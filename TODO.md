@@ -55,7 +55,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 2.1 Core Auth Backend
 
-- [ ] **Implement user registration and password auth**
+- [x] **Implement user registration and password auth**
   - Install argon2 for password hashing
   - Create auth router with register procedure
   - Create auth router with login procedure
