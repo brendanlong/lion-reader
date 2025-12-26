@@ -19,7 +19,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 1.2 Docker and Local Development
 
-- [ ] **Set up Docker for local development**
+- [x] **Set up Docker for local development**
   - Create docker-compose.yml with Postgres 16 and Redis 7
   - Create .env.example with required environment variables
   - Document local setup in README.md

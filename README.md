@@ -36,22 +36,68 @@ Lion Reader is a self-hosted feed reader that supports RSS, Atom, and JSON feeds
 
 - Node.js 20+
 - pnpm
-- Docker (for local Postgres and Redis)
+- Docker and Docker Compose (for local Postgres and Redis)
 
 ### Setup
 
 ```bash
+# Clone the repository
+git clone https://github.com/your-org/lion-reader.git
+cd lion-reader
+
 # Install dependencies
 pnpm install
 
-# Start local services
-docker-compose up -d
+# Copy environment variables
+cp .env.example .env
 
-# Run database migrations
-pnpm db:migrate
+# Start local services (Postgres 16 and Redis 7)
+docker compose up -d
+
+# Verify services are running
+docker compose ps
+
+# Run database migrations (available after task 1.3)
+# pnpm db:migrate
 
 # Start development server
 pnpm dev
+```
+
+### Local Services
+
+The development environment uses Docker Compose to run:
+
+| Service  | Port | Description                      |
+| -------- | ---- | -------------------------------- |
+| Postgres | 5432 | Primary database (PostgreSQL 16) |
+| Redis    | 6379 | Cache and pub/sub (Redis 7)      |
+
+**Connection URLs** (configured in `.env`):
+
+- Database: `postgresql://lionreader:lionreader@localhost:5432/lionreader`
+- Redis: `redis://localhost:6379`
+
+### Common Commands
+
+```bash
+# Start services in background
+docker compose up -d
+
+# View service logs
+docker compose logs -f
+
+# Stop services (preserves data)
+docker compose stop
+
+# Stop and remove containers (preserves volumes)
+docker compose down
+
+# Stop and remove everything including data
+docker compose down -v
+
+# Check service health
+docker compose ps
 ```
 
 ### Testing
