@@ -27,7 +27,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 1.3 Database Setup
 
-- [ ] **Set up Drizzle ORM and MVP schema**
+- [x] **Set up Drizzle ORM and MVP schema**
   - Install and configure Drizzle ORM
   - Implement UUIDv7 generation utility (TypeScript)
   - Create MVP schema migrations:
