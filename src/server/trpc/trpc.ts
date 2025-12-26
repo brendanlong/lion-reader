@@ -64,7 +64,7 @@ export const publicProcedure = t.procedure.use(timingMiddleware);
  * Throws UNAUTHORIZED if no valid session exists.
  */
 const authMiddleware = t.middleware(({ ctx, next }) => {
-  if (!ctx.session) {
+  if (!ctx.session || !ctx.sessionToken) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
       message: "You must be logged in to access this resource",
@@ -74,8 +74,9 @@ const authMiddleware = t.middleware(({ ctx, next }) => {
   return next({
     ctx: {
       ...ctx,
-      // Narrow the type: session is guaranteed to be non-null
+      // Narrow the types: session and sessionToken are guaranteed to be non-null
       session: ctx.session,
+      sessionToken: ctx.sessionToken,
     },
   });
 });

@@ -1,19 +1,19 @@
 /**
  * Auth Router
  *
- * Handles user authentication: registration, login.
- * Session management (logout, session listing) is in users router.
+ * Handles user authentication: registration, login, logout.
+ * Session listing and revocation is in users router.
  */
 
 import { z } from "zod";
 import * as argon2 from "argon2";
-import crypto from "crypto";
 import { eq } from "drizzle-orm";
 
-import { createTRPCRouter, publicProcedure } from "../trpc";
+import { createTRPCRouter, publicProcedure, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { users, sessions } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { generateSessionToken, getSessionExpiry, revokeSessionByToken } from "@/server/auth";
 
 // ============================================================================
 // Validation Schemas
@@ -57,42 +57,6 @@ const loginInputSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
 });
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Session duration in days
- */
-const SESSION_DURATION_DAYS = 30;
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Generates a secure session token.
- * Returns both the raw token (for client) and its hash (for storage).
- */
-function generateSessionToken(): { token: string; tokenHash: string } {
-  // Generate 32 random bytes, encode as base64url
-  const token = crypto.randomBytes(32).toString("base64url");
-
-  // Hash the token for storage (we never store raw tokens)
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-
-  return { token, tokenHash };
-}
-
-/**
- * Calculates session expiry date
- */
-function getSessionExpiry(): Date {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + SESSION_DURATION_DAYS);
-  return expiresAt;
-}
 
 // ============================================================================
 // Router
@@ -273,5 +237,31 @@ export const authRouter = createTRPCRouter({
         },
         sessionToken: token,
       };
+    }),
+
+  /**
+   * Logout the current session.
+   *
+   * Revokes the current session token, invalidating it for future requests.
+   * Also clears the session from Redis cache.
+   */
+  logout: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/auth/logout",
+        tags: ["Auth"],
+        summary: "Logout current session",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      // Revoke the current session using the token from context
+      if (ctx.sessionToken) {
+        await revokeSessionByToken(ctx.sessionToken);
+      }
+
+      return { success: true };
     }),
 });
