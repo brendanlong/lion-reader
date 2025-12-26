@@ -43,7 +43,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 1.4 tRPC Setup
 
-- [ ] **Configure tRPC with Next.js**
+- [x] **Configure tRPC with Next.js**
   - Install tRPC and dependencies
   - Set up tRPC context with session handling
   - Create root router structure
