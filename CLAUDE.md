@@ -17,6 +17,7 @@
 ### Unit Tests vs Integration Tests
 
 **Unit tests** are for pure business logic with no I/O:
+
 - Feed parsing (XML → ParsedFeed)
 - Cache header interpretation
 - Next fetch time calculation
@@ -25,6 +26,7 @@
 - Any pure function that transforms data
 
 **Integration tests** are for code that touches external systems:
+
 - Database queries and transactions
 - Redis operations
 - HTTP endpoints (tRPC routes)
@@ -41,19 +43,20 @@
 
 ```typescript
 // GOOD: Pure function, easy to unit test
-function calculateNextFetch(cacheControl: CacheHeaders, lastFetch: Date): Date
+function calculateNextFetch(cacheControl: CacheHeaders, lastFetch: Date): Date;
 
 // GOOD: I/O function, test with real DB in integration tests
-async function fetchFeed(url: string): Promise<FetchResult>
+async function fetchFeed(url: string): Promise<FetchResult>;
 
 // BAD: Mixed concerns, would need mocks to test
 async function fetchAndCalculateNext(feedId: string): Promise<Date> {
-  const feed = await db.getFeed(feedId);  // I/O mixed with logic
+  const feed = await db.getFeed(feedId); // I/O mixed with logic
   // ...
 }
 ```
 
 **Exceptions where mocks are acceptable:**
+
 - External HTTP APIs in integration tests (use a test server or recorded responses)
 - Time-dependent code (inject a clock abstraction)
 - Third-party services we don't control (email providers, OAuth providers)

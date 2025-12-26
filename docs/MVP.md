@@ -8,29 +8,29 @@ The MVP is a functional feed reader that demonstrates the core architecture and 
 
 ### Included
 
-| Feature | Description |
-|---------|-------------|
-| **Email/password auth** | Register, login, logout, session management |
-| **RSS/Atom feeds** | Subscribe by URL, automatic feed detection |
-| **Entry viewing** | List entries, read full content, mark read/unread |
-| **Starring** | Star entries for later |
-| **Basic UI** | Responsive web app with sidebar navigation |
-| **Real-time updates** | SSE for instant entry notifications |
-| **Public API** | REST endpoints for third-party clients |
+| Feature                 | Description                                       |
+| ----------------------- | ------------------------------------------------- |
+| **Email/password auth** | Register, login, logout, session management       |
+| **RSS/Atom feeds**      | Subscribe by URL, automatic feed detection        |
+| **Entry viewing**       | List entries, read full content, mark read/unread |
+| **Starring**            | Star entries for later                            |
+| **Basic UI**            | Responsive web app with sidebar navigation        |
+| **Real-time updates**   | SSE for instant entry notifications               |
+| **Public API**          | REST endpoints for third-party clients            |
 
 ### Excluded from MVP
 
-| Feature | Reason |
-|---------|--------|
+| Feature                       | Reason                                        |
+| ----------------------------- | --------------------------------------------- |
 | OAuth (Google/Facebook/Apple) | Adds complexity, email/password is sufficient |
-| Email feed ingestion | Requires email service integration |
-| WebSub push | Polling is sufficient for MVP |
-| Content cleaning/readability | Pass through original content |
-| Entry versioning | Store hash but skip version history |
-| Folders/organization | Flat list of feeds is fine initially |
-| Full-text search | List/filter is sufficient initially |
-| OPML import/export | Manual subscription is fine initially |
-| Keyboard shortcuts | Click/tap navigation for MVP |
+| Email feed ingestion          | Requires email service integration            |
+| WebSub push                   | Polling is sufficient for MVP                 |
+| Content cleaning/readability  | Pass through original content                 |
+| Entry versioning              | Store hash but skip version history           |
+| Folders/organization          | Flat list of feeds is fine initially          |
+| Full-text search              | List/filter is sufficient initially           |
+| OPML import/export            | Manual subscription is fine initially         |
+| Keyboard shortcuts            | Click/tap navigation for MVP                  |
 
 ## Data Model (MVP Subset)
 
@@ -59,6 +59,7 @@ jobs (id, type, payload, scheduled_for, started_at, completed_at, status,
 ```
 
 Note: Compared to full design, MVP omits:
+
 - `oauth_accounts` table
 - `entry_versions` table
 - `websub_subscriptions` table
@@ -67,6 +68,7 @@ Note: Compared to full design, MVP omits:
 ## API Endpoints (MVP)
 
 ### Auth
+
 ```
 POST /v1/auth/register     { email, password } → { user, session }
 POST /v1/auth/login        { email, password } → { user, session }
@@ -75,6 +77,7 @@ GET  /v1/auth/me           → { user }
 ```
 
 ### Subscriptions
+
 ```
 GET    /v1/subscriptions              → { items: Subscription[] }
 POST   /v1/subscriptions              { url } → { subscription, feed }
@@ -84,6 +87,7 @@ DELETE /v1/subscriptions/:id          → {}
 ```
 
 ### Entries
+
 ```
 GET  /v1/entries                      { feedId?, unreadOnly?, starredOnly?, cursor?, limit? }
                                       → { items: Entry[], nextCursor? }
@@ -95,11 +99,13 @@ DELETE /v1/entries/:id/star           → {}
 ```
 
 ### Feeds
+
 ```
 GET /v1/feeds/preview                 { url } → { feed: FeedPreview }
 ```
 
 ### Real-time
+
 ```
 GET /v1/events                        → SSE stream
 ```
@@ -150,6 +156,7 @@ GET /v1/events                        → SSE stream
 ### Phase 1: Foundation
 
 **1.1 Project Setup**
+
 - Initialize Next.js project with App Router
 - Configure TypeScript (strict mode)
 - Set up pnpm, ESLint, Prettier
@@ -157,11 +164,13 @@ GET /v1/events                        → SSE stream
 - Set up Drizzle ORM with Postgres
 
 **1.2 Database Schema**
+
 - Create MVP schema migrations
 - Implement UUIDv7 generation
 - Set up seed data for development
 
 **1.3 tRPC Setup**
+
 - Configure tRPC with Next.js
 - Set up trpc-openapi for REST endpoints
 - Implement error handling middleware
@@ -169,18 +178,21 @@ GET /v1/events                        → SSE stream
 ### Phase 2: Authentication
 
 **2.1 Core Auth**
+
 - User registration (email/password)
 - Password hashing with argon2
 - Session creation and validation
 - Login/logout flows
 
 **2.2 Session Management**
+
 - Token generation and hashing
 - Redis session cache
 - Session revocation
 - List active sessions
 
 **2.3 Auth UI**
+
 - Login page
 - Registration page
 - Protected route middleware
@@ -188,18 +200,21 @@ GET /v1/events                        → SSE stream
 ### Phase 3: Feed Management
 
 **3.1 Feed Parser**
+
 - RSS 2.0 parsing
 - Atom parsing
 - Unified ParsedFeed output
 - Feed auto-detection from HTML pages
 
 **3.2 Feed Subscription**
+
 - Subscribe by URL endpoint
 - Feed preview endpoint
 - Create subscription (find or create feed)
 - List/update/delete subscriptions
 
 **3.3 Subscription UI**
+
 - Subscribe dialog/page
 - Feed preview before subscribing
 - Subscription list in sidebar
@@ -207,24 +222,28 @@ GET /v1/events                        → SSE stream
 ### Phase 4: Feed Fetching
 
 **4.1 Job Queue**
+
 - Simple Postgres-based job queue
 - Job scheduling (scheduled_for)
 - Job execution with retries
 - Concurrent job processing
 
 **4.2 Feed Fetcher**
+
 - HTTP fetch with proper headers (If-None-Match, If-Modified-Since)
 - Response handling (200, 304, errors)
 - Cache header parsing
 - Next fetch time calculation
 
 **4.3 Entry Processing**
+
 - Parse entries from feed
 - Detect new vs existing entries
 - Store entries in database
 - Publish new entry events to Redis
 
 **4.4 Background Worker**
+
 - Worker process/thread in app server
 - Poll for due jobs
 - Execute feed fetches
@@ -233,17 +252,20 @@ GET /v1/events                        → SSE stream
 ### Phase 5: Entry Display
 
 **5.1 Entry Queries**
+
 - List entries for user (with visibility filter)
 - Filter by feed, unread, starred
 - Cursor-based pagination
 - Single entry fetch
 
 **5.2 Entry Actions**
+
 - Mark read/unread (single and bulk)
 - Mark all read (with filters)
 - Star/unstar
 
 **5.3 Entry UI**
+
 - Entry list component
 - Entry list item (title, feed, date, preview)
 - Entry content view
@@ -253,15 +275,18 @@ GET /v1/events                        → SSE stream
 ### Phase 6: Real-time Updates
 
 **6.1 Redis Pub/Sub**
+
 - Publish events on new entries
 - Subscribe to feed channels
 
 **6.2 SSE Endpoint**
+
 - Server-Sent Events route
 - User-specific channel subscription
 - Heartbeat for connection keepalive
 
 **6.3 Client Integration**
+
 - EventSource connection
 - React Query cache invalidation
 - Connection status indicator
@@ -269,34 +294,40 @@ GET /v1/events                        → SSE stream
 ### Phase 7: Polish
 
 **7.1 UI/UX**
+
 - Responsive design (mobile-friendly)
 - Loading states and skeletons
 - Error states and retry
 - Empty states
 
 **7.2 Settings**
+
 - Account settings page
 - Session management UI
 - Change password
 
 **7.3 Rate Limiting**
+
 - API rate limiting with Redis
 - Rate limit headers in responses
 
 ### Phase 8: Deployment
 
 **8.1 Infrastructure**
+
 - Fly.io app configuration
 - Postgres database provisioning
 - Redis provisioning
 - Environment variables
 
 **8.2 CI/CD**
+
 - GitHub Actions for CI
 - Automated deployment on merge
 - Database migrations in deploy
 
 **8.3 Observability**
+
 - Grafana Cloud setup
 - Sentry error tracking
 - Basic metrics and logging
@@ -305,18 +336,18 @@ GET /v1/events                        → SSE stream
 
 ### Libraries
 
-| Purpose | Library | Rationale |
-|---------|---------|-----------|
-| Framework | Next.js 14+ | App Router, RSC, API routes |
-| API | tRPC + trpc-openapi | Type safety, auto REST generation |
-| Database | Drizzle ORM | TypeScript-first, good migrations |
-| Validation | Zod | Used by tRPC, schema validation |
-| Auth | Custom + argon2 + arctic | Full control, battle-tested primitives |
-| HTTP Client | Native fetch | Sufficient for our needs |
-| XML Parsing | fast-xml-parser | Fast, well-maintained |
-| State | TanStack Query | Server state management |
-| Styling | Tailwind CSS | Utility-first, fast iteration |
-| UI Components | shadcn/ui | Unstyled, accessible components |
+| Purpose       | Library                  | Rationale                              |
+| ------------- | ------------------------ | -------------------------------------- |
+| Framework     | Next.js 14+              | App Router, RSC, API routes            |
+| API           | tRPC + trpc-openapi      | Type safety, auto REST generation      |
+| Database      | Drizzle ORM              | TypeScript-first, good migrations      |
+| Validation    | Zod                      | Used by tRPC, schema validation        |
+| Auth          | Custom + argon2 + arctic | Full control, battle-tested primitives |
+| HTTP Client   | Native fetch             | Sufficient for our needs               |
+| XML Parsing   | fast-xml-parser          | Fast, well-maintained                  |
+| State         | TanStack Query           | Server state management                |
+| Styling       | Tailwind CSS             | Utility-first, fast iteration          |
+| UI Components | shadcn/ui                | Unstyled, accessible components        |
 
 ### File Structure
 
@@ -378,16 +409,16 @@ MVP is complete when a user can:
 
 ## Estimated Effort
 
-| Phase | Effort |
-|-------|--------|
-| 1. Foundation | Small |
-| 2. Authentication | Small |
-| 3. Feed Management | Medium |
-| 4. Feed Fetching | Medium |
-| 5. Entry Display | Medium |
-| 6. Real-time Updates | Small |
-| 7. Polish | Medium |
-| 8. Deployment | Small |
+| Phase                | Effort |
+| -------------------- | ------ |
+| 1. Foundation        | Small  |
+| 2. Authentication    | Small  |
+| 3. Feed Management   | Medium |
+| 4. Feed Fetching     | Medium |
+| 5. Entry Display     | Medium |
+| 6. Real-time Updates | Small  |
+| 7. Polish            | Medium |
+| 8. Deployment        | Small  |
 
 ## Post-MVP Priorities
 
