@@ -82,7 +82,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 2.4 Auth UI
 
-- [ ] **Create authentication pages**
+- [x] **Create authentication pages**
   - Create (auth) route group with centered layout
   - Build login page with form
   - Build registration page with form
