@@ -72,11 +72,11 @@
 
 ### Component Responsibilities
 
-| Component | Responsibilities |
-|-----------|-----------------|
-| **App Server** | HTTP API, SSE connections, background job execution |
-| **Postgres** | Persistent storage, job queue (pg-boss style) |
-| **Redis** | Session cache, rate limiting, pub/sub for real-time |
+| Component         | Responsibilities                                      |
+| ----------------- | ----------------------------------------------------- |
+| **App Server**    | HTTP API, SSE connections, background job execution   |
+| **Postgres**      | Persistent storage, job queue (pg-boss style)         |
+| **Redis**         | Session cache, rate limiting, pub/sub for real-time   |
 | **Email Service** | Inbound email processing for newsletter subscriptions |
 
 ---
@@ -86,6 +86,7 @@
 ### ID Strategy
 
 All primary keys use **UUIDv7**, which provides:
+
 - Global uniqueness without coordination
 - Time-ordered (roughly chronological, good for pagination)
 - Better B-tree index performance than UUIDv4 (sequential inserts)
@@ -442,6 +443,7 @@ $$ LANGUAGE plpgsql VOLATILE;
 ### Strategy
 
 Roll our own auth using battle-tested primitives:
+
 - **`arctic`**: Lightweight OAuth library for Google/Facebook/Apple
 - **`argon2`**: Password hashing
 - **Custom session management**: Token-based, stored in Postgres with Redis cache
@@ -477,9 +479,9 @@ await db.users.create({ email, passwordHash });
 
 // Login
 const user = await db.users.findByEmail(email);
-if (!user?.passwordHash) throw new Error('Invalid credentials');
-if (!await argon2.verify(user.passwordHash, password)) {
-  throw new Error('Invalid credentials');
+if (!user?.passwordHash) throw new Error("Invalid credentials");
+if (!(await argon2.verify(user.passwordHash, password))) {
+  throw new Error("Invalid credentials");
 }
 const session = await createSession(user.id);
 ```
@@ -488,7 +490,7 @@ const session = await createSession(user.id);
 
 ```typescript
 // Using arctic for OAuth
-import { Google, Facebook, Apple } from 'arctic';
+import { Google, Facebook, Apple } from "arctic";
 
 const google = new Google(clientId, clientSecret, redirectUri);
 
@@ -500,12 +502,12 @@ const tokens = await google.validateAuthorizationCode(code, codeVerifier);
 const userInfo = await fetchGoogleUserInfo(tokens.accessToken);
 
 // Step 3: Find or create user
-let user = await db.users.findByOAuth('google', userInfo.sub);
+let user = await db.users.findByOAuth("google", userInfo.sub);
 if (!user) {
   user = await db.users.create({ email: userInfo.email });
   await db.oauthAccounts.create({
     userId: user.id,
-    provider: 'google',
+    provider: "google",
     providerAccountId: userInfo.sub,
   });
 }
@@ -518,8 +520,8 @@ const session = await createSession(user.id);
 Session tokens are 32 random bytes, base64url encoded. We store SHA-256 hash in database (never the raw token).
 
 ```typescript
-const token = crypto.randomBytes(32).toString('base64url');
-const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+const token = crypto.randomBytes(32).toString("base64url");
+const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 ```
 
 ---
@@ -569,7 +571,7 @@ Permanent redirects (301) are tricky - we don't want to immediately trust them:
 
 ```typescript
 if (response.status === 301) {
-  const newUrl = response.headers.get('location');
+  const newUrl = response.headers.get("location");
 
   if (feed.redirectUrl === newUrl) {
     // Same redirect seen again
@@ -578,12 +580,12 @@ if (response.status === 301) {
     if (feed.redirectConfirmedCount >= 3) {
       // Seen 3+ times, update canonical URL
       feed.canonicalUrl = newUrl;
-      feed.url = newUrl;  // or keep original as alias
+      feed.url = newUrl; // or keep original as alias
     }
   } else {
     // New redirect destination
     feed.redirectUrl = newUrl;
-    feed.redirectType = 'permanent';
+    feed.redirectType = "permanent";
     feed.redirectConfirmedCount = 1;
   }
 }
@@ -594,7 +596,7 @@ if (response.status === 301) {
 ```typescript
 async function processEntries(feed: Feed, parsedFeed: ParsedFeed) {
   for (const item of parsedFeed.items) {
-    const guid = item.guid || item.link || item.title;  // fallback chain
+    const guid = item.guid || item.link || item.title; // fallback chain
     const contentHash = hash(item.content + item.title);
 
     const existing = await db.entries.findByGuid(feed.id, guid);
@@ -608,7 +610,7 @@ async function processEntries(feed: Feed, parsedFeed: ParsedFeed) {
         title: item.title,
         author: item.author,
         contentOriginal: item.content,
-        contentCleaned: item.content,  // TODO: readability extraction
+        contentCleaned: item.content, // TODO: readability extraction
         summary: truncate(stripHtml(item.content), 300),
         publishedAt: item.pubDate,
         fetchedAt: new Date(),
@@ -617,7 +619,6 @@ async function processEntries(feed: Feed, parsedFeed: ParsedFeed) {
 
       // Notify subscribers via Redis pub/sub
       await redis.publish(`feed:${feed.id}:new_entry`, JSON.stringify({ guid }));
-
     } else if (existing.contentHash !== contentHash) {
       // Entry updated
       await db.entryVersions.create({
@@ -637,9 +638,12 @@ async function processEntries(feed: Feed, parsedFeed: ParsedFeed) {
         version: existing.version + 1,
       });
 
-      await redis.publish(`feed:${feed.id}:entry_updated`, JSON.stringify({
-        entryId: existing.id
-      }));
+      await redis.publish(
+        `feed:${feed.id}:entry_updated`,
+        JSON.stringify({
+          entryId: existing.id,
+        })
+      );
     }
     // else: no change, skip
   }
@@ -674,20 +678,20 @@ interface ParsedEntry {
 }
 
 function parseFeed(content: string, contentType: string): ParsedFeed {
-  if (contentType.includes('json')) {
+  if (contentType.includes("json")) {
     return parseJsonFeed(content);
   }
 
   // XML-based (RSS, Atom)
   const doc = parseXml(content);
 
-  if (doc.querySelector('feed')) {
+  if (doc.querySelector("feed")) {
     return parseAtomFeed(doc);
-  } else if (doc.querySelector('rss') || doc.querySelector('channel')) {
+  } else if (doc.querySelector("rss") || doc.querySelector("channel")) {
     return parseRssFeed(doc);
   }
 
-  throw new Error('Unknown feed format');
+  throw new Error("Unknown feed format");
 }
 ```
 
@@ -697,7 +701,7 @@ Per-domain rate limiting to be a good citizen:
 
 ```typescript
 const DOMAIN_RATE_LIMITS = {
-  default: { requests: 1, windowMs: 1000 },  // 1 req/sec default
+  default: { requests: 1, windowMs: 1000 }, // 1 req/sec default
   // Could add per-domain overrides
 };
 
@@ -708,7 +712,7 @@ async function fetchWithRateLimit(url: string): Promise<Response> {
   // Simple sliding window in Redis
   const count = await redis.incr(key);
   if (count === 1) {
-    await redis.pexpire(key, 1000);  // 1 second window
+    await redis.pexpire(key, 1000); // 1 second window
   }
 
   if (count > DOMAIN_RATE_LIMITS.default.requests) {
@@ -719,7 +723,7 @@ async function fetchWithRateLimit(url: string): Promise<Response> {
 
   return fetch(url, {
     headers: {
-      'User-Agent': 'LionReader/1.0 (+https://lionreader.com/bot)',
+      "User-Agent": "LionReader/1.0 (+https://lionreader.com/bot)",
     },
   });
 }
@@ -762,11 +766,11 @@ async function fetchWithRateLimit(url: string): Promise<Response> {
 export async function GET(req: Request) {
   const session = await getSession(req);
   if (!session) {
-    return new Response('Unauthorized', { status: 401 });
+    return new Response("Unauthorized", { status: 401 });
   }
 
   const subscriptions = await db.subscriptions.listForUser(session.userId);
-  const feedIds = subscriptions.map(s => s.feedId);
+  const feedIds = subscriptions.map((s) => s.feedId);
 
   const stream = new ReadableStream({
     start(controller) {
@@ -780,19 +784,19 @@ export async function GET(req: Request) {
         subscriber.subscribe(`feed:${feedId}:entry_updated`);
       }
 
-      subscriber.on('message', (channel, message) => {
-        const [, feedId, eventType] = channel.split(':');
+      subscriber.on("message", (channel, message) => {
+        const [, feedId, eventType] = channel.split(":");
         const data = JSON.stringify({ feedId, ...JSON.parse(message) });
         controller.enqueue(encoder.encode(`event: ${eventType}\ndata: ${data}\n\n`));
       });
 
       // Heartbeat every 30 seconds
       const heartbeat = setInterval(() => {
-        controller.enqueue(encoder.encode(': heartbeat\n\n'));
+        controller.enqueue(encoder.encode(": heartbeat\n\n"));
       }, 30000);
 
       // Cleanup on close
-      req.signal.addEventListener('abort', () => {
+      req.signal.addEventListener("abort", () => {
         clearInterval(heartbeat);
         subscriber.quit();
       });
@@ -801,9 +805,9 @@ export async function GET(req: Request) {
 
   return new Response(stream, {
     headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
     },
   });
 }
@@ -817,20 +821,20 @@ export function useRealtimeUpdates() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const eventSource = new EventSource('/api/v1/events', {
+    const eventSource = new EventSource("/api/v1/events", {
       withCredentials: true,
     });
 
-    eventSource.addEventListener('new_entry', (e) => {
+    eventSource.addEventListener("new_entry", (e) => {
       const { feedId } = JSON.parse(e.data);
-      queryClient.invalidateQueries({ queryKey: ['entries', { feedId }] });
-      queryClient.invalidateQueries({ queryKey: ['entries', 'all'] });
-      queryClient.invalidateQueries({ queryKey: ['subscriptions'] });  // unread counts
+      queryClient.invalidateQueries({ queryKey: ["entries", { feedId }] });
+      queryClient.invalidateQueries({ queryKey: ["entries", "all"] });
+      queryClient.invalidateQueries({ queryKey: ["subscriptions"] }); // unread counts
     });
 
-    eventSource.addEventListener('entry_updated', (e) => {
+    eventSource.addEventListener("entry_updated", (e) => {
       const { entryId } = JSON.parse(e.data);
-      queryClient.invalidateQueries({ queryKey: ['entries', entryId] });
+      queryClient.invalidateQueries({ queryKey: ["entries", entryId] });
     });
 
     eventSource.onerror = () => {
@@ -851,12 +855,12 @@ export function useRealtimeUpdates() {
 
 ```typescript
 // server/trpc/root.ts
-import { router } from './trpc';
-import { authRouter } from './routers/auth';
-import { usersRouter } from './routers/users';
-import { subscriptionsRouter } from './routers/subscriptions';
-import { entriesRouter } from './routers/entries';
-import { feedsRouter } from './routers/feeds';
+import { router } from "./trpc";
+import { authRouter } from "./routers/auth";
+import { usersRouter } from "./routers/users";
+import { subscriptionsRouter } from "./routers/subscriptions";
+import { entriesRouter } from "./routers/entries";
+import { feedsRouter } from "./routers/feeds";
 
 export const appRouter = router({
   auth: authRouter,
@@ -949,11 +953,11 @@ Token bucket via Redis, per-user:
 
 ```typescript
 const RATE_LIMITS = {
-  default: { capacity: 100, refillRate: 10 },  // 100 burst, 10/sec refill
-  search: { capacity: 10, refillRate: 1 },     // search is expensive
+  default: { capacity: 100, refillRate: 10 }, // 100 burst, 10/sec refill
+  search: { capacity: 10, refillRate: 1 }, // search is expensive
 };
 
-async function checkRateLimit(userId: string, bucket = 'default'): Promise<boolean> {
+async function checkRateLimit(userId: string, bucket = "default"): Promise<boolean> {
   const config = RATE_LIMITS[bucket];
   const key = `ratelimit:api:${userId}:${bucket}`;
 
@@ -1057,13 +1061,13 @@ components/
 ### Server vs Client Components
 
 | Server Components (default) | Client Components ('use client') |
-|-----------------------------|----------------------------------|
-| Sidebar feed list (initial) | Keyboard navigation |
-| Entry list (initial render) | Mark read/star interactions |
-| Entry content | Optimistic updates |
-| Settings forms | Real-time indicators |
-| | Infinite scroll |
-| | SSE subscription |
+| --------------------------- | -------------------------------- |
+| Sidebar feed list (initial) | Keyboard navigation              |
+| Entry list (initial render) | Mark read/star interactions      |
+| Entry content               | Optimistic updates               |
+| Settings forms              | Real-time indicators             |
+|                             | Infinite scroll                  |
+|                             | SSE subscription                 |
 
 ### State Management
 
@@ -1078,16 +1082,16 @@ const { data: entries } = trpc.entries.list.useQuery({
 const markRead = trpc.entries.markRead.useMutation({
   onMutate: async ({ ids, read }) => {
     // Cancel outgoing refetches
-    await queryClient.cancelQueries({ queryKey: ['entries'] });
+    await queryClient.cancelQueries({ queryKey: ["entries"] });
 
     // Optimistically update
-    queryClient.setQueryData(['entries'], (old) =>
-      old.map(e => ids.includes(e.id) ? { ...e, read } : e)
+    queryClient.setQueryData(["entries"], (old) =>
+      old.map((e) => (ids.includes(e.id) ? { ...e, read } : e))
     );
   },
   onError: (err, variables, context) => {
     // Rollback on error
-    queryClient.setQueryData(['entries'], context.previousEntries);
+    queryClient.setQueryData(["entries"], context.previousEntries);
   },
 });
 ```
@@ -1186,8 +1190,8 @@ jobs:
       - uses: pnpm/action-setup@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: "20"
+          cache: "pnpm"
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
@@ -1217,8 +1221,8 @@ jobs:
       - uses: pnpm/action-setup@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: "20"
+          cache: "pnpm"
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:migrate
@@ -1317,16 +1321,16 @@ subscriptions_created_total
 ### Structured Logging
 
 ```typescript
-import { logger } from '@/lib/logger';
+import { logger } from "@/lib/logger";
 
-logger.info('Feed fetched', {
+logger.info("Feed fetched", {
   feedId: feed.id,
   url: feed.url,
   entriesFound: entries.length,
   durationMs: duration,
 });
 
-logger.error('Feed fetch failed', {
+logger.error("Feed fetch failed", {
   feedId: feed.id,
   url: feed.url,
   error: error.message,
@@ -1337,12 +1341,12 @@ logger.error('Feed fetch failed', {
 ### Error Tracking
 
 ```typescript
-import * as Sentry from '@sentry/nextjs';
+import * as Sentry from "@sentry/nextjs";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.NODE_ENV,
-  tracesSampleRate: 0.1,  // 10% of transactions
+  tracesSampleRate: 0.1, // 10% of transactions
 });
 
 // In error handlers
@@ -1386,36 +1390,36 @@ tests/
 
 ```typescript
 // tests/unit/next-fetch.test.ts
-import { describe, it, expect } from 'vitest';
-import { calculateNextFetch } from '@/lib/feed/scheduling';
+import { describe, it, expect } from "vitest";
+import { calculateNextFetch } from "@/lib/feed/scheduling";
 
-describe('calculateNextFetch', () => {
-  it('respects Cache-Control max-age within bounds', () => {
+describe("calculateNextFetch", () => {
+  it("respects Cache-Control max-age within bounds", () => {
     const result = calculateNextFetch({
-      cacheControl: { maxAge: 3600 },  // 1 hour
-      lastFetch: new Date('2024-01-01T12:00:00Z'),
+      cacheControl: { maxAge: 3600 }, // 1 hour
+      lastFetch: new Date("2024-01-01T12:00:00Z"),
     });
 
-    expect(result).toEqual(new Date('2024-01-01T13:00:00Z'));
+    expect(result).toEqual(new Date("2024-01-01T13:00:00Z"));
   });
 
-  it('caps max-age at 7 days', () => {
+  it("caps max-age at 7 days", () => {
     const result = calculateNextFetch({
-      cacheControl: { maxAge: 86400 * 30 },  // 30 days
-      lastFetch: new Date('2024-01-01T12:00:00Z'),
+      cacheControl: { maxAge: 86400 * 30 }, // 30 days
+      lastFetch: new Date("2024-01-01T12:00:00Z"),
     });
 
     // Should cap at 7 days
-    expect(result).toEqual(new Date('2024-01-08T12:00:00Z'));
+    expect(result).toEqual(new Date("2024-01-08T12:00:00Z"));
   });
 
-  it('enforces minimum of 1 minute', () => {
+  it("enforces minimum of 1 minute", () => {
     const result = calculateNextFetch({
-      cacheControl: { maxAge: 10 },  // 10 seconds
-      lastFetch: new Date('2024-01-01T12:00:00Z'),
+      cacheControl: { maxAge: 10 }, // 10 seconds
+      lastFetch: new Date("2024-01-01T12:00:00Z"),
     });
 
-    expect(result).toEqual(new Date('2024-01-01T12:01:00Z'));
+    expect(result).toEqual(new Date("2024-01-01T12:01:00Z"));
   });
 });
 ```
@@ -1424,44 +1428,44 @@ describe('calculateNextFetch', () => {
 
 ```typescript
 // tests/integration/subscriptions.test.ts
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestContext } from '../helpers';
+import { describe, it, expect, beforeEach } from "vitest";
+import { createTestContext } from "../helpers";
 
-describe('Subscriptions', () => {
+describe("Subscriptions", () => {
   let ctx: TestContext;
 
   beforeEach(async () => {
-    ctx = await createTestContext();  // Fresh DB, authenticated user
+    ctx = await createTestContext(); // Fresh DB, authenticated user
   });
 
-  it('creates subscription and returns feed metadata', async () => {
+  it("creates subscription and returns feed metadata", async () => {
     const result = await ctx.trpc.subscriptions.create({
-      url: 'https://example.com/feed.xml',
+      url: "https://example.com/feed.xml",
     });
 
-    expect(result.feed.title).toBe('Example Feed');
+    expect(result.feed.title).toBe("Example Feed");
     expect(result.subscription.subscribedAt).toBeDefined();
   });
 
-  it('deduplicates feeds across users', async () => {
+  it("deduplicates feeds across users", async () => {
     // User 1 subscribes
-    await ctx.trpc.subscriptions.create({ url: 'https://example.com/feed.xml' });
+    await ctx.trpc.subscriptions.create({ url: "https://example.com/feed.xml" });
 
     // User 2 subscribes to same feed
-    const ctx2 = await createTestContext();  // Different user
-    await ctx2.trpc.subscriptions.create({ url: 'https://example.com/feed.xml' });
+    const ctx2 = await createTestContext(); // Different user
+    await ctx2.trpc.subscriptions.create({ url: "https://example.com/feed.xml" });
 
     // Should be same feed ID
     const feeds = await ctx.db.feeds.findAll();
     expect(feeds).toHaveLength(1);
   });
 
-  it('only shows entries after subscription date', async () => {
+  it("only shows entries after subscription date", async () => {
     // Feed has entries from before user subscribed
-    const feed = await ctx.db.feeds.create({ url: 'https://example.com/feed.xml' });
+    const feed = await ctx.db.feeds.create({ url: "https://example.com/feed.xml" });
     await ctx.db.entries.create({
       feedId: feed.id,
-      fetchedAt: new Date('2024-01-01'),  // Old entry
+      fetchedAt: new Date("2024-01-01"), // Old entry
     });
 
     // User subscribes now
@@ -1470,7 +1474,7 @@ describe('Subscriptions', () => {
     // Add new entry after subscription
     await ctx.db.entries.create({
       feedId: feed.id,
-      fetchedAt: new Date(),  // New entry
+      fetchedAt: new Date(), // New entry
     });
 
     // User should only see the new entry
@@ -1487,6 +1491,7 @@ describe('Subscriptions', () => {
 Features and improvements for post-MVP development:
 
 ### Feed Features
+
 - **OPML import/export**: Standard format for migrating from other readers
 - **JSON Feed support**: In addition to RSS/Atom
 - **Feed discovery**: Auto-detect feeds from arbitrary URLs
@@ -1494,6 +1499,7 @@ Features and improvements for post-MVP development:
 - **Feed health dashboard**: Show fetch success rates, update frequency
 
 ### User Experience
+
 - **Keyboard shortcuts**: vim-style navigation (j/k, o, m, s)
 - **Offline support**: Service worker + IndexedDB cache
 - **PWA**: Installable web app with push notifications
@@ -1501,28 +1507,33 @@ Features and improvements for post-MVP development:
 - **Folder/tag organization**: Hierarchical organization of feeds
 
 ### Content
+
 - **Readability extraction**: Clean article extraction for feeds with summaries only
 - **Full-text search**: Enhanced search with filters, saved searches
 - **Highlights and notes**: Annotate entries
 - **Read later queue**: Save entries for later reading
 
 ### Mobile
+
 - **Native iOS app**: Swift/SwiftUI
 - **Native Android app**: Kotlin/Compose
 - **Responsive web**: Optimized mobile web experience
 
 ### Social
+
 - **Public profiles**: Share what you're reading
 - **Shared folders**: Collaborative feed collections
 - **Comments**: Discuss entries with other users
 
 ### Infrastructure
+
 - **Multi-region deployment**: Fly.io regions for global latency
 - **Read replicas**: Postgres read replicas for scale
 - **CDN**: Cache static assets and common API responses
 - **Adaptive rate limiting**: System-load-aware rate limits
 
 ### Integrations
+
 - **Pocket/Instapaper**: Send to read-later services
 - **Browser extension**: Subscribe from any page
 - **Zapier/IFTTT**: Automation triggers
