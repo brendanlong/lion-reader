@@ -2,7 +2,7 @@
 
 Each task below is designed to be a self-contained PR. Complete them in order.
 
-Reference @docs/MVP.md and @docs/DESIGN.md.
+ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ## Phase 1: Foundation
 
