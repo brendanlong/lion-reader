@@ -2,15 +2,138 @@
  * Users Router
  *
  * Handles user profile and session management.
- * Will be implemented in Phase 2.
  */
 
-import { createTRPCRouter } from "../trpc";
+import { z } from "zod";
+import { eq, and, isNull, gt, desc } from "drizzle-orm";
+
+import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { errors } from "../errors";
+import { sessions } from "@/server/db/schema";
+import { revokeSession } from "@/server/auth";
+
+// ============================================================================
+// Schemas
+// ============================================================================
+
+/**
+ * Session output schema - what we return for a session
+ */
+const sessionOutputSchema = z.object({
+  id: z.string(),
+  userAgent: z.string().nullable(),
+  ipAddress: z.string().nullable(),
+  createdAt: z.date(),
+  lastActiveAt: z.date(),
+  expiresAt: z.date(),
+  isCurrent: z.boolean(),
+});
+
+// ============================================================================
+// Router
+// ============================================================================
 
 export const usersRouter = createTRPCRouter({
-  // Placeholder - will be implemented in Phase 2
-  // me: protectedProcedure.query(...)
-  // update: protectedProcedure.input(...).mutation(...)
-  // sessions: protectedProcedure.query(...)
-  // revokeSession: protectedProcedure.input(...).mutation(...)
+  /**
+   * List active sessions for the current user.
+   *
+   * Returns all non-revoked, non-expired sessions for the authenticated user.
+   * Sessions are ordered by last active time (most recent first).
+   */
+  "me.sessions": protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/users/me/sessions",
+        tags: ["Users"],
+        summary: "List active sessions",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        sessions: z.array(sessionOutputSchema),
+      })
+    )
+    .query(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+      const currentSessionId = ctx.session.session.id;
+
+      // Get all active sessions for this user
+      const activeSessions = await ctx.db
+        .select({
+          id: sessions.id,
+          userAgent: sessions.userAgent,
+          ipAddress: sessions.ipAddress,
+          createdAt: sessions.createdAt,
+          lastActiveAt: sessions.lastActiveAt,
+          expiresAt: sessions.expiresAt,
+        })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            isNull(sessions.revokedAt),
+            gt(sessions.expiresAt, new Date())
+          )
+        )
+        .orderBy(desc(sessions.lastActiveAt));
+
+      return {
+        sessions: activeSessions.map((session) => ({
+          ...session,
+          isCurrent: session.id === currentSessionId,
+        })),
+      };
+    }),
+
+  /**
+   * Revoke a specific session.
+   *
+   * Revokes a session by its ID. The session must belong to the current user.
+   * Cannot revoke the current session (use logout instead).
+   */
+  "me.revokeSession": protectedProcedure
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/v1/users/me/sessions/{sessionId}",
+        tags: ["Users"],
+        summary: "Revoke a session",
+      },
+    })
+    .input(
+      z.object({
+        sessionId: z.string().uuid("Invalid session ID"),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const currentSessionId = ctx.session.session.id;
+      const { sessionId } = input;
+
+      // Don't allow revoking the current session - use logout instead
+      if (sessionId === currentSessionId) {
+        throw errors.validation("Cannot revoke current session. Use logout instead.");
+      }
+
+      // Verify the session belongs to the current user
+      const sessionResult = await ctx.db
+        .select({ id: sessions.id, userId: sessions.userId })
+        .from(sessions)
+        .where(
+          and(eq(sessions.id, sessionId), eq(sessions.userId, userId), isNull(sessions.revokedAt))
+        )
+        .limit(1);
+
+      if (sessionResult.length === 0) {
+        throw errors.notFound("Session");
+      }
+
+      // Revoke the session
+      await revokeSession(sessionId);
+
+      return { success: true };
+    }),
 });

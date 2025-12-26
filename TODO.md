@@ -74,7 +74,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 2.3 Auth API Completion
 
-- [ ] **Complete auth API endpoints**
+- [x] **Complete auth API endpoints**
   - GET /v1/auth/me - return current user
   - GET /v1/users/me/sessions - list active sessions
   - DELETE /v1/users/me/sessions/:id - revoke session
