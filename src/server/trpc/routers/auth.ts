@@ -240,6 +240,44 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
+   * Get the current authenticated user.
+   *
+   * Returns the user profile for the currently authenticated session.
+   */
+  me: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/auth/me",
+        tags: ["Auth"],
+        summary: "Get current user",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        user: z.object({
+          id: z.string(),
+          email: z.string(),
+          emailVerifiedAt: z.date().nullable(),
+          createdAt: z.date(),
+        }),
+      })
+    )
+    .query(({ ctx }) => {
+      const { user } = ctx.session;
+
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          emailVerifiedAt: user.emailVerifiedAt,
+          createdAt: user.createdAt,
+        },
+      };
+    }),
+
+  /**
    * Logout the current session.
    *
    * Revokes the current session token, invalidating it for future requests.
