@@ -1,5 +1,10 @@
 # Lion Reader Development Guidelines
 
+## Coding
+
+- When you're done with a task, always commit the changes. If more changes are needed, you can always
+  amend the commit (but generally prefer to make a new commit if it makes sense)
+
 ## Type Safety
 
 - **All non-test code must be fully type checked** - no `any`, no `// @ts-ignore`, no implicit any
