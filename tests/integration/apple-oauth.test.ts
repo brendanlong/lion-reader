@@ -19,33 +19,34 @@ import { redis } from "../../src/server/redis";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as argon2 from "argon2";
 
-// Helper to create a mock JWT id_token
-function createMockIdToken(payload: Record<string, unknown>): string {
-  const header = { alg: "RS256", kid: "test-key" };
-  const headerB64 = Buffer.from(JSON.stringify(header)).toString("base64url");
-  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const signature = "mock-signature";
-  return `${headerB64}.${payloadB64}.${signature}`;
-}
-
 // Default mock Apple user info (embedded in JWT)
 const mockAppleUserSub = "apple-user-123.abc.def";
 const mockAppleEmail = "test@example.com";
 
 // Mock the arctic library
-vi.mock("arctic", () => ({
-  Apple: vi.fn().mockImplementation(() => ({
-    createAuthorizationURL: vi.fn().mockImplementation((state: string) => {
+vi.mock("arctic", () => {
+  // Helper to create a mock JWT id_token (defined inside mock to avoid hoisting issues)
+  function mockCreateIdToken(payload: Record<string, unknown>): string {
+    const header = { alg: "RS256", kid: "test-key" };
+    const headerB64 = Buffer.from(JSON.stringify(header)).toString("base64url");
+    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const signature = "mock-signature";
+    return `${headerB64}.${payloadB64}.${signature}`;
+  }
+
+  // Create a mock class for Apple that can be instantiated with `new`
+  class MockApple {
+    createAuthorizationURL(state: string) {
       return new URL(`https://appleid.apple.com/auth/authorize?state=${state}`);
-    }),
-    validateAuthorizationCode: vi.fn().mockImplementation(() => {
-      const idToken = createMockIdToken({
+    }
+    validateAuthorizationCode() {
+      const idToken = mockCreateIdToken({
         iss: "https://appleid.apple.com",
         aud: "test-client-id",
         exp: Math.floor(Date.now() / 1000) + 3600,
         iat: Math.floor(Date.now() / 1000),
-        sub: mockAppleUserSub,
-        email: mockAppleEmail,
+        sub: "apple-user-123.abc.def",
+        email: "test@example.com",
         email_verified: "true",
         is_private_email: "false",
         auth_time: Math.floor(Date.now() / 1000),
@@ -59,14 +60,25 @@ vi.mock("arctic", () => ({
         idToken: () => idToken,
         accessTokenExpiresAt: () => new Date(Date.now() + 3600000),
       };
-    }),
-  })),
-  Google: vi.fn().mockImplementation(() => ({
-    createAuthorizationURL: vi.fn(),
-    validateAuthorizationCode: vi.fn(),
-  })),
-  generateState: vi.fn().mockReturnValue("mock-apple-state"),
-}));
+    }
+  }
+
+  // Create a mock class for Google
+  class MockGoogle {
+    createAuthorizationURL() {
+      return new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    }
+    validateAuthorizationCode() {
+      return {};
+    }
+  }
+
+  return {
+    Apple: MockApple,
+    Google: MockGoogle,
+    generateState: () => "mock-apple-state",
+  };
+});
 
 describe("Apple OAuth", () => {
   // Setup environment for Apple OAuth
