@@ -11,3 +11,4 @@ export { entriesRouter } from "./entries";
 export { feedsRouter } from "./feeds";
 export { tagsRouter } from "./tags";
 export { savedRouter } from "./saved";
+export { narrationRouter } from "./narration";
