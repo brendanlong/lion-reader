@@ -152,13 +152,13 @@ export default function SessionsPage() {
             return (
               <div
                 key={session.id}
-                className={`rounded-lg border p-4 ${
+                className={`rounded-lg border p-3 sm:p-4 ${
                   session.isCurrent
                     ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950"
                     : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
                 }`}
               >
-                <div className="flex items-start justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       {/* Device icon */}
@@ -194,22 +194,22 @@ export default function SessionsPage() {
                         )}
                       </div>
 
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <p className="font-medium text-zinc-900 dark:text-zinc-50">
                           {browser} on {platform}
-                          {session.isCurrent && (
-                            <span className="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
-                              Current session
-                            </span>
-                          )}
                         </p>
+                        {session.isCurrent && (
+                          <span className="mt-0.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                            Current session
+                          </span>
+                        )}
                         <p className="text-sm text-zinc-500 dark:text-zinc-400">
                           {session.ipAddress || "Unknown IP"}
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-2 flex gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
                       <span>Last active: {formatTimeAgo(lastActive)}</span>
                       <span>
                         Created:{" "}
@@ -228,7 +228,7 @@ export default function SessionsPage() {
                       size="sm"
                       onClick={() => handleRevokeSession(session.id)}
                       disabled={revokeSessionMutation.isPending}
-                      className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+                      className="w-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
                     >
                       Revoke
                     </Button>

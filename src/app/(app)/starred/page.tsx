@@ -28,9 +28,9 @@ export default function StarredEntriesPage() {
 
   // Otherwise, show the starred entries list
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Starred</h1>
+    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
+      <div className="mb-4 flex items-center justify-between sm:mb-6">
+        <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Starred</h1>
       </div>
 
       <EntryList

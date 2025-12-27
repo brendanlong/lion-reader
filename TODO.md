@@ -296,7 +296,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 7.4 Responsive Design
 
-- [ ] **Polish responsive design**
+- [x] **Polish responsive design**
   - Ensure mobile-friendly layout (< 768px)
   - Collapsible sidebar on mobile
   - Touch-friendly tap targets
