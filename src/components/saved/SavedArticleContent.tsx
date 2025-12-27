@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
+import { NarrationControls } from "@/components/narration/NarrationControls";
 
 /**
  * Props for the SavedArticleContent component.
@@ -375,6 +376,14 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
             <ExternalLinkIcon />
             <span className="ml-2">View Original</span>
           </Button>
+
+          {/* Narration controls */}
+          <NarrationControls
+            articleId={articleId}
+            articleType="saved"
+            title={displayTitle}
+            feedTitle={displaySite}
+          />
         </div>
       </header>
 
