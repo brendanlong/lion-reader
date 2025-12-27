@@ -16,6 +16,7 @@ import {
   LinkedAccounts,
   KeyboardShortcutsSettings,
   TagManagement,
+  BookmarkletSettings,
 } from "@/components/settings";
 
 export default function SettingsPage() {
@@ -149,6 +150,9 @@ export default function SettingsPage() {
 
       {/* OPML Import/Export Section */}
       <OpmlImportExport />
+
+      {/* Bookmarklet Section */}
+      <BookmarkletSettings />
 
       {/* Keyboard Shortcuts Section */}
       <KeyboardShortcutsSettings />
