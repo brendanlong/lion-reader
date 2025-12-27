@@ -580,3 +580,43 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Track WebSub status for monitoring
   - Log WebSub events for debugging
   - Always schedule polling as backup
+
+## Phase 12: Read-it-Later
+
+### 12.1 Saved Articles Schema and API
+
+- [ ] **Create saved_articles database schema**
+  - Create saved_articles table migration
+  - Add indexes for user listing and unread filtering
+  - Update Drizzle schema with types
+
+- [ ] **Implement saved articles CRUD API**
+  - POST /v1/saved - save URL (fetch page, extract metadata, run Readability)
+  - GET /v1/saved - list saved articles with cursor pagination
+  - GET /v1/saved/:id - get single saved article with content
+  - PATCH /v1/saved/:id - update read/archived status
+  - DELETE /v1/saved/:id - hard delete
+  - POST /v1/saved/mark-read - bulk mark read
+  - Write integration tests
+
+### 12.2 Saved Articles UI
+
+- [ ] **Build saved articles list UI**
+  - Add "Saved" section to sidebar (like Starred)
+  - Create /saved route with entry list
+  - Reuse EntryList/EntryContent components where possible
+  - Add archive button to mark items "done"
+  - Add keyboard shortcut: g+l (go to saved/later)
+
+- [ ] **Create save page for bookmarklet**
+  - Create /save?url=... route (minimal popup UI)
+  - Show saving progress with spinner
+  - Display success/error state
+  - Auto-close on success (with delay)
+  - Handle already-saved gracefully
+
+- [ ] **Add bookmarklet to settings**
+  - Create "Bookmarklet" section in settings page
+  - Show draggable bookmarklet link
+  - Include installation instructions
+  - Show bookmarklet code for manual installation
