@@ -29,6 +29,10 @@ export interface EntryListItemData {
 interface EntryListItemProps {
   entry: EntryListItemData;
   onClick?: (entryId: string) => void;
+  /**
+   * Whether this entry is currently selected (for keyboard navigation).
+   */
+  selected?: boolean;
 }
 
 /**
@@ -63,10 +67,35 @@ function formatRelativeTime(date: Date): string {
 }
 
 /**
+ * Get the appropriate CSS classes for the entry item based on read and selected state.
+ */
+function getEntryClasses(read: boolean, selected: boolean): string {
+  const baseClasses =
+    "group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4";
+
+  if (selected) {
+    // Selected state takes priority - blue ring indicator
+    return `${baseClasses} border-blue-500 ring-2 ring-blue-500 ring-offset-1 dark:border-blue-400 dark:ring-blue-400 dark:ring-offset-zinc-900 ${
+      read ? "bg-white dark:bg-zinc-900" : "bg-zinc-50 dark:bg-zinc-800"
+    }`;
+  }
+
+  if (read) {
+    return `${baseClasses} border-zinc-200 bg-white hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800`;
+  }
+
+  return `${baseClasses} border-zinc-300 bg-zinc-50 hover:bg-zinc-100 active:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 dark:active:bg-zinc-700`;
+}
+
+/**
  * EntryListItem component.
  * Memoized to prevent unnecessary re-renders in virtualized lists.
  */
-export const EntryListItem = memo(function EntryListItem({ entry, onClick }: EntryListItemProps) {
+export const EntryListItem = memo(function EntryListItem({
+  entry,
+  onClick,
+  selected = false,
+}: EntryListItemProps) {
   const displayDate = entry.publishedAt ?? entry.fetchedAt;
   const displayTitle = entry.title ?? "Untitled";
   const displayFeed = entry.feedTitle ?? "Unknown Feed";
@@ -88,12 +117,9 @@ export const EntryListItem = memo(function EntryListItem({ entry, onClick }: Ent
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className={`group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4 ${
-        entry.read
-          ? "border-zinc-200 bg-white hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800"
-          : "border-zinc-300 bg-zinc-50 hover:bg-zinc-100 active:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 dark:active:bg-zinc-700"
-      }`}
-      aria-label={`${entry.read ? "Read" : "Unread"} entry: ${displayTitle} from ${displayFeed}`}
+      data-entry-id={entry.id}
+      className={getEntryClasses(entry.read, selected)}
+      aria-label={`${entry.read ? "Read" : "Unread"}${selected ? ", selected" : ""} entry: ${displayTitle} from ${displayFeed}`}
     >
       <div className="flex items-start gap-3">
         {/* Read/Unread Indicator */}
