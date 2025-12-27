@@ -135,7 +135,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 3.6 Subscription UI
 
-- [ ] **Create subscription management UI**
+- [x] **Create subscription management UI**
   - Build subscribe page/dialog with URL input
   - Show feed preview before confirming subscription
   - Build sidebar with feed list and unread counts
