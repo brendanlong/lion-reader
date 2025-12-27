@@ -15,6 +15,13 @@
       "when": 1766812549075,
       "tag": "0001_sweet_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1766816693927,
+      "tag": "0002_nappy_black_queen",
+      "breakpoints": true
     }
   ]
 }
