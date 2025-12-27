@@ -744,22 +744,37 @@ async function fetchWithRateLimit(url: string): Promise<Response> {
 │                                                                 │
 │  1. Feed worker fetches feed, finds new entry                  │
 │                                                                 │
-│  2. Worker publishes to Redis:                                 │
-│     PUBLISH feed:{feedId}:new_entry {entryId, ...}             │
+│  2. Worker publishes to per-feed Redis channel:                │
+│     PUBLISH feed:{feedId}:events {type, entryId, ...}          │
 │                                                                 │
-│  3. All app servers are subscribed to Redis channels           │
+│  3. SSE connections subscribe only to channels for feeds       │
+│     their user cares about (not all feeds)                     │
 │                                                                 │
-│  4. App server receives message, looks up which connected      │
-│     users are subscribed to that feed                          │
+│  4. App server receives message, forwards to client            │
+│     (no filtering needed - already subscribed selectively)     │
 │                                                                 │
-│  5. App server sends SSE event to those users                  │
+│  5. Client receives event, invalidates React Query cache       │
 │                                                                 │
-│  6. Client receives event, invalidates React Query cache       │
-│                                                                 │
-│  7. UI updates automatically                                    │
+│  6. UI updates automatically                                    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Channel Design
+
+Per-feed channels for scalability - servers only receive events they care about:
+
+| Channel Pattern        | Purpose                                |
+| ---------------------- | -------------------------------------- |
+| `feed:{feedId}:events` | Feed events (new_entry, entry_updated) |
+| `user:{userId}:events` | User events (subscription_created)     |
+
+When a user subscribes to a new feed:
+
+1. Server publishes `subscription_created` to `user:{userId}:events`
+2. All SSE connections for that user receive it
+3. Each SSE connection dynamically subscribes to `feed:{feedId}:events`
+4. Client invalidates entries to catch any that arrived during the race window
 
 ### Server-Sent Events Endpoint
 
@@ -771,25 +786,36 @@ export async function GET(req: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const subscriptions = await db.subscriptions.listForUser(session.userId);
-  const feedIds = subscriptions.map((s) => s.feedId);
+  const userId = session.userId;
+  const feedIds = await getUserFeedIds(userId);
+  const userChannel = `user:${userId}:events`;
 
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
-
-      // Subscribe to Redis channels for user's feeds
       const subscriber = redis.duplicate();
+      const subscribedChannels = new Set<string>();
 
-      for (const feedId of feedIds) {
-        subscriber.subscribe(`feed:${feedId}:new_entry`);
-        subscriber.subscribe(`feed:${feedId}:entry_updated`);
-      }
+      // Subscribe to user's channel + all their feed channels
+      const feedChannels = feedIds.map((id) => `feed:${id}:events`);
+      subscriber.subscribe(userChannel, ...feedChannels);
+      feedChannels.forEach((c) => subscribedChannels.add(c));
 
       subscriber.on("message", (channel, message) => {
-        const [, feedId, eventType] = channel.split(":");
-        const data = JSON.stringify({ feedId, ...JSON.parse(message) });
-        controller.enqueue(encoder.encode(`event: ${eventType}\ndata: ${data}\n\n`));
+        const event = JSON.parse(message);
+
+        if (channel === userChannel && event.type === "subscription_created") {
+          // Dynamically subscribe to new feed's channel
+          const newChannel = `feed:${event.feedId}:events`;
+          if (!subscribedChannels.has(newChannel)) {
+            subscriber.subscribe(newChannel);
+            subscribedChannels.add(newChannel);
+          }
+        }
+
+        // Forward event to client
+        const data = `event: ${event.type}\ndata: ${message}\n\n`;
+        controller.enqueue(encoder.encode(data));
       });
 
       // Heartbeat every 30 seconds
@@ -797,7 +823,6 @@ export async function GET(req: Request) {
         controller.enqueue(encoder.encode(": heartbeat\n\n"));
       }, 30000);
 
-      // Cleanup on close
       req.signal.addEventListener("abort", () => {
         clearInterval(heartbeat);
         subscriber.quit();
@@ -828,15 +853,22 @@ export function useRealtimeUpdates() {
     });
 
     eventSource.addEventListener("new_entry", (e) => {
-      const { feedId } = JSON.parse(e.data);
-      queryClient.invalidateQueries({ queryKey: ["entries", { feedId }] });
-      queryClient.invalidateQueries({ queryKey: ["entries", "all"] });
+      queryClient.invalidateQueries({ queryKey: ["entries"] });
       queryClient.invalidateQueries({ queryKey: ["subscriptions"] }); // unread counts
     });
 
     eventSource.addEventListener("entry_updated", (e) => {
       const { entryId } = JSON.parse(e.data);
       queryClient.invalidateQueries({ queryKey: ["entries", entryId] });
+      queryClient.invalidateQueries({ queryKey: ["entries"] });
+    });
+
+    eventSource.addEventListener("subscription_created", (e) => {
+      // New subscription - refresh subscriptions list
+      queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+      // Also refresh entries to catch any that arrived before we subscribed
+      // to the new feed's channel (race condition handling)
+      queryClient.invalidateQueries({ queryKey: ["entries"] });
     });
 
     eventSource.onerror = () => {
@@ -1657,11 +1689,11 @@ Article content is sent to Groq (Llama 3.1 8B) for text preprocessing. Audio gen
 
 ### Limitations
 
-| Limitation | Impact | Mitigation |
-|------------|--------|------------|
-| Background playback | Audio stops when tab backgrounded on mobile | Future: Capacitor wrapper |
-| Voice quality variance | Some browsers have poor voices | Recommend Chrome/Safari |
-| No offline narration | Requires network to generate text | Cache aggressively |
+| Limitation             | Impact                                      | Mitigation                |
+| ---------------------- | ------------------------------------------- | ------------------------- |
+| Background playback    | Audio stops when tab backgrounded on mobile | Future: Capacitor wrapper |
+| Voice quality variance | Some browsers have poor voices              | Recommend Chrome/Safari   |
+| No offline narration   | Requires network to generate text           | Cache aggressively        |
 
 ### Future Enhancements
 
