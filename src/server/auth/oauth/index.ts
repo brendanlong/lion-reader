@@ -17,3 +17,13 @@ export {
   isProviderEnabled,
   hasAnyOAuthProvider,
 } from "./config";
+
+// Google OAuth flow exports
+export {
+  type GoogleUserInfo,
+  type GoogleAuthUrlResult,
+  type GoogleAuthResult,
+  createGoogleAuthUrl,
+  validateGoogleCallback,
+  isGoogleOAuthEnabled,
+} from "./google";

@@ -373,7 +373,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Create oauth provider config with runtime detection
   - Add GET /v1/auth/providers endpoint (returns enabled providers)
 
-- [ ] **Implement Google OAuth flow**
+- [x] **Implement Google OAuth flow**
   - Configure Google OAuth provider with arctic
   - GET /v1/auth/oauth/google - generate auth URL with PKCE
   - POST /v1/auth/oauth/google/callback - handle callback, create/link user

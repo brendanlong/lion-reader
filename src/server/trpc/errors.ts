@@ -32,6 +32,9 @@ export const ErrorCodes = {
   INVALID_EMAIL: "INVALID_EMAIL",
   WEAK_PASSWORD: "WEAK_PASSWORD",
   EMAIL_ALREADY_EXISTS: "EMAIL_ALREADY_EXISTS",
+  OAUTH_STATE_INVALID: "OAUTH_STATE_INVALID",
+  OAUTH_PROVIDER_NOT_CONFIGURED: "OAUTH_PROVIDER_NOT_CONFIGURED",
+  OAUTH_CALLBACK_FAILED: "OAUTH_CALLBACK_FAILED",
 
   // Conflict errors (409)
   ALREADY_SUBSCRIBED: "ALREADY_SUBSCRIBED",
@@ -73,6 +76,9 @@ const errorCodeToTRPCCode: Record<
   INVALID_EMAIL: "BAD_REQUEST",
   WEAK_PASSWORD: "BAD_REQUEST",
   EMAIL_ALREADY_EXISTS: "BAD_REQUEST",
+  OAUTH_STATE_INVALID: "BAD_REQUEST",
+  OAUTH_PROVIDER_NOT_CONFIGURED: "BAD_REQUEST",
+  OAUTH_CALLBACK_FAILED: "BAD_REQUEST",
   ALREADY_SUBSCRIBED: "CONFLICT",
   RATE_LIMITED: "TOO_MANY_REQUESTS",
   INTERNAL_ERROR: "INTERNAL_SERVER_ERROR",
@@ -132,6 +138,21 @@ export const errors = {
 
   emailExists: () =>
     createError(ErrorCodes.EMAIL_ALREADY_EXISTS, "An account with this email already exists"),
+
+  oauthStateInvalid: () =>
+    createError(
+      ErrorCodes.OAUTH_STATE_INVALID,
+      "Invalid or expired OAuth state. Please try signing in again."
+    ),
+
+  oauthProviderNotConfigured: (provider: string) =>
+    createError(
+      ErrorCodes.OAUTH_PROVIDER_NOT_CONFIGURED,
+      `${provider} OAuth is not configured on this server`
+    ),
+
+  oauthCallbackFailed: (reason: string) =>
+    createError(ErrorCodes.OAUTH_CALLBACK_FAILED, `OAuth callback failed: ${reason}`),
 
   alreadySubscribed: () =>
     createError(ErrorCodes.ALREADY_SUBSCRIBED, "You are already subscribed to this feed"),
