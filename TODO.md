@@ -184,7 +184,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 4.5 Background Worker
 
-- [ ] **Implement background job processing**
+- [x] **Implement background job processing**
   - Create worker that polls for due jobs
   - Process fetch_feed jobs
   - Handle concurrent job execution
