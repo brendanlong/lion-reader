@@ -205,7 +205,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 5.2 Entry Actions API
 
-- [ ] **Implement entry action endpoints**
+- [x] **Implement entry action endpoints**
   - POST /v1/entries/mark-read - mark entries read/unread (bulk)
   - POST /v1/entries/mark-all-read - mark all read with filters
   - POST /v1/entries/:id/star - star entry
