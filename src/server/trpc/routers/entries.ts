@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, desc, lt, inArray } from "drizzle-orm";
+import { eq, and, isNull, desc, lt, lte, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -359,5 +359,403 @@ export const entriesRouter = createTRPCRouter({
           feedUrl: feed.url,
         },
       };
+    }),
+
+  /**
+   * Mark entries as read or unread (bulk operation).
+   *
+   * Only entries the user has access to (subscribed feeds, visibility rules) will be updated.
+   *
+   * @param ids - Array of entry IDs to mark
+   * @param read - Whether to mark as read (true) or unread (false)
+   * @returns Empty object on success
+   */
+  markRead: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/entries/mark-read",
+        tags: ["Entries"],
+        summary: "Mark entries read/unread",
+      },
+    })
+    .input(
+      z.object({
+        ids: z
+          .array(uuidSchema)
+          .min(1, "At least one entry ID is required")
+          .max(1000, "Maximum 1000 entries per request"),
+        read: z.boolean(),
+      })
+    )
+    .output(z.object({}))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const now = new Date();
+
+      // Get the user's active subscriptions for visibility check
+      const userSubscriptions = await ctx.db
+        .select({
+          feedId: subscriptions.feedId,
+          subscribedAt: subscriptions.subscribedAt,
+        })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+      if (userSubscriptions.length === 0) {
+        // No subscriptions, no entries to mark
+        return {};
+      }
+
+      // Build subscription map for visibility filtering
+      const subscriptionMap = new Map(
+        userSubscriptions.map((sub) => [sub.feedId, sub.subscribedAt])
+      );
+
+      const subscribedFeedIds = userSubscriptions.map((sub) => sub.feedId);
+
+      // Get the entries that exist and belong to subscribed feeds
+      const existingEntries = await ctx.db
+        .select({
+          id: entries.id,
+          feedId: entries.feedId,
+          fetchedAt: entries.fetchedAt,
+        })
+        .from(entries)
+        .where(and(inArray(entries.id, input.ids), inArray(entries.feedId, subscribedFeedIds)));
+
+      // Filter by visibility (entry.fetchedAt >= subscription.subscribedAt)
+      const visibleEntryIds = existingEntries
+        .filter((entry) => {
+          const subscribedAt = subscriptionMap.get(entry.feedId);
+          return subscribedAt && entry.fetchedAt >= subscribedAt;
+        })
+        .map((entry) => entry.id);
+
+      if (visibleEntryIds.length === 0) {
+        return {};
+      }
+
+      // Upsert user entry states for each entry
+      for (const entryId of visibleEntryIds) {
+        await ctx.db
+          .insert(userEntryStates)
+          .values({
+            userId,
+            entryId,
+            read: input.read,
+            readAt: input.read ? now : null,
+          })
+          .onConflictDoUpdate({
+            target: [userEntryStates.userId, userEntryStates.entryId],
+            set: {
+              read: input.read,
+              readAt: input.read ? now : null,
+            },
+          });
+      }
+
+      return {};
+    }),
+
+  /**
+   * Mark all entries as read with optional filters.
+   *
+   * @param feedId - Optional filter to mark only entries from a specific feed
+   * @param before - Optional filter to mark only entries fetched before this date
+   * @returns The count of entries marked as read
+   */
+  markAllRead: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/entries/mark-all-read",
+        tags: ["Entries"],
+        summary: "Mark all entries read",
+      },
+    })
+    .input(
+      z.object({
+        feedId: uuidSchema.optional(),
+        before: z.coerce.date().optional(),
+      })
+    )
+    .output(z.object({ count: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const now = new Date();
+
+      // Get the user's active subscriptions
+      const userSubscriptions = await ctx.db
+        .select({
+          feedId: subscriptions.feedId,
+          subscribedAt: subscriptions.subscribedAt,
+        })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+      if (userSubscriptions.length === 0) {
+        return { count: 0 };
+      }
+
+      // If feedId is provided, verify user is subscribed to it
+      if (input.feedId) {
+        const isSubscribed = userSubscriptions.some((sub) => sub.feedId === input.feedId);
+        if (!isSubscribed) {
+          return { count: 0 };
+        }
+      }
+
+      // Build subscription map for visibility filtering
+      const subscriptionMap = new Map(
+        userSubscriptions.map((sub) => [sub.feedId, sub.subscribedAt])
+      );
+
+      // Get the feed IDs to query
+      const feedIds = input.feedId ? [input.feedId] : userSubscriptions.map((sub) => sub.feedId);
+
+      // Build query conditions
+      const conditions = [inArray(entries.feedId, feedIds)];
+
+      // Add before date filter if provided
+      if (input.before) {
+        conditions.push(lte(entries.fetchedAt, input.before));
+      }
+
+      // Get all entries matching the conditions
+      const matchingEntries = await ctx.db
+        .select({
+          id: entries.id,
+          feedId: entries.feedId,
+          fetchedAt: entries.fetchedAt,
+        })
+        .from(entries)
+        .where(and(...conditions));
+
+      // Filter by visibility (entry.fetchedAt >= subscription.subscribedAt)
+      const visibleEntryIds = matchingEntries
+        .filter((entry) => {
+          const subscribedAt = subscriptionMap.get(entry.feedId);
+          return subscribedAt && entry.fetchedAt >= subscribedAt;
+        })
+        .map((entry) => entry.id);
+
+      if (visibleEntryIds.length === 0) {
+        return { count: 0 };
+      }
+
+      // Get entries that are not already marked as read
+      const existingStates = await ctx.db
+        .select({
+          entryId: userEntryStates.entryId,
+          read: userEntryStates.read,
+        })
+        .from(userEntryStates)
+        .where(
+          and(eq(userEntryStates.userId, userId), inArray(userEntryStates.entryId, visibleEntryIds))
+        );
+
+      const alreadyReadEntryIds = new Set(
+        existingStates.filter((state) => state.read).map((state) => state.entryId)
+      );
+
+      // Filter to only entries that are not already read
+      const entriesToMark = visibleEntryIds.filter((id) => !alreadyReadEntryIds.has(id));
+
+      if (entriesToMark.length === 0) {
+        return { count: 0 };
+      }
+
+      // Upsert user entry states for each entry
+      for (const entryId of entriesToMark) {
+        await ctx.db
+          .insert(userEntryStates)
+          .values({
+            userId,
+            entryId,
+            read: true,
+            readAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [userEntryStates.userId, userEntryStates.entryId],
+            set: {
+              read: true,
+              readAt: now,
+            },
+          });
+      }
+
+      return { count: entriesToMark.length };
+    }),
+
+  /**
+   * Star an entry.
+   *
+   * The entry must be visible to the user (subscribed feed, visibility rules).
+   *
+   * @param id - The entry ID to star
+   * @returns Empty object on success
+   */
+  star: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/entries/{id}/star",
+        tags: ["Entries"],
+        summary: "Star entry",
+      },
+    })
+    .input(
+      z.object({
+        id: uuidSchema,
+      })
+    )
+    .output(z.object({}))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const now = new Date();
+
+      // Get the entry
+      const entryResult = await ctx.db
+        .select({
+          id: entries.id,
+          feedId: entries.feedId,
+          fetchedAt: entries.fetchedAt,
+        })
+        .from(entries)
+        .where(eq(entries.id, input.id))
+        .limit(1);
+
+      if (entryResult.length === 0) {
+        throw errors.entryNotFound();
+      }
+
+      const entry = entryResult[0];
+
+      // Check if user is subscribed to this feed
+      const subscription = await ctx.db
+        .select()
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            eq(subscriptions.feedId, entry.feedId),
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .limit(1);
+
+      if (subscription.length === 0) {
+        throw errors.entryNotFound();
+      }
+
+      // Check visibility: entry.fetchedAt >= subscription.subscribedAt
+      if (entry.fetchedAt < subscription[0].subscribedAt) {
+        throw errors.entryNotFound();
+      }
+
+      // Upsert user entry state to star the entry
+      await ctx.db
+        .insert(userEntryStates)
+        .values({
+          userId,
+          entryId: input.id,
+          starred: true,
+          starredAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [userEntryStates.userId, userEntryStates.entryId],
+          set: {
+            starred: true,
+            starredAt: now,
+          },
+        });
+
+      return {};
+    }),
+
+  /**
+   * Unstar an entry.
+   *
+   * The entry must be visible to the user (subscribed feed, visibility rules).
+   *
+   * @param id - The entry ID to unstar
+   * @returns Empty object on success
+   */
+  unstar: protectedProcedure
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/v1/entries/{id}/star",
+        tags: ["Entries"],
+        summary: "Unstar entry",
+      },
+    })
+    .input(
+      z.object({
+        id: uuidSchema,
+      })
+    )
+    .output(z.object({}))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // Get the entry
+      const entryResult = await ctx.db
+        .select({
+          id: entries.id,
+          feedId: entries.feedId,
+          fetchedAt: entries.fetchedAt,
+        })
+        .from(entries)
+        .where(eq(entries.id, input.id))
+        .limit(1);
+
+      if (entryResult.length === 0) {
+        throw errors.entryNotFound();
+      }
+
+      const entry = entryResult[0];
+
+      // Check if user is subscribed to this feed
+      const subscription = await ctx.db
+        .select()
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            eq(subscriptions.feedId, entry.feedId),
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .limit(1);
+
+      if (subscription.length === 0) {
+        throw errors.entryNotFound();
+      }
+
+      // Check visibility: entry.fetchedAt >= subscription.subscribedAt
+      if (entry.fetchedAt < subscription[0].subscribedAt) {
+        throw errors.entryNotFound();
+      }
+
+      // Upsert user entry state to unstar the entry
+      await ctx.db
+        .insert(userEntryStates)
+        .values({
+          userId,
+          entryId: input.id,
+          starred: false,
+          starredAt: null,
+        })
+        .onConflictDoUpdate({
+          target: [userEntryStates.userId, userEntryStates.entryId],
+          set: {
+            starred: false,
+            starredAt: null,
+          },
+        });
+
+      return {};
     }),
 });
