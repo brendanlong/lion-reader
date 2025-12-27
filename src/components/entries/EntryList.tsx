@@ -32,6 +32,16 @@ export interface EntryListFilters {
   starredOnly?: boolean;
 }
 
+/**
+ * Entry data passed to parent for keyboard actions.
+ */
+export interface EntryListEntryData {
+  id: string;
+  url: string | null;
+  read: boolean;
+  starred: boolean;
+}
+
 interface EntryListProps {
   /**
    * Filter options for the list.
@@ -60,10 +70,10 @@ interface EntryListProps {
   selectedEntryId?: string | null;
 
   /**
-   * Callback to receive the list of entry IDs when entries are loaded.
-   * Used by parent components for keyboard navigation.
+   * Callback to receive entry data when entries are loaded.
+   * Used by parent components for keyboard navigation and actions.
    */
-  onEntriesLoaded?: (entryIds: string[]) => void;
+  onEntriesLoaded?: (entries: EntryListEntryData[]) => void;
 }
 
 /**
@@ -198,11 +208,16 @@ export function EntryList({
   // Flatten all pages into a single array of entries
   const allEntries = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
 
-  // Notify parent of entry IDs for keyboard navigation
+  // Notify parent of entry data for keyboard navigation and actions
   useEffect(() => {
     if (onEntriesLoaded) {
-      const entryIds = allEntries.map((entry) => entry.id);
-      onEntriesLoaded(entryIds);
+      const entries: EntryListEntryData[] = allEntries.map((entry) => ({
+        id: entry.id,
+        url: entry.url,
+        read: entry.read,
+        starred: entry.starred,
+      }));
+      onEntriesLoaded(entries);
     }
   }, [allEntries, onEntriesLoaded]);
 
