@@ -380,11 +380,12 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Handle account linking (existing email matches)
   - Write integration tests
 
-- [ ] **Add Google OAuth UI**
+- [x] **Add Google OAuth UI**
   - Add "Sign in with Google" button to login page
   - Add "Continue with Google" button to register page
   - Conditionally show based on /v1/auth/providers response
   - Handle OAuth errors gracefully
+  - Create /auth/oauth/callback page to handle the OAuth redirect
 
 ### 9.3 Apple OAuth
 

@@ -1,7 +1,7 @@
 /**
  * Registration Page
  *
- * Allows new users to create an account.
+ * Allows new users to create an account with email/password or OAuth.
  */
 
 "use client";
@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
+import { GoogleSignInButton } from "@/components/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -100,6 +101,26 @@ export default function RegisterPage() {
           {errors.form}
         </Alert>
       )}
+
+      {/* OAuth Sign-up Options */}
+      <div className="space-y-3">
+        <GoogleSignInButton
+          label="Continue with Google"
+          onError={(error) => setErrors({ form: error })}
+        />
+      </div>
+
+      {/* Divider */}
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-zinc-300 dark:border-zinc-700" />
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="bg-white px-2 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+            Or continue with email
+          </span>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
