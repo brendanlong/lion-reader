@@ -1612,14 +1612,20 @@ UI Highlighter  ←  Media Session API  ←  Web Speech API (on-device)
 
 ### Schema Changes
 
-```sql
--- Add to both entries and saved_articles tables
-ALTER TABLE entries ADD COLUMN content_narration text;
-ALTER TABLE entries ADD COLUMN narration_generated_at timestamptz;
-ALTER TABLE entries ADD COLUMN narration_error text;
-ALTER TABLE entries ADD COLUMN narration_error_at timestamptz;
+Separate table keyed by content hash for deduplication across entries, saved articles, and duplicate content:
 
--- Same columns on saved_articles
+```sql
+CREATE TABLE narration_content (
+  id uuid PRIMARY KEY,
+  content_hash text UNIQUE NOT NULL,  -- SHA256 of source content
+  content_narration text,
+  generated_at timestamptz,
+  error text,
+  error_at timestamptz
+);
+
+-- Add content_hash to saved_articles (entries already have it)
+ALTER TABLE saved_articles ADD COLUMN content_hash text;
 ```
 
 ### API
@@ -1630,6 +1636,7 @@ narration.generate   POST  /v1/narration/generate
   Output: { narration, cached, source }
 ```
 
+- Looks up narration by content hash (deduplication)
 - Returns cached narration if available
 - Falls back to basic HTML→text conversion if Groq unavailable or errored
 - Stores errors and allows retry after 1 hour
