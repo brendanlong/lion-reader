@@ -1,0 +1,66 @@
+# Fly.io configuration for Lion Reader
+# See https://fly.io/docs/reference/configuration/ for all available options
+#
+# Before deploying:
+# 1. Run: fly launch --no-deploy (to create the app and set app name)
+# 2. Set secrets:
+#    fly secrets set DATABASE_URL="..." REDIS_URL="..." SESSION_SECRET="..."
+# 3. Deploy: fly deploy
+
+app = "lion-reader"  # Change this to your app name after running fly launch
+primary_region = "iad"  # US East - change to your preferred region
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Run migrations before starting the new app version
+  release_command = "pnpm db:migrate"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+  [http_service.machine_checks]
+    grace_period = "10s"
+    interval = "30s"
+    timeout = "5s"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Health check configuration
+[[services]]
+  protocol = "tcp"
+  internal_port = 3000
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    path = "/api/health"

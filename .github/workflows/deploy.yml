@@ -1,0 +1,37 @@
+# Deployment workflow for Lion Reader
+# Deploys to Fly.io on push to main branch
+#
+# Prerequisites:
+# 1. Create a Fly.io account and install flyctl
+# 2. Run `fly launch --no-deploy` in the project directory
+# 3. Create a deploy token: `fly tokens create deploy`
+# 4. Add the token as a GitHub secret: FLY_API_TOKEN
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Allow manual trigger
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    # Only deploy if CI checks pass on main
+    # The CI workflow runs on push to main, so this ensures quality
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Fly.io CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

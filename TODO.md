@@ -314,7 +314,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 8.2 Deployment Configuration
 
-- [ ] **Configure Fly.io deployment**
+- [x] **Configure Fly.io deployment**
   - Create fly.toml with app configuration
   - Create production Dockerfile
   - Set up release_command for migrations
