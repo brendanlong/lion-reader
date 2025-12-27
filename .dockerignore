@@ -1,0 +1,79 @@
+# Dependencies - must be installed fresh in container
+node_modules/
+
+# Build outputs - will be generated during build
+.next/
+out/
+dist/
+
+# Git
+.git/
+.gitignore
+
+# Tests - not needed in production
+tests/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development scripts
+scripts/
+
+# Docker files (prevent recursive context)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Environment files (should not be baked into image)
+.env
+.env.*
+!.env.example
+.envrc
+
+# IDE and editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude/AI
+.claude/
+CLAUDE.md
+
+# CI/CD
+.github/
+
+# Git hooks
+.husky/
+
+# Fly.io config
+fly.toml
+
+# Linting/formatting configs (not needed at runtime)
+.eslintcache
+.prettierrc
+.prettierignore
+eslint.config.mjs
+
+# Coverage and test reports
+coverage/
+*.lcov
+.nyc_output/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# pnpm
+.pnpm-debug.log
