@@ -38,6 +38,8 @@ export const ErrorCodes = {
 
   // Conflict errors (409)
   ALREADY_SUBSCRIBED: "ALREADY_SUBSCRIBED",
+  OAUTH_ALREADY_LINKED: "OAUTH_ALREADY_LINKED",
+  CANNOT_UNLINK_ONLY_AUTH: "CANNOT_UNLINK_ONLY_AUTH",
 
   // Rate limiting (429)
   RATE_LIMITED: "RATE_LIMITED",
@@ -80,6 +82,8 @@ const errorCodeToTRPCCode: Record<
   OAUTH_PROVIDER_NOT_CONFIGURED: "BAD_REQUEST",
   OAUTH_CALLBACK_FAILED: "BAD_REQUEST",
   ALREADY_SUBSCRIBED: "CONFLICT",
+  OAUTH_ALREADY_LINKED: "CONFLICT",
+  CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
   RATE_LIMITED: "TOO_MANY_REQUESTS",
   INTERNAL_ERROR: "INTERNAL_SERVER_ERROR",
   FEED_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
@@ -156,6 +160,18 @@ export const errors = {
 
   alreadySubscribed: () =>
     createError(ErrorCodes.ALREADY_SUBSCRIBED, "You are already subscribed to this feed"),
+
+  oauthAlreadyLinked: (provider: string) =>
+    createError(
+      ErrorCodes.OAUTH_ALREADY_LINKED,
+      `A ${provider} account is already linked to your account`
+    ),
+
+  cannotUnlinkOnlyAuth: () =>
+    createError(
+      ErrorCodes.CANNOT_UNLINK_ONLY_AUTH,
+      "Cannot unlink this account because it is your only authentication method. Add a password first."
+    ),
 
   rateLimited: (retryAfter?: number) =>
     createError(ErrorCodes.RATE_LIMITED, "Too many requests", { retryAfter }),

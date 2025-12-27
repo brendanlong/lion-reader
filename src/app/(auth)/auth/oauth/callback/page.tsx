@@ -1,14 +1,19 @@
 /**
  * OAuth Callback Page
  *
- * Handles the OAuth redirect from providers like Google.
+ * Handles the OAuth redirect from providers like Google and Apple.
  * Extracts the authorization code and state from URL,
- * exchanges them for a session, and redirects to the app.
+ * exchanges them for a session (login) or links account (link mode),
+ * and redirects to the appropriate page.
+ *
+ * Link Mode:
+ * When oauth_link_mode is set in localStorage, this page links the OAuth
+ * account to the currently logged-in user instead of creating a new session.
  */
 
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 
@@ -29,13 +34,40 @@ function getErrorCode(message: string): string {
   if (message.includes("not configured") || message.includes("not available")) {
     return "provider_not_configured";
   }
+  if (message.includes("already linked")) {
+    return "already_linked";
+  }
   return "callback_failed";
+}
+
+/**
+ * Clean up all OAuth-related localStorage items
+ */
+function cleanupOAuthState() {
+  localStorage.removeItem("oauth_state");
+  localStorage.removeItem("oauth_link_mode");
+  localStorage.removeItem("oauth_link_provider");
 }
 
 export default function OAuthCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const hasProcessed = useRef(false);
+
+  // Determine if we're in link mode (linking to existing account)
+  // Use lazy initialization to read from localStorage without causing cascading renders
+  const [isLinkMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("oauth_link_mode") === "true";
+    }
+    return false;
+  });
+  const [linkProvider] = useState<"google" | "apple" | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("oauth_link_provider") as "google" | "apple" | null;
+    }
+    return null;
+  });
 
   // Validate callback parameters upfront (no effect needed for validation)
   const validation = useMemo((): CallbackValidation => {
@@ -77,25 +109,60 @@ export default function OAuthCallbackPage() {
     return { valid: true, code, state: stateFromUrl };
   }, [searchParams]);
 
+  // Login mutations
   const googleCallbackMutation = trpc.auth.googleCallback.useMutation({
     onSuccess: (data) => {
       // Store the session token in a cookie
       document.cookie = `session=${data.sessionToken}; path=/; max-age=${30 * 24 * 60 * 60}; samesite=lax`;
-
-      // Clean up OAuth state from localStorage
-      localStorage.removeItem("oauth_state");
-
-      // Redirect to the app
+      cleanupOAuthState();
       router.push("/all");
       router.refresh();
     },
     onError: (error) => {
-      // Clean up OAuth state
-      localStorage.removeItem("oauth_state");
-
-      // Redirect to login with error
+      cleanupOAuthState();
       const errorCode = getErrorCode(error.message);
       router.push(`/login?error=${errorCode}`);
+    },
+  });
+
+  const appleCallbackMutation = trpc.auth.appleCallback.useMutation({
+    onSuccess: (data) => {
+      document.cookie = `session=${data.sessionToken}; path=/; max-age=${30 * 24 * 60 * 60}; samesite=lax`;
+      cleanupOAuthState();
+      router.push("/all");
+      router.refresh();
+    },
+    onError: (error) => {
+      cleanupOAuthState();
+      const errorCode = getErrorCode(error.message);
+      router.push(`/login?error=${errorCode}`);
+    },
+  });
+
+  // Link mutations (for linking OAuth to existing account)
+  const linkGoogleMutation = trpc.auth.linkGoogle.useMutation({
+    onSuccess: () => {
+      cleanupOAuthState();
+      router.push("/settings?linked=google");
+      router.refresh();
+    },
+    onError: (error) => {
+      cleanupOAuthState();
+      const errorCode = getErrorCode(error.message);
+      router.push(`/settings?link_error=${errorCode}`);
+    },
+  });
+
+  const linkAppleMutation = trpc.auth.linkApple.useMutation({
+    onSuccess: () => {
+      cleanupOAuthState();
+      router.push("/settings?linked=apple");
+      router.refresh();
+    },
+    onError: (error) => {
+      cleanupOAuthState();
+      const errorCode = getErrorCode(error.message);
+      router.push(`/settings?link_error=${errorCode}`);
     },
   });
 
@@ -106,9 +173,12 @@ export default function OAuthCallbackPage() {
 
     // Handle validation errors by redirecting
     if (!validation.valid) {
-      localStorage.removeItem("oauth_state");
+      const redirectPath = isLinkMode
+        ? `/settings?link_error=${validation.errorCode}`
+        : `/login?error=${validation.errorCode}`;
+      cleanupOAuthState();
       const timeoutId = setTimeout(() => {
-        router.push(`/login?error=${validation.errorCode}`);
+        router.push(redirectPath);
       }, 2000);
       return () => clearTimeout(timeoutId);
     }
@@ -116,26 +186,60 @@ export default function OAuthCallbackPage() {
     // Mark as processed to prevent double calls
     hasProcessed.current = true;
 
-    // Exchange code for session
-    googleCallbackMutation.mutate({
-      code: validation.code,
-      state: validation.state,
-    });
-  }, [validation, router, googleCallbackMutation]);
+    // Determine which mutation to call
+    if (isLinkMode && linkProvider) {
+      // Link mode: link OAuth to existing account
+      if (linkProvider === "google") {
+        linkGoogleMutation.mutate({
+          code: validation.code,
+          state: validation.state,
+        });
+      } else if (linkProvider === "apple") {
+        linkAppleMutation.mutate({
+          code: validation.code,
+          state: validation.state,
+        });
+      }
+    } else {
+      // Login mode: exchange code for session
+      // Default to Google callback (existing behavior)
+      // Note: For Apple, the callback comes through a different route (/api/auth/apple/callback)
+      googleCallbackMutation.mutate({
+        code: validation.code,
+        state: validation.state,
+      });
+    }
+  }, [
+    validation,
+    router,
+    isLinkMode,
+    linkProvider,
+    googleCallbackMutation,
+    appleCallbackMutation,
+    linkGoogleMutation,
+    linkAppleMutation,
+  ]);
 
   // Determine what to display
   const errorMessage = !validation.valid ? validation.error : null;
+  const actionText = isLinkMode ? "linking account" : "sign-in";
 
   return (
     <div className="flex flex-col items-center justify-center">
       <h2 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-        {errorMessage ? "Sign-in Error" : "Completing sign-in..."}
+        {errorMessage
+          ? isLinkMode
+            ? "Link Error"
+            : "Sign-in Error"
+          : `Completing ${actionText}...`}
       </h2>
 
       {errorMessage ? (
         <div className="text-center">
           <p className="mb-4 text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">Redirecting to login page...</p>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Redirecting to {isLinkMode ? "settings" : "login"} page...
+          </p>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-4">
@@ -160,7 +264,7 @@ export default function OAuthCallbackPage() {
             />
           </svg>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Please wait while we complete your sign-in...
+            Please wait while we complete {isLinkMode ? "linking your account" : "your sign-in"}...
           </p>
         </div>
       )}
