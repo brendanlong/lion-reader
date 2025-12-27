@@ -222,7 +222,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 5.4 Entry Content UI
 
-- [ ] **Create entry content view**
+- [x] **Create entry content view**
   - Build full entry view (title, author, date, content)
   - Mark entry as read when viewed
   - Add star/unstar button
