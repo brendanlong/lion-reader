@@ -6,12 +6,13 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
 import { EntryList } from "@/components/entries/EntryList";
 import { EntryContent } from "@/components/entries/EntryContent";
+import { useKeyboardShortcuts } from "@/lib/hooks";
 
 /**
  * Loading skeleton for the feed header.
@@ -74,7 +75,16 @@ export default function SingleFeedPage() {
   const params = useParams<{ feedId: string }>();
   const feedId = params.feedId;
 
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [openEntryId, setOpenEntryId] = useState<string | null>(null);
+  const [entryIds, setEntryIds] = useState<string[]>([]);
+
+  // Keyboard navigation
+  const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
+    entryIds,
+    onOpenEntry: (entryId) => setOpenEntryId(entryId),
+    onClose: () => setOpenEntryId(null),
+    isEntryOpen: !!openEntryId,
+  });
 
   // Fetch subscription info to get feed title and validate access
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
@@ -82,17 +92,25 @@ export default function SingleFeedPage() {
   // Find the subscription for this feed
   const subscription = subscriptionsQuery.data?.items.find((item) => item.feed.id === feedId);
 
-  const handleEntryClick = (entryId: string) => {
-    setSelectedEntryId(entryId);
-  };
+  const handleEntryClick = useCallback(
+    (entryId: string) => {
+      setSelectedEntryId(entryId);
+      setOpenEntryId(entryId);
+    },
+    [setSelectedEntryId]
+  );
 
-  const handleBack = () => {
-    setSelectedEntryId(null);
-  };
+  const handleBack = useCallback(() => {
+    setOpenEntryId(null);
+  }, []);
 
-  // If an entry is selected, show the full content view
-  if (selectedEntryId) {
-    return <EntryContent entryId={selectedEntryId} onBack={handleBack} />;
+  const handleEntriesLoaded = useCallback((ids: string[]) => {
+    setEntryIds(ids);
+  }, []);
+
+  // If an entry is open, show the full content view
+  if (openEntryId) {
+    return <EntryContent entryId={openEntryId} onBack={handleBack} />;
   }
 
   // Show loading state while checking subscription
@@ -160,6 +178,8 @@ export default function SingleFeedPage() {
       <EntryList
         filters={{ feedId }}
         onEntryClick={handleEntryClick}
+        selectedEntryId={selectedEntryId}
+        onEntriesLoaded={handleEntriesLoaded}
         emptyMessage="No entries in this feed yet. Entries will appear here once the feed is fetched."
       />
     </div>

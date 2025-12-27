@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { EntryListItem, type EntryListItemData } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
@@ -53,6 +53,17 @@ interface EntryListProps {
    * Custom empty state message.
    */
   emptyMessage?: string;
+
+  /**
+   * Currently selected entry ID (for keyboard navigation highlighting).
+   */
+  selectedEntryId?: string | null;
+
+  /**
+   * Callback to receive the list of entry IDs when entries are loaded.
+   * Used by parent components for keyboard navigation.
+   */
+  onEntriesLoaded?: (entryIds: string[]) => void;
 }
 
 /**
@@ -155,6 +166,8 @@ export function EntryList({
   onEntryClick,
   pageSize = 20,
   emptyMessage = "No entries to display",
+  selectedEntryId,
+  onEntriesLoaded,
 }: EntryListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
@@ -183,7 +196,15 @@ export function EntryList({
   );
 
   // Flatten all pages into a single array of entries
-  const allEntries = data?.pages.flatMap((page) => page.items) ?? [];
+  const allEntries = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
+
+  // Notify parent of entry IDs for keyboard navigation
+  useEffect(() => {
+    if (onEntriesLoaded) {
+      const entryIds = allEntries.map((entry) => entry.id);
+      onEntriesLoaded(entryIds);
+    }
+  }, [allEntries, onEntriesLoaded]);
 
   // Intersection Observer for infinite scroll
   const handleObserver = useCallback(
@@ -238,7 +259,12 @@ export function EntryList({
   return (
     <div className="space-y-3">
       {allEntries.map((entry) => (
-        <EntryListItem key={entry.id} entry={entry as EntryListItemData} onClick={onEntryClick} />
+        <EntryListItem
+          key={entry.id}
+          entry={entry as EntryListItemData}
+          onClick={onEntryClick}
+          selected={selectedEntryId === entry.id}
+        />
       ))}
 
       {/* Load more trigger element */}
