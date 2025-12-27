@@ -9,7 +9,7 @@ import { z } from "zod";
 import * as argon2 from "argon2";
 import { eq } from "drizzle-orm";
 
-import { createTRPCRouter, publicProcedure, protectedProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, expensivePublicProcedure } from "../trpc";
 import { errors } from "../errors";
 import { users, sessions } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -69,8 +69,11 @@ export const authRouter = createTRPCRouter({
    * @param email - User's email address (will be normalized to lowercase)
    * @param password - Password (min 8 characters)
    * @returns The created user and session token
+   *
+   * Note: This endpoint uses stricter rate limiting (10 burst, 1/sec)
+   * to prevent abuse.
    */
-  register: publicProcedure
+  register: expensivePublicProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -158,8 +161,11 @@ export const authRouter = createTRPCRouter({
    * @param email - User's email address
    * @param password - User's password
    * @returns The user and session token
+   *
+   * Note: This endpoint uses stricter rate limiting (10 burst, 1/sec)
+   * to prevent brute force attacks.
    */
-  login: publicProcedure
+  login: expensivePublicProcedure
     .meta({
       openapi: {
         method: "POST",
