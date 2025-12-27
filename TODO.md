@@ -465,7 +465,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Color picker for tag colors
   - Show feed count per tag
 
-- [ ] **Integrate tags into app**
+- [x] **Integrate tags into app**
   - Add tags section to sidebar with colored indicators
   - Add tag picker to subscription edit dialog
   - Filter entries by tag when clicking sidebar tag
