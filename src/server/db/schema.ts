@@ -381,6 +381,54 @@ export const websubSubscriptions = pgTable(
 );
 
 // ============================================================================
+// SAVED ARTICLES (Read-it-Later)
+// ============================================================================
+
+/**
+ * Saved articles table - stores URLs saved for later reading.
+ * Similar to Pocket/Instapaper - articles have read/starred state like feed entries.
+ */
+export const savedArticles = pgTable(
+  "saved_articles",
+  {
+    id: uuid("id").primaryKey(), // UUIDv7
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    url: text("url").notNull(),
+    title: text("title"),
+    siteName: text("site_name"),
+    author: text("author"),
+    imageUrl: text("image_url"), // og:image for display
+
+    contentOriginal: text("content_original"),
+    contentCleaned: text("content_cleaned"), // via Readability
+    excerpt: text("excerpt"),
+
+    // Same read/starred model as entries
+    read: boolean("read").notNull().default(false),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    starred: boolean("starred").notNull().default(false),
+    starredAt: timestamp("starred_at", { withTimezone: true }),
+
+    savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Can only save same URL once per user
+    unique("uq_saved_articles_user_url").on(table.userId, table.url),
+    // For listing saved articles by user (UUIDv7 gives time ordering with DESC)
+    index("idx_saved_articles_user").on(table.userId, table.id),
+    // For filtering unread articles
+    index("idx_saved_articles_unread").on(table.userId),
+    // For filtering starred articles
+    index("idx_saved_articles_starred").on(table.userId, table.starredAt),
+  ]
+);
+
+// ============================================================================
 // TYPE EXPORTS
 // ============================================================================
 
@@ -416,3 +464,6 @@ export type NewSubscriptionTag = typeof subscriptionTags.$inferInsert;
 
 export type WebsubSubscription = typeof websubSubscriptions.$inferSelect;
 export type NewWebsubSubscription = typeof websubSubscriptions.$inferInsert;
+
+export type SavedArticle = typeof savedArticles.$inferSelect;
+export type NewSavedArticle = typeof savedArticles.$inferInsert;

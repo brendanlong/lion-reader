@@ -587,7 +587,7 @@ See DESIGN.md § Saved Articles for full design.
 
 ### 12.1 Saved Articles Schema and API
 
-- [ ] **Create saved_articles database schema**
+- [x] **Create saved_articles database schema**
   - Create saved_articles table migration (see DESIGN.md)
   - Add indexes for user listing, unread, and starred
   - Update Drizzle schema with types
