@@ -26,12 +26,26 @@ function isUnauthorizedError(error: unknown): boolean {
 }
 
 /**
+ * Check if the user currently has a session cookie.
+ */
+function hasSessionCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.cookie.split(";").some((c) => c.trim().startsWith("session="));
+}
+
+/**
  * Clear the session cookie and redirect to login.
  * Uses a flag to prevent multiple redirects from concurrent failed requests.
+ * Only triggers if the user is currently logged in (has a session cookie).
  */
 let isLoggingOut = false;
 function handleUnauthorizedError() {
   if (isLoggingOut || typeof window === "undefined") return;
+
+  // Only sign out if the user is currently logged in
+  // This prevents login errors from causing a redirect/refresh
+  if (!hasSessionCookie()) return;
+
   isLoggingOut = true;
 
   // Clear the session cookie
