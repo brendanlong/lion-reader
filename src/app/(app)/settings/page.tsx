@@ -11,7 +11,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
-import { OpmlImportExport, LinkedAccounts } from "@/components/settings";
+import { OpmlImportExport, LinkedAccounts, KeyboardShortcutsSettings } from "@/components/settings";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -141,6 +141,9 @@ export default function SettingsPage() {
 
       {/* OPML Import/Export Section */}
       <OpmlImportExport />
+
+      {/* Keyboard Shortcuts Section */}
+      <KeyboardShortcutsSettings />
     </div>
   );
 }
