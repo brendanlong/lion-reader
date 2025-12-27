@@ -27,3 +27,15 @@ export {
   validateGoogleCallback,
   isGoogleOAuthEnabled,
 } from "./google";
+
+// Apple OAuth flow exports
+export {
+  type AppleUserInfo,
+  type AppleFirstAuthUserData,
+  type AppleAuthUrlResult,
+  type AppleAuthResult,
+  createAppleAuthUrl,
+  validateAppleCallback,
+  isAppleOAuthEnabled,
+  isApplePrivateRelayEmail,
+} from "./apple";
