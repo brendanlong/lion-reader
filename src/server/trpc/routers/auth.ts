@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import * as argon2 from "argon2";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -23,7 +23,11 @@ import {
   getSessionExpiry,
   revokeSessionByToken,
   getEnabledProviders,
+  createGoogleAuthUrl,
+  validateGoogleCallback,
+  isGoogleOAuthEnabled,
 } from "@/server/auth";
+import { oauthAccounts } from "@/server/db/schema";
 
 // ============================================================================
 // Validation Schemas
@@ -282,6 +286,258 @@ export const authRouter = createTRPCRouter({
 
       return {
         providers: enabledProviders,
+      };
+    }),
+
+  /**
+   * Generate Google OAuth authorization URL.
+   *
+   * Returns a URL to redirect the user to for Google OAuth login.
+   * The state parameter should be stored by the client to verify the callback.
+   *
+   * Flow:
+   * 1. Client calls this endpoint
+   * 2. Client stores the returned state (e.g., in localStorage)
+   * 3. Client redirects user to the URL
+   * 4. After Google auth, user is redirected to callback URL
+   * 5. Client sends code and state to googleCallback endpoint
+   */
+  googleAuthUrl: publicProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/auth/oauth/google",
+        tags: ["Auth"],
+        summary: "Get Google OAuth authorization URL",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        url: z.string(),
+        state: z.string(),
+      })
+    )
+    .query(async () => {
+      if (!isGoogleOAuthEnabled()) {
+        throw errors.oauthProviderNotConfigured("Google");
+      }
+
+      const result = await createGoogleAuthUrl();
+
+      return {
+        url: result.url,
+        state: result.state,
+      };
+    }),
+
+  /**
+   * Handle Google OAuth callback.
+   *
+   * Exchanges the authorization code for tokens, retrieves user info,
+   * and creates or links a user account.
+   *
+   * Account Linking Logic:
+   * 1. If OAuth account exists: log in as that user
+   * 2. If email matches existing user: link OAuth to that account
+   * 3. Otherwise: create new user and OAuth account
+   *
+   * @param code - The authorization code from Google
+   * @param state - The state parameter (must match the one from googleAuthUrl)
+   * @returns The user and session token
+   */
+  googleCallback: expensivePublicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/auth/oauth/google/callback",
+        tags: ["Auth"],
+        summary: "Handle Google OAuth callback",
+      },
+    })
+    .input(
+      z.object({
+        code: z.string().min(1, "Authorization code is required"),
+        state: z.string().min(1, "State parameter is required"),
+      })
+    )
+    .output(
+      z.object({
+        user: z.object({
+          id: z.string(),
+          email: z.string(),
+          createdAt: z.date(),
+        }),
+        sessionToken: z.string(),
+        isNewUser: z.boolean(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { code, state } = input;
+
+      if (!isGoogleOAuthEnabled()) {
+        throw errors.oauthProviderNotConfigured("Google");
+      }
+
+      // Validate the OAuth callback
+      let googleResult;
+      try {
+        googleResult = await validateGoogleCallback(code, state);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message.includes("Invalid or expired OAuth state")) {
+            throw errors.oauthStateInvalid();
+          }
+          throw errors.oauthCallbackFailed(error.message);
+        }
+        throw errors.oauthCallbackFailed("Unknown error");
+      }
+
+      const { userInfo, tokens } = googleResult;
+      const now = new Date();
+
+      // Check if OAuth account already exists
+      const existingOAuthAccount = await ctx.db
+        .select({
+          id: oauthAccounts.id,
+          userId: oauthAccounts.userId,
+        })
+        .from(oauthAccounts)
+        .where(
+          and(
+            eq(oauthAccounts.provider, "google"),
+            eq(oauthAccounts.providerAccountId, userInfo.sub)
+          )
+        )
+        .limit(1);
+
+      let userId: string;
+      let userEmail: string;
+      let userCreatedAt: Date;
+      let isNewUser = false;
+
+      if (existingOAuthAccount.length > 0) {
+        // OAuth account exists - log in as that user
+        userId = existingOAuthAccount[0].userId;
+
+        // Get user details
+        const userResult = await ctx.db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+        if (userResult.length === 0) {
+          // Orphaned OAuth account - this shouldn't happen
+          throw errors.internal("User account not found");
+        }
+
+        userEmail = userResult[0].email;
+        userCreatedAt = userResult[0].createdAt;
+
+        // Update OAuth tokens
+        await ctx.db
+          .update(oauthAccounts)
+          .set({
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken ?? null,
+            expiresAt: tokens.expiresAt ?? null,
+          })
+          .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
+      } else {
+        // OAuth account doesn't exist - check if email matches existing user
+        const existingUser = await ctx.db
+          .select()
+          .from(users)
+          .where(eq(users.email, userInfo.email.toLowerCase()))
+          .limit(1);
+
+        if (existingUser.length > 0) {
+          // Link OAuth to existing user account
+          userId = existingUser[0].id;
+          userEmail = existingUser[0].email;
+          userCreatedAt = existingUser[0].createdAt;
+
+          // Create OAuth account link
+          await ctx.db.insert(oauthAccounts).values({
+            id: generateUuidv7(),
+            userId,
+            provider: "google",
+            providerAccountId: userInfo.sub,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken ?? null,
+            expiresAt: tokens.expiresAt ?? null,
+            createdAt: now,
+          });
+
+          // Mark email as verified if not already (Google verified it)
+          if (!existingUser[0].emailVerifiedAt) {
+            await ctx.db
+              .update(users)
+              .set({
+                emailVerifiedAt: now,
+                updatedAt: now,
+              })
+              .where(eq(users.id, userId));
+          }
+        } else {
+          // Create new user and OAuth account
+          userId = generateUuidv7();
+          userEmail = userInfo.email.toLowerCase();
+          userCreatedAt = now;
+          isNewUser = true;
+
+          // Create user (no password since they're using OAuth)
+          await ctx.db.insert(users).values({
+            id: userId,
+            email: userEmail,
+            emailVerifiedAt: now, // Google verified the email
+            passwordHash: null,
+            createdAt: now,
+            updatedAt: now,
+          });
+
+          // Create OAuth account
+          await ctx.db.insert(oauthAccounts).values({
+            id: generateUuidv7(),
+            userId,
+            provider: "google",
+            providerAccountId: userInfo.sub,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken ?? null,
+            expiresAt: tokens.expiresAt ?? null,
+            createdAt: now,
+          });
+        }
+      }
+
+      // Create session
+      const sessionId = generateUuidv7();
+      const { token, tokenHash } = generateSessionToken();
+      const expiresAt = getSessionExpiry();
+
+      // Get client info from headers
+      const userAgent = ctx.headers.get("user-agent") ?? undefined;
+      const ipAddress =
+        ctx.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+        ctx.headers.get("x-real-ip") ??
+        undefined;
+
+      await ctx.db.insert(sessions).values({
+        id: sessionId,
+        userId,
+        tokenHash,
+        userAgent,
+        ipAddress,
+        expiresAt,
+        createdAt: now,
+        lastActiveAt: now,
+      });
+
+      return {
+        user: {
+          id: userId,
+          email: userEmail,
+          createdAt: userCreatedAt,
+        },
+        sessionToken: token,
+        isNewUser,
       };
     }),
 

@@ -29,4 +29,11 @@ export {
   getEnabledProviders,
   isProviderEnabled,
   hasAnyOAuthProvider,
+  // Google OAuth flow
+  type GoogleUserInfo,
+  type GoogleAuthUrlResult,
+  type GoogleAuthResult,
+  createGoogleAuthUrl,
+  validateGoogleCallback,
+  isGoogleOAuthEnabled,
 } from "./oauth";
