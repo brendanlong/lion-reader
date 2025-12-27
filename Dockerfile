@@ -40,6 +40,9 @@ COPY . .
 # Set environment for build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# Dummy URLs for build - modules check these exist but don't connect
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
+ENV REDIS_URL="redis://localhost:6379"
 
 # Build Next.js application in standalone mode
 RUN pnpm build
