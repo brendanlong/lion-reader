@@ -58,6 +58,7 @@ export {
   generateContentHash,
   deriveGuid,
   generateSummary,
+  cleanEntryContent,
   findEntryByGuid,
   createEntry,
   updateEntryContent,
@@ -67,3 +68,9 @@ export {
   type ProcessEntriesResult,
   type ProcessEntriesOptions,
 } from "./entry-processor";
+export {
+  cleanContent,
+  generateCleanedSummary,
+  type CleanedContent,
+  type CleanContentOptions,
+} from "./content-cleaner";

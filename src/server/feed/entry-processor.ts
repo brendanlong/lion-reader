@@ -13,6 +13,8 @@ import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
+import { cleanContent, generateCleanedSummary, type CleanedContent } from "./content-cleaner";
+import { logger } from "@/lib/logger";
 
 /**
  * Result of processing a single entry.
@@ -126,6 +128,69 @@ export function generateSummary(entry: ParsedEntry): string {
 }
 
 /**
+ * Content cleaning result for an entry.
+ */
+interface EntryCleaningResult {
+  /** The original content (unchanged) */
+  contentOriginal: string | null;
+  /** The cleaned content (Readability output) or null if cleaning failed */
+  contentCleaned: string | null;
+  /** The summary generated from cleaned content or original */
+  summary: string;
+}
+
+/**
+ * Cleans entry content using Readability and generates a summary.
+ *
+ * @param parsedEntry - The parsed entry from the feed
+ * @param entryUrl - The URL of the entry (used as base URL for Readability)
+ * @returns Cleaning result with original, cleaned content, and summary
+ */
+export function cleanEntryContent(
+  parsedEntry: ParsedEntry,
+  entryUrl?: string
+): EntryCleaningResult {
+  const originalContent = parsedEntry.content ?? parsedEntry.summary ?? null;
+
+  // If no content, return early
+  if (!originalContent) {
+    return {
+      contentOriginal: null,
+      contentCleaned: null,
+      summary: "",
+    };
+  }
+
+  // Attempt to clean the content with Readability
+  let cleaned: CleanedContent | null = null;
+
+  try {
+    cleaned = cleanContent(originalContent, { url: entryUrl });
+  } catch (error) {
+    // Log but don't fail - we'll use the original content
+    logger.warn("Content cleaning failed", {
+      url: entryUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // Generate summary from cleaned content if available, otherwise from original
+  let summary: string;
+  if (cleaned) {
+    summary = generateCleanedSummary(cleaned, 300);
+  } else {
+    // Fall back to simple HTML stripping for summary
+    summary = truncate(stripHtml(originalContent), 300);
+  }
+
+  return {
+    contentOriginal: originalContent,
+    contentCleaned: cleaned?.content ?? null,
+    summary,
+  };
+}
+
+/**
  * Finds an existing entry by feed ID and GUID.
  *
  * @param feedId - The feed's UUID
@@ -158,7 +223,9 @@ export async function createEntry(
   fetchedAt: Date
 ): Promise<Entry> {
   const guid = deriveGuid(parsedEntry);
-  const summary = generateSummary(parsedEntry);
+
+  // Clean the content using Readability
+  const cleaningResult = cleanEntryContent(parsedEntry, parsedEntry.link ?? undefined);
 
   const newEntry: NewEntry = {
     id: generateUuidv7(),
@@ -167,8 +234,9 @@ export async function createEntry(
     url: parsedEntry.link ?? null,
     title: parsedEntry.title ?? null,
     author: parsedEntry.author ?? null,
-    contentOriginal: parsedEntry.content ?? parsedEntry.summary ?? null,
-    summary,
+    contentOriginal: cleaningResult.contentOriginal,
+    contentCleaned: cleaningResult.contentCleaned,
+    summary: cleaningResult.summary,
     publishedAt: parsedEntry.pubDate ?? null,
     fetchedAt,
     contentHash,
@@ -192,15 +260,17 @@ export async function updateEntryContent(
   parsedEntry: ParsedEntry,
   contentHash: string
 ): Promise<Entry> {
-  const summary = generateSummary(parsedEntry);
+  // Clean the content using Readability
+  const cleaningResult = cleanEntryContent(parsedEntry, parsedEntry.link ?? undefined);
 
   const [entry] = await db
     .update(entries)
     .set({
       title: parsedEntry.title ?? null,
       author: parsedEntry.author ?? null,
-      contentOriginal: parsedEntry.content ?? parsedEntry.summary ?? null,
-      summary,
+      contentOriginal: cleaningResult.contentOriginal,
+      contentCleaned: cleaningResult.contentCleaned,
+      summary: cleaningResult.summary,
       contentHash,
       updatedAt: new Date(),
     })
