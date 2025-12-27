@@ -10,12 +10,20 @@
 
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
 
 export default function SavePage() {
+  return (
+    <Suspense>
+      <SaveContent />
+    </Suspense>
+  );
+}
+
+function SaveContent() {
   const searchParams = useSearchParams();
   const urlToSave = searchParams.get("url");
 
