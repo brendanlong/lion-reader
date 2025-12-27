@@ -444,7 +444,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Add indexes for efficient queries
   - Update Drizzle schema
 
-- [ ] **Implement tags CRUD API**
+- [x] **Implement tags CRUD API**
   - GET /v1/tags - list user's tags
   - POST /v1/tags - create tag (name, color)
   - PATCH /v1/tags/:id - update tag
