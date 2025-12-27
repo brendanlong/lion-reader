@@ -347,7 +347,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 9.1 OPML Import/Export
 
-- [ ] **Implement OPML parsing and generation**
+- [x] **Implement OPML parsing and generation**
   - Create OPML parser (XML → OpmlFeed[]) - pure function
   - Handle nested folders/categories in OPML
   - Create OPML generator (subscriptions → XML)
