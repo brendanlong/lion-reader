@@ -21,3 +21,10 @@ export {
   useKeyboardShortcutsEnabled,
   type UseKeyboardShortcutsEnabledResult,
 } from "./useKeyboardShortcutsEnabled";
+
+export {
+  useSavedArticleKeyboardShortcuts,
+  type SavedArticleKeyboardData,
+  type UseSavedArticleKeyboardShortcutsOptions,
+  type UseSavedArticleKeyboardShortcutsResult,
+} from "./useSavedArticleKeyboardShortcuts";

@@ -603,7 +603,7 @@ See DESIGN.md § Saved Articles for full design.
 
 ### 12.2 Saved Articles UI
 
-- [ ] **Build saved articles list UI**
+- [x] **Build saved articles list UI**
   - Add "Saved" section to sidebar (between Starred and feeds)
   - Create /saved route reusing EntryList components
   - Mark read when opened (same as feed entries)
