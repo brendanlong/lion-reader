@@ -1,0 +1,257 @@
+/**
+ * Server-Sent Events (SSE) Endpoint
+ *
+ * Provides real-time updates for authenticated users.
+ * Subscribes to Redis pub/sub and forwards relevant feed events.
+ *
+ * Events:
+ * - new_entry: A new entry was added to a subscribed feed
+ * - entry_updated: An existing entry's content was updated
+ *
+ * Heartbeat: Sent every 30 seconds as a comment (: heartbeat)
+ */
+
+import { db } from "@/server/db";
+import { subscriptions } from "@/server/db/schema";
+import { validateSession } from "@/server/auth";
+import {
+  createSubscriberClient,
+  FEED_EVENTS_CHANNEL,
+  parseFeedEvent,
+  type FeedEvent,
+} from "@/server/redis/pubsub";
+import { eq, and, isNull } from "drizzle-orm";
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Heartbeat interval in milliseconds (30 seconds)
+ */
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Extracts session token from request headers.
+ * Supports both cookie-based and Authorization header authentication.
+ */
+function getSessionToken(headers: Headers): string | null {
+  // Check Authorization header first (for API clients)
+  const authHeader = headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    return authHeader.slice(7);
+  }
+
+  // Check cookie (for browser clients)
+  const cookieHeader = headers.get("cookie");
+  if (cookieHeader) {
+    const cookies = Object.fromEntries(
+      cookieHeader.split("; ").map((c) => {
+        const [key, ...value] = c.split("=");
+        return [key, value.join("=")];
+      })
+    );
+    if (cookies.session) {
+      return cookies.session;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Gets all active feed IDs for a user's subscriptions.
+ */
+async function getUserFeedIds(userId: string): Promise<Set<string>> {
+  const userSubscriptions = await db
+    .select({ feedId: subscriptions.feedId })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+  return new Set(userSubscriptions.map((s) => s.feedId));
+}
+
+/**
+ * Formats an SSE event message.
+ */
+function formatSSEEvent(event: FeedEvent): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+/**
+ * Formats an SSE heartbeat comment.
+ */
+function formatSSEHeartbeat(): string {
+  return ": heartbeat\n\n";
+}
+
+// ============================================================================
+// Route Handler
+// ============================================================================
+
+/**
+ * GET /api/v1/events
+ *
+ * SSE stream for real-time feed updates.
+ * Requires authentication via session cookie or Bearer token.
+ */
+export async function GET(req: Request): Promise<Response> {
+  // Authenticate the user
+  const token = getSessionToken(req.headers);
+  if (!token) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Authentication required",
+        },
+      }),
+      {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  const sessionData = await validateSession(token);
+  if (!sessionData) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        },
+      }),
+      {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  const userId = sessionData.user.id;
+
+  // Get user's subscribed feed IDs
+  const feedIds = await getUserFeedIds(userId);
+
+  // Create readable stream for SSE
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      let subscriber: ReturnType<typeof createSubscriberClient> | null = null;
+      let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+      let isCleanedUp = false;
+
+      /**
+       * Cleanup function to close Redis subscription and clear heartbeat
+       */
+      function cleanup(): void {
+        if (isCleanedUp) return;
+        isCleanedUp = true;
+
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+          heartbeatInterval = null;
+        }
+
+        if (subscriber) {
+          subscriber.unsubscribe().catch(() => {
+            // Ignore unsubscribe errors during cleanup
+          });
+          subscriber.quit().catch(() => {
+            // Ignore quit errors during cleanup
+          });
+          subscriber = null;
+        }
+      }
+
+      /**
+       * Sends data to the stream, handling any errors
+       */
+      function send(data: string): void {
+        if (isCleanedUp) return;
+        try {
+          controller.enqueue(encoder.encode(data));
+        } catch {
+          // Stream may have been closed
+          cleanup();
+        }
+      }
+
+      // Set up abort handler for client disconnection
+      req.signal.addEventListener("abort", () => {
+        cleanup();
+        try {
+          controller.close();
+        } catch {
+          // Controller may already be closed
+        }
+      });
+
+      // Create Redis subscriber
+      try {
+        subscriber = createSubscriberClient();
+
+        // Subscribe to the feed events channel
+        subscriber.subscribe(FEED_EVENTS_CHANNEL).catch((err) => {
+          console.error("Failed to subscribe to feed events:", err);
+          cleanup();
+          try {
+            controller.error(err);
+          } catch {
+            // Controller may already be closed
+          }
+        });
+
+        // Handle incoming messages
+        subscriber.on("message", (channel: string, message: string) => {
+          if (channel !== FEED_EVENTS_CHANNEL) return;
+
+          const event = parseFeedEvent(message);
+          if (!event) return;
+
+          // Only forward events for feeds the user is subscribed to
+          if (feedIds.has(event.feedId)) {
+            send(formatSSEEvent(event));
+          }
+        });
+
+        // Handle Redis errors
+        subscriber.on("error", (err) => {
+          console.error("Redis subscriber error:", err);
+          // Don't cleanup on transient errors - ioredis handles reconnection
+        });
+
+        // Start heartbeat
+        heartbeatInterval = setInterval(() => {
+          send(formatSSEHeartbeat());
+        }, HEARTBEAT_INTERVAL_MS);
+
+        // Send initial heartbeat to confirm connection
+        send(formatSSEHeartbeat());
+      } catch (err) {
+        console.error("Failed to set up SSE connection:", err);
+        cleanup();
+        try {
+          controller.error(err);
+        } catch {
+          // Controller may already be closed
+        }
+      }
+    },
+  });
+
+  // Return SSE response
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no", // Disable nginx buffering
+    },
+  });
+}
