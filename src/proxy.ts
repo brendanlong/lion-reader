@@ -1,5 +1,5 @@
 /**
- * Next.js Middleware
+ * Next.js Proxy
  *
  * Handles route protection and authentication redirects.
  *
@@ -42,7 +42,7 @@ function getSessionToken(request: NextRequest): string | null {
   return request.cookies.get("session")?.value ?? null;
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const sessionToken = getSessionToken(request);
   const isAuthenticated = sessionToken !== null;
