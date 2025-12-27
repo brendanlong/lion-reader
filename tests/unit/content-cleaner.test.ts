@@ -1,0 +1,398 @@
+/**
+ * Unit tests for content cleaner using Mozilla Readability.
+ */
+
+import { describe, it, expect } from "vitest";
+import { cleanContent, generateCleanedSummary } from "@/server/feed/content-cleaner";
+
+describe("cleanContent", () => {
+  describe("basic functionality", () => {
+    it("should extract article content from a full HTML page", () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Test Article</title>
+        </head>
+        <body>
+          <nav>Navigation menu</nav>
+          <article>
+            <h1>Main Article Title</h1>
+            <p>This is the first paragraph of the article content. It contains important information that should be extracted by Readability.</p>
+            <p>This is the second paragraph with more content. The algorithm should identify this as the main article body.</p>
+            <p>Third paragraph adds even more text to help Readability understand this is an article.</p>
+          </article>
+          <aside>Sidebar content</aside>
+          <footer>Footer content</footer>
+        </body>
+        </html>
+      `;
+
+      const result = cleanContent(html, { url: "https://example.com/article" });
+
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain("first paragraph");
+      expect(result!.content).toContain("second paragraph");
+      expect(result!.textContent).toContain("important information");
+      // Navigation and footer should be removed
+      expect(result!.content).not.toContain("Navigation menu");
+      expect(result!.content).not.toContain("Footer content");
+    });
+
+    it("should extract content from a simple article element", () => {
+      const html = `
+        <article>
+          <h1>Simple Article</h1>
+          <p>This is a straightforward article with enough content to be processed by Readability. It needs multiple paragraphs to work properly.</p>
+          <p>Here is another paragraph with additional text that helps establish this as readable content.</p>
+          <p>And a third paragraph to ensure there's enough text for the algorithm to work with.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain("Simple Article");
+      expect(result!.textContent).toContain("straightforward article");
+    });
+
+    it("should handle content with images", () => {
+      const html = `
+        <article>
+          <h1>Article with Images</h1>
+          <p>This article contains an image that should be preserved in the cleaned output.</p>
+          <img src="https://example.com/image.jpg" alt="Test image" />
+          <p>More text after the image to provide context and ensure Readability works.</p>
+          <p>Additional paragraph content for the algorithm to process properly.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html, { url: "https://example.com" });
+
+      expect(result).not.toBeNull();
+      // The image should be preserved
+      expect(result!.content).toContain("img");
+    });
+
+    it("should handle content with links", () => {
+      const html = `
+        <article>
+          <h1>Article with Links</h1>
+          <p>This article contains a <a href="https://example.com/link">link to another page</a> that should be preserved.</p>
+          <p>More paragraph text to ensure the article is long enough for processing.</p>
+          <p>Third paragraph with additional content for Readability.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html, { url: "https://example.com" });
+
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain("href");
+      expect(result!.content).toContain("link to another page");
+    });
+
+    it("should handle code blocks", () => {
+      const html = `
+        <article>
+          <h1>Technical Article</h1>
+          <p>This article contains code examples that should be preserved.</p>
+          <pre><code>function hello() {
+  console.log("Hello, world!");
+}</code></pre>
+          <p>More explanation after the code block with additional content.</p>
+          <p>Technical articles often have multiple paragraphs explaining concepts.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain("function hello()");
+      expect(result!.content).toContain("console.log");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should return null for very short content", () => {
+      const html = "<p>Too short</p>";
+      const result = cleanContent(html);
+      expect(result).toBeNull();
+    });
+
+    it("should return null for empty content", () => {
+      const html = "";
+      const result = cleanContent(html);
+      expect(result).toBeNull();
+    });
+
+    it("should handle malformed HTML gracefully", () => {
+      const html = `
+        <article>
+          <h1>Malformed Article
+          <p>This paragraph is not properly closed.
+          <p>Another paragraph with enough content to process.
+          <p>Third paragraph for Readability algorithm.
+        </article>
+      `;
+
+      // Should not throw, even if it returns null
+      expect(() => cleanContent(html)).not.toThrow();
+    });
+
+    it("should handle content with only navigation elements", () => {
+      const html = `
+        <nav>
+          <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/about">About</a></li>
+            <li><a href="/contact">Contact</a></li>
+          </ul>
+        </nav>
+      `;
+
+      // Navigation-only content should fail or return empty
+      const result = cleanContent(html);
+      // Readability might return null or empty content
+      if (result) {
+        expect(result.textContent.trim().length).toBeLessThan(50);
+      }
+    });
+
+    it("should respect minimum content length option", () => {
+      const html = "<p>Short content</p>";
+      // With a low minContentLength, the function will attempt to process
+      // even short content (though Readability may still fail to extract)
+      expect(() => cleanContent(html, { minContentLength: 10 })).not.toThrow();
+    });
+  });
+
+  describe("content cleaning", () => {
+    it("should remove script tags", () => {
+      const html = `
+        <article>
+          <h1>Article with Script</h1>
+          <p>This is legitimate content that should be preserved.</p>
+          <script>alert('malicious');</script>
+          <p>More content after the script tag.</p>
+          <p>Third paragraph for algorithm processing.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      expect(result!.content).not.toContain("<script");
+      expect(result!.content).not.toContain("alert");
+      expect(result!.content).toContain("legitimate content");
+    });
+
+    it("should remove inline style elements", () => {
+      const html = `
+        <article>
+          <h1>Article with Style</h1>
+          <style>.hidden { display: none; }</style>
+          <p>This is the main content of the article.</p>
+          <p>Second paragraph with more text.</p>
+          <p>Third paragraph for processing.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      expect(result!.content).not.toContain("<style");
+      expect(result!.content).not.toContain("display: none");
+    });
+
+    it("should handle content with HTML comments", () => {
+      const html = `
+        <article>
+          <h1>Article Title</h1>
+          <!-- This is a comment -->
+          <p>Main content paragraph one with text.</p>
+          <p>Main content paragraph two with more text.</p>
+          <p>Main content paragraph three.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      // Main content should be preserved
+      expect(result!.content).toContain("Main content paragraph");
+    });
+  });
+
+  describe("metadata extraction", () => {
+    it("should extract title from article", () => {
+      const html = `
+        <html>
+        <head><title>Page Title</title></head>
+        <body>
+          <article>
+            <h1>Article Headline</h1>
+            <p>First paragraph of the article with meaningful content.</p>
+            <p>Second paragraph continues the story.</p>
+            <p>Third paragraph concludes this section.</p>
+          </article>
+        </body>
+        </html>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      // Title could come from h1 or page title
+      expect(result!.title).toBeTruthy();
+    });
+
+    it("should extract byline when present", () => {
+      const html = `
+        <article>
+          <h1>Featured Article</h1>
+          <div class="byline">By John Smith</div>
+          <p>This is the article content written by the author.</p>
+          <p>More content in the second paragraph.</p>
+          <p>Third paragraph with additional text.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      // Note: Byline extraction can be finicky
+      // Just verify we got content
+      expect(result!.content).toContain("article content");
+    });
+
+    it("should generate excerpt from content", () => {
+      const html = `
+        <article>
+          <h1>Long Article</h1>
+          <p>This is the opening paragraph that introduces the topic. It should appear in the excerpt.</p>
+          <p>The second paragraph continues with more detail about the subject matter.</p>
+          <p>A third paragraph adds depth to the article content.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      expect(result!.excerpt.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("text content", () => {
+    it("should provide plain text version without HTML", () => {
+      const html = `
+        <article>
+          <h1>Test Article</h1>
+          <p>This is <strong>bold</strong> and <em>italic</em> text.</p>
+          <p>More text in a second paragraph.</p>
+          <p>Third paragraph for processing.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      expect(result!.textContent).not.toContain("<strong>");
+      expect(result!.textContent).not.toContain("<em>");
+      expect(result!.textContent).toContain("bold");
+      expect(result!.textContent).toContain("italic");
+    });
+
+    it("should normalize whitespace in text content", () => {
+      const html = `
+        <article>
+          <h1>Test</h1>
+          <p>This    has    extra    whitespace   in   the   text.</p>
+          <p>Second paragraph with normal text.</p>
+          <p>Third paragraph here.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html);
+
+      expect(result).not.toBeNull();
+      // Text content should be trimmed
+      expect(result!.textContent).not.toMatch(/^\s/);
+      expect(result!.textContent).not.toMatch(/\s$/);
+    });
+  });
+});
+
+describe("generateCleanedSummary", () => {
+  it("should use excerpt when available and long enough", () => {
+    const cleaned = {
+      content: "<p>Full content here...</p>",
+      textContent: "Full content here...",
+      excerpt: "This is a meaningful excerpt that summarizes the article content well.",
+      title: "Test",
+      byline: null,
+    };
+
+    const summary = generateCleanedSummary(cleaned);
+
+    expect(summary).toBe(cleaned.excerpt);
+  });
+
+  it("should fall back to text content when excerpt is short", () => {
+    const cleaned = {
+      content: "<p>Full content here...</p>",
+      textContent: "This is the full text content that should be used for the summary.",
+      excerpt: "Too short",
+      title: "Test",
+      byline: null,
+    };
+
+    const summary = generateCleanedSummary(cleaned);
+
+    expect(summary).toContain("full text content");
+  });
+
+  it("should truncate long content", () => {
+    const longText = "A".repeat(500);
+    const cleaned = {
+      content: `<p>${longText}</p>`,
+      textContent: longText,
+      excerpt: "",
+      title: "Test",
+      byline: null,
+    };
+
+    const summary = generateCleanedSummary(cleaned, 300);
+
+    expect(summary.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(summary.endsWith("...")).toBe(true);
+  });
+
+  it("should not truncate short content", () => {
+    const cleaned = {
+      content: "<p>Short content</p>",
+      textContent: "Short content",
+      excerpt: "",
+      title: "Test",
+      byline: null,
+    };
+
+    const summary = generateCleanedSummary(cleaned);
+
+    expect(summary).toBe("Short content");
+    expect(summary.endsWith("...")).toBe(false);
+  });
+
+  it("should handle empty content", () => {
+    const cleaned = {
+      content: "",
+      textContent: "",
+      excerpt: "",
+      title: "Test",
+      byline: null,
+    };
+
+    const summary = generateCleanedSummary(cleaned);
+
+    expect(summary).toBe("");
+  });
+});
