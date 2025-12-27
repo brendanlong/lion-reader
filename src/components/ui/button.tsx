@@ -37,10 +37,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         "text-zinc-900 hover:bg-zinc-100 focus:ring-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400",
     };
 
+    // Ensure minimum 44px height for touch targets on mobile (WCAG touch target guidelines)
     const sizeStyles = {
-      sm: "h-8 px-3 text-sm",
-      md: "h-10 px-4 text-sm",
-      lg: "h-12 px-6 text-base",
+      sm: "min-h-[36px] px-3 text-sm sm:min-h-[32px]",
+      md: "min-h-[44px] px-4 text-sm",
+      lg: "min-h-[48px] px-6 text-base",
     };
 
     return (

@@ -88,10 +88,10 @@ export const EntryListItem = memo(function EntryListItem({ entry, onClick }: Ent
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className={`group relative cursor-pointer rounded-lg border p-4 transition-colors ${
+      className={`group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4 ${
         entry.read
-          ? "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/50"
-          : "border-zinc-300 bg-zinc-50 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/50"
+          ? "border-zinc-200 bg-white hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800"
+          : "border-zinc-300 bg-zinc-50 hover:bg-zinc-100 active:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 dark:active:bg-zinc-700"
       }`}
       aria-label={`${entry.read ? "Read" : "Unread"} entry: ${displayTitle} from ${displayFeed}`}
     >
