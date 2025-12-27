@@ -111,7 +111,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 3.3 Feed Auto-Discovery
 
-- [ ] **Implement feed discovery from HTML pages**
+- [x] **Implement feed discovery from HTML pages**
   - Parse HTML to find link[rel="alternate"] tags
   - Support RSS and Atom type detection
   - Handle relative URLs
