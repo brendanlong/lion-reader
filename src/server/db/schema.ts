@@ -180,6 +180,57 @@ export const entries = pgTable(
 );
 
 // ============================================================================
+// TAGS
+// ============================================================================
+
+/**
+ * Tags table - user-defined tags for organizing subscriptions.
+ * Each tag belongs to a single user.
+ */
+export const tags = pgTable(
+  "tags",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color"), // hex color for UI (e.g., "#ff6b6b")
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Each user can only have one tag with a given name
+    unique("uq_tags_user_name").on(table.userId, table.name),
+    // Index for listing tags by user
+    index("idx_tags_user").on(table.userId),
+  ]
+);
+
+/**
+ * Subscription tags junction table - links subscriptions to tags.
+ * Enables many-to-many relationship between subscriptions and tags.
+ */
+export const subscriptionTags = pgTable(
+  "subscription_tags",
+  {
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "cascade" }),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.subscriptionId, table.tagId] }),
+    // Index for finding all subscriptions with a given tag
+    index("idx_subscription_tags_tag").on(table.tagId),
+  ]
+);
+
+// ============================================================================
 // USER SUBSCRIPTIONS
 // ============================================================================
 
@@ -308,3 +359,9 @@ export type NewJob = typeof jobs.$inferInsert;
 
 export type OAuthAccount = typeof oauthAccounts.$inferSelect;
 export type NewOAuthAccount = typeof oauthAccounts.$inferInsert;
+
+export type Tag = typeof tags.$inferSelect;
+export type NewTag = typeof tags.$inferInsert;
+
+export type SubscriptionTag = typeof subscriptionTags.$inferSelect;
+export type NewSubscriptionTag = typeof subscriptionTags.$inferInsert;
