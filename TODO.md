@@ -353,14 +353,14 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Create OPML generator (subscriptions → XML)
   - Write unit tests for parser and generator
 
-- [ ] **Implement OPML import API and UI**
+- [x] **Implement OPML import API and UI**
   - POST /v1/subscriptions/import - accept OPML, return results
   - Batch create subscriptions with progress tracking
   - Handle duplicates gracefully (skip existing)
   - Build import UI: file upload, preview, confirm dialog
   - Show import results (imported, skipped, errors)
 
-- [ ] **Implement OPML export**
+- [x] **Implement OPML export**
   - GET /v1/subscriptions/export - generate OPML file
   - Include tags as OPML categories
   - Add export button to settings page

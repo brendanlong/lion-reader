@@ -1,7 +1,7 @@
 /**
  * Subscriptions Router
  *
- * Handles feed subscriptions: list, create, update, delete.
+ * Handles feed subscriptions: list, create, update, delete, import, export.
  * Implements subscription management with soft delete pattern.
  */
 
@@ -13,7 +13,9 @@ import { errors } from "../errors";
 import { feeds, subscriptions, entries, userEntryStates } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, detectFeedType } from "@/server/feed";
+import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import { createInitialFetchJob } from "@/server/jobs/handlers";
+import { logger } from "@/lib/logger";
 import type { FeedType } from "@/server/feed";
 
 // ============================================================================
@@ -636,5 +638,280 @@ export const subscriptionsRouter = createTRPCRouter({
         .where(eq(subscriptions.id, input.id));
 
       return { success: true };
+    }),
+
+  /**
+   * Import feeds from OPML content.
+   *
+   * This procedure:
+   * 1. Parses the OPML XML content
+   * 2. For each feed, creates or finds the existing feed record
+   * 3. Creates subscriptions (skips already subscribed feeds)
+   * 4. Returns import results with counts and errors
+   *
+   * @param opml - The OPML XML content as a string
+   * @returns Import results with imported, skipped, and error counts
+   */
+  import: expensiveProtectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/subscriptions/import",
+        tags: ["Subscriptions"],
+        summary: "Import feeds from OPML",
+      },
+    })
+    .input(
+      z.object({
+        opml: z
+          .string()
+          .min(1, "OPML content is required")
+          .max(5 * 1024 * 1024, "OPML file too large (max 5MB)"),
+      })
+    )
+    .output(
+      z.object({
+        imported: z.number(),
+        skipped: z.number(),
+        failed: z.number(),
+        results: z.array(
+          z.object({
+            url: z.string(),
+            title: z.string().nullable(),
+            status: z.enum(["imported", "skipped", "failed"]),
+            error: z.string().optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // Step 1: Parse the OPML content
+      let opmlFeeds: OpmlFeed[];
+      try {
+        opmlFeeds = parseOpml(input.opml);
+      } catch (error) {
+        throw errors.validation(
+          `Failed to parse OPML: ${error instanceof Error ? error.message : "Invalid OPML format"}`
+        );
+      }
+
+      if (opmlFeeds.length === 0) {
+        return {
+          imported: 0,
+          skipped: 0,
+          failed: 0,
+          results: [],
+        };
+      }
+
+      // Step 2: Get existing subscriptions for the user
+      const existingSubscriptions = await ctx.db
+        .select({
+          feedUrl: feeds.url,
+        })
+        .from(subscriptions)
+        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+      const existingUrls = new Set(existingSubscriptions.map((s) => s.feedUrl));
+
+      // Step 3: Process each feed
+      const results: Array<{
+        url: string;
+        title: string | null;
+        status: "imported" | "skipped" | "failed";
+        error?: string;
+      }> = [];
+
+      let imported = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const opmlFeed of opmlFeeds) {
+        const feedUrl = opmlFeed.xmlUrl;
+        const feedTitle = opmlFeed.title ?? null;
+
+        // Check if already subscribed
+        if (existingUrls.has(feedUrl)) {
+          results.push({
+            url: feedUrl,
+            title: feedTitle,
+            status: "skipped",
+            error: "Already subscribed",
+          });
+          skipped++;
+          continue;
+        }
+
+        try {
+          // Check if feed already exists in database
+          const existingFeed = await ctx.db
+            .select()
+            .from(feeds)
+            .where(eq(feeds.url, feedUrl))
+            .limit(1);
+
+          let feedId: string;
+
+          if (existingFeed.length > 0) {
+            // Feed exists - use it
+            feedId = existingFeed[0].id;
+          } else {
+            // Create new feed record
+            feedId = generateUuidv7();
+            const now = new Date();
+
+            await ctx.db.insert(feeds).values({
+              id: feedId,
+              type: "rss" as const, // Default to RSS, will be updated on first fetch
+              url: feedUrl,
+              title: feedTitle,
+              siteUrl: opmlFeed.htmlUrl ?? null,
+              nextFetchAt: now, // Schedule immediate fetch
+              createdAt: now,
+              updatedAt: now,
+            });
+
+            // Schedule initial fetch job for the new feed
+            await createInitialFetchJob(feedId);
+          }
+
+          // Check for existing soft-deleted subscription
+          const existingSub = await ctx.db
+            .select()
+            .from(subscriptions)
+            .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+            .limit(1);
+
+          const now = new Date();
+          const subscriptionId = generateUuidv7();
+
+          if (existingSub.length > 0 && existingSub[0].unsubscribedAt !== null) {
+            // Reactivate soft-deleted subscription
+            await ctx.db
+              .update(subscriptions)
+              .set({
+                unsubscribedAt: null,
+                subscribedAt: now,
+                updatedAt: now,
+              })
+              .where(eq(subscriptions.id, existingSub[0].id));
+          } else if (existingSub.length === 0) {
+            // Create new subscription
+            await ctx.db.insert(subscriptions).values({
+              id: subscriptionId,
+              userId,
+              feedId,
+              subscribedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+
+          // Add to existing URLs set to prevent duplicates within this import
+          existingUrls.add(feedUrl);
+
+          results.push({
+            url: feedUrl,
+            title: feedTitle,
+            status: "imported",
+          });
+          imported++;
+
+          logger.info("OPML import: feed imported", { feedUrl, userId });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          results.push({
+            url: feedUrl,
+            title: feedTitle,
+            status: "failed",
+            error: errorMessage,
+          });
+          failed++;
+
+          logger.warn("OPML import: feed import failed", { feedUrl, userId, error: errorMessage });
+        }
+      }
+
+      logger.info("OPML import completed", {
+        userId,
+        imported,
+        skipped,
+        failed,
+        total: opmlFeeds.length,
+      });
+
+      return {
+        imported,
+        skipped,
+        failed,
+        results,
+      };
+    }),
+
+  /**
+   * Export subscriptions as OPML.
+   *
+   * Generates an OPML XML file containing all active subscriptions
+   * for the current user.
+   *
+   * @returns OPML XML content
+   */
+  export: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/subscriptions/export",
+        tags: ["Subscriptions"],
+        summary: "Export subscriptions as OPML",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        opml: z.string(),
+        feedCount: z.number(),
+      })
+    )
+    .query(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+
+      // Get all active subscriptions with feed info
+      const userSubscriptions = await ctx.db
+        .select({
+          subscription: subscriptions,
+          feed: feeds,
+        })
+        .from(subscriptions)
+        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)))
+        .orderBy(feeds.title);
+
+      // Convert to OPML subscription format
+      const opmlSubscriptions: OpmlSubscription[] = userSubscriptions
+        .filter(({ feed }) => feed.url !== null)
+        .map(({ subscription, feed }) => ({
+          title: subscription.customTitle || feed.title || feed.url || "Untitled Feed",
+          xmlUrl: feed.url!,
+          htmlUrl: feed.siteUrl ?? undefined,
+          // folder: undefined, // TODO: Add when tags are implemented
+        }));
+
+      // Generate OPML
+      const opml = generateOpml(opmlSubscriptions, {
+        title: "Lion Reader Subscriptions",
+      });
+
+      logger.info("OPML export completed", {
+        userId,
+        feedCount: opmlSubscriptions.length,
+      });
+
+      return {
+        opml,
+        feedCount: opmlSubscriptions.length,
+      };
     }),
 });
