@@ -57,14 +57,27 @@ const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const BACKOFF_MULTIPLIER = 2;
 
 /**
- * Event data structure from the SSE endpoint.
+ * Event data structure from the SSE endpoint for feed events.
  */
-interface SSEEventData {
+interface FeedEventData {
   type: "new_entry" | "entry_updated";
   feedId: string;
   entryId: string;
   timestamp: string;
 }
+
+/**
+ * Event data structure from the SSE endpoint for user events.
+ */
+interface UserEventData {
+  type: "subscription_created";
+  userId: string;
+  feedId: string;
+  subscriptionId: string;
+  timestamp: string;
+}
+
+type SSEEventData = FeedEventData | UserEventData;
 
 /**
  * Parses SSE event data from a JSON string.
@@ -73,28 +86,40 @@ function parseEventData(data: string): SSEEventData | null {
   try {
     const parsed: unknown = JSON.parse(data);
 
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "type" in parsed &&
-      "feedId" in parsed &&
-      "entryId" in parsed
-    ) {
-      const event = parsed as Record<string, unknown>;
+    if (typeof parsed !== "object" || parsed === null || !("type" in parsed)) {
+      return null;
+    }
 
-      if (
-        (event.type === "new_entry" || event.type === "entry_updated") &&
-        typeof event.feedId === "string" &&
-        typeof event.entryId === "string"
-      ) {
-        return {
-          type: event.type,
-          feedId: event.feedId,
-          entryId: event.entryId,
-          timestamp:
-            typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        };
-      }
+    const event = parsed as Record<string, unknown>;
+
+    // Handle feed events
+    if (
+      (event.type === "new_entry" || event.type === "entry_updated") &&
+      typeof event.feedId === "string" &&
+      typeof event.entryId === "string"
+    ) {
+      return {
+        type: event.type,
+        feedId: event.feedId,
+        entryId: event.entryId,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+      };
+    }
+
+    // Handle user events
+    if (
+      event.type === "subscription_created" &&
+      typeof event.userId === "string" &&
+      typeof event.feedId === "string" &&
+      typeof event.subscriptionId === "string"
+    ) {
+      return {
+        type: event.type,
+        userId: event.userId,
+        feedId: event.feedId,
+        subscriptionId: event.subscriptionId,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+      };
     }
 
     return null;
@@ -184,6 +209,10 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
 
         // Also invalidate the list in case the update affects display
         utils.entries.list.invalidate();
+      } else if (data.type === "subscription_created") {
+        // A new subscription was created (possibly from another tab/device)
+        // Invalidate subscriptions to show the new feed in the sidebar
+        utils.subscriptions.list.invalidate();
       }
     },
     [utils.entries, utils.subscriptions]
@@ -274,6 +303,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         // Handle named events
         eventSource.addEventListener("new_entry", handleEvent);
         eventSource.addEventListener("entry_updated", handleEvent);
+        eventSource.addEventListener("subscription_created", handleEvent);
 
         eventSource.onerror = () => {
           // EventSource will automatically try to reconnect, but we'll handle

@@ -15,9 +15,14 @@ import Redis from "ioredis";
 export type FeedEventType = "new_entry" | "entry_updated";
 
 /**
- * Base event payload interface.
+ * User event types that can be published.
  */
-interface BaseEvent {
+export type UserEventType = "subscription_created";
+
+/**
+ * Base event payload interface for feed events.
+ */
+interface BaseFeedEvent {
   type: FeedEventType;
   feedId: string;
   entryId: string;
@@ -27,14 +32,14 @@ interface BaseEvent {
 /**
  * Event published when a new entry is created.
  */
-export interface NewEntryEvent extends BaseEvent {
+export interface NewEntryEvent extends BaseFeedEvent {
   type: "new_entry";
 }
 
 /**
  * Event published when an existing entry is updated.
  */
-export interface EntryUpdatedEvent extends BaseEvent {
+export interface EntryUpdatedEvent extends BaseFeedEvent {
   type: "entry_updated";
 }
 
@@ -44,11 +49,41 @@ export interface EntryUpdatedEvent extends BaseEvent {
 export type FeedEvent = NewEntryEvent | EntryUpdatedEvent;
 
 /**
+ * Event published when a user subscribes to a new feed.
+ * This is sent to all of the user's active SSE connections so they can:
+ * 1. Add the new feedId to their filter set
+ * 2. Refresh the subscriptions list
+ */
+export interface SubscriptionCreatedEvent {
+  type: "subscription_created";
+  userId: string;
+  feedId: string;
+  subscriptionId: string;
+  timestamp: string;
+}
+
+/**
+ * Union type for all user events.
+ */
+export type UserEvent = SubscriptionCreatedEvent;
+
+/**
  * Channel name for feed events.
  * Using a single channel for all feed events simplifies subscription management.
  * Events include feedId so subscribers can filter as needed.
  */
 export const FEED_EVENTS_CHANNEL = "feed:events";
+
+/**
+ * Returns the channel name for user-specific events.
+ * Each user has their own channel so only their sessions receive the events.
+ *
+ * @param userId - The user's ID
+ * @returns The channel name for the user's events
+ */
+export function getUserEventsChannel(userId: string): string {
+  return `user:${userId}:events`;
+}
 
 /**
  * Dedicated Redis client for publishing events.
@@ -144,6 +179,34 @@ export async function publishEntryUpdated(feedId: string, entryId: string): Prom
 }
 
 /**
+ * Publishes a subscription_created event when a user subscribes to a feed.
+ * This notifies all of the user's SSE connections to:
+ * 1. Add the new feedId to their filter set (so they receive new_entry events for it)
+ * 2. Refresh the subscriptions list in the UI
+ *
+ * @param userId - The ID of the user who subscribed
+ * @param feedId - The ID of the feed they subscribed to
+ * @param subscriptionId - The ID of the new subscription
+ * @returns The number of subscribers that received the message
+ */
+export async function publishSubscriptionCreated(
+  userId: string,
+  feedId: string,
+  subscriptionId: string
+): Promise<number> {
+  const client = getPublisherClient();
+  const event: SubscriptionCreatedEvent = {
+    type: "subscription_created",
+    userId,
+    feedId,
+    subscriptionId,
+    timestamp: new Date().toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
  * Creates a new Redis client for subscribing to feed events.
  * Each subscriber should use its own connection as Redis requires
  * dedicated connections for subscriptions.
@@ -209,6 +272,48 @@ export function parseFeedEvent(message: string): FeedEvent | null {
         typeof event.timestamp === "string"
       ) {
         return event as FeedEvent;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parses a JSON message from a user events channel.
+ *
+ * @param message - The JSON string message from Redis
+ * @returns The parsed UserEvent or null if parsing fails
+ */
+export function parseUserEvent(message: string): UserEvent | null {
+  try {
+    const parsed: unknown = JSON.parse(message);
+
+    // Type guard to validate the event structure
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "type" in parsed &&
+      "timestamp" in parsed
+    ) {
+      const event = parsed as Record<string, unknown>;
+
+      if (
+        event.type === "subscription_created" &&
+        typeof event.userId === "string" &&
+        typeof event.feedId === "string" &&
+        typeof event.subscriptionId === "string" &&
+        typeof event.timestamp === "string"
+      ) {
+        return {
+          type: "subscription_created",
+          userId: event.userId,
+          feedId: event.feedId,
+          subscriptionId: event.subscriptionId,
+          timestamp: event.timestamp,
+        };
       }
     }
 
