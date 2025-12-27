@@ -1486,6 +1486,106 @@ describe("Subscriptions", () => {
 
 ---
 
+## Saved Articles (Read-it-Later)
+
+Save arbitrary URLs to read later, similar to Pocket or Instapaper. Works like a personal feed - articles have read/unread state just like feed entries. Star articles you want to keep for reference.
+
+### Schema
+
+```sql
+CREATE TABLE saved_articles (
+  id uuid PRIMARY KEY,  -- UUIDv7
+  user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+
+  url text NOT NULL,
+  title text,
+  site_name text,
+  author text,
+  image_url text,  -- og:image for display
+
+  content_original text,
+  content_cleaned text,  -- via Readability
+  excerpt text,
+
+  -- Same read/starred model as entries
+  read boolean NOT NULL DEFAULT false,
+  read_at timestamptz,
+  starred boolean NOT NULL DEFAULT false,
+  starred_at timestamptz,
+
+  saved_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+
+  UNIQUE(user_id, url)  -- can only save same URL once
+);
+
+CREATE INDEX idx_saved_articles_user ON saved_articles(user_id, id DESC);
+CREATE INDEX idx_saved_articles_unread ON saved_articles(user_id)
+  WHERE NOT read;
+CREATE INDEX idx_saved_articles_starred ON saved_articles(user_id, starred_at DESC)
+  WHERE starred;
+```
+
+### API Endpoints
+
+```
+POST   /v1/saved              { url } → { article }
+GET    /v1/saved              ?unreadOnly, ?starredOnly, ?cursor → { items, nextCursor }
+GET    /v1/saved/:id          → { article }
+DELETE /v1/saved/:id          → {}
+
+POST   /v1/saved/mark-read    { ids[], read } → {}
+POST   /v1/saved/:id/star     → {}
+DELETE /v1/saved/:id/star     → {}
+```
+
+### Save Flow
+
+1. User submits URL (via bookmarklet, API, or UI)
+2. Fetch page HTML
+3. Extract metadata (title, og:image, site name, author)
+4. Run Readability for clean content
+5. Store in saved_articles
+6. Return article to user
+
+### Bookmarklet
+
+```javascript
+javascript: (function () {
+  window.open(
+    "https://app.example.com/save?url=" + encodeURIComponent(location.href),
+    "save",
+    "width=400,height=300"
+  );
+})();
+```
+
+The `/save` page is a minimal popup that:
+
+- Shows saving progress
+- Displays success or error
+- Auto-closes after success
+
+### UI Integration
+
+- "Saved" section in sidebar (like Starred)
+- Uses same EntryList/EntryContent components as feeds
+- Keyboard shortcut: `g` then `l` (go to saved/later)
+- Mark read when opened (same as feed entries)
+- Star to keep for reference
+
+### Future: Curated Lists
+
+For social features (sharing article collections), a separate "Lists" feature can be built on top:
+
+- Named, public/private collections
+- Can include saved articles OR feed entries
+- Shareable URLs for public lists
+- Separate from the read-it-later queue (different mental models)
+
+---
+
 ## Future Work
 
 Features and improvements for post-MVP development:
@@ -1508,10 +1608,10 @@ Features and improvements for post-MVP development:
 
 ### Content
 
-- **Readability extraction**: Clean article extraction for feeds with summaries only
+- **Readability extraction**: Clean article extraction for feeds with summaries only ✓
 - **Full-text search**: Enhanced search with filters, saved searches
 - **Highlights and notes**: Annotate entries
-- **Read later queue**: Save entries for later reading
+- **Read later / Saved Articles**: Save URLs for later reading ✓ (see § Saved Articles above)
 
 ### Mobile
 

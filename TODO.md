@@ -583,29 +583,31 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ## Phase 12: Read-it-Later
 
+See DESIGN.md § Saved Articles for full design.
+
 ### 12.1 Saved Articles Schema and API
 
 - [ ] **Create saved_articles database schema**
-  - Create saved_articles table migration
-  - Add indexes for user listing and unread filtering
+  - Create saved_articles table migration (see DESIGN.md)
+  - Add indexes for user listing, unread, and starred
   - Update Drizzle schema with types
 
 - [ ] **Implement saved articles CRUD API**
   - POST /v1/saved - save URL (fetch page, extract metadata, run Readability)
-  - GET /v1/saved - list saved articles with cursor pagination
+  - GET /v1/saved - list with cursor pagination, unreadOnly/starredOnly filters
   - GET /v1/saved/:id - get single saved article with content
-  - PATCH /v1/saved/:id - update read/archived status
   - DELETE /v1/saved/:id - hard delete
-  - POST /v1/saved/mark-read - bulk mark read
+  - POST /v1/saved/mark-read - bulk mark read/unread
+  - POST/DELETE /v1/saved/:id/star - star/unstar
   - Write integration tests
 
 ### 12.2 Saved Articles UI
 
 - [ ] **Build saved articles list UI**
-  - Add "Saved" section to sidebar (like Starred)
-  - Create /saved route with entry list
-  - Reuse EntryList/EntryContent components where possible
-  - Add archive button to mark items "done"
+  - Add "Saved" section to sidebar (between Starred and feeds)
+  - Create /saved route reusing EntryList components
+  - Mark read when opened (same as feed entries)
+  - Star/unstar support (same as feed entries)
   - Add keyboard shortcut: g+l (go to saved/later)
 
 - [ ] **Create save page for bookmarklet**
@@ -619,4 +621,3 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Create "Bookmarklet" section in settings page
   - Show draggable bookmarklet link
   - Include installation instructions
-  - Show bookmarklet code for manual installation
