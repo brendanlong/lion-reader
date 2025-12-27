@@ -19,6 +19,8 @@ export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json"]);
 
 export const jobStatusEnum = pgEnum("job_status", ["pending", "running", "completed", "failed"]);
 
+export const websubStateEnum = pgEnum("websub_state", ["pending", "active", "unsubscribed"]);
+
 // ============================================================================
 // AUTHENTICATION
 // ============================================================================
@@ -126,6 +128,11 @@ export const feeds = pgTable(
     // Error tracking
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
     lastError: text("last_error"),
+
+    // WebSub support
+    hubUrl: text("hub_url"), // WebSub hub URL discovered from feed
+    selfUrl: text("self_url"), // Canonical feed URL (topic URL)
+    websubActive: boolean("websub_active").notNull().default(false), // Whether WebSub is currently active
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -334,6 +341,46 @@ export const jobs = pgTable(
 );
 
 // ============================================================================
+// WEBSUB SUBSCRIPTIONS
+// ============================================================================
+
+/**
+ * WebSub subscriptions table - tracks push notification subscriptions.
+ * Enables real-time feed updates via WebSub/PubSubHubbub protocol.
+ */
+export const websubSubscriptions = pgTable(
+  "websub_subscriptions",
+  {
+    id: uuid("id").primaryKey(),
+    feedId: uuid("feed_id")
+      .notNull()
+      .references(() => feeds.id, { onDelete: "cascade" }),
+
+    hubUrl: text("hub_url").notNull(), // WebSub hub URL
+    topicUrl: text("topic_url").notNull(), // Feed URL (topic)
+    callbackSecret: text("callback_secret").notNull(), // HMAC secret for verification
+
+    state: websubStateEnum("state").notNull().default("pending"),
+    leaseSeconds: integer("lease_seconds"), // Subscription lease duration
+    expiresAt: timestamp("expires_at", { withTimezone: true }), // When subscription expires
+
+    lastChallengeAt: timestamp("last_challenge_at", { withTimezone: true }), // Last verification attempt
+    lastError: text("last_error"), // Last error message if any
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Unique constraint on feed + hub to prevent duplicate subscriptions
+    unique("uq_websub_subscriptions_feed_hub").on(table.feedId, table.hubUrl),
+    // Index for finding expiring subscriptions that need renewal
+    index("idx_websub_expiring").on(table.expiresAt),
+    // Index for finding subscriptions by feed
+    index("idx_websub_feed").on(table.feedId),
+  ]
+);
+
+// ============================================================================
 // TYPE EXPORTS
 // ============================================================================
 
@@ -366,3 +413,6 @@ export type NewTag = typeof tags.$inferInsert;
 
 export type SubscriptionTag = typeof subscriptionTags.$inferSelect;
 export type NewSubscriptionTag = typeof subscriptionTags.$inferInsert;
+
+export type WebsubSubscription = typeof websubSubscriptions.$inferSelect;
+export type NewWebsubSubscription = typeof websubSubscriptions.$inferInsert;
