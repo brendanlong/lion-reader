@@ -13,6 +13,7 @@ import {
   entriesRouter,
   feedsRouter,
   tagsRouter,
+  savedRouter,
 } from "./routers";
 
 /**
@@ -26,6 +27,7 @@ export const appRouter = createTRPCRouter({
   entries: entriesRouter,
   feeds: feedsRouter,
   tags: tagsRouter,
+  saved: savedRouter,
 });
 
 /**
