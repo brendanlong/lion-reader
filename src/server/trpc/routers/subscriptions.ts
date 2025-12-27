@@ -13,6 +13,7 @@ import { errors } from "../errors";
 import { feeds, subscriptions, entries, userEntryStates } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, detectFeedType } from "@/server/feed";
+import { createInitialFetchJob } from "@/server/jobs/handlers";
 import type { FeedType } from "@/server/feed";
 
 // ============================================================================
@@ -254,6 +255,9 @@ export const subscriptionsRouter = createTRPCRouter({
 
         await ctx.db.insert(feeds).values(newFeed);
         feedRecord = newFeed as typeof feeds.$inferSelect;
+
+        // Schedule initial fetch job for the new feed
+        await createInitialFetchJob(feedId);
       }
 
       // Step 5: Check for existing subscription
