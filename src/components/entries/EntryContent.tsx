@@ -1,0 +1,378 @@
+/**
+ * EntryContent Component
+ *
+ * Displays the full content of a single entry.
+ * Includes title, author, date, content (safely sanitized), star button,
+ * and link to original article. Marks entry as read when viewed.
+ */
+
+"use client";
+
+import { useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
+import { trpc } from "@/lib/trpc/client";
+import { Button } from "@/components/ui/button";
+
+/**
+ * Props for the EntryContent component.
+ */
+interface EntryContentProps {
+  /**
+   * The ID of the entry to display.
+   */
+  entryId: string;
+
+  /**
+   * Optional callback when the back button is clicked.
+   */
+  onBack?: () => void;
+}
+
+/**
+ * Loading skeleton for entry content.
+ */
+function EntryContentSkeleton() {
+  return (
+    <div className="mx-auto max-w-3xl animate-pulse px-4 py-8">
+      {/* Back button placeholder */}
+      <div className="mb-6 h-8 w-20 rounded bg-zinc-200 dark:bg-zinc-700" />
+
+      {/* Title placeholder */}
+      <div className="mb-2 h-8 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="mb-4 h-8 w-1/2 rounded bg-zinc-200 dark:bg-zinc-700" />
+
+      {/* Meta row placeholder */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
+        <div className="h-4 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
+      </div>
+
+      {/* Action buttons placeholder */}
+      <div className="mb-8 flex gap-3">
+        <div className="h-10 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
+        <div className="h-10 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
+      </div>
+
+      {/* Content placeholders */}
+      <div className="space-y-4">
+        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
+        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
+        <div className="h-4 w-5/6 rounded bg-zinc-200 dark:bg-zinc-700" />
+        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
+        <div className="h-4 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Error state component for entry content.
+ */
+function EntryContentError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <svg
+        className="mb-4 h-16 w-16 text-red-400 dark:text-red-500"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+        />
+      </svg>
+      <p className="mb-4 text-base text-zinc-600 dark:text-zinc-400">{message}</p>
+      <Button onClick={onRetry} variant="secondary">
+        Try again
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Format a date as a readable string.
+ */
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Star icon component (filled or outline).
+ */
+function StarIcon({ filled }: { filled: boolean }) {
+  if (filled) {
+    return (
+      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      className="h-5 w-5"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"
+      />
+    </svg>
+  );
+}
+
+/**
+ * External link icon.
+ */
+function ExternalLinkIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Back arrow icon.
+ */
+function BackArrowIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+    </svg>
+  );
+}
+
+/**
+ * EntryContent component.
+ *
+ * Fetches and displays the full content of an entry.
+ * Marks the entry as read on mount.
+ */
+export function EntryContent({ entryId, onBack }: EntryContentProps) {
+  const utils = trpc.useUtils();
+  const hasMarkedRead = useRef(false);
+
+  // Fetch the entry
+  const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
+
+  // Mark read mutation
+  const markReadMutation = trpc.entries.markRead.useMutation({
+    onSuccess: () => {
+      // Invalidate entries list to update read status
+      utils.entries.list.invalidate();
+    },
+  });
+
+  // Star/unstar mutations
+  const starMutation = trpc.entries.star.useMutation({
+    onSuccess: () => {
+      // Invalidate the entry query to update starred status
+      utils.entries.get.invalidate({ id: entryId });
+      utils.entries.list.invalidate();
+    },
+  });
+
+  const unstarMutation = trpc.entries.unstar.useMutation({
+    onSuccess: () => {
+      utils.entries.get.invalidate({ id: entryId });
+      utils.entries.list.invalidate();
+    },
+  });
+
+  const entry = data?.entry;
+
+  // Mark entry as read when component mounts and entry is loaded
+  useEffect(() => {
+    if (entry && !entry.read && !hasMarkedRead.current) {
+      hasMarkedRead.current = true;
+      markReadMutation.mutate({ ids: [entryId], read: true });
+    }
+  }, [entry, entryId, markReadMutation]);
+
+  // Handle star toggle
+  const handleStarToggle = () => {
+    if (!entry) return;
+
+    if (entry.starred) {
+      unstarMutation.mutate({ id: entryId });
+    } else {
+      starMutation.mutate({ id: entryId });
+    }
+  };
+
+  const isStarLoading = starMutation.isPending || unstarMutation.isPending;
+
+  // Loading state
+  if (isLoading) {
+    return <EntryContentSkeleton />;
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <EntryContentError
+        message={error?.message ?? "Failed to load entry"}
+        onRetry={() => refetch()}
+      />
+    );
+  }
+
+  // Entry not found
+  if (!entry) {
+    return <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
+  }
+
+  // Sanitize HTML content
+  const sanitizedContent = entry.contentOriginal
+    ? DOMPurify.sanitize(entry.contentOriginal, {
+        // Allow safe tags and attributes
+        ADD_TAGS: ["iframe"], // Allow iframes for embedded content
+        ADD_ATTR: ["target", "allowfullscreen", "frameborder"], // Allow target="_blank" on links
+        FORBID_TAGS: ["style", "script"], // Forbid style and script tags
+        FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"], // Forbid event handlers
+      })
+    : null;
+
+  const displayTitle = entry.title ?? "Untitled";
+  const displayDate = entry.publishedAt ?? entry.fetchedAt;
+  const displayFeed = entry.feedTitle ?? "Unknown Feed";
+
+  return (
+    <article className="mx-auto max-w-3xl px-4 py-8">
+      {/* Back button */}
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        >
+          <BackArrowIcon />
+          <span>Back to list</span>
+        </button>
+      )}
+
+      {/* Header */}
+      <header className="mb-8">
+        {/* Title */}
+        <h1 className="mb-4 text-2xl leading-tight font-bold text-zinc-900 sm:text-3xl dark:text-zinc-100">
+          {displayTitle}
+        </h1>
+
+        {/* Meta row: Feed, Author, Date */}
+        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <span className="font-medium">{displayFeed}</span>
+          {entry.author && (
+            <>
+              <span aria-hidden="true" className="text-zinc-400 dark:text-zinc-600">
+                |
+              </span>
+              <span>by {entry.author}</span>
+            </>
+          )}
+          <span aria-hidden="true" className="text-zinc-400 dark:text-zinc-600">
+            |
+          </span>
+          <time dateTime={displayDate.toISOString()}>{formatDate(displayDate)}</time>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex flex-wrap gap-3">
+          {/* Star button */}
+          <Button
+            variant={entry.starred ? "primary" : "secondary"}
+            size="sm"
+            onClick={handleStarToggle}
+            disabled={isStarLoading}
+            className={
+              entry.starred
+                ? "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-500 dark:text-white dark:hover:bg-amber-600"
+                : ""
+            }
+            aria-label={entry.starred ? "Remove from starred" : "Add to starred"}
+          >
+            <StarIcon filled={entry.starred} />
+            <span className="ml-2">{entry.starred ? "Starred" : "Star"}</span>
+          </Button>
+
+          {/* Original article link */}
+          {entry.url && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => window.open(entry.url!, "_blank", "noopener,noreferrer")}
+              aria-label="Open original article in new tab"
+            >
+              <ExternalLinkIcon />
+              <span className="ml-2">View Original</span>
+            </Button>
+          )}
+        </div>
+      </header>
+
+      {/* Divider */}
+      <hr className="mb-8 border-zinc-200 dark:border-zinc-700" />
+
+      {/* Content */}
+      {sanitizedContent ? (
+        <div
+          className="prose prose-zinc dark:prose-invert prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 hover:prose-a:text-blue-700 dark:hover:prose-a:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none"
+          dangerouslySetInnerHTML={{ __html: sanitizedContent }}
+        />
+      ) : entry.summary ? (
+        <p className="text-base leading-relaxed text-zinc-700 dark:text-zinc-300">
+          {entry.summary}
+        </p>
+      ) : (
+        <p className="text-zinc-500 italic dark:text-zinc-400">No content available.</p>
+      )}
+
+      {/* Footer with original link */}
+      {entry.url && (
+        <footer className="mt-12 border-t border-zinc-200 pt-8 dark:border-zinc-700">
+          <a
+            href={entry.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            <ExternalLinkIcon />
+            Read on {entry.feedUrl ? new URL(entry.feedUrl).hostname : "original site"}
+          </a>
+        </footer>
+      )}
+    </article>
+  );
+}
