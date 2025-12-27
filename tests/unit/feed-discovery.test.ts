@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { discoverFeeds } from "../../src/server/feed/discovery";
+import {
+  discoverFeeds,
+  getCommonFeedUrls,
+  COMMON_FEED_PATHS,
+} from "../../src/server/feed/discovery";
 
 describe("discoverFeeds", () => {
   describe("standard RSS link discovery", () => {
@@ -589,5 +593,148 @@ describe("discoverFeeds", () => {
       expect(feeds).toHaveLength(1);
       expect(feeds[0].url).toBe("https://medium.com/feed/@username");
     });
+  });
+
+  describe("JSON Feed discovery", () => {
+    it("discovers JSON Feed from link tag with application/feed+json", () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Example Site</title>
+            <link rel="alternate" type="application/feed+json" href="/feed.json" title="JSON Feed">
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      const feeds = discoverFeeds(html, "https://example.com");
+
+      expect(feeds).toHaveLength(1);
+      expect(feeds[0]).toEqual({
+        url: "https://example.com/feed.json",
+        type: "json",
+        title: "JSON Feed",
+      });
+    });
+
+    it("discovers JSON Feed from link tag with application/json", () => {
+      const html = `
+        <html>
+          <head>
+            <link rel="alternate" type="application/json" href="/feed.json" title="JSON Feed">
+          </head>
+        </html>
+      `;
+
+      const feeds = discoverFeeds(html, "https://example.com");
+
+      expect(feeds).toHaveLength(1);
+      expect(feeds[0].url).toBe("https://example.com/feed.json");
+      expect(feeds[0].type).toBe("json");
+    });
+
+    it("discovers mixed RSS, Atom, and JSON feeds", () => {
+      const html = `
+        <html>
+          <head>
+            <link rel="alternate" type="application/rss+xml" href="/rss.xml" title="RSS">
+            <link rel="alternate" type="application/atom+xml" href="/atom.xml" title="Atom">
+            <link rel="alternate" type="application/feed+json" href="/feed.json" title="JSON">
+          </head>
+        </html>
+      `;
+
+      const feeds = discoverFeeds(html, "https://example.com");
+
+      expect(feeds).toHaveLength(3);
+
+      const rss = feeds.find((f) => f.type === "rss");
+      const atom = feeds.find((f) => f.type === "atom");
+      const json = feeds.find((f) => f.type === "json");
+
+      expect(rss).toBeDefined();
+      expect(rss!.url).toBe("https://example.com/rss.xml");
+
+      expect(atom).toBeDefined();
+      expect(atom!.url).toBe("https://example.com/atom.xml");
+
+      expect(json).toBeDefined();
+      expect(json!.url).toBe("https://example.com/feed.json");
+    });
+
+    it("handles JSON Feed with charset parameter", () => {
+      const html = `
+        <link rel="alternate" type="application/feed+json; charset=utf-8" href="/feed.json">
+      `;
+
+      const feeds = discoverFeeds(html, "https://example.com");
+
+      expect(feeds).toHaveLength(1);
+      expect(feeds[0].type).toBe("json");
+    });
+  });
+});
+
+describe("getCommonFeedUrls", () => {
+  it("generates feed URLs from base URL", () => {
+    const urls = getCommonFeedUrls("https://example.com");
+
+    expect(urls.length).toBe(COMMON_FEED_PATHS.length);
+    expect(urls).toContain("https://example.com/feed");
+    expect(urls).toContain("https://example.com/feed.xml");
+    expect(urls).toContain("https://example.com/rss");
+    expect(urls).toContain("https://example.com/rss.xml");
+    expect(urls).toContain("https://example.com/atom.xml");
+    expect(urls).toContain("https://example.com/feed.json");
+  });
+
+  it("uses origin only, ignoring path", () => {
+    const urls = getCommonFeedUrls("https://example.com/blog/post/123");
+
+    expect(urls).toContain("https://example.com/feed");
+    expect(urls).not.toContain("https://example.com/blog/post/123/feed");
+  });
+
+  it("preserves port in origin", () => {
+    const urls = getCommonFeedUrls("https://example.com:8080/blog");
+
+    expect(urls).toContain("https://example.com:8080/feed");
+    expect(urls).toContain("https://example.com:8080/rss.xml");
+  });
+
+  it("handles http protocol", () => {
+    const urls = getCommonFeedUrls("http://example.com");
+
+    expect(urls).toContain("http://example.com/feed");
+    expect(urls).toContain("http://example.com/rss.xml");
+  });
+
+  it("returns empty array for invalid URL", () => {
+    const urls = getCommonFeedUrls("not-a-valid-url");
+
+    expect(urls).toEqual([]);
+  });
+
+  it("returns empty array for empty string", () => {
+    const urls = getCommonFeedUrls("");
+
+    expect(urls).toEqual([]);
+  });
+
+  it("handles subdomain correctly", () => {
+    const urls = getCommonFeedUrls("https://blog.example.com/posts");
+
+    expect(urls).toContain("https://blog.example.com/feed");
+    expect(urls).toContain("https://blog.example.com/rss.xml");
+    expect(urls).not.toContain("https://example.com/feed");
+  });
+
+  it("ignores query parameters and fragments from base URL", () => {
+    const urls = getCommonFeedUrls("https://example.com/page?query=test#section");
+
+    // Should use origin only
+    expect(urls).toContain("https://example.com/feed");
+    expect(urls).not.toContain("https://example.com/page/feed");
   });
 });

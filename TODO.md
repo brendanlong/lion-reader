@@ -483,9 +483,9 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 10.4 Feed Discovery Enhancement
 
-- [ ] **Improve feed discovery**
+- [x] **Improve feed discovery**
   - GET /v1/feeds/discover?url=... - find feeds on any page
-  - Check common paths (/feed, /rss, /atom.xml, /feed.xml)
+  - Check common paths (/feed, /rss, /atom.xml, /feed.xml, /feed.json)
   - Return multiple discovered feeds with metadata
   - Write unit tests
 

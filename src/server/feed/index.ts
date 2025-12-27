@@ -13,7 +13,12 @@ export {
   UnknownFeedFormatError,
   type FeedType,
 } from "./parser";
-export { discoverFeeds, type DiscoveredFeed } from "./discovery";
+export {
+  discoverFeeds,
+  getCommonFeedUrls,
+  COMMON_FEED_PATHS,
+  type DiscoveredFeed,
+} from "./discovery";
 export {
   parseCacheControl,
   parseCacheHeaders,
