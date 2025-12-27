@@ -389,7 +389,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 9.3 Apple OAuth
 
-- [ ] **Implement Apple OAuth flow**
+- [x] **Implement Apple OAuth flow**
   - Configure Apple OAuth provider with arctic
   - Handle Apple's JWT-based token format
   - GET /v1/auth/oauth/apple - generate auth URL
