@@ -37,3 +37,15 @@ export {
   type FetchTooManyRedirectsResult,
   type RedirectInfo,
 } from "./fetcher";
+export {
+  calculateNextFetch,
+  calculateFailureBackoff,
+  getNextFetchTime,
+  MIN_FETCH_INTERVAL_SECONDS,
+  MAX_FETCH_INTERVAL_SECONDS,
+  DEFAULT_FETCH_INTERVAL_SECONDS,
+  MAX_CONSECUTIVE_FAILURES,
+  type CalculateNextFetchOptions,
+  type NextFetchResult,
+  type NextFetchReason,
+} from "./scheduling";

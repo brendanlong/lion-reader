@@ -165,7 +165,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 4.3 Next Fetch Scheduling
 
-- [ ] **Implement next fetch time calculation**
+- [x] **Implement next fetch time calculation**
   - Respect Cache-Control max-age (within bounds: 1 min - 7 days)
   - Default to 15 minutes when no cache headers
   - Implement exponential backoff for failures
