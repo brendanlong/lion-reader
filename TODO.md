@@ -621,3 +621,83 @@ See DESIGN.md § Saved Articles for full design.
   - Create "Bookmarklet" section in settings page
   - Show draggable bookmarklet link
   - Include installation instructions
+
+## Phase 13: Audio Narration
+
+See @docs/narration-design.md for full design details.
+
+### 13.1 Narration Schema and LLM Integration
+
+- [ ] **Create narration database schema**
+  - Add `content_narration` text column to entries table
+  - Add `narration_generated_at` timestamptz column to entries table
+  - Create index for finding entries needing narration
+  - Update Drizzle schema with types
+
+- [ ] **Implement Groq/LLM text preprocessing**
+  - Install groq-sdk package
+  - Create narration prompt template (see design doc)
+  - Implement `generateNarration(htmlContent)` function
+  - Implement `htmlToPlainText(html)` fallback for when Groq unavailable
+  - Write unit tests for HTML→text conversion
+
+### 13.2 Narration API
+
+- [ ] **Implement narration generation endpoint**
+  - POST /v1/narration/generate - generate or return cached narration
+  - Return cached narration if available
+  - Fall back to plain text conversion if GROQ_API_KEY not set
+  - Cache generated narration in database
+  - Write integration tests
+
+### 13.3 Web Speech API Integration
+
+- [ ] **Create ArticleNarrator class**
+  - Paragraph-based playback with `SpeechSynthesisUtterance`
+  - Play/pause/resume/stop controls
+  - Skip forward/backward between paragraphs
+  - Track current paragraph index
+  - Write unit tests
+
+- [ ] **Implement voice selection utilities**
+  - `getAvailableVoices()` with language filtering
+  - `waitForVoices()` for async voice loading
+  - `rankVoices()` heuristic for quality sorting
+  - Write unit tests
+
+### 13.4 Media Session API Integration
+
+- [ ] **Implement OS-level playback controls**
+  - Set up MediaMetadata (article title, feed name)
+  - Handle play/pause/stop actions
+  - Handle previoustrack/nexttrack for paragraph skip
+  - Update playbackState on state changes
+
+### 13.5 Narration UI
+
+- [ ] **Create narration settings component**
+  - Voice selector dropdown with preview button
+  - Speed slider (0.5x - 2.0x)
+  - Pitch slider (optional, 0.5x - 2.0x)
+  - Store settings in localStorage
+  - Add narration section to settings page
+
+- [ ] **Add playback controls to article view**
+  - Play/pause button in article header
+  - Skip forward/backward buttons
+  - Current paragraph indicator
+  - Loading state during narration generation
+  - Handle unsupported browsers gracefully
+
+### 13.6 Narration Polish
+
+- [ ] **Add narration metrics**
+  - Track narration_generated_total{cached, source}
+  - Track narration_playback_started_total
+  - Track narration_generation_duration_seconds
+  - Track narration_generation_errors_total{error_type}
+
+- [ ] **Update privacy policy**
+  - Document Groq data processing
+  - Explain on-device audio generation
+  - Link to Groq privacy policy
