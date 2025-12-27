@@ -16,7 +16,7 @@ import { subscriptions } from "@/server/db/schema";
 import { validateSession } from "@/server/auth";
 import {
   createSubscriberClient,
-  FEED_EVENTS_CHANNEL,
+  getFeedEventsChannel,
   getUserEventsChannel,
   parseFeedEvent,
   parseUserEvent,
@@ -150,7 +150,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const userId = sessionData.user.id;
 
-  // Get user's subscribed feed IDs (mutable - will be updated on new subscriptions)
+  // Get user's subscribed feed IDs
   const feedIds = await getUserFeedIds(userId);
 
   // Get the user-specific events channel
@@ -163,6 +163,9 @@ export async function GET(req: Request): Promise<Response> {
       let subscriber: ReturnType<typeof createSubscriberClient> | null = null;
       let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
       let isCleanedUp = false;
+
+      // Track which feed channels we're subscribed to
+      const subscribedFeedChannels = new Set<string>();
 
       /**
        * Cleanup function to close Redis subscription and clear heartbeat
@@ -203,6 +206,22 @@ export async function GET(req: Request): Promise<Response> {
         }
       }
 
+      /**
+       * Subscribes to a feed's event channel
+       */
+      function subscribeToFeed(feedId: string): void {
+        if (isCleanedUp || !subscriber) return;
+
+        const channel = getFeedEventsChannel(feedId);
+        if (subscribedFeedChannels.has(channel)) return;
+
+        subscribedFeedChannels.add(channel);
+        subscriber.subscribe(channel).catch((err) => {
+          console.error(`Failed to subscribe to feed channel ${feedId}:`, err);
+          subscribedFeedChannels.delete(channel);
+        });
+      }
+
       // Set up abort handler for client disconnection
       req.signal.addEventListener("abort", () => {
         cleanup();
@@ -217,48 +236,57 @@ export async function GET(req: Request): Promise<Response> {
       try {
         subscriber = createSubscriberClient();
 
-        // Subscribe to both the feed events channel and user-specific channel
-        Promise.all([
-          subscriber.subscribe(FEED_EVENTS_CHANNEL),
-          subscriber.subscribe(userEventsChannel),
-        ]).catch((err) => {
-          console.error("Failed to subscribe to channels:", err);
-          cleanup();
-          try {
-            controller.error(err);
-          } catch {
-            // Controller may already be closed
-          }
-        });
+        // Build list of channels to subscribe to:
+        // - User-specific channel for subscription events
+        // - Per-feed channels for each subscribed feed
+        const feedChannels = Array.from(feedIds).map(getFeedEventsChannel);
+        const allChannels = [userEventsChannel, ...feedChannels];
+
+        // Track subscribed feed channels
+        for (const channel of feedChannels) {
+          subscribedFeedChannels.add(channel);
+        }
+
+        // Subscribe to all channels
+        if (allChannels.length > 0) {
+          subscriber.subscribe(...allChannels).catch((err) => {
+            console.error("Failed to subscribe to channels:", err);
+            cleanup();
+            try {
+              controller.error(err);
+            } catch {
+              // Controller may already be closed
+            }
+          });
+        }
 
         // Handle incoming messages
         subscriber.on("message", (channel: string, message: string) => {
-          // Handle feed events (new_entry, entry_updated)
-          if (channel === FEED_EVENTS_CHANNEL) {
-            const event = parseFeedEvent(message);
-            if (!event) return;
-
-            // Only forward events for feeds the user is subscribed to
-            if (feedIds.has(event.feedId)) {
-              send(formatSSEFeedEvent(event));
-              trackSSEEventSent(event.type);
-            }
-            return;
-          }
-
           // Handle user events (subscription_created)
           if (channel === userEventsChannel) {
             const event = parseUserEvent(message);
             if (!event) return;
 
             if (event.type === "subscription_created") {
-              // Add the new feed to our filter set so we receive its events
-              feedIds.add(event.feedId);
+              // Subscribe to the new feed's channel
+              subscribeToFeed(event.feedId);
 
               // Forward the event to the client
               send(formatSSEUserEvent(event));
               trackSSEEventSent(event.type);
             }
+            return;
+          }
+
+          // Handle feed events (new_entry, entry_updated)
+          // Since we only subscribe to channels for feeds we care about,
+          // we don't need to filter here - just forward the event
+          if (subscribedFeedChannels.has(channel)) {
+            const event = parseFeedEvent(message);
+            if (!event) return;
+
+            send(formatSSEFeedEvent(event));
+            trackSSEEventSent(event.type);
           }
         });
 

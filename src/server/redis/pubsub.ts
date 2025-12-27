@@ -68,11 +68,16 @@ export interface SubscriptionCreatedEvent {
 export type UserEvent = SubscriptionCreatedEvent;
 
 /**
- * Channel name for feed events.
- * Using a single channel for all feed events simplifies subscription management.
- * Events include feedId so subscribers can filter as needed.
+ * Returns the channel name for feed-specific events.
+ * Each feed has its own channel so servers only receive events for feeds
+ * their connected users are subscribed to.
+ *
+ * @param feedId - The feed's ID
+ * @returns The channel name for the feed's events
  */
-export const FEED_EVENTS_CHANNEL = "feed:events";
+export function getFeedEventsChannel(feedId: string): string {
+  return `feed:${feedId}:events`;
+}
 
 /**
  * Returns the channel name for user-specific events.
@@ -133,15 +138,16 @@ function getPublisherClient(): Redis {
 }
 
 /**
- * Publishes a feed event to Redis.
+ * Publishes a feed event to the feed-specific Redis channel.
  *
  * @param event - The event to publish
  * @returns The number of subscribers that received the message
  */
 export async function publishFeedEvent(event: FeedEvent): Promise<number> {
   const client = getPublisherClient();
+  const channel = getFeedEventsChannel(event.feedId);
   const message = JSON.stringify(event);
-  return client.publish(FEED_EVENTS_CHANNEL, message);
+  return client.publish(channel, message);
 }
 
 /**
