@@ -451,7 +451,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - DELETE /v1/tags/:id - delete tag (cascade to subscription_tags)
   - Write integration tests
 
-- [ ] **Implement subscription tagging**
+- [x] **Implement subscription tagging**
   - POST /v1/subscriptions/:id/tags - set tags (replace all)
   - Update GET /v1/subscriptions to include tags
   - Add tagId filter to GET /v1/entries

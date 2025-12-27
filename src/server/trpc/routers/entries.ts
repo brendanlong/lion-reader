@@ -10,7 +10,14 @@ import { eq, and, isNull, desc, lt, lte, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { entries, feeds, subscriptions, userEntryStates } from "@/server/db/schema";
+import {
+  entries,
+  feeds,
+  subscriptions,
+  userEntryStates,
+  subscriptionTags,
+  tags,
+} from "@/server/db/schema";
 
 // ============================================================================
 // Constants
@@ -135,6 +142,7 @@ export const entriesRouter = createTRPCRouter({
    * 2. The entry was fetched_at >= the subscription's subscribed_at date
    *
    * @param feedId - Optional filter by feed ID
+   * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
    * @param unreadOnly - Optional filter to show only unread entries
    * @param starredOnly - Optional filter to show only starred entries
    * @param cursor - Optional pagination cursor (from previous response)
@@ -153,6 +161,7 @@ export const entriesRouter = createTRPCRouter({
     .input(
       z.object({
         feedId: uuidSchema.optional(),
+        tagId: uuidSchema.optional(),
         unreadOnly: z.boolean().optional(),
         starredOnly: z.boolean().optional(),
         cursor: cursorSchema,
@@ -165,34 +174,69 @@ export const entriesRouter = createTRPCRouter({
       const limit = input.limit ?? DEFAULT_LIMIT;
 
       // Get the user's active subscriptions
-      const userSubscriptions = await ctx.db
+      const subscriptionQuery = ctx.db
         .select({
+          id: subscriptions.id,
           feedId: subscriptions.feedId,
           subscribedAt: subscriptions.subscribedAt,
         })
         .from(subscriptions)
         .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
+      const userSubscriptions = await subscriptionQuery;
+
       if (userSubscriptions.length === 0) {
         return { items: [], nextCursor: undefined };
       }
 
+      // If filtering by tagId, get subscriptions with that tag
+      let filteredSubscriptions = userSubscriptions;
+      if (input.tagId) {
+        // First verify the tag belongs to the user
+        const tagExists = await ctx.db
+          .select({ id: tags.id })
+          .from(tags)
+          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId)))
+          .limit(1);
+
+        if (tagExists.length === 0) {
+          // Tag not found or doesn't belong to user, return empty result
+          return { items: [], nextCursor: undefined };
+        }
+
+        // Get subscriptions with this tag
+        const taggedSubscriptionIds = await ctx.db
+          .select({ subscriptionId: subscriptionTags.subscriptionId })
+          .from(subscriptionTags)
+          .where(eq(subscriptionTags.tagId, input.tagId));
+
+        const taggedIdSet = new Set(taggedSubscriptionIds.map((s) => s.subscriptionId));
+        filteredSubscriptions = userSubscriptions.filter((sub) => taggedIdSet.has(sub.id));
+
+        if (filteredSubscriptions.length === 0) {
+          // No subscriptions with this tag
+          return { items: [], nextCursor: undefined };
+        }
+      }
+
       // If filtering by feedId, verify user is subscribed to it
       if (input.feedId) {
-        const isSubscribed = userSubscriptions.some((sub) => sub.feedId === input.feedId);
+        const isSubscribed = filteredSubscriptions.some((sub) => sub.feedId === input.feedId);
         if (!isSubscribed) {
-          // User is not subscribed to this feed, return empty result
+          // User is not subscribed to this feed (or feed doesn't have the tag), return empty result
           return { items: [], nextCursor: undefined };
         }
       }
 
       // Build subscription map for visibility filtering
       const subscriptionMap = new Map(
-        userSubscriptions.map((sub) => [sub.feedId, sub.subscribedAt])
+        filteredSubscriptions.map((sub) => [sub.feedId, sub.subscribedAt])
       );
 
       // Get the feed IDs to query
-      const feedIds = input.feedId ? [input.feedId] : userSubscriptions.map((sub) => sub.feedId);
+      const feedIds = input.feedId
+        ? [input.feedId]
+        : filteredSubscriptions.map((sub) => sub.feedId);
 
       // Build the base query conditions
       const conditions = [inArray(entries.feedId, feedIds)];

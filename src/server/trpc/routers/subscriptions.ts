@@ -6,11 +6,18 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, isNull, sql, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { feeds, subscriptions, entries, userEntryStates } from "@/server/db/schema";
+import {
+  feeds,
+  subscriptions,
+  entries,
+  userEntryStates,
+  tags,
+  subscriptionTags,
+} from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, detectFeedType } from "@/server/feed";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
@@ -66,6 +73,15 @@ const customTitleSchema = z
 // ============================================================================
 
 /**
+ * Tag output schema for subscriptions - lightweight tag info.
+ */
+const tagOutputSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().nullable(),
+});
+
+/**
  * Feed output schema - what we return for a feed.
  */
 const feedOutputSchema = z.object({
@@ -86,6 +102,7 @@ const subscriptionOutputSchema = z.object({
   customTitle: z.string().nullable(),
   subscribedAt: z.date(),
   unreadCount: z.number(),
+  tags: z.array(tagOutputSchema),
 });
 
 /**
@@ -317,6 +334,7 @@ export const subscriptionsRouter = createTRPCRouter({
           customTitle: null,
           subscribedAt,
           unreadCount: 0, // New subscription has no unread entries yet
+          tags: [], // New subscription has no tags yet
         },
         feed: {
           id: feedRecord.id,
@@ -364,6 +382,36 @@ export const subscriptionsRouter = createTRPCRouter({
         .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)))
         .orderBy(feeds.title);
 
+      // Get all subscription IDs to fetch their tags
+      const subscriptionIds = userSubscriptions.map(({ subscription }) => subscription.id);
+
+      // Fetch all tags for all subscriptions in one query
+      const subscriptionTagsData =
+        subscriptionIds.length > 0
+          ? await ctx.db
+              .select({
+                subscriptionId: subscriptionTags.subscriptionId,
+                tagId: tags.id,
+                tagName: tags.name,
+                tagColor: tags.color,
+              })
+              .from(subscriptionTags)
+              .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
+              .where(inArray(subscriptionTags.subscriptionId, subscriptionIds))
+          : [];
+
+      // Create a map of subscriptionId -> tags[]
+      const tagsMap = new Map<string, Array<{ id: string; name: string; color: string | null }>>();
+      for (const row of subscriptionTagsData) {
+        const existing = tagsMap.get(row.subscriptionId) ?? [];
+        existing.push({
+          id: row.tagId,
+          name: row.tagName,
+          color: row.tagColor,
+        });
+        tagsMap.set(row.subscriptionId, existing);
+      }
+
       // Calculate unread counts for each subscription
       // An entry is unread if:
       // 1. It was fetched after the subscription date
@@ -387,6 +435,7 @@ export const subscriptionsRouter = createTRPCRouter({
             );
 
           const unreadCount = unreadResult[0]?.count ?? 0;
+          const subscriptionTagsList = tagsMap.get(subscription.id) ?? [];
 
           return {
             subscription: {
@@ -395,6 +444,7 @@ export const subscriptionsRouter = createTRPCRouter({
               customTitle: subscription.customTitle,
               subscribedAt: subscription.subscribedAt,
               unreadCount,
+              tags: subscriptionTagsList,
             },
             feed: {
               id: feed.id,
@@ -457,6 +507,23 @@ export const subscriptionsRouter = createTRPCRouter({
 
       const { subscription, feed } = result[0];
 
+      // Fetch tags for this subscription
+      const subscriptionTagsData = await ctx.db
+        .select({
+          tagId: tags.id,
+          tagName: tags.name,
+          tagColor: tags.color,
+        })
+        .from(subscriptionTags)
+        .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
+        .where(eq(subscriptionTags.subscriptionId, subscription.id));
+
+      const subscriptionTagsList = subscriptionTagsData.map((row) => ({
+        id: row.tagId,
+        name: row.tagName,
+        color: row.tagColor,
+      }));
+
       // Calculate unread count
       const unreadResult = await ctx.db
         .select({ count: sql<number>`count(*)::int` })
@@ -482,6 +549,7 @@ export const subscriptionsRouter = createTRPCRouter({
           customTitle: subscription.customTitle,
           subscribedAt: subscription.subscribedAt,
           unreadCount,
+          tags: subscriptionTagsList,
         },
         feed: {
           id: feed.id,
@@ -556,6 +624,23 @@ export const subscriptionsRouter = createTRPCRouter({
 
       await ctx.db.update(subscriptions).set(updateData).where(eq(subscriptions.id, input.id));
 
+      // Fetch tags for this subscription
+      const subscriptionTagsData = await ctx.db
+        .select({
+          tagId: tags.id,
+          tagName: tags.name,
+          tagColor: tags.color,
+        })
+        .from(subscriptionTags)
+        .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
+        .where(eq(subscriptionTags.subscriptionId, subscription.id));
+
+      const subscriptionTagsList = subscriptionTagsData.map((row) => ({
+        id: row.tagId,
+        name: row.tagName,
+        color: row.tagColor,
+      }));
+
       // Calculate unread count
       const unreadResult = await ctx.db
         .select({ count: sql<number>`count(*)::int` })
@@ -582,6 +667,7 @@ export const subscriptionsRouter = createTRPCRouter({
             input.customTitle !== undefined ? input.customTitle : subscription.customTitle,
           subscribedAt: subscription.subscribedAt,
           unreadCount,
+          tags: subscriptionTagsList,
         },
       };
     }),
@@ -913,5 +999,86 @@ export const subscriptionsRouter = createTRPCRouter({
         opml,
         feedCount: opmlSubscriptions.length,
       };
+    }),
+
+  /**
+   * Set tags for a subscription (replace all).
+   *
+   * This replaces all existing tags on the subscription with the provided tag IDs.
+   * All tag IDs must belong to the current user.
+   *
+   * @param id - The subscription ID
+   * @param tagIds - Array of tag IDs to set
+   * @returns Empty object on success
+   */
+  setTags: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/subscriptions/{id}/tags",
+        tags: ["Subscriptions"],
+        summary: "Set subscription tags",
+      },
+    })
+    .input(
+      z.object({
+        id: uuidSchema,
+        tagIds: z.array(z.string().uuid("Invalid tag ID")),
+      })
+    )
+    .output(z.object({}))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // Verify the subscription exists and belongs to the user
+      const existingSubscription = await ctx.db
+        .select()
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.id, input.id),
+            eq(subscriptions.userId, userId),
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .limit(1);
+
+      if (existingSubscription.length === 0) {
+        throw errors.subscriptionNotFound();
+      }
+
+      // If tagIds is empty, just delete all existing tags
+      if (input.tagIds.length === 0) {
+        await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+        return {};
+      }
+
+      // Verify all tag IDs belong to the current user
+      const userTags = await ctx.db
+        .select({ id: tags.id })
+        .from(tags)
+        .where(and(eq(tags.userId, userId), inArray(tags.id, input.tagIds)));
+
+      const validTagIds = new Set(userTags.map((t) => t.id));
+      const invalidTagIds = input.tagIds.filter((id) => !validTagIds.has(id));
+
+      if (invalidTagIds.length > 0) {
+        throw errors.validation("One or more tag IDs are invalid or do not belong to you");
+      }
+
+      // Delete all existing tags for the subscription
+      await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+
+      // Insert new subscription_tags entries
+      const now = new Date();
+      await ctx.db.insert(subscriptionTags).values(
+        input.tagIds.map((tagId) => ({
+          subscriptionId: input.id,
+          tagId,
+          createdAt: now,
+        }))
+      );
+
+      return {};
     }),
 });

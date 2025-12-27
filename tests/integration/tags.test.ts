@@ -8,7 +8,15 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, tags, subscriptions, subscriptionTags, feeds } from "../../src/server/db/schema";
+import {
+  users,
+  tags,
+  subscriptions,
+  subscriptionTags,
+  feeds,
+  entries,
+  userEntryStates,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -108,6 +116,28 @@ async function linkTagToSubscription(tagId: string, subscriptionId: string): Pro
   });
 }
 
+/**
+ * Creates a test entry for a feed.
+ */
+async function createTestEntry(
+  feedId: string,
+  options: { fetchedAt?: Date; title?: string } = {}
+): Promise<string> {
+  const entryId = generateUuidv7();
+  const now = options.fetchedAt ?? new Date();
+  await db.insert(entries).values({
+    id: entryId,
+    feedId,
+    guid: `guid-${entryId}`,
+    title: options.title ?? `Entry ${entryId}`,
+    contentHash: `hash-${entryId}`,
+    fetchedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return entryId;
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -115,6 +145,8 @@ async function linkTagToSubscription(tagId: string, subscriptionId: string): Pro
 describe("Tags API", () => {
   // Clean up tables before each test
   beforeEach(async () => {
+    await db.delete(userEntryStates);
+    await db.delete(entries);
     await db.delete(subscriptionTags);
     await db.delete(tags);
     await db.delete(subscriptions);
@@ -124,6 +156,8 @@ describe("Tags API", () => {
 
   // Clean up after all tests
   afterAll(async () => {
+    await db.delete(userEntryStates);
+    await db.delete(entries);
     await db.delete(subscriptionTags);
     await db.delete(tags);
     await db.delete(subscriptions);
@@ -644,6 +678,355 @@ describe("Tags API", () => {
       await expect(caller.tags.delete({ id: generateUuidv7() })).rejects.toThrow(
         "You must be logged in"
       );
+    });
+  });
+
+  describe("subscriptions.setTags", () => {
+    it("sets tags on a subscription", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+
+      // Create tags
+      const tag1Id = generateUuidv7();
+      const tag2Id = generateUuidv7();
+      await db.insert(tags).values([
+        { id: tag1Id, userId, name: "Tech", color: "#ff6b6b", createdAt: new Date() },
+        { id: tag2Id, userId, name: "News", color: "#4ecdc4", createdAt: new Date() },
+      ]);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.subscriptions.setTags({ id: subId, tagIds: [tag1Id, tag2Id] });
+
+      expect(result).toEqual({});
+
+      // Verify tags are set in database
+      const dbTags = await db
+        .select()
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, subId));
+      expect(dbTags).toHaveLength(2);
+      expect(dbTags.map((t) => t.tagId).sort()).toEqual([tag1Id, tag2Id].sort());
+    });
+
+    it("replaces existing tags", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+
+      // Create tags
+      const tag1Id = generateUuidv7();
+      const tag2Id = generateUuidv7();
+      const tag3Id = generateUuidv7();
+      await db.insert(tags).values([
+        { id: tag1Id, userId, name: "Tech", createdAt: new Date() },
+        { id: tag2Id, userId, name: "News", createdAt: new Date() },
+        { id: tag3Id, userId, name: "Sports", createdAt: new Date() },
+      ]);
+
+      // Link initial tags
+      await linkTagToSubscription(tag1Id, subId);
+      await linkTagToSubscription(tag2Id, subId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Replace with new tag
+      await caller.subscriptions.setTags({ id: subId, tagIds: [tag3Id] });
+
+      // Verify tags are replaced
+      const dbTags = await db
+        .select()
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, subId));
+      expect(dbTags).toHaveLength(1);
+      expect(dbTags[0].tagId).toBe(tag3Id);
+    });
+
+    it("removes all tags when given empty array", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+
+      // Create and link a tag
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+      await linkTagToSubscription(tagId, subId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      await caller.subscriptions.setTags({ id: subId, tagIds: [] });
+
+      // Verify all tags are removed
+      const dbTags = await db
+        .select()
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, subId));
+      expect(dbTags).toHaveLength(0);
+    });
+
+    it("throws error for non-existent subscription", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      await expect(
+        caller.subscriptions.setTags({ id: generateUuidv7(), tagIds: [tagId] })
+      ).rejects.toThrow("Subscription not found");
+    });
+
+    it("throws error for another user's subscription", async () => {
+      const userId1 = await createTestUser("user1@test.com");
+      const userId2 = await createTestUser("user2@test.com");
+
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId1, feedId);
+
+      const tagId = generateUuidv7();
+      await db
+        .insert(tags)
+        .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
+
+      // User 2 tries to set tags on User 1's subscription
+      const ctx = createAuthContext(userId2);
+      const caller = createCaller(ctx);
+
+      await expect(caller.subscriptions.setTags({ id: subId, tagIds: [tagId] })).rejects.toThrow(
+        "Subscription not found"
+      );
+    });
+
+    it("throws error for invalid tag IDs", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Try to set a non-existent tag
+      await expect(
+        caller.subscriptions.setTags({ id: subId, tagIds: [generateUuidv7()] })
+      ).rejects.toThrow("One or more tag IDs are invalid or do not belong to you");
+    });
+
+    it("throws error for another user's tags", async () => {
+      const userId1 = await createTestUser("user1@test.com");
+      const userId2 = await createTestUser("user2@test.com");
+
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId1, feedId);
+
+      // Create tag owned by user 2
+      const tagId = generateUuidv7();
+      await db
+        .insert(tags)
+        .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
+
+      // User 1 tries to use User 2's tag
+      const ctx = createAuthContext(userId1);
+      const caller = createCaller(ctx);
+
+      await expect(caller.subscriptions.setTags({ id: subId, tagIds: [tagId] })).rejects.toThrow(
+        "One or more tag IDs are invalid or do not belong to you"
+      );
+    });
+  });
+
+  describe("subscriptions.list with tags", () => {
+    it("returns subscriptions with their tags", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+
+      // Create and link tags
+      const tag1Id = generateUuidv7();
+      const tag2Id = generateUuidv7();
+      await db.insert(tags).values([
+        { id: tag1Id, userId, name: "Tech", color: "#ff6b6b", createdAt: new Date() },
+        { id: tag2Id, userId, name: "News", color: "#4ecdc4", createdAt: new Date() },
+      ]);
+      await linkTagToSubscription(tag1Id, subId);
+      await linkTagToSubscription(tag2Id, subId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.subscriptions.list();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].subscription.tags).toHaveLength(2);
+      expect(result.items[0].subscription.tags.map((t) => t.name).sort()).toEqual(["News", "Tech"]);
+    });
+
+    it("returns empty tags array for subscriptions without tags", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      await createTestSubscription(userId, feedId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.subscriptions.list();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].subscription.tags).toEqual([]);
+    });
+  });
+
+  describe("entries.list with tagId filter", () => {
+    it("filters entries by tag", async () => {
+      const userId = await createTestUser("user1@test.com");
+
+      // Create two feeds with subscriptions
+      const feedId1 = await createTestFeed("https://feed1.com/rss");
+      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const subId1 = await createTestSubscription(userId, feedId1);
+      await createTestSubscription(userId, feedId2);
+
+      // Create a tag and link it to subscription 1 only
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+      await linkTagToSubscription(tagId, subId1);
+
+      // Create entries for both feeds (after subscription date)
+      const entryId1 = await createTestEntry(feedId1, { title: "Entry from Feed 1" });
+      await createTestEntry(feedId2, { title: "Entry from Feed 2" });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Filter by tag - should only return entries from feed 1
+      const result = await caller.entries.list({ tagId });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe(entryId1);
+      expect(result.items[0].title).toBe("Entry from Feed 1");
+    });
+
+    it("returns empty list when tag has no subscriptions", async () => {
+      const userId = await createTestUser("user1@test.com");
+
+      // Create a feed with subscription
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      await createTestSubscription(userId, feedId);
+
+      // Create a tag with no subscriptions linked
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Empty Tag", createdAt: new Date() });
+
+      // Create an entry
+      await createTestEntry(feedId, { title: "Test Entry" });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Filter by empty tag - should return empty
+      const result = await caller.entries.list({ tagId });
+
+      expect(result.items).toHaveLength(0);
+    });
+
+    it("returns empty list for non-existent tag", async () => {
+      const userId = await createTestUser("user1@test.com");
+
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      await createTestSubscription(userId, feedId);
+      await createTestEntry(feedId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Filter by non-existent tag
+      const result = await caller.entries.list({ tagId: generateUuidv7() });
+
+      expect(result.items).toHaveLength(0);
+    });
+
+    it("returns empty list for another user's tag", async () => {
+      const userId1 = await createTestUser("user1@test.com");
+      const userId2 = await createTestUser("user2@test.com");
+
+      // User 1 has a feed and subscription
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      await createTestSubscription(userId1, feedId);
+      await createTestEntry(feedId);
+
+      // Tag owned by user 2
+      const tagId = generateUuidv7();
+      await db
+        .insert(tags)
+        .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
+
+      // User 1 tries to filter by user 2's tag
+      const ctx = createAuthContext(userId1);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.list({ tagId });
+
+      expect(result.items).toHaveLength(0);
+    });
+
+    it("combines tagId and feedId filters", async () => {
+      const userId = await createTestUser("user1@test.com");
+
+      // Create two feeds with subscriptions
+      const feedId1 = await createTestFeed("https://feed1.com/rss");
+      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const subId1 = await createTestSubscription(userId, feedId1);
+      const subId2 = await createTestSubscription(userId, feedId2);
+
+      // Create a tag and link it to both subscriptions
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+      await linkTagToSubscription(tagId, subId1);
+      await linkTagToSubscription(tagId, subId2);
+
+      // Create entries for both feeds
+      const entryId1 = await createTestEntry(feedId1, { title: "Entry from Feed 1" });
+      await createTestEntry(feedId2, { title: "Entry from Feed 2" });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Filter by tag AND feedId - should only return entries from feed 1
+      const result = await caller.entries.list({ tagId, feedId: feedId1 });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe(entryId1);
+    });
+
+    it("returns empty when feedId is not in tag", async () => {
+      const userId = await createTestUser("user1@test.com");
+
+      // Create two feeds with subscriptions
+      const feedId1 = await createTestFeed("https://feed1.com/rss");
+      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const subId1 = await createTestSubscription(userId, feedId1);
+      await createTestSubscription(userId, feedId2);
+
+      // Create a tag and link it to subscription 1 only
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+      await linkTagToSubscription(tagId, subId1);
+
+      // Create entries for both feeds
+      await createTestEntry(feedId1);
+      await createTestEntry(feedId2);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Filter by tag AND feedId (where feedId2 is not in tag)
+      const result = await caller.entries.list({ tagId, feedId: feedId2 });
+
+      expect(result.items).toHaveLength(0);
     });
   });
 });
