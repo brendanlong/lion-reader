@@ -11,7 +11,12 @@ import { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
-import { OpmlImportExport, LinkedAccounts, KeyboardShortcutsSettings } from "@/components/settings";
+import {
+  OpmlImportExport,
+  LinkedAccounts,
+  KeyboardShortcutsSettings,
+  TagManagement,
+} from "@/components/settings";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -135,6 +140,9 @@ export default function SettingsPage() {
 
       {/* Linked Accounts Section */}
       <LinkedAccounts />
+
+      {/* Tags Section */}
+      <TagManagement />
 
       {/* Change Password Section */}
       <ChangePasswordForm />
