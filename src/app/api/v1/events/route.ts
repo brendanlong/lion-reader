@@ -21,6 +21,11 @@ import {
   type FeedEvent,
 } from "@/server/redis/pubsub";
 import { eq, and, isNull } from "drizzle-orm";
+import {
+  incrementSSEConnections,
+  decrementSSEConnections,
+  trackSSEEventSent,
+} from "@/server/metrics/metrics";
 
 // ============================================================================
 // Constants
@@ -153,6 +158,9 @@ export async function GET(req: Request): Promise<Response> {
         if (isCleanedUp) return;
         isCleanedUp = true;
 
+        // Decrement active SSE connections counter
+        decrementSSEConnections();
+
         if (heartbeatInterval) {
           clearInterval(heartbeatInterval);
           heartbeatInterval = null;
@@ -217,6 +225,7 @@ export async function GET(req: Request): Promise<Response> {
           // Only forward events for feeds the user is subscribed to
           if (feedIds.has(event.feedId)) {
             send(formatSSEEvent(event));
+            trackSSEEventSent(event.type);
           }
         });
 
@@ -229,10 +238,15 @@ export async function GET(req: Request): Promise<Response> {
         // Start heartbeat
         heartbeatInterval = setInterval(() => {
           send(formatSSEHeartbeat());
+          trackSSEEventSent("heartbeat");
         }, HEARTBEAT_INTERVAL_MS);
+
+        // Increment active SSE connections counter
+        incrementSSEConnections();
 
         // Send initial heartbeat to confirm connection
         send(formatSSEHeartbeat());
+        trackSSEEventSent("heartbeat");
       } catch (err) {
         console.error("Failed to set up SSE connection:", err);
         cleanup();

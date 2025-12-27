@@ -512,7 +512,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Create middleware to instrument tRPC/API routes
   - Ensure zero overhead when disabled
 
-- [ ] **Implement application metrics**
+- [x] **Implement application metrics**
   - Track feed_fetch_total{status}
   - Track feed_fetch_duration_seconds
   - Track job_processed_total{type, status}
