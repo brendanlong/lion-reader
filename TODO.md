@@ -323,7 +323,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 8.3 Infrastructure Provisioning
 
-- [ ] **Provision production infrastructure**
+- [x] **Provision production infrastructure**
   - Create Fly.io Postgres database
   - Create Fly.io Redis (Upstash)
   - Configure environment variables/secrets
