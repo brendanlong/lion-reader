@@ -1,0 +1,165 @@
+/**
+ * Single Feed Page
+ *
+ * Displays entries from a specific feed.
+ */
+
+"use client";
+
+import { useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { trpc } from "@/lib/trpc/client";
+import { EntryList } from "@/components/entries/EntryList";
+import { EntryContent } from "@/components/entries/EntryContent";
+
+/**
+ * Loading skeleton for the feed header.
+ */
+function FeedHeaderSkeleton() {
+  return (
+    <div className="mb-6 animate-pulse">
+      <div className="mb-2 h-8 w-48 rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="h-4 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
+    </div>
+  );
+}
+
+/**
+ * Error state for when the feed is not found.
+ */
+function FeedNotFound() {
+  return (
+    <div className="mx-auto max-w-3xl p-6">
+      <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/20">
+          <svg
+            className="h-6 w-6 text-red-500 dark:text-red-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+        </div>
+        <h2 className="mb-2 text-lg font-medium text-zinc-900 dark:text-zinc-50">Feed not found</h2>
+        <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+          The feed you&apos;re looking for doesn&apos;t exist or you&apos;re not subscribed to it.
+        </p>
+        <Link
+          href="/all"
+          className="inline-flex items-center text-sm font-medium text-zinc-900 hover:underline dark:text-zinc-50"
+        >
+          <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          Back to All Items
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export default function SingleFeedPage() {
+  const params = useParams<{ feedId: string }>();
+  const feedId = params.feedId;
+
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+
+  // Fetch subscription info to get feed title and validate access
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+
+  // Find the subscription for this feed
+  const subscription = subscriptionsQuery.data?.items.find((item) => item.feed.id === feedId);
+
+  const handleEntryClick = (entryId: string) => {
+    setSelectedEntryId(entryId);
+  };
+
+  const handleBack = () => {
+    setSelectedEntryId(null);
+  };
+
+  // If an entry is selected, show the full content view
+  if (selectedEntryId) {
+    return <EntryContent entryId={selectedEntryId} onBack={handleBack} />;
+  }
+
+  // Show loading state while checking subscription
+  if (subscriptionsQuery.isLoading) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <FeedHeaderSkeleton />
+      </div>
+    );
+  }
+
+  // Show error if subscription not found (not subscribed to this feed)
+  if (!subscription) {
+    return <FeedNotFound />;
+  }
+
+  const feedTitle =
+    subscription.subscription.customTitle ?? subscription.feed.title ?? "Untitled Feed";
+  const unreadCount = subscription.subscription.unreadCount;
+
+  return (
+    <div className="mx-auto max-w-3xl p-6">
+      <div className="mb-6">
+        {/* Breadcrumb back link */}
+        <Link
+          href="/all"
+          className="mb-2 inline-flex items-center text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        >
+          <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          All Items
+        </Link>
+
+        {/* Feed title and unread count */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{feedTitle}</h1>
+          {unreadCount > 0 && (
+            <span className="rounded-full bg-zinc-100 px-3 py-1 text-sm text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+              {unreadCount} unread
+            </span>
+          )}
+        </div>
+
+        {/* Feed URL if available */}
+        {subscription.feed.siteUrl && (
+          <a
+            href={subscription.feed.siteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"
+          >
+            {new URL(subscription.feed.siteUrl).hostname}
+          </a>
+        )}
+      </div>
+
+      <EntryList
+        filters={{ feedId }}
+        onEntryClick={handleEntryClick}
+        emptyMessage="No entries in this feed yet. Entries will appear here once the feed is fetched."
+      />
+    </div>
+  );
+}
