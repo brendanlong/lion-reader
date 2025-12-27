@@ -116,6 +116,41 @@ describe("detectFeedType", () => {
     });
   });
 
+  describe("JSON Feed detection", () => {
+    it("detects JSON Feed 1.1", () => {
+      const json = JSON.stringify({
+        version: "https://jsonfeed.org/version/1.1",
+        title: "Test Feed",
+        items: [],
+      });
+
+      expect(detectFeedType(json)).toBe("json");
+    });
+
+    it("detects JSON Feed 1.0", () => {
+      const json = JSON.stringify({
+        version: "https://jsonfeed.org/version/1",
+        title: "Test Feed",
+        items: [],
+      });
+
+      expect(detectFeedType(json)).toBe("json");
+    });
+
+    it("returns unknown for JSON without JSON Feed version", () => {
+      const json = JSON.stringify({
+        title: "Not a JSON Feed",
+        items: [],
+      });
+
+      expect(detectFeedType(json)).toBe("unknown");
+    });
+
+    it("returns unknown for JSON array", () => {
+      expect(detectFeedType("[]")).toBe("unknown");
+    });
+  });
+
   describe("edge cases", () => {
     it("handles whitespace before XML declaration", () => {
       const xml = `
@@ -136,6 +171,16 @@ describe("detectFeedType", () => {
         </feed>`;
 
       expect(detectFeedType(xml)).toBe("atom");
+    });
+
+    it("handles whitespace before JSON", () => {
+      const json = `  ${JSON.stringify({
+        version: "https://jsonfeed.org/version/1.1",
+        title: "Test Feed",
+        items: [],
+      })}`;
+
+      expect(detectFeedType(json)).toBe("json");
     });
   });
 });
@@ -190,6 +235,30 @@ describe("parseFeed", () => {
       expect(feed.items[0].title).toBe("Atom Post");
     });
 
+    it("parses JSON Feed 1.1 automatically", () => {
+      const json = JSON.stringify({
+        version: "https://jsonfeed.org/version/1.1",
+        title: "JSON Feed",
+        home_page_url: "https://example.com",
+        description: "A JSON feed",
+        items: [
+          {
+            id: "post-1",
+            url: "https://example.com/post",
+            title: "JSON Post",
+          },
+        ],
+      });
+
+      const feed = parseFeed(json);
+
+      expect(feed.title).toBe("JSON Feed");
+      expect(feed.siteUrl).toBe("https://example.com");
+      expect(feed.description).toBe("A JSON feed");
+      expect(feed.items).toHaveLength(1);
+      expect(feed.items[0].title).toBe("JSON Post");
+    });
+
     it("throws UnknownFeedFormatError for unknown format", () => {
       const html = `<!DOCTYPE html>
         <html>
@@ -203,7 +272,7 @@ describe("parseFeed", () => {
   });
 
   describe("unified output format", () => {
-    it("produces consistent output for RSS and Atom feeds", () => {
+    it("produces consistent output for RSS, Atom, and JSON feeds", () => {
       const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
         <rss version="2.0">
           <channel>
@@ -235,18 +304,42 @@ describe("parseFeed", () => {
           </entry>
         </feed>`;
 
+      const jsonFeed = JSON.stringify({
+        version: "https://jsonfeed.org/version/1.1",
+        title: "Test Feed",
+        home_page_url: "https://example.com",
+        description: "Test description",
+        items: [
+          {
+            id: "post-1",
+            url: "https://example.com/post",
+            title: "Test Post",
+            date_published: "2024-01-01T12:00:00Z",
+          },
+        ],
+      });
+
       const rssFeed = parseFeed(rssXml);
       const atomFeed = parseFeed(atomXml);
+      const jsonParsed = parseFeed(jsonFeed);
 
-      // Both should have same structure
+      // All should have same structure
       expect(rssFeed.title).toBe(atomFeed.title);
+      expect(rssFeed.title).toBe(jsonParsed.title);
       expect(rssFeed.siteUrl).toBe(atomFeed.siteUrl);
+      expect(rssFeed.siteUrl).toBe(jsonParsed.siteUrl);
       expect(rssFeed.description).toBe(atomFeed.description);
+      expect(rssFeed.description).toBe(jsonParsed.description);
       expect(rssFeed.items).toHaveLength(atomFeed.items.length);
+      expect(rssFeed.items).toHaveLength(jsonParsed.items.length);
       expect(rssFeed.items[0].title).toBe(atomFeed.items[0].title);
+      expect(rssFeed.items[0].title).toBe(jsonParsed.items[0].title);
       expect(rssFeed.items[0].link).toBe(atomFeed.items[0].link);
+      expect(rssFeed.items[0].link).toBe(jsonParsed.items[0].link);
       expect(rssFeed.items[0].guid).toBe(atomFeed.items[0].guid);
+      expect(rssFeed.items[0].guid).toBe(jsonParsed.items[0].guid);
       expect(rssFeed.items[0].pubDate).toEqual(atomFeed.items[0].pubDate);
+      expect(rssFeed.items[0].pubDate).toEqual(jsonParsed.items[0].pubDate);
     });
   });
 });
@@ -278,6 +371,18 @@ describe("parseFeedWithFormat", () => {
     expect(feed.title).toBe("Atom Feed");
   });
 
+  it("parses JSON Feed with explicit format", () => {
+    const json = JSON.stringify({
+      version: "https://jsonfeed.org/version/1.1",
+      title: "JSON Feed",
+      items: [],
+    });
+
+    const feed = parseFeedWithFormat(json, "json");
+
+    expect(feed.title).toBe("JSON Feed");
+  });
+
   it("throws when format doesn't match content (RSS)", () => {
     const atomXml = `<?xml version="1.0" encoding="UTF-8"?>
       <feed xmlns="http://www.w3.org/2005/Atom">
@@ -299,6 +404,18 @@ describe("parseFeedWithFormat", () => {
     // Trying to parse RSS as Atom should fail
     expect(() => parseFeedWithFormat(rssXml, "atom")).toThrow();
   });
+
+  it("throws when format doesn't match content (JSON)", () => {
+    const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0">
+        <channel>
+          <title>RSS Feed</title>
+        </channel>
+      </rss>`;
+
+    // Trying to parse RSS as JSON should fail
+    expect(() => parseFeedWithFormat(rssXml, "json")).toThrow();
+  });
 });
 
 describe("UnknownFeedFormatError", () => {
@@ -306,7 +423,7 @@ describe("UnknownFeedFormatError", () => {
     const error = new UnknownFeedFormatError();
 
     expect(error.name).toBe("UnknownFeedFormatError");
-    expect(error.message).toBe("Unknown feed format: unable to detect RSS or Atom");
+    expect(error.message).toBe("Unknown feed format: unable to detect RSS, Atom, or JSON Feed");
   });
 
   it("accepts custom message", () => {
