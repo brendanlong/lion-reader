@@ -47,6 +47,17 @@ export {
   entriesTotal,
   feedsTotal,
   updateBusinessMetrics,
+
+  // Narration metrics
+  narrationGeneratedTotal,
+  narrationGenerationDurationSeconds,
+  narrationGenerationErrorsTotal,
+  trackNarrationGenerated,
+  trackNarrationGenerationDuration,
+  trackNarrationGenerationError,
+  startNarrationGenerationTimer,
+  type NarrationSource,
+  type NarrationErrorType,
 } from "./metrics";
 
 export { collectAllMetrics, collectBusinessMetrics, collectJobQueueMetrics } from "./collect";
