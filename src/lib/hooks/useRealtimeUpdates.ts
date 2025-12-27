@@ -213,6 +213,12 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         // A new subscription was created (possibly from another tab/device)
         // Invalidate subscriptions to show the new feed in the sidebar
         utils.subscriptions.list.invalidate();
+
+        // Also invalidate entries to fetch any entries that may have been
+        // created before the SSE connection subscribed to the new feed's channel.
+        // This handles the race condition where new_entry events arrive before
+        // the subscription_created event.
+        utils.entries.list.invalidate();
       }
     },
     [utils.entries, utils.subscriptions]
