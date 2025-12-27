@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -196,6 +196,7 @@ function BackArrowIcon() {
 export function SavedArticleContent({ articleId, onBack }: SavedArticleContentProps) {
   const utils = trpc.useUtils();
   const hasMarkedRead = useRef(false);
+  const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the saved article
   const { data, isLoading, isError, error, refetch } = trpc.saved.get.useQuery({ id: articleId });
@@ -268,8 +269,13 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
     return <SavedArticleContentError message="Article not found" onRetry={() => refetch()} />;
   }
 
-  // Prefer cleaned content if available, fall back to original
-  const contentToDisplay = article.contentCleaned ?? article.contentOriginal;
+  // Check if both content versions are available for toggle
+  const hasBothVersions = Boolean(article.contentCleaned && article.contentOriginal);
+
+  // Select content based on toggle state
+  const contentToDisplay = showOriginal
+    ? article.contentOriginal
+    : (article.contentCleaned ?? article.contentOriginal);
 
   // Sanitize HTML content
   const sanitizedContent = contentToDisplay
@@ -346,6 +352,18 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
             <StarIcon filled={article.starred} />
             <span className="ml-2">{article.starred ? "Starred" : "Star"}</span>
           </Button>
+
+          {/* Content view toggle - only show when both versions exist */}
+          {hasBothVersions && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowOriginal(!showOriginal)}
+              aria-label={showOriginal ? "Show cleaned content" : "Show original content"}
+            >
+              <span>{showOriginal ? "Show Cleaned" : "Show Original"}</span>
+            </Button>
+          )}
 
           {/* Original article link */}
           <Button

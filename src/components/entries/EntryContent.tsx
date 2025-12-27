@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -185,6 +185,7 @@ function BackArrowIcon() {
 export function EntryContent({ entryId, onBack }: EntryContentProps) {
   const utils = trpc.useUtils();
   const hasMarkedRead = useRef(false);
+  const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
@@ -256,8 +257,13 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
     return <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
   }
 
-  // Prefer cleaned content if available, fall back to original
-  const contentToDisplay = entry.contentCleaned ?? entry.contentOriginal;
+  // Check if both content versions are available for toggle
+  const hasBothVersions = Boolean(entry.contentCleaned && entry.contentOriginal);
+
+  // Select content based on toggle state
+  const contentToDisplay = showOriginal
+    ? entry.contentOriginal
+    : (entry.contentCleaned ?? entry.contentOriginal);
 
   // Sanitize HTML content
   const sanitizedContent = contentToDisplay
@@ -335,6 +341,18 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
             <StarIcon filled={entry.starred} />
             <span className="ml-2">{entry.starred ? "Starred" : "Star"}</span>
           </Button>
+
+          {/* Content view toggle - only show when both versions exist */}
+          {hasBothVersions && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowOriginal(!showOriginal)}
+              aria-label={showOriginal ? "Show cleaned content" : "Show original content"}
+            >
+              <span>{showOriginal ? "Show Cleaned" : "Show Original"}</span>
+            </Button>
+          )}
 
           {/* Original article link */}
           {entry.url && (
