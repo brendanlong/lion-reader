@@ -27,6 +27,7 @@ export const ErrorCodes = {
   ENTRY_NOT_FOUND: "ENTRY_NOT_FOUND",
   SUBSCRIPTION_NOT_FOUND: "SUBSCRIPTION_NOT_FOUND",
   TAG_NOT_FOUND: "TAG_NOT_FOUND",
+  SAVED_ARTICLE_NOT_FOUND: "SAVED_ARTICLE_NOT_FOUND",
 
   // Validation errors (400)
   VALIDATION_ERROR: "VALIDATION_ERROR",
@@ -49,6 +50,7 @@ export const ErrorCodes = {
   INTERNAL_ERROR: "INTERNAL_ERROR",
   FEED_FETCH_ERROR: "FEED_FETCH_ERROR",
   PARSE_ERROR: "PARSE_ERROR",
+  SAVED_ARTICLE_FETCH_ERROR: "SAVED_ARTICLE_FETCH_ERROR",
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -76,6 +78,7 @@ const errorCodeToTRPCCode: Record<
   ENTRY_NOT_FOUND: "NOT_FOUND",
   SUBSCRIPTION_NOT_FOUND: "NOT_FOUND",
   TAG_NOT_FOUND: "NOT_FOUND",
+  SAVED_ARTICLE_NOT_FOUND: "NOT_FOUND",
   VALIDATION_ERROR: "BAD_REQUEST",
   INVALID_EMAIL: "BAD_REQUEST",
   WEAK_PASSWORD: "BAD_REQUEST",
@@ -90,6 +93,7 @@ const errorCodeToTRPCCode: Record<
   INTERNAL_ERROR: "INTERNAL_SERVER_ERROR",
   FEED_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
   PARSE_ERROR: "INTERNAL_SERVER_ERROR",
+  SAVED_ARTICLE_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
 };
 
 /**
@@ -190,4 +194,12 @@ export const errors = {
 
   parseError: (reason: string) =>
     createError(ErrorCodes.PARSE_ERROR, `Failed to parse feed: ${reason}`),
+
+  savedArticleNotFound: () =>
+    createError(ErrorCodes.SAVED_ARTICLE_NOT_FOUND, "Saved article not found"),
+
+  savedArticleFetchError: (url: string, reason: string) =>
+    createError(ErrorCodes.SAVED_ARTICLE_FETCH_ERROR, `Failed to fetch page: ${reason}`, {
+      url,
+    }),
 };

@@ -592,7 +592,7 @@ See DESIGN.md § Saved Articles for full design.
   - Add indexes for user listing, unread, and starred
   - Update Drizzle schema with types
 
-- [ ] **Implement saved articles CRUD API**
+- [x] **Implement saved articles CRUD API**
   - POST /v1/saved - save URL (fetch page, extract metadata, run Readability)
   - GET /v1/saved - list with cursor pagination, unreadOnly/starredOnly filters
   - GET /v1/saved/:id - get single saved article with content

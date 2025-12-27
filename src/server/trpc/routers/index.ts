@@ -10,3 +10,4 @@ export { subscriptionsRouter } from "./subscriptions";
 export { entriesRouter } from "./entries";
 export { feedsRouter } from "./feeds";
 export { tagsRouter } from "./tags";
+export { savedRouter } from "./saved";
