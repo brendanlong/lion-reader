@@ -213,7 +213,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 5.3 Entry List UI
 
-- [ ] **Create entry list component**
+- [x] **Create entry list component**
   - Build entry list with items showing title, feed, date, preview
   - Show read/unread indicator (filled/empty circle)
   - Show starred indicator
