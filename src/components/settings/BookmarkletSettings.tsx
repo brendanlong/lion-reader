@@ -1,0 +1,144 @@
+/**
+ * BookmarkletSettings Component
+ *
+ * Settings section for the "Save to Lion Reader" bookmarklet.
+ * Provides a draggable link that users can add to their bookmarks bar,
+ * installation instructions, and optionally shows the raw bookmarklet code.
+ */
+
+"use client";
+
+import { useState, useMemo } from "react";
+
+export function BookmarkletSettings() {
+  const [showCode, setShowCode] = useState(false);
+
+  // Generate the bookmarklet URL using the app's base URL
+  const { bookmarkletHref, appUrl } = useMemo(() => {
+    // Use NEXT_PUBLIC_APP_URL if available, otherwise use window.location.origin
+    const baseUrl =
+      typeof window !== "undefined"
+        ? process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+        : "";
+
+    // The bookmarklet JavaScript - opens the save page in a popup window
+    const bookmarkletCode = `javascript:(function(){window.open('${baseUrl}/save?url='+encodeURIComponent(location.href),'save','width=400,height=300')})();`;
+
+    return {
+      bookmarkletHref: bookmarkletCode,
+      appUrl: baseUrl,
+    };
+  }, []);
+
+  return (
+    <section>
+      <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        Save to Lion Reader
+      </h2>
+      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Description */}
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Use the bookmarklet to save any webpage to your Lion Reader with one click. The article
+          will be added to your Saved section where you can read it later.
+        </p>
+
+        {/* Draggable Bookmarklet Link */}
+        <div className="mt-6">
+          <p className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Drag this button to your bookmarks bar:
+          </p>
+          <a
+            href={bookmarkletHref}
+            onClick={(e) => e.preventDefault()}
+            draggable
+            className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 shadow-sm transition-all hover:border-amber-400 hover:bg-amber-100 hover:shadow active:scale-95 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:border-amber-600 dark:hover:bg-amber-900"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+              />
+            </svg>
+            Save to Lion Reader
+          </a>
+        </div>
+
+        {/* Installation Instructions */}
+        <div className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+          <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            Installation Instructions
+          </h3>
+          <ol className="mt-2 list-inside list-decimal space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <li>Make sure your browser&apos;s bookmarks bar is visible</li>
+            <li>
+              Drag the{" "}
+              <strong className="text-zinc-900 dark:text-zinc-200">
+                &quot;Save to Lion Reader&quot;
+              </strong>{" "}
+              button above to your bookmarks bar
+            </li>
+            <li>
+              When you find an article you want to save, click the bookmarklet in your bookmarks bar
+            </li>
+            <li>A popup will appear confirming the article has been saved</li>
+          </ol>
+        </div>
+
+        {/* Show/Hide Code Section */}
+        <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+          <button
+            type="button"
+            onClick={() => setShowCode(!showCode)}
+            className="inline-flex items-center gap-2 text-sm font-medium text-zinc-700 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50"
+          >
+            <svg
+              className={`h-4 w-4 transition-transform ${showCode ? "rotate-90" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            {showCode ? "Hide bookmarklet code" : "Show bookmarklet code"}
+          </button>
+
+          {showCode && (
+            <div className="mt-4">
+              <p className="mb-2 text-sm text-zinc-500 dark:text-zinc-400">
+                If you prefer, you can manually create a bookmark with this JavaScript code:
+              </p>
+              <div className="relative">
+                <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-100 p-3 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                  <code className="break-all whitespace-pre-wrap">{bookmarkletHref}</code>
+                </pre>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(bookmarkletHref);
+                  }}
+                  className="absolute top-2 right-2 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Note about app URL */}
+        {appUrl && (
+          <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-500">
+            Bookmarklet configured for: {appUrl}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
