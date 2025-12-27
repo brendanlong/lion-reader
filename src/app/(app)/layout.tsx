@@ -8,9 +8,6 @@
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { AppLayoutContent } from "./AppLayoutContent";
 
-// Force dynamic rendering - all app pages require authentication
-export const dynamic = "force-dynamic";
-
 interface AppLayoutProps {
   children: React.ReactNode;
 }
