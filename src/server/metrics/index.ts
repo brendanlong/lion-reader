@@ -6,4 +6,12 @@
  * METRICS_ENABLED=true in environment variables.
  */
 
-export { metricsEnabled, registry, trackMetric } from "./metrics";
+export {
+  metricsEnabled,
+  registry,
+  trackMetric,
+  httpRequestsTotal,
+  httpRequestDurationSeconds,
+  trackHttpRequest,
+  startHttpTimer,
+} from "./metrics";

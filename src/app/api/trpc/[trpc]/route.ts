@@ -4,11 +4,13 @@
  * This is the main entry point for tRPC requests.
  * All tRPC procedures are accessible at /api/trpc/*
  * Includes rate limit headers in error responses.
+ * Tracks HTTP metrics when METRICS_ENABLED=true.
  */
 
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { TRPCError } from "@trpc/server";
 import { appRouter, createContext } from "@/server/trpc";
+import { startHttpTimer } from "@/server/metrics";
 
 /**
  * Extracts rate limit headers from a tRPC error (if present).
@@ -21,10 +23,33 @@ function extractRateLimitHeaders(error: TRPCError): Record<string, string> {
 }
 
 /**
+ * Normalizes the tRPC path for metrics.
+ * Extracts the procedure name from the URL path.
+ *
+ * Example: /api/trpc/entries.list,entries.get → /api/trpc/entries.list
+ * (For batched requests, we use the first procedure as the path)
+ */
+function normalizeTrpcPath(url: URL): string {
+  const pathname = url.pathname;
+  // Extract procedure from path like /api/trpc/entries.list
+  const trpcPath = pathname.replace("/api/trpc/", "");
+
+  // For batched requests (comma-separated), use the first procedure
+  const firstProcedure = trpcPath.split(",")[0] || "unknown";
+
+  return `/api/trpc/${firstProcedure}`;
+}
+
+/**
  * Handle tRPC requests for all HTTP methods with rate limit header handling.
  */
 const handler = async (req: Request) => {
   let rateLimitHeaders: Record<string, string> = {};
+
+  // Start timing for metrics (no-op if metrics disabled)
+  const url = new URL(req.url);
+  const normalizedPath = normalizeTrpcPath(url);
+  const endTimer = startHttpTimer(req.method, normalizedPath);
 
   const response = await fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -48,6 +73,9 @@ const handler = async (req: Request) => {
             }
           },
   });
+
+  // Record HTTP metrics
+  endTimer(response.status);
 
   // Add rate limit headers to the response
   if (Object.keys(rateLimitHeaders).length > 0) {
