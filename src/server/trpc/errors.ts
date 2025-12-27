@@ -26,6 +26,7 @@ export const ErrorCodes = {
   FEED_NOT_FOUND: "FEED_NOT_FOUND",
   ENTRY_NOT_FOUND: "ENTRY_NOT_FOUND",
   SUBSCRIPTION_NOT_FOUND: "SUBSCRIPTION_NOT_FOUND",
+  TAG_NOT_FOUND: "TAG_NOT_FOUND",
 
   // Validation errors (400)
   VALIDATION_ERROR: "VALIDATION_ERROR",
@@ -74,6 +75,7 @@ const errorCodeToTRPCCode: Record<
   FEED_NOT_FOUND: "NOT_FOUND",
   ENTRY_NOT_FOUND: "NOT_FOUND",
   SUBSCRIPTION_NOT_FOUND: "NOT_FOUND",
+  TAG_NOT_FOUND: "NOT_FOUND",
   VALIDATION_ERROR: "BAD_REQUEST",
   INVALID_EMAIL: "BAD_REQUEST",
   WEAK_PASSWORD: "BAD_REQUEST",
@@ -136,6 +138,8 @@ export const errors = {
 
   subscriptionNotFound: () =>
     createError(ErrorCodes.SUBSCRIPTION_NOT_FOUND, "Subscription not found"),
+
+  tagNotFound: () => createError(ErrorCodes.TAG_NOT_FOUND, "Tag not found"),
 
   validation: (message: string, details?: Record<string, unknown>) =>
     createError(ErrorCodes.VALIDATION_ERROR, message, details),

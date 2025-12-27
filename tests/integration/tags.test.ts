@@ -1,0 +1,649 @@
+/**
+ * Integration tests for the Tags API.
+ *
+ * These tests use a real database to verify tag CRUD operations
+ * and the proper handling of user isolation and authorization.
+ */
+
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { eq, and } from "drizzle-orm";
+import { db } from "../../src/server/db";
+import { users, tags, subscriptions, subscriptionTags, feeds } from "../../src/server/db/schema";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createCaller } from "../../src/server/trpc/root";
+import type { Context } from "../../src/server/trpc/context";
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/**
+ * Creates a test user and returns their ID.
+ */
+async function createTestUser(email: string): Promise<string> {
+  const userId = generateUuidv7();
+  await db.insert(users).values({
+    id: userId,
+    email,
+    passwordHash: "test-hash",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return userId;
+}
+
+/**
+ * Creates an authenticated context for a test user.
+ */
+function createAuthContext(userId: string): Context {
+  const now = new Date();
+  return {
+    db,
+    session: {
+      session: {
+        id: generateUuidv7(),
+        userId,
+        tokenHash: "test-hash",
+        userAgent: null,
+        ipAddress: null,
+        createdAt: now,
+        expiresAt: new Date(Date.now() + 3600000),
+        revokedAt: null,
+        lastActiveAt: now,
+      },
+      user: {
+        id: userId,
+        email: `${userId}@test.com`,
+        emailVerifiedAt: null,
+        passwordHash: "test-hash",
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
+    sessionToken: "test-token",
+    headers: new Headers(),
+  };
+}
+
+/**
+ * Creates a test feed and returns its ID.
+ */
+async function createTestFeed(url: string): Promise<string> {
+  const feedId = generateUuidv7();
+  await db.insert(feeds).values({
+    id: feedId,
+    type: "rss",
+    url,
+    title: `Test Feed ${feedId}`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return feedId;
+}
+
+/**
+ * Creates a test subscription for a user and feed.
+ */
+async function createTestSubscription(userId: string, feedId: string): Promise<string> {
+  const subscriptionId = generateUuidv7();
+  await db.insert(subscriptions).values({
+    id: subscriptionId,
+    userId,
+    feedId,
+    subscribedAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return subscriptionId;
+}
+
+/**
+ * Links a tag to a subscription.
+ */
+async function linkTagToSubscription(tagId: string, subscriptionId: string): Promise<void> {
+  await db.insert(subscriptionTags).values({
+    tagId,
+    subscriptionId,
+    createdAt: new Date(),
+  });
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+describe("Tags API", () => {
+  // Clean up tables before each test
+  beforeEach(async () => {
+    await db.delete(subscriptionTags);
+    await db.delete(tags);
+    await db.delete(subscriptions);
+    await db.delete(feeds);
+    await db.delete(users);
+  });
+
+  // Clean up after all tests
+  afterAll(async () => {
+    await db.delete(subscriptionTags);
+    await db.delete(tags);
+    await db.delete(subscriptions);
+    await db.delete(feeds);
+    await db.delete(users);
+  });
+
+  describe("tags.list", () => {
+    it("returns empty list for user with no tags", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.list();
+
+      expect(result.items).toEqual([]);
+    });
+
+    it("returns tags for the authenticated user only", async () => {
+      const userId1 = await createTestUser("user1@test.com");
+      const userId2 = await createTestUser("user2@test.com");
+
+      // Create tags for both users
+      const tag1Id = generateUuidv7();
+      const tag2Id = generateUuidv7();
+      const tag3Id = generateUuidv7();
+
+      await db.insert(tags).values([
+        { id: tag1Id, userId: userId1, name: "Tech", color: "#ff6b6b", createdAt: new Date() },
+        { id: tag2Id, userId: userId1, name: "News", color: "#4ecdc4", createdAt: new Date() },
+        { id: tag3Id, userId: userId2, name: "Sports", color: "#45b7d1", createdAt: new Date() },
+      ]);
+
+      const ctx1 = createAuthContext(userId1);
+      const caller1 = createCaller(ctx1);
+      const result1 = await caller1.tags.list();
+
+      // User 1 should only see their own tags
+      expect(result1.items).toHaveLength(2);
+      expect(result1.items.map((t) => t.name).sort()).toEqual(["News", "Tech"]);
+
+      const ctx2 = createAuthContext(userId2);
+      const caller2 = createCaller(ctx2);
+      const result2 = await caller2.tags.list();
+
+      // User 2 should only see their own tags
+      expect(result2.items).toHaveLength(1);
+      expect(result2.items[0].name).toBe("Sports");
+    });
+
+    it("returns tags with correct feed counts", async () => {
+      const userId = await createTestUser("user1@test.com");
+
+      // Create a tag
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        color: "#ff6b6b",
+        createdAt: new Date(),
+      });
+
+      // Create feeds and subscriptions
+      const feedId1 = await createTestFeed("https://feed1.com/rss");
+      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const subId1 = await createTestSubscription(userId, feedId1);
+      const subId2 = await createTestSubscription(userId, feedId2);
+
+      // Link subscriptions to tag
+      await linkTagToSubscription(tagId, subId1);
+      await linkTagToSubscription(tagId, subId2);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.tags.list();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].feedCount).toBe(2);
+    });
+
+    it("returns tags ordered by name", async () => {
+      const userId = await createTestUser("user1@test.com");
+
+      // Create tags in random order
+      await db.insert(tags).values([
+        { id: generateUuidv7(), userId, name: "Zebra", createdAt: new Date() },
+        { id: generateUuidv7(), userId, name: "Apple", createdAt: new Date() },
+        { id: generateUuidv7(), userId, name: "Middle", createdAt: new Date() },
+      ]);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.tags.list();
+
+      expect(result.items.map((t) => t.name)).toEqual(["Apple", "Middle", "Zebra"]);
+    });
+  });
+
+  describe("tags.create", () => {
+    it("creates a tag with name only", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.create({ name: "Tech" });
+
+      expect(result.tag.name).toBe("Tech");
+      expect(result.tag.color).toBeNull();
+      expect(result.tag.feedCount).toBe(0);
+      expect(result.tag.id).toBeDefined();
+      expect(result.tag.createdAt).toBeInstanceOf(Date);
+
+      // Verify in database
+      const dbTag = await db.select().from(tags).where(eq(tags.id, result.tag.id)).limit(1);
+      expect(dbTag).toHaveLength(1);
+      expect(dbTag[0].name).toBe("Tech");
+      expect(dbTag[0].userId).toBe(userId);
+    });
+
+    it("creates a tag with name and color", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.create({ name: "News", color: "#4ecdc4" });
+
+      expect(result.tag.name).toBe("News");
+      expect(result.tag.color).toBe("#4ecdc4");
+    });
+
+    it("trims whitespace from tag name", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.create({ name: "  Tech  " });
+
+      expect(result.tag.name).toBe("Tech");
+    });
+
+    it("rejects duplicate tag names for the same user", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      await caller.tags.create({ name: "Tech" });
+
+      await expect(caller.tags.create({ name: "Tech" })).rejects.toThrow(
+        "A tag with this name already exists"
+      );
+    });
+
+    it("allows same tag name for different users", async () => {
+      const userId1 = await createTestUser("user1@test.com");
+      const userId2 = await createTestUser("user2@test.com");
+
+      const ctx1 = createAuthContext(userId1);
+      const caller1 = createCaller(ctx1);
+      await caller1.tags.create({ name: "Tech" });
+
+      const ctx2 = createAuthContext(userId2);
+      const caller2 = createCaller(ctx2);
+      const result = await caller2.tags.create({ name: "Tech" });
+
+      expect(result.tag.name).toBe("Tech");
+    });
+
+    it("rejects empty tag name", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.create({ name: "" })).rejects.toThrow();
+    });
+
+    it("rejects tag name that is too long", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const longName = "a".repeat(51);
+      await expect(caller.tags.create({ name: longName })).rejects.toThrow();
+    });
+
+    it("rejects invalid color format", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.create({ name: "Tech", color: "red" })).rejects.toThrow();
+      await expect(caller.tags.create({ name: "Tech", color: "#fff" })).rejects.toThrow();
+      await expect(caller.tags.create({ name: "Tech", color: "ff6b6b" })).rejects.toThrow();
+    });
+  });
+
+  describe("tags.update", () => {
+    it("updates tag name", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        createdAt: new Date(),
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.update({ id: tagId, name: "Technology" });
+
+      expect(result.tag.name).toBe("Technology");
+    });
+
+    it("updates tag color", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        color: "#ff6b6b",
+        createdAt: new Date(),
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.update({ id: tagId, color: "#4ecdc4" });
+
+      expect(result.tag.color).toBe("#4ecdc4");
+    });
+
+    it("removes tag color when set to null", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        color: "#ff6b6b",
+        createdAt: new Date(),
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.update({ id: tagId, color: null });
+
+      expect(result.tag.color).toBeNull();
+    });
+
+    it("updates both name and color", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        color: "#ff6b6b",
+        createdAt: new Date(),
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.update({
+        id: tagId,
+        name: "Technology",
+        color: "#4ecdc4",
+      });
+
+      expect(result.tag.name).toBe("Technology");
+      expect(result.tag.color).toBe("#4ecdc4");
+    });
+
+    it("returns correct feed count after update", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        createdAt: new Date(),
+      });
+
+      // Create feed, subscription, and link
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      await linkTagToSubscription(tagId, subId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.update({ id: tagId, name: "Technology" });
+
+      expect(result.tag.feedCount).toBe(1);
+    });
+
+    it("throws error when tag not found", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const nonExistentId = generateUuidv7();
+      await expect(caller.tags.update({ id: nonExistentId, name: "New Name" })).rejects.toThrow(
+        "Tag not found"
+      );
+    });
+
+    it("throws error when updating another user's tag", async () => {
+      const userId1 = await createTestUser("user1@test.com");
+      const userId2 = await createTestUser("user2@test.com");
+
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId: userId1,
+        name: "Tech",
+        createdAt: new Date(),
+      });
+
+      // User 2 tries to update User 1's tag
+      const ctx = createAuthContext(userId2);
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.update({ id: tagId, name: "Hacked" })).rejects.toThrow(
+        "Tag not found"
+      );
+    });
+
+    it("rejects duplicate name when updating", async () => {
+      const userId = await createTestUser("user1@test.com");
+
+      await db.insert(tags).values([
+        { id: generateUuidv7(), userId, name: "Tech", createdAt: new Date() },
+        { id: generateUuidv7(), userId, name: "News", createdAt: new Date() },
+      ]);
+
+      const techTag = await db
+        .select()
+        .from(tags)
+        .where(and(eq(tags.userId, userId), eq(tags.name, "Tech")))
+        .limit(1);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.update({ id: techTag[0].id, name: "News" })).rejects.toThrow(
+        "A tag with this name already exists"
+      );
+    });
+
+    it("allows keeping the same name when updating only color", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        createdAt: new Date(),
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // This should not throw even though the name "Tech" exists
+      const result = await caller.tags.update({ id: tagId, color: "#ff6b6b" });
+
+      expect(result.tag.name).toBe("Tech");
+      expect(result.tag.color).toBe("#ff6b6b");
+    });
+  });
+
+  describe("tags.delete", () => {
+    it("deletes a tag", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        createdAt: new Date(),
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.tags.delete({ id: tagId });
+
+      expect(result.success).toBe(true);
+
+      // Verify tag is deleted
+      const dbTag = await db.select().from(tags).where(eq(tags.id, tagId)).limit(1);
+      expect(dbTag).toHaveLength(0);
+    });
+
+    it("cascades deletion to subscription_tags", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId,
+        name: "Tech",
+        createdAt: new Date(),
+      });
+
+      // Create feed, subscription, and link
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      await linkTagToSubscription(tagId, subId);
+
+      // Verify link exists
+      const linksBefore = await db
+        .select()
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.tagId, tagId));
+      expect(linksBefore).toHaveLength(1);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      await caller.tags.delete({ id: tagId });
+
+      // Verify link is deleted
+      const linksAfter = await db
+        .select()
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.tagId, tagId));
+      expect(linksAfter).toHaveLength(0);
+
+      // Verify subscription still exists
+      const sub = await db.select().from(subscriptions).where(eq(subscriptions.id, subId)).limit(1);
+      expect(sub).toHaveLength(1);
+    });
+
+    it("throws error when tag not found", async () => {
+      const userId = await createTestUser("user1@test.com");
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const nonExistentId = generateUuidv7();
+      await expect(caller.tags.delete({ id: nonExistentId })).rejects.toThrow("Tag not found");
+    });
+
+    it("throws error when deleting another user's tag", async () => {
+      const userId1 = await createTestUser("user1@test.com");
+      const userId2 = await createTestUser("user2@test.com");
+
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({
+        id: tagId,
+        userId: userId1,
+        name: "Tech",
+        createdAt: new Date(),
+      });
+
+      // User 2 tries to delete User 1's tag
+      const ctx = createAuthContext(userId2);
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.delete({ id: tagId })).rejects.toThrow("Tag not found");
+
+      // Verify tag still exists
+      const dbTag = await db.select().from(tags).where(eq(tags.id, tagId)).limit(1);
+      expect(dbTag).toHaveLength(1);
+    });
+  });
+
+  describe("authentication", () => {
+    it("requires authentication for list", async () => {
+      const ctx: Context = {
+        db,
+        session: null,
+        sessionToken: null,
+        headers: new Headers(),
+      };
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.list()).rejects.toThrow("You must be logged in");
+    });
+
+    it("requires authentication for create", async () => {
+      const ctx: Context = {
+        db,
+        session: null,
+        sessionToken: null,
+        headers: new Headers(),
+      };
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.create({ name: "Tech" })).rejects.toThrow("You must be logged in");
+    });
+
+    it("requires authentication for update", async () => {
+      const ctx: Context = {
+        db,
+        session: null,
+        sessionToken: null,
+        headers: new Headers(),
+      };
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.update({ id: generateUuidv7(), name: "Tech" })).rejects.toThrow(
+        "You must be logged in"
+      );
+    });
+
+    it("requires authentication for delete", async () => {
+      const ctx: Context = {
+        db,
+        session: null,
+        sessionToken: null,
+        headers: new Headers(),
+      };
+      const caller = createCaller(ctx);
+
+      await expect(caller.tags.delete({ id: generateUuidv7() })).rejects.toThrow(
+        "You must be logged in"
+      );
+    });
+  });
+});
