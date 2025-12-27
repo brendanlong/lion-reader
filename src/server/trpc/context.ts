@@ -27,6 +27,11 @@ export interface Context {
    * Useful for logout to revoke the current session.
    */
   sessionToken: string | null;
+  /**
+   * Rate limit response headers (set by rate limiting middleware).
+   * Applied to the response after processing.
+   */
+  rateLimitHeaders?: Record<string, string>;
 }
 
 /**
