@@ -80,11 +80,9 @@ export function cleanContent(
 
   try {
     // Parse HTML into a DOM
+    // Note: We explicitly don't fetch external resources to avoid blocking on slow/unresponsive servers
     const dom = new JSDOM(html, {
       url,
-      // Don't run scripts or fetch resources
-      runScripts: "outside-only",
-      resources: "usable",
     });
 
     const document = dom.window.document;
