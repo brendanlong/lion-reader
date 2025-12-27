@@ -3,25 +3,54 @@
  *
  * Allows users to subscribe to new feeds.
  * Provides URL input with feed preview before confirming subscription.
+ * If the URL is not a direct feed, automatically discovers feeds on the page.
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface DiscoveredFeed {
+  url: string;
+  type: "rss" | "atom" | "json" | "unknown";
+  title?: string;
+}
+
+type Step = "input" | "discovery" | "preview";
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export default function SubscribePage() {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState<string | undefined>();
-  const [step, setStep] = useState<"input" | "preview">("input");
+  const [step, setStep] = useState<Step>("input");
+  const [discoveredFeeds, setDiscoveredFeeds] = useState<DiscoveredFeed[]>([]);
+  const [selectedFeedUrl, setSelectedFeedUrl] = useState<string | null>(null);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
 
   // Preview query - only runs when we explicitly call refetch
   const previewQuery = trpc.feeds.preview.useQuery(
+    { url: selectedFeedUrl || url },
+    {
+      enabled: false,
+      retry: false,
+    }
+  );
+
+  // Discovery query - only runs when we explicitly call refetch
+  const discoverQuery = trpc.feeds.discover.useQuery(
     { url },
     {
       enabled: false,
@@ -58,23 +87,85 @@ export default function SubscribePage() {
     return true;
   };
 
+  /**
+   * Checks if an error indicates we should try discovery
+   */
+  const shouldTryDiscovery = useCallback((error: { message: string }): boolean => {
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("no feeds found") ||
+      message.includes("failed to parse feed") ||
+      message.includes("invalid feed format")
+    );
+  }, []);
+
   const handlePreview = async () => {
     if (!validateUrl(url)) {
       return;
     }
 
+    // Reset state
+    setSelectedFeedUrl(null);
+    setDiscoveredFeeds([]);
+    setDiscoveryError(null);
+
+    // First, try to preview directly
     const result = await previewQuery.refetch();
+
+    if (result.data) {
+      // Direct preview succeeded
+      setStep("preview");
+      return;
+    }
+
+    // If preview failed, check if we should try discovery
+    if (result.error && shouldTryDiscovery(result.error)) {
+      // Try discovery
+      const discoverResult = await discoverQuery.refetch();
+
+      if (discoverResult.data && discoverResult.data.feeds.length > 0) {
+        // Found feeds via discovery
+        setDiscoveredFeeds(discoverResult.data.feeds);
+        setStep("discovery");
+        return;
+      }
+
+      // No feeds found anywhere
+      setDiscoveryError(
+        "We couldn't find any feeds at this URL. Please check the URL and try again, or enter a direct feed URL."
+      );
+    }
+    // If preview failed for other reasons (network error, etc.), the error will be shown via previewQuery.error
+  };
+
+  const handleSelectFeed = async (feedUrl: string) => {
+    setSelectedFeedUrl(feedUrl);
+
+    // Preview the selected feed
+    const result = await previewQuery.refetch();
+
     if (result.data) {
       setStep("preview");
     }
+    // If preview fails, error will be shown via previewQuery.error
   };
 
   const handleSubscribe = () => {
-    subscribeMutation.mutate({ url: previewQuery.data?.feed.url ?? url });
+    subscribeMutation.mutate({ url: previewQuery.data?.feed.url ?? selectedFeedUrl ?? url });
   };
 
   const handleBack = () => {
-    setStep("input");
+    if (step === "preview" && discoveredFeeds.length > 0) {
+      // Go back to discovery if we came from there
+      setStep("discovery");
+      setSelectedFeedUrl(null);
+    } else {
+      // Go back to input
+      setStep("input");
+      setSelectedFeedUrl(null);
+      setDiscoveredFeeds([]);
+      setDiscoveryError(null);
+    }
   };
 
   const formatDate = (date: Date | null) => {
@@ -85,22 +176,52 @@ export default function SubscribePage() {
     }).format(date);
   };
 
+  const getFeedTypeLabel = (type: "rss" | "atom" | "json" | "unknown"): string => {
+    switch (type) {
+      case "rss":
+        return "RSS";
+      case "atom":
+        return "Atom";
+      case "json":
+        return "JSON Feed";
+      default:
+        return "Feed";
+    }
+  };
+
+  const isLoading = previewQuery.isFetching || discoverQuery.isFetching;
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:p-6">
       <h1 className="mb-4 text-xl font-bold text-zinc-900 sm:mb-6 sm:text-2xl dark:text-zinc-50">
         Subscribe to Feed
       </h1>
 
-      {step === "input" ? (
+      {step === "input" && (
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
             Enter the URL of an RSS or Atom feed, or a website that has a feed. We&apos;ll
             automatically discover the feed if possible.
           </p>
 
-          {previewQuery.error && (
+          {/* Show discovery error if no feeds were found */}
+          {discoveryError && (
+            <Alert variant="error" className="mb-4">
+              {discoveryError}
+            </Alert>
+          )}
+
+          {/* Show preview error only if it's not a "should try discovery" type error */}
+          {previewQuery.error && !shouldTryDiscovery(previewQuery.error) && (
             <Alert variant="error" className="mb-4">
               {previewQuery.error.message}
+            </Alert>
+          )}
+
+          {/* Show discover error if fetch itself failed */}
+          {discoverQuery.error && (
+            <Alert variant="error" className="mb-4">
+              {discoverQuery.error.message}
             </Alert>
           )}
 
@@ -120,18 +241,134 @@ export default function SubscribePage() {
               onChange={(e) => {
                 setUrl(e.target.value);
                 if (urlError) setUrlError(undefined);
+                if (discoveryError) setDiscoveryError(null);
               }}
               error={urlError}
               autoComplete="url"
-              disabled={previewQuery.isFetching}
+              disabled={isLoading}
             />
 
-            <Button type="submit" className="w-full" loading={previewQuery.isFetching}>
+            <Button type="submit" className="w-full" loading={isLoading}>
               Preview Feed
             </Button>
           </form>
         </div>
-      ) : (
+      )}
+
+      {step === "discovery" && (
+        <div className="space-y-4">
+          {/* Discovery Results Card */}
+          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="mb-4 flex items-center gap-2">
+              <svg
+                className="h-5 w-5 text-green-600 dark:text-green-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                We found {discoveredFeeds.length} feed{discoveredFeeds.length !== 1 ? "s" : ""} on
+                this site
+              </h2>
+            </div>
+
+            <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+              Select a feed to preview and subscribe:
+            </p>
+
+            {/* Show error if preview of selected feed failed */}
+            {selectedFeedUrl && previewQuery.error && (
+              <Alert variant="error" className="mb-4">
+                {previewQuery.error.message}
+              </Alert>
+            )}
+
+            {/* Feed selection list */}
+            <div className="space-y-2">
+              {discoveredFeeds.map((feed) => (
+                <button
+                  key={feed.url}
+                  type="button"
+                  onClick={() => handleSelectFeed(feed.url)}
+                  disabled={isLoading}
+                  className={`w-full rounded-lg border p-4 text-left transition-colors ${
+                    selectedFeedUrl === feed.url
+                      ? "border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-800"
+                      : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+                  } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-zinc-900 dark:text-zinc-50">
+                          {feed.title || "Untitled Feed"}
+                        </p>
+                        <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
+                          {getFeedTypeLabel(feed.type)}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                        {feed.url}
+                      </p>
+                    </div>
+                    {selectedFeedUrl === feed.url && isLoading ? (
+                      <svg
+                        className="h-5 w-5 animate-spin text-zinc-500"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="h-5 w-5 text-zinc-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Back button */}
+          <div className="flex">
+            <Button variant="secondary" onClick={handleBack} disabled={isLoading}>
+              Back
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === "preview" && (
         <div className="space-y-4">
           {/* Feed Preview Card */}
           <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">

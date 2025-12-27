@@ -489,7 +489,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Return multiple discovered feeds with metadata
   - Write unit tests
 
-- [ ] **Enhance subscribe UI with discovery**
+- [x] **Enhance subscribe UI with discovery**
   - If URL is not a feed, auto-run discovery
   - Show "We found X feeds on this site" UI
   - Let user choose which feed to subscribe to
