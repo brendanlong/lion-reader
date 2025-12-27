@@ -1590,7 +1590,7 @@ For social features (sharing article collections), a separate "Lists" feature ca
 
 ## Audio Narration
 
-Listen to articles using on-device text-to-speech. Content is preprocessed by an LLM to improve pronunciation and readability.
+Listen to articles using on-device text-to-speech. Content is preprocessed by an LLM to improve pronunciation and readability. Works for both feed entries and saved articles.
 
 See [docs/narration-design.md](./narration-design.md) for full implementation details.
 
@@ -1613,26 +1613,36 @@ UI Highlighter  ←  Media Session API  ←  Web Speech API (on-device)
 ### Schema Changes
 
 ```sql
+-- Add to both entries and saved_articles tables
 ALTER TABLE entries ADD COLUMN content_narration text;
 ALTER TABLE entries ADD COLUMN narration_generated_at timestamptz;
+ALTER TABLE entries ADD COLUMN narration_error text;
+ALTER TABLE entries ADD COLUMN narration_error_at timestamptz;
+
+-- Same columns on saved_articles
 ```
 
 ### API
 
 ```
-narration.generate   POST  /v1/narration/generate  { entryId } → { narration, cached, source }
+narration.generate   POST  /v1/narration/generate
+  Input: { type: 'entry' | 'saved', id: uuid }
+  Output: { narration, cached, source }
 ```
 
 - Returns cached narration if available
-- Falls back to basic HTML→text conversion if Groq unavailable
+- Falls back to basic HTML→text conversion if Groq unavailable or errored
+- Stores errors and allows retry after 1 hour
 - Indicates source: `'llm'` or `'fallback'`
 
 ### Client Integration
 
 - **Web Speech API**: Paragraph-based playback using `SpeechSynthesisUtterance`
 - **Media Session API**: OS-level controls (lock screen, media keys)
-- **Voice Settings**: User-selectable browser voices with rate/pitch controls
+- **Voice Settings**: User-selectable browser voices with rate/pitch controls (localStorage)
 - **Playback Controls**: Play/pause/skip in article view
+- **Feature Detection**: Hide controls in unsupported browsers
+- **Keyboard Shortcuts**: `p` play/pause, `Shift+N/P` skip paragraphs
 
 ### Privacy
 
