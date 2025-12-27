@@ -22,6 +22,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, detectFeedType } from "@/server/feed";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import { createInitialFetchJob } from "@/server/jobs/handlers";
+import { publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 import type { FeedType } from "@/server/feed";
 
@@ -326,6 +327,12 @@ export const subscriptionsRouter = createTRPCRouter({
           updatedAt: subscribedAt,
         });
       }
+
+      // Publish subscription_created event to notify all of the user's SSE connections
+      // This ensures other browser tabs/devices will receive new_entry events for this feed
+      publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
+        logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+      });
 
       return {
         subscription: {
@@ -874,8 +881,11 @@ export const subscriptionsRouter = createTRPCRouter({
           const now = new Date();
           const subscriptionId = generateUuidv7();
 
+          let actualSubscriptionId = subscriptionId;
+
           if (existingSub.length > 0 && existingSub[0].unsubscribedAt !== null) {
             // Reactivate soft-deleted subscription
+            actualSubscriptionId = existingSub[0].id;
             await ctx.db
               .update(subscriptions)
               .set({
@@ -883,7 +893,7 @@ export const subscriptionsRouter = createTRPCRouter({
                 subscribedAt: now,
                 updatedAt: now,
               })
-              .where(eq(subscriptions.id, existingSub[0].id));
+              .where(eq(subscriptions.id, actualSubscriptionId));
           } else if (existingSub.length === 0) {
             // Create new subscription
             await ctx.db.insert(subscriptions).values({
@@ -895,6 +905,11 @@ export const subscriptionsRouter = createTRPCRouter({
               updatedAt: now,
             });
           }
+
+          // Publish subscription_created event (fire and forget)
+          publishSubscriptionCreated(userId, feedId, actualSubscriptionId).catch((err) => {
+            logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+          });
 
           // Add to existing URLs set to prevent duplicates within this import
           existingUrls.add(feedUrl);

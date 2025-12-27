@@ -17,8 +17,11 @@ import { validateSession } from "@/server/auth";
 import {
   createSubscriberClient,
   FEED_EVENTS_CHANNEL,
+  getUserEventsChannel,
   parseFeedEvent,
+  parseUserEvent,
   type FeedEvent,
+  type UserEvent,
 } from "@/server/redis/pubsub";
 import { eq, and, isNull } from "drizzle-orm";
 import {
@@ -81,9 +84,16 @@ async function getUserFeedIds(userId: string): Promise<Set<string>> {
 }
 
 /**
- * Formats an SSE event message.
+ * Formats an SSE event message for feed events.
  */
-function formatSSEEvent(event: FeedEvent): string {
+function formatSSEFeedEvent(event: FeedEvent): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+/**
+ * Formats an SSE event message for user events.
+ */
+function formatSSEUserEvent(event: UserEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
@@ -140,8 +150,11 @@ export async function GET(req: Request): Promise<Response> {
 
   const userId = sessionData.user.id;
 
-  // Get user's subscribed feed IDs
+  // Get user's subscribed feed IDs (mutable - will be updated on new subscriptions)
   const feedIds = await getUserFeedIds(userId);
+
+  // Get the user-specific events channel
+  const userEventsChannel = getUserEventsChannel(userId);
 
   // Create readable stream for SSE
   const stream = new ReadableStream({
@@ -204,9 +217,12 @@ export async function GET(req: Request): Promise<Response> {
       try {
         subscriber = createSubscriberClient();
 
-        // Subscribe to the feed events channel
-        subscriber.subscribe(FEED_EVENTS_CHANNEL).catch((err) => {
-          console.error("Failed to subscribe to feed events:", err);
+        // Subscribe to both the feed events channel and user-specific channel
+        Promise.all([
+          subscriber.subscribe(FEED_EVENTS_CHANNEL),
+          subscriber.subscribe(userEventsChannel),
+        ]).catch((err) => {
+          console.error("Failed to subscribe to channels:", err);
           cleanup();
           try {
             controller.error(err);
@@ -217,15 +233,32 @@ export async function GET(req: Request): Promise<Response> {
 
         // Handle incoming messages
         subscriber.on("message", (channel: string, message: string) => {
-          if (channel !== FEED_EVENTS_CHANNEL) return;
+          // Handle feed events (new_entry, entry_updated)
+          if (channel === FEED_EVENTS_CHANNEL) {
+            const event = parseFeedEvent(message);
+            if (!event) return;
 
-          const event = parseFeedEvent(message);
-          if (!event) return;
+            // Only forward events for feeds the user is subscribed to
+            if (feedIds.has(event.feedId)) {
+              send(formatSSEFeedEvent(event));
+              trackSSEEventSent(event.type);
+            }
+            return;
+          }
 
-          // Only forward events for feeds the user is subscribed to
-          if (feedIds.has(event.feedId)) {
-            send(formatSSEEvent(event));
-            trackSSEEventSent(event.type);
+          // Handle user events (subscription_created)
+          if (channel === userEventsChannel) {
+            const event = parseUserEvent(message);
+            if (!event) return;
+
+            if (event.type === "subscription_created") {
+              // Add the new feed to our filter set so we receive its events
+              feedIds.add(event.feedId);
+
+              // Forward the event to the client
+              send(formatSSEUserEvent(event));
+              trackSSEEventSent(event.type);
+            }
           }
         });
 
