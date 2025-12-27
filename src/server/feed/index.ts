@@ -74,4 +74,16 @@ export {
   type CleanedContent,
   type CleanContentOptions,
 } from "./content-cleaner";
-export { canUseWebSub, getWebsubCallbackBaseUrl, generateCallbackUrl } from "./websub";
+export {
+  canUseWebSub,
+  getWebsubCallbackBaseUrl,
+  generateCallbackUrl,
+  generateCallbackSecret,
+  subscribeToHub,
+  handleVerificationChallenge,
+  verifyHmacSignature,
+  getActiveSubscription,
+  unsubscribeFromHub,
+  type SubscribeToHubResult,
+  type VerificationResult,
+} from "./websub";

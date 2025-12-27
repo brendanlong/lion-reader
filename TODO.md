@@ -554,14 +554,14 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 11.4 WebSub Subscription Flow
 
-- [ ] **Implement WebSub subscription**
+- [x] **Implement WebSub subscription**
   - Generate unique callback URLs with secrets
   - POST subscription request to hub
   - Handle verification callback (GET with challenge)
   - Update subscription status on verification
   - Write integration tests (with mock hub)
 
-- [ ] **Implement WebSub callback handling**
+- [x] **Implement WebSub callback handling**
   - POST /api/webhooks/websub/:feedId - receive content
   - Verify HMAC signature
   - Parse and process pushed entries
