@@ -1,7 +1,8 @@
 /**
  * Settings Page
  *
- * Main account settings page showing user info and change password form.
+ * Main account settings page showing user info, change password form,
+ * and OPML import/export functionality.
  */
 
 "use client";
@@ -9,6 +10,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
+import { OpmlImportExport } from "@/components/settings";
 
 export default function SettingsPage() {
   const userQuery = trpc.auth.me.useQuery();
@@ -86,6 +88,9 @@ export default function SettingsPage() {
 
       {/* Change Password Section */}
       <ChangePasswordForm />
+
+      {/* OPML Import/Export Section */}
+      <OpmlImportExport />
     </div>
   );
 }
