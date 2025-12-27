@@ -19,6 +19,11 @@ import {
   isGroqAvailable,
 } from "@/server/services/narration";
 import { logger } from "@/lib/logger";
+import {
+  trackNarrationGenerated,
+  trackNarrationGenerationError,
+  startNarrationGenerationTimer,
+} from "@/server/metrics";
 
 // ============================================================================
 // Constants
@@ -166,6 +171,7 @@ export const narrationRouter = createTRPCRouter({
 
       // Handle empty content
       if (!sourceContent.trim()) {
+        trackNarrationGenerated(false, "fallback");
         return {
           narration: "",
           cached: false,
@@ -200,6 +206,7 @@ export const narrationRouter = createTRPCRouter({
 
       // Return cached narration if available
       if (narrationRecord.contentNarration) {
+        trackNarrationGenerated(true, "llm");
         return {
           narration: narrationRecord.contentNarration,
           cached: true,
@@ -214,6 +221,7 @@ export const narrationRouter = createTRPCRouter({
       // If Groq is not configured or we had a recent error, fall back to plain text
       if (!isGroqAvailable() || !canRetryLLM) {
         const fallbackText = htmlToPlainText(sourceContent);
+        trackNarrationGenerated(false, "fallback");
         return {
           narration: fallbackText,
           cached: false,
@@ -221,12 +229,20 @@ export const narrationRouter = createTRPCRouter({
         };
       }
 
+      // Start timer for LLM generation duration
+      const stopTimer = startNarrationGenerationTimer();
+
       try {
         // Generate via LLM
         const result = await generateNarration(sourceContent);
 
+        // Stop the timer after generation completes
+        stopTimer();
+
         // If LLM returned fallback (e.g., empty response), don't cache it
         if (result.source === "fallback") {
+          trackNarrationGenerated(false, "fallback");
+          trackNarrationGenerationError("empty_response");
           return {
             narration: result.text,
             cached: false,
@@ -245,17 +261,24 @@ export const narrationRouter = createTRPCRouter({
           })
           .where(eq(narrationContent.id, narrationRecord.id));
 
+        trackNarrationGenerated(false, "llm");
         return {
           narration: result.text,
           cached: false,
           source: "llm" as const,
         };
       } catch (error) {
+        // Stop the timer even on error
+        stopTimer();
+
         // Log the error
         logger.error("Narration generation failed", {
           contentHash,
           error: error instanceof Error ? error.message : String(error),
         });
+
+        // Track the error
+        trackNarrationGenerationError("api_error");
 
         // Store error in narration_content for retry tracking
         await ctx.db
@@ -268,6 +291,7 @@ export const narrationRouter = createTRPCRouter({
 
         // Fall back to plain text
         const fallbackText = htmlToPlainText(sourceContent);
+        trackNarrationGenerated(false, "fallback");
         return {
           narration: fallbackText,
           cached: false,
