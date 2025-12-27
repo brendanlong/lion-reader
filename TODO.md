@@ -231,7 +231,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 5.5 App Layout
 
-- [ ] **Create main app layout**
+- [x] **Create main app layout**
   - Build app shell with sidebar and main content area
   - Create header with subscribe button and user menu
   - Implement /all route (all entries)
