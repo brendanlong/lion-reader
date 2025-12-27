@@ -205,20 +205,6 @@ const canRetry = !narration.error_at ||
   Date.now() - narration.error_at.getTime() > 60 * 60 * 1000;
 ```
 
-### Cleanup
-
-Orphaned narration records (no entries or saved_articles reference them) can be cleaned up periodically:
-
-```sql
--- Find orphaned narration content (run periodically)
-DELETE FROM narration_content nc
-WHERE NOT EXISTS (
-  SELECT 1 FROM entries e WHERE e.content_hash = nc.content_hash
-) AND NOT EXISTS (
-  SELECT 1 FROM saved_articles sa WHERE sa.content_hash = nc.content_hash
-);
-```
-
 ### Future Schema (for sync and highlighting)
 
 ```sql
@@ -783,4 +769,3 @@ narration_rate_setting{bucket}  // 0.5-0.75, 0.75-1.0, 1.0-1.25, etc.
 - [ ] Pre-generation for starred/saved articles
 - [ ] Playback speed presets (1x, 1.25x, 1.5x, 2x)
 - [ ] Skip silence option
-- [ ] Orphaned narration cleanup job
