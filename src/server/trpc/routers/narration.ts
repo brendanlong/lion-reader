@@ -44,13 +44,13 @@ const RETRY_AFTER_MS = 60 * 60 * 1000;
 const uuidSchema = z.string().uuid("Invalid ID");
 
 /**
- * Discriminated union input for narration generation.
+ * Input for narration generation.
  * Supports both feed entries and saved articles.
  */
-const generateInputSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("entry"), id: uuidSchema }),
-  z.object({ type: z.literal("saved"), id: uuidSchema }),
-]);
+const generateInputSchema = z.object({
+  type: z.enum(["entry", "saved"]),
+  id: uuidSchema,
+});
 
 // ============================================================================
 // Output Schemas
