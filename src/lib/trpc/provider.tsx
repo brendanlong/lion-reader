@@ -7,11 +7,44 @@
 
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState, useCallback, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
+import { TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 import { trpc } from "./client";
+
+/**
+ * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
+ */
+function isUnauthorizedError(error: unknown): boolean {
+  if (error instanceof TRPCClientError) {
+    // Check for UNAUTHORIZED tRPC code
+    return error.data?.code === "UNAUTHORIZED";
+  }
+  return false;
+}
+
+/**
+ * Clear the session cookie and redirect to login.
+ * Uses a flag to prevent multiple redirects from concurrent failed requests.
+ */
+let isLoggingOut = false;
+function handleUnauthorizedError() {
+  if (isLoggingOut || typeof window === "undefined") return;
+  isLoggingOut = true;
+
+  // Clear the session cookie
+  document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+
+  // Redirect to login with current path as redirect target
+  const currentPath = window.location.pathname + window.location.search;
+  const redirectParam =
+    currentPath !== "/" && !currentPath.startsWith("/login")
+      ? `?redirect=${encodeURIComponent(currentPath)}`
+      : "";
+  window.location.href = `/login${redirectParam}`;
+}
 
 /**
  * Get the base URL for API requests.
@@ -43,16 +76,31 @@ interface TRPCProviderProps {
  * ```
  */
 export function TRPCProvider({ children }: TRPCProviderProps) {
+  const handleError = useCallback((error: Error) => {
+    if (isUnauthorizedError(error)) {
+      handleUnauthorizedError();
+    }
+  }, []);
+
   const [queryClient] = useState(
     () =>
       new QueryClient({
+        queryCache: new QueryCache({
+          onError: handleError,
+        }),
+        mutationCache: new MutationCache({
+          onError: handleError,
+        }),
         defaultOptions: {
           queries: {
             // With SSR, we usually want to set some default staleTime
             // above 0 to avoid refetching immediately on the client
             staleTime: 60 * 1000, // 1 minute
-            // Retry failed requests once
-            retry: 1,
+            // Retry failed requests once, but not for auth errors
+            retry: (failureCount, error) => {
+              if (isUnauthorizedError(error)) return false;
+              return failureCount < 1;
+            },
           },
         },
       })
