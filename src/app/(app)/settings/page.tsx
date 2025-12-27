@@ -1,22 +1,69 @@
 /**
  * Settings Page
  *
- * Main account settings page showing user info, change password form,
- * and OPML import/export functionality.
+ * Main account settings page showing user info, linked accounts,
+ * change password form, and OPML import/export functionality.
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
-import { OpmlImportExport } from "@/components/settings";
+import { OpmlImportExport, LinkedAccounts } from "@/components/settings";
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const userQuery = trpc.auth.me.useQuery();
+
+  // Handle link success/error query params
+  const linkedProvider = searchParams.get("linked");
+  const linkError = searchParams.get("link_error");
+
+  // Map error codes to user-friendly messages
+  const linkErrorMessage = useMemo(() => {
+    if (!linkError) return null;
+
+    const errorMessages: Record<string, string> = {
+      invalid_state: "Account linking failed. Please try again.",
+      callback_failed: "Failed to complete account linking. Please try again.",
+      provider_not_configured: "This provider is not available.",
+      already_linked: "This account is already linked to another user.",
+    };
+
+    return errorMessages[linkError] || "An error occurred while linking your account.";
+  }, [linkError]);
+
+  const linkSuccessMessage = useMemo(() => {
+    if (!linkedProvider) return null;
+    const providerName =
+      linkedProvider === "google"
+        ? "Google"
+        : linkedProvider === "apple"
+          ? "Apple"
+          : linkedProvider;
+    return `${providerName} account linked successfully!`;
+  }, [linkedProvider]);
+
+  // Clear query params after showing message
+  useEffect(() => {
+    if (linkedProvider || linkError) {
+      const timeoutId = setTimeout(() => {
+        router.replace("/settings", { scroll: false });
+      }, 5000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [linkedProvider, linkError, router]);
 
   return (
     <div className="space-y-8">
+      {/* Link Success/Error Messages */}
+      {linkSuccessMessage && <Alert variant="success">{linkSuccessMessage}</Alert>}
+
+      {linkErrorMessage && <Alert variant="error">{linkErrorMessage}</Alert>}
+
       {/* Account Information Section */}
       <section>
         <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
@@ -85,6 +132,9 @@ export default function SettingsPage() {
           )}
         </div>
       </section>
+
+      {/* Linked Accounts Section */}
+      <LinkedAccounts />
 
       {/* Change Password Section */}
       <ChangePasswordForm />

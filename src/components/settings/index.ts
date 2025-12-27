@@ -5,3 +5,4 @@
  */
 
 export { OpmlImportExport } from "./OpmlImportExport";
+export { LinkedAccounts } from "./LinkedAccounts";

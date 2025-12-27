@@ -7,13 +7,14 @@
 
 import { z } from "zod";
 import * as argon2 from "argon2";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 import {
   createTRPCRouter,
   publicProcedure,
   protectedProcedure,
   expensivePublicProcedure,
+  expensiveProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
 import { users, sessions } from "@/server/db/schema";
@@ -897,6 +898,275 @@ export const authRouter = createTRPCRouter({
       if (ctx.sessionToken) {
         await revokeSessionByToken(ctx.sessionToken);
       }
+
+      return { success: true };
+    }),
+
+  /**
+   * Link Google OAuth to existing account.
+   *
+   * Similar to googleCallback but requires the user to be authenticated
+   * and links the OAuth account to the current user rather than creating
+   * a new account or finding an existing one.
+   *
+   * @param code - The authorization code from Google
+   * @param state - The state parameter (must match the one from googleAuthUrl)
+   * @returns Success status
+   */
+  linkGoogle: expensiveProtectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/auth/link/google",
+        tags: ["Auth"],
+        summary: "Link Google OAuth to existing account",
+      },
+    })
+    .input(
+      z.object({
+        code: z.string().min(1, "Authorization code is required"),
+        state: z.string().min(1, "State parameter is required"),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { code, state } = input;
+      const userId = ctx.session.user.id;
+
+      if (!isGoogleOAuthEnabled()) {
+        throw errors.oauthProviderNotConfigured("Google");
+      }
+
+      // Check if user already has a Google account linked
+      const existingLink = await ctx.db
+        .select({ id: oauthAccounts.id })
+        .from(oauthAccounts)
+        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")))
+        .limit(1);
+
+      if (existingLink.length > 0) {
+        throw errors.oauthAlreadyLinked("Google");
+      }
+
+      // Validate the OAuth callback
+      let googleResult;
+      try {
+        googleResult = await validateGoogleCallback(code, state);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message.includes("Invalid or expired OAuth state")) {
+            throw errors.oauthStateInvalid();
+          }
+          throw errors.oauthCallbackFailed(error.message);
+        }
+        throw errors.oauthCallbackFailed("Unknown error");
+      }
+
+      const { userInfo, tokens } = googleResult;
+      const now = new Date();
+
+      // Check if this Google account is already linked to another user
+      const existingOAuthAccount = await ctx.db
+        .select({ userId: oauthAccounts.userId })
+        .from(oauthAccounts)
+        .where(
+          and(
+            eq(oauthAccounts.provider, "google"),
+            eq(oauthAccounts.providerAccountId, userInfo.sub)
+          )
+        )
+        .limit(1);
+
+      if (existingOAuthAccount.length > 0) {
+        throw errors.oauthCallbackFailed("This Google account is already linked to another user");
+      }
+
+      // Link the OAuth account to the current user
+      await ctx.db.insert(oauthAccounts).values({
+        id: generateUuidv7(),
+        userId,
+        provider: "google",
+        providerAccountId: userInfo.sub,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken ?? null,
+        expiresAt: tokens.expiresAt ?? null,
+        createdAt: now,
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Link Apple OAuth to existing account.
+   *
+   * Similar to appleCallback but requires the user to be authenticated
+   * and links the OAuth account to the current user rather than creating
+   * a new account or finding an existing one.
+   *
+   * @param code - The authorization code from Apple
+   * @param state - The state parameter (must match the one from appleAuthUrl)
+   * @param user - Optional user data (only sent on first authorization)
+   * @returns Success status
+   */
+  linkApple: expensiveProtectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/auth/link/apple",
+        tags: ["Auth"],
+        summary: "Link Apple OAuth to existing account",
+      },
+    })
+    .input(
+      z.object({
+        code: z.string().min(1, "Authorization code is required"),
+        state: z.string().min(1, "State parameter is required"),
+        user: z
+          .union([
+            z.string(),
+            z.object({
+              name: z
+                .object({
+                  firstName: z.string().optional(),
+                  lastName: z.string().optional(),
+                })
+                .optional(),
+              email: z.string().optional(),
+            }),
+          ])
+          .optional(),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { code, state, user: userDataInput } = input;
+      const userId = ctx.session.user.id;
+
+      if (!isAppleOAuthEnabled()) {
+        throw errors.oauthProviderNotConfigured("Apple");
+      }
+
+      // Check if user already has an Apple account linked
+      const existingLink = await ctx.db
+        .select({ id: oauthAccounts.id })
+        .from(oauthAccounts)
+        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "apple")))
+        .limit(1);
+
+      if (existingLink.length > 0) {
+        throw errors.oauthAlreadyLinked("Apple");
+      }
+
+      // Validate the OAuth callback
+      let appleResult;
+      try {
+        appleResult = await validateAppleCallback(code, state, userDataInput);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message.includes("Invalid or expired OAuth state")) {
+            throw errors.oauthStateInvalid();
+          }
+          throw errors.oauthCallbackFailed(error.message);
+        }
+        throw errors.oauthCallbackFailed("Unknown error");
+      }
+
+      const { userInfo, tokens } = appleResult;
+      const now = new Date();
+
+      // Check if this Apple account is already linked to another user
+      const existingOAuthAccount = await ctx.db
+        .select({ userId: oauthAccounts.userId })
+        .from(oauthAccounts)
+        .where(
+          and(
+            eq(oauthAccounts.provider, "apple"),
+            eq(oauthAccounts.providerAccountId, userInfo.sub)
+          )
+        )
+        .limit(1);
+
+      if (existingOAuthAccount.length > 0) {
+        throw errors.oauthCallbackFailed("This Apple account is already linked to another user");
+      }
+
+      // Link the OAuth account to the current user
+      await ctx.db.insert(oauthAccounts).values({
+        id: generateUuidv7(),
+        userId,
+        provider: "apple",
+        providerAccountId: userInfo.sub,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken ?? null,
+        expiresAt: tokens.expiresAt ?? null,
+        createdAt: now,
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Unlink OAuth provider from account.
+   *
+   * Removes the OAuth account link from the current user.
+   * Will fail if it's the only authentication method (no password set).
+   *
+   * @param provider - The provider to unlink ('google' or 'apple')
+   * @returns Success status
+   */
+  unlinkProvider: protectedProcedure
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/v1/auth/link/{provider}",
+        tags: ["Auth"],
+        summary: "Unlink OAuth provider from account",
+      },
+    })
+    .input(
+      z.object({
+        provider: z.enum(["google", "apple"]),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { provider } = input;
+      const userId = ctx.session.user.id;
+
+      // Check if user has a password
+      const user = await ctx.db
+        .select({ passwordHash: users.passwordHash })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      const hasPassword = !!user[0]?.passwordHash;
+
+      // Count linked OAuth accounts
+      const linkedAccountsResult = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(oauthAccounts)
+        .where(eq(oauthAccounts.userId, userId));
+
+      const linkedAccountsCount = linkedAccountsResult[0]?.count ?? 0;
+
+      // Prevent unlinking if it's the only auth method
+      if (!hasPassword && linkedAccountsCount <= 1) {
+        throw errors.cannotUnlinkOnlyAuth();
+      }
+
+      // Find and delete the OAuth account
+      const oauthAccount = await ctx.db
+        .select({ id: oauthAccounts.id })
+        .from(oauthAccounts)
+        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
+        .limit(1);
+
+      if (oauthAccount.length === 0) {
+        throw errors.notFound(`${provider} account`);
+      }
+
+      await ctx.db.delete(oauthAccounts).where(eq(oauthAccounts.id, oauthAccount[0].id));
 
       return { success: true };
     }),
