@@ -244,7 +244,7 @@ You should see:
 
 ## GitHub Actions Setup
 
-The repository includes CI/CD workflows that automatically deploy on push to `main`.
+The repository includes CI/CD workflows that automatically deploy on push to `master`.
 
 ### 1. Generate a Fly.io Deploy Token
 
@@ -272,7 +272,7 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch: # Allow manual trigger
 
 jobs:
