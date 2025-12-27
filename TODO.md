@@ -339,15 +339,243 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ---
 
-## Success Criteria
+# Post-MVP Implementation
 
-MVP is complete when:
+See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guidelines.
 
-1. [ ] User can create an account with email/password
-2. [ ] User can subscribe to an RSS or Atom feed
-3. [ ] User can see entries from their subscribed feeds
-4. [ ] User can mark entries as read (individually and bulk)
-5. [ ] User can star entries for later
-6. [ ] User sees new entries appear in real-time (without refresh)
-7. [ ] User can access their account from the public REST API
-8. [ ] User can access the app from mobile web
+## Phase 9: User Acquisition & Migration
+
+### 9.1 OPML Import/Export
+
+- [ ] **Implement OPML parsing and generation**
+  - Create OPML parser (XML → OpmlFeed[]) - pure function
+  - Handle nested folders/categories in OPML
+  - Create OPML generator (subscriptions → XML)
+  - Write unit tests for parser and generator
+
+- [ ] **Implement OPML import API and UI**
+  - POST /v1/subscriptions/import - accept OPML, return results
+  - Batch create subscriptions with progress tracking
+  - Handle duplicates gracefully (skip existing)
+  - Build import UI: file upload, preview, confirm dialog
+  - Show import results (imported, skipped, errors)
+
+- [ ] **Implement OPML export**
+  - GET /v1/subscriptions/export - generate OPML file
+  - Include tags as OPML categories
+  - Add export button to settings page
+
+### 9.2 Google OAuth
+
+- [ ] **Implement OAuth infrastructure**
+  - Create oauth_accounts table migration
+  - Install and configure `arctic` library
+  - Create oauth provider config with runtime detection
+  - Add GET /v1/auth/providers endpoint (returns enabled providers)
+
+- [ ] **Implement Google OAuth flow**
+  - Configure Google OAuth provider with arctic
+  - GET /v1/auth/oauth/google - generate auth URL with PKCE
+  - POST /v1/auth/oauth/google/callback - handle callback, create/link user
+  - Handle account linking (existing email matches)
+  - Write integration tests
+
+- [ ] **Add Google OAuth UI**
+  - Add "Sign in with Google" button to login page
+  - Add "Continue with Google" button to register page
+  - Conditionally show based on /v1/auth/providers response
+  - Handle OAuth errors gracefully
+
+### 9.3 Apple OAuth
+
+- [ ] **Implement Apple OAuth flow**
+  - Configure Apple OAuth provider with arctic
+  - Handle Apple's JWT-based token format
+  - GET /v1/auth/oauth/apple - generate auth URL
+  - POST /v1/auth/oauth/apple/callback - handle callback
+  - Capture user info on first auth (Apple only sends once)
+  - Handle private relay email addresses
+  - Write integration tests
+
+- [ ] **Add Apple OAuth UI**
+  - Add "Sign in with Apple" button (Apple's required styling)
+  - Conditionally show based on /v1/auth/providers response
+
+### 9.4 OAuth Account Management
+
+- [ ] **Implement account linking/unlinking**
+  - POST /v1/auth/link/:provider - link OAuth to existing account
+  - DELETE /v1/auth/link/:provider - unlink OAuth from account
+  - Prevent unlinking if it's the only auth method (no password)
+  - Add linked accounts section to settings page
+  - Show which providers are linked with unlink buttons
+
+### 9.5 Keyboard Shortcuts
+
+- [ ] **Implement keyboard navigation**
+  - Install react-hotkeys-hook
+  - Create useKeyboardShortcuts hook
+  - Track selected entry state (separate from open)
+  - Implement j/k navigation (next/previous entry)
+  - Implement o/Enter (open entry), Escape (close)
+  - Add visual indicator for selected entry
+
+- [ ] **Implement keyboard actions**
+  - Implement m (toggle read/unread)
+  - Implement s (toggle star)
+  - Implement v (open original URL in new tab)
+  - Implement r (refresh current view)
+  - Implement g+a, g+s navigation (go to all, starred)
+
+- [ ] **Add keyboard shortcuts help**
+  - Implement ? to show shortcuts modal
+  - Create shortcuts cheat sheet component
+  - Add "Keyboard shortcuts" link to settings/help
+  - Add setting to disable keyboard shortcuts
+
+## Phase 10: Organization & Discovery
+
+### 10.1 Tags Schema and API
+
+- [ ] **Create tags database schema**
+  - Create tags table migration (id, user_id, name, color)
+  - Create subscription_tags junction table
+  - Add indexes for efficient queries
+  - Update Drizzle schema
+
+- [ ] **Implement tags CRUD API**
+  - GET /v1/tags - list user's tags
+  - POST /v1/tags - create tag (name, color)
+  - PATCH /v1/tags/:id - update tag
+  - DELETE /v1/tags/:id - delete tag (cascade to subscription_tags)
+  - Write integration tests
+
+- [ ] **Implement subscription tagging**
+  - POST /v1/subscriptions/:id/tags - set tags (replace all)
+  - Update GET /v1/subscriptions to include tags
+  - Add tagId filter to GET /v1/entries
+  - Write integration tests
+
+### 10.2 Tags UI
+
+- [ ] **Build tag management UI**
+  - Create tag management section in settings
+  - Add create/edit/delete tag functionality
+  - Color picker for tag colors
+  - Show feed count per tag
+
+- [ ] **Integrate tags into app**
+  - Add tags section to sidebar with colored indicators
+  - Add tag picker to subscription edit dialog
+  - Filter entries by tag when clicking sidebar tag
+  - Show tags on feed items in sidebar
+
+### 10.3 JSON Feed Support
+
+- [ ] **Implement JSON Feed parser**
+  - Create JSON Feed parser (JSON → ParsedFeed)
+  - Handle JSON Feed 1.1 spec
+  - Map to existing ParsedFeed interface
+  - Add 'json' to feed_type enum (migration)
+  - Integrate into unified parser with format detection
+  - Write unit tests
+
+### 10.4 Feed Discovery Enhancement
+
+- [ ] **Improve feed discovery**
+  - GET /v1/feeds/discover?url=... - find feeds on any page
+  - Check common paths (/feed, /rss, /atom.xml, /feed.xml)
+  - Return multiple discovered feeds with metadata
+  - Write unit tests
+
+- [ ] **Enhance subscribe UI with discovery**
+  - If URL is not a feed, auto-run discovery
+  - Show "We found X feeds on this site" UI
+  - Let user choose which feed to subscribe to
+  - Handle case where no feeds found
+
+## Phase 11: Scale & Quality
+
+### 11.1 Prometheus Metrics Setup
+
+- [ ] **Set up metrics infrastructure**
+  - Install prom-client
+  - Create metrics registry with conditional initialization
+  - Only register collectors when METRICS_ENABLED=true
+  - Create GET /api/metrics endpoint with optional basic auth
+  - Return 404 when metrics disabled
+
+- [ ] **Implement HTTP metrics**
+  - Track http_requests_total{method, path, status}
+  - Track http_request_duration_seconds{method, path}
+  - Create middleware to instrument tRPC/API routes
+  - Ensure zero overhead when disabled
+
+- [ ] **Implement application metrics**
+  - Track feed_fetch_total{status}
+  - Track feed_fetch_duration_seconds
+  - Track job_processed_total{type, status}
+  - Track job_queue_size{type, status}
+  - Track sse_connections_active
+  - Track business metrics (users, subscriptions, entries totals)
+
+### 11.2 Content Cleaning
+
+- [ ] **Implement Readability extraction**
+  - Install @mozilla/readability and jsdom
+  - Create cleanContent() function (HTML → cleaned article)
+  - Handle Readability failures gracefully (return null)
+  - Write unit tests with sample HTML
+
+- [ ] **Integrate content cleaning into feed processing**
+  - Run Readability on entry content during fetch
+  - Store original in content_original, cleaned in content_cleaned
+  - Generate summary from cleaned text content
+  - Log failures for monitoring
+
+- [ ] **Update entry display to use cleaned content**
+  - Prefer content_cleaned when available
+  - Fall back to content_original
+  - Add toggle to show original content (optional)
+
+### 11.3 WebSub Schema and Discovery
+
+- [ ] **Create WebSub database schema**
+  - Create websub_subscriptions table migration
+  - Add hub_url and websub_active columns to feeds table
+  - Add indexes for expiring subscriptions
+  - Update Drizzle schema
+
+- [ ] **Implement hub discovery**
+  - Parse <link rel="hub"> from feeds during fetch
+  - Store hub_url on feed record
+  - Create canUseWebSub() check (requires public URL)
+
+### 11.4 WebSub Subscription Flow
+
+- [ ] **Implement WebSub subscription**
+  - Generate unique callback URLs with secrets
+  - POST subscription request to hub
+  - Handle verification callback (GET with challenge)
+  - Update subscription status on verification
+  - Write integration tests (with mock hub)
+
+- [ ] **Implement WebSub callback handling**
+  - POST /api/webhooks/websub/:feedId - receive content
+  - Verify HMAC signature
+  - Parse and process pushed entries
+  - Handle signature failures gracefully
+
+### 11.5 WebSub Maintenance
+
+- [ ] **Implement subscription renewal**
+  - Create renew_websub job type
+  - Schedule renewal for subscriptions expiring within 24h
+  - Handle renewal failures (fall back to polling)
+  - Run renewal check daily
+
+- [ ] **Implement graceful fallback**
+  - If WebSub fails, continue with polling
+  - Track WebSub status for monitoring
+  - Log WebSub events for debugging
+  - Always schedule polling as backup
