@@ -8,6 +8,13 @@
       "when": 1766791389177,
       "tag": "0000_sweet_the_watchers",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1766812549075,
+      "tag": "0001_sweet_moon_knight",
+      "breakpoints": true
     }
   ]
 }
