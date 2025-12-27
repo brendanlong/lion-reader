@@ -12,6 +12,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { RealtimeProvider } from "@/components/layout/RealtimeProvider";
+import { OfflineBanner } from "@/components/layout/OfflineBanner";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { trpc } from "@/lib/trpc/client";
 
 interface AppLayoutProps {
@@ -181,8 +183,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </div>
           </header>
 
+          {/* Offline banner */}
+          <OfflineBanner />
+
           {/* Main content */}
-          <main className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-zinc-950">{children}</main>
+          <main className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
+            <ErrorBoundary message="Something went wrong while loading this page.">
+              {children}
+            </ErrorBoundary>
+          </main>
         </div>
       </div>
     </RealtimeProvider>

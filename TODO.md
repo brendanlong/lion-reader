@@ -270,7 +270,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 7.1 Loading and Error States
 
-- [ ] **Implement loading and error states**
+- [x] **Implement loading and error states**
   - Add loading skeletons for entry list
   - Add loading skeletons for sidebar
   - Create error boundary with retry button
