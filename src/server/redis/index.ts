@@ -45,3 +45,18 @@ if (process.env.NODE_ENV === "development") {
 }
 
 export type RedisClient = typeof redis;
+
+// Re-export pub/sub functionality
+export {
+  publishFeedEvent,
+  publishNewEntry,
+  publishEntryUpdated,
+  createSubscriberClient,
+  parseFeedEvent,
+  closePublisher,
+  FEED_EVENTS_CHANNEL,
+  type FeedEvent,
+  type FeedEventType,
+  type NewEntryEvent,
+  type EntryUpdatedEvent,
+} from "./pubsub";

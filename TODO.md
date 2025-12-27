@@ -243,7 +243,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 6.1 Redis Pub/Sub
 
-- [ ] **Implement event publishing**
+- [x] **Implement event publishing**
   - Publish new_entry event when entry is stored
   - Publish entry_updated event when entry changes
   - Include feedId and entryId in events

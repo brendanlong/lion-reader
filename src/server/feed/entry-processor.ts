@@ -2,6 +2,8 @@
  * Entry processing module.
  * Handles storing entries from parsed feeds, detecting new vs updated entries,
  * and content hash generation for change detection.
+ *
+ * Publishes Redis events for new and updated entries to enable real-time updates.
  */
 
 import { createHash } from "crypto";
@@ -9,6 +11,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "../db";
 import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
+import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
 
 /**
@@ -230,6 +233,13 @@ export async function processEntry(
   if (!existing) {
     // New entry - create it
     const entry = await createEntry(feedId, parsedEntry, contentHash, fetchedAt);
+
+    // Publish new_entry event for real-time updates
+    // Fire and forget - we don't want publishing failures to affect entry processing
+    publishNewEntry(feedId, entry.id).catch((err) => {
+      console.error("Failed to publish new_entry event:", err);
+    });
+
     return {
       id: entry.id,
       guid,
@@ -242,6 +252,13 @@ export async function processEntry(
   if (existing.contentHash !== contentHash) {
     // Content changed - update it
     const entry = await updateEntryContent(existing.id, parsedEntry, contentHash);
+
+    // Publish entry_updated event for real-time updates
+    // Fire and forget - we don't want publishing failures to affect entry processing
+    publishEntryUpdated(feedId, entry.id).catch((err) => {
+      console.error("Failed to publish entry_updated event:", err);
+    });
+
     return {
       id: entry.id,
       guid,
