@@ -629,13 +629,15 @@ See @docs/narration-design.md for full design details.
 ### 13.1 Narration Schema and LLM Integration
 
 - [ ] **Create narration database schema**
-  - Add narration columns to entries table:
-    - `content_narration` text
-    - `narration_generated_at` timestamptz
-    - `narration_error` text (for error tracking)
-    - `narration_error_at` timestamptz (for retry logic)
-  - Add same columns to saved_articles table
-  - Create indexes for finding items needing narration
+  - Create `narration_content` table:
+    - `id` uuid PRIMARY KEY
+    - `content_hash` text UNIQUE NOT NULL (SHA256 of source content)
+    - `content_narration` text (null until generated)
+    - `generated_at` timestamptz
+    - `error` text (for error tracking)
+    - `error_at` timestamptz (for retry logic)
+  - Add `content_hash` column to saved_articles (entries already have it)
+  - Create index for finding narration needing generation
   - Update Drizzle schema with types
 
 - [ ] **Implement Groq/LLM text preprocessing**
@@ -651,6 +653,7 @@ See @docs/narration-design.md for full design details.
   - POST /v1/narration/generate with discriminated union input:
     - `{ type: 'entry', id }` for feed entries
     - `{ type: 'saved', id }` for saved articles
+  - Look up narration by content hash (deduplication)
   - Return cached narration if available
   - Store errors and allow retry after 1 hour
   - Fall back to plain text on error or if GROQ_API_KEY not set

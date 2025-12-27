@@ -130,41 +130,93 @@ Image: The main dashboard showing feed list.
 
 ### Schema Changes
 
+Use a separate table keyed by content hash for deduplication. This allows sharing narration across:
+- Same article appearing in multiple feeds
+- Saved article matching a feed entry
+- Duplicate content over time
+
 ```sql
--- Add narration columns to entries table
-ALTER TABLE entries ADD COLUMN content_narration text;
-ALTER TABLE entries ADD COLUMN narration_generated_at timestamptz;
-ALTER TABLE entries ADD COLUMN narration_error text;
-ALTER TABLE entries ADD COLUMN narration_error_at timestamptz;
+-- Narration content table (deduplicated by content hash)
+CREATE TABLE narration_content (
+  id uuid PRIMARY KEY DEFAULT gen_uuidv7(),
+  content_hash text UNIQUE NOT NULL,  -- SHA256 of source content
 
--- Add same columns to saved_articles table
-ALTER TABLE saved_articles ADD COLUMN content_narration text;
-ALTER TABLE saved_articles ADD COLUMN narration_generated_at timestamptz;
-ALTER TABLE saved_articles ADD COLUMN narration_error text;
-ALTER TABLE saved_articles ADD COLUMN narration_error_at timestamptz;
+  content_narration text,  -- null until generated
+  generated_at timestamptz,
 
--- Index for finding entries that need narration generation
-CREATE INDEX idx_entries_needs_narration
-  ON entries(id)
-  WHERE content_narration IS NULL;
+  -- Error tracking for retry logic
+  error text,
+  error_at timestamptz,
 
-CREATE INDEX idx_saved_articles_needs_narration
-  ON saved_articles(id)
-  WHERE content_narration IS NULL;
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Add content_hash to saved_articles (entries already have it)
+ALTER TABLE saved_articles ADD COLUMN content_hash text;
+
+-- Index for finding narration that needs generation
+CREATE INDEX idx_narration_needs_generation
+  ON narration_content(id)
+  WHERE content_narration IS NULL AND (error_at IS NULL OR error_at < now() - interval '1 hour');
+```
+
+### Content Hash Strategy
+
+Entries already have `content_hash` for update detection. For saved_articles, compute hash when saving:
+
+```typescript
+import { createHash } from 'crypto';
+
+function computeContentHash(content: string): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+// When saving an article
+const contentHash = computeContentHash(article.content_cleaned || article.content_original);
+```
+
+### Narration Lookup Flow
+
+```typescript
+async function getOrCreateNarration(contentHash: string): Promise<NarrationContent> {
+  // Try to find existing narration
+  let narration = await db.narrationContent.findByHash(contentHash);
+
+  if (!narration) {
+    // Create placeholder record
+    narration = await db.narrationContent.create({ content_hash: contentHash });
+  }
+
+  return narration;
+}
 ```
 
 ### Error Handling
 
 When Groq returns an error:
-1. Store error message in `narration_error` and timestamp in `narration_error_at`
+1. Store error message in `error` and timestamp in `error_at`
 2. Fall back to plain text conversion for immediate playback
-3. Allow retry after 1 hour (check `narration_error_at` before regenerating)
+3. Allow retry after 1 hour (check `error_at` before regenerating)
 4. Clear error columns on successful generation
 
 ```typescript
 // Allow retry if error was more than 1 hour ago
-const canRetry = !entry.narration_error_at ||
-  Date.now() - entry.narration_error_at.getTime() > 60 * 60 * 1000;
+const canRetry = !narration.error_at ||
+  Date.now() - narration.error_at.getTime() > 60 * 60 * 1000;
+```
+
+### Cleanup
+
+Orphaned narration records (no entries or saved_articles reference them) can be cleaned up periodically:
+
+```sql
+-- Find orphaned narration content (run periodically)
+DELETE FROM narration_content nc
+WHERE NOT EXISTS (
+  SELECT 1 FROM entries e WHERE e.content_hash = nc.content_hash
+) AND NOT EXISTS (
+  SELECT 1 FROM saved_articles sa WHERE sa.content_hash = nc.content_hash
+);
 ```
 
 ### Future Schema (for sync and highlighting)
@@ -347,7 +399,7 @@ function setupMediaSession(
 
 ### Generate Narration
 
-Supports both feed entries and saved articles via discriminated union:
+Supports both feed entries and saved articles. Uses content hash for deduplication.
 
 ```typescript
 // tRPC procedure
@@ -367,10 +419,20 @@ narration: {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
 
+      const sourceContent = article.content_cleaned || article.content_original;
+      const contentHash = article.content_hash || computeContentHash(sourceContent);
+
+      // Look up or create narration record by content hash
+      let narration = await ctx.db.narrationContent.findByHash(contentHash);
+
+      if (!narration) {
+        narration = await ctx.db.narrationContent.create({ content_hash: contentHash });
+      }
+
       // Return cached if available
-      if (article.content_narration) {
+      if (narration.content_narration) {
         return {
-          narration: article.content_narration,
+          narration: narration.content_narration,
           cached: true,
           source: 'llm',
         };
@@ -378,10 +440,8 @@ narration: {
 
       // Check if we should retry after a previous error
       const RETRY_AFTER_MS = 60 * 60 * 1000; // 1 hour
-      const canRetryLLM = !article.narration_error_at ||
-        Date.now() - article.narration_error_at.getTime() > RETRY_AFTER_MS;
-
-      const sourceContent = article.content_cleaned || article.content_original;
+      const canRetryLLM = !narration.error_at ||
+        Date.now() - narration.error_at.getTime() > RETRY_AFTER_MS;
 
       // If Groq is not configured or we had a recent error, fall back to raw text
       if (!process.env.GROQ_API_KEY || !canRetryLLM) {
@@ -395,30 +455,22 @@ narration: {
 
       try {
         // Generate via LLM
-        const narration = await generateNarration(sourceContent);
+        const generatedNarration = await generateNarration(sourceContent);
 
-        // Cache in database, clear any previous error
-        const updateFn = input.type === 'entry'
-          ? ctx.db.entries.update
-          : ctx.db.savedArticles.update;
-
-        await updateFn(article.id, {
-          content_narration: narration,
-          narration_generated_at: new Date(),
-          narration_error: null,
-          narration_error_at: null,
+        // Cache in narration_content table, clear any previous error
+        await ctx.db.narrationContent.update(narration.id, {
+          content_narration: generatedNarration,
+          generated_at: new Date(),
+          error: null,
+          error_at: null,
         });
 
-        return { narration, cached: false, source: 'llm' };
+        return { narration: generatedNarration, cached: false, source: 'llm' };
       } catch (error) {
-        // Store error, fall back to plain text
-        const updateFn = input.type === 'entry'
-          ? ctx.db.entries.update
-          : ctx.db.savedArticles.update;
-
-        await updateFn(article.id, {
-          narration_error: error instanceof Error ? error.message : 'Unknown error',
-          narration_error_at: new Date(),
+        // Store error in narration_content, fall back to plain text
+        await ctx.db.narrationContent.update(narration.id, {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          error_at: new Date(),
         });
 
         const fallbackText = htmlToPlainText(sourceContent);
@@ -707,11 +759,12 @@ narration_rate_setting{bucket}  // 0.5-0.75, 0.75-1.0, 1.0-1.25, etc.
 
 ### MVP (v1)
 
-- [ ] Database migration: add narration columns to entries and saved_articles
-  - `content_narration`, `narration_generated_at`
-  - `narration_error`, `narration_error_at` (for error tracking/retry)
+- [ ] Database migration:
+  - Create `narration_content` table (keyed by content_hash)
+  - Add `content_hash` column to saved_articles (entries already have it)
+  - Add index for finding narration needing generation
 - [ ] Groq integration for text preprocessing
-- [ ] tRPC endpoint for narration generation (supports entries and saved articles)
+- [ ] tRPC endpoint for narration generation (content hash deduplication)
 - [ ] Error handling with fallback to plain text, retry after 1 hour
 - [ ] Web Speech API wrapper with paragraph-based playback
 - [ ] Feature detection (hide controls in unsupported browsers)
@@ -730,3 +783,4 @@ narration_rate_setting{bucket}  // 0.5-0.75, 0.75-1.0, 1.0-1.25, etc.
 - [ ] Pre-generation for starred/saved articles
 - [ ] Playback speed presets (1x, 1.25x, 1.5x, 2x)
 - [ ] Skip silence option
+- [ ] Orphaned narration cleanup job
