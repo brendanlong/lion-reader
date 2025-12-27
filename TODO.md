@@ -259,7 +259,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 6.3 Client Real-time Integration
 
-- [ ] **Integrate real-time updates in UI**
+- [x] **Integrate real-time updates in UI**
   - Create useRealtimeUpdates hook with EventSource
   - Invalidate React Query cache on new_entry
   - Update unread counts in sidebar
