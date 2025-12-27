@@ -279,7 +279,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 7.2 Settings Pages
 
-- [ ] **Create settings pages**
+- [x] **Create settings pages**
   - Build /settings route with account info
   - Build /settings/sessions route with session list
   - Add logout from specific sessions
