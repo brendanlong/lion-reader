@@ -404,7 +404,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 9.4 OAuth Account Management
 
-- [ ] **Implement account linking/unlinking**
+- [x] **Implement account linking/unlinking**
   - POST /v1/auth/link/:provider - link OAuth to existing account
   - DELETE /v1/auth/link/:provider - unlink OAuth from account
   - Prevent unlinking if it's the only auth method (no password)

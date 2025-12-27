@@ -10,7 +10,7 @@ import { eq, and, isNull, gt, desc } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { sessions, users } from "@/server/db/schema";
+import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import { revokeSession } from "@/server/auth";
 
 // ============================================================================
@@ -196,5 +196,62 @@ export const usersRouter = createTRPCRouter({
         .where(eq(users.id, userId));
 
       return { success: true };
+    }),
+
+  /**
+   * Get linked OAuth accounts for the current user.
+   *
+   * Returns a list of OAuth providers that are linked to the user's account.
+   */
+  "me.linkedAccounts": protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/users/me/linked-accounts",
+        tags: ["Users"],
+        summary: "Get linked OAuth accounts",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        accounts: z.array(
+          z.object({
+            provider: z.enum(["google", "apple"]),
+            linkedAt: z.date(),
+          })
+        ),
+        hasPassword: z.boolean(),
+      })
+    )
+    .query(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+
+      // Get linked OAuth accounts
+      const linkedAccounts = await ctx.db
+        .select({
+          provider: oauthAccounts.provider,
+          linkedAt: oauthAccounts.createdAt,
+        })
+        .from(oauthAccounts)
+        .where(eq(oauthAccounts.userId, userId))
+        .orderBy(oauthAccounts.createdAt);
+
+      // Check if user has a password
+      const user = await ctx.db
+        .select({ passwordHash: users.passwordHash })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      const hasPassword = !!user[0]?.passwordHash;
+
+      return {
+        accounts: linkedAccounts.map((account) => ({
+          provider: account.provider as "google" | "apple",
+          linkedAt: account.linkedAt,
+        })),
+        hasPassword,
+      };
     }),
 });
