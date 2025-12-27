@@ -250,7 +250,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 6.2 SSE Endpoint
 
-- [ ] **Implement Server-Sent Events endpoint**
+- [x] **Implement Server-Sent Events endpoint**
   - GET /v1/events - SSE stream for authenticated user
   - Subscribe to Redis channels for user's feeds
   - Forward events to client
