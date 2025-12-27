@@ -22,12 +22,13 @@ import type { Context } from "../../src/server/trpc/context";
 
 /**
  * Creates a test user and returns their ID.
+ * Uses a unique email based on the userId to avoid conflicts in parallel tests.
  */
-async function createTestUser(email: string): Promise<string> {
+async function createTestUser(emailPrefix: string = "user"): Promise<string> {
   const userId = generateUuidv7();
   await db.insert(users).values({
     id: userId,
-    email,
+    email: `${emailPrefix}-${userId}@test.com`,
     passwordHash: "test-hash",
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -124,7 +125,7 @@ describe("Saved Articles API", () => {
 
   describe("saved.list", () => {
     it("returns empty list for user with no saved articles", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -135,8 +136,8 @@ describe("Saved Articles API", () => {
     });
 
     it("returns saved articles for the authenticated user only", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       // Create articles for both users
       await createTestSavedArticle(userId1, { title: "User 1 Article 1" });
@@ -162,7 +163,7 @@ describe("Saved Articles API", () => {
     });
 
     it("returns articles ordered by ID descending (newest first)", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       // Create articles with slight delay to ensure different UUIDv7s
       const id1 = await createTestSavedArticle(userId, { title: "First" });
@@ -182,7 +183,7 @@ describe("Saved Articles API", () => {
     });
 
     it("filters by unreadOnly", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       await createTestSavedArticle(userId, { title: "Read Article", read: true });
       await createTestSavedArticle(userId, { title: "Unread Article", read: false });
@@ -196,7 +197,7 @@ describe("Saved Articles API", () => {
     });
 
     it("filters by starredOnly", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       await createTestSavedArticle(userId, { title: "Starred Article", starred: true });
       await createTestSavedArticle(userId, { title: "Unstarred Article", starred: false });
@@ -210,7 +211,7 @@ describe("Saved Articles API", () => {
     });
 
     it("combines unreadOnly and starredOnly filters", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       await createTestSavedArticle(userId, {
         title: "Read and Starred",
@@ -237,7 +238,7 @@ describe("Saved Articles API", () => {
     });
 
     it("supports cursor-based pagination", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       // Create 5 articles
       for (let i = 1; i <= 5; i++) {
@@ -269,7 +270,7 @@ describe("Saved Articles API", () => {
     });
 
     it("respects limit parameter", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       for (let i = 1; i <= 10; i++) {
         await createTestSavedArticle(userId, { title: `Article ${i}` });
@@ -286,7 +287,7 @@ describe("Saved Articles API", () => {
 
   describe("saved.get", () => {
     it("returns a saved article with full content", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { title: "Test Article" });
 
       const ctx = createAuthContext(userId);
@@ -301,7 +302,7 @@ describe("Saved Articles API", () => {
     });
 
     it("throws error for non-existent article", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -311,8 +312,8 @@ describe("Saved Articles API", () => {
     });
 
     it("throws error when accessing another user's article", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const articleId = await createTestSavedArticle(userId1, { title: "User 1's Article" });
 
@@ -325,7 +326,7 @@ describe("Saved Articles API", () => {
 
   describe("saved.delete", () => {
     it("deletes a saved article", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { title: "To Delete" });
 
       const ctx = createAuthContext(userId);
@@ -344,7 +345,7 @@ describe("Saved Articles API", () => {
     });
 
     it("throws error for non-existent article", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -354,8 +355,8 @@ describe("Saved Articles API", () => {
     });
 
     it("throws error when deleting another user's article", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const articleId = await createTestSavedArticle(userId1, { title: "User 1's Article" });
 
@@ -378,7 +379,7 @@ describe("Saved Articles API", () => {
 
   describe("saved.markRead", () => {
     it("marks articles as read", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const id1 = await createTestSavedArticle(userId, { read: false });
       const id2 = await createTestSavedArticle(userId, { read: false });
 
@@ -398,7 +399,7 @@ describe("Saved Articles API", () => {
     });
 
     it("marks articles as unread", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const id1 = await createTestSavedArticle(userId, { read: true });
       const id2 = await createTestSavedArticle(userId, { read: true });
 
@@ -418,7 +419,7 @@ describe("Saved Articles API", () => {
     });
 
     it("ignores non-existent article IDs", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const validId = await createTestSavedArticle(userId, { read: false });
 
       const ctx = createAuthContext(userId);
@@ -441,8 +442,8 @@ describe("Saved Articles API", () => {
     });
 
     it("ignores articles belonging to other users", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const myArticle = await createTestSavedArticle(userId1, { read: false });
       const otherArticle = await createTestSavedArticle(userId2, { read: false });
@@ -470,7 +471,7 @@ describe("Saved Articles API", () => {
     });
 
     it("returns empty object when no valid IDs provided", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -484,7 +485,7 @@ describe("Saved Articles API", () => {
 
   describe("saved.star", () => {
     it("stars a saved article", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { starred: false });
 
       const ctx = createAuthContext(userId);
@@ -504,7 +505,7 @@ describe("Saved Articles API", () => {
     });
 
     it("throws error for non-existent article", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -514,8 +515,8 @@ describe("Saved Articles API", () => {
     });
 
     it("throws error when starring another user's article", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const articleId = await createTestSavedArticle(userId1, { starred: false });
 
@@ -536,7 +537,7 @@ describe("Saved Articles API", () => {
 
   describe("saved.unstar", () => {
     it("unstars a saved article", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { starred: true });
 
       const ctx = createAuthContext(userId);
@@ -556,7 +557,7 @@ describe("Saved Articles API", () => {
     });
 
     it("throws error for non-existent article", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -566,8 +567,8 @@ describe("Saved Articles API", () => {
     });
 
     it("throws error when unstarring another user's article", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const articleId = await createTestSavedArticle(userId1, { starred: true });
 
@@ -688,7 +689,7 @@ describe("Saved Articles API", () => {
 
   describe("saved.save with existing URL", () => {
     it("returns existing article if URL is already saved", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const existingUrl = "https://example.com/already-saved";
       const articleId = await createTestSavedArticle(userId, {
         url: existingUrl,
@@ -707,8 +708,8 @@ describe("Saved Articles API", () => {
     });
 
     it("allows different users to save the same URL", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
       const sharedUrl = "https://example.com/shared";
 
       // User 1 saves the URL

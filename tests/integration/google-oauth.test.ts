@@ -15,23 +15,28 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as argon2 from "argon2";
 
 // Mock the arctic library to avoid needing real Google credentials
-vi.mock("arctic", () => ({
-  Google: vi.fn().mockImplementation(() => ({
-    createAuthorizationURL: vi.fn().mockImplementation((state: string) => {
+vi.mock("arctic", () => {
+  // Create a mock class for Google that can be instantiated with `new`
+  class MockGoogle {
+    createAuthorizationURL(state: string) {
       return new URL(`https://accounts.google.com/o/oauth2/v2/auth?state=${state}`);
-    }),
-    validateAuthorizationCode: vi.fn().mockImplementation(() => {
+    }
+    validateAuthorizationCode() {
       return {
         accessToken: () => "mock-access-token",
         hasRefreshToken: () => true,
         refreshToken: () => "mock-refresh-token",
         accessTokenExpiresAt: () => new Date(Date.now() + 3600000),
       };
-    }),
-  })),
-  generateCodeVerifier: vi.fn().mockReturnValue("mock-code-verifier"),
-  generateState: vi.fn().mockReturnValue("mock-state"),
-}));
+    }
+  }
+
+  return {
+    Google: MockGoogle,
+    generateCodeVerifier: vi.fn().mockReturnValue("mock-code-verifier"),
+    generateState: vi.fn().mockReturnValue("mock-state"),
+  };
+});
 
 // Mock Google user info fetch
 const mockGoogleUserInfo = {
@@ -240,10 +245,11 @@ describe("Google OAuth", () => {
     it("stores verifier with TTL", async () => {
       const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");
 
-      await createGoogleAuthUrl();
+      const result = await createGoogleAuthUrl();
 
       // Check TTL is set (should be 600 seconds)
-      const ttl = await redis.ttl("oauth:pkce:mock-state");
+      // Use the actual state returned to handle mock variations
+      const ttl = await redis.ttl(`oauth:pkce:${result.state}`);
       expect(ttl).toBeGreaterThan(0);
       expect(ttl).toBeLessThanOrEqual(600);
     });

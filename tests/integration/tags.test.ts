@@ -27,12 +27,13 @@ import type { Context } from "../../src/server/trpc/context";
 
 /**
  * Creates a test user and returns their ID.
+ * Uses a unique email based on the userId to avoid conflicts in parallel tests.
  */
-async function createTestUser(email: string): Promise<string> {
+async function createTestUser(emailPrefix: string = "user"): Promise<string> {
   const userId = generateUuidv7();
   await db.insert(users).values({
     id: userId,
-    email,
+    email: `${emailPrefix}-${userId}@test.com`,
     passwordHash: "test-hash",
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -167,7 +168,7 @@ describe("Tags API", () => {
 
   describe("tags.list", () => {
     it("returns empty list for user with no tags", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -177,8 +178,8 @@ describe("Tags API", () => {
     });
 
     it("returns tags for the authenticated user only", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       // Create tags for both users
       const tag1Id = generateUuidv7();
@@ -209,7 +210,7 @@ describe("Tags API", () => {
     });
 
     it("returns tags with correct feed counts", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       // Create a tag
       const tagId = generateUuidv7();
@@ -240,7 +241,7 @@ describe("Tags API", () => {
     });
 
     it("returns tags ordered by name", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       // Create tags in random order
       await db.insert(tags).values([
@@ -259,7 +260,7 @@ describe("Tags API", () => {
 
   describe("tags.create", () => {
     it("creates a tag with name only", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -279,7 +280,7 @@ describe("Tags API", () => {
     });
 
     it("creates a tag with name and color", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -290,7 +291,7 @@ describe("Tags API", () => {
     });
 
     it("trims whitespace from tag name", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -300,7 +301,7 @@ describe("Tags API", () => {
     });
 
     it("rejects duplicate tag names for the same user", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -312,8 +313,8 @@ describe("Tags API", () => {
     });
 
     it("allows same tag name for different users", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const ctx1 = createAuthContext(userId1);
       const caller1 = createCaller(ctx1);
@@ -327,7 +328,7 @@ describe("Tags API", () => {
     });
 
     it("rejects empty tag name", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -335,7 +336,7 @@ describe("Tags API", () => {
     });
 
     it("rejects tag name that is too long", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -344,7 +345,7 @@ describe("Tags API", () => {
     });
 
     it("rejects invalid color format", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -356,7 +357,7 @@ describe("Tags API", () => {
 
   describe("tags.update", () => {
     it("updates tag name", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({
         id: tagId,
@@ -374,7 +375,7 @@ describe("Tags API", () => {
     });
 
     it("updates tag color", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({
         id: tagId,
@@ -393,7 +394,7 @@ describe("Tags API", () => {
     });
 
     it("removes tag color when set to null", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({
         id: tagId,
@@ -412,7 +413,7 @@ describe("Tags API", () => {
     });
 
     it("updates both name and color", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({
         id: tagId,
@@ -436,7 +437,7 @@ describe("Tags API", () => {
     });
 
     it("returns correct feed count after update", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({
         id: tagId,
@@ -459,7 +460,7 @@ describe("Tags API", () => {
     });
 
     it("throws error when tag not found", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -470,8 +471,8 @@ describe("Tags API", () => {
     });
 
     it("throws error when updating another user's tag", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const tagId = generateUuidv7();
       await db.insert(tags).values({
@@ -491,7 +492,7 @@ describe("Tags API", () => {
     });
 
     it("rejects duplicate name when updating", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       await db.insert(tags).values([
         { id: generateUuidv7(), userId, name: "Tech", createdAt: new Date() },
@@ -513,7 +514,7 @@ describe("Tags API", () => {
     });
 
     it("allows keeping the same name when updating only color", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({
         id: tagId,
@@ -535,7 +536,7 @@ describe("Tags API", () => {
 
   describe("tags.delete", () => {
     it("deletes a tag", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({
         id: tagId,
@@ -557,7 +558,7 @@ describe("Tags API", () => {
     });
 
     it("cascades deletion to subscription_tags", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({
         id: tagId,
@@ -595,7 +596,7 @@ describe("Tags API", () => {
     });
 
     it("throws error when tag not found", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
@@ -604,8 +605,8 @@ describe("Tags API", () => {
     });
 
     it("throws error when deleting another user's tag", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const tagId = generateUuidv7();
       await db.insert(tags).values({
@@ -683,7 +684,7 @@ describe("Tags API", () => {
 
   describe("subscriptions.setTags", () => {
     it("sets tags on a subscription", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const feedId = await createTestFeed("https://feed1.com/rss");
       const subId = await createTestSubscription(userId, feedId);
 
@@ -712,7 +713,7 @@ describe("Tags API", () => {
     });
 
     it("replaces existing tags", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const feedId = await createTestFeed("https://feed1.com/rss");
       const subId = await createTestSubscription(userId, feedId);
 
@@ -746,7 +747,7 @@ describe("Tags API", () => {
     });
 
     it("removes all tags when given empty array", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const feedId = await createTestFeed("https://feed1.com/rss");
       const subId = await createTestSubscription(userId, feedId);
 
@@ -769,7 +770,7 @@ describe("Tags API", () => {
     });
 
     it("throws error for non-existent subscription", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
@@ -782,8 +783,8 @@ describe("Tags API", () => {
     });
 
     it("throws error for another user's subscription", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const feedId = await createTestFeed("https://feed1.com/rss");
       const subId = await createTestSubscription(userId1, feedId);
@@ -803,7 +804,7 @@ describe("Tags API", () => {
     });
 
     it("throws error for invalid tag IDs", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const feedId = await createTestFeed("https://feed1.com/rss");
       const subId = await createTestSubscription(userId, feedId);
 
@@ -817,8 +818,8 @@ describe("Tags API", () => {
     });
 
     it("throws error for another user's tags", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       const feedId = await createTestFeed("https://feed1.com/rss");
       const subId = await createTestSubscription(userId1, feedId);
@@ -841,7 +842,7 @@ describe("Tags API", () => {
 
   describe("subscriptions.list with tags", () => {
     it("returns subscriptions with their tags", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const feedId = await createTestFeed("https://feed1.com/rss");
       const subId = await createTestSubscription(userId, feedId);
 
@@ -866,7 +867,7 @@ describe("Tags API", () => {
     });
 
     it("returns empty tags array for subscriptions without tags", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
       const feedId = await createTestFeed("https://feed1.com/rss");
       await createTestSubscription(userId, feedId);
 
@@ -882,7 +883,7 @@ describe("Tags API", () => {
 
   describe("entries.list with tagId filter", () => {
     it("filters entries by tag", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       // Create two feeds with subscriptions
       const feedId1 = await createTestFeed("https://feed1.com/rss");
@@ -911,7 +912,7 @@ describe("Tags API", () => {
     });
 
     it("returns empty list when tag has no subscriptions", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       // Create a feed with subscription
       const feedId = await createTestFeed("https://feed1.com/rss");
@@ -934,7 +935,7 @@ describe("Tags API", () => {
     });
 
     it("returns empty list for non-existent tag", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       const feedId = await createTestFeed("https://feed1.com/rss");
       await createTestSubscription(userId, feedId);
@@ -950,8 +951,8 @@ describe("Tags API", () => {
     });
 
     it("returns empty list for another user's tag", async () => {
-      const userId1 = await createTestUser("user1@test.com");
-      const userId2 = await createTestUser("user2@test.com");
+      const userId1 = await createTestUser();
+      const userId2 = await createTestUser("other");
 
       // User 1 has a feed and subscription
       const feedId = await createTestFeed("https://feed1.com/rss");
@@ -974,7 +975,7 @@ describe("Tags API", () => {
     });
 
     it("combines tagId and feedId filters", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       // Create two feeds with subscriptions
       const feedId1 = await createTestFeed("https://feed1.com/rss");
@@ -1003,7 +1004,7 @@ describe("Tags API", () => {
     });
 
     it("returns empty when feedId is not in tag", async () => {
-      const userId = await createTestUser("user1@test.com");
+      const userId = await createTestUser();
 
       // Create two feeds with subscriptions
       const feedId1 = await createTestFeed("https://feed1.com/rss");

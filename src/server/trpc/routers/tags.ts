@@ -257,9 +257,14 @@ export const tagsRouter = createTRPCRouter({
         })
         .from(tags)
         .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
-        .where(eq(tags.id, input.id))
+        .where(and(eq(tags.id, input.id), eq(tags.userId, userId)))
         .groupBy(tags.id)
         .limit(1);
+
+      // This should never happen since we verified the tag exists above
+      if (updatedTag.length === 0) {
+        throw errors.tagNotFound();
+      }
 
       return {
         tag: {
