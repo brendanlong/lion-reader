@@ -541,13 +541,13 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 11.3 WebSub Schema and Discovery
 
-- [ ] **Create WebSub database schema**
+- [x] **Create WebSub database schema**
   - Create websub_subscriptions table migration
   - Add hub_url and websub_active columns to feeds table
   - Add indexes for expiring subscriptions
   - Update Drizzle schema
 
-- [ ] **Implement hub discovery**
+- [x] **Implement hub discovery**
   - Parse <link rel="hub"> from feeds during fetch
   - Store hub_url on feed record
   - Create canUseWebSub() check (requires public URL)

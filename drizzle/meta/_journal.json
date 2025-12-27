@@ -29,6 +29,13 @@
       "when": 1766821843794,
       "tag": "0003_slim_lockheed",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1766822561272,
+      "tag": "0004_natural_kitty_pryde",
+      "breakpoints": true
     }
   ]
 }
