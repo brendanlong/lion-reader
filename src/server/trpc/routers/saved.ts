@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, lt, inArray } from "drizzle-orm";
+import { eq, and, desc, lt, inArray, count } from "drizzle-orm";
 import { JSDOM } from "jsdom";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -687,5 +687,47 @@ export const savedRouter = createTRPCRouter({
         .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)));
 
       return {};
+    }),
+
+  /**
+   * Get count of saved articles.
+   *
+   * @returns Count of total and unread saved articles
+   */
+  count: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/saved/count",
+        tags: ["Saved Articles"],
+        summary: "Get saved articles count",
+      },
+    })
+    .input(z.object({}))
+    .output(
+      z.object({
+        total: z.number(),
+        unread: z.number(),
+      })
+    )
+    .query(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+
+      // Get total count
+      const totalResult = await ctx.db
+        .select({ count: count() })
+        .from(savedArticles)
+        .where(eq(savedArticles.userId, userId));
+
+      // Get unread count
+      const unreadResult = await ctx.db
+        .select({ count: count() })
+        .from(savedArticles)
+        .where(and(eq(savedArticles.userId, userId), eq(savedArticles.read, false)));
+
+      return {
+        total: totalResult[0]?.count ?? 0,
+        unread: unreadResult[0]?.count ?? 0,
+      };
     }),
 });

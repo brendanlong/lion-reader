@@ -14,6 +14,7 @@
  * - r to refresh current view
  * - g+a to navigate to All items
  * - g+s to navigate to Starred items
+ * - g+l to navigate to Saved/Later items
  * - Selected entry state management
  */
 
@@ -464,6 +465,22 @@ export function useKeyboardShortcuts(
       e.preventDefault();
       clearGPrefix();
       router.push("/all");
+    },
+    {
+      enabled: enabled && !isEntryOpen && gPrefixActive,
+      enableOnFormTags: false,
+    },
+    [gPrefixActive, clearGPrefix, router, isEntryOpen, enabled]
+  );
+
+  // l - go to Saved/Later (when g prefix is active)
+  useHotkeys(
+    "l",
+    (e) => {
+      if (!gPrefixActive) return;
+      e.preventDefault();
+      clearGPrefix();
+      router.push("/saved");
     },
     {
       enabled: enabled && !isEntryOpen && gPrefixActive,

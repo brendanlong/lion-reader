@@ -33,6 +33,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
   const tagsQuery = trpc.tags.list.useQuery();
+  const savedCountQuery = trpc.saved.count.useQuery({});
   const utils = trpc.useUtils();
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
@@ -53,6 +54,9 @@ export function Sidebar({ onClose }: SidebarProps) {
     }
     if (href === "/starred") {
       return pathname === "/starred";
+    }
+    if (href === "/saved") {
+      return pathname === "/saved";
     }
     if (href.startsWith("/tag/")) {
       return pathname === href;
@@ -99,6 +103,23 @@ export function Sidebar({ onClose }: SidebarProps) {
             }`}
           >
             Starred
+          </Link>
+
+          <Link
+            href="/saved"
+            onClick={handleClose}
+            className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+              isActiveLink("/saved")
+                ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            }`}
+          >
+            <span>Saved</span>
+            {savedCountQuery.data && savedCountQuery.data.unread > 0 && (
+              <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+                ({savedCountQuery.data.unread})
+              </span>
+            )}
           </Link>
         </div>
 
