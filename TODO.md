@@ -287,7 +287,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 7.3 Rate Limiting
 
-- [ ] **Implement API rate limiting**
+- [x] **Implement API rate limiting**
   - Set up Redis token bucket rate limiting
   - Apply rate limits to API routes (100 burst, 10/sec refill)
   - Apply stricter limits to expensive operations

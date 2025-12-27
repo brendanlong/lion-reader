@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { feeds, subscriptions, entries, userEntryStates } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -175,8 +175,11 @@ export const subscriptionsRouter = createTRPCRouter({
    *
    * @param url - The feed URL (or HTML page with feed discovery)
    * @returns The subscription and feed
+   *
+   * Note: This endpoint uses stricter rate limiting (10 burst, 1/sec)
+   * since it involves external HTTP requests.
    */
-  create: protectedProcedure
+  create: expensiveProtectedProcedure
     .meta({
       openapi: {
         method: "POST",
