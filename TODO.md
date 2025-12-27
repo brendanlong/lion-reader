@@ -196,7 +196,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 5.1 Entry Queries API
 
-- [ ] **Implement entry listing endpoints**
+- [x] **Implement entry listing endpoints**
   - GET /v1/entries - list entries with filters
   - Filter by feedId, unreadOnly, starredOnly
   - Implement cursor-based pagination
