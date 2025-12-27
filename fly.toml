@@ -7,8 +7,8 @@
 #    fly secrets set DATABASE_URL="..." REDIS_URL="..." SESSION_SECRET="..."
 # 3. Deploy: fly deploy
 
-app = "lion-reader"  # Change this to your app name after running fly launch
-primary_region = "iad"  # US East - change to your preferred region
+app = "lion-reader"
+primary_region = "lax"
 
 [build]
   dockerfile = "Dockerfile"
@@ -33,11 +33,6 @@ primary_region = "iad"  # US East - change to your preferred region
     type = "requests"
     hard_limit = 250
     soft_limit = 200
-
-  [http_service.machine_checks]
-    grace_period = "10s"
-    interval = "30s"
-    timeout = "5s"
 
 [[vm]]
   memory = "512mb"
