@@ -12,7 +12,16 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Routes that require authentication
  */
-const PROTECTED_ROUTES = ["/all", "/starred", "/feed", "/entry", "/settings", "/subscribe"];
+const PROTECTED_ROUTES = [
+  "/all",
+  "/starred",
+  "/feed",
+  "/entry",
+  "/settings",
+  "/subscribe",
+  "/save",
+  "/saved",
+];
 
 /**
  * Routes that should redirect authenticated users away
