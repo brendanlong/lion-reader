@@ -50,6 +50,14 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
   {
+    title: "Narration",
+    shortcuts: [
+      { keys: ["p"], description: "Toggle play/pause" },
+      { keys: ["Shift+N"], description: "Skip to next paragraph" },
+      { keys: ["Shift+P"], description: "Skip to previous paragraph" },
+    ],
+  },
+  {
     title: "Help",
     shortcuts: [{ keys: ["?"], description: "Show keyboard shortcuts" }],
   },

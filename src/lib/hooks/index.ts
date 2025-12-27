@@ -28,3 +28,10 @@ export {
   type UseSavedArticleKeyboardShortcutsOptions,
   type UseSavedArticleKeyboardShortcutsResult,
 } from "./useSavedArticleKeyboardShortcuts";
+
+export {
+  useNarrationKeyboardShortcuts,
+  type NarrationShortcutState,
+  type NarrationShortcutControls,
+  type UseNarrationKeyboardShortcutsOptions,
+} from "./useNarrationKeyboardShortcuts";
