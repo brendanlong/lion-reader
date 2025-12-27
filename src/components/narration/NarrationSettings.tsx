@@ -1,0 +1,327 @@
+/**
+ * NarrationSettings Component
+ *
+ * Settings section for audio narration configuration.
+ * Allows users to select a voice, adjust playback speed and pitch,
+ * and preview how narration will sound.
+ */
+
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { Button } from "@/components/ui";
+import { useNarrationSettings } from "@/lib/narration/settings";
+import { getNarrationSupportInfo } from "@/lib/narration/feature-detection";
+import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
+
+/**
+ * Sample text used for voice preview.
+ */
+const PREVIEW_TEXT = "This is a preview of how articles will sound with this voice.";
+
+export function NarrationSettings() {
+  const [settings, setSettings] = useNarrationSettings();
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  // Use lazy initialization to get support info without triggering cascading renders
+  const [supportInfo] = useState<ReturnType<typeof getNarrationSupportInfo>>(() =>
+    getNarrationSupportInfo()
+  );
+  // Initialize loading state based on whether we need to load voices
+  const [isLoadingVoices, setIsLoadingVoices] = useState(() => supportInfo.supported);
+
+  // Load voices on mount (only if supported)
+  useEffect(() => {
+    // Skip if not supported - isLoadingVoices is already false from initialization
+    if (!supportInfo.supported) {
+      return;
+    }
+
+    let cancelled = false;
+    waitForVoices().then((availableVoices) => {
+      if (cancelled) return;
+      const ranked = rankVoices(availableVoices);
+      setVoices(ranked);
+      setIsLoadingVoices(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supportInfo.supported]);
+
+  // Get the currently selected voice object
+  const selectedVoice = settings.voiceUri ? findVoiceByUri(settings.voiceUri) : null;
+
+  // Handle voice selection change
+  const handleVoiceChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = e.target.value;
+      setSettings({
+        ...settings,
+        voiceUri: value || null,
+      });
+    },
+    [settings, setSettings]
+  );
+
+  // Handle rate change
+  const handleRateChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = parseFloat(e.target.value);
+      setSettings({
+        ...settings,
+        rate: value,
+      });
+    },
+    [settings, setSettings]
+  );
+
+  // Handle pitch change
+  const handlePitchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = parseFloat(e.target.value);
+      setSettings({
+        ...settings,
+        pitch: value,
+      });
+    },
+    [settings, setSettings]
+  );
+
+  // Preview voice with current settings
+  const handlePreview = useCallback(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+
+    // Cancel any ongoing speech
+    speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(PREVIEW_TEXT);
+
+    // Apply voice if selected
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    } else if (voices.length > 0) {
+      // Use first available voice if none selected
+      utterance.voice = voices[0];
+    }
+
+    utterance.rate = settings.rate;
+    utterance.pitch = settings.pitch;
+
+    utterance.onstart = () => setIsPreviewing(true);
+    utterance.onend = () => setIsPreviewing(false);
+    utterance.onerror = () => setIsPreviewing(false);
+
+    speechSynthesis.speak(utterance);
+  }, [selectedVoice, voices, settings.rate, settings.pitch]);
+
+  // Stop preview
+  const handleStopPreview = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      speechSynthesis.cancel();
+      setIsPreviewing(false);
+    }
+  }, []);
+
+  // Show unsupported message if narration is not available
+  if (!supportInfo.supported) {
+    return (
+      <section>
+        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-start gap-3">
+            <svg
+              className="mt-0.5 h-5 w-5 flex-shrink-0 text-zinc-400 dark:text-zinc-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                Narration Unavailable
+              </p>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{supportInfo.reason}</p>
+              <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
+                Try using Chrome, Safari, or Edge for the best narration experience.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
+      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Enable/Disable Toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              Enable narration
+            </h3>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              Listen to articles using text-to-speech.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.enabled}
+            onClick={() => setSettings({ ...settings, enabled: !settings.enabled })}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+              settings.enabled ? "bg-zinc-900 dark:bg-zinc-50" : "bg-zinc-200 dark:bg-zinc-700"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                settings.enabled ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Voice Settings (only shown when enabled) */}
+        {settings.enabled && (
+          <div className="mt-6 space-y-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+            {/* Voice Selector */}
+            <div>
+              <label
+                htmlFor="narration-voice"
+                className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Voice
+              </label>
+              <div className="flex gap-3">
+                <select
+                  id="narration-voice"
+                  value={settings.voiceUri || ""}
+                  onChange={handleVoiceChange}
+                  disabled={isLoadingVoices}
+                  className="block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                >
+                  {isLoadingVoices ? (
+                    <option value="">Loading voices...</option>
+                  ) : voices.length === 0 ? (
+                    <option value="">No voices available</option>
+                  ) : (
+                    <>
+                      <option value="">Default voice</option>
+                      {voices.map((voice) => (
+                        <option key={voice.voiceURI} value={voice.voiceURI}>
+                          {voice.name}
+                          {voice.localService ? "" : " (online)"}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={isPreviewing ? handleStopPreview : handlePreview}
+                  disabled={isLoadingVoices || voices.length === 0}
+                >
+                  {isPreviewing ? "Stop" : "Preview"}
+                </Button>
+              </div>
+              <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Voices are provided by your browser. Chrome and Safari typically offer higher
+                quality voices.
+              </p>
+            </div>
+
+            {/* Speed Slider */}
+            <div>
+              <label
+                htmlFor="narration-rate"
+                className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Speed: {settings.rate.toFixed(1)}x
+              </label>
+              <input
+                id="narration-rate"
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                value={settings.rate}
+                onChange={handleRateChange}
+                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
+              />
+              <div className="mt-1 flex justify-between text-xs text-zinc-400 dark:text-zinc-500">
+                <span>0.5x</span>
+                <span>1.0x</span>
+                <span>1.5x</span>
+                <span>2.0x</span>
+              </div>
+            </div>
+
+            {/* Pitch Slider */}
+            <div>
+              <label
+                htmlFor="narration-pitch"
+                className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Pitch: {settings.pitch.toFixed(1)}x
+              </label>
+              <input
+                id="narration-pitch"
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                value={settings.pitch}
+                onChange={handlePitchChange}
+                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
+              />
+              <div className="mt-1 flex justify-between text-xs text-zinc-400 dark:text-zinc-500">
+                <span>0.5x</span>
+                <span>1.0x</span>
+                <span>1.5x</span>
+                <span>2.0x</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Media Session Info */}
+        {settings.enabled && supportInfo.mediaSession && (
+          <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+            <div className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+              <svg
+                className="mt-0.5 h-4 w-4 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span>
+                Your browser supports media controls. You can control playback using your keyboard
+                media keys or lock screen controls.
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
