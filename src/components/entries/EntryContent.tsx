@@ -33,7 +33,7 @@ interface EntryContentProps {
  */
 function EntryContentSkeleton() {
   return (
-    <div className="mx-auto max-w-3xl animate-pulse px-4 py-8">
+    <div className="mx-auto max-w-3xl animate-pulse px-4 py-6 sm:py-8">
       {/* Back button placeholder */}
       <div className="mb-6 h-8 w-20 rounded bg-zinc-200 dark:bg-zinc-700" />
 
@@ -272,12 +272,12 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
   const displayFeed = entry.feedTitle ?? "Unknown Feed";
 
   return (
-    <article className="mx-auto max-w-3xl px-4 py-8">
+    <article className="mx-auto max-w-3xl px-4 py-6 sm:py-8">
       {/* Back button */}
       {onBack && (
         <button
           onClick={onBack}
-          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          className="mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
         >
           <BackArrowIcon />
           <span>Back to list</span>
@@ -285,31 +285,37 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
       )}
 
       {/* Header */}
-      <header className="mb-8">
+      <header className="mb-6 sm:mb-8">
         {/* Title */}
-        <h1 className="mb-4 text-2xl leading-tight font-bold text-zinc-900 sm:text-3xl dark:text-zinc-100">
+        <h1 className="mb-3 text-xl leading-tight font-bold text-zinc-900 sm:mb-4 sm:text-2xl md:text-3xl dark:text-zinc-100">
           {displayTitle}
         </h1>
 
         {/* Meta row: Feed, Author, Date */}
-        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600 sm:mb-6 sm:gap-x-4 sm:gap-y-2 sm:text-sm dark:text-zinc-400">
           <span className="font-medium">{displayFeed}</span>
           {entry.author && (
             <>
-              <span aria-hidden="true" className="text-zinc-400 dark:text-zinc-600">
+              <span
+                aria-hidden="true"
+                className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
+              >
                 |
               </span>
-              <span>by {entry.author}</span>
+              <span className="hidden sm:inline">by {entry.author}</span>
+              <span className="sm:hidden">- {entry.author}</span>
             </>
           )}
-          <span aria-hidden="true" className="text-zinc-400 dark:text-zinc-600">
+          <span aria-hidden="true" className="hidden text-zinc-400 sm:inline dark:text-zinc-600">
             |
           </span>
-          <time dateTime={displayDate.toISOString()}>{formatDate(displayDate)}</time>
+          <time dateTime={displayDate.toISOString()} className="basis-full sm:basis-auto">
+            {formatDate(displayDate)}
+          </time>
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           {/* Star button */}
           <Button
             variant={entry.starred ? "primary" : "secondary"}
@@ -343,12 +349,12 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
       </header>
 
       {/* Divider */}
-      <hr className="mb-8 border-zinc-200 dark:border-zinc-700" />
+      <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
 
       {/* Content */}
       {sanitizedContent ? (
         <div
-          className="prose prose-zinc dark:prose-invert prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 hover:prose-a:text-blue-700 dark:hover:prose-a:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none"
+          className="prose prose-zinc prose-sm sm:prose-base dark:prose-invert prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 hover:prose-a:text-blue-700 dark:hover:prose-a:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:overflow-x-auto prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none"
           dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
       ) : entry.summary ? (
@@ -361,12 +367,12 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
 
       {/* Footer with original link */}
       {entry.url && (
-        <footer className="mt-12 border-t border-zinc-200 pt-8 dark:border-zinc-700">
+        <footer className="mt-8 border-t border-zinc-200 pt-6 sm:mt-12 sm:pt-8 dark:border-zinc-700">
           <a
             href={entry.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            className="inline-flex min-h-[44px] items-center gap-2 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
           >
             <ExternalLinkIcon />
             Read on {entry.feedUrl ? new URL(entry.feedUrl).hostname : "original site"}

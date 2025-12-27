@@ -86,8 +86,10 @@ export default function SubscribePage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
-      <h1 className="mb-6 text-2xl font-bold text-zinc-900 dark:text-zinc-50">Subscribe to Feed</h1>
+    <div className="mx-auto max-w-2xl px-4 py-4 sm:p-6">
+      <h1 className="mb-4 text-xl font-bold text-zinc-900 sm:mb-6 sm:text-2xl dark:text-zinc-50">
+        Subscribe to Feed
+      </h1>
 
       {step === "input" ? (
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">

@@ -63,7 +63,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </Link>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="rounded p-1 text-zinc-500 hover:bg-zinc-100 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+              aria-label="Close navigation menu"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -89,7 +90,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
             {/* Mobile menu button */}
             <button
               onClick={() => setSidebarOpen(true)}
-              className="rounded p-2 text-zinc-500 hover:bg-zinc-100 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+              aria-label="Open navigation menu"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -109,7 +111,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               {/* Subscribe button */}
               <Link
                 href="/subscribe"
-                className="inline-flex h-9 items-center gap-1 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white transition-colors hover:bg-zinc-800 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:active:bg-zinc-300"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -126,10 +128,22 @@ export default function AppLayout({ children }: AppLayoutProps) {
               <div className="relative">
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="flex h-9 items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="flex min-h-[40px] items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                  aria-expanded={userMenuOpen}
+                  aria-haspopup="true"
                 >
-                  <span className="max-w-[150px] truncate">
+                  <span className="hidden max-w-[150px] truncate sm:inline">
                     {userQuery.data?.user.email ?? "..."}
+                  </span>
+                  <span className="sm:hidden" aria-label="Account menu">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
+                    </svg>
                   </span>
                   <svg
                     className={`h-4 w-4 transition-transform ${userMenuOpen ? "rotate-180" : ""}`}
@@ -154,14 +168,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
                       <Link
                         href="/settings"
                         onClick={() => setUserMenuOpen(false)}
-                        className="block px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        className="flex min-h-[44px] items-center px-4 text-sm text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                       >
                         Settings
                       </Link>
                       <Link
                         href="/settings/sessions"
                         onClick={() => setUserMenuOpen(false)}
-                        className="block px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        className="flex min-h-[44px] items-center px-4 text-sm text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                       >
                         Sessions
                       </Link>
@@ -172,7 +186,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                           handleLogout();
                         }}
                         disabled={logoutMutation.isPending}
-                        className="block w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        className="flex min-h-[44px] w-full items-center px-4 text-left text-sm text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                       >
                         {logoutMutation.isPending ? "Signing out..." : "Sign out"}
                       </button>

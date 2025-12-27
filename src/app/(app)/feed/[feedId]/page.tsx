@@ -30,8 +30,8 @@ function FeedHeaderSkeleton() {
  */
 function FeedNotFound() {
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
+      <div className="rounded-lg border border-zinc-200 bg-white p-6 text-center sm:p-8 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/20">
           <svg
             className="h-6 w-6 text-red-500 dark:text-red-400"
@@ -98,7 +98,7 @@ export default function SingleFeedPage() {
   // Show loading state while checking subscription
   if (subscriptionsQuery.isLoading) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
         <FeedHeaderSkeleton />
       </div>
     );
@@ -114,12 +114,12 @@ export default function SingleFeedPage() {
   const unreadCount = subscription.subscription.unreadCount;
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <div className="mb-6">
+    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
+      <div className="mb-4 sm:mb-6">
         {/* Breadcrumb back link */}
         <Link
           href="/all"
-          className="mb-2 inline-flex items-center text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-2 -ml-2 inline-flex min-h-[36px] items-center rounded-md px-2 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:active:bg-zinc-700"
         >
           <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -133,10 +133,12 @@ export default function SingleFeedPage() {
         </Link>
 
         {/* Feed title and unread count */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{feedTitle}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">
+            {feedTitle}
+          </h1>
           {unreadCount > 0 && (
-            <span className="rounded-full bg-zinc-100 px-3 py-1 text-sm text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+            <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
               {unreadCount} unread
             </span>
           )}
@@ -148,7 +150,7 @@ export default function SingleFeedPage() {
             href={subscription.feed.siteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"
+            className="mt-1 inline-block text-sm text-zinc-500 hover:underline dark:text-zinc-400"
           >
             {new URL(subscription.feed.siteUrl).hostname}
           </a>
