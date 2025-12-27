@@ -4,6 +4,10 @@
  * A client-side class for paragraph-based article narration using the Web Speech API.
  * Provides playback controls, state management, and paragraph navigation.
  *
+ * Note: Firefox has a known bug where `speechSynthesis.pause()` and
+ * `speechSynthesis.resume()` don't work. This class implements a workaround
+ * by using `cancel()` and restarting from the current paragraph position.
+ *
  * Usage:
  * ```typescript
  * import { ArticleNarrator } from "@/lib/narration/ArticleNarrator";
@@ -13,7 +17,11 @@
  * narrator.onStateChange((state) => console.log(state));
  * narrator.play();
  * ```
+ *
+ * @see https://bugzilla.mozilla.org/show_bug.cgi?id=1316808
  */
+
+import { isFirefox } from "./feature-detection";
 
 /**
  * Possible states for the narration playback.
@@ -98,12 +106,21 @@ export class ArticleNarrator {
   private stateChangeListeners: Set<StateChangeCallback> = new Set();
 
   /**
+   * Cached Firefox detection result.
+   * Firefox has broken pause/resume, so we use a workaround.
+   */
+  private readonly isFirefoxBrowser: boolean;
+
+  /**
    * Creates a new ArticleNarrator instance.
    */
   constructor() {
     // Bind methods to ensure correct 'this' context when used as callbacks
     this.handleUtteranceEnd = this.handleUtteranceEnd.bind(this);
     this.handleUtteranceError = this.handleUtteranceError.bind(this);
+
+    // Cache Firefox detection (checked once at construction)
+    this.isFirefoxBrowser = isFirefox();
   }
 
   /**
@@ -170,6 +187,10 @@ export class ArticleNarrator {
 
   /**
    * Pauses the current playback.
+   *
+   * Note: Firefox has a known bug where `speechSynthesis.pause()` doesn't work.
+   * On Firefox, we use `cancel()` instead and remember the paragraph position
+   * so we can restart from there on resume.
    */
   pause(): void {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -177,13 +198,23 @@ export class ArticleNarrator {
     }
 
     if (this.status === "playing") {
-      speechSynthesis.pause();
+      if (this.isFirefoxBrowser) {
+        // Firefox workaround: cancel instead of pause
+        // We'll restart from the current paragraph on resume
+        speechSynthesis.cancel();
+        this.utterance = null;
+      } else {
+        speechSynthesis.pause();
+      }
       this.setStatus("paused");
     }
   }
 
   /**
    * Resumes playback after a pause.
+   *
+   * Note: On Firefox, since we used `cancel()` instead of `pause()`,
+   * we restart from the beginning of the current paragraph.
    */
   resume(): void {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -191,8 +222,13 @@ export class ArticleNarrator {
     }
 
     if (this.status === "paused") {
-      speechSynthesis.resume();
-      this.setStatus("playing");
+      if (this.isFirefoxBrowser) {
+        // Firefox workaround: restart from current paragraph
+        this.speakCurrentParagraph();
+      } else {
+        speechSynthesis.resume();
+        this.setStatus("playing");
+      }
     }
   }
 
