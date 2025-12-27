@@ -65,6 +65,39 @@ export const sessions = pgTable(
 );
 
 // ============================================================================
+// OAUTH ACCOUNTS
+// ============================================================================
+
+/**
+ * OAuth accounts table - links OAuth providers to user accounts.
+ * Enables login via Google, Apple, etc.
+ */
+export const oauthAccounts = pgTable(
+  "oauth_accounts",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(), // 'google', 'apple'
+    providerAccountId: text("provider_account_id").notNull(),
+
+    // Token storage for potential API access
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Unique constraint on provider + provider_account_id
+    unique("uq_oauth_accounts_provider_account").on(table.provider, table.providerAccountId),
+    // Index for looking up OAuth accounts by user
+    index("idx_oauth_accounts_user").on(table.userId),
+  ]
+);
+
+// ============================================================================
 // FEEDS (shared canonical data)
 // ============================================================================
 
@@ -272,3 +305,6 @@ export type NewUserEntryState = typeof userEntryStates.$inferInsert;
 
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
+
+export type OAuthAccount = typeof oauthAccounts.$inferSelect;
+export type NewOAuthAccount = typeof oauthAccounts.$inferInsert;
