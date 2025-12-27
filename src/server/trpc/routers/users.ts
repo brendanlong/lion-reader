@@ -5,11 +5,12 @@
  */
 
 import { z } from "zod";
+import * as argon2 from "argon2";
 import { eq, and, isNull, gt, desc } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { sessions } from "@/server/db/schema";
+import { sessions, users } from "@/server/db/schema";
 import { revokeSession } from "@/server/auth";
 
 // ============================================================================
@@ -133,6 +134,66 @@ export const usersRouter = createTRPCRouter({
 
       // Revoke the session
       await revokeSession(sessionId);
+
+      return { success: true };
+    }),
+
+  /**
+   * Change password for the current user.
+   *
+   * Requires the current password for verification before setting a new one.
+   */
+  "me.changePassword": protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/v1/users/me/change-password",
+        tags: ["Users"],
+        summary: "Change password",
+      },
+    })
+    .input(
+      z.object({
+        currentPassword: z.string().min(1, "Current password is required"),
+        newPassword: z
+          .string()
+          .min(8, "New password must be at least 8 characters")
+          .max(128, "New password must be less than 128 characters"),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const { currentPassword, newPassword } = input;
+
+      // Get the user's current password hash
+      const user = await ctx.db
+        .select({ passwordHash: users.passwordHash })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (user.length === 0 || !user[0].passwordHash) {
+        throw errors.validation("Cannot change password for this account");
+      }
+
+      // Verify current password
+      const isValidPassword = await argon2.verify(user[0].passwordHash, currentPassword);
+      if (!isValidPassword) {
+        throw errors.validation("Current password is incorrect");
+      }
+
+      // Hash the new password
+      const newPasswordHash = await argon2.hash(newPassword);
+
+      // Update the password
+      await ctx.db
+        .update(users)
+        .set({
+          passwordHash: newPasswordHash,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
 
       return { success: true };
     }),
