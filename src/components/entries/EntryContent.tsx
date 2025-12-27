@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
+import { NarrationControls } from "@/components/narration/NarrationControls";
 
 /**
  * Props for the EntryContent component.
@@ -366,6 +367,14 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
               <span className="ml-2">View Original</span>
             </Button>
           )}
+
+          {/* Narration controls */}
+          <NarrationControls
+            articleId={entryId}
+            articleType="entry"
+            title={displayTitle}
+            feedTitle={displayFeed}
+          />
         </div>
       </header>
 
