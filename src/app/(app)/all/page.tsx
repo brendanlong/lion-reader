@@ -7,24 +7,42 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { EntryList } from "@/components/entries/EntryList";
 import { EntryContent } from "@/components/entries/EntryContent";
+import { useKeyboardShortcuts } from "@/lib/hooks";
 
 export default function AllEntriesPage() {
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [openEntryId, setOpenEntryId] = useState<string | null>(null);
+  const [entryIds, setEntryIds] = useState<string[]>([]);
 
-  const handleEntryClick = (entryId: string) => {
-    setSelectedEntryId(entryId);
-  };
+  // Keyboard navigation
+  const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
+    entryIds,
+    onOpenEntry: (entryId) => setOpenEntryId(entryId),
+    onClose: () => setOpenEntryId(null),
+    isEntryOpen: !!openEntryId,
+  });
 
-  const handleBack = () => {
-    setSelectedEntryId(null);
-  };
+  const handleEntryClick = useCallback(
+    (entryId: string) => {
+      setSelectedEntryId(entryId);
+      setOpenEntryId(entryId);
+    },
+    [setSelectedEntryId]
+  );
 
-  // If an entry is selected, show the full content view
-  if (selectedEntryId) {
-    return <EntryContent entryId={selectedEntryId} onBack={handleBack} />;
+  const handleBack = useCallback(() => {
+    setOpenEntryId(null);
+  }, []);
+
+  const handleEntriesLoaded = useCallback((ids: string[]) => {
+    setEntryIds(ids);
+  }, []);
+
+  // If an entry is open, show the full content view
+  if (openEntryId) {
+    return <EntryContent entryId={openEntryId} onBack={handleBack} />;
   }
 
   // Otherwise, show the entry list
@@ -36,6 +54,8 @@ export default function AllEntriesPage() {
 
       <EntryList
         onEntryClick={handleEntryClick}
+        selectedEntryId={selectedEntryId}
+        onEntriesLoaded={handleEntriesLoaded}
         emptyMessage="No entries yet. Subscribe to some feeds to see entries here."
       />
     </div>
