@@ -405,6 +405,7 @@ export const savedArticles = pgTable(
     contentOriginal: text("content_original"),
     contentCleaned: text("content_cleaned"), // via Readability
     excerpt: text("excerpt"),
+    contentHash: text("content_hash"), // SHA256 hash for narration deduplication
 
     // Same read/starred model as entries
     read: boolean("read").notNull().default(false),
@@ -425,6 +426,35 @@ export const savedArticles = pgTable(
     index("idx_saved_articles_unread").on(table.userId),
     // For filtering starred articles
     index("idx_saved_articles_starred").on(table.userId, table.starredAt),
+  ]
+);
+
+// ============================================================================
+// NARRATION
+// ============================================================================
+
+/**
+ * Narration content table - stores LLM-processed text for text-to-speech.
+ * Keyed by content hash for deduplication across entries and saved articles.
+ */
+export const narrationContent = pgTable(
+  "narration_content",
+  {
+    id: uuid("id").primaryKey(), // UUIDv7
+    contentHash: text("content_hash").unique().notNull(), // SHA256 of source content
+
+    contentNarration: text("content_narration"), // null until generated
+    generatedAt: timestamp("generated_at", { withTimezone: true }),
+
+    // Error tracking for retry logic
+    error: text("error"),
+    errorAt: timestamp("error_at", { withTimezone: true }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Index for finding narration that needs generation (null narration, no recent error)
+    index("idx_narration_needs_generation").on(table.id),
   ]
 );
 
@@ -467,3 +497,6 @@ export type NewWebsubSubscription = typeof websubSubscriptions.$inferInsert;
 
 export type SavedArticle = typeof savedArticles.$inferSelect;
 export type NewSavedArticle = typeof savedArticles.$inferInsert;
+
+export type NarrationContent = typeof narrationContent.$inferSelect;
+export type NewNarrationContent = typeof narrationContent.$inferInsert;
