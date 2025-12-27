@@ -10,6 +10,7 @@
 import { useState, useCallback } from "react";
 import { EntryList, type EntryListEntryData } from "@/components/entries/EntryList";
 import { EntryContent } from "@/components/entries/EntryContent";
+import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import { useKeyboardShortcuts, type KeyboardEntryData } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
@@ -17,6 +18,7 @@ export default function AllEntriesPage() {
   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
+  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -44,6 +46,7 @@ export default function AllEntriesPage() {
     onOpenEntry: (entryId) => setOpenEntryId(entryId),
     onClose: () => setOpenEntryId(null),
     isEntryOpen: !!openEntryId,
+    enabled: keyboardShortcutsEnabled,
     onToggleRead: (entryId, currentlyRead) => {
       markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
     },
