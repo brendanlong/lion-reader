@@ -119,7 +119,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 3.4 Subscriptions API
 
-- [ ] **Implement subscription endpoints**
+- [x] **Implement subscription endpoints**
   - POST /v1/subscriptions - subscribe by URL (find or create feed)
   - GET /v1/subscriptions - list user's subscriptions
   - GET /v1/subscriptions/:id - get single subscription
