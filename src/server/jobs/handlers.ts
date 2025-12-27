@@ -14,6 +14,7 @@ import {
   type FetchFeedResult,
 } from "../feed";
 import { createJob, type JobPayloads } from "./queue";
+import { logger } from "@/lib/logger";
 
 /**
  * Result of a job handler execution.
@@ -39,10 +40,13 @@ export async function handleFetchFeed(
 ): Promise<JobHandlerResult> {
   const { feedId } = payload;
 
+  logger.debug("Starting feed fetch", { feedId });
+
   // Get the feed from the database
   const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId)).limit(1);
 
   if (!feed) {
+    logger.warn("Feed not found for fetch job", { feedId });
     return {
       success: false,
       error: `Feed not found: ${feedId}`,
@@ -50,6 +54,7 @@ export async function handleFetchFeed(
   }
 
   if (!feed.url) {
+    logger.warn("Feed has no URL", { feedId });
     return {
       success: false,
       error: `Feed has no URL: ${feedId}`,
@@ -64,6 +69,22 @@ export async function handleFetchFeed(
 
   // Process the result based on status
   const handlerResult = await processFetchResult(feed, fetchResult);
+
+  // Log the result
+  if (handlerResult.success) {
+    logger.info("Feed fetched successfully", {
+      feedId,
+      url: feed.url,
+      ...handlerResult.metadata,
+    });
+  } else {
+    logger.warn("Feed fetch failed", {
+      feedId,
+      url: feed.url,
+      error: handlerResult.error,
+      ...handlerResult.metadata,
+    });
+  }
 
   return handlerResult;
 }

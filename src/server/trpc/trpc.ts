@@ -17,6 +17,8 @@ import {
   RATE_LIMIT_CONFIGS,
   type RateLimitType,
 } from "@/server/rate-limit";
+import { logger } from "@/lib/logger";
+import * as Sentry from "@sentry/nextjs";
 
 /**
  * Initialize tRPC with our context type and superjson transformer.
@@ -46,18 +48,58 @@ export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 
 /**
- * Middleware that logs request timing
+ * Middleware that logs request timing and captures errors
  */
-const timingMiddleware = t.middleware(async ({ path, type, next }) => {
+const timingMiddleware = t.middleware(async ({ path, type, next, ctx }) => {
   const start = Date.now();
-  const result = await next();
-  const duration = Date.now() - start;
 
-  if (duration > 1000) {
-    console.warn(`Slow ${type} '${path}': ${duration}ms`);
+  try {
+    const result = await next();
+    const duration = Date.now() - start;
+
+    // Log slow requests
+    if (duration > 1000) {
+      logger.warn("Slow tRPC request", {
+        path,
+        type,
+        durationMs: duration,
+        userId: ctx.session?.user?.id,
+      });
+    }
+
+    return result;
+  } catch (error) {
+    const duration = Date.now() - start;
+
+    // Log the error
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const isTRPCError = error instanceof TRPCError;
+
+    // Only log unexpected errors (not client errors like UNAUTHORIZED, NOT_FOUND)
+    if (
+      !isTRPCError ||
+      !["UNAUTHORIZED", "NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"].includes(error.code)
+    ) {
+      logger.error("tRPC request failed", {
+        path,
+        type,
+        durationMs: duration,
+        error: errorMessage,
+        userId: ctx.session?.user?.id,
+      });
+
+      // Report non-client errors to Sentry
+      Sentry.captureException(error, {
+        tags: { trpcPath: path, trpcType: type },
+        extra: {
+          durationMs: duration,
+          userId: ctx.session?.user?.id,
+        },
+      });
+    }
+
+    throw error;
   }
-
-  return result;
 });
 
 /**

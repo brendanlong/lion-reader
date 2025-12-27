@@ -331,7 +331,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 8.4 Observability
 
-- [ ] **Set up monitoring and error tracking**
+- [x] **Set up monitoring and error tracking**
   - Integrate Sentry for error tracking
   - Add structured logging
   - Set up basic health check endpoint
