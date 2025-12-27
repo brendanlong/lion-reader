@@ -128,7 +128,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 3.5 Feed Preview API
 
-- [ ] **Implement feed preview endpoint**
+- [x] **Implement feed preview endpoint**
   - GET /v1/feeds/preview?url=... - fetch and parse without saving
   - Return feed title, description, site URL, sample entries
   - Handle errors gracefully (invalid URL, not a feed, etc.)
