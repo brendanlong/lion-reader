@@ -154,7 +154,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 4.2 Feed Fetcher
 
-- [ ] **Implement HTTP feed fetching**
+- [x] **Implement HTTP feed fetching**
   - Fetch with proper headers (If-None-Match, If-Modified-Since)
   - Handle 200 OK - parse feed content
   - Handle 304 Not Modified - update timestamps only
