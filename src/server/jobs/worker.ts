@@ -16,7 +16,12 @@ import {
   resetStaleJobs,
   type JobType,
 } from "./queue";
-import { handleFetchFeed, handleCleanup, type JobHandlerResult } from "./handlers";
+import {
+  handleFetchFeed,
+  handleCleanup,
+  handleRenewWebsub,
+  type JobHandlerResult,
+} from "./handlers";
 import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
@@ -173,6 +178,11 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         case "cleanup": {
           const payload = getJobPayload<"cleanup">(job);
           result = await handleCleanup(payload);
+          break;
+        }
+        case "renew_websub": {
+          const payload = getJobPayload<"renew_websub">(job);
+          result = await handleRenewWebsub(payload);
           break;
         }
         default: {

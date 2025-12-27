@@ -53,6 +53,7 @@ function rowToJob(row: RawJobRow): Job {
 export interface JobPayloads {
   fetch_feed: { feedId: string };
   cleanup: { olderThanDays?: number };
+  renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
 }
 
 export type JobType = keyof JobPayloads;

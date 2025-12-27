@@ -569,13 +569,13 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 11.5 WebSub Maintenance
 
-- [ ] **Implement subscription renewal**
+- [x] **Implement subscription renewal**
   - Create renew_websub job type
   - Schedule renewal for subscriptions expiring within 24h
   - Handle renewal failures (fall back to polling)
   - Run renewal check daily
 
-- [ ] **Implement graceful fallback**
+- [x] **Implement graceful fallback**
   - If WebSub fails, continue with polling
   - Track WebSub status for monitoring
   - Log WebSub events for debugging
