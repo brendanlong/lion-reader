@@ -145,7 +145,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 4.1 Job Queue
 
-- [ ] **Implement Postgres-based job queue**
+- [x] **Implement Postgres-based job queue**
   - Create job creation utility with scheduling
   - Implement job claiming with row locking (SELECT FOR UPDATE SKIP LOCKED)
   - Add job completion and failure handling

@@ -19,7 +19,7 @@
     "db:seed": "dotenv -- tsx scripts/seed.ts",
     "test": "vitest",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "dotenv -- vitest run tests/integration"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": [
