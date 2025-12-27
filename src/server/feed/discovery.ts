@@ -1,6 +1,6 @@
 /**
  * Feed discovery from HTML pages.
- * Parses HTML to find <link rel="alternate"> tags pointing to RSS/Atom feeds.
+ * Parses HTML to find <link rel="alternate"> tags pointing to RSS/Atom/JSON feeds.
  */
 
 /**
@@ -9,8 +9,8 @@
 export interface DiscoveredFeed {
   /** The URL of the feed (resolved to absolute) */
   url: string;
-  /** The type of feed (rss, atom, or unknown) */
-  type: "rss" | "atom" | "unknown";
+  /** The type of feed (rss, atom, json, or unknown) */
+  type: "rss" | "atom" | "json" | "unknown";
   /** The title of the feed (from title attribute, if present) */
   title?: string;
 }
@@ -21,9 +21,34 @@ export interface DiscoveredFeed {
 const FEED_MIME_TYPES: Record<string, DiscoveredFeed["type"]> = {
   "application/rss+xml": "rss",
   "application/atom+xml": "atom",
+  "application/feed+json": "json",
+  "application/json": "json",
   "application/xml": "unknown",
   "text/xml": "unknown",
 };
+
+/**
+ * Common feed paths to check on websites.
+ * These are checked in order of likelihood.
+ */
+export const COMMON_FEED_PATHS = [
+  "/feed",
+  "/feed.xml",
+  "/rss",
+  "/rss.xml",
+  "/atom.xml",
+  "/index.xml",
+  "/feed.json",
+  "/feed/",
+  "/rss/",
+  "/atom/",
+  "/blog/feed",
+  "/blog/rss",
+  "/blog/feed.xml",
+  "/blog/rss.xml",
+  "/blog/atom.xml",
+  "/.rss",
+];
 
 /**
  * Regular expression to match <link> tags in HTML.
@@ -172,4 +197,27 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
   }
 
   return feeds;
+}
+
+/**
+ * Generates a list of common feed URLs to check for a given base URL.
+ * Returns absolute URLs built from the origin of the base URL.
+ *
+ * @param baseUrl - The base URL to generate feed URLs from
+ * @returns An array of absolute feed URLs to check
+ *
+ * @example
+ * ```typescript
+ * const urls = getCommonFeedUrls("https://example.com/blog/post");
+ * // Returns: ["https://example.com/feed", "https://example.com/feed.xml", ...]
+ * ```
+ */
+export function getCommonFeedUrls(baseUrl: string): string[] {
+  try {
+    const url = new URL(baseUrl);
+    const origin = url.origin;
+    return COMMON_FEED_PATHS.map((path) => `${origin}${path}`);
+  } catch {
+    return [];
+  }
 }
