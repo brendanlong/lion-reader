@@ -506,7 +506,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Create GET /api/metrics endpoint with optional basic auth
   - Return 404 when metrics disabled
 
-- [ ] **Implement HTTP metrics**
+- [x] **Implement HTTP metrics**
   - Track http_requests_total{method, path, status}
   - Track http_request_duration_seconds{method, path}
   - Create middleware to instrument tRPC/API routes

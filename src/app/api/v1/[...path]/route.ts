@@ -4,11 +4,13 @@
  * This handles REST requests for the public API.
  * Routes are defined using the openapi meta on tRPC procedures.
  * Includes rate limit headers in all responses.
+ * Tracks HTTP metrics when METRICS_ENABLED=true.
  */
 
 import { createOpenApiFetchHandler } from "trpc-to-openapi";
 import { TRPCError } from "@trpc/server";
 import { appRouter, createContext } from "@/server/trpc";
+import { startHttpTimer } from "@/server/metrics";
 
 /**
  * Extracts rate limit headers from a tRPC error (if present).
@@ -21,10 +23,31 @@ function extractRateLimitHeaders(error: TRPCError): Record<string, string> {
 }
 
 /**
+ * Normalizes the REST API path for metrics.
+ * Replaces dynamic segments (UUIDs) with placeholders to avoid high cardinality.
+ *
+ * Example: /api/v1/subscriptions/550e8400-e29b-41d4-a716-446655440000 → /api/v1/subscriptions/:id
+ */
+function normalizeRestPath(url: URL): string {
+  const pathname = url.pathname;
+
+  // UUID pattern: 8-4-4-4-12 hex chars
+  const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+  // Replace UUIDs with :id placeholder
+  return pathname.replace(uuidPattern, ":id");
+}
+
+/**
  * Handle REST API requests with rate limit header handling.
  */
 const handler = async (req: Request) => {
   let rateLimitHeaders: Record<string, string> = {};
+
+  // Start timing for metrics (no-op if metrics disabled)
+  const url = new URL(req.url);
+  const normalizedPath = normalizeRestPath(url);
+  const endTimer = startHttpTimer(req.method, normalizedPath);
 
   const response = await createOpenApiFetchHandler({
     endpoint: "/api/v1",
@@ -48,6 +71,9 @@ const handler = async (req: Request) => {
             }
           },
   });
+
+  // Record HTTP metrics
+  endTimer(response.status);
 
   // Add rate limit headers to the response
   if (Object.keys(rateLimitHeaders).length > 0) {
