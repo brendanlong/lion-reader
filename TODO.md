@@ -367,7 +367,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 9.2 Google OAuth
 
-- [ ] **Implement OAuth infrastructure**
+- [x] **Implement OAuth infrastructure**
   - Create oauth_accounts table migration
   - Install and configure `arctic` library
   - Create oauth provider config with runtime detection

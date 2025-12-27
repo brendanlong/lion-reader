@@ -1,7 +1,7 @@
 /**
  * Auth Router
  *
- * Handles user authentication: registration, login, logout.
+ * Handles user authentication: registration, login, logout, and OAuth.
  * Session listing and revocation is in users router.
  */
 
@@ -9,11 +9,21 @@ import { z } from "zod";
 import * as argon2 from "argon2";
 import { eq } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure, expensivePublicProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  publicProcedure,
+  protectedProcedure,
+  expensivePublicProcedure,
+} from "../trpc";
 import { errors } from "../errors";
 import { users, sessions } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { generateSessionToken, getSessionExpiry, revokeSessionByToken } from "@/server/auth";
+import {
+  generateSessionToken,
+  getSessionExpiry,
+  revokeSessionByToken,
+  getEnabledProviders,
+} from "@/server/auth";
 
 // ============================================================================
 // Validation Schemas
@@ -242,6 +252,36 @@ export const authRouter = createTRPCRouter({
           createdAt: foundUser.createdAt,
         },
         sessionToken: token,
+      };
+    }),
+
+  /**
+   * Get list of enabled OAuth providers.
+   *
+   * Returns the list of OAuth providers that are configured and available.
+   * UI uses this to decide which OAuth buttons to show.
+   * If no OAuth providers are configured, returns empty array.
+   */
+  providers: publicProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/auth/providers",
+        tags: ["Auth"],
+        summary: "Get enabled OAuth providers",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        providers: z.array(z.enum(["google", "apple"])),
+      })
+    )
+    .query(() => {
+      const enabledProviders = getEnabledProviders();
+
+      return {
+        providers: enabledProviders,
       };
     }),
 
