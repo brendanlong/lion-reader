@@ -12,7 +12,9 @@
 8. [Infrastructure](#infrastructure)
 9. [Observability](#observability)
 10. [Testing Strategy](#testing-strategy)
-11. [Future Work](#future-work)
+11. [Saved Articles](#saved-articles-read-it-later)
+12. [Audio Narration](#audio-narration)
+13. [Future Work](#future-work)
 
 ---
 
@@ -1586,6 +1588,73 @@ For social features (sharing article collections), a separate "Lists" feature ca
 
 ---
 
+## Audio Narration
+
+Listen to articles using on-device text-to-speech. Content is preprocessed by an LLM to improve pronunciation and readability.
+
+See [docs/narration-design.md](./narration-design.md) for full implementation details.
+
+### Design Principles
+
+1. **Zero marginal cost**: On-device TTS means unlimited listening without per-character fees
+2. **Quality through preprocessing**: LLM cleanup fixes abbreviations, URLs, and formatting
+3. **Progressive enhancement**: Basic playback first, sync and highlighting in future versions
+4. **Transparency**: Users are informed when content is sent to LLM provider
+
+### Architecture
+
+```
+Article HTML  →  LLM Cleanup (Groq)  →  Narration Text (cached in DB)
+                                              ↓
+UI Highlighter  ←  Media Session API  ←  Web Speech API (on-device)
+   (future)
+```
+
+### Schema Changes
+
+```sql
+ALTER TABLE entries ADD COLUMN content_narration text;
+ALTER TABLE entries ADD COLUMN narration_generated_at timestamptz;
+```
+
+### API
+
+```
+narration.generate   POST  /v1/narration/generate  { entryId } → { narration, cached, source }
+```
+
+- Returns cached narration if available
+- Falls back to basic HTML→text conversion if Groq unavailable
+- Indicates source: `'llm'` or `'fallback'`
+
+### Client Integration
+
+- **Web Speech API**: Paragraph-based playback using `SpeechSynthesisUtterance`
+- **Media Session API**: OS-level controls (lock screen, media keys)
+- **Voice Settings**: User-selectable browser voices with rate/pitch controls
+- **Playback Controls**: Play/pause/skip in article view
+
+### Privacy
+
+Article content is sent to Groq (Llama 3.1 8B) for text preprocessing. Audio generation happens entirely on-device. Processed text is cached server-side.
+
+### Limitations
+
+| Limitation | Impact | Mitigation |
+|------------|--------|------------|
+| Background playback | Audio stops when tab backgrounded on mobile | Future: Capacitor wrapper |
+| Voice quality variance | Some browsers have poor voices | Recommend Chrome/Safari |
+| No offline narration | Requires network to generate text | Cache aggressively |
+
+### Future Enhancements
+
+- Sentence-level highlighting with paragraph mapping
+- Cross-device playback sync
+- Capacitor wrapper for background audio
+- Pre-generation for saved/starred articles
+
+---
+
 ## Future Work
 
 Features and improvements for post-MVP development:
@@ -1612,6 +1681,7 @@ Features and improvements for post-MVP development:
 - **Full-text search**: Enhanced search with filters, saved searches
 - **Highlights and notes**: Annotate entries
 - **Read later / Saved Articles**: Save URLs for later reading ✓ (see § Saved Articles above)
+- **Audio narration**: Listen to articles with on-device TTS (see § Audio Narration above)
 
 ### Mobile
 
