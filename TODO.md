@@ -306,7 +306,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 8.1 CI Pipeline
 
-- [ ] **Set up GitHub Actions CI**
+- [x] **Set up GitHub Actions CI**
   - Create workflow for PRs
   - Run typecheck, lint, unit tests
   - Run integration tests with Postgres/Redis services
