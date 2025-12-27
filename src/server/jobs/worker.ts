@@ -20,6 +20,7 @@ import { handleFetchFeed, handleCleanup, type JobHandlerResult } from "./handler
 import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
+import { trackJobProcessed } from "../metrics/metrics";
 
 /**
  * Worker configuration options.
@@ -187,6 +188,10 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       if (result.success) {
         await completeJob(job.id);
         totalSucceeded++;
+
+        // Track job success metrics
+        trackJobProcessed(job.type, "success", duration);
+
         logger.info(`Job ${job.id} completed`, {
           type: job.type,
           durationMs: duration,
@@ -195,6 +200,10 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       } else {
         await failJob(job.id, result.error ?? "Unknown error");
         totalFailed++;
+
+        // Track job failure metrics
+        trackJobProcessed(job.type, "failure", duration);
+
         logger.warn(`Job ${job.id} failed`, {
           type: job.type,
           durationMs: duration,
@@ -208,6 +217,9 @@ export function createWorker(config: WorkerConfig = {}): Worker {
 
       await failJob(job.id, errorMessage);
       totalFailed++;
+
+      // Track job exception as failure
+      trackJobProcessed(job.type, "failure", duration);
 
       logger.error(`Job ${job.id} threw exception`, {
         type: job.type,

@@ -15,6 +15,7 @@ import {
 } from "../feed";
 import { createJob, type JobPayloads } from "./queue";
 import { logger } from "@/lib/logger";
+import { startFeedFetchTimer, type FeedFetchStatus } from "../metrics/metrics";
 
 /**
  * Result of a job handler execution.
@@ -42,11 +43,15 @@ export async function handleFetchFeed(
 
   logger.debug("Starting feed fetch", { feedId });
 
+  // Start metrics timer for feed fetch
+  const endFeedFetchTimer = startFeedFetchTimer();
+
   // Get the feed from the database
   const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId)).limit(1);
 
   if (!feed) {
     logger.warn("Feed not found for fetch job", { feedId });
+    endFeedFetchTimer("error");
     return {
       success: false,
       error: `Feed not found: ${feedId}`,
@@ -55,6 +60,7 @@ export async function handleFetchFeed(
 
   if (!feed.url) {
     logger.warn("Feed has no URL", { feedId });
+    endFeedFetchTimer("error");
     return {
       success: false,
       error: `Feed has no URL: ${feedId}`,
@@ -69,6 +75,10 @@ export async function handleFetchFeed(
 
   // Process the result based on status
   const handlerResult = await processFetchResult(feed, fetchResult);
+
+  // Map handler result to metrics status
+  const metricsStatus: FeedFetchStatus = getMetricsStatus(fetchResult, handlerResult);
+  endFeedFetchTimer(metricsStatus);
 
   // Log the result
   if (handlerResult.success) {
@@ -87,6 +97,22 @@ export async function handleFetchFeed(
   }
 
   return handlerResult;
+}
+
+/**
+ * Maps fetch result and handler result to a metrics status.
+ */
+function getMetricsStatus(
+  fetchResult: FetchFeedResult,
+  handlerResult: JobHandlerResult
+): FeedFetchStatus {
+  if (fetchResult.status === "not_modified") {
+    return "not_modified";
+  }
+  if (fetchResult.status === "success" && handlerResult.success) {
+    return "success";
+  }
+  return "error";
 }
 
 /**

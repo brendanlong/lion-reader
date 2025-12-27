@@ -1,4 +1,4 @@
-import { metricsEnabled, registry } from "@/server/metrics";
+import { metricsEnabled, registry, collectAllMetrics } from "@/server/metrics";
 
 /**
  * Prometheus Metrics Endpoint
@@ -8,6 +8,7 @@ import { metricsEnabled, registry } from "@/server/metrics";
  * Behavior:
  * - Returns 404 when METRICS_ENABLED is not "true"
  * - Requires basic auth if METRICS_USERNAME and METRICS_PASSWORD are set
+ * - Collects business metrics from database before returning
  * - Returns metrics in Prometheus text format
  *
  * Environment Variables:
@@ -69,6 +70,9 @@ export async function GET(request: Request): Promise<Response> {
       },
     });
   }
+
+  // Collect business metrics from database before returning
+  await collectAllMetrics();
 
   // Return metrics in Prometheus text format
   const metrics = await registry.metrics();
