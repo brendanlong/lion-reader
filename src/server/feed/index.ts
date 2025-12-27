@@ -14,3 +14,26 @@ export {
   type FeedType,
 } from "./parser";
 export { discoverFeeds, type DiscoveredFeed } from "./discovery";
+export {
+  parseCacheControl,
+  parseCacheHeaders,
+  getEffectiveMaxAge,
+  type CacheControl,
+  type ParsedCacheHeaders,
+} from "./cache-headers";
+export {
+  fetchFeed,
+  shouldRetry,
+  getRetryDelay,
+  type FetchFeedOptions,
+  type FetchFeedResult,
+  type FetchSuccessResult,
+  type FetchNotModifiedResult,
+  type FetchPermanentRedirectResult,
+  type FetchClientErrorResult,
+  type FetchServerErrorResult,
+  type FetchRateLimitedResult,
+  type FetchNetworkErrorResult,
+  type FetchTooManyRedirectsResult,
+  type RedirectInfo,
+} from "./fetcher";
