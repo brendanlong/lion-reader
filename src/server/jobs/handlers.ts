@@ -11,11 +11,12 @@ import {
   parseFeed,
   processEntries,
   calculateNextFetch,
+  renewExpiringSubscriptions,
   type FetchFeedResult,
 } from "../feed";
 import { createJob, type JobPayloads } from "./queue";
 import { logger } from "@/lib/logger";
-import { startFeedFetchTimer, type FeedFetchStatus } from "../metrics/metrics";
+import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from "../metrics/metrics";
 
 /**
  * Result of a job handler execution.
@@ -410,4 +411,101 @@ export async function handleCleanup(payload: JobPayloads["cleanup"]): Promise<Jo
       cutoffDate: cutoffDate.toISOString(),
     },
   };
+}
+
+/**
+ * Handler for renew_websub jobs.
+ * Renews WebSub subscriptions that are expiring soon.
+ *
+ * This job should be scheduled to run daily. It finds all active WebSub
+ * subscriptions expiring within 24 hours and attempts to renew them.
+ * If renewal fails, the subscription is marked as unsubscribed and
+ * normal polling will take over.
+ *
+ * @param _payload - The job payload (empty for this job type)
+ * @returns Job handler result
+ */
+export async function handleRenewWebsub(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _payload: JobPayloads["renew_websub"]
+): Promise<JobHandlerResult> {
+  logger.info("Starting WebSub subscription renewal check");
+
+  const result = await renewExpiringSubscriptions(24); // 24 hours before expiry
+
+  // Track renewal metrics
+  for (let i = 0; i < result.renewed; i++) {
+    trackWebsubRenewal(true);
+  }
+  for (let i = 0; i < result.failed; i++) {
+    trackWebsubRenewal(false);
+  }
+
+  if (result.failed > 0) {
+    logger.warn("Some WebSub renewals failed", {
+      errors: result.errors,
+    });
+  }
+
+  // Schedule the next renewal check for 24 hours from now
+  await scheduleNextRenewalCheck();
+
+  return {
+    success: true,
+    metadata: {
+      checked: result.checked,
+      renewed: result.renewed,
+      failed: result.failed,
+      errors: result.errors.length > 0 ? result.errors : undefined,
+    },
+  };
+}
+
+/**
+ * Schedules the next WebSub renewal check for 24 hours from now.
+ */
+async function scheduleNextRenewalCheck(): Promise<void> {
+  const nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
+
+  await createJob({
+    type: "renew_websub",
+    payload: {},
+    scheduledFor: nextCheck,
+    maxAttempts: 3,
+  });
+
+  logger.debug("Scheduled next WebSub renewal check", {
+    scheduledFor: nextCheck.toISOString(),
+  });
+}
+
+/**
+ * Creates the initial WebSub renewal job.
+ * This should be called once on application startup to ensure
+ * the renewal job is scheduled.
+ */
+export async function ensureWebsubRenewalJobExists(): Promise<void> {
+  // Check if there's already a pending renew_websub job
+  const { listJobs } = await import("./queue");
+  const existingJobs = await listJobs({
+    type: "renew_websub",
+    status: "pending",
+    limit: 1,
+  });
+
+  if (existingJobs.length === 0) {
+    // No pending renewal job exists, create one to run now
+    await createJob({
+      type: "renew_websub",
+      payload: {},
+      scheduledFor: new Date(), // Run immediately
+      maxAttempts: 3,
+    });
+
+    logger.info("Created initial WebSub renewal job");
+  } else {
+    logger.debug("WebSub renewal job already scheduled", {
+      scheduledFor: existingJobs[0].scheduledFor.toISOString(),
+    });
+  }
 }

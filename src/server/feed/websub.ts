@@ -8,7 +8,7 @@
  */
 
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
-import { eq, and } from "drizzle-orm";
+import { eq, and, lt } from "drizzle-orm";
 import { db } from "../db";
 import { feeds, websubSubscriptions, type Feed } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
@@ -528,6 +528,161 @@ export async function getActiveSubscription(feedId: string) {
     .limit(1);
 
   return subscription ?? null;
+}
+
+/**
+ * Result of renewing expiring WebSub subscriptions.
+ */
+export interface RenewSubscriptionsResult {
+  /** Number of subscriptions that were checked */
+  checked: number;
+  /** Number of subscriptions successfully renewed */
+  renewed: number;
+  /** Number of subscriptions that failed to renew */
+  failed: number;
+  /** Details about failed renewals */
+  errors: Array<{ feedId: string; error: string }>;
+}
+
+/**
+ * Renews WebSub subscriptions that are expiring within the specified hours.
+ *
+ * This function should be called periodically (e.g., daily) to ensure
+ * subscriptions don't expire unexpectedly. If renewal fails, the subscription
+ * is marked as unsubscribed and polling will take over.
+ *
+ * @param hoursBeforeExpiry - Renew subscriptions expiring within this many hours (default: 24)
+ * @returns Result with counts of checked, renewed, and failed subscriptions
+ *
+ * @example
+ * // Run daily to renew subscriptions expiring in the next 24 hours
+ * const result = await renewExpiringSubscriptions(24);
+ * if (result.failed > 0) {
+ *   logger.warn("Some WebSub renewals failed", { errors: result.errors });
+ * }
+ */
+export async function renewExpiringSubscriptions(
+  hoursBeforeExpiry: number = 24
+): Promise<RenewSubscriptionsResult> {
+  const result: RenewSubscriptionsResult = {
+    checked: 0,
+    renewed: 0,
+    failed: 0,
+    errors: [],
+  };
+
+  // Don't attempt renewal if WebSub is not available
+  if (!canUseWebSub()) {
+    logger.debug("WebSub not available, skipping renewal check");
+    return result;
+  }
+
+  // Find subscriptions expiring within the specified time
+  const expiryThreshold = new Date(Date.now() + hoursBeforeExpiry * 60 * 60 * 1000);
+
+  const expiringSubs = await db
+    .select({
+      subscription: websubSubscriptions,
+      feed: feeds,
+    })
+    .from(websubSubscriptions)
+    .innerJoin(feeds, eq(websubSubscriptions.feedId, feeds.id))
+    .where(
+      and(
+        eq(websubSubscriptions.state, "active"),
+        lt(websubSubscriptions.expiresAt, expiryThreshold)
+      )
+    );
+
+  result.checked = expiringSubs.length;
+
+  if (expiringSubs.length === 0) {
+    logger.debug("No WebSub subscriptions need renewal");
+    return result;
+  }
+
+  logger.info("Found WebSub subscriptions to renew", {
+    count: expiringSubs.length,
+    hoursBeforeExpiry,
+  });
+
+  // Renew each expiring subscription
+  for (const { subscription, feed } of expiringSubs) {
+    try {
+      const renewResult = await subscribeToHub(feed);
+
+      if (renewResult.success) {
+        result.renewed++;
+        logger.info("WebSub subscription renewed", {
+          subscriptionId: subscription.id,
+          feedId: feed.id,
+        });
+      } else {
+        // Renewal request failed - mark as unsubscribed so polling takes over
+        await markSubscriptionFailed(
+          subscription.id,
+          feed.id,
+          renewResult.error ?? "Renewal failed"
+        );
+        result.failed++;
+        result.errors.push({
+          feedId: feed.id,
+          error: renewResult.error ?? "Renewal failed",
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+      // Mark as unsubscribed so polling takes over
+      await markSubscriptionFailed(subscription.id, feed.id, errorMessage);
+      result.failed++;
+      result.errors.push({
+        feedId: feed.id,
+        error: errorMessage,
+      });
+    }
+  }
+
+  logger.info("WebSub renewal completed", {
+    checked: result.checked,
+    renewed: result.renewed,
+    failed: result.failed,
+  });
+
+  return result;
+}
+
+/**
+ * Marks a WebSub subscription as failed/unsubscribed.
+ * Updates both the subscription state and the feed's websubActive flag.
+ */
+async function markSubscriptionFailed(
+  subscriptionId: string,
+  feedId: string,
+  error: string
+): Promise<void> {
+  await db
+    .update(websubSubscriptions)
+    .set({
+      state: "unsubscribed",
+      lastError: error,
+      updatedAt: new Date(),
+    })
+    .where(eq(websubSubscriptions.id, subscriptionId));
+
+  await db
+    .update(feeds)
+    .set({
+      websubActive: false,
+      updatedAt: new Date(),
+    })
+    .where(eq(feeds.id, feedId));
+
+  logger.warn("WebSub subscription marked as failed", {
+    subscriptionId,
+    feedId,
+    error,
+  });
 }
 
 /**

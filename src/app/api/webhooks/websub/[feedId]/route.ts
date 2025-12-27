@@ -17,8 +17,17 @@ import {
   parseFeed,
   processEntries,
 } from "@/server/feed";
+import { createJob } from "@/server/jobs/queue";
+import { trackWebsubNotificationReceived } from "@/server/metrics/metrics";
 import { logger } from "@/lib/logger";
 import { isValidUuid } from "@/lib/uuidv7";
+
+/**
+ * Longer interval for backup polling when WebSub is active.
+ * WebSub should deliver updates in real-time, so we use a 4-hour backup interval
+ * instead of the normal 15-minute interval.
+ */
+const WEBSUB_BACKUP_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 /**
  * Route segment config for Next.js
@@ -144,6 +153,9 @@ export async function POST(
     return new Response("Feed not found", { status: 404 });
   }
 
+  // Track WebSub notification received metric
+  trackWebsubNotificationReceived();
+
   // Parse the pushed feed content
   let parsedFeed;
   try {
@@ -181,6 +193,10 @@ export async function POST(
       updatedEntries: result.updatedCount,
       unchangedEntries: result.unchangedCount,
     });
+
+    // Schedule backup polling with a longer interval since WebSub is active.
+    // This ensures we still get updates even if WebSub stops working.
+    await scheduleBackupPoll(feedId);
   } catch (error) {
     logger.error("WebSub notification processing failed", {
       feedId,
@@ -188,8 +204,39 @@ export async function POST(
     });
     // Return 200 to acknowledge receipt even if processing failed
     // The hub doesn't need to retry - we have the content
+
+    // Still schedule backup polling in case of errors
+    await scheduleBackupPoll(feedId);
   }
 
   // Always return 200 to acknowledge receipt
   return new Response("OK", { status: 200 });
+}
+
+/**
+ * Schedules a backup polling job for a feed.
+ * Uses a longer interval than normal since WebSub is active.
+ */
+async function scheduleBackupPoll(feedId: string): Promise<void> {
+  const scheduledFor = new Date(Date.now() + WEBSUB_BACKUP_POLL_INTERVAL_MS);
+
+  try {
+    await createJob({
+      type: "fetch_feed",
+      payload: { feedId },
+      scheduledFor,
+      maxAttempts: 3,
+    });
+
+    logger.debug("Scheduled WebSub backup poll", {
+      feedId,
+      scheduledFor: scheduledFor.toISOString(),
+    });
+  } catch (error) {
+    // Don't let scheduling errors affect the response
+    logger.warn("Failed to schedule WebSub backup poll", {
+      feedId,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
 }
