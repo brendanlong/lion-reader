@@ -2,7 +2,7 @@
  * Sidebar Component
  *
  * Navigation sidebar for the main app layout.
- * Shows navigation links, feed list with unread counts.
+ * Shows navigation links, feed list with unread counts, and tags.
  */
 
 "use client";
@@ -12,6 +12,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
+import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -23,8 +24,15 @@ export function Sidebar({ onClose }: SidebarProps) {
     id: string;
     title: string;
   } | null>(null);
+  const [editTarget, setEditTarget] = useState<{
+    id: string;
+    title: string;
+    customTitle: string | null;
+    tagIds: string[];
+  } | null>(null);
 
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+  const tagsQuery = trpc.tags.list.useQuery();
   const utils = trpc.useUtils();
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
@@ -46,8 +54,14 @@ export function Sidebar({ onClose }: SidebarProps) {
     if (href === "/starred") {
       return pathname === "/starred";
     }
+    if (href.startsWith("/tag/")) {
+      return pathname === href;
+    }
     return pathname.startsWith(href);
   };
+
+  // Get tag data for easy lookup
+  const tags = tagsQuery.data?.items ?? [];
 
   const handleClose = () => {
     onClose?.();
@@ -125,6 +139,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                 const title = subscription.customTitle || feed.title || "Untitled Feed";
                 const feedHref = `/feed/${feed.id}`;
                 const isActive = pathname === feedHref;
+                const subscriptionTags = subscription.tags || [];
 
                 return (
                   <li key={subscription.id} className="group relative">
@@ -137,7 +152,27 @@ export function Sidebar({ onClose }: SidebarProps) {
                           : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                       }`}
                     >
-                      <span className="truncate pr-8">{title}</span>
+                      <span className="flex items-center gap-2 truncate pr-8">
+                        {/* Tag color dots */}
+                        {subscriptionTags.length > 0 && (
+                          <span className="flex shrink-0 gap-0.5">
+                            {subscriptionTags.slice(0, 3).map((tag) => (
+                              <span
+                                key={tag.id}
+                                className="inline-block h-2 w-2 rounded-full"
+                                style={{ backgroundColor: tag.color || "#6b7280" }}
+                                title={tag.name}
+                              />
+                            ))}
+                            {subscriptionTags.length > 3 && (
+                              <span className="text-xs text-zinc-400">
+                                +{subscriptionTags.length - 3}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                        <span className="truncate">{title}</span>
+                      </span>
                       {subscription.unreadCount > 0 && (
                         <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
                           ({subscription.unreadCount})
@@ -145,39 +180,119 @@ export function Sidebar({ onClose }: SidebarProps) {
                       )}
                     </Link>
 
-                    {/* Unsubscribe button - visible on hover/touch */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setUnsubscribeTarget({
-                          id: subscription.id,
-                          title,
-                        });
-                      }}
-                      className="absolute top-1/2 right-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-zinc-200 hover:text-zinc-600 focus:opacity-100 lg:opacity-0 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                      title="Unsubscribe"
-                      aria-label={`Unsubscribe from ${title}`}
-                    >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                    {/* Action buttons - visible on hover/touch */}
+                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 lg:opacity-0">
+                      {/* Edit button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditTarget({
+                            id: subscription.id,
+                            title,
+                            customTitle: subscription.customTitle,
+                            tagIds: subscriptionTags.map((t) => t.id),
+                          });
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                        title="Edit subscription"
+                        aria-label={`Edit ${title}`}
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M6 18L18 6M6 6l12 12"
-                        />
-                      </svg>
-                    </button>
+                        <svg
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                          />
+                        </svg>
+                      </button>
+
+                      {/* Unsubscribe button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUnsubscribeTarget({
+                            id: subscription.id,
+                            title,
+                          });
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                        title="Unsubscribe"
+                        aria-label={`Unsubscribe from ${title}`}
+                      >
+                        <svg
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
                   </li>
                 );
               })}
             </ul>
           )}
         </div>
+
+        {/* Tags Section */}
+        {tags.length > 0 && (
+          <>
+            {/* Divider */}
+            <div className="mx-3 border-t border-zinc-200 dark:border-zinc-700" />
+
+            <div className="flex-shrink-0 p-3">
+              <h3 className="mb-2 px-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                Tags
+              </h3>
+
+              <ul className="space-y-1">
+                {tags.map((tag) => {
+                  const tagHref = `/tag/${tag.id}`;
+                  const isActive = isActiveLink(tagHref);
+
+                  return (
+                    <li key={tag.id}>
+                      <Link
+                        href={tagHref}
+                        onClick={handleClose}
+                        className={`flex min-h-[40px] items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                          isActive
+                            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                            : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        }`}
+                      >
+                        <span
+                          className="inline-block h-3 w-3 shrink-0 rounded-full"
+                          style={{ backgroundColor: tag.color || "#6b7280" }}
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">{tag.name}</span>
+                        {tag.feedCount > 0 && (
+                          <span className="ml-auto shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                            ({tag.feedCount})
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </>
+        )}
       </nav>
 
       {/* Unsubscribe Confirmation Dialog */}
@@ -191,6 +306,20 @@ export function Sidebar({ onClose }: SidebarProps) {
           }
         }}
         onCancel={() => setUnsubscribeTarget(null)}
+      />
+
+      {/* Edit Subscription Dialog */}
+      <EditSubscriptionDialog
+        isOpen={editTarget !== null}
+        subscriptionId={editTarget?.id ?? ""}
+        currentTitle={editTarget?.title ?? ""}
+        currentCustomTitle={editTarget?.customTitle ?? null}
+        currentTagIds={editTarget?.tagIds ?? []}
+        onClose={() => {
+          setEditTarget(null);
+          utils.subscriptions.list.invalidate();
+          utils.tags.list.invalidate();
+        }}
       />
     </>
   );

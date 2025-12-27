@@ -22,6 +22,11 @@ export interface EntryListFilters {
   feedId?: string;
 
   /**
+   * Filter by tag ID (entries from feeds with this tag).
+   */
+  tagId?: string;
+
+  /**
    * Show only unread entries.
    */
   unreadOnly?: boolean;
@@ -194,6 +199,7 @@ export function EntryList({
   } = trpc.entries.list.useInfiniteQuery(
     {
       feedId: filters.feedId,
+      tagId: filters.tagId,
       unreadOnly: filters.unreadOnly,
       starredOnly: filters.starredOnly,
       limit: pageSize,
