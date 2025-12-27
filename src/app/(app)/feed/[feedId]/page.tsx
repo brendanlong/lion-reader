@@ -10,9 +10,9 @@ import { useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
-import { EntryList } from "@/components/entries/EntryList";
+import { EntryList, type EntryListEntryData } from "@/components/entries/EntryList";
 import { EntryContent } from "@/components/entries/EntryContent";
-import { useKeyboardShortcuts } from "@/lib/hooks";
+import { useKeyboardShortcuts, type KeyboardEntryData } from "@/lib/hooks";
 
 /**
  * Loading skeleton for the feed header.
@@ -76,14 +76,48 @@ export default function SingleFeedPage() {
   const feedId = params.feedId;
 
   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
-  const [entryIds, setEntryIds] = useState<string[]>([]);
+  const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
-  // Keyboard navigation
+  const utils = trpc.useUtils();
+
+  // Mutations for keyboard actions
+  const markReadMutation = trpc.entries.markRead.useMutation({
+    onSuccess: () => {
+      utils.entries.list.invalidate();
+    },
+  });
+
+  const starMutation = trpc.entries.star.useMutation({
+    onSuccess: () => {
+      utils.entries.list.invalidate();
+    },
+  });
+
+  const unstarMutation = trpc.entries.unstar.useMutation({
+    onSuccess: () => {
+      utils.entries.list.invalidate();
+    },
+  });
+
+  // Keyboard navigation and actions
   const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
-    entryIds,
+    entries,
     onOpenEntry: (entryId) => setOpenEntryId(entryId),
     onClose: () => setOpenEntryId(null),
     isEntryOpen: !!openEntryId,
+    onToggleRead: (entryId, currentlyRead) => {
+      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
+    },
+    onToggleStar: (entryId, currentlyStarred) => {
+      if (currentlyStarred) {
+        unstarMutation.mutate({ id: entryId });
+      } else {
+        starMutation.mutate({ id: entryId });
+      }
+    },
+    onRefresh: () => {
+      utils.entries.list.invalidate();
+    },
   });
 
   // Fetch subscription info to get feed title and validate access
@@ -104,8 +138,8 @@ export default function SingleFeedPage() {
     setOpenEntryId(null);
   }, []);
 
-  const handleEntriesLoaded = useCallback((ids: string[]) => {
-    setEntryIds(ids);
+  const handleEntriesLoaded = useCallback((loadedEntries: EntryListEntryData[]) => {
+    setEntries(loadedEntries);
   }, []);
 
   // If an entry is open, show the full content view
