@@ -421,7 +421,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Implement o/Enter (open entry), Escape (close)
   - Add visual indicator for selected entry
 
-- [ ] **Implement keyboard actions**
+- [x] **Implement keyboard actions**
   - Implement m (toggle read/unread)
   - Implement s (toggle star)
   - Implement v (open original URL in new tab)

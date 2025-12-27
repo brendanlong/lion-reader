@@ -8,22 +8,40 @@
  * - j/k navigation (next/previous entry)
  * - o/Enter to open selected entry
  * - Escape to close entry or deselect
+ * - m to toggle read/unread
+ * - s to toggle star
+ * - v to open original URL in new tab
+ * - r to refresh current view
+ * - g+a to navigate to All items
+ * - g+s to navigate to Starred items
  * - Selected entry state management
  */
 
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useRouter } from "next/navigation";
+
+/**
+ * Entry data needed for keyboard actions.
+ */
+export interface KeyboardEntryData {
+  id: string;
+  url: string | null;
+  read: boolean;
+  starred: boolean;
+}
 
 /**
  * Configuration options for keyboard shortcuts.
  */
 export interface UseKeyboardShortcutsOptions {
   /**
-   * Array of entry IDs in the current list (in display order).
+   * Array of entries in the current list (in display order).
+   * Used for navigation and action context.
    */
-  entryIds: string[];
+  entries: KeyboardEntryData[];
 
   /**
    * Callback when an entry should be opened.
@@ -46,6 +64,23 @@ export interface UseKeyboardShortcutsOptions {
    * @default true
    */
   enabled?: boolean;
+
+  /**
+   * Callback when read status should be toggled.
+   * Receives the entry ID and its current read status.
+   */
+  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+
+  /**
+   * Callback when star status should be toggled.
+   * Receives the entry ID and its current starred status.
+   */
+  onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
+
+  /**
+   * Callback to refresh the current view.
+   */
+  onRefresh?: () => void;
 }
 
 /**
@@ -92,16 +127,18 @@ export interface UseKeyboardShortcutsResult {
  * ```tsx
  * function EntryListPage() {
  *   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
- *   const entryIds = entries.map(e => e.id);
  *
  *   const {
  *     selectedEntryId,
  *     setSelectedEntryId,
  *   } = useKeyboardShortcuts({
- *     entryIds,
+ *     entries,
  *     onOpenEntry: setOpenEntryId,
  *     onClose: () => setOpenEntryId(null),
  *     isEntryOpen: !!openEntryId,
+ *     onToggleRead: (id, read) => markReadMutation.mutate({ ids: [id], read: !read }),
+ *     onToggleStar: (id, starred) => starred ? unstarMutation.mutate({ id }) : starMutation.mutate({ id }),
+ *     onRefresh: () => utils.entries.list.invalidate(),
  *   });
  *
  *   return (
@@ -119,15 +156,65 @@ export interface UseKeyboardShortcutsResult {
 export function useKeyboardShortcuts(
   options: UseKeyboardShortcutsOptions
 ): UseKeyboardShortcutsResult {
-  const { entryIds, onOpenEntry, onClose, isEntryOpen = false, enabled = true } = options;
+  const {
+    entries,
+    onOpenEntry,
+    onClose,
+    isEntryOpen = false,
+    enabled = true,
+    onToggleRead,
+    onToggleStar,
+    onRefresh,
+  } = options;
 
+  const router = useRouter();
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+
+  // Track "g" prefix for navigation shortcuts (g+a, g+s)
+  const gPrefixTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [gPrefixActive, setGPrefixActive] = useState(false);
+
+  // Clear g prefix after timeout
+  const clearGPrefix = useCallback(() => {
+    if (gPrefixTimeoutRef.current) {
+      clearTimeout(gPrefixTimeoutRef.current);
+      gPrefixTimeoutRef.current = null;
+    }
+    setGPrefixActive(false);
+  }, []);
+
+  // Activate g prefix with timeout
+  const activateGPrefix = useCallback(() => {
+    clearGPrefix();
+    setGPrefixActive(true);
+    gPrefixTimeoutRef.current = setTimeout(() => {
+      setGPrefixActive(false);
+    }, 1500); // 1.5 second timeout for the second key
+  }, [clearGPrefix]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (gPrefixTimeoutRef.current) {
+        clearTimeout(gPrefixTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Get entry IDs from entries
+  const entryIds = entries.map((e) => e.id);
 
   // Get the current index of the selected entry
   const getSelectedIndex = useCallback((): number => {
     if (!selectedEntryId) return -1;
     return entryIds.indexOf(selectedEntryId);
   }, [selectedEntryId, entryIds]);
+
+  // Get the selected entry data
+  const getSelectedEntry = useCallback((): KeyboardEntryData | null => {
+    if (!selectedEntryId) return null;
+    return entries.find((e) => e.id === selectedEntryId) ?? null;
+  }, [selectedEntryId, entries]);
 
   // Move selection to the next entry
   const selectNext = useCallback(() => {
@@ -269,6 +356,120 @@ export function useKeyboardShortcuts(
       enableOnFormTags: false,
     },
     [isEntryOpen, onClose, effectiveSelectedEntryId, clearSelection, enabled]
+  );
+
+  // m - toggle read/unread (when entry is selected and not open)
+  useHotkeys(
+    "m",
+    (e) => {
+      e.preventDefault();
+      const entry = getSelectedEntry();
+      if (entry && onToggleRead) {
+        onToggleRead(entry.id, entry.read);
+      }
+    },
+    {
+      enabled: enabled && !isEntryOpen && !!effectiveSelectedEntryId && !!onToggleRead,
+      enableOnFormTags: false,
+    },
+    [getSelectedEntry, onToggleRead, isEntryOpen, effectiveSelectedEntryId, enabled]
+  );
+
+  // s - toggle star (when entry is selected, not open, and g prefix NOT active)
+  useHotkeys(
+    "s",
+    (e) => {
+      // If g prefix is active, this should trigger navigation instead
+      if (gPrefixActive) {
+        e.preventDefault();
+        clearGPrefix();
+        router.push("/starred");
+        return;
+      }
+
+      e.preventDefault();
+      const entry = getSelectedEntry();
+      if (entry && onToggleStar) {
+        onToggleStar(entry.id, entry.starred);
+      }
+    },
+    {
+      enabled: enabled && !isEntryOpen && (!!effectiveSelectedEntryId || gPrefixActive),
+      enableOnFormTags: false,
+    },
+    [
+      getSelectedEntry,
+      onToggleStar,
+      isEntryOpen,
+      effectiveSelectedEntryId,
+      enabled,
+      gPrefixActive,
+      clearGPrefix,
+      router,
+    ]
+  );
+
+  // v - open original URL in new tab (when entry is selected)
+  useHotkeys(
+    "v",
+    (e) => {
+      e.preventDefault();
+      const entry = getSelectedEntry();
+      if (entry?.url) {
+        window.open(entry.url, "_blank", "noopener,noreferrer");
+      }
+    },
+    {
+      enabled: enabled && !isEntryOpen && !!effectiveSelectedEntryId,
+      enableOnFormTags: false,
+    },
+    [getSelectedEntry, isEntryOpen, effectiveSelectedEntryId, enabled]
+  );
+
+  // r - refresh current view
+  useHotkeys(
+    "r",
+    (e) => {
+      e.preventDefault();
+      if (onRefresh) {
+        onRefresh();
+      }
+    },
+    {
+      enabled: enabled && !isEntryOpen && !!onRefresh,
+      enableOnFormTags: false,
+    },
+    [onRefresh, isEntryOpen, enabled]
+  );
+
+  // g - activate g prefix for navigation shortcuts
+  useHotkeys(
+    "g",
+    (e) => {
+      e.preventDefault();
+      activateGPrefix();
+    },
+    {
+      enabled: enabled && !isEntryOpen,
+      enableOnFormTags: false,
+    },
+    [activateGPrefix, isEntryOpen, enabled]
+  );
+
+  // a - go to All (when g prefix is active)
+  useHotkeys(
+    "a",
+    (e) => {
+      if (!gPrefixActive) return;
+      e.preventDefault();
+      clearGPrefix();
+      router.push("/all");
+    },
+    {
+      enabled: enabled && !isEntryOpen && gPrefixActive,
+      enableOnFormTags: false,
+    },
+    [gPrefixActive, clearGPrefix, router, isEntryOpen, enabled]
   );
 
   return {

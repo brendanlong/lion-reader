@@ -12,6 +12,7 @@ export {
 
 export {
   useKeyboardShortcuts,
+  type KeyboardEntryData,
   type UseKeyboardShortcutsOptions,
   type UseKeyboardShortcutsResult,
 } from "./useKeyboardShortcuts";
