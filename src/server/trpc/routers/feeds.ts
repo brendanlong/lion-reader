@@ -9,7 +9,14 @@ import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { errors } from "../errors";
-import { parseFeed, discoverFeeds, type ParsedEntry } from "@/server/feed";
+import {
+  parseFeed,
+  discoverFeeds,
+  detectFeedType,
+  getCommonFeedUrls,
+  type ParsedEntry,
+  type DiscoveredFeed,
+} from "@/server/feed";
 
 // ============================================================================
 // Constants
@@ -29,6 +36,16 @@ const FETCH_TIMEOUT_MS = 10000;
  * Maximum number of sample entries to return in preview.
  */
 const MAX_SAMPLE_ENTRIES = 5;
+
+/**
+ * Timeout for checking common paths during discovery (5 seconds per path).
+ */
+const DISCOVERY_PATH_TIMEOUT_MS = 5000;
+
+/**
+ * Maximum number of common paths to check concurrently.
+ */
+const MAX_CONCURRENT_PATH_CHECKS = 5;
 
 // ============================================================================
 // Validation Schemas
@@ -177,6 +194,106 @@ function toSampleEntry(entry: ParsedEntry): z.infer<typeof sampleEntrySchema> {
   };
 }
 
+/**
+ * Tries to fetch a URL and determine if it's a valid feed.
+ * Returns the discovered feed info if it is, or null if not.
+ *
+ * @param url - The URL to check
+ * @param timeoutMs - Timeout for the fetch request
+ * @returns DiscoveredFeed if valid feed, null otherwise
+ */
+async function tryFetchAsFeed(
+  url: string,
+  timeoutMs: number = DISCOVERY_PATH_TIMEOUT_MS
+): Promise<DiscoveredFeed | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept:
+          "application/rss+xml, application/atom+xml, application/feed+json, application/json, application/xml, text/xml, */*",
+      },
+      signal: controller.signal,
+      redirect: "follow",
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const text = await response.text();
+    const feedType = detectFeedType(text);
+
+    if (feedType === "unknown") {
+      return null;
+    }
+
+    // Try to parse to get the title
+    try {
+      const parsed = parseFeed(text);
+      return {
+        url,
+        type: feedType,
+        title: parsed.title || undefined,
+      };
+    } catch {
+      // Could detect type but couldn't parse - still return it
+      return {
+        url,
+        type: feedType,
+        title: undefined,
+      };
+    }
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Checks common feed paths on a domain concurrently.
+ * Returns all discovered feeds.
+ *
+ * @param baseUrl - The base URL to check paths from
+ * @returns Array of discovered feeds from common paths
+ */
+async function checkCommonPaths(baseUrl: string): Promise<DiscoveredFeed[]> {
+  const pathUrls = getCommonFeedUrls(baseUrl);
+  const discovered: DiscoveredFeed[] = [];
+
+  // Process in batches to limit concurrency
+  for (let i = 0; i < pathUrls.length; i += MAX_CONCURRENT_PATH_CHECKS) {
+    const batch = pathUrls.slice(i, i + MAX_CONCURRENT_PATH_CHECKS);
+    const results = await Promise.all(batch.map((url) => tryFetchAsFeed(url)));
+
+    for (const result of results) {
+      if (result) {
+        discovered.push(result);
+      }
+    }
+
+    // If we found feeds, we can stop checking more paths
+    if (discovered.length > 0) {
+      break;
+    }
+  }
+
+  return discovered;
+}
+
+/**
+ * Output schema for discovered feed.
+ */
+const discoveredFeedSchema = z.object({
+  url: z.string(),
+  type: z.enum(["rss", "atom", "json", "unknown"]),
+  title: z.string().optional(),
+});
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -262,5 +379,90 @@ export const feedsRouter = createTRPCRouter({
           sampleEntries,
         },
       };
+    }),
+
+  /**
+   * Discover feeds from a URL.
+   *
+   * This procedure:
+   * 1. First tries to parse the URL as a feed directly
+   * 2. If not a feed, fetches the page and looks for <link rel="alternate"> tags
+   * 3. Also checks common feed paths on the same domain
+   * 4. Returns all discovered feeds with title, type, and URL
+   * 5. Deduplicates by URL
+   *
+   * This is a public procedure - no authentication required.
+   * It allows users to discover feeds before subscribing.
+   *
+   * @param url - The URL to discover feeds from
+   * @returns Array of discovered feeds
+   */
+  discover: publicProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/feeds/discover",
+        tags: ["Feeds"],
+        summary: "Discover feeds from a URL",
+      },
+    })
+    .input(
+      z.object({
+        url: urlSchema,
+      })
+    )
+    .output(
+      z.object({
+        feeds: z.array(discoveredFeedSchema),
+      })
+    )
+    .query(async ({ input }) => {
+      const inputUrl = input.url;
+      const seenUrls = new Set<string>();
+      const allFeeds: DiscoveredFeed[] = [];
+
+      /**
+       * Helper to add a feed to results, deduplicating by URL.
+       */
+      function addFeed(feed: DiscoveredFeed): void {
+        if (!seenUrls.has(feed.url)) {
+          seenUrls.add(feed.url);
+          allFeeds.push(feed);
+        }
+      }
+
+      // Step 1: Try to fetch and parse the URL as a feed directly
+      const directFeed = await tryFetchAsFeed(inputUrl, FETCH_TIMEOUT_MS);
+      if (directFeed) {
+        addFeed(directFeed);
+        // If it's a valid feed, return it directly (no need to check other sources)
+        return { feeds: allFeeds };
+      }
+
+      // Step 2: Fetch the URL and try to discover feeds from HTML
+      try {
+        const { text: content, contentType } = await fetchUrl(inputUrl);
+
+        if (isHtmlContent(contentType, content)) {
+          // Look for <link rel="alternate"> tags in the HTML
+          const htmlFeeds = discoverFeeds(content, inputUrl);
+          for (const feed of htmlFeeds) {
+            addFeed(feed);
+          }
+        }
+      } catch {
+        // If we can't fetch the page, we'll just check common paths
+      }
+
+      // Step 3: Check common feed paths on the domain
+      // Only do this if we haven't found any feeds yet
+      if (allFeeds.length === 0) {
+        const pathFeeds = await checkCommonPaths(inputUrl);
+        for (const feed of pathFeeds) {
+          addFeed(feed);
+        }
+      }
+
+      return { feeds: allFeeds };
     }),
 });
