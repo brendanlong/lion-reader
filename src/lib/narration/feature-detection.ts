@@ -80,6 +80,24 @@ export interface NarrationSupportInfo {
 }
 
 /**
+ * Detects if the current browser is Firefox.
+ *
+ * Firefox has a known bug where `speechSynthesis.pause()` and
+ * `speechSynthesis.resume()` don't work properly. We use this
+ * to implement a workaround (cancel + restart from paragraph).
+ *
+ * @returns true if running in Firefox, false otherwise.
+ *
+ * @see https://bugzilla.mozilla.org/show_bug.cgi?id=1316808
+ */
+export function isFirefox(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  return navigator.userAgent.toLowerCase().includes("firefox");
+}
+
+/**
  * Gets detailed information about narration support.
  *
  * Use this when you need both the support status and a reason
