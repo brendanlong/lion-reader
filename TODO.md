@@ -617,7 +617,7 @@ See DESIGN.md § Saved Articles for full design.
   - Auto-close on success (with delay)
   - Handle already-saved gracefully
 
-- [ ] **Add bookmarklet to settings**
+- [x] **Add bookmarklet to settings**
   - Create "Bookmarklet" section in settings page
   - Show draggable bookmarklet link
   - Include installation instructions
