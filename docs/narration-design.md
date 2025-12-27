@@ -134,11 +134,37 @@ Image: The main dashboard showing feed list.
 -- Add narration columns to entries table
 ALTER TABLE entries ADD COLUMN content_narration text;
 ALTER TABLE entries ADD COLUMN narration_generated_at timestamptz;
+ALTER TABLE entries ADD COLUMN narration_error text;
+ALTER TABLE entries ADD COLUMN narration_error_at timestamptz;
+
+-- Add same columns to saved_articles table
+ALTER TABLE saved_articles ADD COLUMN content_narration text;
+ALTER TABLE saved_articles ADD COLUMN narration_generated_at timestamptz;
+ALTER TABLE saved_articles ADD COLUMN narration_error text;
+ALTER TABLE saved_articles ADD COLUMN narration_error_at timestamptz;
 
 -- Index for finding entries that need narration generation
-CREATE INDEX idx_entries_needs_narration 
-  ON entries(id) 
+CREATE INDEX idx_entries_needs_narration
+  ON entries(id)
   WHERE content_narration IS NULL;
+
+CREATE INDEX idx_saved_articles_needs_narration
+  ON saved_articles(id)
+  WHERE content_narration IS NULL;
+```
+
+### Error Handling
+
+When Groq returns an error:
+1. Store error message in `narration_error` and timestamp in `narration_error_at`
+2. Fall back to plain text conversion for immediate playback
+3. Allow retry after 1 hour (check `narration_error_at` before regenerating)
+4. Clear error columns on successful generation
+
+```typescript
+// Allow retry if error was more than 1 hour ago
+const canRetry = !entry.narration_error_at ||
+  Date.now() - entry.narration_error_at.getTime() > 60 * 60 * 1000;
 ```
 
 ### Future Schema (for sync and highlighting)
@@ -321,31 +347,44 @@ function setupMediaSession(
 
 ### Generate Narration
 
+Supports both feed entries and saved articles via discriminated union:
+
 ```typescript
 // tRPC procedure
 narration: {
   generate: protectedProcedure
-    .input(z.object({ entryId: z.string().uuid() }))
+    .input(z.discriminatedUnion('type', [
+      z.object({ type: z.literal('entry'), id: z.string().uuid() }),
+      z.object({ type: z.literal('saved'), id: z.string().uuid() }),
+    ]))
     .mutation(async ({ ctx, input }) => {
-      const entry = await ctx.db.entries.findById(input.entryId);
-      
-      if (!entry) {
+      // Fetch the article (entry or saved)
+      const article = input.type === 'entry'
+        ? await ctx.db.entries.findById(input.id)
+        : await ctx.db.savedArticles.findById(input.id);
+
+      if (!article) {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
-      
+
       // Return cached if available
-      if (entry.content_narration) {
-        return { 
-          narration: entry.content_narration,
+      if (article.content_narration) {
+        return {
+          narration: article.content_narration,
           cached: true,
           source: 'llm',
         };
       }
-      
-      const sourceContent = entry.content_cleaned || entry.content_original;
-      
-      // If Groq is not configured, fall back to raw text
-      if (!process.env.GROQ_API_KEY) {
+
+      // Check if we should retry after a previous error
+      const RETRY_AFTER_MS = 60 * 60 * 1000; // 1 hour
+      const canRetryLLM = !article.narration_error_at ||
+        Date.now() - article.narration_error_at.getTime() > RETRY_AFTER_MS;
+
+      const sourceContent = article.content_cleaned || article.content_original;
+
+      // If Groq is not configured or we had a recent error, fall back to raw text
+      if (!process.env.GROQ_API_KEY || !canRetryLLM) {
         const fallbackText = htmlToPlainText(sourceContent);
         return {
           narration: fallbackText,
@@ -353,17 +392,42 @@ narration: {
           source: 'fallback',
         };
       }
-      
-      // Generate via LLM
-      const narration = await generateNarration(sourceContent);
-      
-      // Cache in database
-      await ctx.db.entries.update(entry.id, {
-        content_narration: narration,
-        narration_generated_at: new Date(),
-      });
-      
-      return { narration, cached: false, source: 'llm' };
+
+      try {
+        // Generate via LLM
+        const narration = await generateNarration(sourceContent);
+
+        // Cache in database, clear any previous error
+        const updateFn = input.type === 'entry'
+          ? ctx.db.entries.update
+          : ctx.db.savedArticles.update;
+
+        await updateFn(article.id, {
+          content_narration: narration,
+          narration_generated_at: new Date(),
+          narration_error: null,
+          narration_error_at: null,
+        });
+
+        return { narration, cached: false, source: 'llm' };
+      } catch (error) {
+        // Store error, fall back to plain text
+        const updateFn = input.type === 'entry'
+          ? ctx.db.entries.update
+          : ctx.db.savedArticles.update;
+
+        await updateFn(article.id, {
+          narration_error: error instanceof Error ? error.message : 'Unknown error',
+          narration_error_at: new Date(),
+        });
+
+        const fallbackText = htmlToPlainText(sourceContent);
+        return {
+          narration: fallbackText,
+          cached: false,
+          source: 'fallback',
+        };
+      }
     }),
 }
 
@@ -529,6 +593,50 @@ Groq's privacy policy: https://groq.com/privacy-policy/
 
 ---
 
+## Feature Detection
+
+Check for required APIs before showing narration controls:
+
+```typescript
+function isNarrationSupported(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    'speechSynthesis' in window &&
+    'SpeechSynthesisUtterance' in window
+  );
+}
+
+function isMediaSessionSupported(): boolean {
+  return (
+    typeof navigator !== 'undefined' &&
+    'mediaSession' in navigator
+  );
+}
+
+// In React component
+function NarrationControls({ article }: { article: Article }) {
+  if (!isNarrationSupported()) {
+    return null; // Don't render controls in unsupported browsers
+  }
+
+  // ... render playback controls
+}
+```
+
+---
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `p` | Toggle play/pause |
+| `Shift+N` | Skip to next paragraph |
+| `Shift+P` | Skip to previous paragraph |
+
+These integrate with the existing keyboard navigation system.
+
+---
+
 ## Known Limitations
 
 ### Web Platform Constraints
@@ -599,13 +707,18 @@ narration_rate_setting{bucket}  // 0.5-0.75, 0.75-1.0, 1.0-1.25, etc.
 
 ### MVP (v1)
 
-- [ ] Database migration: add `content_narration`, `narration_generated_at` to entries
+- [ ] Database migration: add narration columns to entries and saved_articles
+  - `content_narration`, `narration_generated_at`
+  - `narration_error`, `narration_error_at` (for error tracking/retry)
 - [ ] Groq integration for text preprocessing
-- [ ] tRPC endpoint for narration generation
+- [ ] tRPC endpoint for narration generation (supports entries and saved articles)
+- [ ] Error handling with fallback to plain text, retry after 1 hour
 - [ ] Web Speech API wrapper with paragraph-based playback
+- [ ] Feature detection (hide controls in unsupported browsers)
 - [ ] Media Session API integration for keyboard/OS controls
 - [ ] Voice selector in settings with preview
 - [ ] Play/pause/skip controls in article view
+- [ ] Keyboard shortcuts (`p` play/pause, `Shift+N/P` skip)
 - [ ] Privacy policy update
 - [ ] Basic metrics
 
