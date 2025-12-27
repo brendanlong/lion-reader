@@ -428,7 +428,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Implement r (refresh current view)
   - Implement g+a, g+s navigation (go to all, starred)
 
-- [ ] **Add keyboard shortcuts help**
+- [x] **Add keyboard shortcuts help**
   - Implement ? to show shortcuts modal
   - Create shortcuts cheat sheet component
   - Add "Keyboard shortcuts" link to settings/help

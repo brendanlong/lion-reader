@@ -16,3 +16,8 @@ export {
   type UseKeyboardShortcutsOptions,
   type UseKeyboardShortcutsResult,
 } from "./useKeyboardShortcuts";
+
+export {
+  useKeyboardShortcutsEnabled,
+  type UseKeyboardShortcutsEnabledResult,
+} from "./useKeyboardShortcutsEnabled";
