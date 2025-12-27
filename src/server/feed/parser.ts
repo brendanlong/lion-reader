@@ -1,27 +1,37 @@
 /**
- * Unified feed parser that auto-detects format (RSS or Atom).
+ * Unified feed parser that auto-detects format (RSS, Atom, or JSON Feed).
  * Provides a single entry point for parsing any supported feed format.
  */
 
 import type { ParsedFeed } from "./types";
 import { parseRssFeed } from "./rss-parser";
 import { parseAtomFeed } from "./atom-parser";
+import { parseJsonFeed, isJsonFeed } from "./json-parser";
 
 /**
  * Detected feed type.
  */
-export type FeedType = "rss" | "atom" | "unknown";
+export type FeedType = "rss" | "atom" | "json" | "unknown";
 
 /**
- * Detects the feed type from XML content.
- * Uses simple heuristics to identify RSS vs Atom feeds.
+ * Detects the feed type from content.
+ * Uses simple heuristics to identify RSS, Atom, or JSON Feed formats.
  *
- * @param xml - The feed XML content as a string
+ * @param content - The feed content as a string
  * @returns The detected feed type
  */
-export function detectFeedType(xml: string): FeedType {
-  // Remove XML declaration and leading whitespace for detection
-  const trimmed = xml.trim();
+export function detectFeedType(content: string): FeedType {
+  // Remove leading whitespace for detection
+  const trimmed = content.trim();
+
+  // Check for JSON Feed first (starts with { and has version field)
+  if (trimmed.startsWith("{")) {
+    if (isJsonFeed(trimmed)) {
+      return "json";
+    }
+    // Could be JSON but not a JSON Feed
+    return "unknown";
+  }
 
   // Look for Atom feed element
   // Atom feeds have <feed xmlns="http://www.w3.org/2005/Atom"> or <feed>
@@ -54,47 +64,51 @@ export function detectFeedType(xml: string): FeedType {
  * Error thrown when feed format cannot be detected.
  */
 export class UnknownFeedFormatError extends Error {
-  constructor(message = "Unknown feed format: unable to detect RSS or Atom") {
+  constructor(message = "Unknown feed format: unable to detect RSS, Atom, or JSON Feed") {
     super(message);
     this.name = "UnknownFeedFormatError";
   }
 }
 
 /**
- * Parses a feed XML string, auto-detecting the format (RSS or Atom).
+ * Parses a feed string, auto-detecting the format (RSS, Atom, or JSON Feed).
  *
- * @param xml - The feed XML content as a string
+ * @param content - The feed content as a string
  * @returns A ParsedFeed object with normalized feed data
  * @throws UnknownFeedFormatError if the feed format cannot be detected
  * @throws Error if the feed is invalid (missing required elements)
  */
-export function parseFeed(xml: string): ParsedFeed {
-  const feedType = detectFeedType(xml);
+export function parseFeed(content: string): ParsedFeed {
+  const feedType = detectFeedType(content);
 
   switch (feedType) {
     case "rss":
-      return parseRssFeed(xml);
+      return parseRssFeed(content);
     case "atom":
-      return parseAtomFeed(xml);
+      return parseAtomFeed(content);
+    case "json":
+      return parseJsonFeed(content);
     case "unknown":
       throw new UnknownFeedFormatError();
   }
 }
 
 /**
- * Parses a feed XML string with explicit format.
+ * Parses a feed string with explicit format.
  * Use this when you know the feed type ahead of time (e.g., from Content-Type header).
  *
- * @param xml - The feed XML content as a string
- * @param format - The feed format ("rss" or "atom")
+ * @param content - The feed content as a string
+ * @param format - The feed format ("rss", "atom", or "json")
  * @returns A ParsedFeed object with normalized feed data
  * @throws Error if the feed is invalid
  */
-export function parseFeedWithFormat(xml: string, format: "rss" | "atom"): ParsedFeed {
+export function parseFeedWithFormat(content: string, format: "rss" | "atom" | "json"): ParsedFeed {
   switch (format) {
     case "rss":
-      return parseRssFeed(xml);
+      return parseRssFeed(content);
     case "atom":
-      return parseAtomFeed(xml);
+      return parseAtomFeed(content);
+    case "json":
+      return parseJsonFeed(content);
   }
 }
