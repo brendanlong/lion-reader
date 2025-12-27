@@ -610,7 +610,7 @@ See DESIGN.md § Saved Articles for full design.
   - Star/unstar support (same as feed entries)
   - Add keyboard shortcut: g+l (go to saved/later)
 
-- [ ] **Create save page for bookmarklet**
+- [x] **Create save page for bookmarklet**
   - Create /save?url=... route (minimal popup UI)
   - Show saving progress with spinner
   - Display success/error state
