@@ -18,6 +18,8 @@ import {
 } from "./queue";
 import { handleFetchFeed, handleCleanup, type JobHandlerResult } from "./handlers";
 import type { Job } from "../db/schema";
+import { logger as appLogger } from "@/lib/logger";
+import * as Sentry from "@sentry/nextjs";
 
 /**
  * Worker configuration options.
@@ -47,12 +49,12 @@ export interface WorkerLogger {
 }
 
 /**
- * Default console logger.
+ * Default structured logger.
  */
 const defaultLogger: WorkerLogger = {
-  info: (message, meta) => console.log(`[Worker] ${message}`, meta ?? ""),
-  warn: (message, meta) => console.warn(`[Worker] ${message}`, meta ?? ""),
-  error: (message, meta) => console.error(`[Worker] ${message}`, meta ?? ""),
+  info: (message, meta) => appLogger.info(message, { component: "worker", ...meta }),
+  warn: (message, meta) => appLogger.warn(message, { component: "worker", ...meta }),
+  error: (message, meta) => appLogger.error(message, { component: "worker", ...meta }),
 };
 
 /**
@@ -211,6 +213,17 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         type: job.type,
         durationMs: duration,
         error: errorMessage,
+      });
+
+      // Report to Sentry with job context
+      Sentry.captureException(error, {
+        tags: { jobType: job.type },
+        extra: {
+          jobId: job.id,
+          attempt: job.attempts,
+          payload: job.payload,
+          durationMs: duration,
+        },
       });
     } finally {
       totalProcessed++;
