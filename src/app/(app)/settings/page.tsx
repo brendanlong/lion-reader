@@ -17,6 +17,7 @@ import {
   KeyboardShortcutsSettings,
   TagManagement,
   BookmarkletSettings,
+  NarrationSettings,
 } from "@/components/settings";
 
 export default function SettingsPage() {
@@ -153,6 +154,9 @@ export default function SettingsPage() {
 
       {/* Bookmarklet Section */}
       <BookmarkletSettings />
+
+      {/* Narration Section */}
+      <NarrationSettings />
 
       {/* Keyboard Shortcuts Section */}
       <KeyboardShortcutsSettings />
