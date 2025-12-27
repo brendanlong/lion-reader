@@ -4,31 +4,49 @@ A modern, high-performance feed reader designed for scale.
 
 ## Overview
 
-Lion Reader is a self-hosted feed reader that supports RSS, Atom, and JSON feeds, with additional support for email-based subscriptions (like Substack newsletters). It's designed for low hosting costs at small scale while being able to handle viral growth.
+Lion Reader is a self-hosted feed reader that supports RSS and Atom feeds. It's designed for low hosting costs at small scale while being able to handle growth.
 
-## Key Features
+## Current Status: MVP Complete ✅
 
-- **Multiple feed formats**: RSS, Atom, JSON Feed, and email subscriptions
-- **Real-time updates**: Instant UI updates when feeds change via SSE
-- **Smart polling**: Respects cache headers, adapts to update frequency
-- **Push support**: WebSub (PubSubHubbub) for instant updates from supporting feeds
-- **Multi-user**: Efficient storage with per-user privacy (users only see entries from after they subscribed)
-- **Public API**: Full REST API for third-party clients
-- **OAuth support**: Google, Facebook, Apple sign-in alongside email/password
+The MVP is fully implemented with the following features:
+
+- **Email/password authentication** with session management
+- **RSS and Atom feed support** with auto-detection from HTML pages
+- **Real-time updates** via Server-Sent Events (SSE)
+- **Smart polling** that respects cache headers with exponential backoff
+- **Entry management** - read/unread tracking, starring
+- **Multi-user** with per-user privacy (entries visible only after subscription)
+- **Public REST API** for third-party clients
+- **Responsive design** with mobile-friendly UI
+- **Rate limiting** to prevent abuse
+- **Error tracking** with Sentry integration
+
+### Future Features (Post-MVP)
+
+- OAuth (Google, Facebook, Apple sign-in)
+- WebSub push support for instant updates
+- JSON Feed format support
+- Email-based subscriptions (Substack newsletters)
+- OPML import/export
+- Keyboard shortcuts
+- Full-text search
+- Folders/organization
 
 ## Tech Stack
 
-- **Frontend**: Next.js (App Router, React Server Components)
-- **Backend**: TypeScript, tRPC
-- **Database**: PostgreSQL
-- **Cache/Pubsub**: Redis
+- **Frontend**: Next.js 16 (App Router, React Server Components)
+- **Backend**: TypeScript, tRPC with REST API generation
+- **Database**: PostgreSQL 16 with Drizzle ORM
+- **Cache/Pubsub**: Redis 7
 - **Deployment**: Fly.io, Docker
-- **Observability**: Grafana Cloud, Sentry
+- **Observability**: Sentry for error tracking, structured logging
 
 ## Documentation
 
 - [Design Document](docs/DESIGN.md) - Architecture, database schema, API design
 - [MVP Specification](docs/MVP.md) - MVP scope and implementation plan
+- [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment to Fly.io
+- [Operations Runbook](docs/RUNBOOK.md) - Troubleshooting and maintenance
 
 ## Development
 
@@ -57,12 +75,17 @@ docker compose up -d
 # Verify services are running
 docker compose ps
 
-# Run database migrations (available after task 1.3)
-# pnpm db:migrate
+# Run database migrations
+pnpm db:migrate
+
+# Seed the database with test data (optional)
+pnpm db:seed
 
 # Start development server
 pnpm dev
 ```
+
+The app will be available at http://localhost:3000.
 
 ### Local Services
 
@@ -115,6 +138,59 @@ pnpm typecheck
 # Linting
 pnpm lint
 ```
+
+### Background Worker
+
+The background worker fetches feeds on a schedule. It starts automatically when you run `pnpm dev` or `pnpm start`. The worker:
+
+- Polls for due jobs every 5 seconds
+- Processes up to 3 feed fetches concurrently
+- Respects cache headers for efficient polling
+- Implements exponential backoff for failed feeds
+
+You can monitor worker activity in the server logs.
+
+## Production Deployment
+
+Lion Reader is configured for deployment to [Fly.io](https://fly.io). See the [Deployment Guide](docs/DEPLOYMENT.md) for detailed instructions.
+
+Quick start:
+
+```bash
+# Install Fly CLI
+curl -L https://fly.io/install.sh | sh
+
+# Login and launch
+fly auth login
+fly launch --no-deploy
+
+# Provision database and Redis
+fly postgres create
+fly postgres attach <your-postgres-app>
+fly redis create
+
+# Set secrets
+fly secrets set SESSION_SECRET="$(openssl rand -base64 32)"
+
+# Deploy
+fly deploy
+```
+
+## API Documentation
+
+Lion Reader provides a REST API for third-party clients. Key endpoints:
+
+| Method | Endpoint                | Description                      |
+| ------ | ----------------------- | -------------------------------- |
+| POST   | `/v1/auth/register`     | Create account                   |
+| POST   | `/v1/auth/login`        | Login                            |
+| GET    | `/v1/subscriptions`     | List subscriptions               |
+| POST   | `/v1/subscriptions`     | Subscribe to feed                |
+| GET    | `/v1/entries`           | List entries                     |
+| POST   | `/v1/entries/mark-read` | Mark entries read                |
+| GET    | `/v1/events`            | SSE stream for real-time updates |
+
+See [MVP Specification](docs/MVP.md) for the complete API reference.
 
 ## License
 
