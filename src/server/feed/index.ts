@@ -84,6 +84,8 @@ export {
   verifyHmacSignature,
   getActiveSubscription,
   unsubscribeFromHub,
+  renewExpiringSubscriptions,
   type SubscribeToHubResult,
   type VerificationResult,
+  type RenewSubscriptionsResult,
 } from "./websub";

@@ -445,3 +445,97 @@ export function updateJobQueueMetrics(
     jobQueueSize?.set({ type, status }, count);
   }
 }
+
+// ============================================================================
+// WebSub Metrics
+// ============================================================================
+
+/**
+ * WebSub subscription status values.
+ * - pending: Subscription request sent, awaiting verification
+ * - active: Subscription verified and active
+ * - unsubscribed: Subscription expired or failed
+ */
+export type WebsubStatus = "pending" | "active" | "unsubscribed";
+
+/**
+ * Gauge for WebSub subscriptions by status.
+ * Labels: status (pending, active, unsubscribed)
+ */
+export const websubSubscriptionsTotal = metricsEnabled
+  ? new Gauge({
+      name: "websub_subscriptions_total",
+      help: "Total WebSub subscriptions by status",
+      labelNames: ["status"] as const,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Counter for WebSub notifications received.
+ * Tracks content push notifications from hubs.
+ */
+export const websubNotificationsReceivedTotal = metricsEnabled
+  ? new Counter({
+      name: "websub_notifications_received_total",
+      help: "Total WebSub content notifications received",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Counter for WebSub renewal attempts.
+ * Labels: status (success, failure)
+ */
+export const websubRenewalsTotal = metricsEnabled
+  ? new Counter({
+      name: "websub_renewals_total",
+      help: "Total WebSub subscription renewal attempts",
+      labelNames: ["status"] as const,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Tracks a WebSub notification received.
+ * This function has zero overhead when metrics are disabled.
+ */
+export function trackWebsubNotificationReceived(): void {
+  if (!metricsEnabled) return;
+  websubNotificationsReceivedTotal?.inc();
+}
+
+/**
+ * Tracks a WebSub renewal attempt.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param success - Whether the renewal was successful
+ */
+export function trackWebsubRenewal(success: boolean): void {
+  if (!metricsEnabled) return;
+  websubRenewalsTotal?.inc({ status: success ? "success" : "failure" });
+}
+
+/**
+ * Updates WebSub subscription metrics by status.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param counts - Subscription counts by status
+ */
+export function updateWebsubMetrics(counts: {
+  pending?: number;
+  active?: number;
+  unsubscribed?: number;
+}): void {
+  if (!metricsEnabled) return;
+
+  if (counts.pending !== undefined) {
+    websubSubscriptionsTotal?.set({ status: "pending" }, counts.pending);
+  }
+  if (counts.active !== undefined) {
+    websubSubscriptionsTotal?.set({ status: "active" }, counts.active);
+  }
+  if (counts.unsubscribed !== undefined) {
+    websubSubscriptionsTotal?.set({ status: "unsubscribed" }, counts.unsubscribed);
+  }
+}
