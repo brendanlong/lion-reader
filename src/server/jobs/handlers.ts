@@ -151,7 +151,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         now,
       });
 
-      // Update feed metadata
+      // Update feed metadata including WebSub hub discovery
       await db
         .update(feeds)
         .set({
@@ -164,6 +164,9 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
           nextFetchAt: nextFetch.nextFetchAt,
           consecutiveFailures: 0,
           lastError: null,
+          // Store WebSub hub and self URLs if discovered
+          hubUrl: parsedFeed.hubUrl ?? feed.hubUrl,
+          selfUrl: parsedFeed.selfUrl ?? feed.selfUrl,
           updatedAt: now,
         })
         .where(eq(feeds.id, feed.id));
