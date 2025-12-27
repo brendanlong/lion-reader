@@ -174,7 +174,7 @@ ALWAYS read @docs/MVP.md and @docs/DESIGN.md before starting.
 
 ### 4.4 Entry Processing
 
-- [ ] **Implement entry storage and deduplication**
+- [x] **Implement entry storage and deduplication**
   - Parse entries from fetched feed
   - Generate content hash for change detection
   - Detect new entries by GUID

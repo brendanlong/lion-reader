@@ -49,3 +49,16 @@ export {
   type NextFetchResult,
   type NextFetchReason,
 } from "./scheduling";
+export {
+  generateContentHash,
+  deriveGuid,
+  generateSummary,
+  findEntryByGuid,
+  createEntry,
+  updateEntryContent,
+  processEntry,
+  processEntries,
+  type ProcessedEntry,
+  type ProcessEntriesResult,
+  type ProcessEntriesOptions,
+} from "./entry-processor";
