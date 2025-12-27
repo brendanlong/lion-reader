@@ -398,7 +398,7 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
   - Handle private relay email addresses
   - Write integration tests
 
-- [ ] **Add Apple OAuth UI**
+- [x] **Add Apple OAuth UI**
   - Add "Sign in with Apple" button (Apple's required styling)
   - Conditionally show based on /v1/auth/providers response
 

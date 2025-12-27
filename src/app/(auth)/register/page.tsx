@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
-import { GoogleSignInButton } from "@/components/auth";
+import { GoogleSignInButton, AppleSignInButton } from "@/components/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -106,6 +106,10 @@ export default function RegisterPage() {
       <div className="space-y-3">
         <GoogleSignInButton
           label="Continue with Google"
+          onError={(error) => setErrors({ form: error })}
+        />
+        <AppleSignInButton
+          label="Continue with Apple"
           onError={(error) => setErrors({ form: error })}
         />
       </div>
