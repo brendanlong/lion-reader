@@ -24,6 +24,7 @@
 
 import { useNarration } from "./useNarration";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
+import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -170,12 +171,20 @@ function NarrationControlsInner({
   feedTitle,
   artwork,
 }: NarrationControlsProps) {
-  const { state, isLoading, play, pause, skipForward, skipBackward } = useNarration({
+  const { state, isLoading, play, pause, skipForward, skipBackward, isSupported } = useNarration({
     id: articleId,
     type: articleType,
     title,
     feedTitle,
     artwork,
+  });
+
+  // Enable keyboard shortcuts for narration
+  useNarrationKeyboardShortcuts({
+    state,
+    controls: { play, pause, skipForward, skipBackward },
+    isLoading,
+    isSupported,
   });
 
   const { status, currentParagraph, totalParagraphs } = state;
