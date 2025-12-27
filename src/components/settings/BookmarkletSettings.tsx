@@ -8,10 +8,11 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 
 export function BookmarkletSettings() {
   const [showCode, setShowCode] = useState(false);
+  const bookmarkletRef = useRef<HTMLAnchorElement>(null);
 
   // Generate the bookmarklet URL using the app's base URL
   const { bookmarkletHref, appUrl } = useMemo(() => {
@@ -29,6 +30,13 @@ export function BookmarkletSettings() {
       appUrl: baseUrl,
     };
   }, []);
+
+  // Set the href directly on the DOM element to bypass React's javascript: URL blocking
+  useEffect(() => {
+    if (bookmarkletRef.current && bookmarkletHref) {
+      bookmarkletRef.current.setAttribute("href", bookmarkletHref);
+    }
+  }, [bookmarkletHref]);
 
   return (
     <section>
@@ -48,7 +56,8 @@ export function BookmarkletSettings() {
             Drag this button to your bookmarks bar:
           </p>
           <a
-            href={bookmarkletHref}
+            ref={bookmarkletRef}
+            href="#"
             onClick={(e) => e.preventDefault()}
             draggable
             className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 shadow-sm transition-all hover:border-amber-400 hover:bg-amber-100 hover:shadow active:scale-95 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:border-amber-600 dark:hover:bg-amber-900"

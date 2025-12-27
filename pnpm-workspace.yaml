@@ -1,5 +1,11 @@
 packages:
   - .
+
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+onlyBuiltDependencies:
+  - "@sentry/cli"
+  - argon2
+  - esbuild
