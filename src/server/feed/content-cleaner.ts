@@ -31,8 +31,15 @@ export interface CleanedContent {
 export interface CleanContentOptions {
   /** Base URL for resolving relative links */
   url?: string;
-  /** Minimum content length to attempt cleaning (default: 100) */
+  /** Minimum content length to attempt cleaning (default: 140, Mozilla's default) */
   minContentLength?: number;
+  /**
+   * Minimum length for cleaned text content to be considered successful.
+   * If the cleaned content is shorter than this, cleaning is considered failed
+   * (e.g., JS-heavy pages that don't render server-side).
+   * Default: 50 characters
+   */
+  minCleanedLength?: number;
 }
 
 /**
@@ -60,7 +67,7 @@ export function cleanContent(
   html: string,
   options: CleanContentOptions = {}
 ): CleanedContent | null {
-  const { url, minContentLength = 100 } = options;
+  const { url, minContentLength = 140, minCleanedLength = 50 } = options;
 
   // Skip very short content
   if (html.length < minContentLength) {
@@ -111,9 +118,20 @@ export function cleanContent(
       return null;
     }
 
+    // Check if cleaned content is unrealistically short (e.g., JS-heavy pages)
+    const textContent = article.textContent?.trim() ?? "";
+    if (textContent.length < minCleanedLength) {
+      logger.debug("Readability extracted content too short", {
+        url,
+        textLength: textContent.length,
+        minCleanedLength,
+      });
+      return null;
+    }
+
     return {
       content: article.content,
-      textContent: article.textContent?.trim() ?? "",
+      textContent,
       excerpt: article.excerpt ?? "",
       title: article.title ?? null,
       byline: article.byline ?? null,
