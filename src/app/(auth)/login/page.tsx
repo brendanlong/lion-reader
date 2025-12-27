@@ -1,16 +1,17 @@
 /**
  * Login Page
  *
- * Allows users to sign in with their email and password.
+ * Allows users to sign in with their email and password, or with OAuth providers.
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
+import { GoogleSignInButton } from "@/components/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,6 +27,20 @@ export default function LoginPage() {
 
   // Get success message from registration redirect
   const registered = searchParams.get("registered") === "true";
+
+  // Get OAuth error from callback redirect and map to user-friendly message
+  const oauthError = searchParams.get("error");
+  const oauthErrorMessage = useMemo(() => {
+    if (!oauthError) return null;
+
+    const errorMessages: Record<string, string> = {
+      invalid_state: "Authentication failed. Please try again.",
+      callback_failed: "Failed to complete sign-in. Please try again.",
+      provider_not_configured: "This sign-in method is not available.",
+    };
+
+    return errorMessages[oauthError] || "An error occurred during sign-in. Please try again.";
+  }, [oauthError]);
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: (data) => {
@@ -86,11 +101,37 @@ export default function LoginPage() {
         </Alert>
       )}
 
+      {oauthErrorMessage && (
+        <Alert variant="error" className="mb-4">
+          {oauthErrorMessage}
+        </Alert>
+      )}
+
       {errors.form && (
         <Alert variant="error" className="mb-4">
           {errors.form}
         </Alert>
       )}
+
+      {/* OAuth Sign-in Options */}
+      <div className="space-y-3">
+        <GoogleSignInButton
+          label="Sign in with Google"
+          onError={(error) => setErrors({ form: error })}
+        />
+      </div>
+
+      {/* Divider */}
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-zinc-300 dark:border-zinc-700" />
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="bg-white px-2 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+            Or continue with email
+          </span>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
