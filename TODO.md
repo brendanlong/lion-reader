@@ -629,9 +629,13 @@ See @docs/narration-design.md for full design details.
 ### 13.1 Narration Schema and LLM Integration
 
 - [ ] **Create narration database schema**
-  - Add `content_narration` text column to entries table
-  - Add `narration_generated_at` timestamptz column to entries table
-  - Create index for finding entries needing narration
+  - Add narration columns to entries table:
+    - `content_narration` text
+    - `narration_generated_at` timestamptz
+    - `narration_error` text (for error tracking)
+    - `narration_error_at` timestamptz (for retry logic)
+  - Add same columns to saved_articles table
+  - Create indexes for finding items needing narration
   - Update Drizzle schema with types
 
 - [ ] **Implement Groq/LLM text preprocessing**
@@ -644,10 +648,12 @@ See @docs/narration-design.md for full design details.
 ### 13.2 Narration API
 
 - [ ] **Implement narration generation endpoint**
-  - POST /v1/narration/generate - generate or return cached narration
+  - POST /v1/narration/generate with discriminated union input:
+    - `{ type: 'entry', id }` for feed entries
+    - `{ type: 'saved', id }` for saved articles
   - Return cached narration if available
-  - Fall back to plain text conversion if GROQ_API_KEY not set
-  - Cache generated narration in database
+  - Store errors and allow retry after 1 hour
+  - Fall back to plain text on error or if GROQ_API_KEY not set
   - Write integration tests
 
 ### 13.3 Web Speech API Integration
@@ -664,6 +670,11 @@ See @docs/narration-design.md for full design details.
   - `waitForVoices()` for async voice loading
   - `rankVoices()` heuristic for quality sorting
   - Write unit tests
+
+- [ ] **Implement feature detection**
+  - `isNarrationSupported()` - check for Web Speech API
+  - `isMediaSessionSupported()` - check for Media Session API
+  - Hide narration controls in unsupported browsers
 
 ### 13.4 Media Session API Integration
 
@@ -687,7 +698,13 @@ See @docs/narration-design.md for full design details.
   - Skip forward/backward buttons
   - Current paragraph indicator
   - Loading state during narration generation
-  - Handle unsupported browsers gracefully
+  - Conditionally render based on feature detection
+
+- [ ] **Add keyboard shortcuts for narration**
+  - `p` - toggle play/pause
+  - `Shift+N` - skip to next paragraph
+  - `Shift+P` - skip to previous paragraph
+  - Integrate with existing keyboard shortcut system
 
 ### 13.6 Narration Polish
 
