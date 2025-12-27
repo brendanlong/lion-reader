@@ -157,6 +157,7 @@ export const entries = pgTable(
     title: text("title"),
     author: text("author"),
     contentOriginal: text("content_original"),
+    contentCleaned: text("content_cleaned"), // Readability-cleaned HTML
     summary: text("summary"), // truncated for previews
 
     // Timestamps

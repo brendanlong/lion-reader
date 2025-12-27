@@ -22,6 +22,13 @@
       "when": 1766816693927,
       "tag": "0002_nappy_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1766821843794,
+      "tag": "0003_slim_lockheed",
+      "breakpoints": true
     }
   ]
 }

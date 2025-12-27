@@ -522,19 +522,19 @@ See @docs/PHASE2-4-PLAN.md for detailed design decisions and implementation guid
 
 ### 11.2 Content Cleaning
 
-- [ ] **Implement Readability extraction**
+- [x] **Implement Readability extraction**
   - Install @mozilla/readability and jsdom
   - Create cleanContent() function (HTML → cleaned article)
   - Handle Readability failures gracefully (return null)
   - Write unit tests with sample HTML
 
-- [ ] **Integrate content cleaning into feed processing**
+- [x] **Integrate content cleaning into feed processing**
   - Run Readability on entry content during fetch
   - Store original in content_original, cleaned in content_cleaned
   - Generate summary from cleaned text content
   - Log failures for monitoring
 
-- [ ] **Update entry display to use cleaned content**
+- [x] **Update entry display to use cleaned content**
   - Prefer content_cleaned when available
   - Fall back to content_original
   - Add toggle to show original content (optional)

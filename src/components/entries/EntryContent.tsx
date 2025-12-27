@@ -256,9 +256,12 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
     return <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
   }
 
+  // Prefer cleaned content if available, fall back to original
+  const contentToDisplay = entry.contentCleaned ?? entry.contentOriginal;
+
   // Sanitize HTML content
-  const sanitizedContent = entry.contentOriginal
-    ? DOMPurify.sanitize(entry.contentOriginal, {
+  const sanitizedContent = contentToDisplay
+    ? DOMPurify.sanitize(contentToDisplay, {
         // Allow safe tags and attributes
         ADD_TAGS: ["iframe"], // Allow iframes for embedded content
         ADD_ATTR: ["target", "allowfullscreen", "frameborder"], // Allow target="_blank" on links
