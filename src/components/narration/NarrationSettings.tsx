@@ -14,6 +14,7 @@ import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
 import type { TTSProviderId } from "@/lib/narration/types";
+import { EnhancedVoiceList } from "./EnhancedVoiceList";
 
 /**
  * Sample text used for voice preview.
@@ -347,28 +348,13 @@ export function NarrationSettings() {
               </div>
             )}
 
-            {/* Enhanced Voices Placeholder (only shown when piper provider selected) */}
+            {/* Enhanced Voices List (only shown when piper provider selected) */}
             {settings.provider === "piper" && (
-              <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-6 text-center dark:border-zinc-700 dark:bg-zinc-800/50">
-                <svg
-                  className="mx-auto h-10 w-10 text-zinc-400 dark:text-zinc-500"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                  />
-                </svg>
-                <h4 className="mt-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                  Enhanced Voices Coming Soon
-                </h4>
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  High-quality voices with natural speech will be available in a future update.
-                </p>
+              <div>
+                <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Select Voice
+                </label>
+                <EnhancedVoiceList settings={settings} setSettings={setSettings} />
               </div>
             )}
 
