@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ENHANCED_VOICES, type EnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
+import { VoiceCache, STORAGE_LIMIT_BYTES } from "@/lib/narration/voice-cache";
 
 /**
  * Download status for a voice.
@@ -85,6 +86,26 @@ export interface UseEnhancedVoicesReturn {
    * Clear the current error.
    */
   clearError: () => void;
+
+  /**
+   * Total storage used by cached voices in bytes.
+   */
+  storageUsed: number;
+
+  /**
+   * Number of downloaded voices.
+   */
+  downloadedCount: number;
+
+  /**
+   * Whether the storage limit (200 MB) has been exceeded.
+   */
+  isStorageLimitExceeded: boolean;
+
+  /**
+   * Delete all cached voices.
+   */
+  deleteAllVoices: () => Promise<void>;
 }
 
 /**
@@ -128,9 +149,38 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [storageUsed, setStorageUsed] = useState(0);
+  const [downloadedCount, setDownloadedCount] = useState(0);
 
   // Track if component is mounted to avoid state updates after unmount
   const isMountedRef = useRef(true);
+
+  // Voice cache reference for storage operations
+  const voiceCacheRef = useRef<VoiceCache | null>(null);
+
+  // Get or create the voice cache
+  const getVoiceCache = useCallback(() => {
+    if (!voiceCacheRef.current) {
+      voiceCacheRef.current = new VoiceCache();
+    }
+    return voiceCacheRef.current;
+  }, []);
+
+  // Update storage statistics
+  const updateStorageStats = useCallback(async () => {
+    try {
+      const cache = getVoiceCache();
+      const entries = await cache.list();
+      const size = await cache.getStorageSize();
+
+      if (isMountedRef.current) {
+        setStorageUsed(size);
+        setDownloadedCount(entries.length);
+      }
+    } catch {
+      // Silently fail - keep existing stats
+    }
+  }, [getVoiceCache]);
 
   // Initialize voice states
   useEffect(() => {
@@ -152,6 +202,9 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
           });
         }
         setVoiceStates(initialStates);
+
+        // Update storage statistics
+        await updateStorageStats();
       } catch {
         // If storage check fails, assume not downloaded
         const initialStates = new Map<string, { status: VoiceDownloadStatus; progress: number }>();
@@ -173,7 +226,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
+  }, [updateStorageStats]);
 
   // Refresh status from storage
   const refreshStatus = useCallback(async () => {
@@ -198,79 +251,94 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
         }
         return newStates;
       });
+
+      // Update storage statistics
+      await updateStorageStats();
     } catch {
       // Silently fail - keep existing state
     }
-  }, []);
+  }, [updateStorageStats]);
 
   // Download a voice
-  const downloadVoice = useCallback(async (voiceId: string) => {
-    setError(null);
+  const downloadVoice = useCallback(
+    async (voiceId: string) => {
+      setError(null);
 
-    // Update status to downloading
-    setVoiceStates((prev) => {
-      const newStates = new Map(prev);
-      newStates.set(voiceId, { status: "downloading", progress: 0 });
-      return newStates;
-    });
+      // Update status to downloading
+      setVoiceStates((prev) => {
+        const newStates = new Map(prev);
+        newStates.set(voiceId, { status: "downloading", progress: 0 });
+        return newStates;
+      });
 
-    try {
-      const provider = getPiperTTSProvider();
-      await provider.downloadVoice(voiceId, (progress) => {
+      try {
+        const provider = getPiperTTSProvider();
+        await provider.downloadVoice(voiceId, (progress) => {
+          if (!isMountedRef.current) return;
+          setVoiceStates((prev) => {
+            const newStates = new Map(prev);
+            newStates.set(voiceId, { status: "downloading", progress });
+            return newStates;
+          });
+        });
+
         if (!isMountedRef.current) return;
+
+        // Update status to downloaded
         setVoiceStates((prev) => {
           const newStates = new Map(prev);
-          newStates.set(voiceId, { status: "downloading", progress });
+          newStates.set(voiceId, { status: "downloaded", progress: 1 });
           return newStates;
         });
-      });
 
-      if (!isMountedRef.current) return;
+        // Update storage statistics
+        await updateStorageStats();
+      } catch (err) {
+        if (!isMountedRef.current) return;
 
-      // Update status to downloaded
-      setVoiceStates((prev) => {
-        const newStates = new Map(prev);
-        newStates.set(voiceId, { status: "downloaded", progress: 1 });
-        return newStates;
-      });
-    } catch (err) {
-      if (!isMountedRef.current) return;
+        // Reset status on error
+        setVoiceStates((prev) => {
+          const newStates = new Map(prev);
+          newStates.set(voiceId, { status: "not-downloaded", progress: 0 });
+          return newStates;
+        });
 
-      // Reset status on error
-      setVoiceStates((prev) => {
-        const newStates = new Map(prev);
-        newStates.set(voiceId, { status: "not-downloaded", progress: 0 });
-        return newStates;
-      });
-
-      const message = err instanceof Error ? err.message : "Failed to download voice";
-      setError(message);
-    }
-  }, []);
+        const message = err instanceof Error ? err.message : "Failed to download voice";
+        setError(message);
+      }
+    },
+    [updateStorageStats]
+  );
 
   // Remove a downloaded voice
-  const removeVoice = useCallback(async (voiceId: string) => {
-    setError(null);
+  const removeVoice = useCallback(
+    async (voiceId: string) => {
+      setError(null);
 
-    try {
-      const provider = getPiperTTSProvider();
-      await provider.removeVoice(voiceId);
+      try {
+        const provider = getPiperTTSProvider();
+        await provider.removeVoice(voiceId);
 
-      if (!isMountedRef.current) return;
+        if (!isMountedRef.current) return;
 
-      // Update status to not downloaded
-      setVoiceStates((prev) => {
-        const newStates = new Map(prev);
-        newStates.set(voiceId, { status: "not-downloaded", progress: 0 });
-        return newStates;
-      });
-    } catch (err) {
-      if (!isMountedRef.current) return;
+        // Update status to not downloaded
+        setVoiceStates((prev) => {
+          const newStates = new Map(prev);
+          newStates.set(voiceId, { status: "not-downloaded", progress: 0 });
+          return newStates;
+        });
 
-      const message = err instanceof Error ? err.message : "Failed to remove voice";
-      setError(message);
-    }
-  }, []);
+        // Update storage statistics
+        await updateStorageStats();
+      } catch (err) {
+        if (!isMountedRef.current) return;
+
+        const message = err instanceof Error ? err.message : "Failed to remove voice";
+        setError(message);
+      }
+    },
+    [updateStorageStats]
+  );
 
   // Preview a voice
   const previewVoice = useCallback(async (voiceId: string) => {
@@ -317,6 +385,43 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     setError(null);
   }, []);
 
+  // Delete all cached voices
+  const deleteAllVoices = useCallback(async () => {
+    setError(null);
+
+    try {
+      const provider = getPiperTTSProvider();
+      const storedVoices = await provider.getStoredVoiceIds();
+
+      // Delete each voice
+      for (const voiceId of storedVoices) {
+        await provider.removeVoice(voiceId);
+      }
+
+      if (!isMountedRef.current) return;
+
+      // Reset all voice states to not downloaded
+      setVoiceStates((prev) => {
+        const newStates = new Map(prev);
+        for (const voice of ENHANCED_VOICES) {
+          newStates.set(voice.id, { status: "not-downloaded", progress: 0 });
+        }
+        return newStates;
+      });
+
+      // Update storage statistics
+      await updateStorageStats();
+    } catch (err) {
+      if (!isMountedRef.current) return;
+
+      const message = err instanceof Error ? err.message : "Failed to delete voices";
+      setError(message);
+    }
+  }, [updateStorageStats]);
+
+  // Calculate if storage limit is exceeded
+  const isStorageLimitExceededValue = storageUsed > STORAGE_LIMIT_BYTES;
+
   // Build the voices array with current state
   const voices: EnhancedVoiceState[] = ENHANCED_VOICES.map((voice) => {
     const state = voiceStates.get(voice.id) ?? { status: "not-downloaded" as const, progress: 0 };
@@ -339,5 +444,9 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     refreshStatus,
     error,
     clearError,
+    storageUsed,
+    downloadedCount,
+    isStorageLimitExceeded: isStorageLimitExceededValue,
+    deleteAllVoices,
   };
 }
