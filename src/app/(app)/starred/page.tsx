@@ -23,7 +23,8 @@ export default function StarredEntriesPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences("starred");
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
+    useViewPreferences("starred");
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -85,9 +86,19 @@ export default function StarredEntriesPage() {
     setEntries(loadedEntries);
   }, []);
 
+  // Handler to toggle read status
+  const handleToggleRead = useCallback(
+    (entryId: string, currentlyRead: boolean) => {
+      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
+    },
+    [markReadMutation]
+  );
+
   // If an entry is open, show the full content view
   if (openEntryId) {
-    return <EntryContent entryId={openEntryId} onBack={handleBack} />;
+    return (
+      <EntryContent entryId={openEntryId} onBack={handleBack} onToggleRead={handleToggleRead} />
+    );
   }
 
   // Otherwise, show the starred entries list
