@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Base theme for Lion Reader.
+        Compose handles theming via LionReaderTheme, but we need a base
+        theme for the Activity splash screen and system UI styling.
+    -->
+    <style name="Theme.LionReader" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Status bar color -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <!-- Navigation bar color -->
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- Enable edge-to-edge -->
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

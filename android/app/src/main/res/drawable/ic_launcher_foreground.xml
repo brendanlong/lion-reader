@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple RSS/Reader icon - centered in safe zone -->
+    <group
+        android:translateX="22"
+        android:translateY="22">
+        <!-- Background circle -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M32,0 C49.67,0 64,14.33 64,32 C64,49.67 49.67,64 32,64 C14.33,64 0,49.67 0,32 C0,14.33 14.33,0 32,0z" />
+        <!-- RSS waves -->
+        <path
+            android:fillColor="#D97706"
+            android:strokeWidth="0"
+            android:pathData="M16,48 C16,48 16,32 32,32 C48,32 48,48 48,48"
+            android:strokeColor="#D97706"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeWidth="4"
+            android:pathData="M20,44 C20,44 20,32 32,32 C44,32 44,44 44,44"
+            android:strokeColor="#D97706"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeWidth="4"
+            android:pathData="M26,40 C26,40 26,34 32,34 C38,34 38,40 38,40"
+            android:strokeColor="#D97706"
+            android:strokeLineCap="round" />
+        <!-- Dot -->
+        <path
+            android:fillColor="#D97706"
+            android:pathData="M32,20 m-4,0 a4,4 0 1,1 8,0 a4,4 0 1,1 -8,0" />
+    </group>
+</vector>
