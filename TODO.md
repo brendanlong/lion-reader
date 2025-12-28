@@ -721,3 +721,25 @@ See @docs/narration-design.md for full design details.
   - Document Groq data processing
   - Explain on-device audio generation
   - Link to Groq privacy policy
+
+## Phase 14: UX Improvements
+
+### 14.1 Show/Hide Read Items
+
+- [ ] **Create view preferences hook**
+  - Create `useViewPreferences` hook with localStorage persistence
+  - Store `unreadOnly` preference per view (all, starred, feed, tag, saved)
+  - Default to showing unread only
+
+- [ ] **Add toggle UI to entry list header**
+  - Add toggle button/checkbox in entry list header
+  - Show current state (eye icon or "Show read" text)
+  - Update query when toggled
+
+- [ ] **Add keyboard shortcut**
+  - `u` key to toggle unread-only mode
+  - Add to keyboard shortcuts help modal
+
+- [ ] **Handle read entry transitions**
+  - When hiding read items, fade out newly-read entries after brief delay
+  - Prevent jarring list reflow when marking items read
