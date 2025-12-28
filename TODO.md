@@ -743,3 +743,91 @@ See @docs/narration-design.md for full design details.
 - [ ] **Handle read entry transitions** (optional polish)
   - When hiding read items, fade out newly-read entries after brief delay
   - Prevent jarring list reflow when marking items read
+
+## Phase 15: Enhanced TTS Voices
+
+See @docs/better-voices-design.md for full design details.
+
+Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. This phase adds optional Piper TTS voices that run in-browser via WebAssembly.
+
+### 15.1 TTS Provider Abstraction
+
+- [ ] **Create TTS provider interface**
+  - Define `TTSProvider` interface with speak/stop/pause/resume methods
+  - Define `TTSVoice` interface for unified voice representation
+  - Implement `BrowserTTSProvider` wrapping existing Web Speech API code
+  - Update `ArticleNarrator` to accept a provider instead of using Web Speech directly
+  - Add `provider` field to `NarrationSettings` type
+  - Ensure existing behavior unchanged (browser voices remain default)
+  - Write unit tests for provider interface
+
+### 15.2 Voice Cache Infrastructure
+
+- [ ] **Implement IndexedDB voice storage**
+  - Create `VoiceCache` class for IndexedDB operations
+  - Schema: voiceId, modelData (ArrayBuffer), configData, downloadedAt, version
+  - Implement get/put/delete/list operations
+  - Add storage size calculation utility
+  - Write integration tests
+
+- [ ] **Implement voice download manager**
+  - Create `downloadVoice(voiceId, onProgress)` function
+  - Fetch from HuggingFace with progress tracking
+  - Store in IndexedDB via VoiceCache
+  - Handle network errors gracefully
+  - Write integration tests
+
+### 15.3 Piper TTS Provider
+
+- [ ] **Add Piper TTS library and provider**
+  - Install piper-tts-web (or @mintplex-labs/piper-tts-web)
+  - Create curated voice metadata (5 English voices with display names, sizes)
+  - Implement `PiperTTSProvider` class
+  - Load voice from IndexedDB cache
+  - Generate audio via ONNX runtime
+  - Play audio via AudioContext
+  - Implement paragraph-based playback matching existing behavior
+  - Write unit tests
+
+- [ ] **Implement fallback behavior**
+  - If Piper fails to load, fall back to browser TTS
+  - Show toast notification on fallback
+  - Log errors for debugging
+
+### 15.4 Enhanced Voices Settings UI
+
+- [ ] **Add provider selection to settings**
+  - Add "Voice Provider" section with Browser/Enhanced radio buttons
+  - Conditionally show browser voice dropdown or enhanced voice list
+  - Store provider preference in localStorage
+
+- [ ] **Build enhanced voice list component**
+  - Show curated voices with name, description, size
+  - Show download status (not downloaded / downloading / downloaded)
+  - Download progress bar during download
+  - Preview button for downloaded voices
+  - Delete button to remove cached voices
+
+- [ ] **Add storage management**
+  - Show total storage used by cached voices
+  - "Manage Storage" link to delete individual voices
+  - Warn if storage exceeds 200 MB
+
+### 15.5 Enhanced Voices Polish
+
+- [ ] **Add metrics and monitoring**
+  - Track enhanced_voice_selected_total{voice_id}
+  - Track enhanced_voice_download_completed_total{voice_id}
+  - Track enhanced_voice_download_failed_total{voice_id, error_type}
+  - Track narration_playback_started_total{provider}
+
+- [ ] **Error handling and edge cases**
+  - Handle IndexedDB quota exceeded error
+  - Handle download interruption gracefully
+  - Handle corrupted cache entries
+  - Add retry button for failed downloads
+  - Write integration tests for error scenarios
+
+- [ ] **Documentation**
+  - Update user-facing help text about enhanced voices
+  - Add FAQ entry about voice downloads and storage

@@ -1753,11 +1753,25 @@ Article content is sent to Groq (Llama 3.1 8B) for text preprocessing. Audio gen
 
 ### Limitations
 
-| Limitation             | Impact                                      | Mitigation                |
-| ---------------------- | ------------------------------------------- | ------------------------- |
-| Background playback    | Audio stops when tab backgrounded on mobile | Future: Capacitor wrapper |
-| Voice quality variance | Some browsers have poor voices              | Recommend Chrome/Safari   |
-| No offline narration   | Requires network to generate text           | Cache aggressively        |
+| Limitation             | Impact                                      | Mitigation                    |
+| ---------------------- | ------------------------------------------- | ----------------------------- |
+| Background playback    | Audio stops when tab backgrounded on mobile | Future: Capacitor wrapper     |
+| Voice quality variance | Some browsers have poor voices              | Enhanced voices via Piper TTS |
+| No offline narration   | Requires network to generate text           | Cache aggressively            |
+
+### Enhanced TTS Voices
+
+Browser voices vary significantly in quality—Chrome and Safari have good options, but Firefox and others are poor. As an optional enhancement, users can download high-quality Piper TTS voices that run entirely in-browser via WebAssembly.
+
+See [docs/better-voices-design.md](./better-voices-design.md) for full implementation details.
+
+**Key points:**
+
+- Browser voices remain the default (no download required)
+- Enhanced voices are downloaded on-demand (~30-60 MB per voice)
+- WASM-only for better mobile battery life (no WebGPU)
+- Curated selection of 3-5 quality English voices
+- Cached in IndexedDB for offline use after download
 
 ### Future Enhancements
 
@@ -1765,6 +1779,7 @@ Article content is sent to Groq (Llama 3.1 8B) for text preprocessing. Audio gen
 - Cross-device playback sync
 - Capacitor wrapper for background audio
 - Pre-generation for saved/starred articles
+- Additional language voices for Piper TTS
 
 ---
 
