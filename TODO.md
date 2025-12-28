@@ -763,7 +763,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
 
 ### 15.2 Voice Cache Infrastructure
 
-- [ ] **Implement IndexedDB voice storage**
+- [x] **Implement IndexedDB voice storage**
   - Create `VoiceCache` class for IndexedDB operations
   - Schema: voiceId, modelData (ArrayBuffer), configData, downloadedAt, version
   - Implement get/put/delete/list operations
