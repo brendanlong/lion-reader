@@ -21,8 +21,9 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml ./
 
 # Install all dependencies (including devDependencies for building)
+# Use --ignore-scripts because postinstall needs files not yet copied
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --ignore-scripts
 
 # =============================================================================
 # Stage 3: Build the application
@@ -36,6 +37,9 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Copy source code
 COPY . .
+
+# Run postinstall script (copies ONNX WASM files to public/)
+RUN node scripts/copy-onnx-wasm.mjs
 
 # Set environment for build
 ENV NEXT_TELEMETRY_DISABLED=1
