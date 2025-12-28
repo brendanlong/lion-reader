@@ -884,7 +884,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Handle edge cases (no map, invalid index)
   - Write unit tests
 
-- [ ] **Add client-side paragraph ID processing**
+- [x] **Add client-side paragraph ID processing**
   - Create function to add `data-para-id` to rendered HTML
   - Process content on client side (matches server preprocessing)
   - Memoize for performance
