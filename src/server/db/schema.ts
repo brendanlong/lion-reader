@@ -274,15 +274,24 @@ export const subscriptions = pgTable(
 );
 
 // ============================================================================
-// USER ENTRY STATE
+// USER ENTRIES (visibility + state)
 // ============================================================================
 
 /**
- * User entry states - read/starred status per user per entry.
+ * User entries - tracks which entries are visible to each user and their read/starred state.
+ *
+ * Row existence means the entry is visible to the user. Rows are created:
+ * 1. When a feed is fetched - for all active subscribers
+ * 2. When a user subscribes - for entries currently in the live feed
+ *
+ * This replaces the old fetchedAt >= subscribedAt visibility logic with explicit tracking,
+ * ensuring users only see entries that were in the feed when they subscribed or
+ * that were added while they were subscribed.
+ *
  * Uses composite primary key (user_id, entry_id).
  */
-export const userEntryStates = pgTable(
-  "user_entry_states",
+export const userEntries = pgTable(
+  "user_entries",
   {
     userId: uuid("user_id")
       .notNull()
@@ -300,9 +309,9 @@ export const userEntryStates = pgTable(
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId] }),
     // For finding unread entries quickly
-    index("idx_user_entry_states_unread").on(table.userId, table.entryId),
+    index("idx_user_entries_unread").on(table.userId, table.entryId),
     // For starred entries view
-    index("idx_user_entry_states_starred").on(table.userId, table.starredAt),
+    index("idx_user_entries_starred").on(table.userId, table.starredAt),
   ]
 );
 
@@ -477,8 +486,8 @@ export type NewEntry = typeof entries.$inferInsert;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;
 
-export type UserEntryState = typeof userEntryStates.$inferSelect;
-export type NewUserEntryState = typeof userEntryStates.$inferInsert;
+export type UserEntry = typeof userEntries.$inferSelect;
+export type NewUserEntry = typeof userEntries.$inferInsert;
 
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;

@@ -2,7 +2,8 @@
  * Entries Router
  *
  * Handles entry listing and actions: list, get, mark read, star.
- * Implements visibility rules: users only see entries fetched after they subscribed.
+ * Visibility is determined by the user_entries table: users only see entries
+ * that have a corresponding row in user_entries for their user_id.
  */
 
 import { z } from "zod";
@@ -14,7 +15,7 @@ import {
   entries,
   feeds,
   subscriptions,
-  userEntryStates,
+  userEntries,
   subscriptionTags,
   tags,
 } from "@/server/db/schema";
@@ -138,9 +139,8 @@ export const entriesRouter = createTRPCRouter({
   /**
    * List entries with filters and cursor-based pagination.
    *
-   * Entries are visible to a user only if:
-   * 1. The user is subscribed to the feed
-   * 2. The entry was fetched_at >= the subscription's subscribed_at date
+   * Entries are visible to a user only if they have a corresponding
+   * row in the user_entries table for their user_id.
    *
    * @param feedId - Optional filter by feed ID
    * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
@@ -174,24 +174,16 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const limit = input.limit ?? DEFAULT_LIMIT;
 
-      // Get the user's active subscriptions
-      const subscriptionQuery = ctx.db
-        .select({
-          id: subscriptions.id,
-          feedId: subscriptions.feedId,
-          subscribedAt: subscriptions.subscribedAt,
-        })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+      // Build the base query conditions
+      // Visibility is enforced by inner join with user_entries
+      const conditions = [eq(userEntries.userId, userId)];
 
-      const userSubscriptions = await subscriptionQuery;
-
-      if (userSubscriptions.length === 0) {
-        return { items: [], nextCursor: undefined };
+      // Filter by feedId if specified
+      if (input.feedId) {
+        conditions.push(eq(entries.feedId, input.feedId));
       }
 
-      // If filtering by tagId, get subscriptions with that tag
-      let filteredSubscriptions = userSubscriptions;
+      // Filter by tagId if specified
       if (input.tagId) {
         // First verify the tag belongs to the user
         const tagExists = await ctx.db
@@ -206,41 +198,32 @@ export const entriesRouter = createTRPCRouter({
         }
 
         // Get subscriptions with this tag
-        const taggedSubscriptionIds = await ctx.db
-          .select({ subscriptionId: subscriptionTags.subscriptionId })
+        const taggedSubscriptions = await ctx.db
+          .select({ feedId: subscriptions.feedId })
           .from(subscriptionTags)
-          .where(eq(subscriptionTags.tagId, input.tagId));
+          .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
+          .where(
+            and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
+          );
 
-        const taggedIdSet = new Set(taggedSubscriptionIds.map((s) => s.subscriptionId));
-        filteredSubscriptions = userSubscriptions.filter((sub) => taggedIdSet.has(sub.id));
-
-        if (filteredSubscriptions.length === 0) {
+        if (taggedSubscriptions.length === 0) {
           // No subscriptions with this tag
           return { items: [], nextCursor: undefined };
         }
+
+        const taggedFeedIds = taggedSubscriptions.map((s) => s.feedId);
+        conditions.push(inArray(entries.feedId, taggedFeedIds));
       }
 
-      // If filtering by feedId, verify user is subscribed to it
-      if (input.feedId) {
-        const isSubscribed = filteredSubscriptions.some((sub) => sub.feedId === input.feedId);
-        if (!isSubscribed) {
-          // User is not subscribed to this feed (or feed doesn't have the tag), return empty result
-          return { items: [], nextCursor: undefined };
-        }
+      // Apply unreadOnly filter
+      if (input.unreadOnly) {
+        conditions.push(eq(userEntries.read, false));
       }
 
-      // Build subscription map for visibility filtering
-      const subscriptionMap = new Map(
-        filteredSubscriptions.map((sub) => [sub.feedId, sub.subscribedAt])
-      );
-
-      // Get the feed IDs to query
-      const feedIds = input.feedId
-        ? [input.feedId]
-        : filteredSubscriptions.map((sub) => sub.feedId);
-
-      // Build the base query conditions
-      const conditions = [inArray(entries.feedId, feedIds)];
+      // Apply starredOnly filter
+      if (input.starredOnly) {
+        conditions.push(eq(userEntries.starred, true));
+      }
 
       // Add cursor condition if present
       if (input.cursor) {
@@ -249,45 +232,24 @@ export const entriesRouter = createTRPCRouter({
       }
 
       // Query entries with user state
+      // Inner join with user_entries enforces visibility
       // We fetch one extra to determine if there are more results
       const queryResults = await ctx.db
         .select({
           entry: entries,
           feed: feeds,
-          userState: userEntryStates,
+          userState: userEntries,
         })
         .from(entries)
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
-        .leftJoin(
-          userEntryStates,
-          and(eq(userEntryStates.entryId, entries.id), eq(userEntryStates.userId, userId))
-        )
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
         .where(and(...conditions))
         .orderBy(desc(entries.id))
         .limit(limit + 1);
 
-      // Filter results by visibility (entry.fetchedAt >= subscription.subscribedAt)
-      // and by read/starred status if requested
-      const visibleEntries = queryResults.filter(({ entry }) => {
-        const subscribedAt = subscriptionMap.get(entry.feedId);
-        if (!subscribedAt) return false;
-        return entry.fetchedAt >= subscribedAt;
-      });
-
-      // Apply unreadOnly filter
-      let filteredEntries = visibleEntries;
-      if (input.unreadOnly) {
-        filteredEntries = filteredEntries.filter(({ userState }) => !userState?.read);
-      }
-
-      // Apply starredOnly filter
-      if (input.starredOnly) {
-        filteredEntries = filteredEntries.filter(({ userState }) => userState?.starred === true);
-      }
-
       // Determine if there are more results
-      const hasMore = filteredEntries.length > limit;
-      const resultEntries = hasMore ? filteredEntries.slice(0, limit) : filteredEntries;
+      const hasMore = queryResults.length > limit;
+      const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
 
       // Format the output
       const items = resultEntries.map(({ entry, feed, userState }) => ({
@@ -299,8 +261,8 @@ export const entriesRouter = createTRPCRouter({
         summary: entry.summary,
         publishedAt: entry.publishedAt,
         fetchedAt: entry.fetchedAt,
-        read: userState?.read ?? false,
-        starred: userState?.starred ?? false,
+        read: userState.read,
+        starred: userState.starred,
         feedTitle: feed.title,
       }));
 
@@ -316,9 +278,8 @@ export const entriesRouter = createTRPCRouter({
   /**
    * Get a single entry by ID with full content.
    *
-   * The entry is visible to a user only if:
-   * 1. The user is subscribed to the feed
-   * 2. The entry was fetched_at >= the subscription's subscribed_at date
+   * The entry is visible to a user only if they have a corresponding
+   * row in the user_entries table for their user_id.
    *
    * @param id - The entry ID
    * @returns The full entry with content
@@ -342,19 +303,17 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       // Get the entry with feed and user state
+      // Inner join with user_entries enforces visibility
       const result = await ctx.db
         .select({
           entry: entries,
           feed: feeds,
-          userState: userEntryStates,
+          userState: userEntries,
         })
         .from(entries)
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
-        .leftJoin(
-          userEntryStates,
-          and(eq(userEntryStates.entryId, entries.id), eq(userEntryStates.userId, userId))
-        )
-        .where(eq(entries.id, input.id))
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(and(eq(entries.id, input.id), eq(userEntries.userId, userId)))
         .limit(1);
 
       if (result.length === 0) {
@@ -362,30 +321,6 @@ export const entriesRouter = createTRPCRouter({
       }
 
       const { entry, feed, userState } = result[0];
-
-      // Check if user is subscribed to this feed
-      const subscription = await ctx.db
-        .select()
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.userId, userId),
-            eq(subscriptions.feedId, entry.feedId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .limit(1);
-
-      if (subscription.length === 0) {
-        // User is not subscribed to this feed
-        throw errors.entryNotFound();
-      }
-
-      // Check visibility: entry.fetchedAt >= subscription.subscribedAt
-      if (entry.fetchedAt < subscription[0].subscribedAt) {
-        // Entry was fetched before user subscribed
-        throw errors.entryNotFound();
-      }
 
       return {
         entry: {
@@ -399,8 +334,8 @@ export const entriesRouter = createTRPCRouter({
           summary: entry.summary,
           publishedAt: entry.publishedAt,
           fetchedAt: entry.fetchedAt,
-          read: userState?.read ?? false,
-          starred: userState?.starred ?? false,
+          read: userState.read,
+          starred: userState.starred,
           feedTitle: feed.title,
           feedUrl: feed.url,
         },
@@ -410,7 +345,7 @@ export const entriesRouter = createTRPCRouter({
   /**
    * Mark entries as read or unread (bulk operation).
    *
-   * Only entries the user has access to (subscribed feeds, visibility rules) will be updated.
+   * Only entries the user has access to (via user_entries) will be updated.
    *
    * @param ids - Array of entry IDs to mark
    * @param read - Whether to mark as read (true) or unread (false)
@@ -439,67 +374,15 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const now = new Date();
 
-      // Get the user's active subscriptions for visibility check
-      const userSubscriptions = await ctx.db
-        .select({
-          feedId: subscriptions.feedId,
-          subscribedAt: subscriptions.subscribedAt,
+      // Update read status on user_entries rows that exist for this user
+      // Visibility is enforced by the user_entries table - only rows that exist can be updated
+      await ctx.db
+        .update(userEntries)
+        .set({
+          read: input.read,
+          readAt: input.read ? now : null,
         })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
-
-      if (userSubscriptions.length === 0) {
-        // No subscriptions, no entries to mark
-        return {};
-      }
-
-      // Build subscription map for visibility filtering
-      const subscriptionMap = new Map(
-        userSubscriptions.map((sub) => [sub.feedId, sub.subscribedAt])
-      );
-
-      const subscribedFeedIds = userSubscriptions.map((sub) => sub.feedId);
-
-      // Get the entries that exist and belong to subscribed feeds
-      const existingEntries = await ctx.db
-        .select({
-          id: entries.id,
-          feedId: entries.feedId,
-          fetchedAt: entries.fetchedAt,
-        })
-        .from(entries)
-        .where(and(inArray(entries.id, input.ids), inArray(entries.feedId, subscribedFeedIds)));
-
-      // Filter by visibility (entry.fetchedAt >= subscription.subscribedAt)
-      const visibleEntryIds = existingEntries
-        .filter((entry) => {
-          const subscribedAt = subscriptionMap.get(entry.feedId);
-          return subscribedAt && entry.fetchedAt >= subscribedAt;
-        })
-        .map((entry) => entry.id);
-
-      if (visibleEntryIds.length === 0) {
-        return {};
-      }
-
-      // Upsert user entry states for each entry
-      for (const entryId of visibleEntryIds) {
-        await ctx.db
-          .insert(userEntryStates)
-          .values({
-            userId,
-            entryId,
-            read: input.read,
-            readAt: input.read ? now : null,
-          })
-          .onConflictDoUpdate({
-            target: [userEntryStates.userId, userEntryStates.entryId],
-            set: {
-              read: input.read,
-              readAt: input.read ? now : null,
-            },
-          });
-      }
+        .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
 
       return {};
     }),
@@ -531,105 +414,67 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const now = new Date();
 
-      // Get the user's active subscriptions
-      const userSubscriptions = await ctx.db
-        .select({
-          feedId: subscriptions.feedId,
-          subscribedAt: subscriptions.subscribedAt,
-        })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+      // Build conditions for the update
+      const conditions = [eq(userEntries.userId, userId), eq(userEntries.read, false)];
 
-      if (userSubscriptions.length === 0) {
-        return { count: 0 };
-      }
-
-      // If feedId is provided, verify user is subscribed to it
+      // If feedId is provided, filter entries by feed
       if (input.feedId) {
-        const isSubscribed = userSubscriptions.some((sub) => sub.feedId === input.feedId);
-        if (!isSubscribed) {
+        // Get entry IDs for this feed
+        const feedEntryIds = await ctx.db
+          .select({ id: entries.id })
+          .from(entries)
+          .where(eq(entries.feedId, input.feedId));
+
+        if (feedEntryIds.length === 0) {
           return { count: 0 };
         }
-      }
 
-      // Build subscription map for visibility filtering
-      const subscriptionMap = new Map(
-        userSubscriptions.map((sub) => [sub.feedId, sub.subscribedAt])
-      );
-
-      // Get the feed IDs to query
-      const feedIds = input.feedId ? [input.feedId] : userSubscriptions.map((sub) => sub.feedId);
-
-      // Build query conditions
-      const conditions = [inArray(entries.feedId, feedIds)];
-
-      // Add before date filter if provided
-      if (input.before) {
-        conditions.push(lte(entries.fetchedAt, input.before));
-      }
-
-      // Get all entries matching the conditions
-      const matchingEntries = await ctx.db
-        .select({
-          id: entries.id,
-          feedId: entries.feedId,
-          fetchedAt: entries.fetchedAt,
-        })
-        .from(entries)
-        .where(and(...conditions));
-
-      // Filter by visibility (entry.fetchedAt >= subscription.subscribedAt)
-      const visibleEntryIds = matchingEntries
-        .filter((entry) => {
-          const subscribedAt = subscriptionMap.get(entry.feedId);
-          return subscribedAt && entry.fetchedAt >= subscribedAt;
-        })
-        .map((entry) => entry.id);
-
-      if (visibleEntryIds.length === 0) {
-        return { count: 0 };
-      }
-
-      // Get entries that are not already marked as read
-      const existingStates = await ctx.db
-        .select({
-          entryId: userEntryStates.entryId,
-          read: userEntryStates.read,
-        })
-        .from(userEntryStates)
-        .where(
-          and(eq(userEntryStates.userId, userId), inArray(userEntryStates.entryId, visibleEntryIds))
+        conditions.push(
+          inArray(
+            userEntries.entryId,
+            feedEntryIds.map((e) => e.id)
+          )
         );
+      }
 
-      const alreadyReadEntryIds = new Set(
-        existingStates.filter((state) => state.read).map((state) => state.entryId)
-      );
+      // If before date is provided, filter entries by fetchedAt
+      if (input.before) {
+        // Get entry IDs fetched before the specified date
+        const beforeEntryIds = await ctx.db
+          .select({ id: entries.id })
+          .from(entries)
+          .where(lte(entries.fetchedAt, input.before));
 
-      // Filter to only entries that are not already read
-      const entriesToMark = visibleEntryIds.filter((id) => !alreadyReadEntryIds.has(id));
+        if (beforeEntryIds.length === 0) {
+          return { count: 0 };
+        }
+
+        conditions.push(
+          inArray(
+            userEntries.entryId,
+            beforeEntryIds.map((e) => e.id)
+          )
+        );
+      }
+
+      // Get count of entries to be marked as read
+      const entriesToMark = await ctx.db
+        .select({ entryId: userEntries.entryId })
+        .from(userEntries)
+        .where(and(...conditions));
 
       if (entriesToMark.length === 0) {
         return { count: 0 };
       }
 
-      // Upsert user entry states for each entry
-      for (const entryId of entriesToMark) {
-        await ctx.db
-          .insert(userEntryStates)
-          .values({
-            userId,
-            entryId,
-            read: true,
-            readAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [userEntryStates.userId, userEntryStates.entryId],
-            set: {
-              read: true,
-              readAt: now,
-            },
-          });
-      }
+      // Update all matching user_entries to read
+      await ctx.db
+        .update(userEntries)
+        .set({
+          read: true,
+          readAt: now,
+        })
+        .where(and(...conditions));
 
       return { count: entriesToMark.length };
     }),
@@ -637,7 +482,7 @@ export const entriesRouter = createTRPCRouter({
   /**
    * Star an entry.
    *
-   * The entry must be visible to the user (subscribed feed, visibility rules).
+   * The entry must be visible to the user (via user_entries).
    *
    * @param id - The entry ID to star
    * @returns Empty object on success
@@ -661,61 +506,25 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const now = new Date();
 
-      // Get the entry
-      const entryResult = await ctx.db
-        .select({
-          id: entries.id,
-          feedId: entries.feedId,
-          fetchedAt: entries.fetchedAt,
-        })
-        .from(entries)
-        .where(eq(entries.id, input.id))
-        .limit(1);
-
-      if (entryResult.length === 0) {
-        throw errors.entryNotFound();
-      }
-
-      const entry = entryResult[0];
-
-      // Check if user is subscribed to this feed
-      const subscription = await ctx.db
+      // Check if entry is visible to user (via user_entries)
+      const userEntry = await ctx.db
         .select()
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.userId, userId),
-            eq(subscriptions.feedId, entry.feedId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)))
         .limit(1);
 
-      if (subscription.length === 0) {
+      if (userEntry.length === 0) {
         throw errors.entryNotFound();
       }
 
-      // Check visibility: entry.fetchedAt >= subscription.subscribedAt
-      if (entry.fetchedAt < subscription[0].subscribedAt) {
-        throw errors.entryNotFound();
-      }
-
-      // Upsert user entry state to star the entry
+      // Update the starred status
       await ctx.db
-        .insert(userEntryStates)
-        .values({
-          userId,
-          entryId: input.id,
+        .update(userEntries)
+        .set({
           starred: true,
           starredAt: now,
         })
-        .onConflictDoUpdate({
-          target: [userEntryStates.userId, userEntryStates.entryId],
-          set: {
-            starred: true,
-            starredAt: now,
-          },
-        });
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
 
       return {};
     }),
@@ -723,7 +532,7 @@ export const entriesRouter = createTRPCRouter({
   /**
    * Unstar an entry.
    *
-   * The entry must be visible to the user (subscribed feed, visibility rules).
+   * The entry must be visible to the user (via user_entries).
    *
    * @param id - The entry ID to unstar
    * @returns Empty object on success
@@ -746,61 +555,25 @@ export const entriesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Get the entry
-      const entryResult = await ctx.db
-        .select({
-          id: entries.id,
-          feedId: entries.feedId,
-          fetchedAt: entries.fetchedAt,
-        })
-        .from(entries)
-        .where(eq(entries.id, input.id))
-        .limit(1);
-
-      if (entryResult.length === 0) {
-        throw errors.entryNotFound();
-      }
-
-      const entry = entryResult[0];
-
-      // Check if user is subscribed to this feed
-      const subscription = await ctx.db
+      // Check if entry is visible to user (via user_entries)
+      const userEntry = await ctx.db
         .select()
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.userId, userId),
-            eq(subscriptions.feedId, entry.feedId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)))
         .limit(1);
 
-      if (subscription.length === 0) {
+      if (userEntry.length === 0) {
         throw errors.entryNotFound();
       }
 
-      // Check visibility: entry.fetchedAt >= subscription.subscribedAt
-      if (entry.fetchedAt < subscription[0].subscribedAt) {
-        throw errors.entryNotFound();
-      }
-
-      // Upsert user entry state to unstar the entry
+      // Update the starred status
       await ctx.db
-        .insert(userEntryStates)
-        .values({
-          userId,
-          entryId: input.id,
+        .update(userEntries)
+        .set({
           starred: false,
           starredAt: null,
         })
-        .onConflictDoUpdate({
-          target: [userEntryStates.userId, userEntryStates.entryId],
-          set: {
-            starred: false,
-            starredAt: null,
-          },
-        });
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
 
       return {};
     }),

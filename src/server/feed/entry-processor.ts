@@ -7,9 +7,9 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db";
-import { entries, type Entry, type NewEntry } from "../db/schema";
+import { entries, subscriptions, userEntries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
@@ -347,9 +347,58 @@ export async function processEntry(
 }
 
 /**
+ * Creates user_entries records for a feed's active subscribers.
+ * This makes entries visible to all currently-subscribed users.
+ *
+ * Uses INSERT ... ON CONFLICT DO NOTHING for efficiency and idempotency.
+ *
+ * @param feedId - The feed's UUID
+ * @param entryIds - Array of entry IDs to make visible
+ */
+export async function createUserEntriesForFeed(feedId: string, entryIds: string[]): Promise<void> {
+  if (entryIds.length === 0) {
+    return;
+  }
+
+  // Get all active subscriptions for this feed with their user IDs
+  const activeSubscriptions = await db
+    .select({ userId: subscriptions.userId })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.feedId, feedId), isNull(subscriptions.unsubscribedAt)));
+
+  if (activeSubscriptions.length === 0) {
+    return;
+  }
+
+  // Build all (user_id, entry_id) pairs
+  const pairs: { userId: string; entryId: string }[] = [];
+  for (const sub of activeSubscriptions) {
+    for (const entryId of entryIds) {
+      pairs.push({ userId: sub.userId, entryId });
+    }
+  }
+
+  // Bulk insert with ON CONFLICT DO NOTHING
+  // Process in batches to avoid hitting query limits
+  const BATCH_SIZE = 1000;
+  for (let i = 0; i < pairs.length; i += BATCH_SIZE) {
+    const batch = pairs.slice(i, i + BATCH_SIZE);
+    await db.insert(userEntries).values(batch).onConflictDoNothing();
+  }
+
+  logger.debug("Created user entries for feed", {
+    feedId,
+    entryCount: entryIds.length,
+    userCount: activeSubscriptions.length,
+    totalPairs: pairs.length,
+  });
+}
+
+/**
  * Processes all entries from a parsed feed.
  * Creates new entries, updates existing ones with changed content,
- * and tracks statistics.
+ * and tracks statistics. Also creates user_entries records
+ * to make entries visible to all active subscribers.
  *
  * @param feedId - The feed's UUID
  * @param feed - The parsed feed containing entries
@@ -390,6 +439,11 @@ export async function processEntries(
       console.error("Failed to process entry:", error);
     }
   }
+
+  // Create user_entries for all processed entries
+  // This makes entries visible to all currently-subscribed users
+  const allEntryIds = results.map((r) => r.id);
+  await createUserEntriesForFeed(feedId, allEntryIds);
 
   return {
     newCount,

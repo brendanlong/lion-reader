@@ -50,6 +50,13 @@
       "when": 1766869010641,
       "tag": "0006_easy_blindfold",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1767000000000,
+      "tag": "0007_user_entries_visibility",
+      "breakpoints": true
     }
   ]
 }
