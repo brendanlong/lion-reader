@@ -45,6 +45,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
     shortcuts: [
       { keys: ["m"], description: "Toggle read/unread" },
       { keys: ["s"], description: "Toggle star" },
+      { keys: ["u"], description: "Toggle show/hide read items" },
       { keys: ["v"], description: "Open original URL in new tab" },
       { keys: ["r"], description: "Refresh current view" },
     ],

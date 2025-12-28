@@ -12,6 +12,7 @@
  * - s to toggle star
  * - v to open original URL in new tab
  * - r to refresh current view
+ * - u to toggle unread-only filter
  * - g+a to navigate to All items
  * - g+s to navigate to Starred items
  * - g+l to navigate to Saved/Later items
@@ -82,6 +83,11 @@ export interface UseSavedArticleKeyboardShortcutsOptions {
    * Callback to refresh the current view.
    */
   onRefresh?: () => void;
+
+  /**
+   * Callback to toggle unread-only filter.
+   */
+  onToggleUnreadOnly?: () => void;
 }
 
 /**
@@ -136,6 +142,7 @@ export function useSavedArticleKeyboardShortcuts(
     onToggleRead,
     onToggleStar,
     onRefresh,
+    onToggleUnreadOnly,
   } = options;
 
   const router = useRouter();
@@ -412,6 +419,22 @@ export function useSavedArticleKeyboardShortcuts(
       enableOnFormTags: false,
     },
     [onRefresh, isArticleOpen, enabled]
+  );
+
+  // u - toggle unread-only filter
+  useHotkeys(
+    "u",
+    (e) => {
+      e.preventDefault();
+      if (onToggleUnreadOnly) {
+        onToggleUnreadOnly();
+      }
+    },
+    {
+      enabled: enabled && !isArticleOpen && !!onToggleUnreadOnly,
+      enableOnFormTags: false,
+    },
+    [onToggleUnreadOnly, isArticleOpen, enabled]
   );
 
   // g - activate g prefix for navigation shortcuts

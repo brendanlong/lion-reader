@@ -10,10 +10,14 @@ import { useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
-import { EntryList, type EntryListEntryData } from "@/components/entries/EntryList";
-import { EntryContent } from "@/components/entries/EntryContent";
+import {
+  EntryList,
+  EntryContent,
+  UnreadToggle,
+  type EntryListEntryData,
+} from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { useKeyboardShortcuts, type KeyboardEntryData } from "@/lib/hooks";
+import { useKeyboardShortcuts, useViewPreferences, type KeyboardEntryData } from "@/lib/hooks";
 
 /**
  * Loading skeleton for the tag header.
@@ -80,6 +84,7 @@ export default function TagEntriesPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
+  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("tag", tagId);
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -122,6 +127,7 @@ export default function TagEntriesPage() {
     onRefresh: () => {
       utils.entries.list.invalidate();
     },
+    onToggleUnreadOnly: toggleShowUnreadOnly,
   });
 
   // Fetch tag info
@@ -185,29 +191,36 @@ export default function TagEntriesPage() {
         </Link>
 
         {/* Tag header with color dot */}
-        <div className="flex flex-wrap items-center gap-3">
-          <span
-            className="inline-block h-4 w-4 rounded-full"
-            style={{ backgroundColor: tag.color || "#6b7280" }}
-            aria-hidden="true"
-          />
-          <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">
-            {tag.name}
-          </h1>
-          {tag.feedCount > 0 && (
-            <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
-              {tag.feedCount} feed{tag.feedCount !== 1 ? "s" : ""}
-            </span>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span
+              className="inline-block h-4 w-4 rounded-full"
+              style={{ backgroundColor: tag.color || "#6b7280" }}
+              aria-hidden="true"
+            />
+            <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">
+              {tag.name}
+            </h1>
+            {tag.feedCount > 0 && (
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
+                {tag.feedCount} feed{tag.feedCount !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+          <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
         </div>
       </div>
 
       <EntryList
-        filters={{ tagId }}
+        filters={{ tagId, unreadOnly: showUnreadOnly }}
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
-        emptyMessage={`No entries from feeds tagged with "${tag.name}" yet.`}
+        emptyMessage={
+          showUnreadOnly
+            ? `No unread entries from feeds tagged with "${tag.name}". Toggle to show all items.`
+            : `No entries from feeds tagged with "${tag.name}" yet.`
+        }
       />
     </div>
   );

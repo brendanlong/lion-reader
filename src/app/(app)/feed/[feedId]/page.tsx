@@ -10,10 +10,14 @@ import { useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
-import { EntryList, type EntryListEntryData } from "@/components/entries/EntryList";
-import { EntryContent } from "@/components/entries/EntryContent";
+import {
+  EntryList,
+  EntryContent,
+  UnreadToggle,
+  type EntryListEntryData,
+} from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { useKeyboardShortcuts, type KeyboardEntryData } from "@/lib/hooks";
+import { useKeyboardShortcuts, useViewPreferences, type KeyboardEntryData } from "@/lib/hooks";
 
 /**
  * Loading skeleton for the feed header.
@@ -80,6 +84,7 @@ export default function SingleFeedPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
+  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("feed", feedId);
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -122,6 +127,7 @@ export default function SingleFeedPage() {
     onRefresh: () => {
       utils.entries.list.invalidate();
     },
+    onToggleUnreadOnly: toggleShowUnreadOnly,
   });
 
   // Fetch subscription info to get feed title and validate access
@@ -193,11 +199,14 @@ export default function SingleFeedPage() {
           <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">
             {feedTitle}
           </h1>
-          {unreadCount > 0 && (
-            <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
-              {unreadCount} unread
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {unreadCount > 0 && (
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
+                {unreadCount} unread
+              </span>
+            )}
+            <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+          </div>
         </div>
 
         {/* Feed URL if available */}
@@ -214,11 +223,15 @@ export default function SingleFeedPage() {
       </div>
 
       <EntryList
-        filters={{ feedId }}
+        filters={{ feedId, unreadOnly: showUnreadOnly }}
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
-        emptyMessage="No entries in this feed yet. Entries will appear here once the feed is fetched."
+        emptyMessage={
+          showUnreadOnly
+            ? "No unread entries in this feed. Toggle to show all items."
+            : "No entries in this feed yet. Entries will appear here once the feed is fetched."
+        }
       />
     </div>
   );
