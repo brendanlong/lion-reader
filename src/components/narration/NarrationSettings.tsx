@@ -53,7 +53,7 @@ export function NarrationSettings() {
   }, [supportInfo.supported]);
 
   // Get the currently selected voice object
-  const selectedVoice = settings.voiceUri ? findVoiceByUri(settings.voiceUri) : null;
+  const selectedVoice = settings.voiceId ? findVoiceByUri(settings.voiceId) : null;
 
   // Handle voice selection change
   const handleVoiceChange = useCallback(
@@ -61,7 +61,7 @@ export function NarrationSettings() {
       const value = e.target.value;
       setSettings({
         ...settings,
-        voiceUri: value || null,
+        voiceId: value || null,
       });
     },
     [settings, setSettings]
@@ -209,7 +209,7 @@ export function NarrationSettings() {
               <div className="flex gap-3">
                 <select
                   id="narration-voice"
-                  value={settings.voiceUri || ""}
+                  value={settings.voiceId || ""}
                   onChange={handleVoiceChange}
                   disabled={isLoadingVoices}
                   className="block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
