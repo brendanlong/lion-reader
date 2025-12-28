@@ -229,6 +229,8 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
   // Mark read mutation
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: () => {
+      // Invalidate this entry to update button state
+      utils.entries.get.invalidate({ id: entryId });
       // Invalidate entries list to update read status
       utils.entries.list.invalidate();
       // Invalidate subscriptions to update unread counts
