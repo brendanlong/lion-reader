@@ -256,11 +256,14 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
 
   const entry = data?.entry;
 
-  // Mark entry as read when component mounts and entry is loaded
+  // Mark entry as read when component mounts and entry is loaded (only once)
   useEffect(() => {
-    if (entry && !entry.read && !hasMarkedRead.current) {
+    if (entry && !hasMarkedRead.current) {
       hasMarkedRead.current = true;
-      markReadMutation.mutate({ ids: [entryId], read: true });
+      // Only mark as read if it's currently unread
+      if (!entry.read) {
+        markReadMutation.mutate({ ids: [entryId], read: true });
+      }
     }
   }, [entry, entryId, markReadMutation]);
 
