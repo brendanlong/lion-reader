@@ -34,12 +34,12 @@ Audio narration allows users to listen to articles using on-device text-to-speec
 
 ### Component Responsibilities
 
-| Component | Responsibility |
-|-----------|----------------|
-| **LLM Preprocessor** | Convert article HTML to speakable plain text with paragraph breaks |
-| **Web Speech API** | Generate audio on-device using browser/OS voices |
-| **Media Session API** | Expose playback controls to OS (lock screen, keyboard media keys) |
-| **Voice Settings** | Let users select from available browser voices |
+| Component             | Responsibility                                                     |
+| --------------------- | ------------------------------------------------------------------ |
+| **LLM Preprocessor**  | Convert article HTML to speakable plain text with paragraph breaks |
+| **Web Speech API**    | Generate audio on-device using browser/OS voices                   |
+| **Media Session API** | Expose playback controls to OS (lock screen, keyboard media keys)  |
+| **Voice Settings**    | Let users select from available browser voices                     |
 
 ---
 
@@ -54,12 +54,14 @@ Groq (Llama 3.1 8B) for low latency (~1-2s) and low cost (~$0.0002/article).
 The LLM converts article HTML to narration-ready plain text:
 
 **Structural elements:**
+
 - Headings: Preserve as paragraph breaks, optionally prefix with "Section:" for major headings
 - Paragraphs: Preserve natural breaks
 - Lists: Convert to numbered format ("1. ... 2. ... 3. ...") to preserve structure
 - Block quotes: Prefix with "Quote:" and suffix with "End quote."
 
 **Special content (read literally with callouts):**
+
 - Code blocks: "Code block: [read code]. End code block."
 - Inline code: Read as-is without callout
 - Tables: "Table with N columns: [column headers]. Row 1: [values]. Row 2: ..."
@@ -68,6 +70,7 @@ The LLM converts article HTML to narration-ready plain text:
 - Links: Read link text only, skip URL unless it's the primary content
 
 **Text cleanup:**
+
 - URLs: Read domain only ("link to example dot com") or skip if in link text
 - Abbreviations: Expand common ones (Dr. → Doctor, etc. → et cetera, e.g. → for example)
 - Numbers: Context-appropriate ("$1,000" → "one thousand dollars", "2024" → "twenty twenty-four")
@@ -103,15 +106,20 @@ Narration text:
 ### Example Transformation
 
 **Input:**
+
 ```html
 <h2>Getting Started</h2>
 <p>First, install the package:</p>
 <pre><code>npm install lion-reader</code></pre>
-<p>Dr. Smith recommends checking the <a href="https://docs.example.com/guide">documentation</a> for more info.</p>
-<img src="screenshot.png" alt="The main dashboard showing feed list">
+<p>
+  Dr. Smith recommends checking the <a href="https://docs.example.com/guide">documentation</a> for
+  more info.
+</p>
+<img src="screenshot.png" alt="The main dashboard showing feed list" />
 ```
 
 **Output:**
+
 ```
 Getting Started
 
@@ -131,6 +139,7 @@ Image: The main dashboard showing feed list.
 ### Schema Changes
 
 Use a separate table keyed by content hash for deduplication. This allows sharing narration across:
+
 - Same article appearing in multiple feeds
 - Saved article matching a feed entry
 - Duplicate content over time
@@ -165,10 +174,10 @@ CREATE INDEX idx_narration_needs_generation
 Entries already have `content_hash` for update detection. For saved_articles, compute hash when saving:
 
 ```typescript
-import { createHash } from 'crypto';
+import { createHash } from "crypto";
 
 function computeContentHash(content: string): string {
-  return createHash('sha256').update(content).digest('hex');
+  return createHash("sha256").update(content).digest("hex");
 }
 
 // When saving an article
@@ -194,6 +203,7 @@ async function getOrCreateNarration(contentHash: string): Promise<NarrationConte
 ### Error Handling
 
 When Groq returns an error:
+
 1. Store error message in `error` and timestamp in `error_at`
 2. Fall back to plain text conversion for immediate playback
 3. Allow retry after 1 hour (check `error_at` before regenerating)
@@ -201,8 +211,7 @@ When Groq returns an error:
 
 ```typescript
 // Allow retry if error was more than 1 hour ago
-const canRetry = !narration.error_at ||
-  Date.now() - narration.error_at.getTime() > 60 * 60 * 1000;
+const canRetry = !narration.error_at || Date.now() - narration.error_at.getTime() > 60 * 60 * 1000;
 ```
 
 ### Future Schema (for sync and highlighting)
@@ -226,7 +235,7 @@ ALTER TABLE entries ADD COLUMN narration_paragraph_map jsonb;
 
 ```typescript
 interface NarrationState {
-  status: 'idle' | 'loading' | 'playing' | 'paused';
+  status: "idle" | "loading" | "playing" | "paused";
   currentParagraph: number;
   totalParagraphs: number;
   selectedVoice: SpeechSynthesisVoice | null;
@@ -236,59 +245,54 @@ class ArticleNarrator {
   private paragraphs: string[] = [];
   private currentIndex = 0;
   private utterance: SpeechSynthesisUtterance | null = null;
-  
+
   async loadArticle(narrationText: string) {
     // Split by double newlines (paragraph breaks)
     this.paragraphs = narrationText
       .split(/\n\n+/)
-      .map(p => p.trim())
-      .filter(p => p.length > 0);
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
     this.currentIndex = 0;
   }
-  
+
   play(voice?: SpeechSynthesisVoice) {
     if (this.currentIndex >= this.paragraphs.length) return;
-    
-    this.utterance = new SpeechSynthesisUtterance(
-      this.paragraphs[this.currentIndex]
-    );
-    
+
+    this.utterance = new SpeechSynthesisUtterance(this.paragraphs[this.currentIndex]);
+
     if (voice) {
       this.utterance.voice = voice;
     }
-    
+
     this.utterance.onend = () => {
       this.currentIndex++;
       if (this.currentIndex < this.paragraphs.length) {
         this.play(voice);
       }
     };
-    
+
     speechSynthesis.speak(this.utterance);
   }
-  
+
   pause() {
     speechSynthesis.pause();
   }
-  
+
   resume() {
     speechSynthesis.resume();
   }
-  
+
   stop() {
     speechSynthesis.cancel();
     this.currentIndex = 0;
   }
-  
+
   skipForward() {
     speechSynthesis.cancel();
-    this.currentIndex = Math.min(
-      this.currentIndex + 1, 
-      this.paragraphs.length - 1
-    );
+    this.currentIndex = Math.min(this.currentIndex + 1, this.paragraphs.length - 1);
     this.play();
   }
-  
+
   skipBackward() {
     speechSynthesis.cancel();
     this.currentIndex = Math.max(this.currentIndex - 1, 0);
@@ -301,14 +305,14 @@ class ArticleNarrator {
 
 ```typescript
 function getAvailableVoices(): SpeechSynthesisVoice[] {
-  return speechSynthesis.getVoices().filter(voice => 
-    voice.lang.startsWith('en') // Filter to user's language
+  return speechSynthesis.getVoices().filter(
+    (voice) => voice.lang.startsWith("en") // Filter to user's language
   );
 }
 
 // Voices load asynchronously in some browsers
 function waitForVoices(): Promise<SpeechSynthesisVoice[]> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const voices = getAvailableVoices();
     if (voices.length > 0) {
       resolve(voices);
@@ -340,40 +344,36 @@ function rankVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
 Enables OS-level playback controls (lock screen, keyboard media keys, headphone buttons).
 
 ```typescript
-function setupMediaSession(
-  articleTitle: string,
-  feedTitle: string,
-  narrator: ArticleNarrator
-) {
-  if (!('mediaSession' in navigator)) return;
-  
+function setupMediaSession(articleTitle: string, feedTitle: string, narrator: ArticleNarrator) {
+  if (!("mediaSession" in navigator)) return;
+
   navigator.mediaSession.metadata = new MediaMetadata({
     title: articleTitle,
     artist: feedTitle,
-    album: 'Lion Reader',
+    album: "Lion Reader",
     // artwork: [{ src: feedIconUrl, sizes: '512x512', type: 'image/png' }]
   });
-  
-  navigator.mediaSession.setActionHandler('play', () => {
+
+  navigator.mediaSession.setActionHandler("play", () => {
     narrator.resume();
-    navigator.mediaSession.playbackState = 'playing';
+    navigator.mediaSession.playbackState = "playing";
   });
-  
-  navigator.mediaSession.setActionHandler('pause', () => {
+
+  navigator.mediaSession.setActionHandler("pause", () => {
     narrator.pause();
-    navigator.mediaSession.playbackState = 'paused';
+    navigator.mediaSession.playbackState = "paused";
   });
-  
-  navigator.mediaSession.setActionHandler('stop', () => {
+
+  navigator.mediaSession.setActionHandler("stop", () => {
     narrator.stop();
-    navigator.mediaSession.playbackState = 'none';
+    navigator.mediaSession.playbackState = "none";
   });
-  
-  navigator.mediaSession.setActionHandler('previoustrack', () => {
+
+  navigator.mediaSession.setActionHandler("previoustrack", () => {
     narrator.skipBackward();
   });
-  
-  navigator.mediaSession.setActionHandler('nexttrack', () => {
+
+  navigator.mediaSession.setActionHandler("nexttrack", () => {
     narrator.skipForward();
   });
 }
@@ -487,31 +487,31 @@ function htmlToPlainText(html: string): string {
 ### LLM Integration
 
 ```typescript
-import Groq from 'groq-sdk';
+import Groq from "groq-sdk";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function generateNarration(htmlContent: string): Promise<string> {
   // Strip HTML to get clean text with structure hints
   const textContent = htmlToNarrationInput(htmlContent);
-  
+
   const response = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: "llama-3.1-8b-instant",
     messages: [
       {
-        role: 'system',
+        role: "system",
         content: NARRATION_SYSTEM_PROMPT,
       },
       {
-        role: 'user', 
+        role: "user",
         content: textContent,
       },
     ],
     temperature: 0.1, // Low temperature for consistency
     max_tokens: 8000,
   });
-  
-  return response.choices[0]?.message?.content || '';
+
+  return response.choices[0]?.message?.content || "";
 }
 
 function htmlToNarrationInput(html: string): string {
@@ -530,9 +530,9 @@ function htmlToNarrationInput(html: string): string {
 ```typescript
 interface NarrationSettings {
   enabled: boolean;
-  voiceUri: string | null;  // SpeechSynthesisVoice.voiceURI
-  rate: number;             // 0.5 - 2.0, default 1.0
-  pitch: number;            // 0.5 - 2.0, default 1.0
+  voiceUri: string | null; // SpeechSynthesisVoice.voiceURI
+  rate: number; // 0.5 - 2.0, default 1.0
+  pitch: number; // 0.5 - 2.0, default 1.0
 }
 
 // Stored in user preferences (localStorage or user settings table)
@@ -544,11 +544,11 @@ interface NarrationSettings {
 function NarrationSettings() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [settings, setSettings] = useNarrationSettings();
-  
+
   useEffect(() => {
     waitForVoices().then(setVoices);
   }, []);
-  
+
   const previewVoice = (voice: SpeechSynthesisVoice) => {
     speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(
@@ -559,15 +559,15 @@ function NarrationSettings() {
     utterance.pitch = settings.pitch;
     speechSynthesis.speak(utterance);
   };
-  
+
   return (
     <div>
       <h3>Narration</h3>
-      
+
       <label>
         Voice
-        <select 
-          value={settings.voiceUri || ''} 
+        <select
+          value={settings.voiceUri || ''}
           onChange={e => setSettings({ ...settings, voiceUri: e.target.value })}
         >
           {voices.map(voice => (
@@ -580,18 +580,18 @@ function NarrationSettings() {
           Preview
         </button>
       </label>
-      
+
       <p className="text-muted">
-        Voices are provided by your browser. Chrome and Safari typically 
+        Voices are provided by your browser. Chrome and Safari typically
         offer higher quality voices than other browsers.
       </p>
-      
+
       <label>
         Speed
-        <input 
-          type="range" 
-          min="0.5" 
-          max="2" 
+        <input
+          type="range"
+          min="0.5"
+          max="2"
           step="0.1"
           value={settings.rate}
           onChange={e => setSettings({ ...settings, rate: parseFloat(e.target.value) })}
@@ -621,9 +621,10 @@ Add to existing privacy policy:
 ## Third-Party Services
 
 ### Text Processing (Groq)
-When you use the audio narration feature, article content is sent to Groq 
-to convert it into speakable text. This processing expands abbreviations, 
-formats numbers for speech, and improves pronunciation. The processed text 
+
+When you use the audio narration feature, article content is sent to Groq
+to convert it into speakable text. This processing expands abbreviations,
+formats numbers for speech, and improves pronunciation. The processed text
 is cached on our servers. Audio generation happens entirely on your device.
 
 Groq's privacy policy: https://groq.com/privacy-policy/
@@ -638,17 +639,14 @@ Check for required APIs before showing narration controls:
 ```typescript
 function isNarrationSupported(): boolean {
   return (
-    typeof window !== 'undefined' &&
-    'speechSynthesis' in window &&
-    'SpeechSynthesisUtterance' in window
+    typeof window !== "undefined" &&
+    "speechSynthesis" in window &&
+    "SpeechSynthesisUtterance" in window
   );
 }
 
 function isMediaSessionSupported(): boolean {
-  return (
-    typeof navigator !== 'undefined' &&
-    'mediaSession' in navigator
-  );
+  return typeof navigator !== "undefined" && "mediaSession" in navigator;
 }
 
 // In React component
@@ -665,10 +663,10 @@ function NarrationControls({ article }: { article: Article }) {
 
 ## Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| `p` | Toggle play/pause |
-| `Shift+N` | Skip to next paragraph |
+| Key       | Action                     |
+| --------- | -------------------------- |
+| `p`       | Toggle play/pause          |
+| `Shift+N` | Skip to next paragraph     |
 | `Shift+P` | Skip to previous paragraph |
 
 These integrate with the existing keyboard navigation system.
@@ -679,41 +677,53 @@ These integrate with the existing keyboard navigation system.
 
 ### Web Platform Constraints
 
-| Limitation | Impact | Mitigation |
-|------------|--------|------------|
-| **Background playback** | Audio stops when tab is backgrounded on mobile | Future: Capacitor wrapper with foreground service |
-| **Voice quality variance** | Some browsers have poor voices | Show quality warning, recommend Chrome/Safari |
-| **No offline narration** | Requires network to generate narration text | Cache aggressively; consider pre-generating for saved articles |
+| Limitation                 | Impact                                         | Mitigation                                                     |
+| -------------------------- | ---------------------------------------------- | -------------------------------------------------------------- |
+| **Background playback**    | Audio stops when tab is backgrounded on mobile | Future: Capacitor wrapper with foreground service              |
+| **Voice quality variance** | Some browsers have poor voices                 | Show quality warning, recommend Chrome/Safari                  |
+| **No offline narration**   | Requires network to generate narration text    | Cache aggressively; consider pre-generating for saved articles |
 
 ### Browser Support
 
-| Browser | Voice Quality | Background Play | Notes |
-|---------|--------------|-----------------|-------|
-| Chrome (macOS) | Excellent | Tab must be visible | Best experience |
-| Safari (macOS) | Excellent | Tab must be visible | Native voices |
-| Chrome (Windows) | Good | Tab must be visible | Microsoft voices |
-| Chrome (Android) | Good | Limited | Stops on screen lock |
-| Safari (iOS) | Good | Limited | Better to use native iOS features |
-| Firefox | Poor | Tab must be visible | Limited voice selection |
+| Browser          | Voice Quality | Background Play     | Notes                             |
+| ---------------- | ------------- | ------------------- | --------------------------------- |
+| Chrome (macOS)   | Excellent     | Tab must be visible | Best experience                   |
+| Safari (macOS)   | Excellent     | Tab must be visible | Native voices                     |
+| Chrome (Windows) | Good          | Tab must be visible | Microsoft voices                  |
+| Chrome (Android) | Good          | Limited             | Stops on screen lock              |
+| Safari (iOS)     | Good          | Limited             | Better to use native iOS features |
+| Firefox          | Poor          | Tab must be visible | Limited voice selection           |
 
 ---
 
 ## Future Enhancements
 
-### Phase 2: Highlighting and Sync (Not in v1)
+### Phase 2: Paragraph Highlighting
 
-**Sentence highlighting**: Show which sentence is currently being spoken by mapping paragraph indices back to original content positions.
+**Paragraph highlighting** is now designed—see [narration-highlighting-design.md](./narration-highlighting-design.md).
+
+**Key implementation:**
+
+- LLM outputs `[PARA:X]` markers to map narration → original paragraphs
+- Mapping stored in `paragraph_map` JSONB column on `narration_content` table
+- Client highlights original paragraphs during playback
+- Auto-scroll keeps highlighted content in view
+
+### Phase 3: Sync and Finer Highlighting (Future)
+
+**Sentence highlighting**: Show which sentence is currently being spoken (finer than paragraph-level).
 
 **Cross-device sync**: Save `playback_paragraph_index` to server, allowing users to start on desktop and continue on mobile.
 
 **Implementation notes:**
-- Store paragraph mapping in `narration_paragraph_map` JSONB column
+
 - Sync position on pause/stop and periodically during playback
 - Handle conflicts by preferring most recent update
 
-### Phase 3: Native App
+### Phase 4: Native App
 
 **Capacitor wrapper** to enable:
+
 - Background audio playback
 - Lock screen controls (beyond Media Session API)
 - Better voice access on mobile
@@ -730,7 +740,7 @@ narration_playback_started_total
 narration_playback_completed_total
 narration_playback_duration_seconds
 
-// Quality signals  
+// Quality signals
 narration_generation_duration_seconds
 narration_generation_errors_total{error_type}
 
@@ -763,7 +773,8 @@ narration_rate_setting{bucket}  // 0.5-0.75, 0.75-1.0, 1.0-1.25, etc.
 
 ### Future (v2+)
 
-- [ ] Sentence-level highlighting
+- [ ] Paragraph highlighting — see [narration-highlighting-design.md](./narration-highlighting-design.md)
+- [ ] Sentence-level highlighting (finer than paragraphs)
 - [ ] Cross-device playback sync
 - [ ] Capacitor wrapper for background audio
 - [ ] Pre-generation for starred/saved articles

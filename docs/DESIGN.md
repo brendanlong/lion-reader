@@ -1773,13 +1773,28 @@ See [docs/better-voices-design.md](./better-voices-design.md) for full implement
 - Curated selection of 3-5 quality English voices
 - Cached in IndexedDB for offline use after download
 
+### Paragraph Highlighting
+
+When audio is playing, the currently-read paragraph is highlighted in the article view. This requires mapping narration paragraphs back to original content.
+
+See [docs/narration-highlighting-design.md](./narration-highlighting-design.md) for full implementation details.
+
+**Key points:**
+
+- LLM includes paragraph markers in output for mapping
+- Mapping stored alongside narration text in database
+- Client-side highlights original paragraphs during playback
+- Optional auto-scroll to keep highlighted content in view
+- Falls back to positional mapping if LLM markers missing
+
 ### Future Enhancements
 
-- Sentence-level highlighting with paragraph mapping
+- Sentence-level highlighting (finer granularity than paragraphs)
 - Cross-device playback sync
 - Capacitor wrapper for background audio
 - Pre-generation for saved/starred articles
 - Additional language voices for Piper TTS
+- Click-to-seek (click paragraph to jump narration to that point)
 
 ---
 
