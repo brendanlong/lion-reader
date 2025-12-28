@@ -915,7 +915,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Use smooth scrolling with `block: 'center'`
   - Respect scroll margin for header
 
-- [ ] **Add highlighting settings**
+- [x] **Add highlighting settings**
   - Add `highlightEnabled` to NarrationSettings (default: true)
   - Add `autoScrollEnabled` to NarrationSettings (default: true)
   - Add toggles to narration settings UI
