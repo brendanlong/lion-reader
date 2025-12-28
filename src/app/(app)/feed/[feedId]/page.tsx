@@ -93,9 +93,13 @@ export default function SingleFeedPage() {
 
   // Mutations for keyboard actions
   const markReadMutation = trpc.entries.markRead.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       utils.entries.list.invalidate();
       utils.subscriptions.list.invalidate();
+      // Also invalidate individual entry queries for UI updates in content view
+      for (const id of variables.ids) {
+        utils.entries.get.invalidate({ id });
+      }
     },
   });
 
