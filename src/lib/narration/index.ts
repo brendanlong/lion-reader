@@ -15,6 +15,11 @@ export type { TTSProvider, TTSVoice, SpeakOptions, TTSProviderId } from "./types
 
 // TTS Provider implementations
 export { BrowserTTSProvider, getBrowserTTSProvider } from "./browser-tts-provider";
+export {
+  PiperTTSProvider,
+  getPiperTTSProvider,
+  VoiceNotDownloadedError,
+} from "./piper-tts-provider";
 
 // Voice selection utilities
 export { getAvailableVoices, waitForVoices, rankVoices, findVoiceByUri } from "./voices";
