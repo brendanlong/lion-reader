@@ -901,7 +901,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Handle both entry and saved article views
   - Write component tests
 
-- [ ] **Add highlight CSS styles**
+- [x] **Add highlight CSS styles**
   - Create highlight styles for light mode (yellow background)
   - Create highlight styles for dark mode
   - Add smooth transition for highlight changes
