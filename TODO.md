@@ -831,3 +831,118 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
 - [x] **Documentation**
   - Update user-facing help text about enhanced voices
   - Add FAQ entry about voice downloads and storage
+
+## Phase 16: Narration Highlighting
+
+See @docs/narration-highlighting-design.md for full design details.
+
+When audio narration is playing, highlight the paragraph currently being read. This provides visual feedback and helps users follow along.
+
+### 16.1 Backend Paragraph Mapping
+
+- [ ] **Add paragraph mapping to database schema**
+  - Add `paragraph_map` jsonb column to `narration_content` table
+  - Create migration
+  - Update Drizzle schema with types
+
+- [ ] **Implement HTML preprocessing for paragraph markers**
+  - Create `preprocessHtmlForNarration()` function
+  - Assign `data-para-id` attributes to block-level elements (p, h1-h6, blockquote, pre, ul, ol, li, figure, table)
+  - Track paragraph order for mapping
+  - Write unit tests
+
+- [ ] **Update LLM prompt for paragraph markers**
+  - Modify `htmlToNarrationInput()` to include `[P:X]` markers in input
+  - Update system prompt to request `[PARA:X]` markers in output
+  - Write unit tests for input generation
+
+- [ ] **Implement paragraph mapping parser**
+  - Create `parseNarrationOutput()` function
+  - Extract `[PARA:X]` markers from LLM output
+  - Build mapping array (narration index → original indices)
+  - Strip markers from final narration text
+  - Handle multi-paragraph markers (e.g., `[PARA:2][PARA:3]`)
+  - Write unit tests
+
+- [ ] **Integrate mapping into narration generation**
+  - Update `generateNarration()` service to use new flow
+  - Store paragraph map in database
+  - Create fallback positional mapping when markers missing
+  - Write integration tests
+
+- [ ] **Update narration API response**
+  - Add `paragraphMap` field to narration.generate response
+  - Update response types
+  - Write integration tests
+
+### 16.2 Client-Side Highlighting
+
+- [ ] **Create narration highlight hook**
+  - Create `useNarrationHighlight` hook
+  - Accept paragraph map, current index, and playing state
+  - Return set of highlighted original paragraph IDs
+  - Handle edge cases (no map, invalid index)
+  - Write unit tests
+
+- [ ] **Add client-side paragraph ID processing**
+  - Create function to add `data-para-id` to rendered HTML
+  - Process content on client side (matches server preprocessing)
+  - Memoize for performance
+
+- [ ] **Integrate highlighting with useNarration**
+  - Add `paragraphMap` state to `useNarration` hook
+  - Store map from API response
+  - Expose map in hook return value
+  - Update existing tests
+
+- [ ] **Update EntryContent component**
+  - Accept `highlightedParagraphIds` prop
+  - Apply highlight class to matching elements
+  - Handle both entry and saved article views
+  - Write component tests
+
+- [ ] **Add highlight CSS styles**
+  - Create highlight styles for light mode (yellow background)
+  - Create highlight styles for dark mode
+  - Add smooth transition for highlight changes
+  - Add scroll margin for highlighted elements
+
+### 16.3 Auto-Scroll & Settings
+
+- [ ] **Implement auto-scroll to highlighted paragraph**
+  - Scroll to highlighted element when it changes
+  - Only scroll if element is not in viewport
+  - Use smooth scrolling with `block: 'center'`
+  - Respect scroll margin for header
+
+- [ ] **Add highlighting settings**
+  - Add `highlightEnabled` to NarrationSettings (default: true)
+  - Add `autoScrollEnabled` to NarrationSettings (default: true)
+  - Add toggles to narration settings UI
+  - Persist in localStorage
+
+- [ ] **Add metrics**
+  - Track `narration_highlight_active_total`
+  - Track `narration_highlight_fallback_total` (when positional mapping used)
+  - Track `narration_highlight_scroll_total`
+
+### 16.4 Polish & Edge Cases
+
+- [ ] **Test with various content types**
+  - Test with code blocks
+  - Test with images and figures
+  - Test with tables
+  - Test with nested lists
+  - Test with long articles (many paragraphs)
+  - Test with short articles (1-3 paragraphs)
+
+- [ ] **Test with both TTS providers**
+  - Verify highlighting works with browser TTS
+  - Verify highlighting works with Piper TTS
+  - Test skip forward/backward updates highlight
+  - Test pause/resume maintains highlight
+
+- [ ] **Handle fallback scenarios**
+  - Test highlighting with LLM fallback (htmlToPlainText)
+  - Test when no mapping available
+  - Ensure graceful degradation (no errors, just no highlighting)
