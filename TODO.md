@@ -821,7 +821,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
   - Track enhanced_voice_download_failed_total{voice_id, error_type}
   - Track narration_playback_started_total{provider}
 
-- [ ] **Error handling and edge cases**
+- [x] **Error handling and edge cases**
   - Handle IndexedDB quota exceeded error
   - Handle download interruption gracefully
   - Handle corrupted cache entries
