@@ -8,7 +8,12 @@
 import { createHash } from "crypto";
 import Groq from "groq-sdk";
 import { logger } from "@/lib/logger";
-import { parseNarrationOutput, createPositionalMapping } from "@/lib/narration/paragraph-mapping";
+import {
+  parseNarrationOutput,
+  createPositionalMapping,
+  hasParaMarkers,
+} from "@/lib/narration/paragraph-mapping";
+import { trackNarrationHighlightFallback } from "@/server/metrics";
 
 /**
  * System prompt for the Groq LLM to convert article content to narration-ready text.
@@ -374,6 +379,7 @@ export async function generateNarration(htmlContent: string): Promise<GenerateNa
   // If Groq is not configured, use fallback
   if (!client) {
     logger.debug("Groq API key not configured, using fallback text conversion");
+    trackNarrationHighlightFallback();
     const fallbackText = htmlToPlainText(htmlContent);
     return {
       text: fallbackText,
@@ -403,12 +409,19 @@ export async function generateNarration(htmlContent: string): Promise<GenerateNa
 
     if (!rawOutput) {
       logger.warn("Groq returned empty response, using fallback");
+      trackNarrationHighlightFallback();
       const fallbackText = htmlToPlainText(htmlContent);
       return {
         text: fallbackText,
         source: "fallback",
         paragraphMap: createFallbackParagraphMap(fallbackText, paragraphOrder.length),
       };
+    }
+
+    // Track fallback metric if LLM didn't return markers (positional mapping will be used)
+    if (!hasParaMarkers(rawOutput)) {
+      logger.debug("LLM output has no paragraph markers, using positional mapping fallback");
+      trackNarrationHighlightFallback();
     }
 
     // Parse the LLM output to extract paragraph mapping and clean text
