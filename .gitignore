@@ -140,3 +140,6 @@ vite.config.ts.timestamp-*
 
 # Next config
 next-env.d.ts
+
+# ONNX WASM files (copied from node_modules on install)
+public/onnx/
