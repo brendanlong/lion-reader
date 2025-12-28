@@ -724,4 +724,128 @@ describe("Saved Articles API", () => {
       expect(articles.filter((a) => a.url === sharedUrl)).toHaveLength(2);
     });
   });
+
+  describe("saved.save with provided HTML", () => {
+    it("uses provided HTML instead of fetching the URL", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const testHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Page Title</title>
+            <meta property="og:title" content="OG Title" />
+            <meta property="og:site_name" content="Test Site" />
+            <meta property="og:image" content="https://example.com/image.jpg" />
+            <meta name="author" content="Test Author" />
+          </head>
+          <body>
+            <article>
+              <h1>Article Heading</h1>
+              <p>This is the article content that should be extracted by Readability.</p>
+              <p>It has multiple paragraphs to ensure proper extraction.</p>
+            </article>
+          </body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: "https://example.com/js-rendered-page",
+        html: testHtml,
+      });
+
+      expect(result.article.url).toBe("https://example.com/js-rendered-page");
+      expect(result.article.title).toBe("OG Title");
+      expect(result.article.siteName).toBe("Test Site");
+      expect(result.article.author).toBe("Test Author");
+      expect(result.article.imageUrl).toBe("https://example.com/image.jpg");
+      expect(result.article.contentOriginal).toBe(testHtml);
+      // Content should be cleaned by Readability
+      expect(result.article.contentCleaned).toContain("article content");
+    });
+
+    it("uses provided title parameter over extracted metadata", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const testHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Page Title from HTML</title>
+            <meta property="og:title" content="OG Title from HTML" />
+          </head>
+          <body>
+            <article><p>Content</p></article>
+          </body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: "https://example.com/with-title-param",
+        html: testHtml,
+        title: "Title from Bookmarklet",
+      });
+
+      // Provided title should take precedence
+      expect(result.article.title).toBe("Title from Bookmarklet");
+    });
+
+    it("falls back to og:title when title parameter is not provided", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const testHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Page Title</title>
+            <meta property="og:title" content="OG Title" />
+          </head>
+          <body><article><p>Content</p></article></body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: "https://example.com/og-title-fallback",
+        html: testHtml,
+      });
+
+      expect(result.article.title).toBe("OG Title");
+    });
+
+    it("handles HTML without metadata gracefully", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const testHtml = `
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <article>
+              <p>Just some content without any metadata.</p>
+              <p>This simulates a minimal page.</p>
+            </article>
+          </body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: "https://example.com/no-metadata",
+        html: testHtml,
+        title: "Fallback Title",
+      });
+
+      expect(result.article.url).toBe("https://example.com/no-metadata");
+      expect(result.article.title).toBe("Fallback Title");
+      expect(result.article.siteName).toBeNull();
+      expect(result.article.author).toBeNull();
+      expect(result.article.imageUrl).toBeNull();
+    });
+  });
 });
