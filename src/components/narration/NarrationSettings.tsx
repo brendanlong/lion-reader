@@ -15,6 +15,7 @@ import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-dete
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
 import type { TTSProviderId } from "@/lib/narration/types";
 import { EnhancedVoiceList } from "./EnhancedVoiceList";
+import { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
 
 /**
  * Sample text used for voice preview.
@@ -350,11 +351,14 @@ export function NarrationSettings() {
 
             {/* Enhanced Voices List (only shown when piper provider selected) */}
             {settings.provider === "piper" && (
-              <div>
-                <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Select Voice
-                </label>
-                <EnhancedVoiceList settings={settings} setSettings={setSettings} />
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Select Voice
+                  </label>
+                  <EnhancedVoiceList settings={settings} setSettings={setSettings} />
+                </div>
+                <EnhancedVoicesHelp />
               </div>
             )}
 
