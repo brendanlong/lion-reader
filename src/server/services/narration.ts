@@ -15,9 +15,10 @@ import { logger } from "@/lib/logger";
 export const NARRATION_SYSTEM_PROMPT = `Convert this article to narration-ready plain text for text-to-speech.
 
 Rules:
+- Output ONLY the article text—no preamble, commentary, or "here is the cleaned article"
 - Output plain text with blank lines between paragraphs
 - Call out special content: "Code block: ... End code block.", "Image: [alt].", "Table with N columns: ..."
-- Expand abbreviations (Dr. → Doctor, etc. → et cetera)
+- Expand abbreviations (Dr. → Doctor, etc. → et cetera, px → pixels)
 - Read URLs as "link to [domain]" or skip if already in link text
 - Convert lists to numbered format (1. ... 2. ... 3. ...) to preserve structure
 - Split very long paragraphs at natural points
