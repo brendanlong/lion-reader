@@ -2,7 +2,7 @@
  * NarrationSettings Component
  *
  * Settings section for audio narration configuration.
- * Allows users to select a voice, adjust playback speed and pitch,
+ * Allows users to select a voice provider, choose a voice, adjust playback speed and pitch,
  * and preview how narration will sound.
  */
 
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
+import type { TTSProviderId } from "@/lib/narration/types";
 
 /**
  * Sample text used for voice preview.
@@ -86,6 +87,19 @@ export function NarrationSettings() {
       setSettings({
         ...settings,
         pitch: value,
+      });
+    },
+    [settings, setSettings]
+  );
+
+  // Handle provider change
+  const handleProviderChange = useCallback(
+    (provider: TTSProviderId) => {
+      // When switching providers, reset voiceId since voice IDs are provider-specific
+      setSettings({
+        ...settings,
+        provider,
+        voiceId: null,
       });
     },
     [settings, setSettings]
@@ -198,52 +212,165 @@ export function NarrationSettings() {
         {/* Voice Settings (only shown when enabled) */}
         {settings.enabled && (
           <div className="mt-6 space-y-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-            {/* Voice Selector */}
+            {/* Voice Provider Selection */}
             <div>
-              <label
-                htmlFor="narration-voice"
-                className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-              >
-                Voice
-              </label>
-              <div className="flex gap-3">
-                <select
-                  id="narration-voice"
-                  value={settings.voiceId || ""}
-                  onChange={handleVoiceChange}
-                  disabled={isLoadingVoices}
-                  className="block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              <h3 className="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                Voice Provider
+              </h3>
+              <div className="space-y-3">
+                {/* Browser Voices Option */}
+                <label
+                  className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
+                    settings.provider === "browser"
+                      ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
+                      : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
+                  }`}
                 >
-                  {isLoadingVoices ? (
-                    <option value="">Loading voices...</option>
-                  ) : voices.length === 0 ? (
-                    <option value="">No voices available</option>
-                  ) : (
-                    <>
-                      <option value="">Default voice</option>
-                      {voices.map((voice) => (
-                        <option key={voice.voiceURI} value={voice.voiceURI}>
-                          {voice.name}
-                          {voice.localService ? "" : " (online)"}
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={isPreviewing ? handleStopPreview : handlePreview}
-                  disabled={isLoadingVoices || voices.length === 0}
+                  <input
+                    type="radio"
+                    name="voice-provider"
+                    value="browser"
+                    checked={settings.provider === "browser"}
+                    onChange={() => handleProviderChange("browser")}
+                    className="sr-only"
+                  />
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
+                        settings.provider === "browser"
+                          ? "border-zinc-900 dark:border-zinc-400"
+                          : "border-zinc-400 dark:border-zinc-500"
+                      }`}
+                    >
+                      {settings.provider === "browser" && (
+                        <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />
+                      )}
+                    </div>
+                    <div>
+                      <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                        Browser Voices
+                      </span>
+                      <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+                        Uses your browser&apos;s built-in text-to-speech
+                      </span>
+                    </div>
+                  </div>
+                </label>
+
+                {/* Enhanced Voices Option */}
+                <label
+                  className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
+                    settings.provider === "piper"
+                      ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
+                      : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
+                  }`}
                 >
-                  {isPreviewing ? "Stop" : "Preview"}
-                </Button>
+                  <input
+                    type="radio"
+                    name="voice-provider"
+                    value="piper"
+                    checked={settings.provider === "piper"}
+                    onChange={() => handleProviderChange("piper")}
+                    className="sr-only"
+                  />
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
+                        settings.provider === "piper"
+                          ? "border-zinc-900 dark:border-zinc-400"
+                          : "border-zinc-400 dark:border-zinc-500"
+                      }`}
+                    >
+                      {settings.provider === "piper" && (
+                        <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />
+                      )}
+                    </div>
+                    <div>
+                      <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                        Enhanced Voices
+                      </span>
+                      <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+                        Higher quality voices (requires download)
+                      </span>
+                    </div>
+                  </div>
+                </label>
               </div>
-              <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                Voices are provided by your browser. Chrome and Safari typically offer higher
-                quality voices.
-              </p>
             </div>
+
+            {/* Browser Voice Selector (only shown when browser provider selected) */}
+            {settings.provider === "browser" && (
+              <div>
+                <label
+                  htmlFor="narration-voice"
+                  className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                >
+                  Voice
+                </label>
+                <div className="flex gap-3">
+                  <select
+                    id="narration-voice"
+                    value={settings.voiceId || ""}
+                    onChange={handleVoiceChange}
+                    disabled={isLoadingVoices}
+                    className="block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  >
+                    {isLoadingVoices ? (
+                      <option value="">Loading voices...</option>
+                    ) : voices.length === 0 ? (
+                      <option value="">No voices available</option>
+                    ) : (
+                      <>
+                        <option value="">Default voice</option>
+                        {voices.map((voice) => (
+                          <option key={voice.voiceURI} value={voice.voiceURI}>
+                            {voice.name}
+                            {voice.localService ? "" : " (online)"}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={isPreviewing ? handleStopPreview : handlePreview}
+                    disabled={isLoadingVoices || voices.length === 0}
+                  >
+                    {isPreviewing ? "Stop" : "Preview"}
+                  </Button>
+                </div>
+                <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  Voices are provided by your browser. Chrome and Safari typically offer higher
+                  quality voices.
+                </p>
+              </div>
+            )}
+
+            {/* Enhanced Voices Placeholder (only shown when piper provider selected) */}
+            {settings.provider === "piper" && (
+              <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-6 text-center dark:border-zinc-700 dark:bg-zinc-800/50">
+                <svg
+                  className="mx-auto h-10 w-10 text-zinc-400 dark:text-zinc-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                  />
+                </svg>
+                <h4 className="mt-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  Enhanced Voices Coming Soon
+                </h4>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  High-quality voices with natural speech will be available in a future update.
+                </p>
+              </div>
+            )}
 
             {/* Speed Slider */}
             <div>
