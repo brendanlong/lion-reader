@@ -265,6 +265,8 @@ describe("saveNarrationSettings", () => {
       voiceId: "test-voice",
       rate: 1.5,
       pitch: 0.8,
+      highlightEnabled: false,
+      autoScrollEnabled: true,
     };
 
     saveNarrationSettings(settings);
@@ -282,6 +284,8 @@ describe("saveNarrationSettings", () => {
       voiceId: "en_US-lessac-medium",
       rate: 1.75,
       pitch: 0.9,
+      highlightEnabled: true,
+      autoScrollEnabled: false,
     };
 
     saveNarrationSettings(originalSettings);
@@ -298,5 +302,68 @@ describe("DEFAULT_NARRATION_SETTINGS", () => {
     expect(DEFAULT_NARRATION_SETTINGS.voiceId).toBeNull();
     expect(DEFAULT_NARRATION_SETTINGS.rate).toBe(1.0);
     expect(DEFAULT_NARRATION_SETTINGS.pitch).toBe(1.0);
+    expect(DEFAULT_NARRATION_SETTINGS.highlightEnabled).toBe(true);
+    expect(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled).toBe(true);
+  });
+});
+
+describe("highlighting settings", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    vi.clearAllMocks();
+  });
+
+  it("parses highlightEnabled correctly", () => {
+    localStorageMock.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ highlightEnabled: false })
+    );
+
+    const settings = loadNarrationSettings();
+    expect(settings.highlightEnabled).toBe(false);
+  });
+
+  it("parses autoScrollEnabled correctly", () => {
+    localStorageMock.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ autoScrollEnabled: false })
+    );
+
+    const settings = loadNarrationSettings();
+    expect(settings.autoScrollEnabled).toBe(false);
+  });
+
+  it("defaults highlightEnabled to true when missing", () => {
+    localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ enabled: true }));
+
+    const settings = loadNarrationSettings();
+    expect(settings.highlightEnabled).toBe(true);
+  });
+
+  it("defaults autoScrollEnabled to true when missing", () => {
+    localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ enabled: true }));
+
+    const settings = loadNarrationSettings();
+    expect(settings.autoScrollEnabled).toBe(true);
+  });
+
+  it("handles non-boolean highlightEnabled gracefully", () => {
+    localStorageMock.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ highlightEnabled: "yes" })
+    );
+
+    const settings = loadNarrationSettings();
+    expect(settings.highlightEnabled).toBe(true); // Falls back to default
+  });
+
+  it("handles non-boolean autoScrollEnabled gracefully", () => {
+    localStorageMock.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ autoScrollEnabled: null })
+    );
+
+    const settings = loadNarrationSettings();
+    expect(settings.autoScrollEnabled).toBe(true); // Falls back to default
   });
 });
