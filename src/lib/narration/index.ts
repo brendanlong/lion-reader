@@ -93,3 +93,10 @@ export {
   type ParagraphMapping,
   type NarrationToOriginal,
 } from "./paragraph-mapping";
+
+// HTML to narration input conversion
+export {
+  htmlToNarrationInput,
+  htmlToPlainText,
+  type HtmlToNarrationInputResult,
+} from "./html-to-narration-input";

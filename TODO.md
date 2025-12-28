@@ -928,7 +928,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
 
 ### 16.4 Polish & Edge Cases
 
-- [ ] **Test with various content types**
+- [x] **Test with various content types**
   - Test with code blocks
   - Test with images and figures
   - Test with tables
@@ -936,13 +936,13 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Test with long articles (many paragraphs)
   - Test with short articles (1-3 paragraphs)
 
-- [ ] **Test with both TTS providers**
+- [x] **Test with both TTS providers**
   - Verify highlighting works with browser TTS
   - Verify highlighting works with Piper TTS
   - Test skip forward/backward updates highlight
   - Test pause/resume maintains highlight
 
-- [ ] **Handle fallback scenarios**
+- [x] **Handle fallback scenarios**
   - Test highlighting with LLM fallback (htmlToPlainText)
   - Test when no mapping available
   - Ensure graceful degradation (no errors, just no highlighting)

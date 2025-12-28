@@ -8,11 +8,14 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import DOMPurify from "dompurify";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
-import { NarrationControls } from "@/components/narration/NarrationControls";
+import { NarrationControls, useNarration, useNarrationHighlight } from "@/components/narration";
+import { isNarrationSupported } from "@/lib/narration/feature-detection";
+import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
+import { useNarrationSettings } from "@/lib/narration/settings";
 
 /**
  * Props for the SavedArticleContent component.
@@ -189,86 +192,53 @@ function BackArrowIcon() {
 }
 
 /**
- * SavedArticleContent component.
- *
- * Fetches and displays the full content of a saved article.
- * Marks the article as read on mount.
+ * Article type from API response.
+ * Matches the shape of data returned from saved.get query.
  */
-export function SavedArticleContent({ articleId, onBack }: SavedArticleContentProps) {
-  const utils = trpc.useUtils();
-  const hasMarkedRead = useRef(false);
-  const [showOriginal, setShowOriginal] = useState(false);
+interface ArticleData {
+  id: string;
+  url: string;
+  title: string | null;
+  author: string | null;
+  siteName: string | null;
+  contentOriginal: string | null;
+  contentCleaned: string | null;
+  excerpt: string | null;
+  savedAt: Date;
+  read: boolean;
+  starred: boolean;
+}
 
-  // Fetch the saved article
-  const { data, isLoading, isError, error, refetch } = trpc.saved.get.useQuery({ id: articleId });
+/**
+ * Props for the inner SavedArticleContentBody component.
+ */
+interface SavedArticleContentBodyProps {
+  article: ArticleData;
+  articleId: string;
+  onBack?: () => void;
+  showOriginal: boolean;
+  setShowOriginal: (show: boolean) => void;
+  handleStarToggle: () => void;
+  isStarLoading: boolean;
+}
 
-  // Mark read mutation
-  const markReadMutation = trpc.saved.markRead.useMutation({
-    onSuccess: () => {
-      // Invalidate saved list and count to update read status
-      utils.saved.list.invalidate();
-      utils.saved.count.invalidate();
-    },
-  });
+/**
+ * Inner component that renders saved article content with narration highlighting.
+ * Separated to allow proper hook usage after article data is loaded.
+ */
+function SavedArticleContentBody({
+  article,
+  articleId,
+  onBack,
+  showOriginal,
+  setShowOriginal,
+  handleStarToggle,
+  isStarLoading,
+}: SavedArticleContentBodyProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  // Star/unstar mutations
-  const starMutation = trpc.saved.star.useMutation({
-    onSuccess: () => {
-      // Invalidate the article query to update starred status
-      utils.saved.get.invalidate({ id: articleId });
-      utils.saved.list.invalidate();
-    },
-  });
-
-  const unstarMutation = trpc.saved.unstar.useMutation({
-    onSuccess: () => {
-      utils.saved.get.invalidate({ id: articleId });
-      utils.saved.list.invalidate();
-    },
-  });
-
-  const article = data?.article;
-
-  // Mark article as read when component mounts and article is loaded
-  useEffect(() => {
-    if (article && !article.read && !hasMarkedRead.current) {
-      hasMarkedRead.current = true;
-      markReadMutation.mutate({ ids: [articleId], read: true });
-    }
-  }, [article, articleId, markReadMutation]);
-
-  // Handle star toggle
-  const handleStarToggle = () => {
-    if (!article) return;
-
-    if (article.starred) {
-      unstarMutation.mutate({ id: articleId });
-    } else {
-      starMutation.mutate({ id: articleId });
-    }
-  };
-
-  const isStarLoading = starMutation.isPending || unstarMutation.isPending;
-
-  // Loading state
-  if (isLoading) {
-    return <SavedArticleContentSkeleton />;
-  }
-
-  // Error state
-  if (isError) {
-    return (
-      <SavedArticleContentError
-        message={error?.message ?? "Failed to load article"}
-        onRetry={() => refetch()}
-      />
-    );
-  }
-
-  // Article not found
-  if (!article) {
-    return <SavedArticleContentError message="Article not found" onRetry={() => refetch()} />;
-  }
+  const displayTitle = article.title ?? "Untitled";
+  const displaySite = article.siteName ?? getDomain(article.url);
 
   // Check if both content versions are available for toggle
   const hasBothVersions = Boolean(article.contentCleaned && article.contentOriginal);
@@ -278,19 +248,104 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
     ? article.contentOriginal
     : (article.contentCleaned ?? article.contentOriginal);
 
-  // Sanitize HTML content
-  const sanitizedContent = contentToDisplay
-    ? DOMPurify.sanitize(contentToDisplay, {
-        // Allow safe tags and attributes
-        ADD_TAGS: ["iframe"], // Allow iframes for embedded content
-        ADD_ATTR: ["target", "allowfullscreen", "frameborder"], // Allow target="_blank" on links
-        FORBID_TAGS: ["style", "script"], // Forbid style and script tags
-        FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"], // Forbid event handlers
-      })
-    : null;
+  // Set up narration with highlighting support
+  const narrationSupported = isNarrationSupported();
+  const narration = useNarration({
+    id: articleId,
+    type: "saved",
+    title: displayTitle,
+    feedTitle: displaySite,
+  });
 
-  const displayTitle = article.title ?? "Untitled";
-  const displaySite = article.siteName ?? getDomain(article.url);
+  const { highlightedParagraphIds } = useNarrationHighlight({
+    paragraphMap: narration.paragraphMap,
+    currentParagraphIndex: narration.state.currentParagraph,
+    isPlaying: narration.state.status === "playing",
+  });
+
+  // Get narration settings for auto-scroll preference
+  const [narrationSettings] = useNarrationSettings();
+
+  // Determine if we should process HTML for highlighting
+  // We process it whenever narration has been activated (paragraphMap exists or state is not idle)
+  const shouldProcessForHighlighting =
+    narrationSupported && (narration.paragraphMap !== null || narration.state.status !== "idle");
+
+  // Sanitize and optionally process HTML content for highlighting
+  const sanitizedContent = useMemo(() => {
+    if (!contentToDisplay) return null;
+
+    const sanitized = DOMPurify.sanitize(contentToDisplay, {
+      // Allow safe tags and attributes, plus data-para-id for highlighting
+      ADD_TAGS: ["iframe"],
+      ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id"],
+      FORBID_TAGS: ["style", "script"],
+      FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
+    });
+
+    // Process for highlighting if narration is active
+    if (shouldProcessForHighlighting) {
+      return processHtmlForHighlighting(sanitized);
+    }
+
+    return sanitized;
+  }, [contentToDisplay, shouldProcessForHighlighting]);
+
+  // Apply/remove highlight classes to DOM elements based on highlightedParagraphIds
+  // Also auto-scroll to highlighted paragraph if enabled
+  useEffect(() => {
+    if (!contentRef.current || !shouldProcessForHighlighting) return;
+
+    const container = contentRef.current;
+
+    // Remove all existing highlights
+    container.querySelectorAll("[data-para-id].narration-highlight").forEach((el) => {
+      el.classList.remove("narration-highlight");
+    });
+
+    // Add highlights to matching elements and optionally scroll to first one
+    // Only apply highlights if the highlightEnabled setting is true
+    if (highlightedParagraphIds.size > 0 && narrationSettings.highlightEnabled) {
+      let firstHighlightedElement: Element | null = null;
+
+      highlightedParagraphIds.forEach((index) => {
+        const el = container.querySelector(`[data-para-id="para-${index}"]`);
+        if (el) {
+          el.classList.add("narration-highlight");
+          // Track first highlighted element for scrolling
+          if (!firstHighlightedElement) {
+            firstHighlightedElement = el;
+          }
+        }
+      });
+
+      // Auto-scroll to highlighted paragraph if enabled and element is not in viewport
+      if (
+        narrationSettings.autoScrollEnabled &&
+        firstHighlightedElement &&
+        narration.state.status === "playing"
+      ) {
+        const element = firstHighlightedElement as HTMLElement;
+        const rect = element.getBoundingClientRect();
+        // Account for the header (scroll-margin-top is 100px in CSS)
+        const headerHeight = 100;
+        const isInViewport = rect.top >= headerHeight && rect.bottom <= window.innerHeight;
+
+        if (!isInViewport) {
+          element.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
+      }
+    }
+  }, [
+    highlightedParagraphIds,
+    shouldProcessForHighlighting,
+    narrationSettings.highlightEnabled,
+    narrationSettings.autoScrollEnabled,
+    narration.state.status,
+  ]);
 
   return (
     <article className="mx-auto max-w-3xl px-4 py-6 sm:py-8">
@@ -377,12 +432,13 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
             <span className="ml-2">View Original</span>
           </Button>
 
-          {/* Narration controls */}
+          {/* Narration controls - pass narration state for controlled mode */}
           <NarrationControls
             articleId={articleId}
             articleType="saved"
             title={displayTitle}
             feedTitle={displaySite}
+            narration={narration}
           />
         </div>
       </header>
@@ -393,6 +449,7 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
       {/* Content */}
       {sanitizedContent ? (
         <div
+          ref={contentRef}
           className="prose prose-zinc prose-sm sm:prose-base dark:prose-invert prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 hover:prose-a:text-blue-700 dark:hover:prose-a:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:overflow-x-auto prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none"
           dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
@@ -417,5 +474,101 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
         </a>
       </footer>
     </article>
+  );
+}
+
+/**
+ * SavedArticleContent component.
+ *
+ * Fetches and displays the full content of a saved article.
+ * Marks the article as read on mount.
+ */
+export function SavedArticleContent({ articleId, onBack }: SavedArticleContentProps) {
+  const utils = trpc.useUtils();
+  const hasMarkedRead = useRef(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  // Fetch the saved article
+  const { data, isLoading, isError, error, refetch } = trpc.saved.get.useQuery({ id: articleId });
+
+  // Mark read mutation
+  const markReadMutation = trpc.saved.markRead.useMutation({
+    onSuccess: () => {
+      // Invalidate saved list and count to update read status
+      utils.saved.list.invalidate();
+      utils.saved.count.invalidate();
+    },
+  });
+
+  // Star/unstar mutations
+  const starMutation = trpc.saved.star.useMutation({
+    onSuccess: () => {
+      // Invalidate the article query to update starred status
+      utils.saved.get.invalidate({ id: articleId });
+      utils.saved.list.invalidate();
+    },
+  });
+
+  const unstarMutation = trpc.saved.unstar.useMutation({
+    onSuccess: () => {
+      utils.saved.get.invalidate({ id: articleId });
+      utils.saved.list.invalidate();
+    },
+  });
+
+  const article = data?.article;
+
+  // Mark article as read when component mounts and article is loaded
+  useEffect(() => {
+    if (article && !article.read && !hasMarkedRead.current) {
+      hasMarkedRead.current = true;
+      markReadMutation.mutate({ ids: [articleId], read: true });
+    }
+  }, [article, articleId, markReadMutation]);
+
+  // Handle star toggle
+  const handleStarToggle = () => {
+    if (!article) return;
+
+    if (article.starred) {
+      unstarMutation.mutate({ id: articleId });
+    } else {
+      starMutation.mutate({ id: articleId });
+    }
+  };
+
+  const isStarLoading = starMutation.isPending || unstarMutation.isPending;
+
+  // Loading state
+  if (isLoading) {
+    return <SavedArticleContentSkeleton />;
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <SavedArticleContentError
+        message={error?.message ?? "Failed to load article"}
+        onRetry={() => refetch()}
+      />
+    );
+  }
+
+  // Article not found
+  if (!article) {
+    return <SavedArticleContentError message="Article not found" onRetry={() => refetch()} />;
+  }
+
+  // Render the article content with narration support
+  return (
+    <SavedArticleContentBody
+      article={article}
+      articleId={articleId}
+      onBack={onBack}
+      showOriginal={showOriginal}
+      setShowOriginal={setShowOriginal}
+      handleStarToggle={handleStarToggle}
+      isStarLoading={isStarLoading}
+    />
   );
 }
