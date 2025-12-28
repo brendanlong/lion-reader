@@ -198,6 +198,9 @@ export class ArticleNarrator {
     }
 
     if (this.status === "playing") {
+      // Set status BEFORE cancel/pause to prevent handleUtteranceEnd from auto-advancing
+      this.setStatus("paused");
+
       if (this.isFirefoxBrowser) {
         // Firefox workaround: cancel instead of pause
         // We'll restart from the current paragraph on resume
@@ -206,7 +209,6 @@ export class ArticleNarrator {
       } else {
         speechSynthesis.pause();
       }
-      this.setStatus("paused");
     }
   }
 
@@ -240,10 +242,11 @@ export class ArticleNarrator {
       return;
     }
 
+    // Set status BEFORE cancel to prevent handleUtteranceEnd from auto-advancing
+    this.setStatus("idle");
     speechSynthesis.cancel();
     this.utterance = null;
     this.currentIndex = 0;
-    this.setStatus("idle");
   }
 
   /**
@@ -442,6 +445,11 @@ export class ArticleNarrator {
    * Handles the end of an utterance, auto-advancing to next paragraph.
    */
   private handleUtteranceEnd(): void {
+    // Don't auto-advance if we're not playing (e.g., paused or stopped)
+    if (this.status !== "playing") {
+      return;
+    }
+
     this.currentIndex++;
 
     if (this.currentIndex < this.paragraphs.length) {
