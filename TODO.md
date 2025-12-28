@@ -895,7 +895,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Expose map in hook return value
   - Update existing tests
 
-- [ ] **Update EntryContent component**
+- [x] **Update EntryContent component**
   - Accept `highlightedParagraphIds` prop
   - Apply highlight class to matching elements
   - Handle both entry and saved article views
