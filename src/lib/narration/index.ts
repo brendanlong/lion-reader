@@ -83,3 +83,13 @@ export {
   type VoiceErrorType,
   type VoiceErrorInfo,
 } from "./errors";
+
+// Paragraph mapping for highlighting
+export {
+  parseNarrationOutput,
+  createPositionalMapping,
+  stripMarkers,
+  hasParaMarkers,
+  type ParagraphMapping,
+  type NarrationToOriginal,
+} from "./paragraph-mapping";
