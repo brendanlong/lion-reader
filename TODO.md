@@ -789,7 +789,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
   - Implement paragraph-based playback matching existing behavior
   - Write unit tests
 
-- [ ] **Implement fallback behavior**
+- [x] **Implement fallback behavior**
   - If Piper fails to load, fall back to browser TTS
   - Show toast notification on fallback
   - Log errors for debugging
