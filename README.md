@@ -212,9 +212,6 @@ fly postgres create
 fly postgres attach <your-postgres-app>
 fly redis create
 
-# Set secrets
-fly secrets set SESSION_SECRET="$(openssl rand -base64 32)"
-
 # Deploy
 fly deploy
 ```

@@ -4,7 +4,7 @@
 # Before deploying:
 # 1. Run: fly launch --no-deploy (to create the app and set app name)
 # 2. Set secrets:
-#    fly secrets set DATABASE_URL="..." REDIS_URL="..." SESSION_SECRET="..."
+#    fly secrets set DATABASE_URL="..." REDIS_URL="..."
 # 3. Deploy: fly deploy
 
 app = "lion-reader"

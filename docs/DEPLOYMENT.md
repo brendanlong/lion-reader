@@ -197,20 +197,7 @@ flyctl secrets set REDIS_URL="rediss://default:password@your-endpoint.upstash.io
 
 Lion Reader requires several secrets for production.
 
-### 1. Generate a Session Secret
-
-```bash
-# Generate a secure random secret
-openssl rand -base64 32
-```
-
-Set it as a Fly.io secret:
-
-```bash
-flyctl secrets set SESSION_SECRET="your-generated-secret-here"
-```
-
-### 2. Set Application URL (Optional but Recommended)
+### 1. Set Application URL (Optional but Recommended)
 
 ```bash
 flyctl secrets set NEXT_PUBLIC_APP_URL="https://lion-reader.fly.dev"
@@ -218,7 +205,7 @@ flyctl secrets set NEXT_PUBLIC_APP_URL="https://lion-reader.fly.dev"
 
 Replace with your custom domain if you have one.
 
-### 3. Verify All Secrets
+### 2. Verify All Secrets
 
 ```bash
 flyctl secrets list
@@ -228,7 +215,6 @@ You should see:
 
 - `DATABASE_URL` (set automatically by postgres attach)
 - `REDIS_URL`
-- `SESSION_SECRET`
 - `NEXT_PUBLIC_APP_URL` (optional)
 
 ### Complete Secrets Reference
@@ -237,7 +223,6 @@ You should see:
 | --------------------- | -------- | ------------------------------- | ------------------------------------------ |
 | `DATABASE_URL`        | Yes      | Postgres connection string      | Set by `fly postgres attach`               |
 | `REDIS_URL`           | Yes      | Redis/Upstash connection string | From Upstash console or `fly redis create` |
-| `SESSION_SECRET`      | Yes      | 32+ character random string     | `openssl rand -base64 32`                  |
 | `NEXT_PUBLIC_APP_URL` | No       | Public URL for the app          | Your Fly.io URL or custom domain           |
 
 ---
