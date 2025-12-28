@@ -5,18 +5,13 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import com.lionreader.data.repository.AuthRepository
 import com.lionreader.di.AppConfig
+import com.lionreader.ui.navigation.LionReaderNavGraph
 import com.lionreader.ui.theme.LionReaderTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -34,6 +29,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var appConfig: AppConfig
 
+    @Inject
+    lateinit var authRepository: AuthRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -45,36 +43,18 @@ class MainActivity : ComponentActivity() {
             LionReaderTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = MaterialTheme.colorScheme.background,
                 ) {
-                    LionReaderContent()
+                    LionReaderNavGraph(
+                        authRepository = authRepository,
+                        onUnauthorized = {
+                            // Placeholder for handling 401 responses
+                            // Will be expanded in a future phase
+                            Log.d("MainActivity", "Received unauthorized response")
+                        },
+                    )
                 }
             }
         }
-    }
-}
-
-@Composable
-fun LionReaderContent() {
-    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Lion Reader",
-                style = MaterialTheme.typography.headlineLarge
-            )
-        }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun LionReaderContentPreview() {
-    LionReaderTheme {
-        LionReaderContent()
     }
 }
