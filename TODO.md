@@ -808,7 +808,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
   - Preview button for downloaded voices
   - Delete button to remove cached voices
 
-- [ ] **Add storage management**
+- [x] **Add storage management**
   - Show total storage used by cached voices
   - "Manage Storage" link to delete individual voices
   - Warn if storage exceeds 200 MB
