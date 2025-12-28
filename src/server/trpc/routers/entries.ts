@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, desc, lt, lte, inArray } from "drizzle-orm";
+import { eq, and, isNull, desc, asc, lt, gt, lte, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -52,6 +52,11 @@ const cursorSchema = z.string().optional();
  * Limit validation schema.
  */
 const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
+
+/**
+ * Sort order validation schema.
+ */
+const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
 
 // ============================================================================
 // Output Schemas
@@ -146,6 +151,7 @@ export const entriesRouter = createTRPCRouter({
    * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
    * @param unreadOnly - Optional filter to show only unread entries
    * @param starredOnly - Optional filter to show only starred entries
+   * @param sortOrder - Optional sort order: "newest" (default) or "oldest"
    * @param cursor - Optional pagination cursor (from previous response)
    * @param limit - Optional number of entries per page (default: 50, max: 100)
    * @returns Paginated list of entries
@@ -165,6 +171,7 @@ export const entriesRouter = createTRPCRouter({
         tagId: uuidSchema.optional(),
         unreadOnly: z.boolean().optional(),
         starredOnly: z.boolean().optional(),
+        sortOrder: sortOrderSchema,
         cursor: cursorSchema,
         limit: limitSchema,
       })
@@ -173,6 +180,7 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const limit = input.limit ?? DEFAULT_LIMIT;
+      const sortOrder = input.sortOrder ?? "newest";
 
       // Build the base query conditions
       // Visibility is enforced by inner join with user_entries
@@ -226,14 +234,21 @@ export const entriesRouter = createTRPCRouter({
       }
 
       // Add cursor condition if present
+      // For newest-first (desc), we want entries with ID < cursor
+      // For oldest-first (asc), we want entries with ID > cursor
       if (input.cursor) {
         const cursorEntryId = decodeCursor(input.cursor);
-        conditions.push(lt(entries.id, cursorEntryId));
+        if (sortOrder === "newest") {
+          conditions.push(lt(entries.id, cursorEntryId));
+        } else {
+          conditions.push(gt(entries.id, cursorEntryId));
+        }
       }
 
       // Query entries with user state
       // Inner join with user_entries enforces visibility
       // We fetch one extra to determine if there are more results
+      const orderByClause = sortOrder === "newest" ? desc(entries.id) : asc(entries.id);
       const queryResults = await ctx.db
         .select({
           entry: entries,
@@ -244,7 +259,7 @@ export const entriesRouter = createTRPCRouter({
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
         .where(and(...conditions))
-        .orderBy(desc(entries.id))
+        .orderBy(orderByClause)
         .limit(limit + 1);
 
       // Determine if there are more results

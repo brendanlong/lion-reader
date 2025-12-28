@@ -14,6 +14,7 @@ import {
   EntryList,
   EntryContent,
   UnreadToggle,
+  SortToggle,
   type EntryListEntryData,
 } from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
@@ -84,7 +85,7 @@ export default function TagEntriesPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("tag", tagId);
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences("tag", tagId);
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -207,12 +208,15 @@ export default function TagEntriesPage() {
               </span>
             )}
           </div>
-          <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+          <div className="flex gap-2">
+            <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
+            <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+          </div>
         </div>
       </div>
 
       <EntryList
-        filters={{ tagId, unreadOnly: showUnreadOnly }}
+        filters={{ tagId, unreadOnly: showUnreadOnly, sortOrder }}
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}

@@ -14,6 +14,7 @@ import {
   EntryList,
   EntryContent,
   UnreadToggle,
+  SortToggle,
   type EntryListEntryData,
 } from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
@@ -84,7 +85,7 @@ export default function SingleFeedPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("feed", feedId);
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences("feed", feedId);
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -205,6 +206,7 @@ export default function SingleFeedPage() {
                 {unreadCount} unread
               </span>
             )}
+            <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
             <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
           </div>
         </div>
@@ -223,7 +225,7 @@ export default function SingleFeedPage() {
       </div>
 
       <EntryList
-        filters={{ feedId, unreadOnly: showUnreadOnly }}
+        filters={{ feedId, unreadOnly: showUnreadOnly, sortOrder }}
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}

@@ -25,6 +25,11 @@ export interface ViewPreferences {
    * Show only unread items.
    */
   showUnreadOnly: boolean;
+
+  /**
+   * Sort order for entries: "newest" (default) or "oldest".
+   */
+  sortOrder: "newest" | "oldest";
 }
 
 /**
@@ -45,6 +50,21 @@ export interface UseViewPreferencesResult {
    * Set the showUnreadOnly preference directly.
    */
   setShowUnreadOnly: (value: boolean) => void;
+
+  /**
+   * Current preference: sort order for entries.
+   */
+  sortOrder: "newest" | "oldest";
+
+  /**
+   * Toggle the sortOrder preference between "newest" and "oldest".
+   */
+  toggleSortOrder: () => void;
+
+  /**
+   * Set the sortOrder preference directly.
+   */
+  setSortOrder: (value: "newest" | "oldest") => void;
 }
 
 /**
@@ -52,6 +72,7 @@ export interface UseViewPreferencesResult {
  */
 const DEFAULT_PREFERENCES: ViewPreferences = {
   showUnreadOnly: true,
+  sortOrder: "newest",
 };
 
 /**
@@ -164,14 +185,17 @@ function notifyListeners(key: string): void {
  * @example
  * ```tsx
  * function AllEntriesPage() {
- *   const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences('all');
+ *   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences('all');
  *
  *   return (
  *     <>
  *       <button onClick={toggleShowUnreadOnly}>
  *         {showUnreadOnly ? 'Show all' : 'Show unread only'}
  *       </button>
- *       <EntryList filters={{ unreadOnly: showUnreadOnly }} />
+ *       <button onClick={toggleSortOrder}>
+ *         {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
+ *       </button>
+ *       <EntryList filters={{ unreadOnly: showUnreadOnly, sortOrder }} />
  *     </>
  *   );
  * }
@@ -210,12 +234,40 @@ export function useViewPreferences(viewType: ViewType, viewId?: string): UseView
     [storageKey]
   );
 
+  const toggleSortOrder = useCallback(() => {
+    const current = getSnapshotCached(storageKey);
+    const updated = {
+      ...current,
+      sortOrder: current.sortOrder === "newest" ? ("oldest" as const) : ("newest" as const),
+    };
+    updateCache(storageKey, updated);
+  }, [storageKey]);
+
+  const setSortOrder = useCallback(
+    (value: "newest" | "oldest") => {
+      const current = getSnapshotCached(storageKey);
+      const updated = { ...current, sortOrder: value };
+      updateCache(storageKey, updated);
+    },
+    [storageKey]
+  );
+
   return useMemo(
     () => ({
       showUnreadOnly: preferences.showUnreadOnly,
       toggleShowUnreadOnly,
       setShowUnreadOnly,
+      sortOrder: preferences.sortOrder,
+      toggleSortOrder,
+      setSortOrder,
     }),
-    [preferences.showUnreadOnly, toggleShowUnreadOnly, setShowUnreadOnly]
+    [
+      preferences.showUnreadOnly,
+      preferences.sortOrder,
+      toggleShowUnreadOnly,
+      setShowUnreadOnly,
+      toggleSortOrder,
+      setSortOrder,
+    ]
   );
 }

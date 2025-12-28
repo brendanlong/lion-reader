@@ -1132,15 +1132,22 @@ const markRead = trpc.entries.markRead.useMutation({
 
 ### View Preferences
 
-Users can toggle between showing all entries or only unread entries. This preference is stored in localStorage and synced via URL query parameters for shareable links.
+Users can customize their reading experience with persistent view preferences stored in localStorage.
 
 **Show/Hide Read Items:**
 
 - Toggle in entry list header (eye icon or "Show read" checkbox)
 - Keyboard shortcut: `u` to toggle unread-only mode
 - Preference persisted in localStorage per-view (all, starred, feed, tag)
-- URL reflects current state: `/all?unread=true` or `/all?unread=false`
 - When hiding read items, newly-read entries fade out after a brief delay
+
+**Sort Order (Newest/Oldest):**
+
+- Toggle between newest-first and oldest-first sorting
+- Sort icon button in entry list header
+- Preference persisted in localStorage per-view
+- Default: newest first (reverse chronological order)
+- Uses UUIDv7 time-ordering for efficient sorting
 
 ```typescript
 // View preference hook
@@ -1150,13 +1157,24 @@ function useViewPreferences(viewKey: string) {
     true // default to unread only
   );
 
-  return { showUnreadOnly, setShowUnreadOnly };
+  const [sortOrder, setSortOrder] = useLocalStorage(
+    `view:${viewKey}:sortOrder`,
+    "newest" // default to newest first
+  );
+
+  return {
+    showUnreadOnly,
+    setShowUnreadOnly,
+    sortOrder,
+    setSortOrder,
+  };
 }
 
-// Query uses preference
+// Query uses preferences
 const { data: entries } = trpc.entries.list.useQuery({
   feedId,
   unreadOnly: showUnreadOnly,
+  sortOrder,
 });
 ```
 
