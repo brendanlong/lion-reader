@@ -864,13 +864,13 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Handle multi-paragraph markers (e.g., `[PARA:2][PARA:3]`)
   - Write unit tests
 
-- [ ] **Integrate mapping into narration generation**
+- [x] **Integrate mapping into narration generation**
   - Update `generateNarration()` service to use new flow
   - Store paragraph map in database
   - Create fallback positional mapping when markers missing
   - Write integration tests
 
-- [ ] **Update narration API response**
+- [x] **Update narration API response**
   - Add `paragraphMap` field to narration.generate response
   - Update response types
   - Write integration tests
