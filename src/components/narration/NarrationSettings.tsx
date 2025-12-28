@@ -9,13 +9,20 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
 import type { TTSProviderId } from "@/lib/narration/types";
-import { EnhancedVoiceList } from "./EnhancedVoiceList";
 import { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
+
+// Dynamic import with ssr: false to prevent piper-tts-web from being bundled for SSR.
+// The piper library has conditional Node.js code with require('fs') that breaks the build.
+const EnhancedVoiceList = dynamic(
+  () => import("./EnhancedVoiceList").then((mod) => mod.EnhancedVoiceList),
+  { ssr: false }
+);
 
 /**
  * Sample text used for voice preview.

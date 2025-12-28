@@ -1,7 +1,28 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  // Handle piper-tts-web which has conditional Node.js code (require('fs'))
+  // that the bundler tries to resolve even though it only runs in Node.js
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // Stub out Node.js modules for client bundles
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+      };
+    }
+    return config;
+  },
+  // Turbopack equivalent configuration
+  turbopack: {
+    resolveAlias: {
+      fs: { browser: "./src/lib/stubs/empty.js" },
+      path: { browser: "./src/lib/stubs/empty.js" },
+    },
+  },
+};
 
 // Sentry webpack plugin options
 // https://github.com/getsentry/sentry-webpack-plugin#options
