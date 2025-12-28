@@ -221,10 +221,16 @@ export const savedRouter = createTRPCRouter({
   /**
    * Save a URL for later reading.
    *
-   * Fetches the page, extracts metadata (title, og:image, site name, author),
+   * Extracts metadata (title, og:image, site name, author),
    * runs Readability for clean content, and stores in saved_articles.
    *
+   * If `html` is provided (e.g., from a bookmarklet capturing the rendered DOM),
+   * it's used directly instead of fetching the URL. This is useful for
+   * JavaScript-rendered pages where server-side fetching would miss content.
+   *
    * @param url - The URL to save
+   * @param html - Optional pre-fetched HTML content (from bookmarklet)
+   * @param title - Optional title hint (from bookmarklet's document.title)
    * @returns The saved article
    */
   save: protectedProcedure
@@ -239,6 +245,8 @@ export const savedRouter = createTRPCRouter({
     .input(
       z.object({
         url: urlSchema,
+        html: z.string().optional(),
+        title: z.string().optional(),
       })
     )
     .output(z.object({ article: savedArticleFullSchema }))
@@ -276,19 +284,27 @@ export const savedRouter = createTRPCRouter({
         };
       }
 
-      // Fetch the page
+      // Use provided HTML or fetch the page
       let html: string;
-      try {
-        html = await fetchPage(input.url);
-      } catch (error) {
-        logger.warn("Failed to fetch URL for saved article", {
+      if (input.html) {
+        html = input.html;
+        logger.debug("Using provided HTML for saved article", {
           url: input.url,
-          error: error instanceof Error ? error.message : String(error),
+          htmlLength: html.length,
         });
-        throw errors.savedArticleFetchError(
-          input.url,
-          error instanceof Error ? error.message : "Unknown error"
-        );
+      } else {
+        try {
+          html = await fetchPage(input.url);
+        } catch (error) {
+          logger.warn("Failed to fetch URL for saved article", {
+            url: input.url,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw errors.savedArticleFetchError(
+            input.url,
+            error instanceof Error ? error.message : "Unknown error"
+          );
+        }
       }
 
       // Extract metadata
@@ -306,8 +322,8 @@ export const savedRouter = createTRPCRouter({
         }
       }
 
-      // Use Readability's title/byline as fallback
-      const finalTitle = metadata.title || cleaned?.title || null;
+      // Use provided title, then metadata, then Readability as fallback
+      const finalTitle = input.title || metadata.title || cleaned?.title || null;
       const finalAuthor = metadata.author || cleaned?.byline || null;
 
       // Create the saved article

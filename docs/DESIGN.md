@@ -1564,7 +1564,7 @@ CREATE INDEX idx_saved_articles_starred ON saved_articles(user_id, starred_at DE
 ### API Endpoints
 
 ```
-POST   /v1/saved              { url } → { article }
+POST   /v1/saved              { url, html?, title? } → { article }
 GET    /v1/saved              ?unreadOnly, ?starredOnly, ?cursor → { items, nextCursor }
 GET    /v1/saved/:id          → { article }
 DELETE /v1/saved/:id          → {}
@@ -1577,7 +1577,7 @@ DELETE /v1/saved/:id/star     → {}
 ### Save Flow
 
 1. User submits URL (via bookmarklet, API, or UI)
-2. Fetch page HTML
+2. If `html` provided, use it; otherwise fetch page HTML from URL
 3. Extract metadata (title, og:image, site name, author)
 4. Run Readability for clean content
 5. Store in saved_articles
@@ -1585,18 +1585,52 @@ DELETE /v1/saved/:id/star     → {}
 
 ### Bookmarklet
 
+The bookmarklet POSTs the current page's HTML to avoid issues with JavaScript-rendered content (e.g., LessWrong, Medium) that wouldn't be captured by server-side fetching.
+
 ```javascript
 javascript: (function () {
-  window.open(
-    "https://app.example.com/save?url=" + encodeURIComponent(location.href),
-    "save",
-    "width=400,height=300"
-  );
+  var form = document.createElement("form");
+  form.method = "POST";
+  form.action = "https://app.example.com/save";
+  form.target = "_blank";
+
+  var urlInput = document.createElement("input");
+  urlInput.type = "hidden";
+  urlInput.name = "url";
+  urlInput.value = location.href;
+  form.appendChild(urlInput);
+
+  var htmlInput = document.createElement("input");
+  htmlInput.type = "hidden";
+  htmlInput.name = "html";
+  htmlInput.value = document.documentElement.outerHTML;
+  form.appendChild(htmlInput);
+
+  var titleInput = document.createElement("input");
+  titleInput.type = "hidden";
+  titleInput.name = "title";
+  titleInput.value = document.title;
+  form.appendChild(titleInput);
+
+  document.body.appendChild(form);
+  form.submit();
 })();
 ```
 
+**Why POST with HTML?**
+
+- JavaScript-heavy sites (SPAs, paywalled content) render content client-side
+- Server-side fetch only gets the initial HTML shell, missing the actual article
+- By capturing `document.documentElement.outerHTML`, we get the fully-rendered DOM
+- The `html` parameter is optional - if omitted, the server fetches the URL itself
+
+**Cookie requirements:**
+
+Session cookies must be set with `SameSite=None; Secure` to be included in cross-origin form submissions. The `/save` endpoint also needs CSRF protection (validate `Origin` header).
+
 The `/save` page is a minimal popup that:
 
+- Accepts both GET (URL only) and POST (URL + optional HTML)
 - Shows saving progress
 - Displays success or error
 - Auto-closes after success
