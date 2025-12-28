@@ -770,7 +770,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
   - Add storage size calculation utility
   - Write integration tests
 
-- [ ] **Implement voice download manager**
+- [x] **Implement voice download manager**
   - Create `downloadVoice(voiceId, onProgress)` function
   - Fetch from HuggingFace with progress tracking
   - Store in IndexedDB via VoiceCache
