@@ -828,6 +828,6 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
   - Add retry button for failed downloads
   - Write integration tests for error scenarios
 
-- [ ] **Documentation**
+- [x] **Documentation**
   - Update user-facing help text about enhanced voices
   - Add FAQ entry about voice downloads and storage
