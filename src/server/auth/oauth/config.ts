@@ -152,7 +152,7 @@ export function getAppleProvider(): Apple | null {
     appleConfig.teamId,
     appleConfig.keyId,
     privateKeyBytes,
-    `${APP_URL}/api/auth/apple/callback`
+    `${APP_URL}/api/v1/auth/oauth/apple/callback`
   );
 }
 
