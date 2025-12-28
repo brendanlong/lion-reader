@@ -20,6 +20,21 @@ async function getPiperTTS(): Promise<typeof import("@mintplex-labs/piper-tts-we
 }
 
 /**
+ * Custom WASM paths configuration.
+ * We serve ONNX WASM files locally because the default CDN URL is broken.
+ * Piper WASM files are served from jsdelivr which works correctly.
+ */
+const CUSTOM_WASM_PATHS = {
+  // Serve ONNX WASM from our public folder (the default cdnjs URL returns 404)
+  onnxWasm: "/onnx/",
+  // These work from the default CDN
+  piperData:
+    "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.data",
+  piperWasm:
+    "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm",
+};
+
+/**
  * Default speech rate (1.0 = normal speed).
  */
 const DEFAULT_RATE = 1.0;
@@ -213,9 +228,13 @@ export class PiperTTSProvider implements TTSProvider {
     this.isPaused = false;
 
     try {
-      // Generate audio using Piper
+      // Generate audio using Piper with custom WASM paths
       const piper = await getPiperTTS();
-      const wavBlob = await piper.predict({ text, voiceId });
+      const session = await piper.TtsSession.create({
+        voiceId,
+        wasmPaths: CUSTOM_WASM_PATHS,
+      });
+      const wavBlob = await session.predict(text);
 
       // Check if we were stopped while generating
       if (this.currentOptions !== options) {
