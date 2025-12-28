@@ -29,3 +29,24 @@ export {
 
 // Voice caching
 export { VoiceCache, STORAGE_LIMIT_BYTES, type VoiceCacheEntry } from "./voice-cache";
+
+// Enhanced voices (Piper TTS)
+export {
+  ENHANCED_VOICES,
+  findEnhancedVoice,
+  isEnhancedVoice,
+  type EnhancedVoice,
+} from "./enhanced-voices";
+
+// Voice download manager
+export {
+  downloadVoice,
+  isVoiceDownloaded,
+  deleteDownloadedVoice,
+  getDownloadedVoices,
+  getVoiceDownloadUrls,
+  fetchWithProgress,
+  VoiceDownloadError,
+  type ProgressCallback,
+  type VoiceDownloadUrls,
+} from "./voice-download";
