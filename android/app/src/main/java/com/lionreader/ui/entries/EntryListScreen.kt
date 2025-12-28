@@ -1,13 +1,10 @@
 package com.lionreader.ui.entries
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,7 +13,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -42,12 +38,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.data.api.models.SortOrder
 import com.lionreader.data.db.relations.EntryWithState
+import com.lionreader.ui.components.ConnectivitySnackbarEffect
+import com.lionreader.ui.components.EntryListEmptyState
+import com.lionreader.ui.components.EntryListSkeleton
+import com.lionreader.ui.components.OfflineBanner
+import com.lionreader.ui.components.OfflineIcon
 import kotlinx.coroutines.launch
 
 /**
@@ -93,6 +93,13 @@ fun EntryListScreen(
         }
     }
 
+    // Handle connectivity changes with snackbar notifications
+    ConnectivitySnackbarEffect(
+        isOnline = uiState.isOnline,
+        snackbarHostState = snackbarHostState,
+        onSyncRequested = viewModel::refresh,
+    )
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -112,18 +119,29 @@ fun EntryListScreen(
             }
         },
     ) { padding ->
-        EntryListContent(
-            entries = entries,
-            uiState = uiState,
-            onEntryClick = onEntryClick,
-            onToggleRead = viewModel::toggleRead,
-            onToggleStar = viewModel::toggleStar,
-            onRefresh = viewModel::refresh,
-            onLoadMore = viewModel::loadMore,
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-        )
+        ) {
+            // Offline banner at the top
+            OfflineBanner(isOnline = uiState.isOnline)
+
+            // Main content
+            EntryListContent(
+                entries = entries,
+                uiState = uiState,
+                onEntryClick = onEntryClick,
+                onToggleRead = viewModel::toggleRead,
+                onToggleStar = viewModel::toggleStar,
+                onRefresh = viewModel::refresh,
+                onLoadMore = viewModel::loadMore,
+                onShowAll = if (uiState.unreadOnly) viewModel::toggleUnreadOnly else null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+            )
+        }
     }
 }
 
@@ -153,14 +171,7 @@ private fun EntryListTopBar(
         },
         actions = {
             // Offline indicator
-            if (!isOnline) {
-                Icon(
-                    imageVector = Icons.Default.CloudOff,
-                    contentDescription = "Offline",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                )
-            }
+            OfflineIcon(isOnline = isOnline)
 
             // Unread filter toggle
             IconButton(onClick = onToggleUnreadOnly) {
@@ -222,9 +233,13 @@ private fun EntryListContent(
     onToggleStar: (String) -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
+    onShowAll: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
+
+    // Determine if this is a starred-only view based on title
+    val isStarredOnly = uiState.title == "Starred"
 
     PullToRefreshBox(
         isRefreshing = uiState.isRefreshing,
@@ -233,16 +248,19 @@ private fun EntryListContent(
         modifier = modifier,
     ) {
         when {
-            // Initial loading state
+            // Initial loading state - show skeleton
             uiState.isLoading && entries.isEmpty() -> {
-                LoadingState()
+                EntryListSkeleton()
             }
 
-            // Empty state
+            // Empty state - use contextual empty state component
             entries.isEmpty() -> {
-                EmptyState(
-                    unreadOnly = uiState.unreadOnly,
+                EntryListEmptyState(
+                    isUnreadOnly = uiState.unreadOnly,
+                    isStarredOnly = isStarredOnly,
                     isOnline = uiState.isOnline,
+                    hasFeedsSubscribed = true, // Assume true, would need feed count from ViewModel
+                    onShowAll = onShowAll,
                 )
             }
 
@@ -330,54 +348,3 @@ private fun EntryList(
     }
 }
 
-/**
- * Loading state displayed when entries are being fetched.
- */
-@Composable
-private fun LoadingState() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator()
-    }
-}
-
-/**
- * Empty state displayed when there are no entries.
- */
-@Composable
-private fun EmptyState(
-    unreadOnly: Boolean,
-    isOnline: Boolean,
-) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(32.dp),
-        ) {
-            Text(
-                text = if (unreadOnly) "All caught up!" else "No entries",
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = when {
-                    !isOnline -> "You're offline. Pull down to refresh when connected."
-                    unreadOnly -> "You've read all your entries. Try showing all entries."
-                    else -> "No entries in this view yet."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}

@@ -212,4 +212,14 @@ class EntryDetailViewModel @Inject constructor(
     fun refresh() {
         loadEntry()
     }
+
+    /**
+     * Retries loading the entry after an error.
+     *
+     * Clears the error state and attempts to reload the entry.
+     */
+    fun retry() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+        loadEntry()
+    }
 }

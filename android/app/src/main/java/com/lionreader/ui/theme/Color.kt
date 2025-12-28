@@ -26,6 +26,12 @@ val OnError = Color(0xFFFFFFFF)
 val ErrorContainer = Color(0xFFFEE2E2)
 val OnErrorContainer = Color(0xFF991B1B)
 
+// Success colors (for connectivity restored, etc.)
+val Success = Color(0xFF059669)
+val OnSuccess = Color(0xFFFFFFFF)
+val SuccessContainer = Color(0xFFD1FAE5)
+val OnSuccessContainer = Color(0xFF065F46)
+
 // Background and surface colors - Light theme
 val BackgroundLight = Color(0xFFFFFBEB)
 val OnBackgroundLight = Color(0xFF1F2937)
@@ -45,3 +51,9 @@ val OnSurfaceVariantDark = Color(0xFF9CA3AF)
 // Outline colors
 val OutlineLight = Color(0xFFD1D5DB)
 val OutlineDark = Color(0xFF4B5563)
+
+// Shimmer colors for loading states
+val ShimmerBaseLight = Color(0xFFE5E7EB)
+val ShimmerHighlightLight = Color(0xFFF9FAFB)
+val ShimmerBaseDark = Color(0xFF374151)
+val ShimmerHighlightDark = Color(0xFF4B5563)
