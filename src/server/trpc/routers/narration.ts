@@ -6,11 +6,11 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { entries, savedArticles, narrationContent, subscriptions } from "@/server/db/schema";
+import { entries, savedArticles, narrationContent, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
   generateNarration,
@@ -100,18 +100,17 @@ export const narrationRouter = createTRPCRouter({
       let contentHash: string;
 
       if (input.type === "entry") {
-        // Get the entry
+        // Get the entry with visibility check via user_entries join
         const entryResult = await ctx.db
           .select({
             id: entries.id,
-            feedId: entries.feedId,
             contentCleaned: entries.contentCleaned,
             contentOriginal: entries.contentOriginal,
             contentHash: entries.contentHash,
-            fetchedAt: entries.fetchedAt,
           })
           .from(entries)
-          .where(eq(entries.id, input.id))
+          .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+          .where(and(eq(entries.id, input.id), eq(userEntries.userId, userId)))
           .limit(1);
 
         if (entryResult.length === 0) {
@@ -119,29 +118,6 @@ export const narrationRouter = createTRPCRouter({
         }
 
         const entry = entryResult[0];
-
-        // Verify user is subscribed to this feed
-        const subscription = await ctx.db
-          .select()
-          .from(subscriptions)
-          .where(
-            and(
-              eq(subscriptions.userId, userId),
-              eq(subscriptions.feedId, entry.feedId),
-              isNull(subscriptions.unsubscribedAt)
-            )
-          )
-          .limit(1);
-
-        if (subscription.length === 0) {
-          throw errors.entryNotFound();
-        }
-
-        // Check visibility: entry.fetchedAt >= subscription.subscribedAt
-        if (entry.fetchedAt < subscription[0].subscribedAt) {
-          throw errors.entryNotFound();
-        }
-
         sourceContent = entry.contentCleaned || entry.contentOriginal || "";
         contentHash = entry.contentHash;
       } else {
