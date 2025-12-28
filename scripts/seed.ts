@@ -43,7 +43,7 @@ async function seed() {
 
   // Clear existing data (in reverse order of dependencies)
   console.log("Clearing existing data...");
-  await db.delete(schema.userEntryStates);
+  await db.delete(schema.userEntries);
   await db.delete(schema.subscriptions);
   await db.delete(schema.entries);
   await db.delete(schema.feeds);
@@ -142,9 +142,10 @@ async function seed() {
   const subscriptions = await db.insert(schema.subscriptions).values(subscriptionsData).returning();
   console.log(`  Created ${subscriptions.length} subscriptions`);
 
-  // Create some user entry states (mark some as read, some as starred)
-  console.log("\nCreating user entry states...");
-  const userEntryStatesData = allEntries.slice(0, 8).map((entry, i) => ({
+  // Create user entries (visibility + read/starred state)
+  // In the new model, row existence = visibility
+  console.log("\nCreating user entries...");
+  const userEntriesData = allEntries.map((entry, i) => ({
     userId: user.id,
     entryId: entry.id,
     read: i < 5, // First 5 are read
@@ -153,8 +154,8 @@ async function seed() {
     starredAt: i % 3 === 0 ? new Date() : null,
   }));
 
-  await db.insert(schema.userEntryStates).values(userEntryStatesData);
-  console.log(`  Created ${userEntryStatesData.length} user entry states`);
+  await db.insert(schema.userEntries).values(userEntriesData);
+  console.log(`  Created ${userEntriesData.length} user entries`);
 
   // Create a sample job
   console.log("\nCreating sample job...");

@@ -64,6 +64,7 @@ export {
   updateEntryContent,
   processEntry,
   processEntries,
+  createUserEntriesForFeed,
   type ProcessedEntry,
   type ProcessEntriesResult,
   type ProcessEntriesOptions,

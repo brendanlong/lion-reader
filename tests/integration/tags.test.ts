@@ -15,7 +15,7 @@ import {
   subscriptionTags,
   feeds,
   entries,
-  userEntryStates,
+  userEntries,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
@@ -118,11 +118,11 @@ async function linkTagToSubscription(tagId: string, subscriptionId: string): Pro
 }
 
 /**
- * Creates a test entry for a feed.
+ * Creates a test entry for a feed and optionally creates user_entries for visibility.
  */
 async function createTestEntry(
   feedId: string,
-  options: { fetchedAt?: Date; title?: string } = {}
+  options: { fetchedAt?: Date; title?: string; userIds?: string[] } = {}
 ): Promise<string> {
   const entryId = generateUuidv7();
   const now = options.fetchedAt ?? new Date();
@@ -136,6 +136,19 @@ async function createTestEntry(
     createdAt: now,
     updatedAt: now,
   });
+
+  // Create user_entries for visibility
+  if (options.userIds && options.userIds.length > 0) {
+    await db.insert(userEntries).values(
+      options.userIds.map((userId) => ({
+        userId,
+        entryId,
+        read: false,
+        starred: false,
+      }))
+    );
+  }
+
   return entryId;
 }
 
@@ -146,7 +159,7 @@ async function createTestEntry(
 describe("Tags API", () => {
   // Clean up tables before each test
   beforeEach(async () => {
-    await db.delete(userEntryStates);
+    await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptionTags);
     await db.delete(tags);
@@ -157,7 +170,7 @@ describe("Tags API", () => {
 
   // Clean up after all tests
   afterAll(async () => {
-    await db.delete(userEntryStates);
+    await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptionTags);
     await db.delete(tags);
@@ -896,9 +909,12 @@ describe("Tags API", () => {
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
       await linkTagToSubscription(tagId, subId1);
 
-      // Create entries for both feeds (after subscription date)
-      const entryId1 = await createTestEntry(feedId1, { title: "Entry from Feed 1" });
-      await createTestEntry(feedId2, { title: "Entry from Feed 2" });
+      // Create entries for both feeds with user_entries for visibility
+      const entryId1 = await createTestEntry(feedId1, {
+        title: "Entry from Feed 1",
+        userIds: [userId],
+      });
+      await createTestEntry(feedId2, { title: "Entry from Feed 2", userIds: [userId] });
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
@@ -989,9 +1005,12 @@ describe("Tags API", () => {
       await linkTagToSubscription(tagId, subId1);
       await linkTagToSubscription(tagId, subId2);
 
-      // Create entries for both feeds
-      const entryId1 = await createTestEntry(feedId1, { title: "Entry from Feed 1" });
-      await createTestEntry(feedId2, { title: "Entry from Feed 2" });
+      // Create entries for both feeds with user_entries for visibility
+      const entryId1 = await createTestEntry(feedId1, {
+        title: "Entry from Feed 1",
+        userIds: [userId],
+      });
+      await createTestEntry(feedId2, { title: "Entry from Feed 2", userIds: [userId] });
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);

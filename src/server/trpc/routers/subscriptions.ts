@@ -14,12 +14,12 @@ import {
   feeds,
   subscriptions,
   entries,
-  userEntryStates,
+  userEntries,
   tags,
   subscriptionTags,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { parseFeed, discoverFeeds, detectFeedType } from "@/server/feed";
+import { parseFeed, discoverFeeds, detectFeedType, deriveGuid } from "@/server/feed";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import { createInitialFetchJob } from "@/server/jobs/handlers";
 import { publishSubscriptionCreated } from "@/server/redis/pubsub";
@@ -328,6 +328,46 @@ export const subscriptionsRouter = createTRPCRouter({
         });
       }
 
+      // Step 6: Populate user_entries for entries currently in the feed
+      // This makes existing entries visible to the new subscriber
+      const feedGuids: string[] = [];
+      for (const item of parsedFeed.items) {
+        try {
+          feedGuids.push(deriveGuid(item));
+        } catch {
+          // Skip items without valid GUIDs
+        }
+      }
+
+      let unreadCount = 0;
+      if (feedGuids.length > 0) {
+        // Find entries that exist in our database and match the current feed
+        const matchingEntries = await ctx.db
+          .select({ id: entries.id })
+          .from(entries)
+          .where(and(eq(entries.feedId, feedId), inArray(entries.guid, feedGuids)));
+
+        if (matchingEntries.length > 0) {
+          // Insert user_entries for all matching entries
+          const pairs = matchingEntries.map((entry) => ({
+            userId,
+            entryId: entry.id,
+          }));
+
+          // Bulk insert with ON CONFLICT DO NOTHING (for resubscription case)
+          await ctx.db.insert(userEntries).values(pairs).onConflictDoNothing();
+
+          // All these entries are unread for a new subscription
+          unreadCount = matchingEntries.length;
+
+          logger.debug("Populated initial user entries", {
+            userId,
+            feedId,
+            entryCount: matchingEntries.length,
+          });
+        }
+      }
+
       // Publish subscription_created event to notify all of the user's SSE connections
       // This ensures other browser tabs/devices will receive new_entry events for this feed
       publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
@@ -340,7 +380,7 @@ export const subscriptionsRouter = createTRPCRouter({
           feedId,
           customTitle: null,
           subscribedAt,
-          unreadCount: 0, // New subscription has no unread entries yet
+          unreadCount,
           tags: [], // New subscription has no tags yet
         },
         feed: {
@@ -420,26 +460,19 @@ export const subscriptionsRouter = createTRPCRouter({
       }
 
       // Calculate unread counts for each subscription
-      // An entry is unread if:
-      // 1. It was fetched after the subscription date
-      // 2. It has no user_entry_state with read=true
+      // An entry is unread if it exists in user_entries with read=false
       const items = await Promise.all(
         userSubscriptions.map(async ({ subscription, feed }) => {
-          // Count entries fetched after subscription date that are not read
+          // Count unread entries visible to this user
+          // Visibility is determined by existence of row in user_entries
           const unreadResult = await ctx.db
             .select({ count: sql<number>`count(*)::int` })
             .from(entries)
-            .leftJoin(
-              userEntryStates,
-              and(eq(userEntryStates.entryId, entries.id), eq(userEntryStates.userId, userId))
+            .innerJoin(
+              userEntries,
+              and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
             )
-            .where(
-              and(
-                eq(entries.feedId, feed.id),
-                sql`${entries.fetchedAt} >= ${subscription.subscribedAt}`,
-                sql`(${userEntryStates.read} IS NULL OR ${userEntryStates.read} = false)`
-              )
-            );
+            .where(and(eq(entries.feedId, feed.id), eq(userEntries.read, false)));
 
           const unreadCount = unreadResult[0]?.count ?? 0;
           const subscriptionTagsList = tagsMap.get(subscription.id) ?? [];
@@ -531,21 +564,15 @@ export const subscriptionsRouter = createTRPCRouter({
         color: row.tagColor,
       }));
 
-      // Calculate unread count
+      // Calculate unread count (visibility via user_entries)
       const unreadResult = await ctx.db
         .select({ count: sql<number>`count(*)::int` })
         .from(entries)
-        .leftJoin(
-          userEntryStates,
-          and(eq(userEntryStates.entryId, entries.id), eq(userEntryStates.userId, userId))
+        .innerJoin(
+          userEntries,
+          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
         )
-        .where(
-          and(
-            eq(entries.feedId, feed.id),
-            sql`${entries.fetchedAt} >= ${subscription.subscribedAt}`,
-            sql`(${userEntryStates.read} IS NULL OR ${userEntryStates.read} = false)`
-          )
-        );
+        .where(and(eq(entries.feedId, feed.id), eq(userEntries.read, false)));
 
       const unreadCount = unreadResult[0]?.count ?? 0;
 
@@ -648,21 +675,15 @@ export const subscriptionsRouter = createTRPCRouter({
         color: row.tagColor,
       }));
 
-      // Calculate unread count
+      // Calculate unread count (visibility via user_entries)
       const unreadResult = await ctx.db
         .select({ count: sql<number>`count(*)::int` })
         .from(entries)
-        .leftJoin(
-          userEntryStates,
-          and(eq(userEntryStates.entryId, entries.id), eq(userEntryStates.userId, userId))
+        .innerJoin(
+          userEntries,
+          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
         )
-        .where(
-          and(
-            eq(entries.feedId, feed.id),
-            sql`${entries.fetchedAt} >= ${subscription.subscribedAt}`,
-            sql`(${userEntryStates.read} IS NULL OR ${userEntryStates.read} = false)`
-          )
-        );
+        .where(and(eq(entries.feedId, feed.id), eq(userEntries.read, false)));
 
       const unreadCount = unreadResult[0]?.count ?? 0;
 
