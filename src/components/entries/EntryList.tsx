@@ -35,6 +35,11 @@ export interface EntryListFilters {
    * Show only starred entries.
    */
   starredOnly?: boolean;
+
+  /**
+   * Sort order: "newest" (default) or "oldest".
+   */
+  sortOrder?: "newest" | "oldest";
 }
 
 /**
@@ -202,6 +207,7 @@ export function EntryList({
       tagId: filters.tagId,
       unreadOnly: filters.unreadOnly,
       starredOnly: filters.starredOnly,
+      sortOrder: filters.sortOrder,
       limit: pageSize,
     },
     {
