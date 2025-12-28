@@ -1,0 +1,65 @@
+# Detekt configuration for Lion Reader Android app
+# https://detekt.dev/docs/rules/
+
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+  warningsAsErrors: false
+
+complexity:
+  LongMethod:
+    threshold: 60
+  LongParameterList:
+    functionThreshold: 6
+    constructorThreshold: 7
+  TooManyFunctions:
+    thresholdInFiles: 15
+    thresholdInClasses: 15
+    thresholdInInterfaces: 15
+    thresholdInObjects: 15
+    thresholdInEnums: 15
+
+formatting:
+  MaxLineLength:
+    maxLineLength: 120
+    excludeCommentStatements: true
+
+naming:
+  FunctionNaming:
+    # Allow Compose naming conventions (PascalCase for composables)
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Z][A-Za-z0-9]*'
+
+style:
+  MagicNumber:
+    ignoreNumbers: ['-1', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '12', '14', '16', '24', '32', '48', '64', '100', '120', '256', '512', '1000', '1024']
+    ignorePropertyDeclaration: true
+    ignoreAnnotation: true
+    ignoreEnums: true
+  ReturnCount:
+    max: 5
+  MaxChainedCallsOnSameLine:
+    maxChainedCalls: 5
+  UnusedPrivateMember:
+    ignoreAnnotated: ['Preview']
+
+empty-blocks:
+  active: true
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: true
+    exceptionNames:
+      - Error
+      - Exception
+      - Throwable
+      - RuntimeException
+  SwallowedException:
+    active: true
+
+performance:
+  SpreadOperator:
+    active: false
