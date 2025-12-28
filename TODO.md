@@ -815,7 +815,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
 
 ### 15.5 Enhanced Voices Polish
 
-- [ ] **Add metrics and monitoring**
+- [x] **Add metrics and monitoring**
   - Track enhanced_voice_selected_total{voice_id}
   - Track enhanced_voice_download_completed_total{voice_id}
   - Track enhanced_voice_download_failed_total{voice_id, error_type}
