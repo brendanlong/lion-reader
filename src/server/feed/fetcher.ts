@@ -155,7 +155,7 @@ const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_MAX_REDIRECTS = 5;
 
 /** Default User-Agent */
-const DEFAULT_USER_AGENT = "LionReader/1.0 (+https://github.com/lion-reader)";
+const DEFAULT_USER_AGENT = "LionReader/1.0 (+https://github.com/brendanlong/lion-reader)";
 
 /**
  * Parses the Retry-After header value.
