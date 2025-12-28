@@ -55,3 +55,21 @@ export {
   type ProgressCallback,
   type VoiceDownloadUrls,
 } from "./voice-download";
+
+// Fallback TTS provider
+export {
+  FallbackTTSProvider,
+  createFallbackProvider,
+  type FallbackCallback,
+  type FallbackTTSProviderOptions,
+} from "./fallback-tts-provider";
+
+// TTS Provider factory
+export {
+  createTTSProvider,
+  getTTSProvider,
+  isPiperAvailable,
+  getBestAvailableProvider,
+  type CreateTTSProviderOptions,
+  type CreateTTSProviderResult,
+} from "./tts-provider-factory";
