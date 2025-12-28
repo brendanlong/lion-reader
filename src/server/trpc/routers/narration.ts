@@ -57,12 +57,22 @@ const generateInputSchema = z.object({
 // ============================================================================
 
 /**
+ * Paragraph mapping entry schema.
+ * Maps a narration paragraph index to one or more original paragraph indices.
+ */
+const paragraphMappingSchema = z.object({
+  n: z.number(), // narration paragraph index
+  o: z.array(z.number()), // original paragraph indices
+});
+
+/**
  * Narration generation result schema.
  */
 const generateOutputSchema = z.object({
   narration: z.string(),
   cached: z.boolean(),
   source: z.enum(["llm", "fallback"]),
+  paragraphMap: z.array(paragraphMappingSchema).nullable(),
 });
 
 // ============================================================================
@@ -152,6 +162,7 @@ export const narrationRouter = createTRPCRouter({
           narration: "",
           cached: false,
           source: "fallback" as const,
+          paragraphMap: null,
         };
       }
 
@@ -187,6 +198,7 @@ export const narrationRouter = createTRPCRouter({
           narration: narrationRecord.contentNarration,
           cached: true,
           source: "llm" as const,
+          paragraphMap: narrationRecord.paragraphMap ?? null,
         };
       }
 
@@ -202,6 +214,7 @@ export const narrationRouter = createTRPCRouter({
           narration: fallbackText,
           cached: false,
           source: "fallback" as const,
+          paragraphMap: null,
         };
       }
 
@@ -216,6 +229,7 @@ export const narrationRouter = createTRPCRouter({
         stopTimer();
 
         // If LLM returned fallback (e.g., empty response), don't cache it
+        // But still return the paragraph map from the fallback generation
         if (result.source === "fallback") {
           trackNarrationGenerated(false, "fallback");
           trackNarrationGenerationError("empty_response");
@@ -223,14 +237,17 @@ export const narrationRouter = createTRPCRouter({
             narration: result.text,
             cached: false,
             source: "fallback" as const,
+            paragraphMap: result.paragraphMap,
           };
         }
 
         // Cache in narration_content table, clear any previous error
+        // Also store the paragraph map for highlighting support
         await ctx.db
           .update(narrationContent)
           .set({
             contentNarration: result.text,
+            paragraphMap: result.paragraphMap,
             generatedAt: new Date(),
             error: null,
             errorAt: null,
@@ -242,6 +259,7 @@ export const narrationRouter = createTRPCRouter({
           narration: result.text,
           cached: false,
           source: "llm" as const,
+          paragraphMap: result.paragraphMap,
         };
       } catch (error) {
         // Stop the timer even on error
@@ -272,6 +290,7 @@ export const narrationRouter = createTRPCRouter({
           narration: fallbackText,
           cached: false,
           source: "fallback" as const,
+          paragraphMap: null,
         };
       }
     }),
