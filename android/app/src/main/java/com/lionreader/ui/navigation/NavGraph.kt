@@ -1,16 +1,8 @@
 package com.lionreader.ui.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -20,6 +12,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lionreader.data.repository.AuthRepository
 import com.lionreader.ui.auth.LoginScreen
+import com.lionreader.ui.entries.EntryDetailScreen
 import com.lionreader.ui.main.MainScreen
 
 /**
@@ -101,39 +94,9 @@ fun LionReaderNavGraph(
                     type = NavType.StringType
                 },
             ),
-        ) { backStackEntry ->
-            val entryId = backStackEntry.arguments?.getString(Screen.ARG_ENTRY_ID) ?: ""
-            EntryDetailPlaceholder(
-                entryId = entryId,
-                onBack = { navController.popBackStack() },
-            )
-        }
-    }
-}
-
-/**
- * Placeholder for the entry detail screen.
- *
- * Will be replaced with EntryDetailScreen in a future phase.
- *
- * @param entryId ID of the entry to display
- * @param onBack Callback when back navigation is triggered
- */
-@Composable
-private fun EntryDetailPlaceholder(
-    entryId: String,
-    onBack: () -> Unit,
-) {
-    Scaffold { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "Entry Detail: $entryId",
-                style = MaterialTheme.typography.headlineMedium,
+            EntryDetailScreen(
+                onBack = { navController.popBackStack() },
             )
         }
     }
