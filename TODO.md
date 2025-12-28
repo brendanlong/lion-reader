@@ -779,7 +779,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
 
 ### 15.3 Piper TTS Provider
 
-- [ ] **Add Piper TTS library and provider**
+- [x] **Add Piper TTS library and provider**
   - Install piper-tts-web (or @mintplex-labs/piper-tts-web)
   - Create curated voice metadata (5 English voices with display names, sizes)
   - Implement `PiperTTSProvider` class
