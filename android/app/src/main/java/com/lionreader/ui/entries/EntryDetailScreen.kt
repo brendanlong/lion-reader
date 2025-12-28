@@ -3,7 +3,6 @@ package com.lionreader.ui.entries
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +18,6 @@ import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,12 +37,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.data.db.relations.EntryWithState
+import com.lionreader.ui.components.EntryDetailSkeleton
+import com.lionreader.ui.components.ErrorState
+import com.lionreader.ui.components.ErrorType
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -131,9 +131,9 @@ fun EntryDetailScreen(
         },
     ) { padding ->
         when {
-            // Loading state
+            // Loading state - show skeleton
             uiState.isLoading && entry == null -> {
-                LoadingState(
+                EntryDetailSkeleton(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
@@ -143,7 +143,10 @@ fun EntryDetailScreen(
             // Error state with no entry
             uiState.errorMessage != null && entry == null -> {
                 ErrorState(
+                    title = "Unable to load article",
                     message = uiState.errorMessage ?: "Unknown error",
+                    errorType = ErrorType.GENERIC,
+                    onRetry = { viewModel.retry() },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
@@ -165,7 +168,9 @@ fun EntryDetailScreen(
             // Fallback empty state
             else -> {
                 ErrorState(
-                    message = "Entry not found",
+                    title = "Entry not found",
+                    message = "The article you're looking for could not be found.",
+                    errorType = ErrorType.GENERIC,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
@@ -347,55 +352,6 @@ private fun EntryHeader(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-    }
-}
-
-/**
- * Loading state displayed while the entry is being fetched.
- */
-@Composable
-private fun LoadingState(
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator()
-    }
-}
-
-/**
- * Error state displayed when the entry cannot be loaded.
- */
-@Composable
-private fun ErrorState(
-    message: String,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp),
-        ) {
-            Text(
-                text = "Unable to load article",
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
         }
     }
 }
