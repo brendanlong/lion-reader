@@ -569,6 +569,128 @@ describe("VoiceDownloadError", () => {
   });
 });
 
+describe("downloadVoice error handling", () => {
+  let cache: VoiceCache;
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    cache = new VoiceCache();
+  });
+
+  afterEach(async () => {
+    await cache.deleteDatabase();
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("throws VoiceDownloadError with network error on fetch failure", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+
+    try {
+      await downloadVoice("en_US-lessac-medium", undefined, cache);
+      expect.fail("Should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(VoiceDownloadError);
+      expect((error as VoiceDownloadError).voiceId).toBe("en_US-lessac-medium");
+      expect((error as VoiceDownloadError).message).toContain("Failed to download model");
+    }
+  });
+
+  it("throws VoiceDownloadError on HTTP 500 error", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+    });
+
+    try {
+      await downloadVoice("en_US-lessac-medium", undefined, cache);
+      expect.fail("Should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(VoiceDownloadError);
+      expect((error as VoiceDownloadError).message).toContain("500");
+    }
+  });
+
+  it("throws VoiceDownloadError on HTTP 404 error", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    });
+
+    try {
+      await downloadVoice("en_US-lessac-medium", undefined, cache);
+      expect.fail("Should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(VoiceDownloadError);
+      expect((error as VoiceDownloadError).message).toContain("404");
+    }
+  });
+
+  it("throws VoiceDownloadError when config download fails after model succeeds", async () => {
+    const modelData = new Uint8Array([1, 2, 3, 4, 5]);
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith(".onnx")) {
+        return Promise.resolve({
+          ok: true,
+          headers: new Map([["content-length", "5"]]),
+          body: {
+            getReader: () => ({
+              read: vi
+                .fn()
+                .mockResolvedValueOnce({ done: false, value: modelData })
+                .mockResolvedValueOnce({ done: true, value: undefined }),
+            }),
+          },
+        });
+      } else if (url.endsWith(".onnx.json")) {
+        return Promise.reject(new Error("Network error"));
+      }
+      return Promise.reject(new Error("Unknown URL"));
+    });
+
+    try {
+      await downloadVoice("en_US-lessac-medium", undefined, cache);
+      expect.fail("Should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(VoiceDownloadError);
+      expect((error as VoiceDownloadError).message).toContain("Failed to download config");
+    }
+  });
+
+  it("preserves the original error as cause", async () => {
+    const originalError = new Error("Connection refused");
+    global.fetch = vi.fn().mockRejectedValue(originalError);
+
+    try {
+      await downloadVoice("en_US-lessac-medium", undefined, cache);
+      expect.fail("Should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(VoiceDownloadError);
+      expect((error as VoiceDownloadError).cause).toBe(originalError);
+    }
+  });
+
+  it("includes voiceId in the error for all error types", async () => {
+    // Test unknown voice
+    try {
+      await downloadVoice("unknown-voice-id", undefined, cache);
+    } catch (error) {
+      expect((error as VoiceDownloadError).voiceId).toBe("unknown-voice-id");
+    }
+
+    // Test network error
+    global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+    try {
+      await downloadVoice("en_US-lessac-medium", undefined, cache);
+    } catch (error) {
+      expect((error as VoiceDownloadError).voiceId).toBe("en_US-lessac-medium");
+    }
+  });
+});
+
 describe("ENHANCED_VOICES constant", () => {
   it("contains all curated voices", () => {
     expect(ENHANCED_VOICES).toHaveLength(5);

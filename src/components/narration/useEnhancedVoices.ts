@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { ENHANCED_VOICES, type EnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { VoiceCache, STORAGE_LIMIT_BYTES } from "@/lib/narration/voice-cache";
+import { getVoiceErrorInfo, type VoiceErrorInfo } from "@/lib/narration/errors";
 import {
   trackEnhancedVoiceDownloadCompleted,
   trackEnhancedVoiceDownloadFailed,
@@ -31,6 +32,10 @@ export interface EnhancedVoiceState {
   voice: EnhancedVoice;
   status: VoiceDownloadStatus;
   progress: number;
+  /**
+   * Error information if the download failed.
+   */
+  errorInfo?: VoiceErrorInfo;
 }
 
 /**
@@ -88,9 +93,29 @@ export interface UseEnhancedVoicesReturn {
   error: string | null;
 
   /**
+   * Full error information for the last failed operation.
+   */
+  lastErrorInfo: VoiceErrorInfo | null;
+
+  /**
+   * The voice ID that last failed to download (for retry).
+   */
+  failedVoiceId: string | null;
+
+  /**
    * Clear the current error.
    */
   clearError: () => void;
+
+  /**
+   * Retry the last failed download.
+   */
+  retryDownload: () => Promise<void>;
+
+  /**
+   * Clear the error for a specific voice and retry.
+   */
+  retryVoiceDownload: (voiceId: string) => Promise<void>;
 
   /**
    * Total storage used by cached voices in bytes.
@@ -148,12 +173,14 @@ const PREVIEW_TEXT = "This is a preview of how articles will sound with this voi
  */
 export function useEnhancedVoices(): UseEnhancedVoicesReturn {
   const [voiceStates, setVoiceStates] = useState<
-    Map<string, { status: VoiceDownloadStatus; progress: number }>
+    Map<string, { status: VoiceDownloadStatus; progress: number; errorInfo?: VoiceErrorInfo }>
   >(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastErrorInfo, setLastErrorInfo] = useState<VoiceErrorInfo | null>(null);
+  const [failedVoiceId, setFailedVoiceId] = useState<string | null>(null);
   const [storageUsed, setStorageUsed] = useState(0);
   const [downloadedCount, setDownloadedCount] = useState(0);
 
@@ -266,13 +293,15 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
 
   // Download a voice
   const downloadVoice = useCallback(
-    async (voiceId: string) => {
+    async (voiceId: string, isRetry = false) => {
       setError(null);
+      setLastErrorInfo(null);
+      setFailedVoiceId(null);
 
-      // Update status to downloading
+      // Update status to downloading and clear any previous error
       setVoiceStates((prev) => {
         const newStates = new Map(prev);
-        newStates.set(voiceId, { status: "downloading", progress: 0 });
+        newStates.set(voiceId, { status: "downloading", progress: 0, errorInfo: undefined });
         return newStates;
       });
 
@@ -282,7 +311,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
           if (!isMountedRef.current) return;
           setVoiceStates((prev) => {
             const newStates = new Map(prev);
-            newStates.set(voiceId, { status: "downloading", progress });
+            newStates.set(voiceId, { status: "downloading", progress, errorInfo: undefined });
             return newStates;
           });
         });
@@ -292,7 +321,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
         // Update status to downloaded
         setVoiceStates((prev) => {
           const newStates = new Map(prev);
-          newStates.set(voiceId, { status: "downloaded", progress: 1 });
+          newStates.set(voiceId, { status: "downloaded", progress: 1, errorInfo: undefined });
           return newStates;
         });
 
@@ -304,22 +333,41 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
       } catch (err) {
         if (!isMountedRef.current) return;
 
-        // Reset status on error
+        // Get detailed error information
+        const errorInfo = getVoiceErrorInfo(err);
+
+        // If it's a corrupted cache error and this isn't already a retry,
+        // try to clear the cache entry and retry once
+        if (errorInfo.type === "corrupted_cache" && !isRetry) {
+          try {
+            const cache = getVoiceCache();
+            await cache.delete(voiceId);
+            // Retry the download
+            await downloadVoice(voiceId, true);
+            return;
+          } catch {
+            // If clearing cache fails, fall through to normal error handling
+          }
+        }
+
+        // Update status with error info
         setVoiceStates((prev) => {
           const newStates = new Map(prev);
-          newStates.set(voiceId, { status: "not-downloaded", progress: 0 });
+          newStates.set(voiceId, { status: "not-downloaded", progress: 0, errorInfo });
           return newStates;
         });
 
-        // Track failed download with error classification
-        const errorType = classifyDownloadError(err);
-        trackEnhancedVoiceDownloadFailed(voiceId, errorType);
+        // Track failed voice ID for retry
+        setFailedVoiceId(voiceId);
+        setLastErrorInfo(errorInfo);
+        setError(errorInfo.message);
 
-        const message = err instanceof Error ? err.message : "Failed to download voice";
-        setError(message);
+        // Track failed download with error classification for telemetry
+        const telemetryErrorType = classifyDownloadError(err);
+        trackEnhancedVoiceDownloadFailed(voiceId, telemetryErrorType);
       }
     },
-    [updateStorageStats]
+    [updateStorageStats, getVoiceCache]
   );
 
   // Remove a downloaded voice
@@ -395,7 +443,50 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
   // Clear error
   const clearError = useCallback(() => {
     setError(null);
+    setLastErrorInfo(null);
+    setFailedVoiceId(null);
+    // Also clear error info from voice states
+    setVoiceStates((prev) => {
+      const newStates = new Map(prev);
+      for (const [voiceId, state] of prev) {
+        if (state.errorInfo) {
+          newStates.set(voiceId, { ...state, errorInfo: undefined });
+        }
+      }
+      return newStates;
+    });
   }, []);
+
+  // Retry the last failed download
+  const retryDownload = useCallback(async () => {
+    if (failedVoiceId) {
+      await downloadVoice(failedVoiceId);
+    }
+  }, [failedVoiceId, downloadVoice]);
+
+  // Clear the error for a specific voice and retry
+  const retryVoiceDownload = useCallback(
+    async (voiceId: string) => {
+      // Clear the error for this specific voice
+      setVoiceStates((prev) => {
+        const newStates = new Map(prev);
+        const current = prev.get(voiceId);
+        if (current) {
+          newStates.set(voiceId, { ...current, errorInfo: undefined });
+        }
+        return newStates;
+      });
+      // Clear global error if this was the failed voice
+      if (failedVoiceId === voiceId) {
+        setError(null);
+        setLastErrorInfo(null);
+        setFailedVoiceId(null);
+      }
+      // Retry the download
+      await downloadVoice(voiceId);
+    },
+    [failedVoiceId, downloadVoice]
+  );
 
   // Delete all cached voices
   const deleteAllVoices = useCallback(async () => {
@@ -436,18 +527,23 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
 
   // Build the voices array with current state
   const voices: EnhancedVoiceState[] = ENHANCED_VOICES.map((voice) => {
-    const state = voiceStates.get(voice.id) ?? { status: "not-downloaded" as const, progress: 0 };
+    const state = voiceStates.get(voice.id) ?? {
+      status: "not-downloaded" as const,
+      progress: 0,
+      errorInfo: undefined,
+    };
     return {
       voice,
       status: state.status,
       progress: state.progress,
+      errorInfo: state.errorInfo,
     };
   });
 
   return {
     voices,
     isLoading,
-    downloadVoice,
+    downloadVoice: (voiceId: string) => downloadVoice(voiceId, false),
     removeVoice,
     previewVoice,
     stopPreview,
@@ -455,7 +551,11 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     previewingVoiceId,
     refreshStatus,
     error,
+    lastErrorInfo,
+    failedVoiceId,
     clearError,
+    retryDownload,
+    retryVoiceDownload,
     storageUsed,
     downloadedCount,
     isStorageLimitExceeded: isStorageLimitExceededValue,
