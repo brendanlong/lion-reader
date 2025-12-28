@@ -69,6 +69,16 @@ class SubscriptionRepository @Inject constructor(
     }
 
     /**
+     * Gets a subscription by its feed ID.
+     *
+     * @param feedId The feed ID
+     * @return The subscription with feed or null
+     */
+    suspend fun getSubscriptionByFeedId(feedId: String): SubscriptionWithFeed? {
+        return subscriptionDao.getSubscriptionWithFeedByFeedId(feedId)
+    }
+
+    /**
      * Syncs subscriptions from the server to the local database.
      *
      * Fetches all subscriptions from the API and updates the local database.
