@@ -5,6 +5,7 @@
  * - TTS provider abstraction for multiple backends (browser, Piper, etc.)
  * - Voice selection and management
  * - Feature detection for browser APIs
+ * - Voice caching for offline use
  *
  * @module narration
  */
@@ -25,3 +26,6 @@ export {
   getNarrationSupportInfo,
   type NarrationSupportInfo,
 } from "./feature-detection";
+
+// Voice caching
+export { VoiceCache, STORAGE_LIMIT_BYTES, type VoiceCacheEntry } from "./voice-cache";
