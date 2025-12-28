@@ -75,6 +75,29 @@ interface SubscriptionDao {
     suspend fun getByFeedId(feedId: String): SubscriptionEntity?
 
     /**
+     * Gets a subscription with its feed by feed ID.
+     *
+     * @param feedId The feed ID
+     * @return The subscription with feed or null
+     */
+    @Query(
+        """
+        SELECT s.*,
+               f.id AS feed_id,
+               f.type AS feed_type,
+               f.url AS feed_url,
+               f.title AS feed_title,
+               f.description AS feed_description,
+               f.siteUrl AS feed_siteUrl,
+               f.lastSyncedAt AS feed_lastSyncedAt
+        FROM subscriptions s
+        JOIN feeds f ON s.feedId = f.id
+        WHERE s.feedId = :feedId
+        """
+    )
+    suspend fun getSubscriptionWithFeedByFeedId(feedId: String): SubscriptionWithFeed?
+
+    /**
      * Inserts or replaces subscriptions.
      *
      * @param subscriptions The subscriptions to insert
