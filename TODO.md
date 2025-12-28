@@ -877,7 +877,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
 
 ### 16.2 Client-Side Highlighting
 
-- [ ] **Create narration highlight hook**
+- [x] **Create narration highlight hook**
   - Create `useNarrationHighlight` hook
   - Accept paragraph map, current index, and playing state
   - Return set of highlighted original paragraph IDs
@@ -889,7 +889,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Process content on client side (matches server preprocessing)
   - Memoize for performance
 
-- [ ] **Integrate highlighting with useNarration**
+- [x] **Integrate highlighting with useNarration**
   - Add `paragraphMap` state to `useNarration` hook
   - Store map from API response
   - Expose map in hook return value
