@@ -9,9 +9,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { TTSVoice } from "../../src/lib/narration/types";
 
+// Hoist the mock function so it can be used in vi.mock factory
+const { mockPredict } = vi.hoisted(() => ({
+  mockPredict: vi.fn(),
+}));
+
 // Mock the piper-tts-web module
 vi.mock("@mintplex-labs/piper-tts-web", () => ({
-  predict: vi.fn(),
+  TtsSession: {
+    create: vi.fn().mockResolvedValue({
+      predict: mockPredict,
+    }),
+  },
   download: vi.fn(),
   remove: vi.fn(),
   stored: vi.fn(),
@@ -252,7 +261,7 @@ describe("PiperTTSProvider", () => {
 
       // Mock predict to return a WAV blob
       const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      vi.mocked(piperTTS.predict).mockResolvedValue(mockBlob);
+      mockPredict.mockResolvedValue(mockBlob);
 
       const onStart = vi.fn();
       const onEnd = vi.fn();
@@ -263,10 +272,11 @@ describe("PiperTTSProvider", () => {
         onEnd,
       });
 
-      expect(piperTTS.predict).toHaveBeenCalledWith({
-        text: "Hello",
+      expect(piperTTS.TtsSession.create).toHaveBeenCalledWith({
         voiceId: "en_US-lessac-medium",
+        wasmPaths: expect.any(Object),
       });
+      expect(mockPredict).toHaveBeenCalledWith("Hello");
       expect(onStart).toHaveBeenCalled();
     });
 
@@ -285,7 +295,7 @@ describe("PiperTTSProvider", () => {
       // Set up mock for playing state
       vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
       const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      vi.mocked(piperTTS.predict).mockResolvedValue(mockBlob);
+      mockPredict.mockResolvedValue(mockBlob);
 
       await provider.speak("Hello", { voiceId: "en_US-lessac-medium" });
 
@@ -317,7 +327,7 @@ describe("PiperTTSProvider", () => {
       // Trigger creation of audio context by speaking
       vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
       const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      vi.mocked(piperTTS.predict).mockResolvedValue(mockBlob);
+      mockPredict.mockResolvedValue(mockBlob);
 
       await provider.speak("Hello", { voiceId: "en_US-lessac-medium" });
       await provider.close();
