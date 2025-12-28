@@ -845,7 +845,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Create migration
   - Update Drizzle schema with types
 
-- [ ] **Implement HTML preprocessing for paragraph markers**
+- [x] **Implement HTML preprocessing for paragraph markers**
   - Create `preprocessHtmlForNarration()` function
   - Assign `data-para-id` attributes to block-level elements (p, h1-h6, blockquote, pre, ul, ol, li, figure, table)
   - Track paragraph order for mapping
