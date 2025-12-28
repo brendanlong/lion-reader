@@ -13,11 +13,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.lionreader.data.repository.AuthRepository
 import com.lionreader.ui.auth.LoginScreen
+import com.lionreader.ui.main.MainScreen
 
 /**
  * Main navigation graph for the app.
@@ -25,6 +28,11 @@ import com.lionreader.ui.auth.LoginScreen
  * Handles routing between all screens and manages authentication state.
  * Automatically redirects to login when not authenticated and to main
  * screen when authenticated.
+ *
+ * Navigation structure:
+ * - Login: Entry point for unauthenticated users
+ * - Main: Container with navigation drawer, hosts entry list views
+ * - EntryDetail: Full article view with back navigation
  *
  * @param authRepository Repository for checking authentication state
  * @param navController Navigation controller, uses remembered one by default
@@ -76,36 +84,28 @@ fun LionReaderNavGraph(
             )
         }
 
-        // Main screen (entry list) - placeholder for now
+        // Main screen with navigation drawer
         composable(route = Screen.Main.route) {
-            MainScreenPlaceholder()
+            MainScreen(
+                onNavigateToEntry = { entryId ->
+                    navController.navigate(Screen.EntryDetail.createRoute(entryId))
+                },
+            )
         }
 
-        // Entry detail screen - placeholder for now
-        composable(route = Screen.EntryDetail.route) { backStackEntry ->
+        // Entry detail screen
+        composable(
+            route = Screen.EntryDetail.route,
+            arguments = listOf(
+                navArgument(Screen.ARG_ENTRY_ID) {
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
             val entryId = backStackEntry.arguments?.getString(Screen.ARG_ENTRY_ID) ?: ""
-            EntryDetailPlaceholder(entryId = entryId)
-        }
-    }
-}
-
-/**
- * Placeholder for the main screen.
- *
- * Will be replaced with EntryListScreen in a future phase.
- */
-@Composable
-private fun MainScreenPlaceholder() {
-    Scaffold { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "Welcome to Lion Reader!",
-                style = MaterialTheme.typography.headlineMedium,
+            EntryDetailPlaceholder(
+                entryId = entryId,
+                onBack = { navController.popBackStack() },
             )
         }
     }
@@ -115,9 +115,15 @@ private fun MainScreenPlaceholder() {
  * Placeholder for the entry detail screen.
  *
  * Will be replaced with EntryDetailScreen in a future phase.
+ *
+ * @param entryId ID of the entry to display
+ * @param onBack Callback when back navigation is triggered
  */
 @Composable
-private fun EntryDetailPlaceholder(entryId: String) {
+private fun EntryDetailPlaceholder(
+    entryId: String,
+    onBack: () -> Unit,
+) {
     Scaffold { padding ->
         Box(
             modifier = Modifier
