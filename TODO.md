@@ -840,7 +840,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
 
 ### 16.1 Backend Paragraph Mapping
 
-- [ ] **Add paragraph mapping to database schema**
+- [x] **Add paragraph mapping to database schema**
   - Add `paragraph_map` jsonb column to `narration_content` table
   - Create migration
   - Update Drizzle schema with types
