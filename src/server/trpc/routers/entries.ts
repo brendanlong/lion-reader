@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, desc, asc, lt, gt, lte, inArray } from "drizzle-orm";
+import { eq, and, isNull, desc, asc, lte, inArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -112,28 +112,46 @@ const entriesListOutputSchema = z.object({
 // ============================================================================
 
 /**
- * Decodes a cursor to get the entry ID.
- * Cursor is base64-encoded entry ID.
+ * Cursor data for pagination.
+ * Uses compound cursor with timestamp + ID to handle entries with same timestamp.
+ */
+interface CursorData {
+  /** ISO timestamp string for the sort column (publishedAt or fetchedAt) */
+  ts: string;
+  /** Entry ID as tiebreaker */
+  id: string;
+}
+
+/**
+ * Decodes a cursor to get the timestamp and entry ID.
+ * Cursor is base64-encoded JSON with { ts, id }.
  *
  * @param cursor - The cursor string
- * @returns The decoded entry ID
+ * @returns The decoded cursor data
  */
-function decodeCursor(cursor: string): string {
+function decodeCursor(cursor: string): CursorData {
   try {
-    return Buffer.from(cursor, "base64").toString("utf8");
+    const decoded = Buffer.from(cursor, "base64").toString("utf8");
+    const parsed = JSON.parse(decoded) as CursorData;
+    if (!parsed.ts || !parsed.id) {
+      throw new Error("Invalid cursor structure");
+    }
+    return parsed;
   } catch {
     throw errors.validation("Invalid cursor format");
   }
 }
 
 /**
- * Encodes an entry ID as a cursor.
+ * Encodes cursor data for pagination.
  *
+ * @param ts - The timestamp (publishedAt or fetchedAt)
  * @param entryId - The entry ID
  * @returns The encoded cursor
  */
-function encodeCursor(entryId: string): string {
-  return Buffer.from(entryId, "utf8").toString("base64");
+function encodeCursor(ts: Date, entryId: string): string {
+  const data: CursorData = { ts: ts.toISOString(), id: entryId };
+  return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
 }
 
 // ============================================================================
@@ -233,22 +251,37 @@ export const entriesRouter = createTRPCRouter({
         conditions.push(eq(userEntries.starred, true));
       }
 
+      // Sort by publishedAt, falling back to fetchedAt if null
+      // Use entry.id as tiebreaker for stable ordering
+      const sortColumn = sql`COALESCE(${entries.publishedAt}, ${entries.fetchedAt})`;
+
       // Add cursor condition if present
-      // For newest-first (desc), we want entries with ID < cursor
-      // For oldest-first (asc), we want entries with ID > cursor
+      // Uses compound comparison: (sortColumn, id) for stable pagination
+      // For newest-first (desc), we want entries with (date, id) < cursor
+      // For oldest-first (asc), we want entries with (date, id) > cursor
       if (input.cursor) {
-        const cursorEntryId = decodeCursor(input.cursor);
+        const { ts, id } = decodeCursor(input.cursor);
+        const cursorTs = new Date(ts);
         if (sortOrder === "newest") {
-          conditions.push(lt(entries.id, cursorEntryId));
+          // Entries older than cursor, or same timestamp with smaller ID
+          conditions.push(
+            sql`(${sortColumn} < ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${entries.id} < ${id}))`
+          );
         } else {
-          conditions.push(gt(entries.id, cursorEntryId));
+          // Entries newer than cursor, or same timestamp with larger ID
+          conditions.push(
+            sql`(${sortColumn} > ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${entries.id} > ${id}))`
+          );
         }
       }
 
       // Query entries with user state
       // Inner join with user_entries enforces visibility
       // We fetch one extra to determine if there are more results
-      const orderByClause = sortOrder === "newest" ? desc(entries.id) : asc(entries.id);
+      const orderByClause =
+        sortOrder === "newest"
+          ? [desc(sortColumn), desc(entries.id)]
+          : [asc(sortColumn), asc(entries.id)];
       const queryResults = await ctx.db
         .select({
           entry: entries,
@@ -259,7 +292,7 @@ export const entriesRouter = createTRPCRouter({
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
         .where(and(...conditions))
-        .orderBy(orderByClause)
+        .orderBy(...orderByClause)
         .limit(limit + 1);
 
       // Determine if there are more results
@@ -282,10 +315,12 @@ export const entriesRouter = createTRPCRouter({
       }));
 
       // Generate next cursor if there are more results
-      const nextCursor =
-        hasMore && resultEntries.length > 0
-          ? encodeCursor(resultEntries[resultEntries.length - 1].entry.id)
-          : undefined;
+      let nextCursor: string | undefined;
+      if (hasMore && resultEntries.length > 0) {
+        const lastEntry = resultEntries[resultEntries.length - 1].entry;
+        const lastTs = lastEntry.publishedAt ?? lastEntry.fetchedAt;
+        nextCursor = encodeCursor(lastTs, lastEntry.id);
+      }
 
       return { items, nextCursor };
     }),
