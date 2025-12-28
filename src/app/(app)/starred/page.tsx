@@ -24,6 +24,7 @@ export default function StarredEntriesPage() {
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: () => {
       utils.entries.list.invalidate();
+      utils.subscriptions.list.invalidate();
     },
   });
 

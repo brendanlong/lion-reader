@@ -86,6 +86,7 @@ export default function SingleFeedPage() {
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: () => {
       utils.entries.list.invalidate();
+      utils.subscriptions.list.invalidate();
     },
   });
 
