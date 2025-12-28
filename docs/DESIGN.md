@@ -1178,6 +1178,48 @@ const { data: entries } = trpc.entries.list.useQuery({
 });
 ```
 
+### Mark Unread
+
+Users can mark entries as unread to revisit them later. This is useful for entries that were automatically marked as read when opened but the user wants to return to later.
+
+**API:**
+
+Uses the existing `entries.markRead` endpoint with `read: false`:
+
+```typescript
+// Mark as unread
+markReadMutation.mutate({ ids: [entryId], read: false });
+
+// Mark as read
+markReadMutation.mutate({ ids: [entryId], read: true });
+```
+
+**UI Button:**
+
+- Displayed in the entry content view action bar (alongside Star, View Original)
+- Shows current state: "Mark Unread" when entry is read, "Mark Read" when unread
+- Icon: filled circle for unread, empty circle for read (matches list indicator)
+- Clicking toggles the read/unread state
+
+**Keyboard Shortcuts:**
+
+| Key | Action             | Context                        |
+| --- | ------------------ | ------------------------------ |
+| `m` | Toggle read/unread | Entry list (existing behavior) |
+| `m` | Toggle read/unread | Entry content view (new)       |
+
+The `m` shortcut works in both contexts:
+
+- In list view: toggles read status of the selected entry
+- In content view: toggles read status of the currently viewed entry
+
+**Implementation:**
+
+1. `EntryContent` component receives an `onToggleRead` callback prop
+2. Parent page passes the mutation function to `EntryContent`
+3. `useKeyboardShortcuts` hook handles `m` key in content view when `isEntryOpen` is true
+4. Visual feedback via button state change and optimistic update in React Query
+
 ---
 
 ## Infrastructure

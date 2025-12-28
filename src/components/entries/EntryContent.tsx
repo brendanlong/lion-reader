@@ -9,6 +9,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,12 @@ interface EntryContentProps {
    * Optional callback when the back button is clicked.
    */
   onBack?: () => void;
+
+  /**
+   * Optional callback when read status should be toggled.
+   * Receives the entry ID and its current read status.
+   */
+  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
 }
 
 /**
@@ -178,12 +185,40 @@ function BackArrowIcon() {
 }
 
 /**
+ * Read/Unread indicator icon.
+ * Filled circle for unread, empty circle for read.
+ */
+function ReadStatusIcon({ read }: { read: boolean }) {
+  if (read) {
+    // Empty circle for read
+    return (
+      <svg
+        className="h-4 w-4"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+      </svg>
+    );
+  }
+  // Filled circle for unread
+  return (
+    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
+/**
  * EntryContent component.
  *
  * Fetches and displays the full content of an entry.
  * Marks the entry as read on mount.
  */
-export function EntryContent({ entryId, onBack }: EntryContentProps) {
+export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProps) {
   const utils = trpc.useUtils();
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -238,7 +273,27 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
     }
   };
 
+  // Handle read toggle
+  const handleReadToggle = () => {
+    if (!entry || !onToggleRead) return;
+    onToggleRead(entryId, entry.read);
+  };
+
   const isStarLoading = starMutation.isPending || unstarMutation.isPending;
+
+  // Keyboard shortcut: m to toggle read/unread
+  useHotkeys(
+    "m",
+    (e) => {
+      e.preventDefault();
+      handleReadToggle();
+    },
+    {
+      enabled: !!entry && !!onToggleRead,
+      enableOnFormTags: false,
+    },
+    [entry, onToggleRead, handleReadToggle]
+  );
 
   // Loading state
   if (isLoading) {
@@ -344,6 +399,20 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
             <StarIcon filled={entry.starred} />
             <span className="ml-2">{entry.starred ? "Starred" : "Star"}</span>
           </Button>
+
+          {/* Mark read/unread button */}
+          {onToggleRead && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleReadToggle}
+              aria-label={entry.read ? "Mark as unread" : "Mark as read"}
+              title="Keyboard shortcut: m"
+            >
+              <ReadStatusIcon read={entry.read} />
+              <span className="ml-2">{entry.read ? "Mark Unread" : "Mark Read"}</span>
+            </Button>
+          )}
 
           {/* Content view toggle - only show when both versions exist */}
           {hasBothVersions && (
