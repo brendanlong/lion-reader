@@ -801,7 +801,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
   - Conditionally show browser voice dropdown or enhanced voice list
   - Store provider preference in localStorage
 
-- [ ] **Build enhanced voice list component**
+- [x] **Build enhanced voice list component**
   - Show curated voices with name, description, size
   - Show download status (not downloaded / downloading / downloaded)
   - Download progress bar during download
