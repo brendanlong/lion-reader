@@ -655,3 +655,117 @@ export function startNarrationGenerationTimer(): () => void {
     trackNarrationGenerationDuration(durationMs);
   };
 }
+
+// ============================================================================
+// Enhanced Voice Metrics
+// ============================================================================
+
+/**
+ * Counter for enhanced voice selections.
+ * Labels: voice_id (the selected voice identifier)
+ */
+export const enhancedVoiceSelectedTotal = metricsEnabled
+  ? new Counter({
+      name: "enhanced_voice_selected_total",
+      help: "Total enhanced voice selections",
+      labelNames: ["voice_id"] as const,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Counter for enhanced voice download completions.
+ * Labels: voice_id (the downloaded voice identifier)
+ */
+export const enhancedVoiceDownloadCompletedTotal = metricsEnabled
+  ? new Counter({
+      name: "enhanced_voice_download_completed_total",
+      help: "Total enhanced voice downloads completed",
+      labelNames: ["voice_id"] as const,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Counter for enhanced voice download failures.
+ * Labels:
+ * - voice_id: The voice that failed to download
+ * - error_type: Type of error (network, storage, unknown)
+ */
+export const enhancedVoiceDownloadFailedTotal = metricsEnabled
+  ? new Counter({
+      name: "enhanced_voice_download_failed_total",
+      help: "Total enhanced voice download failures",
+      labelNames: ["voice_id", "error_type"] as const,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Counter for narration playback starts.
+ * Labels: provider (browser or piper)
+ */
+export const narrationPlaybackStartedTotal = metricsEnabled
+  ? new Counter({
+      name: "narration_playback_started_total",
+      help: "Total narration playbacks started",
+      labelNames: ["provider"] as const,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Enhanced voice download error types.
+ * - network: Network or fetch error
+ * - storage: IndexedDB or quota error
+ * - unknown: Unknown error type
+ */
+export type EnhancedVoiceDownloadErrorType = "network" | "storage" | "unknown";
+
+/**
+ * Tracks an enhanced voice selection.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param voiceId - The ID of the selected voice
+ */
+export function trackEnhancedVoiceSelected(voiceId: string): void {
+  if (!metricsEnabled) return;
+  enhancedVoiceSelectedTotal?.inc({ voice_id: voiceId });
+}
+
+/**
+ * Tracks a successful enhanced voice download.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param voiceId - The ID of the downloaded voice
+ */
+export function trackEnhancedVoiceDownloadCompleted(voiceId: string): void {
+  if (!metricsEnabled) return;
+  enhancedVoiceDownloadCompletedTotal?.inc({ voice_id: voiceId });
+}
+
+/**
+ * Tracks a failed enhanced voice download.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param voiceId - The ID of the voice that failed to download
+ * @param errorType - The type of error that occurred
+ */
+export function trackEnhancedVoiceDownloadFailed(
+  voiceId: string,
+  errorType: EnhancedVoiceDownloadErrorType
+): void {
+  if (!metricsEnabled) return;
+  enhancedVoiceDownloadFailedTotal?.inc({ voice_id: voiceId, error_type: errorType });
+}
+
+/**
+ * Tracks a narration playback start.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param provider - The TTS provider used (browser or piper)
+ */
+export function trackNarrationPlaybackStarted(provider: "browser" | "piper"): void {
+  if (!metricsEnabled) return;
+  narrationPlaybackStartedTotal?.inc({ provider });
+}

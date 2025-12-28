@@ -36,6 +36,7 @@ import {
   createMediaSessionStateHandler,
 } from "@/lib/narration/media-session";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
+import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 
 /**
  * Configuration for the useNarration hook.
@@ -214,6 +215,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         }
       }
       narrator.play(voice, settings.rate, settings.pitch);
+      // Track playback start with the current provider
+      trackNarrationPlaybackStarted(settings.provider);
       return;
     }
 
@@ -240,6 +243,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
         // Start playback
         narrator.play(voice, settings.rate, settings.pitch);
+        // Track playback start with the current provider
+        trackNarrationPlaybackStarted(settings.provider);
       }
     } catch (error) {
       console.error("Failed to generate narration:", error);
@@ -255,6 +260,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     settings.voiceId,
     settings.rate,
     settings.pitch,
+    settings.provider,
     generateMutation,
     id,
     type,

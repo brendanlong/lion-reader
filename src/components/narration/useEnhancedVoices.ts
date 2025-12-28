@@ -13,6 +13,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { ENHANCED_VOICES, type EnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { VoiceCache, STORAGE_LIMIT_BYTES } from "@/lib/narration/voice-cache";
+import {
+  trackEnhancedVoiceDownloadCompleted,
+  trackEnhancedVoiceDownloadFailed,
+  classifyDownloadError,
+} from "@/lib/telemetry";
 
 /**
  * Download status for a voice.
@@ -291,6 +296,9 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
           return newStates;
         });
 
+        // Track successful download
+        trackEnhancedVoiceDownloadCompleted(voiceId);
+
         // Update storage statistics
         await updateStorageStats();
       } catch (err) {
@@ -302,6 +310,10 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
           newStates.set(voiceId, { status: "not-downloaded", progress: 0 });
           return newStates;
         });
+
+        // Track failed download with error classification
+        const errorType = classifyDownloadError(err);
+        trackEnhancedVoiceDownloadFailed(voiceId, errorType);
 
         const message = err instanceof Error ? err.message : "Failed to download voice";
         setError(message);

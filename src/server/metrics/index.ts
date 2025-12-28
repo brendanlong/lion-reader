@@ -58,6 +58,17 @@ export {
   startNarrationGenerationTimer,
   type NarrationSource,
   type NarrationErrorType,
+
+  // Enhanced voice metrics
+  enhancedVoiceSelectedTotal,
+  enhancedVoiceDownloadCompletedTotal,
+  enhancedVoiceDownloadFailedTotal,
+  narrationPlaybackStartedTotal,
+  trackEnhancedVoiceSelected,
+  trackEnhancedVoiceDownloadCompleted,
+  trackEnhancedVoiceDownloadFailed,
+  trackNarrationPlaybackStarted,
+  type EnhancedVoiceDownloadErrorType,
 } from "./metrics";
 
 export { collectAllMetrics, collectBusinessMetrics, collectJobQueueMetrics } from "./collect";
