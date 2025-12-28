@@ -8,10 +8,14 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { EntryList, type EntryListEntryData } from "@/components/entries/EntryList";
-import { EntryContent } from "@/components/entries/EntryContent";
+import {
+  EntryList,
+  EntryContent,
+  UnreadToggle,
+  type EntryListEntryData,
+} from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { useKeyboardShortcuts, type KeyboardEntryData } from "@/lib/hooks";
+import { useKeyboardShortcuts, useViewPreferences, type KeyboardEntryData } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
 export default function AllEntriesPage() {
@@ -19,6 +23,7 @@ export default function AllEntriesPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
+  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("all");
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -61,6 +66,7 @@ export default function AllEntriesPage() {
     onRefresh: () => {
       utils.entries.list.invalidate();
     },
+    onToggleUnreadOnly: toggleShowUnreadOnly,
   });
 
   const handleEntryClick = useCallback(
@@ -89,13 +95,19 @@ export default function AllEntriesPage() {
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between sm:mb-6">
         <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">All Items</h1>
+        <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
       </div>
 
       <EntryList
+        filters={{ unreadOnly: showUnreadOnly }}
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
-        emptyMessage="No entries yet. Subscribe to some feeds to see entries here."
+        emptyMessage={
+          showUnreadOnly
+            ? "No unread entries. Toggle to show all items."
+            : "No entries yet. Subscribe to some feeds to see entries here."
+        }
       />
     </div>
   );

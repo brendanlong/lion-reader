@@ -6,5 +6,6 @@
 
 export { EntryListItem, type EntryListItemData } from "./EntryListItem";
 export { EntryListSkeleton } from "./EntryListSkeleton";
-export { EntryList, type EntryListFilters } from "./EntryList";
+export { EntryList, type EntryListFilters, type EntryListEntryData } from "./EntryList";
 export { EntryContent } from "./EntryContent";
+export { UnreadToggle } from "./UnreadToggle";

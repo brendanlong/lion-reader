@@ -726,20 +726,20 @@ See @docs/narration-design.md for full design details.
 
 ### 14.1 Show/Hide Read Items
 
-- [ ] **Create view preferences hook**
+- [x] **Create view preferences hook**
   - Create `useViewPreferences` hook with localStorage persistence
   - Store `unreadOnly` preference per view (all, starred, feed, tag, saved)
   - Default to showing unread only
 
-- [ ] **Add toggle UI to entry list header**
+- [x] **Add toggle UI to entry list header**
   - Add toggle button/checkbox in entry list header
   - Show current state (eye icon or "Show read" text)
   - Update query when toggled
 
-- [ ] **Add keyboard shortcut**
+- [x] **Add keyboard shortcut**
   - `u` key to toggle unread-only mode
   - Add to keyboard shortcuts help modal
 
-- [ ] **Handle read entry transitions**
+- [ ] **Handle read entry transitions** (optional polish)
   - When hiding read items, fade out newly-read entries after brief delay
   - Prevent jarring list reflow when marking items read

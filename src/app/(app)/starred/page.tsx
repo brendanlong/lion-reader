@@ -7,10 +7,14 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { EntryList, type EntryListEntryData } from "@/components/entries/EntryList";
-import { EntryContent } from "@/components/entries/EntryContent";
+import {
+  EntryList,
+  EntryContent,
+  UnreadToggle,
+  type EntryListEntryData,
+} from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { useKeyboardShortcuts, type KeyboardEntryData } from "@/lib/hooks";
+import { useKeyboardShortcuts, useViewPreferences, type KeyboardEntryData } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
 export default function StarredEntriesPage() {
@@ -18,6 +22,7 @@ export default function StarredEntriesPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
+  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("starred");
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -60,6 +65,7 @@ export default function StarredEntriesPage() {
     onRefresh: () => {
       utils.entries.list.invalidate();
     },
+    onToggleUnreadOnly: toggleShowUnreadOnly,
   });
 
   const handleEntryClick = useCallback(
@@ -88,14 +94,19 @@ export default function StarredEntriesPage() {
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between sm:mb-6">
         <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Starred</h1>
+        <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
       </div>
 
       <EntryList
-        filters={{ starredOnly: true }}
+        filters={{ starredOnly: true, unreadOnly: showUnreadOnly }}
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
-        emptyMessage="No starred entries yet. Star entries to save them for later."
+        emptyMessage={
+          showUnreadOnly
+            ? "No unread starred entries. Toggle to show all starred items."
+            : "No starred entries yet. Star entries to save them for later."
+        }
       />
     </div>
   );

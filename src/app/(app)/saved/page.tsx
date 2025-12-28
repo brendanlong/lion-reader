@@ -7,10 +7,14 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { SavedArticleList, type SavedArticleListEntryData } from "@/components/saved";
-import { SavedArticleContent } from "@/components/saved";
+import {
+  SavedArticleList,
+  SavedArticleContent,
+  type SavedArticleListEntryData,
+} from "@/components/saved";
+import { UnreadToggle } from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { useSavedArticleKeyboardShortcuts } from "@/lib/hooks";
+import { useSavedArticleKeyboardShortcuts, useViewPreferences } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
 export default function SavedArticlesPage() {
@@ -18,6 +22,7 @@ export default function SavedArticlesPage() {
   const [articles, setArticles] = useState<SavedArticleListEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
+  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("saved");
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -61,6 +66,7 @@ export default function SavedArticlesPage() {
       utils.saved.list.invalidate();
       utils.saved.count.invalidate();
     },
+    onToggleUnreadOnly: toggleShowUnreadOnly,
   });
 
   const handleArticleClick = useCallback(
@@ -89,13 +95,19 @@ export default function SavedArticlesPage() {
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between sm:mb-6">
         <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Saved</h1>
+        <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
       </div>
 
       <SavedArticleList
+        filters={{ unreadOnly: showUnreadOnly }}
         onArticleClick={handleArticleClick}
         selectedArticleId={selectedArticleId}
         onArticlesLoaded={handleArticlesLoaded}
-        emptyMessage="No saved articles yet. Save articles to read them later."
+        emptyMessage={
+          showUnreadOnly
+            ? "No unread saved articles. Toggle to show all items."
+            : "No saved articles yet. Save articles to read them later."
+        }
       />
     </div>
   );

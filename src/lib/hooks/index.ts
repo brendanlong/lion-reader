@@ -35,3 +35,10 @@ export {
   type NarrationShortcutControls,
   type UseNarrationKeyboardShortcutsOptions,
 } from "./useNarrationKeyboardShortcuts";
+
+export {
+  useViewPreferences,
+  type ViewType,
+  type ViewPreferences,
+  type UseViewPreferencesResult,
+} from "./useViewPreferences";
