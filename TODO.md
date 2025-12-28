@@ -796,7 +796,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
 
 ### 15.4 Enhanced Voices Settings UI
 
-- [ ] **Add provider selection to settings**
+- [x] **Add provider selection to settings**
   - Add "Voice Provider" section with Browser/Enhanced radio buttons
   - Conditionally show browser voice dropdown or enhanced voice list
   - Store provider preference in localStorage
