@@ -188,6 +188,93 @@ export class PiperTTSProvider implements TTSProvider {
   }
 
   /**
+   * Generates audio for text without playing it.
+   * Useful for pre-buffering upcoming paragraphs.
+   *
+   * @param text - The text to synthesize.
+   * @param voiceId - The voice ID to use.
+   * @returns Promise resolving to the AudioBuffer.
+   * @throws Error if voice is not available or synthesis fails.
+   */
+  async generateAudio(text: string, voiceId: string): Promise<AudioBuffer> {
+    if (!this.isAvailable()) {
+      throw new Error("Piper TTS is not available in this browser");
+    }
+
+    // Check if voice is an enhanced voice
+    const voice = findEnhancedVoice(voiceId);
+    if (!voice) {
+      throw new Error(`Unknown enhanced voice: ${voiceId}`);
+    }
+
+    // Check if voice is downloaded
+    const storedVoices = await this.getStoredVoiceIds();
+    if (!storedVoices.includes(voiceId)) {
+      throw new VoiceNotDownloadedError(voiceId);
+    }
+
+    // Generate audio using Piper with custom WASM paths
+    const piper = await getPiperTTS();
+    const session = await piper.TtsSession.create({
+      voiceId,
+      wasmPaths: CUSTOM_WASM_PATHS,
+    });
+    const wavBlob = await session.predict(text);
+
+    // Decode the audio
+    const arrayBuffer = await wavBlob.arrayBuffer();
+    const audioContext = this.getAudioContext();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    return audioBuffer;
+  }
+
+  /**
+   * Plays a pre-generated AudioBuffer.
+   * Useful for playing cached audio without regenerating.
+   *
+   * @param buffer - The AudioBuffer to play.
+   * @param options - Speaking options.
+   */
+  playBuffer(buffer: AudioBuffer, options: SpeakOptions): void {
+    // Stop any current speech
+    this.stop();
+
+    this.currentOptions = options;
+    this.isPaused = false;
+    this.currentBuffer = buffer;
+
+    const audioContext = this.getAudioContext();
+
+    // Apply playback rate
+    const rate = clamp(options.rate ?? DEFAULT_RATE, MIN_RATE, MAX_RATE);
+
+    // Create and configure the source
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    source.connect(audioContext.destination);
+
+    // Set up completion handler
+    source.onended = () => {
+      if (!this.isPaused && this.currentSource === source) {
+        this.currentSource = null;
+        this.currentBuffer = null;
+        this.currentOptions = null;
+        options.onEnd?.();
+      }
+    };
+
+    this.currentSource = source;
+    this.startedAt = audioContext.currentTime;
+    this.pausedAt = 0;
+
+    // Start playback
+    source.start(0);
+    options.onStart?.();
+  }
+
+  /**
    * Speaks the given text using Piper TTS.
    *
    * @param text - The text to speak.
@@ -200,9 +287,6 @@ export class PiperTTSProvider implements TTSProvider {
       return;
     }
 
-    // Stop any current speech
-    this.stop();
-
     // Validate voice is provided
     const voiceId = options.voiceId;
     if (!voiceId) {
@@ -210,71 +294,9 @@ export class PiperTTSProvider implements TTSProvider {
       return;
     }
 
-    // Check if voice is an enhanced voice
-    const voice = findEnhancedVoice(voiceId);
-    if (!voice) {
-      options.onError?.(new Error(`Unknown enhanced voice: ${voiceId}`));
-      return;
-    }
-
-    // Check if voice is downloaded
-    const storedVoices = await this.getStoredVoiceIds();
-    if (!storedVoices.includes(voiceId)) {
-      options.onError?.(new VoiceNotDownloadedError(voiceId));
-      return;
-    }
-
-    this.currentOptions = options;
-    this.isPaused = false;
-
     try {
-      // Generate audio using Piper with custom WASM paths
-      const piper = await getPiperTTS();
-      const session = await piper.TtsSession.create({
-        voiceId,
-        wasmPaths: CUSTOM_WASM_PATHS,
-      });
-      const wavBlob = await session.predict(text);
-
-      // Check if we were stopped while generating
-      if (this.currentOptions !== options) {
-        return;
-      }
-
-      // Decode the audio
-      const arrayBuffer = await wavBlob.arrayBuffer();
-      const audioContext = this.getAudioContext();
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-      // Store buffer for resume functionality
-      this.currentBuffer = audioBuffer;
-
-      // Apply playback rate
-      const rate = clamp(options.rate ?? DEFAULT_RATE, MIN_RATE, MAX_RATE);
-
-      // Create and configure the source
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.playbackRate.value = rate;
-      source.connect(audioContext.destination);
-
-      // Set up completion handler
-      source.onended = () => {
-        if (!this.isPaused && this.currentSource === source) {
-          this.currentSource = null;
-          this.currentBuffer = null;
-          this.currentOptions = null;
-          options.onEnd?.();
-        }
-      };
-
-      this.currentSource = source;
-      this.startedAt = audioContext.currentTime;
-      this.pausedAt = 0;
-
-      // Start playback
-      source.start(0);
-      options.onStart?.();
+      const audioBuffer = await this.generateAudio(text, voiceId);
+      this.playBuffer(audioBuffer, options);
     } catch (error) {
       this.currentOptions = null;
       options.onError?.(error instanceof Error ? error : new Error(String(error)));

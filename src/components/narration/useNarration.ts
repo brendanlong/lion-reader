@@ -130,6 +130,11 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const piperCurrentIndexRef = useRef(0);
   const piperIsPausedRef = useRef(false);
 
+  // Audio cache for instant rewind/skip (Map of paragraph index -> AudioBuffer)
+  const audioCacheRef = useRef<Map<number, AudioBuffer>>(new Map());
+  // Track which paragraphs are currently being pre-buffered to avoid duplicates
+  const bufferingRef = useRef<Set<number>>(new Set());
+
   // Get user settings
   const [settings] = useNarrationSettings();
 
@@ -213,7 +218,35 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   }, [isSupported, settings.voiceId, usePiper]);
 
   /**
+   * Pre-buffers a paragraph's audio in the background.
+   */
+  const preBufferParagraph = useCallback(
+    async (paragraphs: string[], index: number) => {
+      if (!settings.voiceId) return;
+      if (index < 0 || index >= paragraphs.length) return;
+      if (audioCacheRef.current.has(index)) return; // Already cached
+      if (bufferingRef.current.has(index)) return; // Already buffering
+
+      bufferingRef.current.add(index);
+
+      try {
+        const piperProvider = getPiperTTSProvider();
+        const buffer = await piperProvider.generateAudio(paragraphs[index], settings.voiceId);
+        audioCacheRef.current.set(index, buffer);
+      } catch (error) {
+        // Silently fail pre-buffering - we'll generate on-demand if needed
+        console.debug("Pre-buffering failed for paragraph", index, error);
+      } finally {
+        bufferingRef.current.delete(index);
+      }
+    },
+    [settings.voiceId]
+  );
+
+  /**
    * Speaks the current paragraph using Piper and auto-advances to the next.
+   * Uses cached audio if available, otherwise generates and caches it.
+   * Pre-buffers the next paragraph while current one is playing.
    */
   const speakPiperParagraph = useCallback(
     async (paragraphs: string[], index: number) => {
@@ -238,26 +271,46 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         totalParagraphs: paragraphs.length,
       }));
 
-      await piperProvider.speak(text, {
-        voiceId: settings.voiceId,
-        rate: settings.rate,
-        onStart: () => {
-          // Already updated state above
-        },
-        onEnd: () => {
-          // Auto-advance to next paragraph if not paused
-          if (!piperIsPausedRef.current) {
-            piperCurrentIndexRef.current = index + 1;
-            speakPiperParagraph(paragraphs, index + 1);
-          }
-        },
-        onError: (error) => {
-          console.error("Piper TTS error:", error);
-          setState((prev) => ({ ...prev, status: "idle" }));
-        },
-      });
+      try {
+        // Check if we have cached audio for this paragraph
+        let audioBuffer = audioCacheRef.current.get(index);
+
+        if (!audioBuffer) {
+          // Generate audio and cache it
+          audioBuffer = await piperProvider.generateAudio(text, settings.voiceId);
+          audioCacheRef.current.set(index, audioBuffer);
+        }
+
+        // Start pre-buffering the next paragraph while this one plays
+        if (index + 1 < paragraphs.length) {
+          preBufferParagraph(paragraphs, index + 1);
+        }
+
+        // Play the audio
+        piperProvider.playBuffer(audioBuffer, {
+          voiceId: settings.voiceId,
+          rate: settings.rate,
+          onStart: () => {
+            // Already updated state above
+          },
+          onEnd: () => {
+            // Auto-advance to next paragraph if not paused
+            if (!piperIsPausedRef.current) {
+              piperCurrentIndexRef.current = index + 1;
+              speakPiperParagraph(paragraphs, index + 1);
+            }
+          },
+          onError: (error) => {
+            console.error("Piper TTS error:", error);
+            setState((prev) => ({ ...prev, status: "idle" }));
+          },
+        });
+      } catch (error) {
+        console.error("Piper TTS error:", error);
+        setState((prev) => ({ ...prev, status: "idle" }));
+      }
     },
-    [settings.voiceId, settings.rate]
+    [settings.voiceId, settings.rate, preBufferParagraph]
   );
 
   /**
@@ -490,14 +543,30 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     narratorRef.current.stop();
   }, [isSupported, usePiper]);
 
+  // Clear audio cache when article or voice changes
+  useEffect(() => {
+    // Clear the cache when article or voice changes
+    audioCacheRef.current.clear();
+    bufferingRef.current.clear();
+    piperParagraphsRef.current = [];
+    piperCurrentIndexRef.current = 0;
+  }, [id, settings.voiceId]);
+
   // Clean up on unmount
   useEffect(() => {
+    // Capture refs for cleanup
+    const audioCache = audioCacheRef.current;
+    const buffering = bufferingRef.current;
+
     return () => {
       narratorRef.current?.stop();
       // Also stop Piper if it's playing
       const piperProvider = getPiperTTSProvider();
       piperProvider.stop();
       clearMediaSession();
+      // Clear cache on unmount
+      audioCache.clear();
+      buffering.clear();
     };
   }, []);
 
