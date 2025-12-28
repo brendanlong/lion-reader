@@ -12,6 +12,7 @@ import com.lionreader.data.repository.EntryRepository
 import com.lionreader.data.repository.SubscriptionRepository
 import com.lionreader.data.repository.SyncRepository
 import com.lionreader.data.repository.TagRepository
+import com.lionreader.data.sync.ConnectivityMonitor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -83,6 +84,7 @@ object RepositoryModule {
      * Provides the EntryRepository for entry operations.
      *
      * Manages feed entries with read/star state and offline support.
+     * Also handles full sync from server including subscriptions, tags, and entries.
      */
     @Provides
     @Singleton
@@ -91,8 +93,21 @@ object RepositoryModule {
         entryDao: EntryDao,
         entryStateDao: EntryStateDao,
         pendingActionDao: PendingActionDao,
+        subscriptionDao: SubscriptionDao,
+        tagDao: TagDao,
+        connectivityMonitor: ConnectivityMonitor,
+        syncRepository: SyncRepository,
     ): EntryRepository {
-        return EntryRepository(api, entryDao, entryStateDao, pendingActionDao)
+        return EntryRepository(
+            api,
+            entryDao,
+            entryStateDao,
+            pendingActionDao,
+            subscriptionDao,
+            tagDao,
+            connectivityMonitor,
+            syncRepository,
+        )
     }
 
     /**
