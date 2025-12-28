@@ -150,6 +150,49 @@ The background worker fetches feeds on a schedule. It starts automatically when 
 
 You can monitor worker activity in the server logs.
 
+## User Registration
+
+By default, Lion Reader runs in invite-only mode. New users need an invite link to register.
+
+### Environment Variables
+
+| Variable            | Default | Description                                          |
+| ------------------- | ------- | ---------------------------------------------------- |
+| `ALLOW_ALL_SIGNUPS` | `false` | Set to `true` to allow anyone to register            |
+| `ALLOWLIST_SECRET`  | -       | Secret for admin API (required for invite-only mode) |
+
+### Creating Invites
+
+When running in invite-only mode, use the admin API to create invite links:
+
+```bash
+# Create an invite (valid for 7 days)
+curl -X POST https://your-app/api/trpc/admin.createInvite \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALLOWLIST_SECRET" \
+  -d '{}'
+
+# Response: {"result":{"data":{"inviteUrl":"https://your-app/register?invite=..."}}}
+```
+
+Share the returned URL with the user. Each invite can only be used once.
+
+### Managing Invites
+
+```bash
+# List all invites with status (pending/used/expired)
+curl -X POST https://your-app/api/trpc/admin.listInvites \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALLOWLIST_SECRET" \
+  -d '{}'
+
+# Revoke an unused invite
+curl -X POST https://your-app/api/trpc/admin.revokeInvite \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALLOWLIST_SECRET" \
+  -d '{"inviteId":"<uuid>"}'
+```
+
 ## Production Deployment
 
 Lion Reader is configured for deployment to [Fly.io](https://fly.io). See the [Deployment Guide](docs/DEPLOYMENT.md) for detailed instructions.
