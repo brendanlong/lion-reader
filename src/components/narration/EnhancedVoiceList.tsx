@@ -72,6 +72,7 @@ function VoiceItem({
   isSelected,
   onSelect,
   onDownload,
+  onRetry,
   onPreview,
   onStopPreview,
   onDelete,
@@ -82,15 +83,17 @@ function VoiceItem({
   isSelected: boolean;
   onSelect: () => void;
   onDownload: () => void;
+  onRetry: () => void;
   onPreview: () => void;
   onStopPreview: () => void;
   onDelete: () => void;
   isPreviewing: boolean;
   isThisVoicePreviewing: boolean;
 }) {
-  const { voice, status, progress } = voiceState;
+  const { voice, status, progress, errorInfo } = voiceState;
   const isDownloading = status === "downloading";
   const isDownloaded = status === "downloaded";
+  const hasError = errorInfo !== undefined;
 
   // Handle click on the voice item (for selection)
   const handleClick = useCallback(() => {
@@ -168,6 +171,28 @@ function VoiceItem({
                   />
                 </svg>
                 Downloaded
+              </div>
+            ) : hasError ? (
+              <div className="mt-1 space-y-1">
+                <div className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  {errorInfo.message}
+                </div>
+                {errorInfo.suggestion && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">{errorInfo.suggestion}</p>
+                )}
               </div>
             ) : (
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -269,6 +294,24 @@ function VoiceItem({
                 </svg>
               </button>
             </>
+          ) : hasError && errorInfo.retryable ? (
+            /* Retry button for retryable errors */
+            <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
+              <svg
+                className="mr-1 h-3.5 w-3.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              Retry
+            </Button>
           ) : (
             /* Download button */
             <Button type="button" variant="secondary" size="sm" onClick={onDownload}>
@@ -328,7 +371,10 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     isPreviewing,
     previewingVoiceId,
     error,
+    lastErrorInfo,
     clearError,
+    retryDownload,
+    retryVoiceDownload,
     storageUsed,
     downloadedCount,
     isStorageLimitExceeded,
@@ -407,35 +453,53 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     <div className="space-y-3">
       {/* Error message */}
       {error && (
-        <div className="flex items-start gap-2 rounded-md bg-red-50 p-3 text-xs text-red-800 dark:bg-red-900/20 dark:text-red-200">
-          <svg
-            className="mt-0.5 h-4 w-4 flex-shrink-0"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          <span className="flex-1">{error}</span>
-          <button
-            type="button"
-            onClick={clearError}
-            className="text-red-600 hover:text-red-800 dark:text-red-300 dark:hover:text-red-100"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="rounded-md bg-red-50 p-3 dark:bg-red-900/20">
+          <div className="flex items-start gap-2 text-xs text-red-800 dark:text-red-200">
+            <svg
+              className="mt-0.5 h-4 w-4 flex-shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
               />
             </svg>
-          </button>
+            <div className="flex-1 space-y-1">
+              <p>{error}</p>
+              {lastErrorInfo?.suggestion && (
+                <p className="text-red-600 dark:text-red-300">{lastErrorInfo.suggestion}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {lastErrorInfo?.retryable && (
+                <button
+                  type="button"
+                  onClick={retryDownload}
+                  className="text-red-600 underline hover:text-red-800 dark:text-red-300 dark:hover:text-red-100"
+                >
+                  Retry
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={clearError}
+                className="text-red-600 hover:text-red-800 dark:text-red-300 dark:hover:text-red-100"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -469,6 +533,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
           isSelected={settings.voiceId === voiceState.voice.id}
           onSelect={() => handleSelectVoice(voiceState.voice.id)}
           onDownload={() => downloadVoice(voiceState.voice.id)}
+          onRetry={() => retryVoiceDownload(voiceState.voice.id)}
           onPreview={() => previewVoice(voiceState.voice.id)}
           onStopPreview={stopPreview}
           onDelete={() => handleDeleteVoice(voiceState.voice.id)}

@@ -73,3 +73,13 @@ export {
   type CreateTTSProviderOptions,
   type CreateTTSProviderResult,
 } from "./tts-provider-factory";
+
+// Error handling
+export {
+  classifyVoiceError,
+  getVoiceErrorInfo,
+  getVoiceErrorMessage,
+  isVoiceErrorRetryable,
+  type VoiceErrorType,
+  type VoiceErrorInfo,
+} from "./errors";
