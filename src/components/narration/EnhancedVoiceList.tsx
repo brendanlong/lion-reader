@@ -13,6 +13,7 @@ import { useCallback } from "react";
 import { Button } from "@/components/ui";
 import type { NarrationSettings } from "@/lib/narration/settings";
 import { useEnhancedVoices, type EnhancedVoiceState } from "./useEnhancedVoices";
+import { trackEnhancedVoiceSelected } from "@/lib/telemetry";
 
 /**
  * Props for the EnhancedVoiceList component.
@@ -341,6 +342,8 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
         ...settings,
         voiceId,
       });
+      // Track voice selection for metrics
+      trackEnhancedVoiceSelected(voiceId);
     },
     [settings, setSettings]
   );
