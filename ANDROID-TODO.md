@@ -4,6 +4,11 @@ Each task below is designed to be a self-contained PR. Complete them in order.
 
 ALWAYS read @docs/android-app-design.md before starting.
 
+## Configuration
+
+- **Production API URL**: `https://lion-reader.fly.dev`
+- **API Base Path**: `/api/v1`
+
 ---
 
 ## Phase 1: Project Setup
@@ -329,44 +334,7 @@ ALWAYS read @docs/android-app-design.md before starting.
   - Clear error on input change
   - Write unit tests
 
-### 6.3 OAuth Buttons
-
-- [ ] **Add OAuth sign-in buttons**
-  - Fetch providers from auth.providers endpoint
-  - Show Google button if "google" in providers
-  - Show Apple button if "apple" in providers
-  - Style buttons appropriately (Google colors, Apple black/white)
-  - loginWithGoogle(), loginWithApple() in ViewModel
-  - Write unit tests
-
-### 6.4 Google OAuth Flow
-
-- [ ] **Implement Google OAuth flow**
-  - Create GoogleAuthManager class
-  - startAuth() - get auth URL, store state, return Custom Tab intent
-  - handleCallback(uri) - verify state, exchange code, store session
-  - Use Chrome Custom Tabs for OAuth
-  - Handle errors gracefully
-  - Write integration tests
-
-### 6.5 Apple OAuth Flow
-
-- [ ] **Implement Apple OAuth flow**
-  - Create AppleAuthManager class (similar to Google)
-  - Handle Apple's user info on first auth
-  - Support AppleUser object parsing
-  - Write integration tests
-
-### 6.6 Deep Link Handling
-
-- [ ] **Configure OAuth callback deep links**
-  - Add intent-filter for lionreader://oauth/callback
-  - Handle deep link in MainActivity
-  - Route to appropriate auth manager
-  - Handle errors and show toast
-  - Write integration tests
-
-### 6.7 Auth Navigation
+### 6.3 Auth Navigation
 
 - [ ] **Implement auth-aware navigation**
   - Check isLoggedIn on app start
@@ -821,7 +789,57 @@ ALWAYS read @docs/android-app-design.md before starting.
 
 ---
 
-## Stretch Goals (Post-V2)
+## Phase 15: OAuth Authentication
+
+### 15.1 OAuth Buttons
+
+- [ ] **Add OAuth sign-in buttons to login screen**
+  - Fetch providers from auth.providers endpoint
+  - Show Google button if "google" in providers
+  - Show Apple button if "apple" in providers
+  - Style buttons appropriately (Google colors, Apple black/white)
+  - loginWithGoogle(), loginWithApple() in ViewModel
+  - Write unit tests
+
+### 15.2 Google OAuth Flow
+
+- [ ] **Implement Google OAuth flow**
+  - Create GoogleAuthManager class
+  - startAuth() - get auth URL, store state, return Custom Tab intent
+  - handleCallback(uri) - verify state, exchange code, store session
+  - Use Chrome Custom Tabs for OAuth
+  - Handle errors gracefully
+  - Write integration tests
+
+### 15.3 Apple OAuth Flow
+
+- [ ] **Implement Apple OAuth flow**
+  - Create AppleAuthManager class (similar to Google)
+  - Handle Apple's user info on first auth
+  - Support AppleUser object parsing
+  - Write integration tests
+
+### 15.4 Deep Link Handling
+
+- [ ] **Configure OAuth callback deep links**
+  - Add intent-filter for lionreader://oauth/callback
+  - Handle deep link in MainActivity
+  - Route to appropriate auth manager
+  - Handle errors and show toast
+  - Write integration tests
+
+### 15.5 Server-Side Mobile OAuth Support
+
+- [ ] **Add mobile redirect support to server OAuth callbacks**
+  - Detect mobile user-agent or add `?platform=android` param
+  - Redirect to `lionreader://oauth/callback?token=...` for mobile
+  - Or return JSON response for mobile clients to handle
+  - Update both Google and Apple callback routes
+  - Write integration tests
+
+---
+
+## Stretch Goals (Post-MVP)
 
 ### S1 Widgets
 
