@@ -11,8 +11,16 @@ import { logger } from "@/lib/logger";
 
 /**
  * System prompt for the Groq LLM to convert article content to narration-ready text.
+ * Includes instructions for paragraph markers to enable highlighting during playback.
  */
 export const NARRATION_SYSTEM_PROMPT = `Convert this article to narration-ready plain text for text-to-speech.
+
+IMPORTANT: Insert paragraph markers to track which original paragraph each narration section comes from.
+- The input has [P:X] markers where X is the original paragraph number (starting from 0)
+- In your output, use [PARA:X] markers at the START of each section
+- If you combine paragraphs, include all their markers: [PARA:2][PARA:3]
+- If you skip content (like complex tables), still include the marker with a note
+- Place markers at the very beginning of each paragraph, before any text
 
 Rules:
 - Output ONLY the article text—no preamble, commentary, or "here is the cleaned article"
@@ -21,8 +29,28 @@ Rules:
 - Expand ALL abbreviations (Dr. → Doctor, etc. → et cetera, px → pixel or pixels)
 - Read URLs as "link to [domain]" or skip if already in link text
 - Preserve the numbers in numbered lists
-- Split very long paragraphs at natural points
-- Keep the content faithful to the original—do NOT summarize or editorialize`;
+- Split very long paragraphs at natural points (keep the same marker)
+- Keep the content faithful to the original—do NOT summarize or editorialize
+
+Example input:
+---
+[P:0] [HEADING] Introduction
+
+[P:1] Dr. Smith said this is important.
+
+[P:2] [CODE BLOCK]
+npm install
+[END CODE BLOCK]
+---
+
+Example output:
+---
+[PARA:0]Introduction.
+
+[PARA:1]Doctor Smith said this is important.
+
+[PARA:2]Code block: npm install. End code block.
+---`;
 
 /**
  * Groq client instance. Only initialized when GROQ_API_KEY is set.
@@ -100,50 +128,99 @@ export function htmlToPlainText(html: string): string {
 }
 
 /**
- * Converts HTML to structured text for LLM processing.
+ * Result of converting HTML to narration input.
+ */
+export interface HtmlToNarrationInputResult {
+  /** Text content with [P:X] markers for LLM processing */
+  inputText: string;
+  /** Array of paragraph identifiers in order they appear */
+  paragraphOrder: string[];
+}
+
+/**
+ * Converts HTML to structured text for LLM processing with paragraph markers.
  * Preserves semantic information like headings, lists, code blocks, and images
  * to help the LLM generate appropriate narration.
  *
+ * Adds [P:X] markers to indicate original paragraph indices, which the LLM
+ * will transform to [PARA:X] markers in its output for highlighting support.
+ *
  * @param html - HTML content to convert
- * @returns Structured text suitable for LLM processing
+ * @returns Object with inputText (marked text) and paragraphOrder (paragraph IDs)
  *
  * @example
- * const input = htmlToNarrationInput('<h2>Title</h2><p>Content</p>');
- * // Returns "[HEADING] Title\n\nContent"
+ * const result = htmlToNarrationInput('<h2>Title</h2><p>Content</p>');
+ * // Returns {
+ * //   inputText: "[P:0] [HEADING] Title\n\n[P:1] Content",
+ * //   paragraphOrder: ["para-0", "para-1"]
+ * // }
  */
-export function htmlToNarrationInput(html: string): string {
+export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
+  // Track paragraph indices
+  let paragraphIndex = 0;
+  const paragraphOrder: string[] = [];
+
+  /**
+   * Generates the next paragraph marker and records it.
+   */
+  function nextMarker(): string {
+    const id = `para-${paragraphIndex}`;
+    paragraphOrder.push(id);
+    const marker = `[P:${paragraphIndex}]`;
+    paragraphIndex++;
+    return marker;
+  }
+
   let result = html;
 
-  // Mark headings with semantic indicators
-  result = result.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, "\n\n[HEADING] $1\n\n");
-  result = result.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, "\n\n[HEADING] $1\n\n");
-  result = result.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, "\n\n[SUBHEADING] $1\n\n");
-  result = result.replace(/<h[4-6][^>]*>([\s\S]*?)<\/h[4-6]>/gi, "\n\n[SUBHEADING] $1\n\n");
+  // Process headings with paragraph markers
+  result = result.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [HEADING] ${content}\n\n`;
+  });
+  result = result.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [HEADING] ${content}\n\n`;
+  });
+  result = result.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [SUBHEADING] ${content}\n\n`;
+  });
+  result = result.replace(/<h[4-6][^>]*>([\s\S]*?)<\/h[4-6]>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [SUBHEADING] ${content}\n\n`;
+  });
 
-  // Mark code blocks
-  result = result.replace(
-    /<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi,
-    "\n\n[CODE BLOCK]\n$1\n[END CODE BLOCK]\n\n"
-  );
-  result = result.replace(
-    /<pre[^>]*>([\s\S]*?)<\/pre>/gi,
-    "\n\n[CODE BLOCK]\n$1\n[END CODE BLOCK]\n\n"
-  );
+  // Mark code blocks with paragraph markers
+  result = result.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [CODE BLOCK]\n${content}\n[END CODE BLOCK]\n\n`;
+  });
+  result = result.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [CODE BLOCK]\n${content}\n[END CODE BLOCK]\n\n`;
+  });
 
-  // Mark inline code (but don't add line breaks)
+  // Mark inline code (but don't add line breaks or markers)
   result = result.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, "`$1`");
 
-  // Mark blockquotes
-  result = result.replace(
-    /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi,
-    "\n\n[QUOTE]\n$1\n[END QUOTE]\n\n"
-  );
+  // Mark blockquotes with paragraph markers
+  result = result.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [QUOTE]\n${content}\n[END QUOTE]\n\n`;
+  });
 
-  // Handle images - extract alt text
-  result = result.replace(/<img[^>]*alt=["']([^"']+)["'][^>]*>/gi, "\n\n[IMAGE: $1]\n\n");
-  result = result.replace(/<img[^>]*>/gi, "\n\n[IMAGE: no description]\n\n");
+  // Handle images - extract alt text with paragraph markers
+  result = result.replace(/<img[^>]*alt=["']([^"']+)["'][^>]*>/gi, (_, alt) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [IMAGE: ${alt}]\n\n`;
+  });
+  result = result.replace(/<img[^>]*>/gi, () => {
+    const marker = nextMarker();
+    return `\n\n${marker} [IMAGE: no description]\n\n`;
+  });
 
-  // Handle links - preserve link text, add URL for context
+  // Handle links - preserve link text, add URL for context (no markers, inline)
   result = result.replace(/<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, url, text) => {
     const cleanText = text.trim();
     // If link text is the same as URL or empty, just show domain
@@ -159,19 +236,31 @@ export function htmlToNarrationInput(html: string): string {
     return cleanText;
   });
 
-  // Handle lists - mark list items
-  result = result.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "\n- $1");
+  // Handle lists - mark list items with paragraph markers
+  result = result.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n${marker} - ${content}`;
+  });
   result = result.replace(/<\/?[ou]l[^>]*>/gi, "\n");
 
-  // Handle tables - mark them for LLM to process
-  result = result.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, "\n\n[TABLE]\n$1\n[END TABLE]\n\n");
+  // Handle tables - mark them for LLM to process with paragraph markers
+  result = result.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} [TABLE]\n${content}\n[END TABLE]\n\n`;
+  });
   result = result.replace(/<tr[^>]*>/gi, "\n[ROW] ");
   result = result.replace(/<\/tr>/gi, "");
   result = result.replace(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi, "$1 | ");
 
-  // Handle paragraphs and divs
-  result = result.replace(/<(p|div)[^>]*>/gi, "\n\n");
-  result = result.replace(/<\/(p|div)>/gi, "\n\n");
+  // Handle paragraphs with paragraph markers
+  result = result.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (_, content) => {
+    const marker = nextMarker();
+    return `\n\n${marker} ${content}\n\n`;
+  });
+
+  // Handle divs (no markers, they're containers)
+  result = result.replace(/<div[^>]*>/gi, "\n\n");
+  result = result.replace(/<\/div>/gi, "\n\n");
 
   // Handle line breaks
   result = result.replace(/<br\s*\/?>/gi, "\n");
@@ -196,7 +285,10 @@ export function htmlToNarrationInput(html: string): string {
     .map((line) => line.trim())
     .join("\n");
 
-  return result.trim();
+  return {
+    inputText: result.trim(),
+    paragraphOrder,
+  };
 }
 
 /**
@@ -240,8 +332,8 @@ export async function generateNarration(htmlContent: string): Promise<GenerateNa
     };
   }
 
-  // Convert HTML to structured text for LLM
-  const textContent = htmlToNarrationInput(htmlContent);
+  // Convert HTML to structured text for LLM with paragraph markers
+  const { inputText } = htmlToNarrationInput(htmlContent);
 
   try {
     const response = await client.chat.completions.create({
@@ -253,7 +345,7 @@ export async function generateNarration(htmlContent: string): Promise<GenerateNa
         },
         {
           role: "user",
-          content: textContent,
+          content: inputText,
         },
       ],
       temperature: 0.1, // Low temperature for consistency

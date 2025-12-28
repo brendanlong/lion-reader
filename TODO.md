@@ -851,7 +851,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Track paragraph order for mapping
   - Write unit tests
 
-- [ ] **Update LLM prompt for paragraph markers**
+- [x] **Update LLM prompt for paragraph markers**
   - Modify `htmlToNarrationInput()` to include `[P:X]` markers in input
   - Update system prompt to request `[PARA:X]` markers in output
   - Write unit tests for input generation
