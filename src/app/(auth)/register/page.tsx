@@ -6,15 +6,30 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
 import { GoogleSignInButton, AppleSignInButton } from "@/components/auth";
 
 export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
+  );
+}
+
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Get invite token from URL query parameter
+  const inviteToken = searchParams.get("invite");
+
+  // Fetch signup configuration
+  const { data: signupConfigData, isLoading: isLoadingConfig } = trpc.auth.signupConfig.useQuery();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -87,8 +102,49 @@ export default function RegisterPage() {
       return;
     }
 
-    registerMutation.mutate({ email, password });
+    registerMutation.mutate({
+      email,
+      password,
+      inviteToken: inviteToken ?? undefined,
+    });
   };
+
+  // Show loading state while fetching config
+  if (isLoadingConfig) {
+    return (
+      <div>
+        <h2 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+          Create your account
+        </h2>
+        <div className="text-center text-zinc-600 dark:text-zinc-400">Loading...</div>
+      </div>
+    );
+  }
+
+  // If invite-only mode and no invite token, show error message
+  const requiresInvite = signupConfigData?.requiresInvite ?? false;
+  if (requiresInvite && !inviteToken) {
+    return (
+      <div>
+        <h2 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+          Invite Required
+        </h2>
+        <Alert variant="error" className="mb-4">
+          This instance requires an invite to sign up. Please contact an administrator to request an
+          invite.
+        </Alert>
+        <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+          Already have an account?{" "}
+          <Link
+            href="/login"
+            className="font-medium text-zinc-900 hover:underline dark:text-zinc-50"
+          >
+            Sign in
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>

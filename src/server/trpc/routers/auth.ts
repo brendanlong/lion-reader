@@ -890,6 +890,33 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
+   * Get signup configuration.
+   *
+   * Returns whether signups require an invite token.
+   * UI uses this to show/hide signup links and display appropriate messages.
+   */
+  signupConfig: publicProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/v1/auth/signup-config",
+        tags: ["Auth"],
+        summary: "Get signup configuration",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        requiresInvite: z.boolean(),
+      })
+    )
+    .query(() => {
+      return {
+        requiresInvite: !signupConfig.allowAllSignups,
+      };
+    }),
+
+  /**
    * Get the current authenticated user.
    *
    * Returns the user profile for the currently authenticated session.
