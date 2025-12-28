@@ -628,7 +628,7 @@ See @docs/narration-design.md for full design details.
 
 ### 13.1 Narration Schema and LLM Integration
 
-- [ ] **Create narration database schema**
+- [x] **Create narration database schema**
   - Create `narration_content` table:
     - `id` uuid PRIMARY KEY
     - `content_hash` text UNIQUE NOT NULL (SHA256 of source content)
@@ -640,7 +640,7 @@ See @docs/narration-design.md for full design details.
   - Create index for finding narration needing generation
   - Update Drizzle schema with types
 
-- [ ] **Implement Groq/LLM text preprocessing**
+- [x] **Implement Groq/LLM text preprocessing**
   - Install groq-sdk package
   - Create narration prompt template (see design doc)
   - Implement `generateNarration(htmlContent)` function
@@ -649,7 +649,7 @@ See @docs/narration-design.md for full design details.
 
 ### 13.2 Narration API
 
-- [ ] **Implement narration generation endpoint**
+- [x] **Implement narration generation endpoint**
   - POST /v1/narration/generate with discriminated union input:
     - `{ type: 'entry', id }` for feed entries
     - `{ type: 'saved', id }` for saved articles
@@ -661,27 +661,27 @@ See @docs/narration-design.md for full design details.
 
 ### 13.3 Web Speech API Integration
 
-- [ ] **Create ArticleNarrator class**
+- [x] **Create ArticleNarrator class**
   - Paragraph-based playback with `SpeechSynthesisUtterance`
   - Play/pause/resume/stop controls
   - Skip forward/backward between paragraphs
   - Track current paragraph index
   - Write unit tests
 
-- [ ] **Implement voice selection utilities**
+- [x] **Implement voice selection utilities**
   - `getAvailableVoices()` with language filtering
   - `waitForVoices()` for async voice loading
   - `rankVoices()` heuristic for quality sorting
   - Write unit tests
 
-- [ ] **Implement feature detection**
+- [x] **Implement feature detection**
   - `isNarrationSupported()` - check for Web Speech API
   - `isMediaSessionSupported()` - check for Media Session API
   - Hide narration controls in unsupported browsers
 
 ### 13.4 Media Session API Integration
 
-- [ ] **Implement OS-level playback controls**
+- [x] **Implement OS-level playback controls**
   - Set up MediaMetadata (article title, feed name)
   - Handle play/pause/stop actions
   - Handle previoustrack/nexttrack for paragraph skip
@@ -689,21 +689,21 @@ See @docs/narration-design.md for full design details.
 
 ### 13.5 Narration UI
 
-- [ ] **Create narration settings component**
+- [x] **Create narration settings component**
   - Voice selector dropdown with preview button
   - Speed slider (0.5x - 2.0x)
   - Pitch slider (optional, 0.5x - 2.0x)
   - Store settings in localStorage
   - Add narration section to settings page
 
-- [ ] **Add playback controls to article view**
+- [x] **Add playback controls to article view**
   - Play/pause button in article header
   - Skip forward/backward buttons
   - Current paragraph indicator
   - Loading state during narration generation
   - Conditionally render based on feature detection
 
-- [ ] **Add keyboard shortcuts for narration**
+- [x] **Add keyboard shortcuts for narration**
   - `p` - toggle play/pause
   - `Shift+N` - skip to next paragraph
   - `Shift+P` - skip to previous paragraph
@@ -711,7 +711,7 @@ See @docs/narration-design.md for full design details.
 
 ### 13.6 Narration Polish
 
-- [ ] **Add narration metrics**
+- [x] **Add narration metrics**
   - Track narration_generated_total{cached, source}
   - Track narration_playback_started_total
   - Track narration_generation_duration_seconds
