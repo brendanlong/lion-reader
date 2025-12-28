@@ -11,6 +11,7 @@ import {
   EntryList,
   EntryContent,
   UnreadToggle,
+  SortToggle,
   type EntryListEntryData,
 } from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
@@ -22,7 +23,7 @@ export default function StarredEntriesPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("starred");
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences("starred");
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -94,11 +95,14 @@ export default function StarredEntriesPage() {
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between sm:mb-6">
         <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Starred</h1>
-        <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+        <div className="flex gap-2">
+          <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
+          <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+        </div>
       </div>
 
       <EntryList
-        filters={{ starredOnly: true, unreadOnly: showUnreadOnly }}
+        filters={{ starredOnly: true, unreadOnly: showUnreadOnly, sortOrder }}
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
