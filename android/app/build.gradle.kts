@@ -1,4 +1,6 @@
 import io.gitlab.arturbosch.detekt.Detekt
+import java.io.FileInputStream
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -11,6 +13,19 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
+// Load local.properties if exists (for keystore configuration)
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties()
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+
+// Version configuration
+val versionMajor = 1
+val versionMinor = 0
+val versionPatch = 0
+val versionBuild = 1 // Increment for each build
+
 android {
     namespace = "com.lionreader"
     compileSdk = 34
@@ -19,17 +34,61 @@ android {
         applicationId = "com.lionreader"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = versionMajor * 10000 + versionMinor * 1000 + versionPatch * 100 + versionBuild
+        versionName = "$versionMajor.$versionMinor.$versionPatch"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // API configuration
+        // API configuration - can be overridden per build type
         buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.fly.dev\"")
         buildConfigField("String", "API_BASE_PATH", "\"/api/v1\"")
+        buildConfigField("boolean", "LOGGING_ENABLED", "false")
+    }
+
+    signingConfigs {
+        // Debug signing config - uses default debug keystore
+        getByName("debug") {
+            // Uses default debug keystore automatically
+        }
+
+        // Release signing config - reads from environment variables or local.properties
+        create("release") {
+            // Priority: Environment variables > local.properties
+            val keystorePath = System.getenv("LION_READER_KEYSTORE_PATH")
+                ?: localProperties.getProperty("LION_READER_KEYSTORE_PATH")
+            val keystorePassword = System.getenv("LION_READER_KEYSTORE_PASSWORD")
+                ?: localProperties.getProperty("LION_READER_KEYSTORE_PASSWORD")
+            val keyAliasValue = System.getenv("LION_READER_KEY_ALIAS")
+                ?: localProperties.getProperty("LION_READER_KEY_ALIAS")
+            val keyPasswordValue = System.getenv("LION_READER_KEY_PASSWORD")
+                ?: localProperties.getProperty("LION_READER_KEY_PASSWORD")
+
+            if (keystorePath != null && keystorePassword != null &&
+                keyAliasValue != null && keyPasswordValue != null
+            ) {
+                storeFile = file(keystorePath)
+                storePassword = keystorePassword
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+
+            // Debug-specific configuration
+            buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.fly.dev\"")
+            buildConfigField("boolean", "LOGGING_ENABLED", "true")
+
+            // Debug uses default debug signing
+            signingConfig = signingConfigs.getByName("debug")
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -37,11 +96,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-        }
-        debug {
-            isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
+
+            // Release-specific configuration
+            buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.fly.dev\"")
+            buildConfigField("boolean", "LOGGING_ENABLED", "false")
+
+            // Release signing - only applied if keystore is configured
+            val releaseSigningConfig = signingConfigs.findByName("release")
+            if (releaseSigningConfig?.storeFile != null) {
+                signingConfig = releaseSigningConfig
+            }
         }
     }
 
