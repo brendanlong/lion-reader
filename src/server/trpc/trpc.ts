@@ -262,3 +262,48 @@ export const expensiveProtectedProcedure = t.procedure
  * Merge routers together
  */
 export const mergeRouters = t.mergeRouters;
+
+// ============================================================================
+// Admin Procedures (protected by ALLOWLIST_SECRET)
+// ============================================================================
+
+import { signupConfig } from "@/server/config/env";
+import { errors } from "./errors";
+
+/**
+ * Middleware that enforces admin authentication via Bearer token.
+ * Checks Authorization header against ALLOWLIST_SECRET env var.
+ */
+const adminMiddleware = t.middleware(({ ctx, next }) => {
+  // Check if admin secret is configured
+  if (!signupConfig.allowlistSecret) {
+    throw errors.adminSecretNotConfigured();
+  }
+
+  // Get Authorization header
+  const authHeader = ctx.headers.get("authorization");
+  if (!authHeader) {
+    throw errors.adminUnauthorized();
+  }
+
+  // Parse Bearer token
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    throw errors.adminUnauthorized();
+  }
+
+  const token = match[1];
+
+  // Validate token against secret
+  if (token !== signupConfig.allowlistSecret) {
+    throw errors.adminUnauthorized();
+  }
+
+  return next({ ctx });
+});
+
+/**
+ * Admin procedure - requires ALLOWLIST_SECRET Bearer token.
+ * Used for managing invites and other admin operations.
+ */
+export const adminProcedure = t.procedure.use(timingMiddleware).use(adminMiddleware);

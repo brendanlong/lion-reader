@@ -17,7 +17,8 @@ import {
   expensiveProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
-import { users, sessions } from "@/server/db/schema";
+import { users, sessions, invites } from "@/server/db/schema";
+import { signupConfig } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
   generateSessionToken,
@@ -66,6 +67,7 @@ const passwordSchema = z
 const registerInputSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
+  inviteToken: z.string().optional(),
 });
 
 /**
@@ -112,7 +114,44 @@ export const authRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { email, password } = input;
+      const { email, password, inviteToken } = input;
+
+      // Check invite requirement
+      let validatedInvite: { id: string } | null = null;
+
+      if (!signupConfig.allowAllSignups) {
+        // Invite required
+        if (!inviteToken) {
+          throw errors.inviteRequired();
+        }
+
+        // Validate invite token
+        const invite = await ctx.db
+          .select({
+            id: invites.id,
+            expiresAt: invites.expiresAt,
+            usedAt: invites.usedAt,
+          })
+          .from(invites)
+          .where(eq(invites.token, inviteToken))
+          .limit(1);
+
+        if (invite.length === 0) {
+          throw errors.inviteInvalid();
+        }
+
+        const inv = invite[0];
+
+        if (inv.usedAt) {
+          throw errors.inviteAlreadyUsed();
+        }
+
+        if (inv.expiresAt < new Date()) {
+          throw errors.inviteExpired();
+        }
+
+        validatedInvite = { id: inv.id };
+      }
 
       // Check if email already exists
       const existingUser = await ctx.db
@@ -148,9 +187,21 @@ export const authRouter = createTRPCRouter({
         id: userId,
         email,
         passwordHash,
+        inviteId: validatedInvite?.id,
         createdAt: now,
         updatedAt: now,
       });
+
+      // Mark invite as used
+      if (validatedInvite) {
+        await ctx.db
+          .update(invites)
+          .set({
+            usedAt: now,
+            usedByUserId: userId,
+          })
+          .where(eq(invites.id, validatedInvite.id));
+      }
 
       await ctx.db.insert(sessions).values({
         id: sessionId,

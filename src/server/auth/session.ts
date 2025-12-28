@@ -63,6 +63,7 @@ interface CachedSession {
   userUpdatedAt: string;
   userEmailVerifiedAt: string | null;
   userPasswordHash: string | null;
+  userInviteId: string | null;
 }
 
 // ============================================================================
@@ -129,6 +130,7 @@ function serializeForCache(data: SessionData): string {
     userUpdatedAt: data.user.updatedAt.toISOString(),
     userEmailVerifiedAt: data.user.emailVerifiedAt?.toISOString() ?? null,
     userPasswordHash: data.user.passwordHash,
+    userInviteId: data.user.inviteId ?? null,
   };
   return JSON.stringify(cached);
 }
@@ -157,6 +159,7 @@ function deserializeFromCache(data: string): SessionData {
       updatedAt: new Date(cached.userUpdatedAt),
       emailVerifiedAt: cached.userEmailVerifiedAt ? new Date(cached.userEmailVerifiedAt) : null,
       passwordHash: cached.userPasswordHash,
+      inviteId: cached.userInviteId ?? null,
     },
   };
 }
