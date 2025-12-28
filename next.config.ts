@@ -1,11 +1,7 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
-const nextConfig: NextConfig = {
-  // Enable standalone output for Docker deployment
-  // This creates a minimal production build that includes only necessary files
-  output: "standalone",
-};
+const nextConfig: NextConfig = {};
 
 // Sentry webpack plugin options
 // https://github.com/getsentry/sentry-webpack-plugin#options

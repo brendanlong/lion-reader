@@ -44,22 +44,23 @@ ENV NODE_ENV=production
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV REDIS_URL="redis://localhost:6379"
 
-# Build Next.js application in standalone mode
+# Build Next.js application
 RUN pnpm build
+
+# Prune dev dependencies after build
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm prune --prod --ignore-scripts
 
 # =============================================================================
 # Stage 4: Production runner
 # =============================================================================
-FROM node:20-alpine AS runner
+FROM base AS runner
 
 WORKDIR /app
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
-
-# Enable corepack for pnpm (needed for migrations)
-RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Set production environment
 ENV NODE_ENV=production
@@ -72,9 +73,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
 
-# Copy standalone build output
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Copy production node_modules (already pruned in builder)
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy built Next.js app
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 
 # Copy drizzle config and migrations for release_command
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
@@ -84,11 +87,6 @@ COPY --from=builder /app/src/server/db/schema.ts ./src/server/db/schema.ts
 # Copy migration scripts
 COPY --from=builder /app/scripts ./scripts
 
-# Install only production dependencies needed for migrations
-# We need drizzle-kit for migrations, pg for database connection, tsx to run TS scripts, and ioredis for cache flush
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm add drizzle-kit drizzle-orm pg dotenv-cli tsx ioredis
-
 # Switch to non-root user
 USER nextjs
 
@@ -96,4 +94,4 @@ USER nextjs
 EXPOSE 3000
 
 # Start the application
-CMD ["node", "server.js"]
+CMD ["pnpm", "start"]
