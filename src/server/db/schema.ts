@@ -26,6 +26,26 @@ export const websubStateEnum = pgEnum("websub_state", ["pending", "active", "uns
 // ============================================================================
 
 /**
+ * Invites table - stores invite tokens for controlled signups.
+ * Each invite is one-time use and expires after 7 days.
+ */
+export const invites = pgTable(
+  "invites",
+  {
+    id: uuid("id").primaryKey(),
+    token: text("token").unique().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    usedByUserId: uuid("used_by_user_id"), // FK added after users table defined
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_invites_token").on(table.token),
+    index("idx_invites_expires").on(table.expiresAt),
+  ]
+);
+
+/**
  * Users table - stores user accounts.
  * Primary key uses UUIDv7 for time-ordering and global uniqueness.
  */
@@ -34,6 +54,7 @@ export const users = pgTable("users", {
   email: text("email").unique().notNull(),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   passwordHash: text("password_hash"), // null if OAuth-only (future)
+  inviteId: uuid("invite_id").references(() => invites.id, { onDelete: "set null" }),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -470,6 +491,9 @@ export const narrationContent = pgTable(
 // ============================================================================
 // TYPE EXPORTS
 // ============================================================================
+
+export type Invite = typeof invites.$inferSelect;
+export type NewInvite = typeof invites.$inferInsert;
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

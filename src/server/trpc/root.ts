@@ -7,6 +7,7 @@
 
 import { createTRPCRouter, createCallerFactory } from "./trpc";
 import {
+  adminRouter,
   authRouter,
   usersRouter,
   subscriptionsRouter,
@@ -22,6 +23,7 @@ import {
  * Add new routers here as they are implemented.
  */
 export const appRouter = createTRPCRouter({
+  admin: adminRouter,
   auth: authRouter,
   users: usersRouter,
   subscriptions: subscriptionsRouter,

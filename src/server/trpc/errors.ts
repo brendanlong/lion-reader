@@ -16,9 +16,11 @@ export const ErrorCodes = {
   UNAUTHORIZED: "UNAUTHORIZED",
   INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
   SESSION_EXPIRED: "SESSION_EXPIRED",
+  ADMIN_UNAUTHORIZED: "ADMIN_UNAUTHORIZED",
 
   // Authorization errors (403)
   FORBIDDEN: "FORBIDDEN",
+  ADMIN_SECRET_NOT_CONFIGURED: "ADMIN_SECRET_NOT_CONFIGURED",
 
   // Not found errors (404)
   NOT_FOUND: "NOT_FOUND",
@@ -37,6 +39,10 @@ export const ErrorCodes = {
   OAUTH_STATE_INVALID: "OAUTH_STATE_INVALID",
   OAUTH_PROVIDER_NOT_CONFIGURED: "OAUTH_PROVIDER_NOT_CONFIGURED",
   OAUTH_CALLBACK_FAILED: "OAUTH_CALLBACK_FAILED",
+  INVITE_REQUIRED: "INVITE_REQUIRED",
+  INVITE_INVALID: "INVITE_INVALID",
+  INVITE_EXPIRED: "INVITE_EXPIRED",
+  INVITE_ALREADY_USED: "INVITE_ALREADY_USED",
 
   // Conflict errors (409)
   ALREADY_SUBSCRIBED: "ALREADY_SUBSCRIBED",
@@ -71,7 +77,9 @@ const errorCodeToTRPCCode: Record<
   UNAUTHORIZED: "UNAUTHORIZED",
   INVALID_CREDENTIALS: "UNAUTHORIZED",
   SESSION_EXPIRED: "UNAUTHORIZED",
+  ADMIN_UNAUTHORIZED: "UNAUTHORIZED",
   FORBIDDEN: "FORBIDDEN",
+  ADMIN_SECRET_NOT_CONFIGURED: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
   USER_NOT_FOUND: "NOT_FOUND",
   FEED_NOT_FOUND: "NOT_FOUND",
@@ -86,6 +94,10 @@ const errorCodeToTRPCCode: Record<
   OAUTH_STATE_INVALID: "BAD_REQUEST",
   OAUTH_PROVIDER_NOT_CONFIGURED: "BAD_REQUEST",
   OAUTH_CALLBACK_FAILED: "BAD_REQUEST",
+  INVITE_REQUIRED: "BAD_REQUEST",
+  INVITE_INVALID: "BAD_REQUEST",
+  INVITE_EXPIRED: "BAD_REQUEST",
+  INVITE_ALREADY_USED: "BAD_REQUEST",
   ALREADY_SUBSCRIBED: "CONFLICT",
   OAUTH_ALREADY_LINKED: "CONFLICT",
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
@@ -202,4 +214,24 @@ export const errors = {
     createError(ErrorCodes.SAVED_ARTICLE_FETCH_ERROR, `Failed to fetch page: ${reason}`, {
       url,
     }),
+
+  // Invite errors
+  inviteRequired: () =>
+    createError(ErrorCodes.INVITE_REQUIRED, "An invite is required to register"),
+
+  inviteInvalid: () => createError(ErrorCodes.INVITE_INVALID, "Invalid invite token"),
+
+  inviteExpired: () => createError(ErrorCodes.INVITE_EXPIRED, "Invite token has expired"),
+
+  inviteAlreadyUsed: () =>
+    createError(ErrorCodes.INVITE_ALREADY_USED, "Invite token has already been used"),
+
+  // Admin errors
+  adminSecretNotConfigured: () =>
+    createError(
+      ErrorCodes.ADMIN_SECRET_NOT_CONFIGURED,
+      "Admin API is not configured on this server"
+    ),
+
+  adminUnauthorized: () => createError(ErrorCodes.ADMIN_UNAUTHORIZED, "Invalid admin secret"),
 };

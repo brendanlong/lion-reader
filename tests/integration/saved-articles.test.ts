@@ -60,6 +60,7 @@ function createAuthContext(userId: string): Context {
         email: `${userId}@test.com`,
         emailVerifiedAt: null,
         passwordHash: "test-hash",
+        inviteId: null,
         createdAt: now,
         updatedAt: now,
       },
