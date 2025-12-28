@@ -40,6 +40,8 @@
     "arctic": "^3.7.0",
     "argon2": "^0.44.0",
     "dompurify": "^3.3.1",
+    "dotenv-cli": "^11.0.0",
+    "drizzle-kit": "^0.31.8",
     "drizzle-orm": "^0.45.1",
     "fast-xml-parser": "^5.3.3",
     "groq-sdk": "^0.37.0",
@@ -53,10 +55,8 @@
     "react-hotkeys-hook": "^5.2.1",
     "superjson": "^2.2.6",
     "trpc-to-openapi": "^3.1.0",
-    "zod": "^4.2.1",
-    "dotenv-cli": "^11.0.0",
-    "drizzle-kit": "^0.31.8",
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -68,6 +68,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "prettier": "^3",
