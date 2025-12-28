@@ -752,7 +752,7 @@ Browser voices vary in quality—Chrome/Safari are good, but Firefox is poor. Th
 
 ### 15.1 TTS Provider Abstraction
 
-- [ ] **Create TTS provider interface**
+- [x] **Create TTS provider interface**
   - Define `TTSProvider` interface with speak/stop/pause/resume methods
   - Define `TTSVoice` interface for unified voice representation
   - Implement `BrowserTTSProvider` wrapping existing Web Speech API code
