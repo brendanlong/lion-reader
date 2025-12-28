@@ -85,7 +85,10 @@ export default function TagEntriesPage() {
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences("tag", tagId);
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences(
+    "tag",
+    tagId
+  );
   const utils = trpc.useUtils();
 
   // Mutations for keyboard actions
@@ -153,9 +156,19 @@ export default function TagEntriesPage() {
     setEntries(loadedEntries);
   }, []);
 
+  // Handler to toggle read status
+  const handleToggleRead = useCallback(
+    (entryId: string, currentlyRead: boolean) => {
+      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
+    },
+    [markReadMutation]
+  );
+
   // If an entry is open, show the full content view
   if (openEntryId) {
-    return <EntryContent entryId={openEntryId} onBack={handleBack} />;
+    return (
+      <EntryContent entryId={openEntryId} onBack={handleBack} onToggleRead={handleToggleRead} />
+    );
   }
 
   // Show loading state while checking tag
