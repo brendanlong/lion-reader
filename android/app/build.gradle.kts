@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ktlint)
@@ -57,6 +58,12 @@ android {
         compose = true
         buildConfig = true
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 // ktlint configuration
@@ -88,10 +95,14 @@ tasks.withType<Detekt>().configureEach {
     }
 }
 
+// Enable JUnit 5 for unit tests
+tasks.withType<Test> {
+    useJUnitPlatform()
+}
+
 dependencies {
     // Core Android
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
 
     // Compose
     implementation(libs.androidx.activity.compose)
@@ -101,17 +112,64 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
+    // Compose Navigation
+    implementation(libs.androidx.navigation.compose)
+
+    // Lifecycle
+    implementation(libs.bundles.lifecycle)
+
+    // Coroutines
+    implementation(libs.bundles.coroutines)
+
+    // Kotlin Serialization
+    implementation(libs.kotlinx.serialization.json)
+
+    // Room
+    implementation(libs.bundles.room)
+    ksp(libs.room.compiler)
+
+    // Ktor Client
+    implementation(libs.bundles.ktor)
+
+    // DataStore
+    implementation(libs.datastore.preferences)
+
+    // Coil (Image Loading)
+    implementation(libs.coil.compose)
+
+    // Security
+    implementation(libs.security.crypto)
+
+    // WorkManager
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
+
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // Testing
-    testImplementation(libs.junit)
+    // Unit Testing
+    testImplementation(libs.bundles.junit5)
+    testRuntimeOnly(libs.junit5.engine)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlin.test.junit5)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.mockk)
+    testImplementation(libs.room.testing)
+
+    // Android Instrumented Testing
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
+    androidTestImplementation(libs.mockk.android)
+    androidTestImplementation(libs.work.testing)
+    androidTestImplementation(libs.ktor.client.mock)
 
     // Debug
     debugImplementation(libs.androidx.ui.tooling)
