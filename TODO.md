@@ -856,7 +856,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Update system prompt to request `[PARA:X]` markers in output
   - Write unit tests for input generation
 
-- [ ] **Implement paragraph mapping parser**
+- [x] **Implement paragraph mapping parser**
   - Create `parseNarrationOutput()` function
   - Extract `[PARA:X]` markers from LLM output
   - Build mapping array (narration index → original indices)
