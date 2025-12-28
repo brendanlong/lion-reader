@@ -17,12 +17,12 @@ export const NARRATION_SYSTEM_PROMPT = `Convert this article to narration-ready 
 Rules:
 - Output ONLY the article text—no preamble, commentary, or "here is the cleaned article"
 - Output plain text with blank lines between paragraphs
-- Call out special content: "Code block: ... End code block.", "Image: [alt].", "Table with N columns: ..."
-- Expand abbreviations (Dr. → Doctor, etc. → et cetera, px → pixels)
+- Call out special content: "Code block: ... End code block.", "Image: [alt].", "Table: ..."
+- Expand ALL abbreviations (Dr. → Doctor, etc. → et cetera, px → pixel or pixels)
 - Read URLs as "link to [domain]" or skip if already in link text
-- Convert lists to numbered format (1. ... 2. ... 3. ...) to preserve structure
+- Preserve the numbers in numbered lists
 - Split very long paragraphs at natural points
-- Keep the content faithful to the original—do not summarize or editorialize`;
+- Keep the content faithful to the original—do NOT summarize or editorialize`;
 
 /**
  * Groq client instance. Only initialized when GROQ_API_KEY is set.
