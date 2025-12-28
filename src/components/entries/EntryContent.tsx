@@ -196,6 +196,8 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
     onSuccess: () => {
       // Invalidate entries list to update read status
       utils.entries.list.invalidate();
+      // Invalidate subscriptions to update unread counts
+      utils.subscriptions.list.invalidate();
     },
   });
 
