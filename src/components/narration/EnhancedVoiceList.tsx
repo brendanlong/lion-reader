@@ -328,6 +328,10 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     previewingVoiceId,
     error,
     clearError,
+    storageUsed,
+    downloadedCount,
+    isStorageLimitExceeded,
+    deleteAllVoices,
   } = useEnhancedVoices();
 
   // Handle voice selection
@@ -355,6 +359,22 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     },
     [removeVoice, settings, setSettings]
   );
+
+  // Handle deleting all voices
+  const handleDeleteAllVoices = useCallback(async () => {
+    await deleteAllVoices();
+    // Clear the selection
+    setSettings({
+      ...settings,
+      voiceId: null,
+    });
+  }, [deleteAllVoices, settings, setSettings]);
+
+  // Format storage size in MB
+  const formatStorageSize = (bytes: number): string => {
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(1)} MB`;
+  };
 
   // Loading state
   if (isLoading) {
@@ -416,6 +436,28 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
         </div>
       )}
 
+      {/* Storage limit warning */}
+      {isStorageLimitExceeded && (
+        <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+          <svg
+            className="mt-0.5 h-4 w-4 flex-shrink-0"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+          <span className="flex-1">
+            Voice storage exceeds 200 MB. Consider removing unused voices to free up space.
+          </span>
+        </div>
+      )}
+
       {/* Voice list */}
       {voices.map((voiceState) => (
         <VoiceItem
@@ -431,6 +473,25 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
           isThisVoicePreviewing={previewingVoiceId === voiceState.voice.id}
         />
       ))}
+
+      {/* Storage info section */}
+      {downloadedCount > 0 && (
+        <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
+          <span className="text-xs text-zinc-600 dark:text-zinc-400">
+            Storage used: {formatStorageSize(storageUsed)} ({downloadedCount}{" "}
+            {downloadedCount === 1 ? "voice" : "voices"})
+          </span>
+          {downloadedCount > 1 && (
+            <button
+              type="button"
+              onClick={handleDeleteAllVoices}
+              className="text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              Delete All
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Info text */}
       <p className="text-xs text-zinc-500 dark:text-zinc-400">
