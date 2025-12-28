@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { NarrationControls, useNarration, useNarrationHighlight } from "@/components/narration";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
+import { useNarrationSettings } from "@/lib/narration/settings";
 
 /**
  * Props for the EntryContent component.
@@ -292,6 +293,9 @@ function EntryContentBody({
     isPlaying: narration.state.status === "playing",
   });
 
+  // Get narration settings for auto-scroll preference
+  const [narrationSettings] = useNarrationSettings();
+
   // Determine if we should process HTML for highlighting
   // We process it whenever narration has been activated (paragraphMap exists or state is not idle)
   const shouldProcessForHighlighting =
@@ -318,6 +322,7 @@ function EntryContentBody({
   }, [contentToDisplay, shouldProcessForHighlighting]);
 
   // Apply/remove highlight classes to DOM elements based on highlightedParagraphIds
+  // Also auto-scroll to highlighted paragraph if enabled
   useEffect(() => {
     if (!contentRef.current || !shouldProcessForHighlighting) return;
 
@@ -328,16 +333,47 @@ function EntryContentBody({
       el.classList.remove("narration-highlight");
     });
 
-    // Add highlights to matching elements
+    // Add highlights to matching elements and optionally scroll to first one
     if (highlightedParagraphIds.size > 0) {
+      let firstHighlightedElement: Element | null = null;
+
       highlightedParagraphIds.forEach((index) => {
         const el = container.querySelector(`[data-para-id="para-${index}"]`);
         if (el) {
           el.classList.add("narration-highlight");
+          // Track first highlighted element for scrolling
+          if (!firstHighlightedElement) {
+            firstHighlightedElement = el;
+          }
         }
       });
+
+      // Auto-scroll to highlighted paragraph if enabled and element is not in viewport
+      if (
+        narrationSettings.autoScrollEnabled &&
+        firstHighlightedElement &&
+        narration.state.status === "playing"
+      ) {
+        const element = firstHighlightedElement as HTMLElement;
+        const rect = element.getBoundingClientRect();
+        // Account for the header (scroll-margin-top is 100px in CSS)
+        const headerHeight = 100;
+        const isInViewport = rect.top >= headerHeight && rect.bottom <= window.innerHeight;
+
+        if (!isInViewport) {
+          element.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
+      }
     }
-  }, [highlightedParagraphIds, shouldProcessForHighlighting]);
+  }, [
+    highlightedParagraphIds,
+    shouldProcessForHighlighting,
+    narrationSettings.autoScrollEnabled,
+    narration.state.status,
+  ]);
 
   // Handle read toggle
   const handleReadToggle = () => {

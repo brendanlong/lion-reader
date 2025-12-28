@@ -909,7 +909,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
 
 ### 16.3 Auto-Scroll & Settings
 
-- [ ] **Implement auto-scroll to highlighted paragraph**
+- [x] **Implement auto-scroll to highlighted paragraph**
   - Scroll to highlighted element when it changes
   - Only scroll if element is not in viewport
   - Use smooth scrolling with `block: 'center'`
@@ -921,7 +921,7 @@ When audio narration is playing, highlight the paragraph currently being read. T
   - Add toggles to narration settings UI
   - Persist in localStorage
 
-- [ ] **Add metrics**
+- [x] **Add metrics**
   - Track `narration_highlight_active_total`
   - Track `narration_highlight_fallback_total` (when positional mapping used)
   - Track `narration_highlight_scroll_total`
