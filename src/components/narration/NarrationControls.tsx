@@ -41,6 +41,12 @@ export interface NarrationControlsProps {
   feedTitle: string;
   /** Optional artwork URL for Media Session */
   artwork?: string;
+  /**
+   * Optional external narration state for controlled mode.
+   * When provided, the component won't create its own useNarration hook.
+   * This is used when the parent needs access to narration state (e.g., for highlighting).
+   */
+  narration?: ReturnType<typeof useNarration>;
 }
 
 /**
@@ -136,6 +142,11 @@ function NarrationIcon() {
  *
  * Renders playback controls for article narration. Only renders
  * if the Web Speech API is supported in the current browser.
+ *
+ * Can be used in two modes:
+ * 1. Uncontrolled: Component manages its own narration state
+ * 2. Controlled: Parent provides narration state via the `narration` prop
+ *    (used when parent needs access to state for highlighting)
  */
 export function NarrationControls({
   articleId,
@@ -143,6 +154,7 @@ export function NarrationControls({
   title,
   feedTitle,
   artwork,
+  narration,
 }: NarrationControlsProps) {
   // Don't render if narration is not supported
   if (!isNarrationSupported()) {
@@ -156,6 +168,7 @@ export function NarrationControls({
       title={title}
       feedTitle={feedTitle}
       artwork={artwork}
+      narration={narration}
     />
   );
 }
@@ -170,14 +183,20 @@ function NarrationControlsInner({
   title,
   feedTitle,
   artwork,
+  narration: externalNarration,
 }: NarrationControlsProps) {
-  const { state, isLoading, play, pause, skipForward, skipBackward, isSupported } = useNarration({
+  // Use internal narration hook only when external state is not provided
+  const internalNarration = useNarration({
     id: articleId,
     type: articleType,
     title,
     feedTitle,
     artwork,
   });
+
+  // Use external narration if provided, otherwise use internal
+  const { state, isLoading, play, pause, skipForward, skipBackward, isSupported } =
+    externalNarration ?? internalNarration;
 
   // Enable keyboard shortcuts for narration
   useNarrationKeyboardShortcuts({
