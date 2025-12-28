@@ -334,7 +334,8 @@ function EntryContentBody({
     });
 
     // Add highlights to matching elements and optionally scroll to first one
-    if (highlightedParagraphIds.size > 0) {
+    // Only apply highlights if the highlightEnabled setting is true
+    if (highlightedParagraphIds.size > 0 && narrationSettings.highlightEnabled) {
       let firstHighlightedElement: Element | null = null;
 
       highlightedParagraphIds.forEach((index) => {
@@ -371,6 +372,7 @@ function EntryContentBody({
   }, [
     highlightedParagraphIds,
     shouldProcessForHighlighting,
+    narrationSettings.highlightEnabled,
     narrationSettings.autoScrollEnabled,
     narration.state.status,
   ]);

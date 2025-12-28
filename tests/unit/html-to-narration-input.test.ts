@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { htmlToNarrationInput } from "../../src/server/services/narration";
+import { htmlToNarrationInput } from "../../src/lib/narration/html-to-narration-input";
 
 describe("htmlToNarrationInput", () => {
   describe("basic paragraph handling", () => {
