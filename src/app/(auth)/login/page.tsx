@@ -36,6 +36,9 @@ function LoginForm() {
   // Get success message from registration redirect
   const registered = searchParams.get("registered") === "true";
 
+  // Fetch signup configuration to determine if signup link should be shown
+  const { data: signupConfigData } = trpc.auth.signupConfig.useQuery();
+
   // Get OAuth error from callback redirect and map to user-friendly message
   const oauthError = searchParams.get("error");
   const oauthErrorMessage = useMemo(() => {
@@ -175,15 +178,17 @@ function LoginForm() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
-        Don&apos;t have an account?{" "}
-        <Link
-          href="/register"
-          className="font-medium text-zinc-900 hover:underline dark:text-zinc-50"
-        >
-          Create one
-        </Link>
-      </p>
+      {!signupConfigData?.requiresInvite && (
+        <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+          Don&apos;t have an account?{" "}
+          <Link
+            href="/register"
+            className="font-medium text-zinc-900 hover:underline dark:text-zinc-50"
+          >
+            Create one
+          </Link>
+        </p>
+      )}
     </div>
   );
 }
