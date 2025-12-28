@@ -172,10 +172,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     if (!isSupported || !narratorRef.current) return;
 
     async function updateVoice() {
-      if (settings.voiceUri) {
+      if (settings.voiceId) {
         // Wait for voices to be available, then find the selected one
         await waitForVoices();
-        const voice = findVoiceByUri(settings.voiceUri);
+        const voice = findVoiceByUri(settings.voiceId);
         if (voice) {
           narratorRef.current?.setVoice(voice);
         }
@@ -183,7 +183,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     }
 
     updateVoice();
-  }, [isSupported, settings.voiceUri]);
+  }, [isSupported, settings.voiceId]);
 
   /**
    * Start or resume playback.
@@ -207,8 +207,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     if (narrationText && state.totalParagraphs > 0) {
       // Get the voice if we have a preference
       let voice: SpeechSynthesisVoice | undefined;
-      if (settings.voiceUri) {
-        const foundVoice = findVoiceByUri(settings.voiceUri);
+      if (settings.voiceId) {
+        const foundVoice = findVoiceByUri(settings.voiceId);
         if (foundVoice) {
           voice = foundVoice;
         }
@@ -231,8 +231,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         // Wait for voices and get preferred voice
         await waitForVoices();
         let voice: SpeechSynthesisVoice | undefined;
-        if (settings.voiceUri) {
-          const foundVoice = findVoiceByUri(settings.voiceUri);
+        if (settings.voiceId) {
+          const foundVoice = findVoiceByUri(settings.voiceId);
           if (foundVoice) {
             voice = foundVoice;
           }
@@ -252,7 +252,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     state.status,
     state.totalParagraphs,
     narrationText,
-    settings.voiceUri,
+    settings.voiceId,
     settings.rate,
     settings.pitch,
     generateMutation,

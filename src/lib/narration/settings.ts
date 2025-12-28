@@ -8,6 +8,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import type { TTSProviderId } from "./types";
 
 /**
  * User preferences for narration playback.
@@ -19,10 +20,27 @@ export interface NarrationSettings {
   enabled: boolean;
 
   /**
-   * The voice URI (SpeechSynthesisVoice.voiceURI) to use for narration.
-   * Null means use the browser default voice.
+   * Which TTS provider to use.
+   * - "browser": Native Web Speech API voices (default)
+   * - "piper": Enhanced voices via Piper TTS (requires download)
    */
-  voiceUri: string | null;
+  provider: TTSProviderId;
+
+  /**
+   * The voice ID to use for narration.
+   *
+   * For browser provider: this is the voiceURI (SpeechSynthesisVoice.voiceURI).
+   * For Piper provider: this is the model ID (e.g., "en_US-lessac-medium").
+   *
+   * Null means use the provider's default voice.
+   */
+  voiceId: string | null;
+
+  /**
+   * @deprecated Use voiceId instead. Kept for backwards compatibility.
+   * Will be migrated to voiceId on load.
+   */
+  voiceUri?: string | null;
 
   /**
    * Playback rate multiplier (0.5 - 2.0, default 1.0).
@@ -40,7 +58,8 @@ export interface NarrationSettings {
  */
 export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   enabled: true,
-  voiceUri: null,
+  provider: "browser",
+  voiceId: null,
   rate: 1.0,
   pitch: 1.0,
 };
@@ -76,14 +95,32 @@ export function loadNarrationSettings(): NarrationSettings {
       return DEFAULT_NARRATION_SETTINGS;
     }
 
-    const parsed = JSON.parse(stored) as Partial<NarrationSettings>;
+    const parsed = JSON.parse(stored) as Partial<NarrationSettings> & { voiceUri?: string | null };
+
+    // Handle migration from voiceUri to voiceId
+    // If voiceId is not present but voiceUri is, use voiceUri as voiceId
+    let voiceId: string | null = null;
+    if (typeof parsed.voiceId === "string") {
+      voiceId = parsed.voiceId;
+    } else if (typeof parsed.voiceUri === "string") {
+      // Migration: use old voiceUri as voiceId
+      voiceId = parsed.voiceUri;
+    }
+
+    // Validate provider value
+    const validProviders = ["browser", "piper"] as const;
+    const provider =
+      typeof parsed.provider === "string" &&
+      validProviders.includes(parsed.provider as "browser" | "piper")
+        ? (parsed.provider as "browser" | "piper")
+        : DEFAULT_NARRATION_SETTINGS.provider;
 
     // Merge with defaults to handle new fields in future versions
     return {
       enabled:
         typeof parsed.enabled === "boolean" ? parsed.enabled : DEFAULT_NARRATION_SETTINGS.enabled,
-      voiceUri:
-        typeof parsed.voiceUri === "string" ? parsed.voiceUri : DEFAULT_NARRATION_SETTINGS.voiceUri,
+      provider,
+      voiceId,
       rate:
         typeof parsed.rate === "number" && parsed.rate >= 0.5 && parsed.rate <= 2.0
           ? parsed.rate
