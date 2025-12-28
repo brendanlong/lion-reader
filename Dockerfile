@@ -81,10 +81,13 @@ COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/src/server/db/schema.ts ./src/server/db/schema.ts
 
+# Copy migration scripts
+COPY --from=builder /app/scripts ./scripts
+
 # Install only production dependencies needed for migrations
-# We need drizzle-kit for migrations and pg for database connection
+# We need drizzle-kit for migrations, pg for database connection, tsx to run TS scripts, and ioredis for cache flush
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm add drizzle-kit drizzle-orm pg dotenv-cli
+    pnpm add drizzle-kit drizzle-orm pg dotenv-cli tsx ioredis
 
 # Switch to non-root user
 USER nextjs

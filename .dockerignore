@@ -18,9 +18,6 @@ docs/
 *.md
 !README.md
 
-# Development scripts
-scripts/
-
 # Docker files (prevent recursive context)
 Dockerfile
 docker-compose.yml
