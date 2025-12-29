@@ -612,6 +612,43 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("Image: Cat sitting on couch");
     });
+
+    it("includes inline image alt text within paragraphs", () => {
+      const html = '<p>Some text <img src="test.jpg" alt="a cute cat"> more text</p>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Some text Image: a cute cat more text");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: [0] }]);
+    });
+
+    it("handles multiple inline images within a paragraph", () => {
+      const html = '<p>First <img alt="image one"> middle <img alt="image two"> last</p>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("First Image: image one middle Image: image two last");
+    });
+
+    it("skips inline images without alt text within paragraphs", () => {
+      const html = '<p>Text before <img src="test.jpg"> text after</p>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Text before  text after");
+    });
+
+    it("handles inline images in list items", () => {
+      const html = '<ul><li>Item with <img alt="icon"> image</li></ul>';
+      const result = htmlToClientNarration(html);
+
+      // ul produces no text, li does
+      expect(result.narrationText).toBe("Item with Image: icon image");
+    });
+
+    it("handles inline images in blockquotes", () => {
+      const html = '<blockquote>Quote with <img alt="emphasis"> for effect</blockquote>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Quote with Image: emphasis for effect");
+    });
   });
 
   describe("code and pre elements", () => {
