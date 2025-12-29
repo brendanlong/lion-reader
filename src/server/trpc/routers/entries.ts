@@ -2,12 +2,15 @@
  * Entries Router
  *
  * Handles entry listing and actions: list, get, mark read, star.
- * Visibility is determined by the user_entries table: users only see entries
- * that have a corresponding row in user_entries for their user_id.
+ *
+ * Visibility rules:
+ * - Users only see entries with a corresponding user_entries row for their user_id
+ * - Additionally, entries must be from an active subscription (not unsubscribed)
+ * - Exception: Starred entries are always visible, even after unsubscribing
  */
 
 import { z } from "zod";
-import { eq, and, isNull, desc, asc, lte, inArray, sql } from "drizzle-orm";
+import { eq, and, or, isNull, desc, asc, lte, inArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -229,6 +232,16 @@ export const entriesRouter = createTRPCRouter({
       // Visibility is enforced by inner join with user_entries
       const conditions = [eq(userEntries.userId, userId)];
 
+      // Entries must be from an active subscription OR be starred
+      // Starred entries are explicitly saved by the user and should persist after unsubscribing
+      const activeSubscriptionFeedIds = ctx.db
+        .select({ feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+      conditions.push(
+        or(inArray(entries.feedId, activeSubscriptionFeedIds), eq(userEntries.starred, true))!
+      );
+
       // Filter by feedId if specified
       if (input.feedId) {
         conditions.push(eq(entries.feedId, input.feedId));
@@ -248,22 +261,16 @@ export const entriesRouter = createTRPCRouter({
           return { items: [], nextCursor: undefined };
         }
 
-        // Get subscriptions with this tag
-        const taggedSubscriptions = await ctx.db
+        // Get feed IDs for subscriptions with this tag
+        // Include starred entries even if no subscriptions have this tag
+        const taggedFeedIds = ctx.db
           .select({ feedId: subscriptions.feedId })
           .from(subscriptionTags)
           .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
           .where(
             and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
           );
-
-        if (taggedSubscriptions.length === 0) {
-          // No subscriptions with this tag
-          return { items: [], nextCursor: undefined };
-        }
-
-        const taggedFeedIds = taggedSubscriptions.map((s) => s.feedId);
-        conditions.push(inArray(entries.feedId, taggedFeedIds));
+        conditions.push(or(inArray(entries.feedId, taggedFeedIds), eq(userEntries.starred, true))!);
       }
 
       // Apply unreadOnly filter
@@ -396,6 +403,25 @@ export const entriesRouter = createTRPCRouter({
       }
 
       const { entry, feed, userState } = result[0];
+
+      // Entry must be starred OR from an active subscription
+      if (!userState.starred) {
+        const activeSubscription = await ctx.db
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              eq(subscriptions.feedId, entry.feedId),
+              isNull(subscriptions.unsubscribedAt)
+            )
+          )
+          .limit(1);
+
+        if (activeSubscription.length === 0) {
+          throw errors.entryNotFound();
+        }
+      }
 
       return {
         entry: {
