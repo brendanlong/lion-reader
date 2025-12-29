@@ -312,6 +312,19 @@ function EntryContentBody({
   const sanitizedContent = useMemo(() => {
     if (!contentToDisplay) return null;
 
+    // If we have processed HTML from client-side narration, use it directly
+    // This ensures the data-para-id attributes exactly match the paragraph mapping
+    if (shouldProcessForHighlighting && narration.processedHtml) {
+      // The processed HTML already has data-para-id attributes added during
+      // htmlToClientNarration, so we just need to sanitize it
+      return DOMPurify.sanitize(narration.processedHtml, {
+        ADD_TAGS: ["iframe"],
+        ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id"],
+        FORBID_TAGS: ["style", "script"],
+        FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
+      });
+    }
+
     const sanitized = DOMPurify.sanitize(contentToDisplay, {
       // Allow safe tags and attributes, plus data-para-id for highlighting
       ADD_TAGS: ["iframe"],
@@ -320,13 +333,14 @@ function EntryContentBody({
       FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
     });
 
-    // Process for highlighting if narration is active
+    // Process for highlighting if narration is active (server-side narration path)
+    // For client-side narration, we use processedHtml above
     if (shouldProcessForHighlighting) {
       return processHtmlForHighlighting(sanitized);
     }
 
     return sanitized;
-  }, [contentToDisplay, shouldProcessForHighlighting]);
+  }, [contentToDisplay, shouldProcessForHighlighting, narration.processedHtml]);
 
   // Auto-scroll to highlighted paragraph when playing
   // Note: Highlighting is now handled via CSS by NarrationHighlightStyles component
