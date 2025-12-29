@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
 import {
   EntryList,
   EntryContent,
@@ -25,7 +25,7 @@ import {
 } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
-export default function AllEntriesPage() {
+function AllEntriesContent() {
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
@@ -108,5 +108,13 @@ export default function AllEntriesPage() {
         }
       />
     </div>
+  );
+}
+
+export default function AllEntriesPage() {
+  return (
+    <Suspense>
+      <AllEntriesContent />
+    </Suspense>
   );
 }

@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
 import { toast } from "sonner";
 import {
   SavedArticleList,
@@ -22,7 +22,7 @@ import {
 } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
-export default function SavedArticlesPage() {
+function SavedArticlesContent() {
   const {
     openEntryId: openArticleId,
     setOpenEntryId: setOpenArticleId,
@@ -236,5 +236,13 @@ export default function SavedArticlesPage() {
         }
       />
     </div>
+  );
+}
+
+export default function SavedArticlesPage() {
+  return (
+    <Suspense>
+      <SavedArticlesContent />
+    </Suspense>
   );
 }

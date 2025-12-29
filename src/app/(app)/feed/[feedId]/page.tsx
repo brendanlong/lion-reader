@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
@@ -83,7 +83,7 @@ function FeedNotFound() {
   );
 }
 
-export default function SingleFeedPage() {
+function SingleFeedContent() {
   const params = useParams<{ feedId: string }>();
   const feedId = params.feedId;
 
@@ -232,5 +232,13 @@ export default function SingleFeedPage() {
         }
       />
     </div>
+  );
+}
+
+export default function SingleFeedPage() {
+  return (
+    <Suspense>
+      <SingleFeedContent />
+    </Suspense>
   );
 }
