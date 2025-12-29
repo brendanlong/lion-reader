@@ -136,6 +136,24 @@ android {
             excludes += "/META-INF/LICENSE-notice.md"
         }
     }
+
+    lint {
+        // Disable lint checks that crash due to Kotlin/AGP version incompatibility
+        // See: https://issuetracker.google.com/issues/344721586
+        disable += "NullSafeMutableLiveData"
+        disable += "RememberInComposition"
+        disable += "FrequentlyChangingValue"
+        disable += "AutoboxingStateCreation"
+        disable += "AutoboxingStateValueProperty"
+        disable += "StateFlowValueCalledInComposition"
+        disable += "FlowOperatorInvokedInComposition"
+        disable += "ComposableNaming"
+        disable += "UnrememberedMutableState"
+        disable += "CoroutineCreationDuringComposition"
+        disable += "ProduceStateDoesNotAssignValue"
+        disable += "ReturnFromAwaitPointerEventScope"
+        disable += "UnnecessaryComposedModifier"
+    }
 }
 
 // ktlint configuration
