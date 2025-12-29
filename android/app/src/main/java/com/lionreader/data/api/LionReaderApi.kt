@@ -155,27 +155,27 @@ class LionReaderApiImpl
             password: String,
         ): ApiResult<LoginResponse> =
             apiClient.post(
-                path = "/auth/login",
+                path = "auth/login",
                 body = LoginRequest(email = email, password = password),
             )
 
-        override suspend fun getAuthProviders(): ApiResult<ProvidersResponse> = apiClient.get(path = "/auth/providers")
+        override suspend fun getAuthProviders(): ApiResult<ProvidersResponse> = apiClient.get(path = "auth/providers")
 
-        override suspend fun me(): ApiResult<UserResponse> = apiClient.get(path = "/auth/me")
+        override suspend fun me(): ApiResult<UserResponse> = apiClient.get(path = "auth/me")
 
-        override suspend fun logout(): ApiResult<Unit> = apiClient.postNoContent(path = "/auth/logout")
+        override suspend fun logout(): ApiResult<Unit> = apiClient.postNoContent(path = "auth/logout")
 
         // ============================================================================
         // SUBSCRIPTION ENDPOINTS
         // ============================================================================
 
-        override suspend fun listSubscriptions(): ApiResult<SubscriptionsResponse> = apiClient.get(path = "/subscriptions")
+        override suspend fun listSubscriptions(): ApiResult<SubscriptionsResponse> = apiClient.get(path = "subscriptions")
 
         // ============================================================================
         // TAG ENDPOINTS
         // ============================================================================
 
-        override suspend fun listTags(): ApiResult<TagsResponse> = apiClient.get(path = "/tags")
+        override suspend fun listTags(): ApiResult<TagsResponse> = apiClient.get(path = "tags")
 
         // ============================================================================
         // ENTRY ENDPOINTS
@@ -190,7 +190,7 @@ class LionReaderApiImpl
             cursor: String?,
             limit: Int?,
         ): ApiResult<EntriesResponse> =
-            apiClient.get(path = "/entries") {
+            apiClient.get(path = "entries") {
                 queryParam("feedId", feedId)
                 queryParam("tagId", tagId)
                 queryParam("unreadOnly", unreadOnly)
@@ -200,18 +200,18 @@ class LionReaderApiImpl
                 queryParam("limit", limit)
             }
 
-        override suspend fun getEntry(id: String): ApiResult<EntryResponse> = apiClient.get(path = "/entries/$id")
+        override suspend fun getEntry(id: String): ApiResult<EntryResponse> = apiClient.get(path = "entries/$id")
 
         override suspend fun markRead(
             ids: List<String>,
             read: Boolean,
         ): ApiResult<Unit> =
             apiClient.postNoContent(
-                path = "/entries/mark-read",
+                path = "entries/mark-read",
                 body = MarkReadRequest(ids = ids, read = read),
             )
 
-        override suspend fun star(id: String): ApiResult<Unit> = apiClient.postNoContent(path = "/entries/$id/star")
+        override suspend fun star(id: String): ApiResult<Unit> = apiClient.postNoContent(path = "entries/$id/star")
 
-        override suspend fun unstar(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "/entries/$id/star")
+        override suspend fun unstar(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "entries/$id/star")
     }

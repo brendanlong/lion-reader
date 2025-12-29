@@ -59,7 +59,8 @@ data class AppConfig(
 ) {
     /**
      * Full API URL combining base URL and path.
+     * Includes trailing slash to ensure proper URL concatenation with relative paths.
      */
     val fullApiUrl: String
-        get() = "$apiBaseUrl$apiBasePath"
+        get() = "$apiBaseUrl$apiBasePath/"
 }
