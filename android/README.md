@@ -58,9 +58,37 @@ git clone <repository-url>
 cd lion-reader/android
 ```
 
-### 2. Open in Android Studio
+### 2. Install Android SDK
+
+#### Option A: Android Studio (Recommended for development)
 
 Open the `android/` directory in Android Studio. The IDE will automatically sync Gradle and download dependencies.
+
+#### Option B: Command-Line Tools (Ubuntu/Linux)
+
+For headless environments or if you prefer not to use Android Studio:
+
+```bash
+# Install JDK and SDK manager
+sudo apt update
+sudo apt install openjdk-17-jdk sdkmanager
+
+# Create SDK directory
+# Note: ANDROID_HOME is already set by android/.envrc if you use direnv
+export ANDROID_HOME=$HOME/Android/Sdk
+mkdir -p $ANDROID_HOME
+
+# Accept licenses and install required SDK components
+sdkmanager --licenses
+sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+```
+
+If you're not using direnv, add to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export ANDROID_HOME=$HOME/Android/Sdk
+export PATH=$PATH:$ANDROID_HOME/platform-tools
+```
 
 ### 3. Configure Local Properties (Optional)
 
@@ -236,6 +264,7 @@ keytool -genkey -v \
 ```
 
 You will be prompted for:
+
 - Keystore password
 - Key alias password
 - Certificate details (name, organization, location)
@@ -277,6 +306,7 @@ LION_READER_KEY_PASSWORD=your_key_password
 For GitHub Actions or other CI/CD systems:
 
 1. Base64 encode the keystore:
+
    ```bash
    base64 -i lion-reader-release.jks -o keystore_base64.txt
    ```
@@ -300,30 +330,36 @@ For GitHub Actions or other CI/CD systems:
 Before submitting to the Google Play Store, prepare the following:
 
 #### App Icon
+
 - **Size**: 512x512 px
 - **Format**: PNG (32-bit, with alpha)
 - **Notes**: Used in Play Store listing and search results
 
 #### Feature Graphic
+
 - **Size**: 1024x500 px
 - **Format**: PNG or JPEG
 - **Notes**: Displayed at top of Play Store listing
 
 #### Screenshots
+
 - **Phone**: At least 2 screenshots (320-3840 px, 16:9 or 9:16)
 - **7-inch tablet**: At least 1 screenshot (optional but recommended)
 - **10-inch tablet**: At least 1 screenshot (optional but recommended)
 - **Format**: PNG or JPEG (24-bit, no alpha)
 
 #### Store Listing Text
+
 - **Title**: Up to 30 characters
 - **Short description**: Up to 80 characters
 - **Full description**: Up to 4000 characters
 
 #### Content Rating
+
 Complete the content rating questionnaire in Play Console.
 
 #### Privacy Policy
+
 Required URL to privacy policy hosted online.
 
 ### Asset Location
@@ -371,6 +407,7 @@ play-store-assets/
 ### Offline Support
 
 The app supports offline-first architecture:
+
 - Entries are cached in Room database
 - Sync operations run via WorkManager
 - Pending actions queue for offline changes
@@ -381,14 +418,17 @@ The app supports offline-first architecture:
 ### Build Errors
 
 **Error: "SDK location not found"**
+
 - Ensure `local.properties` contains correct `sdk.dir` path
 - Or set `ANDROID_HOME` environment variable
 
 **Error: Release signing not configured**
+
 - Configure keystore as described in [Keystore Setup](#keystore-setup)
 - Debug builds don't require keystore configuration
 
 **ProGuard/R8 issues in release builds**
+
 - Check `proguard-rules.pro` for missing keep rules
 - Run with `--info` flag for detailed shrinking logs:
   ```bash
@@ -398,6 +438,7 @@ The app supports offline-first architecture:
 ### Testing Issues
 
 **Instrumented tests failing**
+
 - Ensure emulator or device is connected and detected
 - Check Android SDK platform tools are up to date
 - Try `adb kill-server && adb start-server`
