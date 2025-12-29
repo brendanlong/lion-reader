@@ -2,10 +2,34 @@
  * HTML to Narration Input Converter
  *
  * This module converts HTML content to structured text with paragraph markers
- * for LLM processing. It's a pure function with no I/O dependencies.
+ * for LLM processing. Uses DOM parsing to ensure paragraph indices match
+ * the client-side highlighting implementation.
  *
  * @module narration/html-to-narration-input
  */
+
+import { JSDOM } from "jsdom";
+
+/**
+ * Block-level elements that get paragraph markers.
+ * Must match the client-side BLOCK_ELEMENTS in client-paragraph-ids.ts
+ */
+const BLOCK_ELEMENTS = new Set([
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "blockquote",
+  "pre",
+  "ul",
+  "ol",
+  "li",
+  "figure",
+  "table",
+]);
 
 /**
  * Result of converting HTML to narration input.
@@ -18,9 +42,121 @@ export interface HtmlToNarrationInputResult {
 }
 
 /**
+ * Converts an element's text content for narration.
+ * Handles special elements like images, code blocks, etc.
+ */
+function getElementNarrationText(el: Element): string {
+  const tagName = el.tagName.toLowerCase();
+
+  // Handle headings
+  if (tagName === "h1" || tagName === "h2") {
+    return `[HEADING] ${el.textContent?.trim() || ""}`;
+  }
+  if (tagName === "h3" || tagName === "h4" || tagName === "h5" || tagName === "h6") {
+    return `[SUBHEADING] ${el.textContent?.trim() || ""}`;
+  }
+
+  // Handle code blocks
+  if (tagName === "pre") {
+    const codeContent = el.textContent?.trim() || "";
+    return `[CODE BLOCK]\n${codeContent}\n[END CODE BLOCK]`;
+  }
+
+  // Handle blockquotes
+  if (tagName === "blockquote") {
+    return `[QUOTE]\n${el.textContent?.trim() || ""}\n[END QUOTE]`;
+  }
+
+  // Handle lists (ul/ol get markers but their text comes from li children)
+  if (tagName === "ul" || tagName === "ol") {
+    return "[LIST]";
+  }
+
+  // Handle list items
+  if (tagName === "li") {
+    return `- ${el.textContent?.trim() || ""}`;
+  }
+
+  // Handle figures
+  if (tagName === "figure") {
+    const img = el.querySelector("img");
+    const figcaption = el.querySelector("figcaption");
+    const alt = img?.getAttribute("alt") || figcaption?.textContent?.trim() || "no description";
+    return `[IMAGE: ${alt}]`;
+  }
+
+  // Handle tables
+  if (tagName === "table") {
+    // Extract table content in a readable format
+    const rows: string[] = [];
+    el.querySelectorAll("tr").forEach((tr) => {
+      const cells: string[] = [];
+      tr.querySelectorAll("th, td").forEach((cell) => {
+        cells.push(cell.textContent?.trim() || "");
+      });
+      if (cells.length > 0) {
+        rows.push(`[ROW] ${cells.join(" | ")}`);
+      }
+    });
+    return `[TABLE]\n${rows.join("\n")}\n[END TABLE]`;
+  }
+
+  // Handle regular paragraphs - process links and inline elements
+  return processInlineContent(el);
+}
+
+/**
+ * Process inline content, handling links and other inline elements.
+ */
+function processInlineContent(el: Element): string {
+  let text = "";
+
+  // Walk through child nodes
+  el.childNodes.forEach((node) => {
+    if (node.nodeType === 3) {
+      // Text node
+      text += node.textContent || "";
+    } else if (node.nodeType === 1) {
+      // Element node
+      const childEl = node as Element;
+      const childTag = childEl.tagName.toLowerCase();
+
+      if (childTag === "a") {
+        // Handle links
+        const href = childEl.getAttribute("href");
+        const linkText = childEl.textContent?.trim() || "";
+
+        if (!linkText || linkText === href) {
+          try {
+            const domain = new URL(href || "").hostname;
+            text += `[link to ${domain}]`;
+          } catch {
+            text += `[link to ${href}]`;
+          }
+        } else {
+          text += linkText;
+        }
+      } else if (childTag === "code") {
+        // Inline code
+        text += `\`${childEl.textContent || ""}\``;
+      } else if (childTag === "img") {
+        // Inline image
+        const alt = childEl.getAttribute("alt") || "image";
+        text += `[IMAGE: ${alt}]`;
+      } else {
+        // Recurse for other inline elements (strong, em, span, etc.)
+        text += processInlineContent(childEl);
+      }
+    }
+  });
+
+  return text.trim();
+}
+
+/**
  * Converts HTML to structured text for LLM processing with paragraph markers.
- * Preserves semantic information like headings, lists, code blocks, and images
- * to help the LLM generate appropriate narration.
+ * Uses DOM parsing to ensure paragraph indices are assigned in document order,
+ * matching the client-side paragraph ID assignment.
  *
  * Adds [P:X] markers to indicate original paragraph indices, which the LLM
  * will transform to [PARA:X] markers in its output for highlighting support.
@@ -36,137 +172,49 @@ export interface HtmlToNarrationInputResult {
  * // }
  */
 export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
-  // Track paragraph indices
-  let paragraphIndex = 0;
-  const paragraphOrder: string[] = [];
-
-  /**
-   * Generates the next paragraph marker and records it.
-   */
-  function nextMarker(): string {
-    const id = `para-${paragraphIndex}`;
-    paragraphOrder.push(id);
-    const marker = `[P:${paragraphIndex}]`;
-    paragraphIndex++;
-    return marker;
+  // Handle empty input
+  if (!html || html.trim() === "") {
+    return {
+      inputText: "",
+      paragraphOrder: [],
+    };
   }
 
-  let result = html;
+  // Parse HTML using JSDOM
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
 
-  // Process headings with paragraph markers
-  result = result.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [HEADING] ${content}\n\n`;
-  });
-  result = result.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [HEADING] ${content}\n\n`;
-  });
-  result = result.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [SUBHEADING] ${content}\n\n`;
-  });
-  result = result.replace(/<h[4-6][^>]*>([\s\S]*?)<\/h[4-6]>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [SUBHEADING] ${content}\n\n`;
-  });
+  // Build selector for all block elements (same as client-side)
+  const selector = Array.from(BLOCK_ELEMENTS).join(", ");
 
-  // Mark code blocks with paragraph markers
-  result = result.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [CODE BLOCK]\n${content}\n[END CODE BLOCK]\n\n`;
-  });
-  result = result.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [CODE BLOCK]\n${content}\n[END CODE BLOCK]\n\n`;
-  });
+  // Find all block elements in document order
+  const elements = doc.querySelectorAll(selector);
+  const paragraphOrder: string[] = [];
+  const lines: string[] = [];
 
-  // Mark inline code (but don't add line breaks or markers)
-  result = result.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, "`$1`");
+  elements.forEach((el, index) => {
+    const id = `para-${index}`;
+    paragraphOrder.push(id);
 
-  // Mark blockquotes with paragraph markers
-  result = result.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [QUOTE]\n${content}\n[END QUOTE]\n\n`;
-  });
+    const marker = `[P:${index}]`;
+    const text = getElementNarrationText(el);
 
-  // Handle images - extract alt text with paragraph markers
-  result = result.replace(/<img[^>]*alt=["']([^"']+)["'][^>]*>/gi, (_, alt) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [IMAGE: ${alt}]\n\n`;
-  });
-  result = result.replace(/<img[^>]*>/gi, () => {
-    const marker = nextMarker();
-    return `\n\n${marker} [IMAGE: no description]\n\n`;
-  });
-
-  // Handle links - preserve link text, add URL for context (no markers, inline)
-  result = result.replace(/<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, url, text) => {
-    const cleanText = text.trim();
-    // If link text is the same as URL or empty, just show domain
-    if (!cleanText || cleanText === url) {
-      try {
-        const domain = new URL(url).hostname;
-        return `[link to ${domain}]`;
-      } catch {
-        return `[link to ${url}]`;
-      }
+    if (text) {
+      lines.push(`${marker} ${text}`);
     }
-    // Otherwise, just use the link text (LLM will handle it)
-    return cleanText;
   });
 
-  // Handle lists - mark list items with paragraph markers
-  result = result.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n${marker} - ${content}`;
-  });
-  result = result.replace(/<\/?[ou]l[^>]*>/gi, "\n");
-
-  // Handle tables - mark them for LLM to process with paragraph markers
-  result = result.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} [TABLE]\n${content}\n[END TABLE]\n\n`;
-  });
-  result = result.replace(/<tr[^>]*>/gi, "\n[ROW] ");
-  result = result.replace(/<\/tr>/gi, "");
-  result = result.replace(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi, "$1 | ");
-
-  // Handle paragraphs with paragraph markers
-  result = result.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (_, content) => {
-    const marker = nextMarker();
-    return `\n\n${marker} ${content}\n\n`;
-  });
-
-  // Handle divs (no markers, they're containers)
-  result = result.replace(/<div[^>]*>/gi, "\n\n");
-  result = result.replace(/<\/div>/gi, "\n\n");
-
-  // Handle line breaks
-  result = result.replace(/<br\s*\/?>/gi, "\n");
-
-  // Remove remaining HTML tags
-  result = result.replace(/<[^>]+>/g, "");
-
-  // Decode common HTML entities
-  result = result.replace(/&nbsp;/g, " ");
-  result = result.replace(/&amp;/g, "&");
-  result = result.replace(/&lt;/g, "<");
-  result = result.replace(/&gt;/g, ">");
-  result = result.replace(/&quot;/g, '"');
-  result = result.replace(/&#39;/g, "'");
-  result = result.replace(/&apos;/g, "'");
+  // Join with double newlines for paragraph separation
+  let inputText = lines.join("\n\n");
 
   // Normalize whitespace
-  result = result.replace(/ +/g, " ");
-  result = result.replace(/\n{3,}/g, "\n\n");
-  result = result
-    .split("\n")
-    .map((line) => line.trim())
-    .join("\n");
+  inputText = inputText
+    .replace(/\u00A0/g, " ") // Convert nbsp to regular space
+    .replace(/ +/g, " ") // Collapse multiple spaces
+    .replace(/\n{3,}/g, "\n\n"); // Collapse multiple newlines
 
   return {
-    inputText: result.trim(),
+    inputText: inputText.trim(),
     paragraphOrder,
   };
 }
