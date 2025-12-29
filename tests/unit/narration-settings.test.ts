@@ -268,6 +268,7 @@ describe("saveNarrationSettings", () => {
       highlightEnabled: false,
       autoScrollEnabled: true,
       useLlmNormalization: true,
+      sentenceGapSeconds: 0.3,
     };
 
     saveNarrationSettings(settings);
@@ -288,6 +289,7 @@ describe("saveNarrationSettings", () => {
       highlightEnabled: true,
       autoScrollEnabled: false,
       useLlmNormalization: false,
+      sentenceGapSeconds: 0.5,
     };
 
     saveNarrationSettings(originalSettings);
@@ -306,6 +308,7 @@ describe("DEFAULT_NARRATION_SETTINGS", () => {
     expect(DEFAULT_NARRATION_SETTINGS.pitch).toBe(1.0);
     expect(DEFAULT_NARRATION_SETTINGS.highlightEnabled).toBe(true);
     expect(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled).toBe(true);
+    expect(DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds).toBe(0.3);
   });
 });
 
