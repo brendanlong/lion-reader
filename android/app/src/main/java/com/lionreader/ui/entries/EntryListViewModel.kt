@@ -9,7 +9,7 @@ import com.lionreader.data.repository.EntryFilters
 import com.lionreader.data.repository.EntryRepository
 import com.lionreader.data.repository.SubscriptionRepository
 import com.lionreader.data.repository.TagRepository
-import com.lionreader.data.sync.ConnectivityMonitor
+import com.lionreader.data.sync.ConnectivityMonitorInterface
 import com.lionreader.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -45,7 +45,7 @@ class EntryListViewModel @Inject constructor(
     private val entryRepository: EntryRepository,
     private val subscriptionRepository: SubscriptionRepository,
     private val tagRepository: TagRepository,
-    private val connectivityMonitor: ConnectivityMonitor,
+    private val connectivityMonitor: ConnectivityMonitorInterface,
 ) : ViewModel() {
 
     companion object {
@@ -81,7 +81,7 @@ class EntryListViewModel @Inject constructor(
             title = Screen.All.TITLE,
             unreadOnly = _unreadOnly.value,
             sortOrder = _sortOrder.value,
-            isOnline = connectivityMonitor.isOnline(),
+            isOnline = connectivityMonitor.checkOnline(),
         )
     )
     val uiState: StateFlow<EntryListUiState> = _uiState.asStateFlow()
@@ -402,7 +402,7 @@ class EntryListViewModel @Inject constructor(
 
             try {
                 // First sync pending actions if online
-                if (connectivityMonitor.isOnline()) {
+                if (connectivityMonitor.checkOnline()) {
                     entryRepository.syncFromServer()
                 }
 
@@ -426,7 +426,7 @@ class EntryListViewModel @Inject constructor(
                 // Even if sync fails, we still have local data
                 _uiState.value = _uiState.value.copy(
                     isRefreshing = false,
-                    errorMessage = if (!connectivityMonitor.isOnline()) {
+                    errorMessage = if (!connectivityMonitor.checkOnline()) {
                         "You're offline. Showing cached entries."
                     } else {
                         e.message ?: "Failed to refresh"
