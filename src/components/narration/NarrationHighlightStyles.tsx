@@ -36,34 +36,57 @@ interface NarrationHighlightStylesProps {
  * Generates CSS rules to highlight specific paragraphs by their data-para-id.
  *
  * Uses CSS attribute selectors to target elements without DOM queries.
+ * Images get a border instead of background color since they have no text content.
  */
 function generateHighlightCSS(paragraphIds: Set<number>): string {
   if (paragraphIds.size === 0) {
     return "";
   }
 
-  // Build selector for all highlighted paragraph IDs
-  const selectors = Array.from(paragraphIds)
-    .map((id) => `[data-para-id="para-${id}"]`)
+  // Build selectors for text elements (everything except img)
+  const textSelectors = Array.from(paragraphIds)
+    .map((id) => `[data-para-id="para-${id}"]:not(img)`)
+    .join(",\n");
+
+  // Build selectors for images specifically
+  const imageSelectors = Array.from(paragraphIds)
+    .map((id) => `img[data-para-id="para-${id}"]`)
     .join(",\n");
 
   // Return CSS rules that apply the highlight styles
-  // These styles match globals.css .narration-highlight class
+  // Text elements get background color, images get border
   return `
-${selectors} {
+${textSelectors} {
   background-color: rgba(253, 230, 138, 0.3);
   border-radius: 0.25rem;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
   scroll-margin-top: 100px;
 }
 
-.dark ${selectors} {
+.dark ${textSelectors} {
   background-color: rgba(113, 63, 18, 0.3);
 }
 
 @media (prefers-color-scheme: dark) {
-  ${selectors} {
+  ${textSelectors} {
     background-color: rgba(113, 63, 18, 0.3);
+  }
+}
+
+${imageSelectors} {
+  box-shadow: 0 0 0 3px rgba(253, 230, 138, 0.5);
+  border-radius: 0.25rem;
+  transition: box-shadow 0.3s ease;
+  scroll-margin-top: 100px;
+}
+
+.dark ${imageSelectors} {
+  box-shadow: 0 0 0 3px rgba(113, 63, 18, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  ${imageSelectors} {
+    box-shadow: 0 0 0 3px rgba(113, 63, 18, 0.5);
   }
 }
 `;
