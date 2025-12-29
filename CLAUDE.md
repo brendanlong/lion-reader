@@ -138,6 +138,7 @@ tests/
 
 ## Git Conventions
 
+- The main branch is named `master`
 - Don't commit unless explicitly asked
 - Commit messages: imperative mood, explain why not what
 - One logical change per commit
