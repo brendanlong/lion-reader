@@ -107,6 +107,23 @@ const entriesListOutputSchema = z.object({
   nextCursor: z.string().optional(),
 });
 
+/**
+ * Schema for entries returned from mutation operations.
+ * Used by normy for automatic cache normalization.
+ */
+const entryMutationResultSchema = z.object({
+  id: z.string(),
+  read: z.boolean(),
+  starred: z.boolean(),
+});
+
+/**
+ * Output schema for markRead mutation.
+ */
+const markReadOutputSchema = z.object({
+  entries: z.array(entryMutationResultSchema),
+});
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -399,7 +416,7 @@ export const entriesRouter = createTRPCRouter({
    *
    * @param ids - Array of entry IDs to mark
    * @param read - Whether to mark as read (true) or unread (false)
-   * @returns Empty object on success
+   * @returns The updated entries with their current state
    */
   markRead: protectedProcedure
     .meta({
@@ -419,7 +436,7 @@ export const entriesRouter = createTRPCRouter({
         read: z.boolean(),
       })
     )
-    .output(z.object({}))
+    .output(markReadOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
@@ -434,7 +451,18 @@ export const entriesRouter = createTRPCRouter({
         })
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
 
-      return {};
+      // Fetch the updated entries to return their current state
+      // This enables normy to automatically update cached queries
+      const updatedEntries = await ctx.db
+        .select({
+          id: userEntries.entryId,
+          read: userEntries.read,
+          starred: userEntries.starred,
+        })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
+
+      return { entries: updatedEntries };
     }),
 
   /**
