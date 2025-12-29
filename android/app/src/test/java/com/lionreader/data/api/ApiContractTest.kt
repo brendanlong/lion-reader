@@ -77,12 +77,13 @@ class ApiContractTest {
             // Extract paths from the spec, normalizing them to match our client format
             // OpenAPI paths look like "/auth/login", we want "auth/login"
             openApiPaths =
-                spec.paths.flatMap { (path, methods) ->
-                    val normalizedPath = path.removePrefix("/")
-                    methods.keys.map { method ->
-                        PathWithMethod(method.uppercase(), normalizedPath)
-                    }
-                }.toSet()
+                spec.paths
+                    .flatMap { (path, methods) ->
+                        val normalizedPath = path.removePrefix("/")
+                        methods.keys.map { method ->
+                            PathWithMethod(method.uppercase(), normalizedPath)
+                        }
+                    }.toSet()
         } catch (e: Exception) {
             fetchError = e
             System.err.println("Failed to fetch OpenAPI spec: ${e.javaClass.simpleName}: ${e.message}")
