@@ -143,10 +143,14 @@ class EntryRepository
             }
 
         /**
-         * Gets a single entry by ID, fetching from server if not in local database.
+         * Gets a single entry by ID, fetching from server if not in local database
+         * or if the local entry is missing full content.
          *
-         * First checks the local database. If not found, attempts to fetch from the
-         * server and store locally before returning.
+         * First checks the local database. If found but missing full content
+         * (contentOriginal and contentCleaned are both null), fetches from the
+         * server to get the full entry. This is necessary because the list endpoint
+         * returns only summaries for performance, while the get endpoint returns
+         * full content.
          *
          * @param id Entry ID
          * @return EntryFetchResult containing the entry or an error
@@ -154,29 +158,40 @@ class EntryRepository
         suspend fun getEntry(id: String): EntryFetchResult {
             // First try to get from local database
             val localEntry = entryDao.getEntryWithState(id).firstOrNull()
-            if (localEntry != null) {
+
+            // Check if local entry has full content (not just summary from list endpoint)
+            val hasFullContent =
+                localEntry?.entry?.contentOriginal != null ||
+                    localEntry?.entry?.contentCleaned != null
+
+            if (localEntry != null && hasFullContent) {
                 return EntryFetchResult.Success(localEntry)
             }
 
-            // Not found locally, try to fetch from server
+            // Either not found locally, or local entry is missing full content
+            // Fetch from server to get full content
+            val hadLocalEntry = localEntry != null
             return when (val result = api.getEntry(id)) {
                 is ApiResult.Success -> {
                     val dto = result.data.entry
                     val entity = mapEntryDtoToEntity(dto)
                     entryDao.insertEntries(listOf(entity))
 
-                    // Create state from DTO
-                    val state =
-                        EntryStateEntity(
-                            entryId = dto.id,
-                            read = dto.read,
-                            starred = dto.starred,
-                            readAt = null,
-                            starredAt = null,
-                            pendingSync = false,
-                            lastModifiedAt = System.currentTimeMillis(),
-                        )
-                    entryStateDao.upsertState(state)
+                    // Only create/update state if we didn't already have a local entry
+                    // This preserves local read/starred state when we're just fetching content
+                    if (!hadLocalEntry) {
+                        val state =
+                            EntryStateEntity(
+                                entryId = dto.id,
+                                read = dto.read,
+                                starred = dto.starred,
+                                readAt = null,
+                                starredAt = null,
+                                pendingSync = false,
+                                lastModifiedAt = System.currentTimeMillis(),
+                            )
+                        entryStateDao.upsertState(state)
+                    }
 
                     // Get the freshly inserted entry with state
                     val freshEntry = entryDao.getEntryWithState(id).firstOrNull()
@@ -189,18 +204,31 @@ class EntryRepository
                 is ApiResult.Error -> {
                     if (result.code == "NOT_FOUND") {
                         EntryFetchResult.NotFound
+                    } else if (localEntry != null) {
+                        // Fall back to local entry (summary only) if we have one
+                        EntryFetchResult.Success(localEntry)
                     } else {
                         EntryFetchResult.Error(result.code, result.message)
                     }
                 }
                 is ApiResult.NetworkError -> {
-                    EntryFetchResult.NetworkError
+                    // Fall back to local entry (summary only) if we have one
+                    if (localEntry != null) {
+                        EntryFetchResult.Success(localEntry)
+                    } else {
+                        EntryFetchResult.NetworkError
+                    }
                 }
                 is ApiResult.Unauthorized -> {
                     EntryFetchResult.Error("UNAUTHORIZED", "Session expired")
                 }
                 is ApiResult.RateLimited -> {
-                    EntryFetchResult.Error("RATE_LIMITED", "Too many requests")
+                    if (localEntry != null) {
+                        // Fall back to local entry (summary only) if we have one
+                        EntryFetchResult.Success(localEntry)
+                    } else {
+                        EntryFetchResult.Error("RATE_LIMITED", "Too many requests")
+                    }
                 }
             }
         }
