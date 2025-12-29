@@ -42,6 +42,7 @@ import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { LRUCache } from "@/lib/narration/lru-cache";
 import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
+import { MIN_PREBUFFER_DURATION_SECONDS } from "@/lib/narration/audio-buffer-utils";
 
 /**
  * Configuration for the useNarration hook.
@@ -251,35 +252,79 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   }, [isSupported, settings.voiceId, usePiper]);
 
   /**
-   * Pre-buffers a paragraph's audio in the background.
+   * Calculates total buffered duration ahead of the current paragraph.
    */
-  const preBufferParagraph = useCallback(
-    async (paragraphs: string[], index: number) => {
+  const getBufferedDurationAhead = useCallback(
+    (paragraphs: string[], currentIndex: number): number => {
+      let totalDuration = 0;
+      for (let i = currentIndex + 1; i < paragraphs.length; i++) {
+        const buffer = audioCacheRef.current.get(i);
+        if (buffer) {
+          totalDuration += buffer.duration;
+        } else {
+          // Stop counting if there's a gap in buffered paragraphs
+          break;
+        }
+      }
+      return totalDuration;
+    },
+    []
+  );
+
+  /**
+   * Pre-buffers paragraphs ahead until we have at least MIN_PREBUFFER_DURATION_SECONDS
+   * of audio buffered. This ensures smooth playback even with short sentences.
+   */
+  const preBufferAhead = useCallback(
+    async (paragraphs: string[], currentIndex: number) => {
       if (!settings.voiceId) return;
-      if (index < 0 || index >= paragraphs.length) return;
-      if (audioCacheRef.current.has(index)) return; // Already cached
-      if (bufferingRef.current.has(index)) return; // Already buffering
 
-      bufferingRef.current.add(index);
+      const piperProvider = getPiperTTSProvider();
+      let bufferedDuration = getBufferedDurationAhead(paragraphs, currentIndex);
+      let nextIndex = currentIndex + 1;
 
-      try {
-        const piperProvider = getPiperTTSProvider();
-        const buffer = await piperProvider.generateAudio(paragraphs[index], settings.voiceId);
-        audioCacheRef.current.set(index, buffer);
-      } catch (error) {
-        // Silently fail pre-buffering - we'll generate on-demand if needed
-        console.debug("Pre-buffering failed for paragraph", index, error);
-      } finally {
-        bufferingRef.current.delete(index);
+      // Keep buffering until we have enough duration or run out of paragraphs
+      while (
+        bufferedDuration < MIN_PREBUFFER_DURATION_SECONDS &&
+        nextIndex < paragraphs.length
+      ) {
+        // Skip if already cached or being buffered
+        if (audioCacheRef.current.has(nextIndex) || bufferingRef.current.has(nextIndex)) {
+          const existingBuffer = audioCacheRef.current.get(nextIndex);
+          if (existingBuffer) {
+            bufferedDuration += existingBuffer.duration;
+          }
+          nextIndex++;
+          continue;
+        }
+
+        bufferingRef.current.add(nextIndex);
+
+        try {
+          const buffer = await piperProvider.generateParagraphAudio(
+            paragraphs[nextIndex],
+            settings.voiceId,
+            settings.sentenceGapSeconds
+          );
+          audioCacheRef.current.set(nextIndex, buffer);
+          bufferedDuration += buffer.duration;
+        } catch (error) {
+          // Silently fail pre-buffering - we'll generate on-demand if needed
+          console.debug("Pre-buffering failed for paragraph", nextIndex, error);
+        } finally {
+          bufferingRef.current.delete(nextIndex);
+        }
+
+        nextIndex++;
       }
     },
-    [settings.voiceId]
+    [settings.voiceId, settings.sentenceGapSeconds, getBufferedDurationAhead]
   );
 
   /**
    * Speaks the current paragraph using Piper and auto-advances to the next.
    * Uses cached audio if available, otherwise generates and caches it.
-   * Pre-buffers the next paragraph while current one is playing.
+   * Pre-buffers upcoming paragraphs to ensure at least 5 seconds of audio is ready.
    */
   const speakPiperParagraph = useCallback(
     async (paragraphs: string[], index: number) => {
@@ -309,15 +354,17 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         let audioBuffer = audioCacheRef.current.get(index);
 
         if (!audioBuffer) {
-          // Generate audio and cache it
-          audioBuffer = await piperProvider.generateAudio(text, settings.voiceId);
+          // Generate audio using sentence-level synthesis and cache it
+          audioBuffer = await piperProvider.generateParagraphAudio(
+            text,
+            settings.voiceId,
+            settings.sentenceGapSeconds
+          );
           audioCacheRef.current.set(index, audioBuffer);
         }
 
-        // Start pre-buffering the next paragraph while this one plays
-        if (index + 1 < paragraphs.length) {
-          preBufferParagraph(paragraphs, index + 1);
-        }
+        // Start pre-buffering upcoming paragraphs (at least 5 seconds ahead)
+        preBufferAhead(paragraphs, index);
 
         // Play the audio
         piperProvider.playBuffer(audioBuffer, {
@@ -343,7 +390,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         setState((prev) => ({ ...prev, status: "idle" }));
       }
     },
-    [settings.voiceId, settings.rate, preBufferParagraph]
+    [settings.voiceId, settings.rate, settings.sentenceGapSeconds, preBufferAhead]
   );
 
   /**

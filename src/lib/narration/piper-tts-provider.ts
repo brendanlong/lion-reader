@@ -10,6 +10,11 @@
 
 import type { TTSProvider, TTSVoice, SpeakOptions } from "./types";
 import { ENHANCED_VOICES, findEnhancedVoice } from "./enhanced-voices";
+import { splitIntoSentences } from "./sentence-splitter";
+import {
+  concatenateAudioBuffers,
+  DEFAULT_SENTENCE_GAP_SECONDS,
+} from "./audio-buffer-utils";
 
 /**
  * Dynamically imports the piper-tts-web module.
@@ -260,6 +265,58 @@ export class PiperTTSProvider implements TTSProvider {
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
     return audioBuffer;
+  }
+
+  /**
+   * Generates audio for a paragraph by splitting it into sentences,
+   * synthesizing each sentence separately, and concatenating the results
+   * with silence gaps between sentences.
+   *
+   * This approach improves TTS quality by giving the neural model
+   * smaller chunks to process, resulting in better prosody.
+   *
+   * @param text - The paragraph text to synthesize.
+   * @param voiceId - The voice ID to use.
+   * @param gapSeconds - Silence gap between sentences (default: 0.3s).
+   * @returns Promise resolving to the concatenated AudioBuffer.
+   * @throws Error if voice is not available or synthesis fails.
+   */
+  async generateParagraphAudio(
+    text: string,
+    voiceId: string,
+    gapSeconds: number = DEFAULT_SENTENCE_GAP_SECONDS
+  ): Promise<AudioBuffer> {
+    if (!this.isAvailable()) {
+      throw new Error("Piper TTS is not available in this browser");
+    }
+
+    // Split paragraph into sentences
+    const sentences = splitIntoSentences(text);
+
+    if (sentences.length === 0) {
+      // Empty text - return a minimal silent buffer
+      const audioContext = this.getAudioContext();
+      return audioContext.createBuffer(1, 1, audioContext.sampleRate);
+    }
+
+    // If only one sentence, use the simpler path
+    if (sentences.length === 1) {
+      return this.generateAudio(sentences[0], voiceId);
+    }
+
+    // Generate audio for each sentence
+    const sentenceBuffers: AudioBuffer[] = [];
+
+    for (const sentence of sentences) {
+      const buffer = await this.generateAudio(sentence, voiceId);
+      sentenceBuffers.push(buffer);
+    }
+
+    // Concatenate with silence gaps
+    const audioContext = this.getAudioContext();
+    const result = concatenateAudioBuffers(audioContext, sentenceBuffers, gapSeconds);
+
+    return result.buffer;
   }
 
   /**

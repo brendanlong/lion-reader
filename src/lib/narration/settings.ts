@@ -73,6 +73,14 @@ export interface NarrationSettings {
    * Default: false
    */
   useLlmNormalization: boolean;
+
+  /**
+   * Silence gap between sentences in seconds when using Piper TTS.
+   * This affects how long the pause is between sentences within a paragraph.
+   * Range: 0.0 - 1.0 seconds
+   * Default: 0.3 seconds
+   */
+  sentenceGapSeconds: number;
 }
 
 /**
@@ -87,6 +95,7 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   highlightEnabled: true,
   autoScrollEnabled: true,
   useLlmNormalization: false,
+  sentenceGapSeconds: 0.3,
 };
 
 /**
@@ -166,6 +175,12 @@ export function loadNarrationSettings(): NarrationSettings {
         typeof parsed.useLlmNormalization === "boolean"
           ? parsed.useLlmNormalization
           : DEFAULT_NARRATION_SETTINGS.useLlmNormalization,
+      sentenceGapSeconds:
+        typeof parsed.sentenceGapSeconds === "number" &&
+        parsed.sentenceGapSeconds >= 0 &&
+        parsed.sentenceGapSeconds <= 1.0
+          ? parsed.sentenceGapSeconds
+          : DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds,
     };
   } catch {
     // If parsing fails, return defaults
