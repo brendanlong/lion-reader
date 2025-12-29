@@ -19,12 +19,13 @@ import {
   useKeyboardShortcuts,
   useViewPreferences,
   useEntryMutations,
+  useEntryUrlState,
   type KeyboardEntryData,
 } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
 export default function StarredEntriesPage() {
-  const [openEntryId, setOpenEntryId] = useState<string | null>(null);
+  const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
@@ -40,8 +41,8 @@ export default function StarredEntriesPage() {
   // Keyboard navigation and actions
   const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
     entries,
-    onOpenEntry: (entryId) => setOpenEntryId(entryId),
-    onClose: () => setOpenEntryId(null),
+    onOpenEntry: setOpenEntryId,
+    onClose: closeEntry,
     isEntryOpen: !!openEntryId,
     enabled: keyboardShortcutsEnabled,
     onToggleRead: toggleRead,
@@ -57,12 +58,12 @@ export default function StarredEntriesPage() {
       setSelectedEntryId(entryId);
       setOpenEntryId(entryId);
     },
-    [setSelectedEntryId]
+    [setSelectedEntryId, setOpenEntryId]
   );
 
   const handleBack = useCallback(() => {
-    setOpenEntryId(null);
-  }, []);
+    closeEntry();
+  }, [closeEntry]);
 
   const handleEntriesLoaded = useCallback((loadedEntries: EntryListEntryData[]) => {
     setEntries(loadedEntries);
