@@ -190,3 +190,208 @@ export function createMemoizedAddParagraphIds(
     return result;
   };
 }
+
+/**
+ * Paragraph mapping entry for highlighting support.
+ * Maps a narration paragraph index to one or more original paragraph indices.
+ */
+export interface ParagraphMapEntry {
+  /** Narration paragraph index */
+  n: number;
+  /** Original paragraph indices (can be multiple if combined) */
+  o: number[];
+}
+
+/**
+ * Result of converting HTML to narration input on the client side.
+ */
+export interface ClientNarrationResult {
+  /** Plain text narration content split by paragraph */
+  narrationText: string;
+  /** Paragraph mapping for highlighting (narration index -> original indices) */
+  paragraphMap: ParagraphMapEntry[];
+  /** HTML with data-para-id attributes added */
+  processedHtml: string;
+}
+
+/**
+ * Gets narration text for an element.
+ * Handles special elements like images, code blocks, headings, etc.
+ */
+function getElementNarrationText(el: Element): string {
+  const tagName = el.tagName.toLowerCase();
+
+  // Handle headings
+  if (tagName === "h1" || tagName === "h2") {
+    return el.textContent?.trim() || "";
+  }
+  if (tagName === "h3" || tagName === "h4" || tagName === "h5" || tagName === "h6") {
+    return el.textContent?.trim() || "";
+  }
+
+  // Handle code blocks
+  if (tagName === "pre") {
+    // Skip code blocks in narration - they're not meant to be read aloud
+    return "";
+  }
+
+  // Handle blockquotes
+  if (tagName === "blockquote") {
+    return el.textContent?.trim() || "";
+  }
+
+  // Handle lists (ul/ol get markers but their text comes from li children)
+  if (tagName === "ul" || tagName === "ol") {
+    return "";
+  }
+
+  // Handle list items
+  if (tagName === "li") {
+    return el.textContent?.trim() || "";
+  }
+
+  // Handle figures
+  if (tagName === "figure") {
+    const img = el.querySelector("img");
+    const figcaption = el.querySelector("figcaption");
+    const alt = img?.getAttribute("alt") || figcaption?.textContent?.trim();
+    if (alt) {
+      return `Image: ${alt}`;
+    }
+    return "";
+  }
+
+  // Handle tables
+  if (tagName === "table") {
+    // Extract table content in a readable format
+    const rows: string[] = [];
+    el.querySelectorAll("tr").forEach((tr) => {
+      const cells: string[] = [];
+      tr.querySelectorAll("th, td").forEach((cell) => {
+        cells.push(cell.textContent?.trim() || "");
+      });
+      if (cells.length > 0 && cells.some((c) => c.length > 0)) {
+        rows.push(cells.join(", "));
+      }
+    });
+    return rows.join(". ");
+  }
+
+  // Handle standalone images
+  if (tagName === "img") {
+    const alt = el.getAttribute("alt");
+    if (alt && alt.trim()) {
+      return `Image: ${alt.trim()}`;
+    }
+    // Images without alt text produce no narration
+    return "";
+  }
+
+  // Handle regular paragraphs - just get text content
+  return el.textContent?.trim() || "";
+}
+
+/**
+ * Converts HTML to narration-ready text with paragraph mapping.
+ *
+ * This is the client-side equivalent of the server's htmlToNarrationInput.
+ * It uses the same block element iteration logic as addParagraphIdsToHtml
+ * to ensure the narration paragraphs exactly match the DOM elements.
+ *
+ * @param html - HTML content to convert
+ * @returns Object with narration text, paragraph map, and processed HTML
+ *
+ * @example
+ * const result = htmlToClientNarration('<p>Hello</p><img src="x" alt="photo"><p>World</p>');
+ * // result.narrationText: "Hello\n\nImage: photo\n\nWorld"
+ * // result.paragraphMap: [{ n: 0, o: [0] }, { n: 1, o: [1] }, { n: 2, o: [2] }]
+ * // result.processedHtml: '<p data-para-id="para-0">Hello</p>...'
+ */
+export function htmlToClientNarration(html: string): ClientNarrationResult {
+  // Handle empty input
+  if (!html || html.trim() === "") {
+    return {
+      narrationText: "",
+      paragraphMap: [],
+      processedHtml: "",
+    };
+  }
+
+  // Parse HTML using DOMParser
+  const parser = new DOMParser();
+  // Wrap in a container to handle fragment parsing correctly
+  const doc = parser.parseFromString(`<div>${html}</div>`, "text/html");
+  const container = doc.body.firstElementChild;
+
+  if (!container) {
+    return {
+      narrationText: "",
+      paragraphMap: [],
+      processedHtml: "",
+    };
+  }
+
+  // Build selector for all block elements
+  const blockElementsExceptImg = BLOCK_ELEMENTS.filter((el) => el !== "img");
+  const selector = blockElementsExceptImg.join(", ");
+
+  // Find all block elements in document order
+  const allElements = container.querySelectorAll(selector);
+
+  // Find standalone images (not nested inside other block elements)
+  const blockElementSet = new Set(BLOCK_ELEMENTS);
+  const standaloneImages: Element[] = [];
+  container.querySelectorAll("img").forEach((img) => {
+    let parent = img.parentElement;
+    let isStandalone = true;
+
+    while (parent && parent !== container) {
+      const parentTag = parent.tagName.toLowerCase();
+      if (blockElementSet.has(parentTag as (typeof BLOCK_ELEMENTS)[number])) {
+        isStandalone = false;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+
+    if (isStandalone) {
+      standaloneImages.push(img);
+    }
+  });
+
+  // Combine block elements and standalone images, then sort by document order
+  const allElementsArray = Array.from(allElements);
+  const combinedElements = [...allElementsArray, ...standaloneImages].sort((a, b) => {
+    const position = a.compareDocumentPosition(b);
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  });
+
+  const narrationParagraphs: string[] = [];
+  const paragraphMap: ParagraphMapEntry[] = [];
+
+  // Process each element: add data-para-id and extract narration text
+  combinedElements.forEach((el, elementIndex) => {
+    const id = `para-${elementIndex}`;
+    el.setAttribute("data-para-id", id);
+
+    const text = getElementNarrationText(el);
+
+    // Only add non-empty text to narration
+    if (text) {
+      const narrationIndex = narrationParagraphs.length;
+      narrationParagraphs.push(text);
+      paragraphMap.push({
+        n: narrationIndex,
+        o: [elementIndex],
+      });
+    }
+  });
+
+  return {
+    narrationText: narrationParagraphs.join("\n\n"),
+    paragraphMap,
+    processedHtml: container.innerHTML,
+  };
+}
