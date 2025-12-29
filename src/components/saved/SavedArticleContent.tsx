@@ -8,7 +8,8 @@
 
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -485,22 +486,64 @@ function SavedArticleContentBody({
  */
 export function SavedArticleContent({ articleId, onBack }: SavedArticleContentProps) {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the saved article
   const { data, isLoading, isError, error, refetch } = trpc.saved.get.useQuery({ id: articleId });
 
+  // Helper to update article in all cached infinite queries
+  const updateArticleInAllLists = useCallback(
+    (
+      id: string,
+      updater: (article: { id: string; read: boolean; starred: boolean }) => {
+        id: string;
+        read: boolean;
+        starred: boolean;
+      }
+    ) => {
+      // Get all cached infinite query data for saved.list
+      // tRPC query keys have the format [["saved", "list"], { input, type }]
+      const queries = queryClient.getQueriesData<{
+        pages: Array<{
+          items: Array<{ id: string; read: boolean; starred: boolean }>;
+          nextCursor?: string;
+        }>;
+        pageParams: unknown[];
+      }>({
+        queryKey: [["saved", "list"]],
+      });
+
+      // Update each cached query
+      for (const [queryKey, data] of queries) {
+        if (!data) continue;
+
+        const updatedData = {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) => (item.id === id ? updater(item) : item)),
+          })),
+        };
+
+        queryClient.setQueryData(queryKey, updatedData);
+      }
+    },
+    [queryClient]
+  );
+
   // Mark read mutation with optimistic updates
   const markReadMutation = trpc.saved.markRead.useMutation({
     onMutate: async (variables) => {
       // Cancel in-flight queries
       await utils.saved.get.cancel({ id: articleId });
+      await utils.saved.list.cancel();
 
       // Snapshot current state
       const previousData = utils.saved.get.getData({ id: articleId });
 
-      // Optimistically update article
+      // Optimistically update individual article query
       utils.saved.get.setData({ id: articleId }, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -509,6 +552,9 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
         };
       });
 
+      // Also update article in all cached list queries
+      updateArticleInAllLists(articleId, (article) => ({ ...article, read: variables.read }));
+
       return { previousData };
     },
     onError: (_error, _variables, context) => {
@@ -516,10 +562,11 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
       if (context?.previousData) {
         utils.saved.get.setData({ id: articleId }, context.previousData);
       }
+      // Re-fetch lists to restore correct state
+      utils.saved.list.invalidate();
     },
     onSettled: () => {
-      // Invalidate list and count to sync
-      utils.saved.list.invalidate();
+      // Invalidate count as it needs server data (computed server-side)
       utils.saved.count.invalidate();
     },
   });
@@ -528,6 +575,7 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
   const starMutation = trpc.saved.star.useMutation({
     onMutate: async () => {
       await utils.saved.get.cancel({ id: articleId });
+      await utils.saved.list.cancel();
 
       const previousData = utils.saved.get.getData({ id: articleId });
 
@@ -539,14 +587,16 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
         };
       });
 
+      // Also update article in all cached list queries
+      updateArticleInAllLists(articleId, (article) => ({ ...article, starred: true }));
+
       return { previousData };
     },
     onError: (_error, _variables, context) => {
       if (context?.previousData) {
         utils.saved.get.setData({ id: articleId }, context.previousData);
       }
-    },
-    onSettled: () => {
+      // Re-fetch lists to restore correct state
       utils.saved.list.invalidate();
     },
   });
@@ -554,6 +604,7 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
   const unstarMutation = trpc.saved.unstar.useMutation({
     onMutate: async () => {
       await utils.saved.get.cancel({ id: articleId });
+      await utils.saved.list.cancel();
 
       const previousData = utils.saved.get.getData({ id: articleId });
 
@@ -565,14 +616,16 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
         };
       });
 
+      // Also update article in all cached list queries
+      updateArticleInAllLists(articleId, (article) => ({ ...article, starred: false }));
+
       return { previousData };
     },
     onError: (_error, _variables, context) => {
       if (context?.previousData) {
         utils.saved.get.setData({ id: articleId }, context.previousData);
       }
-    },
-    onSettled: () => {
+      // Re-fetch lists to restore correct state
       utils.saved.list.invalidate();
     },
   });
