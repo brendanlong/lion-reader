@@ -2,12 +2,12 @@ name: Android CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - 'android/**'
       - '.github/workflows/android.yml'
   pull_request:
-    branches: [main]
+    branches: [master]
     paths:
       - 'android/**'
       - '.github/workflows/android.yml'
@@ -37,7 +37,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
 
       - name: Run ktlint
         run: ./gradlew ktlintCheck
@@ -72,7 +72,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
@@ -112,7 +112,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
 
       - name: Build debug APK
         run: ./gradlew assembleDebug
@@ -153,7 +153,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
 
       - name: AVD cache
         uses: actions/cache@v4
