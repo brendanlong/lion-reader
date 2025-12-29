@@ -5,6 +5,7 @@ import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
 import com.lionreader.data.api.models.EntryDto
 import com.lionreader.data.api.models.SortOrder
+import com.lionreader.data.api.models.StarredCountResponse
 import com.lionreader.data.api.models.SubscriptionWithFeedDto
 import com.lionreader.data.api.models.TagDto
 import com.lionreader.data.db.dao.EntryDao
@@ -129,6 +130,17 @@ class EntryRepository
          * @return Flow of the entry with state or null
          */
         fun getEntryFlow(id: String): Flow<EntryWithState?> = entryDao.getEntryWithState(id)
+
+        /**
+         * Fetches the starred entries count from the server.
+         *
+         * @return StarredCountResponse with total and unread counts, or null on failure
+         */
+        suspend fun fetchStarredCount(): StarredCountResponse? =
+            when (val result = api.getStarredCount()) {
+                is ApiResult.Success -> result.data
+                else -> null
+            }
 
         /**
          * Gets a single entry by ID, fetching from server if not in local database.

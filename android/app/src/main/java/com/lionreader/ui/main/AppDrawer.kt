@@ -50,6 +50,7 @@ import com.lionreader.ui.navigation.Screen
  * @param tags List of tags to display
  * @param currentRoute Current navigation route for selection state
  * @param totalUnreadCount Total unread count for "All" item badge
+ * @param starredUnreadCount Unread count for starred entries badge
  * @param onNavigate Callback when a navigation item is selected
  * @param onSignOut Callback when sign out is clicked
  * @param modifier Modifier for the drawer sheet
@@ -60,6 +61,7 @@ fun AppDrawer(
     tags: List<TagEntity>,
     currentRoute: String,
     totalUnreadCount: Int,
+    starredUnreadCount: Int,
     onNavigate: (String) -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
@@ -105,6 +107,13 @@ fun AppDrawer(
                         imageVector = Icons.Default.Star,
                         contentDescription = null,
                     )
+                },
+                badge = {
+                    if (starredUnreadCount > 0) {
+                        Badge {
+                            Text(formatCount(starredUnreadCount))
+                        }
+                    }
                 },
                 selected = currentRoute == Screen.Starred.route,
                 onClick = { onNavigate(Screen.Starred.route) },

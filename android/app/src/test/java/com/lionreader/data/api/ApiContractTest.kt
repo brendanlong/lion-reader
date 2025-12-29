@@ -56,6 +56,7 @@ class ApiContractTest {
             PathWithMethod("POST", "entries/mark-read"),
             PathWithMethod("POST", "entries/{id}/star"),
             PathWithMethod("DELETE", "entries/{id}/star"),
+            PathWithMethod("GET", "entries/starred/count"),
         )
 
     @BeforeAll
