@@ -177,6 +177,10 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     onSettled: () => {
       // Invalidate subscription counts as they need server data
       utils.subscriptions.list.invalidate();
+      // Invalidate tag unread counts
+      utils.tags.list.invalidate();
+      // Invalidate starred count as it may have changed
+      utils.entries.starredCount.invalidate();
     },
   });
 
@@ -220,6 +224,8 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       utils.entries.list.invalidate({ starredOnly: true });
       // Invalidate subscriptions to update unread counts
       utils.subscriptions.list.invalidate();
+      // Invalidate starred count
+      utils.entries.starredCount.invalidate();
     },
   });
 
@@ -263,6 +269,8 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       utils.entries.list.invalidate({ starredOnly: true });
       // Invalidate subscriptions to update unread counts
       utils.subscriptions.list.invalidate();
+      // Invalidate starred count
+      utils.entries.starredCount.invalidate();
     },
   });
 
