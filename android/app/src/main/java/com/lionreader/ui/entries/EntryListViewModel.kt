@@ -76,6 +76,7 @@ class EntryListViewModel
                     ?: SortOrder.NEWEST,
             )
         private val _currentOffset = MutableStateFlow(0)
+        private val _nextCursor = MutableStateFlow<String?>(null)
         private val _hasMore = MutableStateFlow(true)
         private val _isLoadingMore = MutableStateFlow(false)
 
@@ -169,6 +170,7 @@ class EntryListViewModel
 
             // Reset pagination when route changes
             _currentOffset.value = 0
+            _nextCursor.value = null
             _hasMore.value = true
 
             parseAndApplyRoute(route)
@@ -271,6 +273,7 @@ class EntryListViewModel
                     )
 
                 _hasMore.value = result.hasMore
+                _nextCursor.value = result.nextCursor
                 _uiState.value =
                     _uiState.value.copy(
                         isLoading = false,
@@ -296,6 +299,7 @@ class EntryListViewModel
             _unreadOnly.value = newValue
             savedStateHandle[KEY_UNREAD_ONLY] = newValue
             _currentOffset.value = 0
+            _nextCursor.value = null
             _hasMore.value = true
             _uiState.value =
                 _uiState.value.copy(
@@ -322,6 +326,7 @@ class EntryListViewModel
             _sortOrder.value = newValue
             savedStateHandle[KEY_SORT_ORDER] = newValue.name
             _currentOffset.value = 0
+            _nextCursor.value = null
             _hasMore.value = true
             _uiState.value =
                 _uiState.value.copy(
@@ -360,20 +365,28 @@ class EntryListViewModel
         /**
          * Loads more entries for infinite scroll.
          *
-         * Increments the offset and fetches the next page of entries from the server.
+         * Uses cursor-based pagination to fetch the next page of entries from the server.
          * Does nothing if already loading or no more entries are available.
          */
         fun loadMore() {
             if (_isLoadingMore.value || !_hasMore.value) return
+
+            val cursor = _nextCursor.value
+            if (cursor == null) {
+                // No cursor means we haven't fetched any entries yet or we're at the end
+                return
+            }
 
             viewModelScope.launch {
                 _isLoadingMore.value = true
                 _uiState.value = _uiState.value.copy(isLoadingMore = true)
 
                 try {
+                    // Increment offset for local query display
                     val newOffset = _currentOffset.value + PAGE_SIZE
                     _currentOffset.value = newOffset
 
+                    // Use cursor-based pagination to fetch the next page
                     val result =
                         entryRepository.syncEntries(
                             EntryFilters(
@@ -383,11 +396,12 @@ class EntryListViewModel
                                 starredOnly = _starredOnly.value,
                                 sortOrder = _sortOrder.value,
                                 limit = PAGE_SIZE,
-                                offset = newOffset,
                             ),
+                            cursor = cursor,
                         )
 
                     _hasMore.value = result.hasMore
+                    _nextCursor.value = result.nextCursor
                     _uiState.value =
                         _uiState.value.copy(
                             isLoadingMore = false,
@@ -415,6 +429,7 @@ class EntryListViewModel
             viewModelScope.launch {
                 _uiState.value = _uiState.value.copy(isRefreshing = true, errorMessage = null)
                 _currentOffset.value = 0
+                _nextCursor.value = null
                 _hasMore.value = true
 
                 try {
@@ -436,6 +451,7 @@ class EntryListViewModel
                         )
 
                     _hasMore.value = result.hasMore
+                    _nextCursor.value = result.nextCursor
                     _uiState.value =
                         _uiState.value.copy(
                             isRefreshing = false,

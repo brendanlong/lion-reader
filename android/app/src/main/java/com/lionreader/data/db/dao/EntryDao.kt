@@ -42,7 +42,9 @@ interface EntryDao {
           AND (:unreadOnly = 0 OR COALESCE(s.read, 0) = 0)
           AND (:starredOnly = 0 OR COALESCE(s.starred, 0) = 1)
         ORDER BY
+            CASE WHEN :sortOrder = 'newest' THEN COALESCE(e.publishedAt, e.fetchedAt) END DESC,
             CASE WHEN :sortOrder = 'newest' THEN e.id END DESC,
+            CASE WHEN :sortOrder = 'oldest' THEN COALESCE(e.publishedAt, e.fetchedAt) END ASC,
             CASE WHEN :sortOrder = 'oldest' THEN e.id END ASC
         LIMIT :limit OFFSET :offset
         """,
