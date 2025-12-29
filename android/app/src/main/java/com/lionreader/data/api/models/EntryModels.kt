@@ -67,3 +67,12 @@ enum class SortOrder(
     NEWEST("newest"),
     OLDEST("oldest"),
 }
+
+/**
+ * Response from starred entries count endpoint.
+ */
+@Serializable
+data class StarredCountResponse(
+    val total: Int,
+    val unread: Int,
+)
