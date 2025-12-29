@@ -183,6 +183,8 @@ class LoginViewModel
                 "INVALID_CREDENTIALS" -> "Invalid email or password"
                 "RATE_LIMITED" -> "Too many attempts. Please try again later."
                 "USER_NOT_FOUND" -> "No account found with this email"
+                "NOT_FOUND", "HTTP_404" ->
+                    "Unable to reach the login service. The server may be misconfigured or unavailable."
                 else -> defaultMessage.ifBlank { "An error occurred. Please try again." }
             }
     }

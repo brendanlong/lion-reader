@@ -70,7 +70,7 @@ export const tagsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/tags",
+        path: "/tags",
         tags: ["Tags"],
         summary: "List tags",
       },
@@ -121,7 +121,7 @@ export const tagsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/tags",
+        path: "/tags",
         tags: ["Tags"],
         summary: "Create a tag",
       },
@@ -186,7 +186,7 @@ export const tagsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "PATCH",
-        path: "/v1/tags/{id}",
+        path: "/tags/{id}",
         tags: ["Tags"],
         summary: "Update a tag",
       },
@@ -290,7 +290,7 @@ export const tagsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "DELETE",
-        path: "/v1/tags/{id}",
+        path: "/tags/{id}",
         tags: ["Tags"],
         summary: "Delete a tag",
       },

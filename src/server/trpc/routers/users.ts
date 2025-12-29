@@ -45,7 +45,7 @@ export const usersRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/users/me/sessions",
+        path: "/users/me/sessions",
         tags: ["Users"],
         summary: "List active sessions",
       },
@@ -98,7 +98,7 @@ export const usersRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "DELETE",
-        path: "/v1/users/me/sessions/{sessionId}",
+        path: "/users/me/sessions/{sessionId}",
         tags: ["Users"],
         summary: "Revoke a session",
       },
@@ -147,7 +147,7 @@ export const usersRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/users/me/change-password",
+        path: "/users/me/change-password",
         tags: ["Users"],
         summary: "Change password",
       },
@@ -207,7 +207,7 @@ export const usersRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/users/me/linked-accounts",
+        path: "/users/me/linked-accounts",
         tags: ["Users"],
         summary: "Get linked OAuth accounts",
       },

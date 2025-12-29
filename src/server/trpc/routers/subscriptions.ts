@@ -203,7 +203,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/subscriptions",
+        path: "/subscriptions",
         tags: ["Subscriptions"],
         summary: "Subscribe to a feed",
       },
@@ -404,7 +404,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/subscriptions",
+        path: "/subscriptions",
         tags: ["Subscriptions"],
         summary: "List subscriptions",
       },
@@ -510,7 +510,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/subscriptions/{id}",
+        path: "/subscriptions/{id}",
         tags: ["Subscriptions"],
         summary: "Get subscription",
       },
@@ -606,7 +606,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "PATCH",
-        path: "/v1/subscriptions/{id}",
+        path: "/subscriptions/{id}",
         tags: ["Subscriptions"],
         summary: "Update subscription",
       },
@@ -710,7 +710,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "DELETE",
-        path: "/v1/subscriptions/{id}",
+        path: "/subscriptions/{id}",
         tags: ["Subscriptions"],
         summary: "Unsubscribe from feed",
       },
@@ -770,7 +770,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/subscriptions/import",
+        path: "/subscriptions/import",
         tags: ["Subscriptions"],
         summary: "Import feeds from OPML",
       },
@@ -985,7 +985,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/subscriptions/export",
+        path: "/subscriptions/export",
         tags: ["Subscriptions"],
         summary: "Export subscriptions as OPML",
       },
@@ -1051,7 +1051,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/subscriptions/{id}/tags",
+        path: "/subscriptions/{id}/tags",
         tags: ["Subscriptions"],
         summary: "Set subscription tags",
       },

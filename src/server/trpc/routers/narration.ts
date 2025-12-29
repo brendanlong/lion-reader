@@ -95,7 +95,7 @@ export const narrationRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/narration/generate",
+        path: "/narration/generate",
         tags: ["Narration"],
         summary: "Generate narration for article",
       },
