@@ -15,11 +15,19 @@ import {
 } from "@/components/saved";
 import { UnreadToggle } from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { useSavedArticleKeyboardShortcuts, useViewPreferences } from "@/lib/hooks";
+import {
+  useSavedArticleKeyboardShortcuts,
+  useViewPreferences,
+  useEntryUrlState,
+} from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
 export default function SavedArticlesPage() {
-  const [openArticleId, setOpenArticleId] = useState<string | null>(null);
+  const {
+    openEntryId: openArticleId,
+    setOpenEntryId: setOpenArticleId,
+    closeEntry: closeArticle,
+  } = useEntryUrlState();
   const [articles, setArticles] = useState<SavedArticleListEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
@@ -166,8 +174,8 @@ export default function SavedArticlesPage() {
   // Keyboard navigation and actions
   const { selectedArticleId, setSelectedArticleId } = useSavedArticleKeyboardShortcuts({
     articles,
-    onOpenArticle: (articleId) => setOpenArticleId(articleId),
-    onClose: () => setOpenArticleId(null),
+    onOpenArticle: setOpenArticleId,
+    onClose: closeArticle,
     isArticleOpen: !!openArticleId,
     enabled: keyboardShortcutsEnabled,
     onToggleRead: (articleId, currentlyRead) => {
@@ -192,12 +200,12 @@ export default function SavedArticlesPage() {
       setSelectedArticleId(articleId);
       setOpenArticleId(articleId);
     },
-    [setSelectedArticleId]
+    [setSelectedArticleId, setOpenArticleId]
   );
 
   const handleBack = useCallback(() => {
-    setOpenArticleId(null);
-  }, []);
+    closeArticle();
+  }, [closeArticle]);
 
   const handleArticlesLoaded = useCallback((loadedArticles: SavedArticleListEntryData[]) => {
     setArticles(loadedArticles);
