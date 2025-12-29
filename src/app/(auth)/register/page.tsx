@@ -247,6 +247,13 @@ function RegisterForm() {
         </Button>
       </form>
 
+      <p className="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
+        By creating an account, you agree to our{" "}
+        <Link href="/privacy" className="underline hover:text-zinc-700 dark:hover:text-zinc-300">
+          Privacy Policy
+        </Link>
+      </p>
+
       <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
         Already have an account?{" "}
         <Link href="/login" className="font-medium text-zinc-900 hover:underline dark:text-zinc-50">
