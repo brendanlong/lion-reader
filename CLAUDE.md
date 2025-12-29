@@ -156,3 +156,21 @@ tests/
 - Add database indexes for common query patterns
 - Use Redis for caching hot data (sessions, rate limits)
 - Keep API responses small - use pagination, select specific fields
+
+## React Query / tRPC Patterns
+
+### Optimistic Updates
+
+For mutations that update UI state (mark read, star, etc.), use optimistic updates:
+
+- Cancel in-flight queries in `onMutate` to prevent race conditions
+- Snapshot current state for rollback
+- Update cache immediately with `setQueryData`/`setInfiniteData`
+- Rollback in `onError` if mutation fails
+- Show toast notification on errors
+
+### Targeted Cache Updates vs Invalidation
+
+- **Prefer `setQueryData`/`setInfiniteData`** for updating specific items in lists
+- **Use `invalidate`** only when you need fresh server data (e.g., computed counts)
+- Targeted updates are faster and avoid unnecessary refetches
