@@ -29,8 +29,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -143,7 +146,10 @@ fun LoginScreenContent(
                     KeyboardActions(
                         onNext = { focusManager.moveFocus(FocusDirection.Down) },
                     ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .semantics { contentType = ContentType.EmailAddress },
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -194,7 +200,10 @@ fun LoginScreenContent(
                             onLogin()
                         },
                     ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .semantics { contentType = ContentType.Password },
             )
 
             Spacer(modifier = Modifier.height(24.dp))

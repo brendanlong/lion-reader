@@ -9,7 +9,7 @@ coreKtx = "1.15.0"
 activityCompose = "1.9.3"
 
 # Compose
-composeBom = "2024.12.01"
+composeBom = "2025.12.00"
 navigationCompose = "2.8.5"
 
 # Lifecycle
