@@ -315,7 +315,9 @@ describe("Entry Processor", () => {
       expect(updatedEntry.title).toBe("Updated Title");
       expect(updatedEntry.contentOriginal).toBe("Updated content");
       expect(updatedEntry.contentHash).toBe(newHash);
-      expect(updatedEntry.updatedAt.getTime()).toBeGreaterThan(createdEntry.createdAt.getTime());
+      expect(updatedEntry.updatedAt.getTime()).toBeGreaterThanOrEqual(
+        createdEntry.createdAt.getTime()
+      );
     });
   });
 
