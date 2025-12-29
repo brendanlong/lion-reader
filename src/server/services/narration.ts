@@ -7,12 +7,9 @@
 
 import { createHash } from "crypto";
 import Groq from "groq-sdk";
+import { z } from "zod";
 import { logger } from "@/lib/logger";
-import {
-  parseNarrationOutput,
-  createPositionalMapping,
-  hasParaMarkers,
-} from "@/lib/narration/paragraph-mapping";
+import { createPositionalMapping } from "@/lib/narration/paragraph-mapping";
 import {
   htmlToNarrationInput,
   htmlToPlainText,
@@ -24,47 +21,112 @@ import { trackNarrationHighlightFallback } from "@/server/metrics";
 export { htmlToNarrationInput, htmlToPlainText, type HtmlToNarrationInputResult };
 
 /**
+ * Schema for a single narration paragraph from the LLM.
+ */
+const narrationParagraphSchema = z.object({
+  /** Original paragraph IDs this narration came from (e.g., ["para-0"] or ["para-1", "para-2"]) */
+  sourceIds: z.array(z.string()),
+  /** The narration text to be spoken */
+  text: z.string(),
+});
+
+/**
+ * Schema for the LLM's structured JSON output.
+ */
+const llmOutputSchema = z.object({
+  paragraphs: z.array(narrationParagraphSchema),
+});
+
+type LLMOutput = z.infer<typeof llmOutputSchema>;
+
+/**
  * System prompt for the Groq LLM to convert article content to narration-ready text.
- * Includes instructions for paragraph markers to enable highlighting during playback.
+ *
+ * Now requests structured JSON output with explicit source paragraph tracking.
  */
 export const NARRATION_SYSTEM_PROMPT = `Convert this article to narration-ready plain text for text-to-speech.
 
-IMPORTANT: Insert paragraph markers to track which original paragraph each narration section comes from.
-- The input has [P:X] markers where X is the original paragraph number (starting from 0)
-- In your output, use [PARA:X] markers at the START of each section
-- If you combine paragraphs, include all their markers: [PARA:2][PARA:3]
-- If you skip content (like complex tables), still include the marker with a note
-- Place markers at the very beginning of each paragraph, before any text
+You will receive paragraphs with IDs like "para-0", "para-1", etc. Your job is to convert them
+to natural-sounding narration text while tracking which original paragraphs each narration section came from.
 
-Rules:
-- Output ONLY the article text—no preamble, commentary, or "here is the cleaned article"
-- Output plain text with blank lines between paragraphs
-- Call out special content: "Code block: ... End code block.", "Image: [alt].", "Table: ..."
+CRITICAL RULES FOR IMAGES AND ALT TEXT:
+- When you see "[IMAGE: alt text]", read it LITERALLY as "Image: alt text" or "Image, alt text"
+- DO NOT rephrase, interpret, or embellish the alt text
+- DO NOT add descriptions like "showing" or "depicting" - just read the alt text as-is
+- Examples:
+  - "[IMAGE: diagram]" → "Image: diagram" (NOT "Image showing a diagram")
+  - "[IMAGE: Photo of a cat]" → "Image: Photo of a cat" (read exactly as written)
+
+General rules:
 - Expand ALL abbreviations (Dr. → Doctor, etc. → et cetera, px → pixel or pixels)
 - Read URLs as "link to [domain]" or skip if already in link text
-- Preserve the numbers in numbered lists
-- Split very long paragraphs at natural points (keep the same marker)
-- Keep the content faithful to the original—do NOT summarize or editorialize
+- Preserve numbers in numbered lists
+- Keep content faithful to original - do NOT summarize or editorialize
+- You may combine multiple paragraphs into one narration section if it flows better
+- You may split long paragraphs for better pacing
+
+Output ONLY valid JSON in this exact format:
+{
+  "paragraphs": [
+    {
+      "sourceIds": ["para-0"],
+      "text": "Introduction."
+    },
+    {
+      "sourceIds": ["para-1", "para-2"],
+      "text": "Doctor Smith said this is important. Here's more detail."
+    }
+  ]
+}
 
 Example input:
 ---
-[P:0] [HEADING] Introduction
-
-[P:1] Dr. Smith said this is important.
-
-[P:2] [CODE BLOCK]
-npm install
-[END CODE BLOCK]
+para-0: [HEADING] Introduction
+para-1: Dr. Smith said this is important.
+para-2: [IMAGE: diagram showing architecture]
+para-3: The diagram illustrates the system.
 ---
 
 Example output:
----
-[PARA:0]Introduction.
+{
+  "paragraphs": [
+    {
+      "sourceIds": ["para-0"],
+      "text": "Introduction."
+    },
+    {
+      "sourceIds": ["para-1"],
+      "text": "Doctor Smith said this is important."
+    },
+    {
+      "sourceIds": ["para-2"],
+      "text": "Image: diagram showing architecture."
+    },
+    {
+      "sourceIds": ["para-3"],
+      "text": "The diagram illustrates the system."
+    }
+  ]
+}`;
 
-[PARA:1]Doctor Smith said this is important.
+/**
+ * User prompt template that presents paragraphs to the LLM in a structured format.
+ */
+function createUserPrompt(paragraphOrder: string[], inputText: string): string {
+  // Parse the input text to extract each paragraph with its marker
+  const lines = inputText.split("\n\n");
+  const paragraphTexts = lines.map((line) => {
+    const match = line.match(/^\[P:(\d+)\]\s*(.*)$/);
+    if (match) {
+      const index = parseInt(match[1], 10);
+      const text = match[2];
+      return `${paragraphOrder[index]}: ${text}`;
+    }
+    return line;
+  });
 
-[PARA:2]Code block: npm install. End code block.
----`;
+  return paragraphTexts.join("\n");
+}
 
 /**
  * Groq client instance. Only initialized when GROQ_API_KEY is set.
@@ -154,9 +216,10 @@ function createFallbackParagraphMap(
 /**
  * Generates narration-ready text from HTML content using Groq LLM.
  *
- * If GROQ_API_KEY is not set, falls back to simple HTML-to-text conversion.
+ * Uses structured JSON output for robust paragraph mapping.
+ * If GROQ_API_KEY is not set or JSON parsing fails, falls back to simple HTML-to-text conversion.
  *
- * The function also returns a paragraph mapping that maps each narration paragraph
+ * The function returns a paragraph mapping that maps each narration paragraph
  * to the original HTML paragraph(s) it was derived from. This enables highlighting
  * the current paragraph during audio playback.
  *
@@ -194,6 +257,9 @@ export async function generateNarration(htmlContent: string): Promise<GenerateNa
   }
 
   try {
+    // Create structured user prompt
+    const userPrompt = createUserPrompt(paragraphOrder, inputText);
+
     const response = await client.chat.completions.create({
       model: "llama-3.1-8b-instant",
       messages: [
@@ -203,9 +269,10 @@ export async function generateNarration(htmlContent: string): Promise<GenerateNa
         },
         {
           role: "user",
-          content: inputText,
+          content: userPrompt,
         },
       ],
+      response_format: { type: "json_object" }, // Request JSON output
       temperature: 0.1, // Low temperature for consistency
       max_tokens: 8000,
     });
@@ -223,21 +290,46 @@ export async function generateNarration(htmlContent: string): Promise<GenerateNa
       };
     }
 
-    // Track fallback metric if LLM didn't return markers (positional mapping will be used)
-    if (!hasParaMarkers(rawOutput)) {
-      logger.debug("LLM output has no paragraph markers, using positional mapping fallback");
+    // Parse and validate JSON output
+    let llmOutput: LLMOutput;
+    try {
+      const parsed = JSON.parse(rawOutput);
+      llmOutput = llmOutputSchema.parse(parsed);
+    } catch (parseError) {
+      logger.warn("Failed to parse or validate LLM JSON output, using fallback", {
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+        rawOutput: rawOutput.substring(0, 200), // Log first 200 chars for debugging
+      });
       trackNarrationHighlightFallback();
+      const fallbackText = htmlToPlainText(htmlContent);
+      return {
+        text: fallbackText,
+        source: "fallback",
+        paragraphMap: createFallbackParagraphMap(fallbackText, paragraphOrder.length),
+      };
     }
 
-    // Parse the LLM output to extract paragraph mapping and clean text
-    const { narrationParagraphs, mapping } = parseNarrationOutput(rawOutput, paragraphOrder);
-    const narrationText = narrationParagraphs.join("\n\n");
+    // Convert structured output to narration text and paragraph mapping
+    const narrationText = llmOutput.paragraphs.map((p) => p.text).join("\n\n");
 
-    // Convert mapping to compact format for storage
-    const paragraphMap: ParagraphMapEntry[] = mapping.map((m) => ({
-      n: m.narrationIndex,
-      o: m.originalIndices,
-    }));
+    const paragraphMap: ParagraphMapEntry[] = llmOutput.paragraphs.map((p, narrationIndex) => {
+      // Extract original paragraph indices from sourceIds (e.g., "para-0" -> 0)
+      const originalIndices = p.sourceIds
+        .map((id) => {
+          const match = id.match(/^para-(\d+)$/);
+          if (!match) {
+            logger.warn(`Invalid sourceId format: ${id}, skipping`);
+            return -1;
+          }
+          return parseInt(match[1], 10);
+        })
+        .filter((idx) => idx !== -1);
+
+      return {
+        n: narrationIndex,
+        o: originalIndices.length > 0 ? originalIndices : [narrationIndex], // Fallback to positional if parsing failed
+      };
+    });
 
     return {
       text: narrationText,
