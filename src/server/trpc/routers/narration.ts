@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 import { errors } from "../errors";
 import { entries, savedArticles, narrationContent, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -299,5 +299,26 @@ export const narrationRouter = createTRPCRouter({
           paragraphMap: null,
         };
       }
+    }),
+
+  /**
+   * Check if AI text processing is available.
+   *
+   * Returns true if GROQ_API_KEY is configured, meaning users can use
+   * LLM-based text normalization for higher quality narration.
+   */
+  isAiTextProcessingAvailable: publicProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/narration/ai-available",
+        tags: ["Narration"],
+        summary: "Check if AI text processing is available",
+      },
+    })
+    .input(z.void())
+    .output(z.object({ available: z.boolean() }))
+    .query(() => {
+      return { available: isGroqAvailable() };
     }),
 });
