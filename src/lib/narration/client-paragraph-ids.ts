@@ -27,6 +27,7 @@ export const BLOCK_ELEMENTS = [
   "li",
   "figure",
   "table",
+  "img",
 ] as const;
 
 /**
@@ -83,13 +84,45 @@ export function addParagraphIdsToHtml(html: string): AddParagraphIdsResult {
   }
 
   // Build selector for all block elements
-  const selector = BLOCK_ELEMENTS.join(", ");
+  const blockElementsExceptImg = BLOCK_ELEMENTS.filter((el) => el !== "img");
+  const selector = blockElementsExceptImg.join(", ");
 
-  // Find all block elements in document order and assign IDs
-  const elements = container.querySelectorAll(selector);
+  // Find all block elements in document order
+  const allElements = container.querySelectorAll(selector);
+
+  // Find standalone images (not nested inside other block elements)
+  // An image is standalone if none of its ancestors are block elements
+  const blockElementSet = new Set(BLOCK_ELEMENTS);
+  const standaloneImages: Element[] = [];
+  container.querySelectorAll("img").forEach((img) => {
+    let parent = img.parentElement;
+    let isStandalone = true;
+
+    while (parent && parent !== container) {
+      const parentTag = parent.tagName.toLowerCase();
+      if (blockElementSet.has(parentTag as (typeof BLOCK_ELEMENTS)[number])) {
+        isStandalone = false;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+
+    if (isStandalone) {
+      standaloneImages.push(img);
+    }
+  });
+
+  // Combine block elements and standalone images, then sort by document order
+  const allElementsArray = Array.from(allElements);
+  const combinedElements = [...allElementsArray, ...standaloneImages].sort((a, b) => {
+    const position = a.compareDocumentPosition(b);
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  });
+
   let paraIndex = 0;
-
-  elements.forEach((el) => {
+  combinedElements.forEach((el) => {
     const id = `para-${paraIndex}`;
     el.setAttribute("data-para-id", id);
     paraIndex++;

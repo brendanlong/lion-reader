@@ -29,6 +29,7 @@ const BLOCK_ELEMENTS = new Set([
   "li",
   "figure",
   "table",
+  "img",
 ]);
 
 /**
@@ -99,6 +100,12 @@ function getElementNarrationText(el: Element): string {
       }
     });
     return `[TABLE]\n${rows.join("\n")}\n[END TABLE]`;
+  }
+
+  // Handle standalone images
+  if (tagName === "img") {
+    const alt = el.getAttribute("alt") || "image";
+    return `[IMAGE: ${alt}]`;
   }
 
   // Handle regular paragraphs - process links and inline elements
@@ -183,16 +190,49 @@ export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
   // Parse HTML using JSDOM
   const dom = new JSDOM(html);
   const doc = dom.window.document;
+  const { Node } = dom.window;
 
-  // Build selector for all block elements (same as client-side)
-  const selector = Array.from(BLOCK_ELEMENTS).join(", ");
+  // Build selector for all block elements
+  const blockElementsExceptImg = Array.from(BLOCK_ELEMENTS).filter((el) => el !== "img");
+  const selector = blockElementsExceptImg.join(", ");
 
   // Find all block elements in document order
-  const elements = doc.querySelectorAll(selector);
+  const allElements = doc.querySelectorAll(selector);
+
+  // Find standalone images (not nested inside other block elements)
+  // An image is standalone if none of its ancestors are block elements
+  const standaloneImages: Element[] = [];
+  doc.querySelectorAll("img").forEach((img) => {
+    let parent = img.parentElement;
+    let isStandalone = true;
+
+    while (parent && parent !== doc.body) {
+      const parentTag = parent.tagName.toLowerCase();
+      if (BLOCK_ELEMENTS.has(parentTag)) {
+        isStandalone = false;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+
+    if (isStandalone) {
+      standaloneImages.push(img);
+    }
+  });
+
+  // Combine block elements and standalone images, then sort by document order
+  const allElementsArray = Array.from(allElements);
+  const combinedElements = [...allElementsArray, ...standaloneImages].sort((a, b) => {
+    const position = a.compareDocumentPosition(b);
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  });
+
   const paragraphOrder: string[] = [];
   const lines: string[] = [];
 
-  elements.forEach((el, index) => {
+  combinedElements.forEach((el, index) => {
     const id = `para-${index}`;
     paragraphOrder.push(id);
 
