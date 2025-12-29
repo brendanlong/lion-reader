@@ -215,18 +215,51 @@ export interface ClientNarrationResult {
 }
 
 /**
+ * Process inline content, handling images and other inline elements.
+ * Recursively walks through child nodes to preserve image alt text.
+ */
+function processInlineContent(el: Element): string {
+  let text = "";
+
+  // Walk through child nodes
+  el.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      // Text node
+      text += node.textContent || "";
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      // Element node
+      const childEl = node as Element;
+      const childTag = childEl.tagName.toLowerCase();
+
+      if (childTag === "img") {
+        // Inline image - include alt text
+        const alt = childEl.getAttribute("alt");
+        if (alt && alt.trim()) {
+          text += `Image: ${alt.trim()}`;
+        }
+      } else {
+        // Recurse for other inline elements (strong, em, span, a, etc.)
+        text += processInlineContent(childEl);
+      }
+    }
+  });
+
+  return text.trim();
+}
+
+/**
  * Gets narration text for an element.
  * Handles special elements like images, code blocks, headings, etc.
  */
 function getElementNarrationText(el: Element): string {
   const tagName = el.tagName.toLowerCase();
 
-  // Handle headings
+  // Handle headings - process inline content to capture any images
   if (tagName === "h1" || tagName === "h2") {
-    return el.textContent?.trim() || "";
+    return processInlineContent(el);
   }
   if (tagName === "h3" || tagName === "h4" || tagName === "h5" || tagName === "h6") {
-    return el.textContent?.trim() || "";
+    return processInlineContent(el);
   }
 
   // Handle code blocks
@@ -235,9 +268,9 @@ function getElementNarrationText(el: Element): string {
     return "";
   }
 
-  // Handle blockquotes
+  // Handle blockquotes - process inline content to capture any images
   if (tagName === "blockquote") {
-    return el.textContent?.trim() || "";
+    return processInlineContent(el);
   }
 
   // Handle lists (ul/ol get markers but their text comes from li children)
@@ -245,9 +278,9 @@ function getElementNarrationText(el: Element): string {
     return "";
   }
 
-  // Handle list items
+  // Handle list items - process inline content to capture any images
   if (tagName === "li") {
-    return el.textContent?.trim() || "";
+    return processInlineContent(el);
   }
 
   // Handle figures
@@ -287,8 +320,8 @@ function getElementNarrationText(el: Element): string {
     return "";
   }
 
-  // Handle regular paragraphs - just get text content
-  return el.textContent?.trim() || "";
+  // Handle regular paragraphs - process inline content to capture any images
+  return processInlineContent(el);
 }
 
 /**
