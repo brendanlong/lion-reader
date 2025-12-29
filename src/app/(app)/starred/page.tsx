@@ -7,7 +7,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { toast } from "sonner";
 import {
   EntryList,
   EntryContent,
@@ -16,7 +15,12 @@ import {
   type EntryListEntryData,
 } from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { useKeyboardShortcuts, useViewPreferences, type KeyboardEntryData } from "@/lib/hooks";
+import {
+  useKeyboardShortcuts,
+  useViewPreferences,
+  useEntryMutations,
+  type KeyboardEntryData,
+} from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
 export default function StarredEntriesPage() {
@@ -28,165 +32,9 @@ export default function StarredEntriesPage() {
     useViewPreferences("starred");
   const utils = trpc.useUtils();
 
-  // Mutations for keyboard actions with optimistic updates
-  const markReadMutation = trpc.entries.markRead.useMutation({
-    onMutate: async (variables) => {
-      // Cancel any in-flight queries
-      await utils.entries.list.cancel();
-
-      // Snapshot current state
-      const previousData = utils.entries.list.getInfiniteData({
-        starredOnly: true,
-        unreadOnly: showUnreadOnly,
-        sortOrder,
-      });
-
-      // Optimistically update entries
-      utils.entries.list.setInfiniteData(
-        { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) => ({
-              ...page,
-              items: page.items.map((item) =>
-                variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
-              ),
-            })),
-          };
-        }
-      );
-
-      // Also update individual entry queries for UI in content view
-      for (const id of variables.ids) {
-        utils.entries.get.setData({ id }, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            entry: { ...oldData.entry, read: variables.read },
-          };
-        });
-      }
-
-      return { previousData };
-    },
-    onError: (_error, variables, context) => {
-      // Rollback to previous state
-      if (context?.previousData) {
-        utils.entries.list.setInfiniteData(
-          { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
-          context.previousData
-        );
-      }
-      // Invalidate individual entry queries to restore correct state
-      for (const id of variables.ids) {
-        utils.entries.get.invalidate({ id });
-      }
-      toast.error("Failed to update read status");
-    },
-    onSettled: () => {
-      // Invalidate subscription counts as they need server data
-      utils.subscriptions.list.invalidate();
-    },
-  });
-
-  const starMutation = trpc.entries.star.useMutation({
-    onMutate: async (variables) => {
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData({
-        starredOnly: true,
-        unreadOnly: showUnreadOnly,
-        sortOrder,
-      });
-
-      utils.entries.list.setInfiniteData(
-        { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) => ({
-              ...page,
-              items: page.items.map((item) =>
-                item.id === variables.id ? { ...item, starred: true } : item
-              ),
-            })),
-          };
-        }
-      );
-
-      // Also update individual entry query
-      utils.entries.get.setData({ id: variables.id }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          entry: { ...oldData.entry, starred: true },
-        };
-      });
-
-      return { previousData };
-    },
-    onError: (_error, variables, context) => {
-      if (context?.previousData) {
-        utils.entries.list.setInfiniteData(
-          { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
-          context.previousData
-        );
-      }
-      utils.entries.get.invalidate({ id: variables.id });
-      toast.error("Failed to star entry");
-    },
-  });
-
-  const unstarMutation = trpc.entries.unstar.useMutation({
-    onMutate: async (variables) => {
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData({
-        starredOnly: true,
-        unreadOnly: showUnreadOnly,
-        sortOrder,
-      });
-
-      utils.entries.list.setInfiniteData(
-        { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) => ({
-              ...page,
-              items: page.items.map((item) =>
-                item.id === variables.id ? { ...item, starred: false } : item
-              ),
-            })),
-          };
-        }
-      );
-
-      // Also update individual entry query
-      utils.entries.get.setData({ id: variables.id }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          entry: { ...oldData.entry, starred: false },
-        };
-      });
-
-      return { previousData };
-    },
-    onError: (_error, variables, context) => {
-      if (context?.previousData) {
-        utils.entries.list.setInfiniteData(
-          { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
-          context.previousData
-        );
-      }
-      utils.entries.get.invalidate({ id: variables.id });
-      toast.error("Failed to unstar entry");
-    },
+  // Entry mutations with optimistic updates
+  const { toggleRead, toggleStar } = useEntryMutations({
+    listFilters: { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
   });
 
   // Keyboard navigation and actions
@@ -196,16 +44,8 @@ export default function StarredEntriesPage() {
     onClose: () => setOpenEntryId(null),
     isEntryOpen: !!openEntryId,
     enabled: keyboardShortcutsEnabled,
-    onToggleRead: (entryId, currentlyRead) => {
-      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
-    },
-    onToggleStar: (entryId, currentlyStarred) => {
-      if (currentlyStarred) {
-        unstarMutation.mutate({ id: entryId });
-      } else {
-        starMutation.mutate({ id: entryId });
-      }
-    },
+    onToggleRead: toggleRead,
+    onToggleStar: toggleStar,
     onRefresh: () => {
       utils.entries.list.invalidate();
     },
@@ -228,12 +68,12 @@ export default function StarredEntriesPage() {
     setEntries(loadedEntries);
   }, []);
 
-  // Handler to toggle read status
+  // Handler to toggle read status (passed to EntryContent)
   const handleToggleRead = useCallback(
     (entryId: string, currentlyRead: boolean) => {
-      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
+      toggleRead(entryId, currentlyRead);
     },
-    [markReadMutation]
+    [toggleRead]
   );
 
   // If an entry is open, show the full content view
