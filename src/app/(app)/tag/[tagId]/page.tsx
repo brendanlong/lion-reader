@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
@@ -83,7 +83,7 @@ function TagNotFound() {
   );
 }
 
-export default function TagEntriesPage() {
+function TagEntriesContent() {
   const params = useParams<{ tagId: string }>();
   const tagId = params.tagId;
 
@@ -223,5 +223,13 @@ export default function TagEntriesPage() {
         }
       />
     </div>
+  );
+}
+
+export default function TagEntriesPage() {
+  return (
+    <Suspense>
+      <TagEntriesContent />
+    </Suspense>
   );
 }
