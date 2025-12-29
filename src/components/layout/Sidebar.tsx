@@ -40,6 +40,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
     onSuccess: () => {
       utils.subscriptions.list.invalidate();
+      utils.entries.list.invalidate();
       setUnsubscribeTarget(null);
     },
     onError: () => {
