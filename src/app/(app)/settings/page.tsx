@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
@@ -169,6 +170,26 @@ function SettingsContent() {
 
       {/* Keyboard Shortcuts Section */}
       <KeyboardShortcutsSettings />
+
+      {/* Privacy & Legal Section */}
+      <section>
+        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+          Privacy & Legal
+        </h2>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Learn more about how we collect, use, and protect your data.
+          </p>
+          <div className="mt-4">
+            <Link
+              href="/privacy"
+              className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              View Privacy Policy &rarr;
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
