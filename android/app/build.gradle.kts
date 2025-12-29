@@ -241,6 +241,8 @@ dependencies {
     androidTestImplementation(libs.mockk.android)
     androidTestImplementation(libs.work.testing)
     androidTestImplementation(libs.ktor.client.mock)
+    androidTestImplementation(libs.kotlin.test)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
 
     // Debug
     debugImplementation(libs.androidx.ui.tooling)
