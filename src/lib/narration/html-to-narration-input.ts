@@ -273,8 +273,11 @@ export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
 export function htmlToPlainText(html: string): string {
   return (
     html
+      // Extract alt text from standalone images (not in figures/paragraphs) and replace with text
+      .replace(/<img\s+[^>]*alt=["']([^"']*)["'][^>]*>/gi, "\n\n[Image: $1]\n\n")
+      .replace(/<img\s+[^>]*>/gi, "\n\n[Image]\n\n") // Images without alt
       // Add paragraph breaks before block elements
-      .replace(/<(p|div|br|h[1-6]|li|tr|blockquote|pre)[^>]*>/gi, "\n\n")
+      .replace(/<(p|div|br|h[1-6]|li|tr|blockquote|pre|figure|table)[^>]*>/gi, "\n\n")
       // Remove all HTML tags
       .replace(/<[^>]+>/g, "")
       // Decode common HTML entities
