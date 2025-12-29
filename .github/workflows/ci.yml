@@ -114,7 +114,8 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
 
       - name: Run integration tests
-        run: pnpm test:integration
+        run: pnpm vitest run tests/integration
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
