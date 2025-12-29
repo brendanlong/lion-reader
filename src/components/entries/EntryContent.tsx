@@ -12,6 +12,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useQueryClient } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { NarrationControls, useNarration, useNarrationHighlight } from "@/components/narration";
@@ -632,6 +633,7 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
       }
       // Re-fetch lists to restore correct state
       utils.entries.list.invalidate();
+      toast.error("Failed to update read status");
     },
     onSettled: () => {
       // Invalidate subscriptions to sync unread counts (computed server-side)
@@ -666,6 +668,7 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
       }
       // Re-fetch lists to restore correct state
       utils.entries.list.invalidate();
+      toast.error("Failed to star entry");
     },
   });
 
@@ -695,6 +698,7 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
       }
       // Re-fetch lists to restore correct state
       utils.entries.list.invalidate();
+      toast.error("Failed to unstar entry");
     },
   });
 

@@ -10,6 +10,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
 
@@ -63,6 +64,9 @@ export default function SubscribePage() {
     onSuccess: () => {
       utils.subscriptions.list.invalidate();
       router.push("/all");
+    },
+    onError: () => {
+      toast.error("Failed to subscribe to feed");
     },
   });
 

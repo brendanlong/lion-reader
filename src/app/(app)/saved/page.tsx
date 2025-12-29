@@ -7,6 +7,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { toast } from "sonner";
 import {
   SavedArticleList,
   SavedArticleContent,
@@ -72,6 +73,7 @@ export default function SavedArticlesPage() {
       for (const id of variables.ids) {
         utils.saved.get.invalidate({ id });
       }
+      toast.error("Failed to update read status");
     },
     onSettled: () => {
       // Invalidate count as it needs server data
@@ -116,6 +118,7 @@ export default function SavedArticlesPage() {
         utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, context.previousData);
       }
       utils.saved.get.invalidate({ id: variables.id });
+      toast.error("Failed to star article");
     },
   });
 
@@ -156,6 +159,7 @@ export default function SavedArticlesPage() {
         utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, context.previousData);
       }
       utils.saved.get.invalidate({ id: variables.id });
+      toast.error("Failed to unstar article");
     },
   });
 

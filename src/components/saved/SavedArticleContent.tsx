@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { NarrationControls, useNarration, useNarrationHighlight } from "@/components/narration";
@@ -564,6 +565,7 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
       }
       // Re-fetch lists to restore correct state
       utils.saved.list.invalidate();
+      toast.error("Failed to update read status");
     },
     onSettled: () => {
       // Invalidate count as it needs server data (computed server-side)
@@ -598,6 +600,7 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
       }
       // Re-fetch lists to restore correct state
       utils.saved.list.invalidate();
+      toast.error("Failed to star article");
     },
   });
 
@@ -627,6 +630,7 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
       }
       // Re-fetch lists to restore correct state
       utils.saved.list.invalidate();
+      toast.error("Failed to unstar article");
     },
   });
 

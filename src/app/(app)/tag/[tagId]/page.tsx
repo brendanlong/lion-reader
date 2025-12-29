@@ -9,6 +9,7 @@
 import { useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import {
   EntryList,
@@ -146,6 +147,7 @@ export default function TagEntriesPage() {
       for (const id of variables.ids) {
         utils.entries.get.invalidate({ id });
       }
+      toast.error("Failed to update read status");
     },
     onSettled: () => {
       // Invalidate subscription counts as they need server data
@@ -198,6 +200,7 @@ export default function TagEntriesPage() {
         );
       }
       utils.entries.get.invalidate({ id: variables.id });
+      toast.error("Failed to star entry");
     },
   });
 
@@ -246,6 +249,7 @@ export default function TagEntriesPage() {
         );
       }
       utils.entries.get.invalidate({ id: variables.id });
+      toast.error("Failed to unstar entry");
     },
   });
 

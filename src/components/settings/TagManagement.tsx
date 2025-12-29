@@ -12,6 +12,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
 
@@ -180,6 +181,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
     },
     onError: (err) => {
       onError(err.message || "Failed to create tag");
+      toast.error("Failed to create tag");
     },
   });
 
@@ -278,6 +280,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
     },
     onError: (err) => {
       onError(err.message || "Failed to update tag");
+      toast.error("Failed to update tag");
     },
   });
 
@@ -289,6 +292,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
     },
     onError: (err) => {
       onError(err.message || "Failed to delete tag");
+      toast.error("Failed to delete tag");
     },
   });
 
