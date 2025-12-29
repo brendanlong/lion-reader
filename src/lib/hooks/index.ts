@@ -49,3 +49,5 @@ export {
   type UseEntryMutationsOptions,
   type UseEntryMutationsResult,
 } from "./useEntryMutations";
+
+export { useEntryUrlState, type UseEntryUrlStateResult } from "./useEntryUrlState";
