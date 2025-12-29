@@ -28,12 +28,12 @@ val versionBuild = 1 // Increment for each build
 
 android {
     namespace = "com.lionreader"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.lionreader"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = versionMajor * 10000 + versionMinor * 1000 + versionPatch * 100 + versionBuild
         versionName = "$versionMajor.$versionMinor.$versionPatch"
 
@@ -54,17 +54,23 @@ android {
         // Release signing config - reads from environment variables or local.properties
         create("release") {
             // Priority: Environment variables > local.properties
-            val keystorePath = System.getenv("LION_READER_KEYSTORE_PATH")
-                ?: localProperties.getProperty("LION_READER_KEYSTORE_PATH")
-            val keystorePassword = System.getenv("LION_READER_KEYSTORE_PASSWORD")
-                ?: localProperties.getProperty("LION_READER_KEYSTORE_PASSWORD")
-            val keyAliasValue = System.getenv("LION_READER_KEY_ALIAS")
-                ?: localProperties.getProperty("LION_READER_KEY_ALIAS")
-            val keyPasswordValue = System.getenv("LION_READER_KEY_PASSWORD")
-                ?: localProperties.getProperty("LION_READER_KEY_PASSWORD")
+            val keystorePath =
+                System.getenv("LION_READER_KEYSTORE_PATH")
+                    ?: localProperties.getProperty("LION_READER_KEYSTORE_PATH")
+            val keystorePassword =
+                System.getenv("LION_READER_KEYSTORE_PASSWORD")
+                    ?: localProperties.getProperty("LION_READER_KEYSTORE_PASSWORD")
+            val keyAliasValue =
+                System.getenv("LION_READER_KEY_ALIAS")
+                    ?: localProperties.getProperty("LION_READER_KEY_ALIAS")
+            val keyPasswordValue =
+                System.getenv("LION_READER_KEY_PASSWORD")
+                    ?: localProperties.getProperty("LION_READER_KEY_PASSWORD")
 
-            if (keystorePath != null && keystorePassword != null &&
-                keyAliasValue != null && keyPasswordValue != null
+            if (keystorePath != null
+                && keystorePassword != null
+                && keyAliasValue != null
+                && keyPasswordValue != null
             ) {
                 storeFile = file(keystorePath)
                 storePassword = keystorePassword
@@ -94,7 +100,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
 
             // Release-specific configuration
