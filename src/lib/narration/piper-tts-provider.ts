@@ -20,6 +20,35 @@ async function getPiperTTS(): Promise<typeof import("@mintplex-labs/piper-tts-we
 }
 
 /**
+ * Tracks the voice ID currently loaded in the TtsSession singleton.
+ * The piper-tts-web library uses a singleton pattern that doesn't reload
+ * the voice model when switching voices - it only updates the voiceId string.
+ * We need to manually reset the singleton when switching to a different voice.
+ */
+let currentlyLoadedVoiceId: string | null = null;
+
+/**
+ * Resets the TtsSession singleton if a different voice is requested.
+ * This works around a limitation in the piper-tts-web library where
+ * the singleton caches the first voice model and reuses it even when
+ * a different voiceId is requested.
+ */
+async function ensureCorrectVoiceLoaded(
+  piper: typeof import("@mintplex-labs/piper-tts-web"),
+  voiceId: string
+): Promise<void> {
+  if (currentlyLoadedVoiceId !== null && currentlyLoadedVoiceId !== voiceId) {
+    // Reset the singleton to force loading the new voice model
+    // The TtsSession class uses a static _instance property for the singleton
+    const TtsSession = piper.TtsSession as typeof piper.TtsSession & {
+      _instance: unknown | null;
+    };
+    TtsSession._instance = null;
+  }
+  currentlyLoadedVoiceId = voiceId;
+}
+
+/**
  * Custom WASM paths configuration.
  * We serve ONNX WASM files locally because the default CDN URL is broken.
  * Piper WASM files are served from jsdelivr which works correctly.
@@ -215,6 +244,10 @@ export class PiperTTSProvider implements TTSProvider {
 
     // Generate audio using Piper with custom WASM paths
     const piper = await getPiperTTS();
+
+    // Ensure the correct voice model is loaded (reset singleton if switching voices)
+    await ensureCorrectVoiceLoaded(piper, voiceId);
+
     const session = await piper.TtsSession.create({
       voiceId,
       wasmPaths: CUSTOM_WASM_PATHS,
