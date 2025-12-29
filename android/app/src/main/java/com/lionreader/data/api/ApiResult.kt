@@ -78,7 +78,7 @@ sealed class ApiResult<out T> {
     /**
      * Returns the data if successful, or the result of the given function otherwise.
      */
-    inline fun getOrElse(onError: (ApiResult<Nothing>) -> T): T = when (this) {
+    inline fun getOrElse(onError: (ApiResult<Nothing>) -> @UnsafeVariance T): T = when (this) {
         is Success -> data
         is Error -> onError(this)
         is NetworkError -> onError(this)
@@ -160,7 +160,7 @@ class RateLimitedException(
 /**
  * Extension function to fold over an ApiResult.
  */
-inline fun <T, R> ApiResult<T>.fold(
+fun <T, R> ApiResult<T>.fold(
     onSuccess: (T) -> R,
     onError: (ApiResult.Error) -> R,
     onNetworkError: (ApiResult.NetworkError) -> R = { onError(ApiResult.Error("NETWORK_ERROR", "Network error")) },

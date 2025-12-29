@@ -15,7 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Badge
@@ -245,7 +245,7 @@ private fun TagColorIndicator(color: String?) {
         )
     } else {
         Icon(
-            imageVector = Icons.Default.Label,
+            imageVector = Icons.AutoMirrored.Filled.Label,
             contentDescription = null,
         )
     }
