@@ -466,9 +466,14 @@ class EntryListViewModelTest {
         fun loadMoreDoesNothingWhenLoading() =
             runTest {
                 // Set up slow response to keep loading state
+                // Must include nextCursor so loadMore() proceeds (it requires a cursor)
                 coEvery { entryRepository.syncEntries(any(), any()) } coAnswers {
                     kotlinx.coroutines.delay(1000)
-                    EntrySyncResult(syncResult = SyncResult.Success, hasMore = true)
+                    EntrySyncResult(
+                        syncResult = SyncResult.Success,
+                        hasMore = true,
+                        nextCursor = "test-cursor",
+                    )
                 }
 
                 viewModel = createViewModel()
