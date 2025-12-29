@@ -68,7 +68,7 @@ class ApiContractTest {
             connection.readTimeout = 10_000
 
             if (connection.responseCode != 200) {
-                throw RuntimeException("Failed to fetch OpenAPI spec: HTTP ${connection.responseCode}")
+                throw IllegalStateException("Failed to fetch OpenAPI spec: HTTP ${connection.responseCode}")
             }
 
             val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
