@@ -42,3 +42,10 @@ export {
   type ViewPreferences,
   type UseViewPreferencesResult,
 } from "./useViewPreferences";
+
+export {
+  useEntryMutations,
+  type EntryListFilters,
+  type UseEntryMutationsOptions,
+  type UseEntryMutationsResult,
+} from "./useEntryMutations";
