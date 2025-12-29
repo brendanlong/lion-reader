@@ -142,6 +142,29 @@ function RegisterForm() {
             Sign in
           </Link>
         </p>
+
+        <footer className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+          <p className="text-center text-xs text-zinc-500 dark:text-zinc-500">
+            Created by{" "}
+            <a
+              href="https://www.brendanlong.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
+            >
+              Brendan Long
+            </a>{" "}
+            and Claude •{" "}
+            <a
+              href="https://github.com/brendanlong/lion-reader"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
+            >
+              View on GitHub
+            </a>
+          </p>
+        </footer>
       </div>
     );
   }
@@ -237,6 +260,29 @@ function RegisterForm() {
           Sign in
         </Link>
       </p>
+
+      <footer className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+        <p className="text-center text-xs text-zinc-500 dark:text-zinc-500">
+          Created by{" "}
+          <a
+            href="https://www.brendanlong.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
+          >
+            Brendan Long
+          </a>{" "}
+          and Claude •{" "}
+          <a
+            href="https://github.com/brendanlong/lion-reader"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
+          >
+            View on GitHub
+          </a>
+        </p>
+      </footer>
     </div>
   );
 }
