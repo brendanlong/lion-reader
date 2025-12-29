@@ -2,7 +2,7 @@ package com.lionreader.data.repository
 
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
-import com.lionreader.data.api.models.SubscriptionDto
+import com.lionreader.data.api.models.SubscriptionWithFeedDto
 import com.lionreader.data.db.dao.SubscriptionDao
 import com.lionreader.data.db.dao.TagDao
 import com.lionreader.data.db.entities.FeedEntity
@@ -87,8 +87,7 @@ class SubscriptionRepository
         suspend fun syncSubscriptions(): SyncResult =
             when (val result = api.listSubscriptions()) {
                 is ApiResult.Success -> {
-                    val subscriptions = result.data.subscriptions
-                    updateLocalDatabase(subscriptions)
+                    updateLocalDatabase(result.data.items)
                     SyncResult.Success
                 }
                 is ApiResult.Error -> {
@@ -108,19 +107,19 @@ class SubscriptionRepository
         /**
          * Updates the local database with subscription data from the API.
          */
-        private suspend fun updateLocalDatabase(subscriptions: List<SubscriptionDto>) {
+        private suspend fun updateLocalDatabase(items: List<SubscriptionWithFeedDto>) {
             val now = System.currentTimeMillis()
 
             // Extract feeds and insert them first (due to foreign key constraint)
             val feeds =
-                subscriptions.map { dto ->
+                items.map { item ->
                     FeedEntity(
-                        id = dto.feed.id,
-                        type = dto.feed.type,
-                        url = dto.feed.url,
-                        title = dto.feed.title,
-                        description = dto.feed.description,
-                        siteUrl = dto.feed.siteUrl,
+                        id = item.feed.id,
+                        type = item.feed.type,
+                        url = item.feed.url,
+                        title = item.feed.title,
+                        description = item.feed.description,
+                        siteUrl = item.feed.siteUrl,
                         lastSyncedAt = now,
                     )
                 }
@@ -128,13 +127,13 @@ class SubscriptionRepository
 
             // Map subscription DTOs to entities
             val subscriptionEntities =
-                subscriptions.map { dto ->
+                items.map { item ->
                     SubscriptionEntity(
-                        id = dto.id,
-                        feedId = dto.feedId,
-                        customTitle = dto.customTitle,
-                        subscribedAt = parseIsoTimestamp(dto.subscribedAt),
-                        unreadCount = dto.unreadCount,
+                        id = item.subscription.id,
+                        feedId = item.subscription.feedId,
+                        customTitle = item.subscription.customTitle,
+                        subscribedAt = parseIsoTimestamp(item.subscription.subscribedAt),
+                        unreadCount = item.subscription.unreadCount,
                         lastSyncedAt = now,
                     )
                 }
@@ -144,8 +143,8 @@ class SubscriptionRepository
             val allTags = mutableMapOf<String, TagEntity>()
             val subscriptionTags = mutableListOf<SubscriptionTagEntity>()
 
-            subscriptions.forEach { subscription ->
-                subscription.tags.forEach { tagDto ->
+            items.forEach { item ->
+                item.subscription.tags.forEach { tagDto ->
                     // Store unique tags
                     allTags[tagDto.id] =
                         TagEntity(
@@ -157,7 +156,7 @@ class SubscriptionRepository
                     // Store subscription-tag relationship
                     subscriptionTags.add(
                         SubscriptionTagEntity(
-                            subscriptionId = subscription.id,
+                            subscriptionId = item.subscription.id,
                             tagId = tagDto.id,
                         ),
                     )
