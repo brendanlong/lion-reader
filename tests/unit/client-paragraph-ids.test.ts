@@ -9,6 +9,7 @@ import {
   addParagraphIdsToHtml,
   processHtmlForHighlighting,
   createMemoizedAddParagraphIds,
+  htmlToClientNarration,
   BLOCK_ELEMENTS,
 } from "../../src/lib/narration/client-paragraph-ids";
 
@@ -520,5 +521,206 @@ describe("BLOCK_ELEMENTS constant", () => {
 
   it("has exactly 15 elements", () => {
     expect(BLOCK_ELEMENTS.length).toBe(15);
+  });
+});
+
+describe("htmlToClientNarration", () => {
+  describe("basic functionality", () => {
+    it("processes simple paragraphs", () => {
+      const html = "<p>Hello world</p><p>Goodbye world</p>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Hello world\n\nGoodbye world");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: [0] },
+        { n: 1, o: [1] },
+      ]);
+      expect(result.processedHtml).toContain('data-para-id="para-0"');
+      expect(result.processedHtml).toContain('data-para-id="para-1"');
+    });
+
+    it("handles empty input", () => {
+      const result = htmlToClientNarration("");
+
+      expect(result.narrationText).toBe("");
+      expect(result.paragraphMap).toEqual([]);
+      expect(result.processedHtml).toBe("");
+    });
+
+    it("handles whitespace-only input", () => {
+      const result = htmlToClientNarration("   \n\t  ");
+
+      expect(result.narrationText).toBe("");
+      expect(result.paragraphMap).toEqual([]);
+      expect(result.processedHtml).toBe("");
+    });
+  });
+
+  describe("image handling", () => {
+    it("includes image with alt text in narration", () => {
+      const html = '<p>Before</p><img src="test.jpg" alt="A photo of a cat"><p>After</p>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Before\n\nImage: A photo of a cat\n\nAfter");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: [0] },
+        { n: 1, o: [1] },
+        { n: 2, o: [2] },
+      ]);
+    });
+
+    it("skips image without alt text (no narration, but still gets ID)", () => {
+      const html = '<p>Before</p><img src="test.jpg"><p>After</p>';
+      const result = htmlToClientNarration(html);
+
+      // Image without alt text produces no narration text, so it's skipped in narrationText
+      // but still gets a data-para-id in the DOM
+      expect(result.narrationText).toBe("Before\n\nAfter");
+      // para-0 is p "Before", para-1 is img (skipped in narration), para-2 is p "After"
+      // So narration paragraph 0 maps to DOM element 0, narration paragraph 1 maps to DOM element 2
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: [0] },
+        { n: 1, o: [2] },
+      ]);
+      // But the image still gets its ID in the DOM
+      expect(result.processedHtml).toContain('data-para-id="para-1"');
+    });
+
+    it("skips image with empty alt text", () => {
+      const html = '<p>Before</p><img src="test.jpg" alt=""><p>After</p>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Before\n\nAfter");
+      // Same mapping as above - image is skipped in narration
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: [0] },
+        { n: 1, o: [2] },
+      ]);
+    });
+
+    it("handles figure with image and figcaption", () => {
+      const html = '<figure><img src="test.jpg"><figcaption>A cat photo</figcaption></figure>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: A cat photo");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: [0] }]);
+    });
+
+    it("handles figure with image alt text", () => {
+      const html = '<figure><img src="test.jpg" alt="Cat sitting on couch"></figure>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: Cat sitting on couch");
+    });
+  });
+
+  describe("code and pre elements", () => {
+    it("skips code blocks in narration", () => {
+      const html = "<p>Before</p><pre><code>const x = 1;</code></pre><p>After</p>";
+      const result = htmlToClientNarration(html);
+
+      // Code blocks produce no narration text
+      expect(result.narrationText).toBe("Before\n\nAfter");
+      // para-0 is p, para-1 is pre (skipped), para-2 is p
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: [0] },
+        { n: 1, o: [2] },
+      ]);
+    });
+  });
+
+  describe("list handling", () => {
+    it("handles ul/ol without narration text for container", () => {
+      const html = "<ul><li>Item 1</li><li>Item 2</li></ul>";
+      const result = htmlToClientNarration(html);
+
+      // ul has no text, but li elements do
+      expect(result.narrationText).toBe("Item 1\n\nItem 2");
+      // ul is para-0 (skipped), li are para-1 and para-2
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: [1] },
+        { n: 1, o: [2] },
+      ]);
+    });
+  });
+
+  describe("heading handling", () => {
+    it("includes headings in narration", () => {
+      const html = "<h1>Main Title</h1><p>Content</p><h2>Section</h2>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Main Title\n\nContent\n\nSection");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: [0] },
+        { n: 1, o: [1] },
+        { n: 2, o: [2] },
+      ]);
+    });
+  });
+
+  describe("paragraph mapping consistency", () => {
+    it("ensures processed HTML IDs match paragraph map", () => {
+      const html = "<p>First</p><p>Second</p><p>Third</p>";
+      const result = htmlToClientNarration(html);
+
+      // Parse the processed HTML and check IDs
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${result.processedHtml}</div>`, "text/html");
+      const container = doc.body.firstElementChild!;
+
+      const elements = container.querySelectorAll("[data-para-id]");
+      expect(elements.length).toBe(3);
+      expect(elements[0].getAttribute("data-para-id")).toBe("para-0");
+      expect(elements[1].getAttribute("data-para-id")).toBe("para-1");
+      expect(elements[2].getAttribute("data-para-id")).toBe("para-2");
+
+      // Verify paragraph map correctly maps narration indices to element indices
+      for (const mapping of result.paragraphMap) {
+        const targetId = `para-${mapping.o[0]}`;
+        const element = container.querySelector(`[data-para-id="${targetId}"]`);
+        expect(element).not.toBeNull();
+      }
+    });
+
+    it("correctly maps when elements are skipped in narration", () => {
+      // This is the key test for the sync issue
+      const html = '<p>Before image</p><img src="x"><p>After image</p>';
+      const result = htmlToClientNarration(html);
+
+      // Narration text should have 2 paragraphs (image without alt is skipped)
+      const narrationParagraphs = result.narrationText.split("\n\n");
+      expect(narrationParagraphs.length).toBe(2);
+      expect(narrationParagraphs[0]).toBe("Before image");
+      expect(narrationParagraphs[1]).toBe("After image");
+
+      // Paragraph map should correctly point to DOM element indices
+      expect(result.paragraphMap[0]).toEqual({ n: 0, o: [0] }); // "Before image" -> para-0
+      expect(result.paragraphMap[1]).toEqual({ n: 1, o: [2] }); // "After image" -> para-2 (skipping para-1 which is the image)
+
+      // Verify the processed HTML has all 3 elements with IDs
+      expect(result.processedHtml).toContain('data-para-id="para-0"');
+      expect(result.processedHtml).toContain('data-para-id="para-1"'); // Image still gets ID
+      expect(result.processedHtml).toContain('data-para-id="para-2"');
+    });
+  });
+
+  describe("blockquote handling", () => {
+    it("includes blockquote text in narration", () => {
+      const html = "<blockquote>A famous quote goes here.</blockquote>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("A famous quote goes here.");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: [0] }]);
+    });
+  });
+
+  describe("table handling", () => {
+    it("includes table content in narration", () => {
+      const html = "<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("A, B. C, D");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: [0] }]);
+    });
   });
 });

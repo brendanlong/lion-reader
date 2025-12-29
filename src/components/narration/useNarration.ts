@@ -41,7 +41,7 @@ import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { LRUCache } from "@/lib/narration/lru-cache";
-import { htmlToPlainText } from "@/lib/narration/html-to-plain-text";
+import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
 
 /**
  * Configuration for the useNarration hook.
@@ -98,6 +98,8 @@ export interface UseNarrationReturn {
   isSupported: boolean;
   /** Paragraph mapping for highlighting (narration index -> original indices) */
   paragraphMap: ParagraphMapEntry[] | null;
+  /** Processed HTML with data-para-id attributes (only for client-side narration) */
+  processedHtml: string | null;
 }
 
 /**
@@ -149,6 +151,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const [narrationText, setNarrationText] = useState<string | null>(null);
   const [isSupported] = useState(() => isNarrationSupported());
   const [paragraphMap, setParagraphMap] = useState<ParagraphMapEntry[] | null>(null);
+  const [processedHtml, setProcessedHtml] = useState<string | null>(null);
 
   // Refs
   const narratorRef = useRef<ArticleNarrator | null>(null);
@@ -380,10 +383,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       try {
         let narration: string;
         let paragraphMapResult: ParagraphMapEntry[] | null = null;
+        let processedHtmlResult: string | null = null;
 
         // If LLM normalization is disabled and we have content, process client-side
         if (!settings.useLlmNormalization && content) {
-          narration = htmlToPlainText(content);
+          const clientResult = htmlToClientNarration(content);
+          narration = clientResult.narrationText;
+          paragraphMapResult = clientResult.paragraphMap;
+          processedHtmlResult = clientResult.processedHtml;
         } else {
           // Call server for LLM processing
           const result = await generateMutation.mutateAsync({
@@ -398,6 +405,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         if (narration) {
           setNarrationText(narration);
           setParagraphMap(paragraphMapResult);
+          setProcessedHtml(processedHtmlResult);
           const paragraphs = splitIntoParagraphs(narration);
           piperParagraphsRef.current = paragraphs;
           piperCurrentIndexRef.current = 0;
@@ -455,10 +463,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     try {
       let narration: string;
       let paragraphMapResult: ParagraphMapEntry[] | null = null;
+      let processedHtmlResult: string | null = null;
 
       // If LLM normalization is disabled and we have content, process client-side
       if (!settings.useLlmNormalization && content) {
-        narration = htmlToPlainText(content);
+        const clientResult = htmlToClientNarration(content);
+        narration = clientResult.narrationText;
+        paragraphMapResult = clientResult.paragraphMap;
+        processedHtmlResult = clientResult.processedHtml;
       } else {
         // Call server for LLM processing
         const result = await generateMutation.mutateAsync({
@@ -473,6 +485,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       if (narration) {
         setNarrationText(narration);
         setParagraphMap(paragraphMapResult);
+        setProcessedHtml(processedHtmlResult);
         narrator.loadArticle(narration);
 
         // Wait for voices and get preferred voice
@@ -614,8 +627,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     bufferingRef.current.clear();
     piperParagraphsRef.current = [];
     piperCurrentIndexRef.current = 0;
-    // Clear paragraph map when article changes, as it's tied to narration content
+    // Clear paragraph map and processed HTML when article changes
     setParagraphMap(null);
+    setProcessedHtml(null);
     setNarrationText(null);
   }, [id, settings.voiceId]);
 
@@ -647,5 +661,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     stop,
     isSupported,
     paragraphMap,
+    processedHtml,
   };
 }
