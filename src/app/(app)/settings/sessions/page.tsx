@@ -8,6 +8,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
 
@@ -95,6 +96,7 @@ export default function SessionsPage() {
     onError: (error) => {
       setRevokeError(error.message || "Failed to revoke session");
       setRevokeSuccess(null);
+      toast.error("Failed to revoke session");
     },
   });
 

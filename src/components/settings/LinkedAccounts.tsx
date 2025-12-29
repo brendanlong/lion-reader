@@ -13,6 +13,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
 
@@ -75,6 +76,7 @@ export function LinkedAccounts() {
       setError(err.message || "Failed to unlink account");
       setSuccessMessage(null);
       setUnlinkingProvider(null);
+      toast.error("Failed to unlink account");
     },
   });
 

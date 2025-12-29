@@ -7,6 +7,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
 
@@ -140,6 +141,7 @@ function EditSubscriptionForm({
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save changes");
+      toast.error("Failed to save subscription changes");
     }
   };
 

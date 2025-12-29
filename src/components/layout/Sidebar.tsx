@@ -10,6 +10,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
@@ -40,6 +41,9 @@ export function Sidebar({ onClose }: SidebarProps) {
     onSuccess: () => {
       utils.subscriptions.list.invalidate();
       setUnsubscribeTarget(null);
+    },
+    onError: () => {
+      toast.error("Failed to unsubscribe from feed");
     },
   });
 

@@ -56,6 +56,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hotkeys-hook": "^5.2.1",
+    "sonner": "^2.0.7",
     "superjson": "^2.2.6",
     "trpc-to-openapi": "^3.1.0",
     "tsx": "^4.21.0",

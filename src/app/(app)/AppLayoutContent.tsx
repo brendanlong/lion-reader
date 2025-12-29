@@ -10,6 +10,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Toaster, toast } from "sonner";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { RealtimeProvider } from "@/components/layout/RealtimeProvider";
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
@@ -34,6 +35,9 @@ export function AppLayoutContent({ children }: AppLayoutContentProps) {
       router.push("/login");
       router.refresh();
     },
+    onError: () => {
+      toast.error("Failed to sign out");
+    },
   });
 
   const handleLogout = () => {
@@ -43,6 +47,7 @@ export function AppLayoutContent({ children }: AppLayoutContentProps) {
   return (
     <RealtimeProvider>
       <KeyboardShortcutsProvider>
+        <Toaster position="bottom-right" richColors closeButton />
         <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950">
           {/* Mobile sidebar overlay */}
           {sidebarOpen && (

@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
 import {
@@ -199,6 +200,7 @@ function ChangePasswordForm() {
         setErrors({ form: error.message || "Failed to change password" });
       }
       setSuccessMessage("");
+      toast.error("Failed to change password");
     },
   });
 

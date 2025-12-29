@@ -12,6 +12,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
 import { parseOpml, type OpmlFeed } from "@/server/feed/opml";
@@ -85,6 +86,7 @@ function ImportSection() {
     onError: (err) => {
       setError(err.message || "Failed to import feeds");
       setImportState({ type: "idle" });
+      toast.error("Failed to import feeds");
     },
   });
 

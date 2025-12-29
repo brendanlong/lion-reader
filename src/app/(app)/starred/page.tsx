@@ -7,6 +7,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { toast } from "sonner";
 import {
   EntryList,
   EntryContent,
@@ -82,6 +83,7 @@ export default function StarredEntriesPage() {
       for (const id of variables.ids) {
         utils.entries.get.invalidate({ id });
       }
+      toast.error("Failed to update read status");
     },
     onSettled: () => {
       // Invalidate subscription counts as they need server data
@@ -134,6 +136,7 @@ export default function StarredEntriesPage() {
         );
       }
       utils.entries.get.invalidate({ id: variables.id });
+      toast.error("Failed to star entry");
     },
   });
 
@@ -182,6 +185,7 @@ export default function StarredEntriesPage() {
         );
       }
       utils.entries.get.invalidate({ id: variables.id });
+      toast.error("Failed to unstar entry");
     },
   });
 
