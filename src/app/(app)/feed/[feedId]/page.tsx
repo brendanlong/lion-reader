@@ -9,7 +9,6 @@
 import { useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import {
   EntryList,
@@ -19,7 +18,12 @@ import {
   type EntryListEntryData,
 } from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { useKeyboardShortcuts, useViewPreferences, type KeyboardEntryData } from "@/lib/hooks";
+import {
+  useKeyboardShortcuts,
+  useViewPreferences,
+  useEntryMutations,
+  type KeyboardEntryData,
+} from "@/lib/hooks";
 
 /**
  * Loading skeleton for the feed header.
@@ -92,134 +96,9 @@ export default function SingleFeedPage() {
   );
   const utils = trpc.useUtils();
 
-  // Mutations for keyboard actions with optimistic updates
-  const markReadMutation = trpc.entries.markRead.useMutation({
-    onMutate: async (variables) => {
-      // Cancel any in-flight queries
-      await utils.entries.list.cancel();
-
-      // Snapshot current state
-      const previousData = utils.entries.list.getInfiniteData({
-        feedId,
-        unreadOnly: showUnreadOnly,
-        sortOrder,
-      });
-
-      // Optimistically update entries (normy propagates to entries.get automatically)
-      utils.entries.list.setInfiniteData(
-        { feedId, unreadOnly: showUnreadOnly, sortOrder },
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) => ({
-              ...page,
-              items: page.items.map((item) =>
-                variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
-              ),
-            })),
-          };
-        }
-      );
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback to previous state (normy propagates rollback to entries.get automatically)
-      if (context?.previousData) {
-        utils.entries.list.setInfiniteData(
-          { feedId, unreadOnly: showUnreadOnly, sortOrder },
-          context.previousData
-        );
-      }
-      toast.error("Failed to update read status");
-    },
-    onSettled: () => {
-      // Invalidate subscription counts as they need server data
-      utils.subscriptions.list.invalidate();
-    },
-  });
-
-  const starMutation = trpc.entries.star.useMutation({
-    onMutate: async (variables) => {
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData({
-        feedId,
-        unreadOnly: showUnreadOnly,
-        sortOrder,
-      });
-
-      // Optimistically update list (normy propagates to entries.get automatically)
-      utils.entries.list.setInfiniteData(
-        { feedId, unreadOnly: showUnreadOnly, sortOrder },
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) => ({
-              ...page,
-              items: page.items.map((item) =>
-                item.id === variables.id ? { ...item, starred: true } : item
-              ),
-            })),
-          };
-        }
-      );
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback list (normy propagates rollback to entries.get automatically)
-      if (context?.previousData) {
-        utils.entries.list.setInfiniteData(
-          { feedId, unreadOnly: showUnreadOnly, sortOrder },
-          context.previousData
-        );
-      }
-      toast.error("Failed to star entry");
-    },
-  });
-
-  const unstarMutation = trpc.entries.unstar.useMutation({
-    onMutate: async (variables) => {
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData({
-        feedId,
-        unreadOnly: showUnreadOnly,
-        sortOrder,
-      });
-
-      // Optimistically update list (normy propagates to entries.get automatically)
-      utils.entries.list.setInfiniteData(
-        { feedId, unreadOnly: showUnreadOnly, sortOrder },
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) => ({
-              ...page,
-              items: page.items.map((item) =>
-                item.id === variables.id ? { ...item, starred: false } : item
-              ),
-            })),
-          };
-        }
-      );
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback list (normy propagates rollback to entries.get automatically)
-      if (context?.previousData) {
-        utils.entries.list.setInfiniteData(
-          { feedId, unreadOnly: showUnreadOnly, sortOrder },
-          context.previousData
-        );
-      }
-      toast.error("Failed to unstar entry");
-    },
+  // Entry mutations with optimistic updates
+  const { toggleRead, toggleStar } = useEntryMutations({
+    listFilters: { feedId, unreadOnly: showUnreadOnly, sortOrder },
   });
 
   // Keyboard navigation and actions
@@ -229,16 +108,8 @@ export default function SingleFeedPage() {
     onClose: () => setOpenEntryId(null),
     isEntryOpen: !!openEntryId,
     enabled: keyboardShortcutsEnabled,
-    onToggleRead: (entryId, currentlyRead) => {
-      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
-    },
-    onToggleStar: (entryId, currentlyStarred) => {
-      if (currentlyStarred) {
-        unstarMutation.mutate({ id: entryId });
-      } else {
-        starMutation.mutate({ id: entryId });
-      }
-    },
+    onToggleRead: toggleRead,
+    onToggleStar: toggleStar,
     onRefresh: () => {
       utils.entries.list.invalidate();
     },
@@ -267,12 +138,12 @@ export default function SingleFeedPage() {
     setEntries(loadedEntries);
   }, []);
 
-  // Handler to toggle read status
+  // Handler to toggle read status (passed to EntryContent)
   const handleToggleRead = useCallback(
     (entryId: string, currentlyRead: boolean) => {
-      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
+      toggleRead(entryId, currentlyRead);
     },
-    [markReadMutation]
+    [toggleRead]
   );
 
   // If an entry is open, show the full content view

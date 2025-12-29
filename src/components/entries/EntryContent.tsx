@@ -11,8 +11,8 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
-import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useEntryMutations } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import {
   NarrationControls,
@@ -546,97 +546,16 @@ function EntryContentBody({
  * Marks the entry as read on mount.
  */
 export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProps) {
-  const utils = trpc.useUtils();
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
 
-  // Mark read mutation with optimistic updates
-  // Note: normy automatically propagates entry changes to all cached queries
-  const markReadMutation = trpc.entries.markRead.useMutation({
-    onMutate: async (variables) => {
-      // Cancel in-flight query for optimistic update
-      await utils.entries.get.cancel({ id: entryId });
-
-      // Snapshot current state for rollback
-      const previousData = utils.entries.get.getData({ id: entryId });
-
-      // Optimistically update the current entry query for instant UI feedback
-      // Note: normy automatically propagates this change to all cached list queries
-      utils.entries.get.setData({ id: entryId }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          entry: { ...oldData.entry, read: variables.read },
-        };
-      });
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback to previous state
-      if (context?.previousData) {
-        utils.entries.get.setData({ id: entryId }, context.previousData);
-      }
-      toast.error("Failed to update read status");
-    },
-    onSettled: () => {
-      // Invalidate subscriptions to sync unread counts (computed server-side)
-      utils.subscriptions.list.invalidate();
-    },
-  });
-
-  // Star/unstar mutations with optimistic updates
-  // Note: normy automatically propagates entry changes to all cached queries
-  const starMutation = trpc.entries.star.useMutation({
-    onMutate: async () => {
-      await utils.entries.get.cancel({ id: entryId });
-
-      const previousData = utils.entries.get.getData({ id: entryId });
-
-      utils.entries.get.setData({ id: entryId }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          entry: { ...oldData.entry, starred: true },
-        };
-      });
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.previousData) {
-        utils.entries.get.setData({ id: entryId }, context.previousData);
-      }
-      toast.error("Failed to star entry");
-    },
-  });
-
-  const unstarMutation = trpc.entries.unstar.useMutation({
-    onMutate: async () => {
-      await utils.entries.get.cancel({ id: entryId });
-
-      const previousData = utils.entries.get.getData({ id: entryId });
-
-      utils.entries.get.setData({ id: entryId }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          entry: { ...oldData.entry, starred: false },
-        };
-      });
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.previousData) {
-        utils.entries.get.setData({ id: entryId }, context.previousData);
-      }
-      toast.error("Failed to unstar entry");
-    },
-  });
+  // Entry mutations without list filters (this component operates on a single entry)
+  // Note: optimistic updates happen at the list level in parent components,
+  // normy automatically propagates changes to entries.get when server responds
+  const { markRead, star, unstar, isPending: isStarLoading } = useEntryMutations();
 
   const entry = data?.entry;
 
@@ -646,23 +565,21 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
       hasMarkedRead.current = true;
       // Only mark as read if it's currently unread
       if (!entry.read) {
-        markReadMutation.mutate({ ids: [entryId], read: true });
+        markRead([entryId], true);
       }
     }
-  }, [entry, entryId, markReadMutation]);
+  }, [entry, entryId, markRead]);
 
   // Handle star toggle
   const handleStarToggle = () => {
     if (!entry) return;
 
     if (entry.starred) {
-      unstarMutation.mutate({ id: entryId });
+      unstar(entryId);
     } else {
-      starMutation.mutate({ id: entryId });
+      star(entryId);
     }
   };
-
-  const isStarLoading = starMutation.isPending || unstarMutation.isPending;
 
   // Loading state
   if (isLoading) {
