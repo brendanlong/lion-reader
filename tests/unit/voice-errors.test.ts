@@ -98,6 +98,26 @@ describe("classifyVoiceError", () => {
     });
   });
 
+  describe("voice not found errors", () => {
+    it("classifies errors with '404' in message", () => {
+      const error = new Error("HTTP 404: Not Found");
+
+      expect(classifyVoiceError(error)).toBe("voice_not_found");
+    });
+
+    it("classifies errors with 'not found' in message", () => {
+      const error = new Error("Voice model not found");
+
+      expect(classifyVoiceError(error)).toBe("voice_not_found");
+    });
+
+    it("classifies errors with 'does not exist' in message", () => {
+      const error = new Error("The requested resource does not exist");
+
+      expect(classifyVoiceError(error)).toBe("voice_not_found");
+    });
+  });
+
   describe("download interrupted errors", () => {
     it("classifies AbortError by name", () => {
       const error = new Error("Request was aborted");
@@ -225,6 +245,17 @@ describe("getVoiceErrorInfo", () => {
     expect(info.retryable).toBe(true);
   });
 
+  it("returns full error info for voice not found", () => {
+    const error = new Error("HTTP 404: Not Found");
+
+    const info = getVoiceErrorInfo(error);
+
+    expect(info.type).toBe("voice_not_found");
+    expect(info.message).toContain("not available");
+    expect(info.suggestion).toContain("different voice");
+    expect(info.retryable).toBe(false);
+  });
+
   it("returns full error info for unknown error", () => {
     const error = new Error("Something went wrong");
 
@@ -270,6 +301,12 @@ describe("isVoiceErrorRetryable", () => {
   it("returns false for quota exceeded", () => {
     const error = new Error("Quota exceeded");
     error.name = "QuotaExceededError";
+
+    expect(isVoiceErrorRetryable(error)).toBe(false);
+  });
+
+  it("returns false for voice not found", () => {
+    const error = new Error("HTTP 404: Not Found");
 
     expect(isVoiceErrorRetryable(error)).toBe(false);
   });

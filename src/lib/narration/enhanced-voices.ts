@@ -104,15 +104,6 @@ export const ENHANCED_VOICES: readonly EnhancedVoice[] = [
     quality: "medium",
     sizeBytes: 50 * 1024 * 1024, // ~50 MB
   },
-  {
-    id: "en_AU-karen-medium",
-    displayName: "Karen (AU)",
-    description: "Australian accent",
-    language: "en-AU",
-    gender: "female",
-    quality: "medium",
-    sizeBytes: 50 * 1024 * 1024, // ~50 MB
-  },
 ] as const;
 
 /**

@@ -58,17 +58,6 @@ describe("getVoiceDownloadUrls", () => {
     );
   });
 
-  it("constructs correct URLs for en_AU-karen-medium", () => {
-    const urls = getVoiceDownloadUrls("en_AU-karen-medium");
-
-    expect(urls.modelUrl).toBe(
-      "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_AU/karen/medium/en_AU-karen-medium.onnx"
-    );
-    expect(urls.configUrl).toBe(
-      "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_AU/karen/medium/en_AU-karen-medium.onnx.json"
-    );
-  });
-
   it("constructs correct URLs for en_US-ryan-medium", () => {
     const urls = getVoiceDownloadUrls("en_US-ryan-medium");
 
@@ -693,14 +682,13 @@ describe("downloadVoice error handling", () => {
 
 describe("ENHANCED_VOICES constant", () => {
   it("contains all curated voices", () => {
-    expect(ENHANCED_VOICES).toHaveLength(5);
+    expect(ENHANCED_VOICES).toHaveLength(4);
 
     const voiceIds = ENHANCED_VOICES.map((v) => v.id);
     expect(voiceIds).toContain("en_US-lessac-medium");
     expect(voiceIds).toContain("en_US-amy-low");
     expect(voiceIds).toContain("en_US-ryan-medium");
     expect(voiceIds).toContain("en_GB-alba-medium");
-    expect(voiceIds).toContain("en_AU-karen-medium");
   });
 
   it("has valid URL patterns for all voices", () => {
@@ -727,7 +715,7 @@ describe("ENHANCED_VOICES constant", () => {
   });
 
   it("has valid language codes", () => {
-    const validLangCodes = ["en-US", "en-GB", "en-AU"];
+    const validLangCodes = ["en-US", "en-GB"];
 
     for (const voice of ENHANCED_VOICES) {
       expect(validLangCodes).toContain(voice.language);
