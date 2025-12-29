@@ -28,14 +28,13 @@ data class SubscriptionTagDto(
 )
 
 /**
- * Subscription data from the API.
+ * Subscription data from the API (without nested feed).
  */
 @Serializable
 data class SubscriptionDto(
     val id: String,
     @SerialName("feedId")
     val feedId: String,
-    val feed: FeedDto,
     @SerialName("customTitle")
     val customTitle: String? = null,
     @SerialName("subscribedAt")
@@ -46,9 +45,19 @@ data class SubscriptionDto(
 )
 
 /**
+ * Subscription with its feed from the API.
+ * Server returns subscription and feed as sibling objects.
+ */
+@Serializable
+data class SubscriptionWithFeedDto(
+    val subscription: SubscriptionDto,
+    val feed: FeedDto,
+)
+
+/**
  * Response from list subscriptions endpoint.
  */
 @Serializable
 data class SubscriptionsResponse(
-    val subscriptions: List<SubscriptionDto>,
+    val items: List<SubscriptionWithFeedDto>,
 )

@@ -9,3 +9,4 @@ onlyBuiltDependencies:
   - "@sentry/cli"
   - argon2
   - esbuild
+  - protobufjs
