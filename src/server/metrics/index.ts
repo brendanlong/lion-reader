@@ -69,6 +69,14 @@ export {
   trackEnhancedVoiceDownloadFailed,
   trackNarrationPlaybackStarted,
   type EnhancedVoiceDownloadErrorType,
+
+  // Narration highlighting metrics
+  narrationHighlightActiveTotal,
+  narrationHighlightFallbackTotal,
+  narrationHighlightScrollTotal,
+  trackNarrationHighlightActive,
+  trackNarrationHighlightFallback,
+  trackNarrationHighlightScroll,
 } from "./metrics";
 
 export { collectAllMetrics, collectBusinessMetrics, collectJobQueueMetrics } from "./collect";

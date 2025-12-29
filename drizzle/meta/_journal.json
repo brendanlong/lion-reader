@@ -64,6 +64,13 @@
       "when": 1767100000000,
       "tag": "0008_invite_system",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1767200000000,
+      "tag": "0009_paragraph_map",
+      "breakpoints": true
     }
   ]
 }

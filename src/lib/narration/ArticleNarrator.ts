@@ -106,6 +106,13 @@ export class ArticleNarrator {
   private stateChangeListeners: Set<StateChangeCallback> = new Set();
 
   /**
+   * Flag to prevent handleUtteranceEnd from auto-advancing during skip operations.
+   * This is needed because speechSynthesis.cancel() may fire onend asynchronously
+   * after we've already set status back to "playing".
+   */
+  private isSkipping = false;
+
+  /**
    * Cached Firefox detection result.
    * Firefox has broken pause/resume, so we use a workaround.
    */
@@ -262,7 +269,9 @@ export class ArticleNarrator {
       return;
     }
 
-    // Cancel current playback
+    // Set skip flag to prevent handleUtteranceEnd from auto-advancing
+    // This is needed because cancel() may fire onend asynchronously
+    this.isSkipping = true;
     speechSynthesis.cancel();
     this.utterance = null;
 
@@ -274,6 +283,11 @@ export class ArticleNarrator {
       // At the last paragraph, stop
       this.setStatus("idle");
     }
+
+    // Clear skip flag after a small delay to handle async onend events
+    setTimeout(() => {
+      this.isSkipping = false;
+    }, 50);
   }
 
   /**
@@ -289,13 +303,20 @@ export class ArticleNarrator {
       return;
     }
 
-    // Cancel current playback
+    // Set skip flag to prevent handleUtteranceEnd from auto-advancing
+    // This is needed because cancel() may fire onend asynchronously
+    this.isSkipping = true;
     speechSynthesis.cancel();
     this.utterance = null;
 
     // Move to previous paragraph
     this.currentIndex = Math.max(this.currentIndex - 1, 0);
     this.speakCurrentParagraph();
+
+    // Clear skip flag after a small delay to handle async onend events
+    setTimeout(() => {
+      this.isSkipping = false;
+    }, 50);
   }
 
   /**
@@ -445,6 +466,11 @@ export class ArticleNarrator {
    * Handles the end of an utterance, auto-advancing to next paragraph.
    */
   private handleUtteranceEnd(): void {
+    // Don't auto-advance if we're skipping (skip operation handles index manually)
+    if (this.isSkipping) {
+      return;
+    }
+
     // Don't auto-advance if we're not playing (e.g., paused or stopped)
     if (this.status !== "playing") {
       return;
