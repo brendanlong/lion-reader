@@ -107,6 +107,31 @@ const entriesListOutputSchema = z.object({
   nextCursor: z.string().optional(),
 });
 
+/**
+ * Schema for entries returned from mutation operations.
+ * Used by normy for automatic cache normalization.
+ */
+const entryMutationResultSchema = z.object({
+  id: z.string(),
+  read: z.boolean(),
+  starred: z.boolean(),
+});
+
+/**
+ * Output schema for markRead mutation.
+ */
+const markReadOutputSchema = z.object({
+  entries: z.array(entryMutationResultSchema),
+});
+
+/**
+ * Output schema for star/unstar mutations.
+ * Returns single entry for normy cache normalization.
+ */
+const starOutputSchema = z.object({
+  entry: entryMutationResultSchema,
+});
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -399,7 +424,7 @@ export const entriesRouter = createTRPCRouter({
    *
    * @param ids - Array of entry IDs to mark
    * @param read - Whether to mark as read (true) or unread (false)
-   * @returns Empty object on success
+   * @returns The updated entries with their current state
    */
   markRead: protectedProcedure
     .meta({
@@ -419,7 +444,7 @@ export const entriesRouter = createTRPCRouter({
         read: z.boolean(),
       })
     )
-    .output(z.object({}))
+    .output(markReadOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
@@ -434,7 +459,18 @@ export const entriesRouter = createTRPCRouter({
         })
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
 
-      return {};
+      // Fetch the updated entries to return their current state
+      // This enables normy to automatically update cached queries
+      const updatedEntries = await ctx.db
+        .select({
+          id: userEntries.entryId,
+          read: userEntries.read,
+          starred: userEntries.starred,
+        })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
+
+      return { entries: updatedEntries };
     }),
 
   /**
@@ -535,7 +571,7 @@ export const entriesRouter = createTRPCRouter({
    * The entry must be visible to the user (via user_entries).
    *
    * @param id - The entry ID to star
-   * @returns Empty object on success
+   * @returns The updated entry with current state
    */
   star: protectedProcedure
     .meta({
@@ -551,7 +587,7 @@ export const entriesRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(z.object({}))
+    .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
@@ -576,7 +612,19 @@ export const entriesRouter = createTRPCRouter({
         })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
 
-      return {};
+      // Fetch the updated entry to return its current state
+      // This enables normy to automatically update cached queries
+      const updatedEntry = await ctx.db
+        .select({
+          id: userEntries.entryId,
+          read: userEntries.read,
+          starred: userEntries.starred,
+        })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)))
+        .limit(1);
+
+      return { entry: updatedEntry[0] };
     }),
 
   /**
@@ -585,7 +633,7 @@ export const entriesRouter = createTRPCRouter({
    * The entry must be visible to the user (via user_entries).
    *
    * @param id - The entry ID to unstar
-   * @returns Empty object on success
+   * @returns The updated entry with current state
    */
   unstar: protectedProcedure
     .meta({
@@ -601,7 +649,7 @@ export const entriesRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(z.object({}))
+    .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
@@ -625,6 +673,18 @@ export const entriesRouter = createTRPCRouter({
         })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
 
-      return {};
+      // Fetch the updated entry to return its current state
+      // This enables normy to automatically update cached queries
+      const updatedEntry = await ctx.db
+        .select({
+          id: userEntries.entryId,
+          read: userEntries.read,
+          starred: userEntries.starred,
+        })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)))
+        .limit(1);
+
+      return { entry: updatedEntry[0] };
     }),
 });
