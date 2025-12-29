@@ -28,6 +28,7 @@ import com.lionreader.data.db.entities.TagEntity
  *
  * Database version history:
  * - Version 1: Initial schema with all core entities
+ * - Version 2: Remove foreign key from entries.feedId to feeds.id
  */
 @Database(
     entities = [
@@ -75,7 +76,7 @@ abstract class LionReaderDatabase : RoomDatabase() {
          *
          * Increment when schema changes require a migration.
          */
-        const val VERSION = 1
+        const val VERSION = 2
 
         /**
          * Database file name.
