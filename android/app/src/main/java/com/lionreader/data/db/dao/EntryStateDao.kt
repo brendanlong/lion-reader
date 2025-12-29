@@ -14,7 +14,6 @@ import com.lionreader.data.db.entities.EntryStateEntity
  */
 @Dao
 interface EntryStateDao {
-
     /**
      * Gets the state for a specific entry.
      *
@@ -55,9 +54,14 @@ interface EntryStateDao {
         UPDATE entry_states
         SET read = :read, readAt = :readAt, pendingSync = 1, lastModifiedAt = :modifiedAt
         WHERE entryId = :entryId
-        """
+        """,
     )
-    suspend fun markRead(entryId: String, read: Boolean, readAt: Long?, modifiedAt: Long)
+    suspend fun markRead(
+        entryId: String,
+        read: Boolean,
+        readAt: Long?,
+        modifiedAt: Long,
+    )
 
     /**
      * Updates the starred status for an entry.
@@ -74,9 +78,14 @@ interface EntryStateDao {
         UPDATE entry_states
         SET starred = :starred, starredAt = :starredAt, pendingSync = 1, lastModifiedAt = :modifiedAt
         WHERE entryId = :entryId
-        """
+        """,
     )
-    suspend fun setStarred(entryId: String, starred: Boolean, starredAt: Long?, modifiedAt: Long)
+    suspend fun setStarred(
+        entryId: String,
+        starred: Boolean,
+        starredAt: Long?,
+        modifiedAt: Long,
+    )
 
     /**
      * Gets all entry IDs with pending sync.

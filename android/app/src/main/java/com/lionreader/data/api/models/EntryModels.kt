@@ -61,7 +61,9 @@ data class MarkReadRequest(
 /**
  * Sort order for entries.
  */
-enum class SortOrder(val value: String) {
+enum class SortOrder(
+    val value: String,
+) {
     NEWEST("newest"),
     OLDEST("oldest"),
 }

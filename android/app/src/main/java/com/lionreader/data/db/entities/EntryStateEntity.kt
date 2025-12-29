@@ -18,13 +18,13 @@ import androidx.room.PrimaryKey
             entity = EntryEntity::class,
             parentColumns = ["id"],
             childColumns = ["entryId"],
-            onDelete = ForeignKey.CASCADE
-        )
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
     indices = [
         Index("entryId"),
-        Index("pendingSync")
-    ]
+        Index("pendingSync"),
+    ],
 )
 data class EntryStateEntity(
     @PrimaryKey
@@ -35,5 +35,5 @@ data class EntryStateEntity(
     val starredAt: Long?,
     /** Flag indicating this state change needs to be synced to server */
     val pendingSync: Boolean = false,
-    val lastModifiedAt: Long
+    val lastModifiedAt: Long,
 )

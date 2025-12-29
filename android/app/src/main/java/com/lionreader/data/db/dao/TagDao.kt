@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.Flow
  */
 @Dao
 interface TagDao {
-
     /**
      * Gets all tags sorted by name.
      *
@@ -55,7 +54,7 @@ interface TagDao {
         JOIN subscription_tags st ON t.id = st.tagId
         WHERE st.subscriptionId = :subscriptionId
         ORDER BY t.name ASC
-        """
+        """,
     )
     suspend fun getTagEntitiesForSubscription(subscriptionId: String): List<TagEntity>
 

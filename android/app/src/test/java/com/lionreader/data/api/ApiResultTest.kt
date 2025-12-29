@@ -20,11 +20,9 @@ import kotlin.test.assertTrue
  * - Fold extension function
  */
 class ApiResultTest {
-
     @Nested
     @DisplayName("State Properties")
     inner class StateProperties {
-
         @Test
         @DisplayName("Success isSuccess returns true")
         fun successIsSuccessReturnsTrue() {
@@ -69,7 +67,6 @@ class ApiResultTest {
     @Nested
     @DisplayName("getOrNull")
     inner class GetOrNull {
-
         @Test
         @DisplayName("Success returns data")
         fun successReturnsData() {
@@ -109,7 +106,6 @@ class ApiResultTest {
     @Nested
     @DisplayName("getOrThrow")
     inner class GetOrThrow {
-
         @Test
         @DisplayName("Success returns data")
         fun successReturnsData() {
@@ -122,9 +118,10 @@ class ApiResultTest {
         fun errorThrowsApiException() {
             val result: ApiResult<String> = ApiResult.Error("TEST_ERROR", "Test message")
 
-            val exception = assertFailsWith<ApiException> {
-                result.getOrThrow()
-            }
+            val exception =
+                assertFailsWith<ApiException> {
+                    result.getOrThrow()
+                }
             assertEquals("TEST_ERROR", exception.code)
             assertEquals("Test message", exception.message)
         }
@@ -135,9 +132,10 @@ class ApiResultTest {
             val cause = RuntimeException("Connection failed")
             val result: ApiResult<String> = ApiResult.NetworkError(cause)
 
-            val exception = assertFailsWith<NetworkException> {
-                result.getOrThrow()
-            }
+            val exception =
+                assertFailsWith<NetworkException> {
+                    result.getOrThrow()
+                }
             assertEquals(cause, exception.cause)
         }
 
@@ -156,9 +154,10 @@ class ApiResultTest {
         fun rateLimitedThrowsRateLimitedException() {
             val result: ApiResult<String> = ApiResult.RateLimited(30)
 
-            val exception = assertFailsWith<RateLimitedException> {
-                result.getOrThrow()
-            }
+            val exception =
+                assertFailsWith<RateLimitedException> {
+                    result.getOrThrow()
+                }
             assertEquals(30, exception.retryAfterSeconds)
         }
     }
@@ -166,7 +165,6 @@ class ApiResultTest {
     @Nested
     @DisplayName("getOrElse")
     inner class GetOrElse {
-
         @Test
         @DisplayName("Success returns data")
         fun successReturnsData() {
@@ -180,10 +178,11 @@ class ApiResultTest {
             val result: ApiResult<String> = ApiResult.Error("CODE", "message")
 
             var capturedError: ApiResult<Nothing>? = null
-            val fallback = result.getOrElse { error ->
-                capturedError = error
-                "fallback"
-            }
+            val fallback =
+                result.getOrElse { error ->
+                    capturedError = error
+                    "fallback"
+                }
 
             assertEquals("fallback", fallback)
             assertTrue(capturedError is ApiResult.Error)
@@ -200,7 +199,6 @@ class ApiResultTest {
     @Nested
     @DisplayName("map")
     inner class Map {
-
         @Test
         @DisplayName("Success transforms data")
         fun successTransformsData() {
@@ -253,7 +251,6 @@ class ApiResultTest {
     @Nested
     @DisplayName("flatMap")
     inner class FlatMap {
-
         @Test
         @DisplayName("Success chains to new Success")
         fun successChainsToNewSuccess() {
@@ -268,9 +265,10 @@ class ApiResultTest {
         @DisplayName("Success chains to Error")
         fun successChainsToError() {
             val result: ApiResult<Int> = ApiResult.Success(5)
-            val flatMapped: ApiResult<String> = result.flatMap {
-                ApiResult.Error("TRANSFORMED_ERROR", "Transformed")
-            }
+            val flatMapped: ApiResult<String> =
+                result.flatMap {
+                    ApiResult.Error("TRANSFORMED_ERROR", "Transformed")
+                }
 
             assertTrue(flatMapped is ApiResult.Error)
             assertEquals("TRANSFORMED_ERROR", (flatMapped as ApiResult.Error).code)
@@ -282,10 +280,11 @@ class ApiResultTest {
             val result: ApiResult<Int> = ApiResult.Error("ORIGINAL", "Original error")
             var transformCalled = false
 
-            val flatMapped: ApiResult<String> = result.flatMap {
-                transformCalled = true
-                ApiResult.Success("should not reach")
-            }
+            val flatMapped: ApiResult<String> =
+                result.flatMap {
+                    transformCalled = true
+                    ApiResult.Success("should not reach")
+                }
 
             assertFalse(transformCalled)
             assertTrue(flatMapped is ApiResult.Error)
@@ -296,7 +295,6 @@ class ApiResultTest {
     @Nested
     @DisplayName("onSuccess and onError")
     inner class Callbacks {
-
         @Test
         @DisplayName("onSuccess is called for Success")
         fun onSuccessCalledForSuccess() {
@@ -360,16 +358,16 @@ class ApiResultTest {
     @Nested
     @DisplayName("fold extension function")
     inner class FoldExtension {
-
         @Test
         @DisplayName("fold handles Success")
         fun foldHandlesSuccess() {
             val result: ApiResult<Int> = ApiResult.Success(42)
 
-            val folded = result.fold(
-                onSuccess = { "success: $it" },
-                onError = { "error" },
-            )
+            val folded =
+                result.fold(
+                    onSuccess = { "success: $it" },
+                    onError = { "error" },
+                )
 
             assertEquals("success: 42", folded)
         }
@@ -379,10 +377,11 @@ class ApiResultTest {
         fun foldHandlesError() {
             val result: ApiResult<Int> = ApiResult.Error("TEST", "Test message")
 
-            val folded = result.fold(
-                onSuccess = { "success: $it" },
-                onError = { "error: ${it.code}" },
-            )
+            val folded =
+                result.fold(
+                    onSuccess = { "success: $it" },
+                    onError = { "error: ${it.code}" },
+                )
 
             assertEquals("error: TEST", folded)
         }
@@ -392,11 +391,12 @@ class ApiResultTest {
         fun foldHandlesNetworkError() {
             val result: ApiResult<Int> = ApiResult.NetworkError()
 
-            val folded = result.fold(
-                onSuccess = { "success" },
-                onError = { "error" },
-                onNetworkError = { "network error" },
-            )
+            val folded =
+                result.fold(
+                    onSuccess = { "success" },
+                    onError = { "error" },
+                    onNetworkError = { "network error" },
+                )
 
             assertEquals("network error", folded)
         }
@@ -406,11 +406,12 @@ class ApiResultTest {
         fun foldHandlesUnauthorized() {
             val result: ApiResult<Int> = ApiResult.Unauthorized
 
-            val folded = result.fold(
-                onSuccess = { "success" },
-                onError = { "error" },
-                onUnauthorized = { "unauthorized" },
-            )
+            val folded =
+                result.fold(
+                    onSuccess = { "success" },
+                    onError = { "error" },
+                    onUnauthorized = { "unauthorized" },
+                )
 
             assertEquals("unauthorized", folded)
         }
@@ -420,11 +421,12 @@ class ApiResultTest {
         fun foldHandlesRateLimited() {
             val result: ApiResult<Int> = ApiResult.RateLimited(30)
 
-            val folded = result.fold(
-                onSuccess = { "success" },
-                onError = { "error" },
-                onRateLimited = { "retry in ${it.retryAfterSeconds}s" },
-            )
+            val folded =
+                result.fold(
+                    onSuccess = { "success" },
+                    onError = { "error" },
+                    onRateLimited = { "retry in ${it.retryAfterSeconds}s" },
+                )
 
             assertEquals("retry in 30s", folded)
         }
@@ -437,22 +439,25 @@ class ApiResultTest {
             val rateLimitedResult: ApiResult<Int> = ApiResult.RateLimited()
 
             // All should fall back to onError with appropriate error codes
-            val networkFolded = networkResult.fold(
-                onSuccess = { "success" },
-                onError = { "error: ${it.code}" },
-            )
+            val networkFolded =
+                networkResult.fold(
+                    onSuccess = { "success" },
+                    onError = { "error: ${it.code}" },
+                )
             assertEquals("error: NETWORK_ERROR", networkFolded)
 
-            val unauthorizedFolded = unauthorizedResult.fold(
-                onSuccess = { "success" },
-                onError = { "error: ${it.code}" },
-            )
+            val unauthorizedFolded =
+                unauthorizedResult.fold(
+                    onSuccess = { "success" },
+                    onError = { "error: ${it.code}" },
+                )
             assertEquals("error: UNAUTHORIZED", unauthorizedFolded)
 
-            val rateLimitedFolded = rateLimitedResult.fold(
-                onSuccess = { "success" },
-                onError = { "error: ${it.code}" },
-            )
+            val rateLimitedFolded =
+                rateLimitedResult.fold(
+                    onSuccess = { "success" },
+                    onError = { "error: ${it.code}" },
+                )
             assertEquals("error: RATE_LIMITED", rateLimitedFolded)
         }
     }
@@ -460,7 +465,6 @@ class ApiResultTest {
     @Nested
     @DisplayName("Error details")
     inner class ErrorDetails {
-
         @Test
         @DisplayName("Error can include details map")
         fun errorCanIncludeDetails() {

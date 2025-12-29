@@ -21,17 +21,17 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
-
     @Provides
     @Singleton
-    fun provideAppConfig(@ApplicationContext context: Context): AppConfig {
-        return AppConfig(
+    fun provideAppConfig(
+        @ApplicationContext context: Context,
+    ): AppConfig =
+        AppConfig(
             appName = context.getString(context.applicationInfo.labelRes),
             apiBaseUrl = BuildConfig.API_BASE_URL,
             apiBasePath = BuildConfig.API_BASE_PATH,
-            isDebug = BuildConfig.DEBUG
+            isDebug = BuildConfig.DEBUG,
         )
-    }
 }
 
 /**
@@ -40,12 +40,9 @@ object AppModule {
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AppBindingsModule {
-
     @Binds
     @Singleton
-    abstract fun bindConnectivityMonitor(
-        impl: ConnectivityMonitor,
-    ): ConnectivityMonitorInterface
+    abstract fun bindConnectivityMonitor(impl: ConnectivityMonitor): ConnectivityMonitorInterface
 }
 
 /**
@@ -58,7 +55,7 @@ data class AppConfig(
     val appName: String,
     val apiBaseUrl: String,
     val apiBasePath: String,
-    val isDebug: Boolean
+    val isDebug: Boolean,
 ) {
     /**
      * Full API URL combining base URL and path.

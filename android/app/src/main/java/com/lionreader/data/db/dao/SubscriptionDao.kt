@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.Flow
  */
 @Dao
 interface SubscriptionDao {
-
     /**
      * Gets all subscriptions with their feeds, sorted by display title.
      *
@@ -38,7 +37,7 @@ interface SubscriptionDao {
         FROM subscriptions s
         JOIN feeds f ON s.feedId = f.id
         ORDER BY COALESCE(s.customTitle, f.title) ASC
-        """
+        """,
     )
     fun getAllWithFeeds(): Flow<List<SubscriptionWithFeed>>
 
@@ -61,7 +60,7 @@ interface SubscriptionDao {
         FROM subscriptions s
         JOIN feeds f ON s.feedId = f.id
         WHERE s.id = :subscriptionId
-        """
+        """,
     )
     fun getSubscriptionWithFeed(subscriptionId: String): Flow<SubscriptionWithFeed?>
 
@@ -93,7 +92,7 @@ interface SubscriptionDao {
         FROM subscriptions s
         JOIN feeds f ON s.feedId = f.id
         WHERE s.feedId = :feedId
-        """
+        """,
     )
     suspend fun getSubscriptionWithFeedByFeedId(feedId: String): SubscriptionWithFeed?
 
@@ -120,7 +119,10 @@ interface SubscriptionDao {
      * @param unreadCount The new unread count
      */
     @Query("UPDATE subscriptions SET unreadCount = :unreadCount WHERE id = :subscriptionId")
-    suspend fun updateUnreadCount(subscriptionId: String, unreadCount: Int)
+    suspend fun updateUnreadCount(
+        subscriptionId: String,
+        unreadCount: Int,
+    )
 
     /**
      * Deletes all subscriptions.

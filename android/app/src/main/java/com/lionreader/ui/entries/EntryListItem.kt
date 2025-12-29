@@ -58,23 +58,27 @@ fun EntryListItem(
     val alpha = if (entry.isRead) 0.6f else 1f
 
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = if (entry.isRead) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (entry.isRead) 0.dp else 1.dp
-        ),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .clickable(onClick = onClick),
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    if (entry.isRead) {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+            ),
+        elevation =
+            CardDefaults.cardElevation(
+                defaultElevation = if (entry.isRead) 0.dp else 1.dp,
+            ),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(16.dp),
         ) {
             // Feed title row with unread indicator
             Row(
@@ -166,16 +170,18 @@ fun EntryListItem(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            imageVector = if (entry.isRead) {
-                                Icons.Outlined.Circle
-                            } else {
-                                Icons.Filled.Circle
-                            },
-                            contentDescription = if (entry.isRead) {
-                                "Mark as unread"
-                            } else {
-                                "Mark as read"
-                            },
+                            imageVector =
+                                if (entry.isRead) {
+                                    Icons.Outlined.Circle
+                                } else {
+                                    Icons.Filled.Circle
+                                },
+                            contentDescription =
+                                if (entry.isRead) {
+                                    "Mark as unread"
+                                } else {
+                                    "Mark as read"
+                                },
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
@@ -187,22 +193,25 @@ fun EntryListItem(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            imageVector = if (entry.isStarred) {
-                                Icons.Filled.Star
-                            } else {
-                                Icons.Outlined.StarBorder
-                            },
-                            contentDescription = if (entry.isStarred) {
-                                "Remove from starred"
-                            } else {
-                                "Add to starred"
-                            },
+                            imageVector =
+                                if (entry.isStarred) {
+                                    Icons.Filled.Star
+                                } else {
+                                    Icons.Outlined.StarBorder
+                                },
+                            contentDescription =
+                                if (entry.isStarred) {
+                                    "Remove from starred"
+                                } else {
+                                    "Add to starred"
+                                },
                             modifier = Modifier.size(16.dp),
-                            tint = if (entry.isStarred) {
-                                MaterialTheme.colorScheme.tertiary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                            tint =
+                                if (entry.isStarred) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                         )
                     }
                 }
@@ -258,9 +267,8 @@ private fun formatRelativeTime(timestamp: Long): String {
  * @param summary The raw summary text
  * @return Cleaned summary text
  */
-private fun cleanSummary(summary: String): String {
-    return summary
+private fun cleanSummary(summary: String): String =
+    summary
         .replace(Regex("<[^>]*>"), "") // Remove HTML tags
         .replace(Regex("\\s+"), " ") // Normalize whitespace
         .trim()
-}

@@ -1,0 +1,17 @@
+# EditorConfig for ktlint
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.{kt,kts}]
+# Allow Composable function names to start with uppercase
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+# Disable backing property rule (common pattern in ViewModels)
+ktlint_standard_backing-property-naming = disabled

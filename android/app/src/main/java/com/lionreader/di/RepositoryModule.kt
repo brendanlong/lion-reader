@@ -36,7 +36,6 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object RepositoryModule {
-
     /**
      * Provides the AuthRepository for authentication operations.
      *
@@ -47,9 +46,7 @@ object RepositoryModule {
     fun provideAuthRepository(
         api: LionReaderApi,
         sessionStore: SessionStore,
-    ): AuthRepository {
-        return AuthRepository(api, sessionStore)
-    }
+    ): AuthRepository = AuthRepository(api, sessionStore)
 
     /**
      * Provides the SubscriptionRepository for subscription operations.
@@ -62,9 +59,7 @@ object RepositoryModule {
         api: LionReaderApi,
         subscriptionDao: SubscriptionDao,
         tagDao: TagDao,
-    ): SubscriptionRepository {
-        return SubscriptionRepository(api, subscriptionDao, tagDao)
-    }
+    ): SubscriptionRepository = SubscriptionRepository(api, subscriptionDao, tagDao)
 
     /**
      * Provides the TagRepository for tag operations.
@@ -76,9 +71,7 @@ object RepositoryModule {
     fun provideTagRepository(
         api: LionReaderApi,
         tagDao: TagDao,
-    ): TagRepository {
-        return TagRepository(api, tagDao)
-    }
+    ): TagRepository = TagRepository(api, tagDao)
 
     /**
      * Provides the EntryRepository for entry operations.
@@ -97,8 +90,8 @@ object RepositoryModule {
         tagDao: TagDao,
         connectivityMonitor: ConnectivityMonitor,
         syncRepository: SyncRepository,
-    ): EntryRepository {
-        return EntryRepository(
+    ): EntryRepository =
+        EntryRepository(
             api,
             entryDao,
             entryStateDao,
@@ -108,7 +101,6 @@ object RepositoryModule {
             connectivityMonitor,
             syncRepository,
         )
-    }
 
     /**
      * Provides the SyncRepository for synchronization operations.
@@ -121,7 +113,5 @@ object RepositoryModule {
         api: LionReaderApi,
         pendingActionDao: PendingActionDao,
         entryStateDao: EntryStateDao,
-    ): SyncRepository {
-        return SyncRepository(api, pendingActionDao, entryStateDao)
-    }
+    ): SyncRepository = SyncRepository(api, pendingActionDao, entryStateDao)
 }

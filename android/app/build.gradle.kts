@@ -67,10 +67,10 @@ android {
                 System.getenv("LION_READER_KEY_PASSWORD")
                     ?: localProperties.getProperty("LION_READER_KEY_PASSWORD")
 
-            if (keystorePath != null
-                && keystorePassword != null
-                && keyAliasValue != null
-                && keyPasswordValue != null
+            if (keystorePath != null &&
+                keystorePassword != null &&
+                keyAliasValue != null &&
+                keyPasswordValue != null
             ) {
                 storeFile = file(keystorePath)
                 storePassword = keystorePassword

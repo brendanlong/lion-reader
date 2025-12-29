@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.Flow
  */
 @Dao
 interface EntryDao {
-
     /**
      * Gets entries with their read/starred state, filtered by various criteria.
      *
@@ -46,7 +45,7 @@ interface EntryDao {
             CASE WHEN :sortOrder = 'newest' THEN e.id END DESC,
             CASE WHEN :sortOrder = 'oldest' THEN e.id END ASC
         LIMIT :limit OFFSET :offset
-        """
+        """,
     )
     fun getEntries(
         feedId: String?,
@@ -55,7 +54,7 @@ interface EntryDao {
         starredOnly: Boolean,
         sortOrder: String,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): Flow<List<EntryWithState>>
 
     /**
@@ -79,7 +78,7 @@ interface EntryDao {
         FROM entries e
         LEFT JOIN entry_states s ON e.id = s.entryId
         WHERE e.id = :id
-        """
+        """,
     )
     fun getEntryWithState(id: String): Flow<EntryWithState?>
 

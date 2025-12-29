@@ -15,27 +15,29 @@ import javax.inject.Singleton
  * the request proceeds without authentication headers.
  */
 @Singleton
-class AuthInterceptor @Inject constructor(
-    private val sessionStore: SessionStore,
-) {
-    /**
-     * Adds the authentication header to the request if a token is available.
-     *
-     * @param request The HTTP request builder to modify
-     */
-    fun intercept(request: HttpRequestBuilder) {
-        sessionStore.getToken()?.let { token ->
-            request.header(HttpHeaders.Authorization, "Bearer $token")
+class AuthInterceptor
+    @Inject
+    constructor(
+        private val sessionStore: SessionStore,
+    ) {
+        /**
+         * Adds the authentication header to the request if a token is available.
+         *
+         * @param request The HTTP request builder to modify
+         */
+        fun intercept(request: HttpRequestBuilder) {
+            sessionStore.getToken()?.let { token ->
+                request.header(HttpHeaders.Authorization, "Bearer $token")
+            }
         }
-    }
 
-    /**
-     * Checks if authentication is currently available.
-     *
-     * @return true if a session token exists
-     */
-    fun hasAuth(): Boolean = sessionStore.hasSession()
-}
+        /**
+         * Checks if authentication is currently available.
+         *
+         * @return true if a session token exists
+         */
+        fun hasAuth(): Boolean = sessionStore.hasSession()
+    }
 
 /**
  * Ktor plugin that automatically adds authentication headers to requests.
@@ -49,14 +51,16 @@ class AuthInterceptor @Inject constructor(
  * }
  * ```
  */
-val AuthPlugin = createClientPlugin("AuthPlugin", ::AuthPluginConfig) {
-    val authInterceptor = pluginConfig.authInterceptor
-        ?: throw IllegalStateException("AuthInterceptor must be provided")
+val AuthPlugin =
+    createClientPlugin("AuthPlugin", ::AuthPluginConfig) {
+        val authInterceptor =
+            pluginConfig.authInterceptor
+                ?: throw IllegalStateException("AuthInterceptor must be provided")
 
-    onRequest { request, _ ->
-        authInterceptor.intercept(request)
+        onRequest { request, _ ->
+            authInterceptor.intercept(request)
+        }
     }
-}
 
 /**
  * Configuration for the AuthPlugin.

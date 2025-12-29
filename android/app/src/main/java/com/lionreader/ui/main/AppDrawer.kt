@@ -13,9 +13,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Badge
@@ -66,9 +66,10 @@ fun AppDrawer(
 ) {
     ModalDrawerSheet(modifier = modifier) {
         Column(
-            modifier = Modifier
-                .fillMaxHeight()
-                .verticalScroll(rememberScrollState()),
+            modifier =
+                Modifier
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState()),
         ) {
             // Header
             DrawerHeader()
@@ -212,10 +213,11 @@ fun AppDrawer(
 @Composable
 private fun DrawerHeader() {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(120.dp)
-            .background(MaterialTheme.colorScheme.primaryContainer),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.BottomStart,
     ) {
         Text(
@@ -236,12 +238,13 @@ private fun DrawerHeader() {
 private fun TagColorIndicator(color: String?) {
     if (color != null) {
         Box(
-            modifier = Modifier
-                .size(12.dp)
-                .background(
-                    color = parseHexColor(color),
-                    shape = CircleShape,
-                ),
+            modifier =
+                Modifier
+                    .size(12.dp)
+                    .background(
+                        color = parseHexColor(color),
+                        shape = CircleShape,
+                    ),
         )
     } else {
         Icon(
@@ -256,25 +259,23 @@ private fun TagColorIndicator(color: String?) {
  *
  * Supports formats: "#RRGGBB" and "#AARRGGBB"
  */
-private fun parseHexColor(hexColor: String): Color {
-    return try {
+private fun parseHexColor(hexColor: String): Color =
+    try {
         val colorString = hexColor.removePrefix("#")
-        val colorLong = when (colorString.length) {
-            6 -> "FF$colorString".toLong(16)
-            8 -> colorString.toLong(16)
-            else -> 0xFFCCCCCC
-        }
+        val colorLong =
+            when (colorString.length) {
+                6 -> "FF$colorString".toLong(16)
+                8 -> colorString.toLong(16)
+                else -> 0xFFCCCCCC
+            }
         Color(colorLong)
     } catch (e: Exception) {
         Color(0xFFCCCCCC)
     }
-}
 
 /**
  * Formats a count for display in badges.
  *
  * Shows the actual number up to 99, then "99+" for larger values.
  */
-private fun formatCount(count: Int): String {
-    return if (count > 99) "99+" else count.toString()
-}
+private fun formatCount(count: Int): String = if (count > 99) "99+" else count.toString()

@@ -18,14 +18,14 @@ import androidx.room.PrimaryKey
             entity = FeedEntity::class,
             parentColumns = ["id"],
             childColumns = ["feedId"],
-            onDelete = ForeignKey.CASCADE
-        )
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
     indices = [
         Index("feedId"),
         Index("fetchedAt"),
-        Index("publishedAt")
-    ]
+        Index("publishedAt"),
+    ],
 )
 data class EntryEntity(
     @PrimaryKey
@@ -40,5 +40,5 @@ data class EntryEntity(
     val publishedAt: Long?,
     val fetchedAt: Long,
     val feedTitle: String?,
-    val lastSyncedAt: Long
+    val lastSyncedAt: Long,
 )

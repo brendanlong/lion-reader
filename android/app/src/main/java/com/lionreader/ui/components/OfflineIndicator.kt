@@ -52,14 +52,16 @@ fun OfflineBanner(
         modifier = modifier,
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.errorContainer),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.errorContainer),
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -140,11 +142,12 @@ fun ConnectivitySnackbarEffect(
         } else if (wasOffline) {
             // Coming back online
             snackbarHostState.currentSnackbarData?.dismiss()
-            val result = snackbarHostState.showSnackbar(
-                message = "Back online",
-                actionLabel = if (onSyncRequested != null) "Sync Now" else null,
-                duration = SnackbarDuration.Short,
-            )
+            val result =
+                snackbarHostState.showSnackbar(
+                    message = "Back online",
+                    actionLabel = if (onSyncRequested != null) "Sync Now" else null,
+                    duration = SnackbarDuration.Short,
+                )
 
             if (result == SnackbarResult.ActionPerformed) {
                 onSyncRequested?.invoke()

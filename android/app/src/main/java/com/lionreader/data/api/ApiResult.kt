@@ -14,7 +14,9 @@ sealed class ApiResult<out T> {
     /**
      * Successful API response with data.
      */
-    data class Success<T>(val data: T) : ApiResult<T>()
+    data class Success<T>(
+        val data: T,
+    ) : ApiResult<T>()
 
     /**
      * API returned an error response.
@@ -59,54 +61,59 @@ sealed class ApiResult<out T> {
     /**
      * Returns the data if successful, null otherwise.
      */
-    fun getOrNull(): T? = when (this) {
-        is Success -> data
-        else -> null
-    }
+    fun getOrNull(): T? =
+        when (this) {
+            is Success -> data
+            else -> null
+        }
 
     /**
      * Returns the data if successful, throws an exception otherwise.
      */
-    fun getOrThrow(): T = when (this) {
-        is Success -> data
-        is Error -> throw ApiException(code, message)
-        is NetworkError -> throw NetworkException(cause)
-        is Unauthorized -> throw UnauthorizedException()
-        is RateLimited -> throw RateLimitedException(retryAfterSeconds)
-    }
+    fun getOrThrow(): T =
+        when (this) {
+            is Success -> data
+            is Error -> throw ApiException(code, message)
+            is NetworkError -> throw NetworkException(cause)
+            is Unauthorized -> throw UnauthorizedException()
+            is RateLimited -> throw RateLimitedException(retryAfterSeconds)
+        }
 
     /**
      * Returns the data if successful, or the result of the given function otherwise.
      */
-    inline fun getOrElse(onError: (ApiResult<Nothing>) -> @UnsafeVariance T): T = when (this) {
-        is Success -> data
-        is Error -> onError(this)
-        is NetworkError -> onError(this)
-        is Unauthorized -> onError(this)
-        is RateLimited -> onError(this)
-    }
+    inline fun getOrElse(onError: (ApiResult<Nothing>) -> @UnsafeVariance T): T =
+        when (this) {
+            is Success -> data
+            is Error -> onError(this)
+            is NetworkError -> onError(this)
+            is Unauthorized -> onError(this)
+            is RateLimited -> onError(this)
+        }
 
     /**
      * Transforms the successful data using the given function.
      */
-    inline fun <R> map(transform: (T) -> R): ApiResult<R> = when (this) {
-        is Success -> Success(transform(data))
-        is Error -> this
-        is NetworkError -> this
-        is Unauthorized -> this
-        is RateLimited -> this
-    }
+    inline fun <R> map(transform: (T) -> R): ApiResult<R> =
+        when (this) {
+            is Success -> Success(transform(data))
+            is Error -> this
+            is NetworkError -> this
+            is Unauthorized -> this
+            is RateLimited -> this
+        }
 
     /**
      * Transforms the successful data using the given function that returns an ApiResult.
      */
-    inline fun <R> flatMap(transform: (T) -> ApiResult<R>): ApiResult<R> = when (this) {
-        is Success -> transform(data)
-        is Error -> this
-        is NetworkError -> this
-        is Unauthorized -> this
-        is RateLimited -> this
-    }
+    inline fun <R> flatMap(transform: (T) -> ApiResult<R>): ApiResult<R> =
+        when (this) {
+            is Success -> transform(data)
+            is Error -> this
+            is NetworkError -> this
+            is Unauthorized -> this
+            is RateLimited -> this
+        }
 
     /**
      * Executes the given action if this is a successful result.
@@ -166,10 +173,11 @@ fun <T, R> ApiResult<T>.fold(
     onNetworkError: (ApiResult.NetworkError) -> R = { onError(ApiResult.Error("NETWORK_ERROR", "Network error")) },
     onUnauthorized: () -> R = { onError(ApiResult.Error("UNAUTHORIZED", "Unauthorized")) },
     onRateLimited: (ApiResult.RateLimited) -> R = { onError(ApiResult.Error("RATE_LIMITED", "Rate limited")) },
-): R = when (this) {
-    is ApiResult.Success -> onSuccess(data)
-    is ApiResult.Error -> onError(this)
-    is ApiResult.NetworkError -> onNetworkError(this)
-    is ApiResult.Unauthorized -> onUnauthorized()
-    is ApiResult.RateLimited -> onRateLimited(this)
-}
+): R =
+    when (this) {
+        is ApiResult.Success -> onSuccess(data)
+        is ApiResult.Error -> onError(this)
+        is ApiResult.NetworkError -> onNetworkError(this)
+        is ApiResult.Unauthorized -> onUnauthorized()
+        is ApiResult.RateLimited -> onRateLimited(this)
+    }

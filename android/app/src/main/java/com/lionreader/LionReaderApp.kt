@@ -18,8 +18,9 @@ import javax.inject.Inject
  * Implements [Configuration.Provider] to configure WorkManager with Hilt support.
  */
 @HiltAndroidApp
-class LionReaderApp : Application(), Configuration.Provider {
-
+class LionReaderApp :
+    Application(),
+    Configuration.Provider {
     companion object {
         private const val TAG = "LionReaderApp"
     }
@@ -69,8 +70,10 @@ class LionReaderApp : Application(), Configuration.Provider {
      * This enables dependency injection in WorkManager workers via @HiltWorker.
      */
     override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .setMinimumLoggingLevel(Log.DEBUG)
-            .build()
+        get() =
+            Configuration
+                .Builder()
+                .setWorkerFactory(workerFactory)
+                .setMinimumLoggingLevel(Log.DEBUG)
+                .build()
 }

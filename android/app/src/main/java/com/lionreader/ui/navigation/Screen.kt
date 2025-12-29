@@ -6,8 +6,9 @@ package com.lionreader.ui.navigation
  * Each screen has a unique route string used by the Navigation component.
  * This provides type-safe navigation throughout the app.
  */
-sealed class Screen(val route: String) {
-
+sealed class Screen(
+    val route: String,
+) {
     /**
      * Login screen for email/password authentication.
      * This is the entry point for unauthenticated users.

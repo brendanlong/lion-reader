@@ -15,7 +15,7 @@ data class EntryWithState(
     val read: Boolean?,
     val starred: Boolean?,
     val readAt: Long?,
-    val starredAt: Long?
+    val starredAt: Long?,
 ) {
     /** Returns true if the entry has been read, defaults to false if no state exists */
     val isRead: Boolean get() = read ?: false

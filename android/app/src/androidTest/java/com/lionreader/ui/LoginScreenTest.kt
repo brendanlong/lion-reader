@@ -2,7 +2,6 @@ package com.lionreader.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -24,7 +23,6 @@ import org.junit.Test
  * - Error display
  */
 class LoginScreenTest {
-
     @get:Rule
     val composeTestRule = createComposeRule()
 
@@ -120,10 +118,11 @@ class LoginScreenTest {
         composeTestRule.setContent {
             LionReaderTheme {
                 LoginScreenContent(
-                    uiState = LoginUiState(
-                        email = "user@example.com",
-                        password = "password123",
-                    ),
+                    uiState =
+                        LoginUiState(
+                            email = "user@example.com",
+                            password = "password123",
+                        ),
                     onEmailChange = {},
                     onPasswordChange = {},
                     onTogglePasswordVisibility = {},
@@ -142,11 +141,12 @@ class LoginScreenTest {
         composeTestRule.setContent {
             LionReaderTheme {
                 LoginScreenContent(
-                    uiState = LoginUiState(
-                        email = "user@example.com",
-                        password = "password",
-                        isLoading = true,
-                    ),
+                    uiState =
+                        LoginUiState(
+                            email = "user@example.com",
+                            password = "password",
+                            isLoading = true,
+                        ),
                     onEmailChange = {},
                     onPasswordChange = {},
                     onTogglePasswordVisibility = {},
@@ -164,11 +164,12 @@ class LoginScreenTest {
         composeTestRule.setContent {
             LionReaderTheme {
                 LoginScreenContent(
-                    uiState = LoginUiState(
-                        email = "user@example.com",
-                        password = "wrongpassword",
-                        error = "Invalid email or password",
-                    ),
+                    uiState =
+                        LoginUiState(
+                            email = "user@example.com",
+                            password = "wrongpassword",
+                            error = "Invalid email or password",
+                        ),
                     onEmailChange = {},
                     onPasswordChange = {},
                     onTogglePasswordVisibility = {},
@@ -187,10 +188,11 @@ class LoginScreenTest {
         composeTestRule.setContent {
             LionReaderTheme {
                 LoginScreenContent(
-                    uiState = LoginUiState(
-                        password = "secret",
-                        isPasswordVisible = false,
-                    ),
+                    uiState =
+                        LoginUiState(
+                            password = "secret",
+                            isPasswordVisible = false,
+                        ),
                     onEmailChange = {},
                     onPasswordChange = {},
                     onTogglePasswordVisibility = { toggleClicked = true },
@@ -209,10 +211,11 @@ class LoginScreenTest {
         composeTestRule.setContent {
             LionReaderTheme {
                 LoginScreenContent(
-                    uiState = LoginUiState(
-                        password = "secret",
-                        isPasswordVisible = true,
-                    ),
+                    uiState =
+                        LoginUiState(
+                            password = "secret",
+                            isPasswordVisible = true,
+                        ),
                     onEmailChange = {},
                     onPasswordChange = {},
                     onTogglePasswordVisibility = {},
@@ -229,11 +232,12 @@ class LoginScreenTest {
         composeTestRule.setContent {
             LionReaderTheme {
                 LoginScreenContent(
-                    uiState = LoginUiState(
-                        email = "user@example.com",
-                        password = "password123",
-                        isLoading = false,
-                    ),
+                    uiState =
+                        LoginUiState(
+                            email = "user@example.com",
+                            password = "password123",
+                            isLoading = false,
+                        ),
                     onEmailChange = {},
                     onPasswordChange = {},
                     onTogglePasswordVisibility = {},

@@ -19,5 +19,5 @@ data class FeedEntity(
     val title: String?,
     val description: String?,
     val siteUrl: String?,
-    val lastSyncedAt: Long
+    val lastSyncedAt: Long,
 )

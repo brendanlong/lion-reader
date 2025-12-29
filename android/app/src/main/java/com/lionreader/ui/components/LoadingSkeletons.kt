@@ -29,59 +29,64 @@ import androidx.compose.ui.unit.dp
  * for feed title, entry title, summary, and metadata.
  */
 @Composable
-fun EntryListItemSkeleton(
-    modifier: Modifier = Modifier,
-) {
+fun EntryListItemSkeleton(modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
         ) {
             // Feed title placeholder
             ShimmerLine(
-                modifier = Modifier
-                    .height(12.dp)
-                    .width(80.dp),
+                modifier =
+                    Modifier
+                        .height(12.dp)
+                        .width(80.dp),
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
             // Entry title placeholder (2 lines)
             ShimmerLine(
-                modifier = Modifier
-                    .height(18.dp)
-                    .fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .height(18.dp)
+                        .fillMaxWidth(),
             )
 
             Spacer(modifier = Modifier.height(6.dp))
 
             ShimmerLine(
-                modifier = Modifier
-                    .height(18.dp)
-                    .fillMaxWidth(0.7f),
+                modifier =
+                    Modifier
+                        .height(18.dp)
+                        .fillMaxWidth(0.7f),
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
             // Summary placeholder (2 lines)
             ShimmerLine(
-                modifier = Modifier
-                    .height(14.dp)
-                    .fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .height(14.dp)
+                        .fillMaxWidth(),
             )
 
             Spacer(modifier = Modifier.height(4.dp))
 
             ShimmerLine(
-                modifier = Modifier
-                    .height(14.dp)
-                    .fillMaxWidth(0.85f),
+                modifier =
+                    Modifier
+                        .height(14.dp)
+                        .fillMaxWidth(0.85f),
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -94,9 +99,10 @@ fun EntryListItemSkeleton(
             ) {
                 // Date placeholder
                 ShimmerLine(
-                    modifier = Modifier
-                        .height(12.dp)
-                        .width(60.dp),
+                    modifier =
+                        Modifier
+                            .height(12.dp)
+                            .width(60.dp),
                 )
 
                 // Action buttons placeholder
@@ -147,36 +153,38 @@ fun EntryListSkeleton(
  * for feed title, entry title, metadata, and article content.
  */
 @Composable
-fun EntryDetailSkeleton(
-    modifier: Modifier = Modifier,
-) {
+fun EntryDetailSkeleton(modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
     ) {
         // Feed title placeholder
         ShimmerLine(
-            modifier = Modifier
-                .height(14.dp)
-                .width(100.dp),
+            modifier =
+                Modifier
+                    .height(14.dp)
+                    .width(100.dp),
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         // Entry title placeholder (multiple lines for long titles)
         ShimmerLine(
-            modifier = Modifier
-                .height(28.dp)
-                .fillMaxWidth(),
+            modifier =
+                Modifier
+                    .height(28.dp)
+                    .fillMaxWidth(),
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         ShimmerLine(
-            modifier = Modifier
-                .height(28.dp)
-                .fillMaxWidth(0.8f),
+            modifier =
+                Modifier
+                    .height(28.dp)
+                    .fillMaxWidth(0.8f),
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -186,14 +194,16 @@ fun EntryDetailSkeleton(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ShimmerLine(
-                modifier = Modifier
-                    .height(14.dp)
-                    .width(80.dp),
+                modifier =
+                    Modifier
+                        .height(14.dp)
+                        .width(80.dp),
             )
             ShimmerLine(
-                modifier = Modifier
-                    .height(14.dp)
-                    .width(100.dp),
+                modifier =
+                    Modifier
+                        .height(14.dp)
+                        .width(100.dp),
             )
         }
 
@@ -207,9 +217,10 @@ fun EntryDetailSkeleton(
 
         // Image placeholder
         ShimmerBox(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
             shape = RoundedCornerShape(8.dp),
         )
 
@@ -230,27 +241,31 @@ fun EntryDetailSkeleton(
 private fun ContentParagraphSkeleton() {
     Column {
         ShimmerLine(
-            modifier = Modifier
-                .height(16.dp)
-                .fillMaxWidth(),
+            modifier =
+                Modifier
+                    .height(16.dp)
+                    .fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(6.dp))
         ShimmerLine(
-            modifier = Modifier
-                .height(16.dp)
-                .fillMaxWidth(),
+            modifier =
+                Modifier
+                    .height(16.dp)
+                    .fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(6.dp))
         ShimmerLine(
-            modifier = Modifier
-                .height(16.dp)
-                .fillMaxWidth(0.92f),
+            modifier =
+                Modifier
+                    .height(16.dp)
+                    .fillMaxWidth(0.92f),
         )
         Spacer(modifier = Modifier.height(6.dp))
         ShimmerLine(
-            modifier = Modifier
-                .height(16.dp)
-                .fillMaxWidth(0.65f),
+            modifier =
+                Modifier
+                    .height(16.dp)
+                    .fillMaxWidth(0.65f),
         )
     }
 }
@@ -259,13 +274,12 @@ private fun ContentParagraphSkeleton() {
  * Loading skeleton for a drawer navigation item.
  */
 @Composable
-fun DrawerItemSkeleton(
-    modifier: Modifier = Modifier,
-) {
+fun DrawerItemSkeleton(modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 28.dp, vertical = 12.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Icon placeholder
@@ -277,18 +291,20 @@ fun DrawerItemSkeleton(
 
         // Label placeholder
         ShimmerLine(
-            modifier = Modifier
-                .height(16.dp)
-                .weight(1f),
+            modifier =
+                Modifier
+                    .height(16.dp)
+                    .weight(1f),
         )
 
         Spacer(modifier = Modifier.width(12.dp))
 
         // Badge placeholder
         ShimmerBox(
-            modifier = Modifier
-                .height(20.dp)
-                .width(28.dp),
+            modifier =
+                Modifier
+                    .height(20.dp)
+                    .width(28.dp),
             shape = RoundedCornerShape(10.dp),
         )
     }
@@ -300,18 +316,17 @@ fun DrawerItemSkeleton(
  * Displays skeleton items for the drawer header and navigation items.
  */
 @Composable
-fun DrawerSkeleton(
-    modifier: Modifier = Modifier,
-) {
+fun DrawerSkeleton(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxSize(),
     ) {
         // Header placeholder
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(120.dp)
-                .shimmerEffect(RoundedCornerShape(0.dp)),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .shimmerEffect(RoundedCornerShape(0.dp)),
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -325,10 +340,11 @@ fun DrawerSkeleton(
 
         // Section label placeholder
         ShimmerLine(
-            modifier = Modifier
-                .padding(horizontal = 28.dp)
-                .height(12.dp)
-                .width(40.dp),
+            modifier =
+                Modifier
+                    .padding(horizontal = 28.dp)
+                    .height(12.dp)
+                    .width(40.dp),
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -342,10 +358,11 @@ fun DrawerSkeleton(
 
         // Section label placeholder
         ShimmerLine(
-            modifier = Modifier
-                .padding(horizontal = 28.dp)
-                .height(12.dp)
-                .width(40.dp),
+            modifier =
+                Modifier
+                    .padding(horizontal = 28.dp)
+                    .height(12.dp)
+                    .width(40.dp),
         )
 
         Spacer(modifier = Modifier.height(8.dp))
