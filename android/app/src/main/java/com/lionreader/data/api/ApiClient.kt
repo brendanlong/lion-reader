@@ -276,7 +276,8 @@ class ApiClient @Inject constructor(
     }
 
     companion object {
-        private const val TAG = "ApiClient"
+        @PublishedApi
+        internal const val TAG = "ApiClient"
         private const val CONNECT_TIMEOUT_MS = 10_000L
         private const val REQUEST_TIMEOUT_MS = 30_000L
         private const val SOCKET_TIMEOUT_MS = 30_000L

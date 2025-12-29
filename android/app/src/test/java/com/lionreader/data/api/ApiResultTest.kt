@@ -268,7 +268,7 @@ class ApiResultTest {
         @DisplayName("Success chains to Error")
         fun successChainsToError() {
             val result: ApiResult<Int> = ApiResult.Success(5)
-            val flatMapped = result.flatMap<Int, String> {
+            val flatMapped: ApiResult<String> = result.flatMap {
                 ApiResult.Error("TRANSFORMED_ERROR", "Transformed")
             }
 
@@ -282,7 +282,7 @@ class ApiResultTest {
             val result: ApiResult<Int> = ApiResult.Error("ORIGINAL", "Original error")
             var transformCalled = false
 
-            val flatMapped = result.flatMap<Int, String> {
+            val flatMapped: ApiResult<String> = result.flatMap {
                 transformCalled = true
                 ApiResult.Success("should not reach")
             }
