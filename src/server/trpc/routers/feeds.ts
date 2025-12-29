@@ -318,7 +318,7 @@ export const feedsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/feeds/preview",
+        path: "/feeds/preview",
         tags: ["Feeds"],
         summary: "Preview a feed without subscribing",
       },
@@ -401,7 +401,7 @@ export const feedsRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/feeds/discover",
+        path: "/feeds/discover",
         tags: ["Feeds"],
         summary: "Discover feeds from a URL",
       },

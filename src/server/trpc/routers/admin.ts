@@ -37,7 +37,7 @@ export const adminRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/admin/invites",
+        path: "/admin/invites",
         tags: ["Admin"],
         summary: "Create a new invite",
       },
@@ -88,7 +88,7 @@ export const adminRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/admin/invites",
+        path: "/admin/invites",
         tags: ["Admin"],
         summary: "List all invites",
       },
@@ -175,7 +175,7 @@ export const adminRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "DELETE",
-        path: "/v1/admin/invites/{inviteId}",
+        path: "/admin/invites/{inviteId}",
         tags: ["Admin"],
         summary: "Revoke an invite",
       },

@@ -97,7 +97,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/auth/register",
+        path: "/auth/register",
         tags: ["Auth"],
         summary: "Register a new account",
       },
@@ -238,7 +238,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/auth/login",
+        path: "/auth/login",
         tags: ["Auth"],
         summary: "Login with email and password",
       },
@@ -325,7 +325,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/auth/providers",
+        path: "/auth/providers",
         tags: ["Auth"],
         summary: "Get enabled OAuth providers",
       },
@@ -361,7 +361,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/auth/oauth/google",
+        path: "/auth/oauth/google",
         tags: ["Auth"],
         summary: "Get Google OAuth authorization URL",
       },
@@ -405,7 +405,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/auth/oauth/google/callback",
+        path: "/auth/oauth/google/callback",
         tags: ["Auth"],
         summary: "Handle Google OAuth callback",
       },
@@ -615,7 +615,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/auth/oauth/apple",
+        path: "/auth/oauth/apple",
         tags: ["Auth"],
         summary: "Get Apple OAuth authorization URL",
       },
@@ -666,7 +666,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/auth/oauth/apple/callback",
+        path: "/auth/oauth/apple/callback",
         tags: ["Auth"],
         summary: "Handle Apple OAuth callback",
       },
@@ -899,7 +899,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/auth/signup-config",
+        path: "/auth/signup-config",
         tags: ["Auth"],
         summary: "Get signup configuration",
       },
@@ -925,7 +925,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/auth/me",
+        path: "/auth/me",
         tags: ["Auth"],
         summary: "Get current user",
       },
@@ -964,7 +964,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/auth/logout",
+        path: "/auth/logout",
         tags: ["Auth"],
         summary: "Logout current session",
       },
@@ -995,7 +995,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/auth/link/google",
+        path: "/auth/link/google",
         tags: ["Auth"],
         summary: "Link Google OAuth to existing account",
       },
@@ -1090,7 +1090,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/auth/link/apple",
+        path: "/auth/link/apple",
         tags: ["Auth"],
         summary: "Link Apple OAuth to existing account",
       },
@@ -1196,7 +1196,7 @@ export const authRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "DELETE",
-        path: "/v1/auth/link/{provider}",
+        path: "/auth/link/{provider}",
         tags: ["Auth"],
         summary: "Unlink OAuth provider from account",
       },

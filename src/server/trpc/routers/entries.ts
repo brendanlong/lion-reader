@@ -178,7 +178,7 @@ export const entriesRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/entries",
+        path: "/entries",
         tags: ["Entries"],
         summary: "List entries",
       },
@@ -338,7 +338,7 @@ export const entriesRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/entries/{id}",
+        path: "/entries/{id}",
         tags: ["Entries"],
         summary: "Get entry",
       },
@@ -405,7 +405,7 @@ export const entriesRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/entries/mark-read",
+        path: "/entries/mark-read",
         tags: ["Entries"],
         summary: "Mark entries read/unread",
       },
@@ -448,7 +448,7 @@ export const entriesRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/entries/mark-all-read",
+        path: "/entries/mark-all-read",
         tags: ["Entries"],
         summary: "Mark all entries read",
       },
@@ -541,7 +541,7 @@ export const entriesRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/entries/{id}/star",
+        path: "/entries/{id}/star",
         tags: ["Entries"],
         summary: "Star entry",
       },
@@ -591,7 +591,7 @@ export const entriesRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "DELETE",
-        path: "/v1/entries/{id}/star",
+        path: "/entries/{id}/star",
         tags: ["Entries"],
         summary: "Unstar entry",
       },

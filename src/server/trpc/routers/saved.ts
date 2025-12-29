@@ -237,7 +237,7 @@ export const savedRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/saved",
+        path: "/saved",
         tags: ["Saved Articles"],
         summary: "Save URL for later",
       },
@@ -379,7 +379,7 @@ export const savedRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/saved",
+        path: "/saved",
         tags: ["Saved Articles"],
         summary: "List saved articles",
       },
@@ -462,7 +462,7 @@ export const savedRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/saved/{id}",
+        path: "/saved/{id}",
         tags: ["Saved Articles"],
         summary: "Get saved article",
       },
@@ -519,7 +519,7 @@ export const savedRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "DELETE",
-        path: "/v1/saved/{id}",
+        path: "/saved/{id}",
         tags: ["Saved Articles"],
         summary: "Delete saved article",
       },
@@ -563,7 +563,7 @@ export const savedRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/saved/mark-read",
+        path: "/saved/mark-read",
         tags: ["Saved Articles"],
         summary: "Mark saved articles read/unread",
       },
@@ -617,7 +617,7 @@ export const savedRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "POST",
-        path: "/v1/saved/{id}/star",
+        path: "/saved/{id}/star",
         tags: ["Saved Articles"],
         summary: "Star saved article",
       },
@@ -666,7 +666,7 @@ export const savedRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "DELETE",
-        path: "/v1/saved/{id}/star",
+        path: "/saved/{id}/star",
         tags: ["Saved Articles"],
         summary: "Unstar saved article",
       },
@@ -714,7 +714,7 @@ export const savedRouter = createTRPCRouter({
     .meta({
       openapi: {
         method: "GET",
-        path: "/v1/saved/count",
+        path: "/saved/count",
         tags: ["Saved Articles"],
         summary: "Get saved articles count",
       },
