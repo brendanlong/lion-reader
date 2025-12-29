@@ -128,7 +128,13 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       starredOnly: listFilters?.starredOnly,
       sortOrder: listFilters?.sortOrder,
     }),
-    [listFilters?.feedId, listFilters?.tagId, listFilters?.unreadOnly, listFilters?.starredOnly, listFilters?.sortOrder]
+    [
+      listFilters?.feedId,
+      listFilters?.tagId,
+      listFilters?.unreadOnly,
+      listFilters?.starredOnly,
+      listFilters?.sortOrder,
+    ]
   );
 
   // markRead mutation with optimistic updates
@@ -209,6 +215,12 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       }
       toast.error("Failed to star entry");
     },
+    onSettled: () => {
+      // Invalidate starred entries list so the Starred page shows the new item
+      utils.entries.list.invalidate({ starredOnly: true });
+      // Invalidate subscriptions to update unread counts
+      utils.subscriptions.list.invalidate();
+    },
   });
 
   // unstar mutation with optimistic updates
@@ -245,6 +257,12 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         utils.entries.list.setInfiniteData(queryFilters, context.previousData);
       }
       toast.error("Failed to unstar entry");
+    },
+    onSettled: () => {
+      // Invalidate starred entries list so the Starred page reflects the removal
+      utils.entries.list.invalidate({ starredOnly: true });
+      // Invalidate subscriptions to update unread counts
+      utils.subscriptions.list.invalidate();
     },
   });
 
