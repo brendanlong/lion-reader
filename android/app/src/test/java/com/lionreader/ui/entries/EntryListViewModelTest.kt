@@ -11,7 +11,7 @@ import com.lionreader.data.repository.EntrySyncResult
 import com.lionreader.data.repository.SubscriptionRepository
 import com.lionreader.data.repository.SyncResult
 import com.lionreader.data.repository.TagRepository
-import com.lionreader.data.sync.ConnectivityMonitor
+import com.lionreader.data.sync.ConnectivityMonitorInterface
 import com.lionreader.ui.navigation.Screen
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -52,7 +52,7 @@ class EntryListViewModelTest {
     private lateinit var entryRepository: EntryRepository
     private lateinit var subscriptionRepository: SubscriptionRepository
     private lateinit var tagRepository: TagRepository
-    private lateinit var connectivityMonitor: ConnectivityMonitor
+    private lateinit var connectivityMonitor: ConnectivityMonitorInterface
 
     private lateinit var viewModel: EntryListViewModel
 
@@ -85,11 +85,11 @@ class EntryListViewModelTest {
         entryRepository = mockk(relaxed = true)
         subscriptionRepository = mockk(relaxed = true)
         tagRepository = mockk(relaxed = true)
-        connectivityMonitor = mockk(relaxed = true)
+        connectivityMonitor = mockk<ConnectivityMonitorInterface>(relaxed = true)
 
         // Default mock setup
         every { connectivityMonitor.isOnline } returns MutableStateFlow(true)
-        every { connectivityMonitor.isOnline() } returns true
+        every { connectivityMonitor.checkOnline() } returns true
         every { entryRepository.getEntries(any()) } returns flowOf(listOf(testEntry))
         coEvery { entryRepository.syncEntries(any(), any()) } returns EntrySyncResult(
             syncResult = SyncResult.Success,
@@ -321,7 +321,8 @@ class EntryListViewModelTest {
         @Test
         @DisplayName("Initial state reflects connectivity")
         fun initialStateReflectsConnectivity() = runTest {
-            every { connectivityMonitor.isOnline() } returns false
+            every { connectivityMonitor.isOnline } returns MutableStateFlow(false)
+            every { connectivityMonitor.checkOnline() } returns false
 
             viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
@@ -334,7 +335,7 @@ class EntryListViewModelTest {
         fun connectivityChangesAreObserved() = runTest {
             val connectivityFlow = MutableStateFlow(true)
             every { connectivityMonitor.isOnline } returns connectivityFlow
-            every { connectivityMonitor.isOnline() } returns true
+            every { connectivityMonitor.checkOnline() } returns true
 
             viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
@@ -359,6 +360,11 @@ class EntryListViewModelTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             viewModel.entries.test {
+                // First emission might be empty list (initial value), skip it
+                skipItems(1)
+                // Advance to let the flow emit from repository
+                testDispatcher.scheduler.advanceUntilIdle()
+
                 val entries = awaitItem()
                 assertEquals(1, entries.size)
                 assertEquals("entry-1", entries[0].entry.id)
@@ -392,7 +398,7 @@ class EntryListViewModelTest {
         @Test
         @DisplayName("Refresh syncs from server when online")
         fun refreshSyncsFromServerWhenOnline() = runTest {
-            every { connectivityMonitor.isOnline() } returns true
+            every { connectivityMonitor.checkOnline() } returns true
 
             viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
@@ -406,7 +412,7 @@ class EntryListViewModelTest {
         @Test
         @DisplayName("Refresh does not sync from server when offline")
         fun refreshDoesNotSyncFromServerWhenOffline() = runTest {
-            every { connectivityMonitor.isOnline() } returns false
+            every { connectivityMonitor.checkOnline() } returns false
 
             viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
@@ -453,11 +459,14 @@ class EntryListViewModelTest {
             }
 
             viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
 
             // Start loading more
             viewModel.loadMore()
+            // Advance slightly to let the coroutine start and set _isLoadingMore = true
+            testDispatcher.scheduler.advanceTimeBy(1)
 
-            // Try to load more again immediately - should be ignored
+            // Try to load more again - should be ignored since _isLoadingMore is now true
             viewModel.loadMore()
 
             testDispatcher.scheduler.advanceUntilIdle()

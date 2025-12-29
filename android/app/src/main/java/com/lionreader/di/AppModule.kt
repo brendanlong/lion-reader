@@ -2,6 +2,9 @@ package com.lionreader.di
 
 import android.content.Context
 import com.lionreader.BuildConfig
+import com.lionreader.data.sync.ConnectivityMonitor
+import com.lionreader.data.sync.ConnectivityMonitorInterface
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -29,6 +32,20 @@ object AppModule {
             isDebug = BuildConfig.DEBUG
         )
     }
+}
+
+/**
+ * Hilt bindings module for interface implementations.
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class AppBindingsModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindConnectivityMonitor(
+        impl: ConnectivityMonitor,
+    ): ConnectivityMonitorInterface
 }
 
 /**

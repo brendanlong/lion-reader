@@ -465,7 +465,7 @@ class EntryRepository @Inject constructor(
      * @return true if online, false otherwise
      */
     private fun isOnline(): Boolean {
-        return connectivityMonitor.isOnline()
+        return connectivityMonitor.checkOnline()
     }
 
     // ============================================================================

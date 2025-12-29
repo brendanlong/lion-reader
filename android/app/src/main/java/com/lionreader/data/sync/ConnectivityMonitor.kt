@@ -14,6 +14,30 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * Interface for monitoring network connectivity.
+ *
+ * This abstraction allows for easier testing by enabling mock implementations.
+ */
+interface ConnectivityMonitorInterface {
+    /**
+     * StateFlow indicating current network connectivity status.
+     *
+     * Emits `true` when the device has internet connectivity, `false` otherwise.
+     */
+    val isOnline: StateFlow<Boolean>
+
+    /**
+     * Returns the current connectivity state.
+     *
+     * This is a convenience method that returns the current value of [isOnline].
+     * For reactive updates, prefer observing the [isOnline] StateFlow directly.
+     *
+     * @return true if device has internet connectivity, false otherwise
+     */
+    fun checkOnline(): Boolean
+}
+
+/**
  * Monitors network connectivity and provides reactive updates.
  *
  * This class registers a NetworkCallback with the ConnectivityManager to track
@@ -28,7 +52,7 @@ import javax.inject.Singleton
 @Singleton
 class ConnectivityMonitor @Inject constructor(
     @ApplicationContext private val context: Context,
-) {
+) : ConnectivityMonitorInterface {
     companion object {
         private const val TAG = "ConnectivityMonitor"
     }
@@ -44,7 +68,7 @@ class ConnectivityMonitor @Inject constructor(
      * Emits `true` when the device has internet connectivity, `false` otherwise.
      * This flow is updated in real-time as network conditions change.
      */
-    val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
+    override val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
 
     /**
      * Callback reference for tracking sync trigger.
@@ -189,7 +213,7 @@ class ConnectivityMonitor @Inject constructor(
      *
      * @return true if device has internet connectivity, false otherwise
      */
-    fun isOnline(): Boolean = _isOnline.value
+    override fun checkOnline(): Boolean = _isOnline.value
 
     /**
      * Checks current connectivity by querying the ConnectivityManager directly.
