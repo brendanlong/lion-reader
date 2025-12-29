@@ -28,7 +28,7 @@ async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}
     .values({
       id: generateUuidv7(),
       type: "rss",
-      url: `https://example.com/feed-${Date.now()}.xml`,
+      url: `https://example.com/feed-${generateUuidv7()}.xml`,
       title: "Test Feed",
       ...overrides,
     })
