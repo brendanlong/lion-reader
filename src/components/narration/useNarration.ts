@@ -40,6 +40,7 @@ import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
+import { LRUCache } from "@/lib/narration/lru-cache";
 
 /**
  * Configuration for the useNarration hook.
@@ -103,6 +104,13 @@ const DEFAULT_STATE: NarrationState = {
 };
 
 /**
+ * Maximum number of audio buffers to cache.
+ * Each AudioBuffer can be ~1-5MB depending on paragraph length,
+ * so 50 paragraphs limits memory to roughly 50-250MB worst case.
+ */
+const AUDIO_CACHE_MAX_SIZE = 50;
+
+/**
  * Splits narration text into paragraphs.
  */
 function splitIntoParagraphs(text: string): string[] {
@@ -144,8 +152,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const piperCurrentIndexRef = useRef(0);
   const piperIsPausedRef = useRef(false);
 
-  // Audio cache for instant rewind/skip (Map of paragraph index -> AudioBuffer)
-  const audioCacheRef = useRef<Map<number, AudioBuffer>>(new Map());
+  // LRU audio cache for instant rewind/skip (paragraph index -> AudioBuffer)
+  // Limited to AUDIO_CACHE_MAX_SIZE to prevent unbounded memory growth
+  const audioCacheRef = useRef<LRUCache<number, AudioBuffer>>(new LRUCache(AUDIO_CACHE_MAX_SIZE));
   // Track which paragraphs are currently being pre-buffered to avoid duplicates
   const bufferingRef = useRef<Set<number>>(new Set());
 
