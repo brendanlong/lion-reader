@@ -3,9 +3,9 @@
  * Each handler is responsible for executing a specific job type.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db";
-import { feeds, type Feed } from "../db/schema";
+import { feeds, subscriptions, type Feed } from "../db/schema";
 import {
   fetchFeed,
   parseFeed,
@@ -31,8 +31,25 @@ export interface JobHandlerResult {
 }
 
 /**
+ * Checks if a feed has at least one active subscriber.
+ *
+ * @param feedId - The feed ID to check
+ * @returns True if the feed has active subscribers
+ */
+async function hasActiveSubscribers(feedId: string): Promise<boolean> {
+  const [result] = await db
+    .select({ count: subscriptions.id })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.feedId, feedId), isNull(subscriptions.unsubscribedAt)))
+    .limit(1);
+
+  return result !== undefined;
+}
+
+/**
  * Handler for fetch_feed jobs.
  * Fetches a feed, processes entries, and schedules the next fetch.
+ * Only syncs feeds that have at least one active subscriber.
  *
  * @param payload - The job payload containing the feedId
  * @returns Job handler result
@@ -56,6 +73,25 @@ export async function handleFetchFeed(
     return {
       success: false,
       error: `Feed not found: ${feedId}`,
+    };
+  }
+
+  // Skip fetching feeds without active subscribers
+  const hasSubscribers = await hasActiveSubscribers(feedId);
+  if (!hasSubscribers) {
+    logger.info("Skipping feed fetch - no active subscribers", { feedId, url: feed.url });
+    // Clear nextFetchAt so this feed won't be scheduled again until someone subscribes
+    await db
+      .update(feeds)
+      .set({ nextFetchAt: null, updatedAt: new Date() })
+      .where(eq(feeds.id, feedId));
+    endFeedFetchTimer("success");
+    return {
+      success: true,
+      metadata: {
+        skipped: true,
+        reason: "no_active_subscribers",
+      },
     };
   }
 
