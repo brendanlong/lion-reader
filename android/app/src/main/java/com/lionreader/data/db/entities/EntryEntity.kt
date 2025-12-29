@@ -1,7 +1,6 @@
 package com.lionreader.data.db.entities
 
 import androidx.room.Entity
-import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -10,17 +9,13 @@ import androidx.room.PrimaryKey
  *
  * Contains all content and metadata for a single entry from a feed.
  * Both original and cleaned content versions are stored for offline reading.
+ *
+ * Note: feedId is not a foreign key because entries can exist for feeds
+ * the user is no longer subscribed to (e.g., starred entries from old
+ * subscriptions). Feed metadata is denormalized in feedTitle.
  */
 @Entity(
     tableName = "entries",
-    foreignKeys = [
-        ForeignKey(
-            entity = FeedEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["feedId"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-    ],
     indices = [
         Index("feedId"),
         Index("fetchedAt"),
