@@ -71,6 +71,13 @@
       "when": 1767200000000,
       "tag": "0009_paragraph_map",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1735464000000,
+      "tag": "0010_invalidate_narration_for_image_fix",
+      "breakpoints": true
     }
   ]
 }
