@@ -13,6 +13,7 @@
 export type VoiceErrorType =
   | "quota_exceeded"
   | "network_error"
+  | "voice_not_found"
   | "corrupted_cache"
   | "download_interrupted"
   | "unknown";
@@ -55,6 +56,11 @@ const ERROR_INFO: Record<VoiceErrorType, Omit<VoiceErrorInfo, "type">> = {
     message: "Download failed due to a network error.",
     suggestion: "Check your internet connection and try again.",
     retryable: true,
+  },
+  voice_not_found: {
+    message: "This voice is not available.",
+    suggestion: "The voice may have been removed. Please select a different voice.",
+    retryable: false,
   },
   corrupted_cache: {
     message: "The cached voice data appears to be corrupted.",
@@ -112,6 +118,15 @@ export function classifyVoiceError(error: unknown): VoiceErrorType {
     message.includes("space")
   ) {
     return "quota_exceeded";
+  }
+
+  // Check for voice not found (404 errors)
+  if (
+    message.includes("404") ||
+    message.includes("not found") ||
+    message.includes("does not exist")
+  ) {
+    return "voice_not_found";
   }
 
   // Check for network-related errors
