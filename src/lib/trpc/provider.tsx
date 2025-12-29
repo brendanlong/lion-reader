@@ -9,6 +9,7 @@
 
 import { useState, useCallback, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
+import { QueryNormalizerProvider } from "@normy/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
@@ -140,7 +141,9 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryNormalizerProvider queryClient={queryClient}>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </QueryNormalizerProvider>
     </trpc.Provider>
   );
 }
