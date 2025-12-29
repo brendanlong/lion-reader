@@ -5,11 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.lionreader.data.db.entities.TagEntity
 import com.lionreader.data.db.relations.SubscriptionWithFeed
 import com.lionreader.data.repository.AuthRepository
+import com.lionreader.data.repository.EntryRepository
 import com.lionreader.data.repository.SubscriptionRepository
 import com.lionreader.data.repository.TagRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,6 +31,7 @@ class DrawerViewModel
         private val subscriptionRepository: SubscriptionRepository,
         private val tagRepository: TagRepository,
         private val authRepository: AuthRepository,
+        private val entryRepository: EntryRepository,
     ) : ViewModel() {
         /**
          * All subscriptions with their feed information.
@@ -74,6 +78,14 @@ class DrawerViewModel
                 )
 
         /**
+         * Unread count for starred entries.
+         *
+         * Fetched from the server when refreshData() is called.
+         */
+        private val _starredUnreadCount = MutableStateFlow(0)
+        val starredUnreadCount: StateFlow<Int> = _starredUnreadCount.asStateFlow()
+
+        /**
          * Signs out the current user.
          *
          * Clears the session and local data. The auth state change will
@@ -91,7 +103,7 @@ class DrawerViewModel
         }
 
         /**
-         * Syncs subscriptions and tags from the server.
+         * Syncs subscriptions, tags, and starred count from the server.
          *
          * Called when the drawer is opened to refresh data.
          */
@@ -99,6 +111,9 @@ class DrawerViewModel
             viewModelScope.launch {
                 subscriptionRepository.syncSubscriptions()
                 tagRepository.syncTags()
+                entryRepository.fetchStarredCount()?.let { count ->
+                    _starredUnreadCount.value = count.unread
+                }
             }
         }
     }

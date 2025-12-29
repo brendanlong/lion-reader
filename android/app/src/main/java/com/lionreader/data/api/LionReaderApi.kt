@@ -7,6 +7,7 @@ import com.lionreader.data.api.models.LoginResponse
 import com.lionreader.data.api.models.MarkReadRequest
 import com.lionreader.data.api.models.ProvidersResponse
 import com.lionreader.data.api.models.SortOrder
+import com.lionreader.data.api.models.StarredCountResponse
 import com.lionreader.data.api.models.SubscriptionsResponse
 import com.lionreader.data.api.models.TagsResponse
 import com.lionreader.data.api.models.UserResponse
@@ -135,6 +136,13 @@ interface LionReaderApi {
      * @param id Entry ID to unstar
      */
     suspend fun unstar(id: String): ApiResult<Unit>
+
+    /**
+     * Get the count of starred entries.
+     *
+     * @return StarredCountResponse with total and unread counts
+     */
+    suspend fun getStarredCount(): ApiResult<StarredCountResponse>
 }
 
 /**
@@ -214,4 +222,6 @@ class LionReaderApiImpl
         override suspend fun star(id: String): ApiResult<Unit> = apiClient.postNoContent(path = "entries/$id/star")
 
         override suspend fun unstar(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "entries/$id/star")
+
+        override suspend fun getStarredCount(): ApiResult<StarredCountResponse> = apiClient.get(path = "entries/starred/count")
     }
