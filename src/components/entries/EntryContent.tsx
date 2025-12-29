@@ -559,30 +559,88 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
 
-  // Mark read mutation
+  // Mark read mutation with optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
-    onSuccess: () => {
-      // Invalidate this entry to update button state
-      utils.entries.get.invalidate({ id: entryId });
-      // Invalidate entries list to update read status
+    onMutate: async (variables) => {
+      // Cancel in-flight queries
+      await utils.entries.get.cancel({ id: entryId });
+
+      // Snapshot current state
+      const previousData = utils.entries.get.getData({ id: entryId });
+
+      // Optimistically update entry
+      utils.entries.get.setData({ id: entryId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: { ...oldData.entry, read: variables.read },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, _variables, context) => {
+      // Rollback to previous state
+      if (context?.previousData) {
+        utils.entries.get.setData({ id: entryId }, context.previousData);
+      }
+    },
+    onSettled: () => {
+      // Invalidate list and subscriptions to sync counts
       utils.entries.list.invalidate();
-      // Invalidate subscriptions to update unread counts
       utils.subscriptions.list.invalidate();
     },
   });
 
-  // Star/unstar mutations
+  // Star/unstar mutations with optimistic updates
   const starMutation = trpc.entries.star.useMutation({
-    onSuccess: () => {
-      // Invalidate the entry query to update starred status
-      utils.entries.get.invalidate({ id: entryId });
+    onMutate: async () => {
+      await utils.entries.get.cancel({ id: entryId });
+
+      const previousData = utils.entries.get.getData({ id: entryId });
+
+      utils.entries.get.setData({ id: entryId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: { ...oldData.entry, starred: true },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousData) {
+        utils.entries.get.setData({ id: entryId }, context.previousData);
+      }
+    },
+    onSettled: () => {
       utils.entries.list.invalidate();
     },
   });
 
   const unstarMutation = trpc.entries.unstar.useMutation({
-    onSuccess: () => {
-      utils.entries.get.invalidate({ id: entryId });
+    onMutate: async () => {
+      await utils.entries.get.cancel({ id: entryId });
+
+      const previousData = utils.entries.get.getData({ id: entryId });
+
+      utils.entries.get.setData({ id: entryId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: { ...oldData.entry, starred: false },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousData) {
+        utils.entries.get.setData({ id: entryId }, context.previousData);
+      }
+    },
+    onSettled: () => {
       utils.entries.list.invalidate();
     },
   });

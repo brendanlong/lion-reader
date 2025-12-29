@@ -91,27 +91,161 @@ export default function SingleFeedPage() {
   );
   const utils = trpc.useUtils();
 
-  // Mutations for keyboard actions
+  // Mutations for keyboard actions with optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
-    onSuccess: (_data, variables) => {
-      utils.entries.list.invalidate();
-      utils.subscriptions.list.invalidate();
-      // Also invalidate individual entry queries for UI updates in content view
+    onMutate: async (variables) => {
+      // Cancel any in-flight queries
+      await utils.entries.list.cancel();
+
+      // Snapshot current state
+      const previousData = utils.entries.list.getInfiniteData({
+        feedId,
+        unreadOnly: showUnreadOnly,
+        sortOrder,
+      });
+
+      // Optimistically update entries
+      utils.entries.list.setInfiniteData(
+        { feedId, unreadOnly: showUnreadOnly, sortOrder },
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) => ({
+              ...page,
+              items: page.items.map((item) =>
+                variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
+              ),
+            })),
+          };
+        }
+      );
+
+      // Also update individual entry queries for UI in content view
+      for (const id of variables.ids) {
+        utils.entries.get.setData({ id }, (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            entry: { ...oldData.entry, read: variables.read },
+          };
+        });
+      }
+
+      return { previousData };
+    },
+    onError: (_error, variables, context) => {
+      // Rollback to previous state
+      if (context?.previousData) {
+        utils.entries.list.setInfiniteData(
+          { feedId, unreadOnly: showUnreadOnly, sortOrder },
+          context.previousData
+        );
+      }
+      // Invalidate individual entry queries to restore correct state
       for (const id of variables.ids) {
         utils.entries.get.invalidate({ id });
       }
     },
+    onSettled: () => {
+      // Invalidate subscription counts as they need server data
+      utils.subscriptions.list.invalidate();
+    },
   });
 
   const starMutation = trpc.entries.star.useMutation({
-    onSuccess: () => {
-      utils.entries.list.invalidate();
+    onMutate: async (variables) => {
+      await utils.entries.list.cancel();
+
+      const previousData = utils.entries.list.getInfiniteData({
+        feedId,
+        unreadOnly: showUnreadOnly,
+        sortOrder,
+      });
+
+      utils.entries.list.setInfiniteData(
+        { feedId, unreadOnly: showUnreadOnly, sortOrder },
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) => ({
+              ...page,
+              items: page.items.map((item) =>
+                item.id === variables.id ? { ...item, starred: true } : item
+              ),
+            })),
+          };
+        }
+      );
+
+      // Also update individual entry query
+      utils.entries.get.setData({ id: variables.id }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: { ...oldData.entry, starred: true },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, variables, context) => {
+      if (context?.previousData) {
+        utils.entries.list.setInfiniteData(
+          { feedId, unreadOnly: showUnreadOnly, sortOrder },
+          context.previousData
+        );
+      }
+      utils.entries.get.invalidate({ id: variables.id });
     },
   });
 
   const unstarMutation = trpc.entries.unstar.useMutation({
-    onSuccess: () => {
-      utils.entries.list.invalidate();
+    onMutate: async (variables) => {
+      await utils.entries.list.cancel();
+
+      const previousData = utils.entries.list.getInfiniteData({
+        feedId,
+        unreadOnly: showUnreadOnly,
+        sortOrder,
+      });
+
+      utils.entries.list.setInfiniteData(
+        { feedId, unreadOnly: showUnreadOnly, sortOrder },
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) => ({
+              ...page,
+              items: page.items.map((item) =>
+                item.id === variables.id ? { ...item, starred: false } : item
+              ),
+            })),
+          };
+        }
+      );
+
+      // Also update individual entry query
+      utils.entries.get.setData({ id: variables.id }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: { ...oldData.entry, starred: false },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, variables, context) => {
+      if (context?.previousData) {
+        utils.entries.list.setInfiniteData(
+          { feedId, unreadOnly: showUnreadOnly, sortOrder },
+          context.previousData
+        );
+      }
+      utils.entries.get.invalidate({ id: variables.id });
     },
   });
 

@@ -491,27 +491,88 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
   // Fetch the saved article
   const { data, isLoading, isError, error, refetch } = trpc.saved.get.useQuery({ id: articleId });
 
-  // Mark read mutation
+  // Mark read mutation with optimistic updates
   const markReadMutation = trpc.saved.markRead.useMutation({
-    onSuccess: () => {
-      // Invalidate saved list and count to update read status
+    onMutate: async (variables) => {
+      // Cancel in-flight queries
+      await utils.saved.get.cancel({ id: articleId });
+
+      // Snapshot current state
+      const previousData = utils.saved.get.getData({ id: articleId });
+
+      // Optimistically update article
+      utils.saved.get.setData({ id: articleId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          article: { ...oldData.article, read: variables.read },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, _variables, context) => {
+      // Rollback to previous state
+      if (context?.previousData) {
+        utils.saved.get.setData({ id: articleId }, context.previousData);
+      }
+    },
+    onSettled: () => {
+      // Invalidate list and count to sync
       utils.saved.list.invalidate();
       utils.saved.count.invalidate();
     },
   });
 
-  // Star/unstar mutations
+  // Star/unstar mutations with optimistic updates
   const starMutation = trpc.saved.star.useMutation({
-    onSuccess: () => {
-      // Invalidate the article query to update starred status
-      utils.saved.get.invalidate({ id: articleId });
+    onMutate: async () => {
+      await utils.saved.get.cancel({ id: articleId });
+
+      const previousData = utils.saved.get.getData({ id: articleId });
+
+      utils.saved.get.setData({ id: articleId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          article: { ...oldData.article, starred: true },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousData) {
+        utils.saved.get.setData({ id: articleId }, context.previousData);
+      }
+    },
+    onSettled: () => {
       utils.saved.list.invalidate();
     },
   });
 
   const unstarMutation = trpc.saved.unstar.useMutation({
-    onSuccess: () => {
-      utils.saved.get.invalidate({ id: articleId });
+    onMutate: async () => {
+      await utils.saved.get.cancel({ id: articleId });
+
+      const previousData = utils.saved.get.getData({ id: articleId });
+
+      utils.saved.get.setData({ id: articleId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          article: { ...oldData.article, starred: false },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousData) {
+        utils.saved.get.setData({ id: articleId }, context.previousData);
+      }
+    },
+    onSettled: () => {
       utils.saved.list.invalidate();
     },
   });
