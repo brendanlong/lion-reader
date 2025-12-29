@@ -713,4 +713,52 @@ export const entriesRouter = createTRPCRouter({
 
       return { entry: updatedEntry[0] };
     }),
+
+  /**
+   * Get count of starred entries.
+   *
+   * @returns Total and unread counts for starred entries
+   */
+  starredCount: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/entries/starred/count",
+        tags: ["Entries"],
+        summary: "Get starred entries count",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        total: z.number(),
+        unread: z.number(),
+      })
+    )
+    .query(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+
+      // Get total starred count
+      const totalResult = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.starred, true)));
+
+      // Get unread starred count
+      const unreadResult = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(userEntries)
+        .where(
+          and(
+            eq(userEntries.userId, userId),
+            eq(userEntries.starred, true),
+            eq(userEntries.read, false)
+          )
+        );
+
+      return {
+        total: totalResult[0]?.count ?? 0,
+        unread: unreadResult[0]?.count ?? 0,
+      };
+    }),
 });

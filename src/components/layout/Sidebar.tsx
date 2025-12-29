@@ -35,6 +35,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
   const tagsQuery = trpc.tags.list.useQuery();
   const savedCountQuery = trpc.saved.count.useQuery({});
+  const starredCountQuery = trpc.entries.starredCount.useQuery({});
   const utils = trpc.useUtils();
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
@@ -101,13 +102,18 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/starred"
             onClick={handleClose}
-            className={`flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActiveLink("/starred")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                 : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
             }`}
           >
-            Starred
+            <span>Starred</span>
+            {starredCountQuery.data && starredCountQuery.data.unread > 0 && (
+              <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+                ({starredCountQuery.data.unread})
+              </span>
+            )}
           </Link>
 
           <Link
@@ -306,9 +312,9 @@ export function Sidebar({ onClose }: SidebarProps) {
                           aria-hidden="true"
                         />
                         <span className="truncate">{tag.name}</span>
-                        {tag.feedCount > 0 && (
+                        {tag.unreadCount > 0 && (
                           <span className="ml-auto shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
-                            ({tag.feedCount})
+                            ({tag.unreadCount})
                           </span>
                         )}
                       </Link>
