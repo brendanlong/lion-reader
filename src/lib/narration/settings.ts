@@ -64,6 +64,15 @@ export interface NarrationSettings {
    * Default: true
    */
   autoScrollEnabled: boolean;
+
+  /**
+   * Whether to use LLM preprocessing for narration.
+   * When enabled, content is processed by an LLM to improve TTS quality
+   * (expanding abbreviations, formatting URLs, etc.).
+   * When disabled, uses simple HTML-to-text conversion.
+   * Default: true (if available on server)
+   */
+  useLlmNormalization: boolean;
 }
 
 /**
@@ -77,6 +86,7 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   pitch: 1.0,
   highlightEnabled: true,
   autoScrollEnabled: true,
+  useLlmNormalization: true,
 };
 
 /**
@@ -152,6 +162,10 @@ export function loadNarrationSettings(): NarrationSettings {
         typeof parsed.autoScrollEnabled === "boolean"
           ? parsed.autoScrollEnabled
           : DEFAULT_NARRATION_SETTINGS.autoScrollEnabled,
+      useLlmNormalization:
+        typeof parsed.useLlmNormalization === "boolean"
+          ? parsed.useLlmNormalization
+          : DEFAULT_NARRATION_SETTINGS.useLlmNormalization,
     };
   } catch {
     // If parsing fails, return defaults
