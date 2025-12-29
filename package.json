@@ -18,10 +18,10 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "dotenv -- tsx scripts/seed.ts",
-    "db:migrate:test": "dotenv -e .env.test -- tsx scripts/migrate.ts",
-    "test": "vitest",
-    "test:unit": "vitest run tests/unit",
-    "test:integration": "dotenv -e .env.test -- vitest run tests/integration"
+    "db:migrate:test": "dotenv -o -e .env.test -- tsx scripts/migrate.ts",
+    "test": "pnpm db:migrate:test && dotenv -o -e .env.test -- vitest",
+    "test:unit": "dotenv -o -e .env.test -- vitest run tests/unit",
+    "test:integration": "pnpm db:migrate:test && dotenv -o -e .env.test -- vitest run tests/integration"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": [
