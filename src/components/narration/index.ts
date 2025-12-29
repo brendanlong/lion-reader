@@ -20,3 +20,4 @@ export {
   type ParagraphMapEntry,
 } from "./useNarrationHighlight";
 export { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
+export { NarrationHighlightStyles } from "./NarrationHighlightStyles";

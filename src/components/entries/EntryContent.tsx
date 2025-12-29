@@ -15,7 +15,12 @@ import DOMPurify from "dompurify";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
-import { NarrationControls, useNarration, useNarrationHighlight } from "@/components/narration";
+import {
+  NarrationControls,
+  NarrationHighlightStyles,
+  useNarration,
+  useNarrationHighlight,
+} from "@/components/narration";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { useNarrationSettings } from "@/lib/narration/settings";
@@ -323,58 +328,38 @@ function EntryContentBody({
     return sanitized;
   }, [contentToDisplay, shouldProcessForHighlighting]);
 
-  // Apply/remove highlight classes to DOM elements based on highlightedParagraphIds
-  // Also auto-scroll to highlighted paragraph if enabled
+  // Auto-scroll to highlighted paragraph when playing
+  // Note: Highlighting is now handled via CSS by NarrationHighlightStyles component
   useEffect(() => {
     if (!contentRef.current || !shouldProcessForHighlighting) return;
+    if (!narrationSettings.autoScrollEnabled) return;
+    if (narration.state.status !== "playing") return;
+    if (highlightedParagraphIds.size === 0) return;
 
+    // Find the first highlighted element for scrolling
     const container = contentRef.current;
+    const firstIndex = Math.min(...highlightedParagraphIds);
+    const element = container.querySelector(
+      `[data-para-id="para-${firstIndex}"]`
+    ) as HTMLElement | null;
 
-    // Remove all existing highlights
-    container.querySelectorAll("[data-para-id].narration-highlight").forEach((el) => {
-      el.classList.remove("narration-highlight");
-    });
+    if (!element) return;
 
-    // Add highlights to matching elements and optionally scroll to first one
-    // Only apply highlights if the highlightEnabled setting is true
-    if (highlightedParagraphIds.size > 0 && narrationSettings.highlightEnabled) {
-      let firstHighlightedElement: Element | null = null;
+    // Check if element is already in viewport
+    const rect = element.getBoundingClientRect();
+    // Account for the header (scroll-margin-top is 100px in CSS)
+    const headerHeight = 100;
+    const isInViewport = rect.top >= headerHeight && rect.bottom <= window.innerHeight;
 
-      highlightedParagraphIds.forEach((index) => {
-        const el = container.querySelector(`[data-para-id="para-${index}"]`);
-        if (el) {
-          el.classList.add("narration-highlight");
-          // Track first highlighted element for scrolling
-          if (!firstHighlightedElement) {
-            firstHighlightedElement = el;
-          }
-        }
+    if (!isInViewport) {
+      element.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
       });
-
-      // Auto-scroll to highlighted paragraph if enabled and element is not in viewport
-      if (
-        narrationSettings.autoScrollEnabled &&
-        firstHighlightedElement &&
-        narration.state.status === "playing"
-      ) {
-        const element = firstHighlightedElement as HTMLElement;
-        const rect = element.getBoundingClientRect();
-        // Account for the header (scroll-margin-top is 100px in CSS)
-        const headerHeight = 100;
-        const isInViewport = rect.top >= headerHeight && rect.bottom <= window.innerHeight;
-
-        if (!isInViewport) {
-          element.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-          });
-        }
-      }
     }
   }, [
     highlightedParagraphIds,
     shouldProcessForHighlighting,
-    narrationSettings.highlightEnabled,
     narrationSettings.autoScrollEnabled,
     narration.state.status,
   ]);
@@ -513,6 +498,14 @@ function EntryContentBody({
 
       {/* Divider */}
       <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
+
+      {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
+      {shouldProcessForHighlighting && (
+        <NarrationHighlightStyles
+          highlightedParagraphIds={highlightedParagraphIds}
+          enabled={narrationSettings.highlightEnabled}
+        />
+      )}
 
       {/* Content */}
       {sanitizedContent ? (
