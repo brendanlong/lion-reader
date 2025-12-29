@@ -42,6 +42,11 @@ export interface NarrationControlsProps {
   /** Optional artwork URL for Media Session */
   artwork?: string;
   /**
+   * Optional HTML content for client-side processing.
+   * Used in uncontrolled mode when LLM normalization is disabled.
+   */
+  content?: string | null;
+  /**
    * Optional external narration state for controlled mode.
    * When provided, the component won't create its own useNarration hook.
    * This is used when the parent needs access to narration state (e.g., for highlighting).
@@ -154,6 +159,7 @@ export function NarrationControls({
   title,
   feedTitle,
   artwork,
+  content,
   narration,
 }: NarrationControlsProps) {
   // Don't render if narration is not supported
@@ -168,6 +174,7 @@ export function NarrationControls({
       title={title}
       feedTitle={feedTitle}
       artwork={artwork}
+      content={content}
       narration={narration}
     />
   );
@@ -183,6 +190,7 @@ function NarrationControlsInner({
   title,
   feedTitle,
   artwork,
+  content,
   narration: externalNarration,
 }: NarrationControlsProps) {
   // Use internal narration hook only when external state is not provided
@@ -192,6 +200,7 @@ function NarrationControlsInner({
     title,
     feedTitle,
     artwork,
+    content,
   });
 
   // Use external narration if provided, otherwise use internal

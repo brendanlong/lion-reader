@@ -291,6 +291,7 @@ function EntryContentBody({
     type: "entry",
     title: displayTitle,
     feedTitle: displayFeed,
+    content: contentToDisplay,
   });
 
   const { highlightedParagraphIds } = useNarrationHighlight({

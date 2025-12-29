@@ -267,6 +267,7 @@ describe("saveNarrationSettings", () => {
       pitch: 0.8,
       highlightEnabled: false,
       autoScrollEnabled: true,
+      useLlmNormalization: true,
     };
 
     saveNarrationSettings(settings);
@@ -286,6 +287,7 @@ describe("saveNarrationSettings", () => {
       pitch: 0.9,
       highlightEnabled: true,
       autoScrollEnabled: false,
+      useLlmNormalization: false,
     };
 
     saveNarrationSettings(originalSettings);

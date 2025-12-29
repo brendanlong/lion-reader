@@ -41,6 +41,7 @@ import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { LRUCache } from "@/lib/narration/lru-cache";
+import { htmlToPlainText } from "@/lib/narration/html-to-plain-text";
 
 /**
  * Configuration for the useNarration hook.
@@ -56,6 +57,12 @@ export interface UseNarrationConfig {
   feedTitle: string;
   /** Optional artwork URL for Media Session */
   artwork?: string;
+  /**
+   * Optional HTML content for client-side processing.
+   * When provided and LLM normalization is disabled, narration will be
+   * generated client-side without a server call.
+   */
+  content?: string | null;
 }
 
 /**
@@ -134,7 +141,7 @@ function splitIntoParagraphs(text: string): string[] {
  * @returns Object with narration state and control functions
  */
 export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
-  const { id, type, title, feedTitle, artwork } = config;
+  const { id, type, title, feedTitle, artwork, content } = config;
 
   // State
   const [state, setState] = useState<NarrationState>(DEFAULT_STATE);
@@ -371,12 +378,27 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       setState((prev) => ({ ...prev, status: "loading" }));
 
       try {
-        const result = await generateMutation.mutateAsync({ id, type });
+        let narration: string;
+        let paragraphMapResult: ParagraphMapEntry[] | null = null;
 
-        if (result.narration) {
-          setNarrationText(result.narration);
-          setParagraphMap(result.paragraphMap ?? null);
-          const paragraphs = splitIntoParagraphs(result.narration);
+        // If LLM normalization is disabled and we have content, process client-side
+        if (!settings.useLlmNormalization && content) {
+          narration = htmlToPlainText(content);
+        } else {
+          // Call server for LLM processing
+          const result = await generateMutation.mutateAsync({
+            id,
+            type,
+            useLlmNormalization: settings.useLlmNormalization,
+          });
+          narration = result.narration;
+          paragraphMapResult = result.paragraphMap ?? null;
+        }
+
+        if (narration) {
+          setNarrationText(narration);
+          setParagraphMap(paragraphMapResult);
+          const paragraphs = splitIntoParagraphs(narration);
           piperParagraphsRef.current = paragraphs;
           piperCurrentIndexRef.current = 0;
           piperIsPausedRef.current = false;
@@ -431,12 +453,27 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     setState((prev) => ({ ...prev, status: "loading" }));
 
     try {
-      const result = await generateMutation.mutateAsync({ id, type });
+      let narration: string;
+      let paragraphMapResult: ParagraphMapEntry[] | null = null;
 
-      if (result.narration) {
-        setNarrationText(result.narration);
-        setParagraphMap(result.paragraphMap ?? null);
-        narrator.loadArticle(result.narration);
+      // If LLM normalization is disabled and we have content, process client-side
+      if (!settings.useLlmNormalization && content) {
+        narration = htmlToPlainText(content);
+      } else {
+        // Call server for LLM processing
+        const result = await generateMutation.mutateAsync({
+          id,
+          type,
+          useLlmNormalization: settings.useLlmNormalization,
+        });
+        narration = result.narration;
+        paragraphMapResult = result.paragraphMap ?? null;
+      }
+
+      if (narration) {
+        setNarrationText(narration);
+        setParagraphMap(paragraphMapResult);
+        narrator.loadArticle(narration);
 
         // Wait for voices and get preferred voice
         await waitForVoices();
@@ -469,9 +506,11 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     settings.rate,
     settings.pitch,
     settings.provider,
+    settings.useLlmNormalization,
     generateMutation,
     id,
     type,
+    content,
     speakPiperParagraph,
   ]);
 
