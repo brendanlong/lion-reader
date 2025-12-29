@@ -41,7 +41,7 @@ export default function AllEntriesPage() {
         sortOrder,
       });
 
-      // Optimistically update entries
+      // Optimistically update entries (normy propagates to entries.get automatically)
       utils.entries.list.setInfiniteData({ unreadOnly: showUnreadOnly, sortOrder }, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -55,30 +55,15 @@ export default function AllEntriesPage() {
         };
       });
 
-      // Also update individual entry queries for UI in content view
-      for (const id of variables.ids) {
-        utils.entries.get.setData({ id }, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            entry: { ...oldData.entry, read: variables.read },
-          };
-        });
-      }
-
       return { previousData };
     },
-    onError: (_error, variables, context) => {
-      // Rollback to previous state
+    onError: (_error, _variables, context) => {
+      // Rollback to previous state (normy propagates rollback to entries.get automatically)
       if (context?.previousData) {
         utils.entries.list.setInfiniteData(
           { unreadOnly: showUnreadOnly, sortOrder },
           context.previousData
         );
-      }
-      // Invalidate individual entry queries to restore correct state
-      for (const id of variables.ids) {
-        utils.entries.get.invalidate({ id });
       }
       toast.error("Failed to update read status");
     },
@@ -97,6 +82,7 @@ export default function AllEntriesPage() {
         sortOrder,
       });
 
+      // Optimistically update list (normy propagates to entries.get automatically)
       utils.entries.list.setInfiniteData({ unreadOnly: showUnreadOnly, sortOrder }, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -110,25 +96,16 @@ export default function AllEntriesPage() {
         };
       });
 
-      // Also update individual entry query
-      utils.entries.get.setData({ id: variables.id }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          entry: { ...oldData.entry, starred: true },
-        };
-      });
-
       return { previousData };
     },
-    onError: (_error, variables, context) => {
+    onError: (_error, _variables, context) => {
+      // Rollback list (normy propagates rollback to entries.get automatically)
       if (context?.previousData) {
         utils.entries.list.setInfiniteData(
           { unreadOnly: showUnreadOnly, sortOrder },
           context.previousData
         );
       }
-      utils.entries.get.invalidate({ id: variables.id });
       toast.error("Failed to star entry");
     },
   });
@@ -142,6 +119,7 @@ export default function AllEntriesPage() {
         sortOrder,
       });
 
+      // Optimistically update list (normy propagates to entries.get automatically)
       utils.entries.list.setInfiniteData({ unreadOnly: showUnreadOnly, sortOrder }, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -155,25 +133,16 @@ export default function AllEntriesPage() {
         };
       });
 
-      // Also update individual entry query
-      utils.entries.get.setData({ id: variables.id }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          entry: { ...oldData.entry, starred: false },
-        };
-      });
-
       return { previousData };
     },
-    onError: (_error, variables, context) => {
+    onError: (_error, _variables, context) => {
+      // Rollback list (normy propagates rollback to entries.get automatically)
       if (context?.previousData) {
         utils.entries.list.setInfiniteData(
           { unreadOnly: showUnreadOnly, sortOrder },
           context.previousData
         );
       }
-      utils.entries.get.invalidate({ id: variables.id });
       toast.error("Failed to unstar entry");
     },
   });
