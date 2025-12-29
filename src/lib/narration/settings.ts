@@ -51,6 +51,19 @@ export interface NarrationSettings {
    * Voice pitch multiplier (0.5 - 2.0, default 1.0).
    */
   pitch: number;
+
+  /**
+   * Whether to highlight the current paragraph during narration.
+   * Default: true.
+   */
+  highlightEnabled: boolean;
+
+  /**
+   * Whether to automatically scroll to the highlighted paragraph during narration.
+   * Only scrolls if the paragraph is not already visible in the viewport.
+   * Default: true
+   */
+  autoScrollEnabled: boolean;
 }
 
 /**
@@ -62,6 +75,8 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   voiceId: null,
   rate: 1.0,
   pitch: 1.0,
+  highlightEnabled: true,
+  autoScrollEnabled: true,
 };
 
 /**
@@ -129,6 +144,14 @@ export function loadNarrationSettings(): NarrationSettings {
         typeof parsed.pitch === "number" && parsed.pitch >= 0.5 && parsed.pitch <= 2.0
           ? parsed.pitch
           : DEFAULT_NARRATION_SETTINGS.pitch,
+      highlightEnabled:
+        typeof parsed.highlightEnabled === "boolean"
+          ? parsed.highlightEnabled
+          : DEFAULT_NARRATION_SETTINGS.highlightEnabled,
+      autoScrollEnabled:
+        typeof parsed.autoScrollEnabled === "boolean"
+          ? parsed.autoScrollEnabled
+          : DEFAULT_NARRATION_SETTINGS.autoScrollEnabled,
     };
   } catch {
     // If parsing fails, return defaults

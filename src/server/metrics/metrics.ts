@@ -769,3 +769,70 @@ export function trackNarrationPlaybackStarted(provider: "browser" | "piper"): vo
   if (!metricsEnabled) return;
   narrationPlaybackStartedTotal?.inc({ provider });
 }
+
+// ============================================================================
+// Narration Highlighting Metrics
+// ============================================================================
+
+/**
+ * Counter for times highlighting was active during narration.
+ * Incremented when highlighting first becomes active in a session.
+ */
+export const narrationHighlightActiveTotal = metricsEnabled
+  ? new Counter({
+      name: "narration_highlight_active_total",
+      help: "Total times narration highlighting was active",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Counter for times fallback mapping was used for highlighting.
+ * Incremented when positional mapping is used instead of LLM markers.
+ */
+export const narrationHighlightFallbackTotal = metricsEnabled
+  ? new Counter({
+      name: "narration_highlight_fallback_total",
+      help: "Total times fallback positional mapping was used for highlighting",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Counter for times auto-scroll was triggered during highlighting.
+ * Incremented when the view scrolls to a highlighted paragraph.
+ */
+export const narrationHighlightScrollTotal = metricsEnabled
+  ? new Counter({
+      name: "narration_highlight_scroll_total",
+      help: "Total times auto-scroll was triggered during highlighting",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Tracks when narration highlighting becomes active.
+ * This function has zero overhead when metrics are disabled.
+ */
+export function trackNarrationHighlightActive(): void {
+  if (!metricsEnabled) return;
+  narrationHighlightActiveTotal?.inc();
+}
+
+/**
+ * Tracks when fallback positional mapping is used for highlighting.
+ * This function has zero overhead when metrics are disabled.
+ */
+export function trackNarrationHighlightFallback(): void {
+  if (!metricsEnabled) return;
+  narrationHighlightFallbackTotal?.inc();
+}
+
+/**
+ * Tracks when auto-scroll is triggered during highlighting.
+ * This function has zero overhead when metrics are disabled.
+ */
+export function trackNarrationHighlightScroll(): void {
+  if (!metricsEnabled) return;
+  narrationHighlightScrollTotal?.inc();
+}

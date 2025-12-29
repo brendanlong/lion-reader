@@ -10,6 +10,8 @@
  * - enhanced_voice_download_completed: Voice download completed successfully
  * - enhanced_voice_download_failed: Voice download failed
  * - narration_playback_started: Narration playback started
+ * - narration_highlight_active: Narration highlighting became active
+ * - narration_highlight_scroll: Auto-scroll triggered during highlighting
  */
 
 import { z } from "zod";
@@ -19,6 +21,8 @@ import {
   trackEnhancedVoiceDownloadCompleted,
   trackEnhancedVoiceDownloadFailed,
   trackNarrationPlaybackStarted,
+  trackNarrationHighlightActive,
+  trackNarrationHighlightScroll,
   type EnhancedVoiceDownloadErrorType,
 } from "@/server/metrics";
 
@@ -60,6 +64,22 @@ const narrationPlaybackStartedSchema = z.object({
 });
 
 /**
+ * Schema for narration highlight active event.
+ * Fired when highlighting first becomes active in a narration session.
+ */
+const narrationHighlightActiveSchema = z.object({
+  event: z.literal("narration_highlight_active"),
+});
+
+/**
+ * Schema for narration highlight scroll event.
+ * Fired when auto-scroll is triggered during highlighting.
+ */
+const narrationHighlightScrollSchema = z.object({
+  event: z.literal("narration_highlight_scroll"),
+});
+
+/**
  * Union schema for all telemetry events.
  */
 const telemetryEventSchema = z.discriminatedUnion("event", [
@@ -67,6 +87,8 @@ const telemetryEventSchema = z.discriminatedUnion("event", [
   enhancedVoiceDownloadCompletedSchema,
   enhancedVoiceDownloadFailedSchema,
   narrationPlaybackStartedSchema,
+  narrationHighlightActiveSchema,
+  narrationHighlightScrollSchema,
 ]);
 
 type TelemetryEvent = z.infer<typeof telemetryEventSchema>;
@@ -147,6 +169,14 @@ export async function POST(req: Request): Promise<Response> {
 
     case "narration_playback_started":
       trackNarrationPlaybackStarted(event.provider);
+      break;
+
+    case "narration_highlight_active":
+      trackNarrationHighlightActive();
+      break;
+
+    case "narration_highlight_scroll":
+      trackNarrationHighlightScroll();
       break;
   }
 

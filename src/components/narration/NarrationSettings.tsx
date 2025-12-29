@@ -421,6 +421,75 @@ export function NarrationSettings() {
               </div>
             </div>
 
+            {/* Highlighting Settings */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Highlighting</h3>
+
+              {/* Highlight Current Paragraph Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                    Highlight current paragraph
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Visually highlight the paragraph being read
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.highlightEnabled}
+                  onClick={() =>
+                    setSettings({ ...settings, highlightEnabled: !settings.highlightEnabled })
+                  }
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                    settings.highlightEnabled
+                      ? "bg-zinc-900 dark:bg-zinc-50"
+                      : "bg-zinc-200 dark:bg-zinc-700"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                      settings.highlightEnabled ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Auto-scroll to Current Paragraph Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                    Auto-scroll to current paragraph
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Automatically scroll the page to keep the current paragraph visible
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.autoScrollEnabled}
+                  onClick={() =>
+                    setSettings({ ...settings, autoScrollEnabled: !settings.autoScrollEnabled })
+                  }
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                    settings.autoScrollEnabled
+                      ? "bg-zinc-900 dark:bg-zinc-50"
+                      : "bg-zinc-200 dark:bg-zinc-700"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                      settings.autoScrollEnabled ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             {/* Firefox Warning */}
             {isFirefoxBrowser && (
               <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">

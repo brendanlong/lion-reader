@@ -8,12 +8,15 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
-import { NarrationControls } from "@/components/narration/NarrationControls";
+import { NarrationControls, useNarration, useNarrationHighlight } from "@/components/narration";
+import { isNarrationSupported } from "@/lib/narration/feature-detection";
+import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
+import { useNarrationSettings } from "@/lib/narration/settings";
 
 /**
  * Props for the EntryContent component.
@@ -213,112 +216,59 @@ function ReadStatusIcon({ read }: { read: boolean }) {
 }
 
 /**
- * EntryContent component.
- *
- * Fetches and displays the full content of an entry.
- * Marks the entry as read on mount.
+ * Entry type from API response.
+ * Matches the shape of data returned from entries.get query.
  */
-export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProps) {
-  const utils = trpc.useUtils();
-  const hasMarkedRead = useRef(false);
-  const [showOriginal, setShowOriginal] = useState(false);
+interface EntryData {
+  id: string;
+  feedId: string;
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  contentOriginal: string | null;
+  contentCleaned: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  read: boolean;
+  starred: boolean;
+  feedTitle: string | null;
+  feedUrl: string | null;
+}
 
-  // Fetch the entry
-  const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
+/**
+ * Props for the inner EntryContentBody component.
+ */
+interface EntryContentBodyProps {
+  entry: EntryData;
+  entryId: string;
+  onBack?: () => void;
+  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  showOriginal: boolean;
+  setShowOriginal: (show: boolean) => void;
+  handleStarToggle: () => void;
+  isStarLoading: boolean;
+}
 
-  // Mark read mutation
-  const markReadMutation = trpc.entries.markRead.useMutation({
-    onSuccess: () => {
-      // Invalidate this entry to update button state
-      utils.entries.get.invalidate({ id: entryId });
-      // Invalidate entries list to update read status
-      utils.entries.list.invalidate();
-      // Invalidate subscriptions to update unread counts
-      utils.subscriptions.list.invalidate();
-    },
-  });
+/**
+ * Inner component that renders entry content with narration highlighting.
+ * Separated to allow proper hook usage after entry data is loaded.
+ */
+function EntryContentBody({
+  entry,
+  entryId,
+  onBack,
+  onToggleRead,
+  showOriginal,
+  setShowOriginal,
+  handleStarToggle,
+  isStarLoading,
+}: EntryContentBodyProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  // Star/unstar mutations
-  const starMutation = trpc.entries.star.useMutation({
-    onSuccess: () => {
-      // Invalidate the entry query to update starred status
-      utils.entries.get.invalidate({ id: entryId });
-      utils.entries.list.invalidate();
-    },
-  });
-
-  const unstarMutation = trpc.entries.unstar.useMutation({
-    onSuccess: () => {
-      utils.entries.get.invalidate({ id: entryId });
-      utils.entries.list.invalidate();
-    },
-  });
-
-  const entry = data?.entry;
-
-  // Mark entry as read when component mounts and entry is loaded (only once)
-  useEffect(() => {
-    if (entry && !hasMarkedRead.current) {
-      hasMarkedRead.current = true;
-      // Only mark as read if it's currently unread
-      if (!entry.read) {
-        markReadMutation.mutate({ ids: [entryId], read: true });
-      }
-    }
-  }, [entry, entryId, markReadMutation]);
-
-  // Handle star toggle
-  const handleStarToggle = () => {
-    if (!entry) return;
-
-    if (entry.starred) {
-      unstarMutation.mutate({ id: entryId });
-    } else {
-      starMutation.mutate({ id: entryId });
-    }
-  };
-
-  // Handle read toggle
-  const handleReadToggle = () => {
-    if (!entry || !onToggleRead) return;
-    onToggleRead(entryId, entry.read);
-  };
-
-  const isStarLoading = starMutation.isPending || unstarMutation.isPending;
-
-  // Keyboard shortcut: m to toggle read/unread
-  useHotkeys(
-    "m",
-    (e) => {
-      e.preventDefault();
-      handleReadToggle();
-    },
-    {
-      enabled: !!entry && !!onToggleRead,
-      enableOnFormTags: false,
-    },
-    [entry, onToggleRead, handleReadToggle]
-  );
-
-  // Loading state
-  if (isLoading) {
-    return <EntryContentSkeleton />;
-  }
-
-  // Error state
-  if (isError) {
-    return (
-      <EntryContentError
-        message={error?.message ?? "Failed to load entry"}
-        onRetry={() => refetch()}
-      />
-    );
-  }
-
-  // Entry not found
-  if (!entry) {
-    return <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
-  }
+  const displayTitle = entry.title ?? "Untitled";
+  const displayDate = entry.publishedAt ?? entry.fetchedAt;
+  const displayFeed = entry.feedTitle ?? "Unknown Feed";
 
   // Check if both content versions are available for toggle
   const hasBothVersions = Boolean(entry.contentCleaned && entry.contentOriginal);
@@ -328,20 +278,124 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
     ? entry.contentOriginal
     : (entry.contentCleaned ?? entry.contentOriginal);
 
-  // Sanitize HTML content
-  const sanitizedContent = contentToDisplay
-    ? DOMPurify.sanitize(contentToDisplay, {
-        // Allow safe tags and attributes
-        ADD_TAGS: ["iframe"], // Allow iframes for embedded content
-        ADD_ATTR: ["target", "allowfullscreen", "frameborder"], // Allow target="_blank" on links
-        FORBID_TAGS: ["style", "script"], // Forbid style and script tags
-        FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"], // Forbid event handlers
-      })
-    : null;
+  // Set up narration with highlighting support
+  const narrationSupported = isNarrationSupported();
+  const narration = useNarration({
+    id: entryId,
+    type: "entry",
+    title: displayTitle,
+    feedTitle: displayFeed,
+  });
 
-  const displayTitle = entry.title ?? "Untitled";
-  const displayDate = entry.publishedAt ?? entry.fetchedAt;
-  const displayFeed = entry.feedTitle ?? "Unknown Feed";
+  const { highlightedParagraphIds } = useNarrationHighlight({
+    paragraphMap: narration.paragraphMap,
+    currentParagraphIndex: narration.state.currentParagraph,
+    isPlaying: narration.state.status === "playing",
+  });
+
+  // Get narration settings for auto-scroll preference
+  const [narrationSettings] = useNarrationSettings();
+
+  // Determine if we should process HTML for highlighting
+  // We process it whenever narration has been activated (paragraphMap exists or state is not idle)
+  const shouldProcessForHighlighting =
+    narrationSupported && (narration.paragraphMap !== null || narration.state.status !== "idle");
+
+  // Sanitize and optionally process HTML content for highlighting
+  const sanitizedContent = useMemo(() => {
+    if (!contentToDisplay) return null;
+
+    const sanitized = DOMPurify.sanitize(contentToDisplay, {
+      // Allow safe tags and attributes, plus data-para-id for highlighting
+      ADD_TAGS: ["iframe"],
+      ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id"],
+      FORBID_TAGS: ["style", "script"],
+      FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
+    });
+
+    // Process for highlighting if narration is active
+    if (shouldProcessForHighlighting) {
+      return processHtmlForHighlighting(sanitized);
+    }
+
+    return sanitized;
+  }, [contentToDisplay, shouldProcessForHighlighting]);
+
+  // Apply/remove highlight classes to DOM elements based on highlightedParagraphIds
+  // Also auto-scroll to highlighted paragraph if enabled
+  useEffect(() => {
+    if (!contentRef.current || !shouldProcessForHighlighting) return;
+
+    const container = contentRef.current;
+
+    // Remove all existing highlights
+    container.querySelectorAll("[data-para-id].narration-highlight").forEach((el) => {
+      el.classList.remove("narration-highlight");
+    });
+
+    // Add highlights to matching elements and optionally scroll to first one
+    // Only apply highlights if the highlightEnabled setting is true
+    if (highlightedParagraphIds.size > 0 && narrationSettings.highlightEnabled) {
+      let firstHighlightedElement: Element | null = null;
+
+      highlightedParagraphIds.forEach((index) => {
+        const el = container.querySelector(`[data-para-id="para-${index}"]`);
+        if (el) {
+          el.classList.add("narration-highlight");
+          // Track first highlighted element for scrolling
+          if (!firstHighlightedElement) {
+            firstHighlightedElement = el;
+          }
+        }
+      });
+
+      // Auto-scroll to highlighted paragraph if enabled and element is not in viewport
+      if (
+        narrationSettings.autoScrollEnabled &&
+        firstHighlightedElement &&
+        narration.state.status === "playing"
+      ) {
+        const element = firstHighlightedElement as HTMLElement;
+        const rect = element.getBoundingClientRect();
+        // Account for the header (scroll-margin-top is 100px in CSS)
+        const headerHeight = 100;
+        const isInViewport = rect.top >= headerHeight && rect.bottom <= window.innerHeight;
+
+        if (!isInViewport) {
+          element.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
+      }
+    }
+  }, [
+    highlightedParagraphIds,
+    shouldProcessForHighlighting,
+    narrationSettings.highlightEnabled,
+    narrationSettings.autoScrollEnabled,
+    narration.state.status,
+  ]);
+
+  // Handle read toggle
+  const handleReadToggle = () => {
+    if (!onToggleRead) return;
+    onToggleRead(entryId, entry.read);
+  };
+
+  // Keyboard shortcut: m to toggle read/unread
+  useHotkeys(
+    "m",
+    (e) => {
+      e.preventDefault();
+      handleReadToggle();
+    },
+    {
+      enabled: !!onToggleRead,
+      enableOnFormTags: false,
+    },
+    [onToggleRead, handleReadToggle]
+  );
 
   return (
     <article className="mx-auto max-w-3xl px-4 py-6 sm:py-8">
@@ -444,12 +498,13 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
             </Button>
           )}
 
-          {/* Narration controls */}
+          {/* Narration controls - pass narration state for controlled mode */}
           <NarrationControls
             articleId={entryId}
             articleType="entry"
             title={displayTitle}
             feedTitle={displayFeed}
+            narration={narration}
           />
         </div>
       </header>
@@ -460,6 +515,7 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
       {/* Content */}
       {sanitizedContent ? (
         <div
+          ref={contentRef}
           className="prose prose-zinc prose-sm sm:prose-base dark:prose-invert prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 hover:prose-a:text-blue-700 dark:hover:prose-a:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:overflow-x-auto prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none"
           dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
@@ -486,5 +542,108 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
         </footer>
       )}
     </article>
+  );
+}
+
+/**
+ * EntryContent component.
+ *
+ * Fetches and displays the full content of an entry.
+ * Marks the entry as read on mount.
+ */
+export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProps) {
+  const utils = trpc.useUtils();
+  const hasMarkedRead = useRef(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  // Fetch the entry
+  const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
+
+  // Mark read mutation
+  const markReadMutation = trpc.entries.markRead.useMutation({
+    onSuccess: () => {
+      // Invalidate this entry to update button state
+      utils.entries.get.invalidate({ id: entryId });
+      // Invalidate entries list to update read status
+      utils.entries.list.invalidate();
+      // Invalidate subscriptions to update unread counts
+      utils.subscriptions.list.invalidate();
+    },
+  });
+
+  // Star/unstar mutations
+  const starMutation = trpc.entries.star.useMutation({
+    onSuccess: () => {
+      // Invalidate the entry query to update starred status
+      utils.entries.get.invalidate({ id: entryId });
+      utils.entries.list.invalidate();
+    },
+  });
+
+  const unstarMutation = trpc.entries.unstar.useMutation({
+    onSuccess: () => {
+      utils.entries.get.invalidate({ id: entryId });
+      utils.entries.list.invalidate();
+    },
+  });
+
+  const entry = data?.entry;
+
+  // Mark entry as read when component mounts and entry is loaded (only once)
+  useEffect(() => {
+    if (entry && !hasMarkedRead.current) {
+      hasMarkedRead.current = true;
+      // Only mark as read if it's currently unread
+      if (!entry.read) {
+        markReadMutation.mutate({ ids: [entryId], read: true });
+      }
+    }
+  }, [entry, entryId, markReadMutation]);
+
+  // Handle star toggle
+  const handleStarToggle = () => {
+    if (!entry) return;
+
+    if (entry.starred) {
+      unstarMutation.mutate({ id: entryId });
+    } else {
+      starMutation.mutate({ id: entryId });
+    }
+  };
+
+  const isStarLoading = starMutation.isPending || unstarMutation.isPending;
+
+  // Loading state
+  if (isLoading) {
+    return <EntryContentSkeleton />;
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <EntryContentError
+        message={error?.message ?? "Failed to load entry"}
+        onRetry={() => refetch()}
+      />
+    );
+  }
+
+  // Entry not found
+  if (!entry) {
+    return <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
+  }
+
+  // Render the entry content with narration support
+  return (
+    <EntryContentBody
+      entry={entry}
+      entryId={entryId}
+      onBack={onBack}
+      onToggleRead={onToggleRead}
+      showOriginal={showOriginal}
+      setShowOriginal={setShowOriginal}
+      handleStarToggle={handleStarToggle}
+      isStarLoading={isStarLoading}
+    />
   );
 }

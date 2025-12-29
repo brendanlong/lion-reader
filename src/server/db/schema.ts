@@ -2,6 +2,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -10,6 +11,25 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+/**
+ * ParagraphMapping represents the mapping from a narration paragraph to
+ * one or more original HTML paragraphs. This enables highlighting the
+ * current paragraph during audio narration playback.
+ *
+ * Format: { n: narrationIndex, o: [originalIndices] }
+ * - n: The narration paragraph index (0-based)
+ * - o: Array of original paragraph indices this narration maps to
+ *      (can be multiple if the LLM combined paragraphs)
+ */
+export interface ParagraphMapping {
+  n: number;
+  o: number[];
+}
 
 // ============================================================================
 // ENUMS
@@ -475,6 +495,11 @@ export const narrationContent = pgTable(
 
     contentNarration: text("content_narration"), // null until generated
     generatedAt: timestamp("generated_at", { withTimezone: true }),
+
+    // Paragraph mapping for narration highlighting
+    // Maps narration paragraph indices to original HTML paragraph indices
+    // Format: [{ n: 0, o: [0] }, { n: 1, o: [1, 2] }, ...]
+    paragraphMap: jsonb("paragraph_map").$type<ParagraphMapping[] | null>(),
 
     // Error tracking for retry logic
     error: text("error"),

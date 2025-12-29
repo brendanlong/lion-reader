@@ -25,3 +25,30 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* =================================
+   Narration Highlighting Styles
+   ================================= */
+
+/* Highlight the currently-read paragraph during narration */
+[data-para-id].narration-highlight {
+  background-color: rgba(253, 230, 138, 0.3); /* yellow-200/30 for light mode */
+  border-radius: 0.25rem;
+  transition: background-color 0.3s ease;
+}
+
+/* Dark mode highlight - supports both class-based and media query */
+.dark [data-para-id].narration-highlight {
+  background-color: rgba(113, 63, 18, 0.3); /* yellow-900/30 for dark mode */
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-para-id].narration-highlight {
+    background-color: rgba(113, 63, 18, 0.3); /* yellow-900/30 for dark mode */
+  }
+}
+
+/* Smooth scroll to highlighted paragraph - account for sticky header */
+[data-para-id].narration-highlight {
+  scroll-margin-top: 100px;
+}

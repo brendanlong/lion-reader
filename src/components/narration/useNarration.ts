@@ -58,6 +58,17 @@ export interface UseNarrationConfig {
 }
 
 /**
+ * Paragraph mapping entry for highlighting support.
+ * Maps a narration paragraph index to one or more original paragraph indices.
+ */
+export interface ParagraphMapEntry {
+  /** Narration paragraph index */
+  n: number;
+  /** Original paragraph indices (can be multiple if LLM combined) */
+  o: number[];
+}
+
+/**
  * Return type for the useNarration hook.
  */
 export interface UseNarrationReturn {
@@ -77,6 +88,8 @@ export interface UseNarrationReturn {
   stop: () => void;
   /** Whether narration is supported in this browser */
   isSupported: boolean;
+  /** Paragraph mapping for highlighting (narration index -> original indices) */
+  paragraphMap: ParagraphMapEntry[] | null;
 }
 
 /**
@@ -120,6 +133,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [narrationText, setNarrationText] = useState<string | null>(null);
   const [isSupported] = useState(() => isNarrationSupported());
+  const [paragraphMap, setParagraphMap] = useState<ParagraphMapEntry[] | null>(null);
 
   // Refs
   const narratorRef = useRef<ArticleNarrator | null>(null);
@@ -352,6 +366,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
         if (result.narration) {
           setNarrationText(result.narration);
+          setParagraphMap(result.paragraphMap ?? null);
           const paragraphs = splitIntoParagraphs(result.narration);
           piperParagraphsRef.current = paragraphs;
           piperCurrentIndexRef.current = 0;
@@ -411,6 +426,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
       if (result.narration) {
         setNarrationText(result.narration);
+        setParagraphMap(result.paragraphMap ?? null);
         narrator.loadArticle(result.narration);
 
         // Wait for voices and get preferred voice
@@ -543,13 +559,16 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     narratorRef.current.stop();
   }, [isSupported, usePiper]);
 
-  // Clear audio cache when article or voice changes
+  // Clear audio cache and paragraph map when article or voice changes
   useEffect(() => {
     // Clear the cache when article or voice changes
     audioCacheRef.current.clear();
     bufferingRef.current.clear();
     piperParagraphsRef.current = [];
     piperCurrentIndexRef.current = 0;
+    // Clear paragraph map when article changes, as it's tied to narration content
+    setParagraphMap(null);
+    setNarrationText(null);
   }, [id, settings.voiceId]);
 
   // Clean up on unmount
@@ -579,5 +598,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     skipBackward,
     stop,
     isSupported,
+    paragraphMap,
   };
 }
