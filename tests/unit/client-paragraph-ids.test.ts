@@ -386,10 +386,11 @@ console.log(result);</code></pre>
         "li",
         "figure",
         "table",
+        "img",
       ];
 
       expect(BLOCK_ELEMENTS).toEqual(expectedElements);
-      expect(BLOCK_ELEMENTS.length).toBe(14);
+      expect(BLOCK_ELEMENTS.length).toBe(15);
     });
 
     it("produces same ID format as server-side (para-N)", () => {
@@ -517,7 +518,7 @@ describe("BLOCK_ELEMENTS constant", () => {
     expect(BLOCK_ELEMENTS).toContain("table");
   });
 
-  it("has exactly 14 elements", () => {
-    expect(BLOCK_ELEMENTS.length).toBe(14);
+  it("has exactly 15 elements", () => {
+    expect(BLOCK_ELEMENTS.length).toBe(15);
   });
 });
