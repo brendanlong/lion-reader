@@ -262,6 +262,7 @@ function SavedArticleContentBody({
     type: "saved",
     title: displayTitle,
     feedTitle: displaySite,
+    content: contentToDisplay,
   });
 
   const { highlightedParagraphIds } = useNarrationHighlight({

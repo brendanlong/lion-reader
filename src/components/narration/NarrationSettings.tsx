@@ -421,6 +421,41 @@ export function NarrationSettings() {
               </div>
             </div>
 
+            {/* Processing Settings */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Processing</h3>
+
+              {/* LLM Normalization Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">Use AI text processing</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Improves narration quality by expanding abbreviations and formatting content
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.useLlmNormalization}
+                  onClick={() =>
+                    setSettings({ ...settings, useLlmNormalization: !settings.useLlmNormalization })
+                  }
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                    settings.useLlmNormalization
+                      ? "bg-zinc-900 dark:bg-zinc-50"
+                      : "bg-zinc-200 dark:bg-zinc-700"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                      settings.useLlmNormalization ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             {/* Highlighting Settings */}
             <div className="space-y-4">
               <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Highlighting</h3>

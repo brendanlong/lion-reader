@@ -50,6 +50,12 @@ const uuidSchema = z.string().uuid("Invalid ID");
 const generateInputSchema = z.object({
   type: z.enum(["entry", "saved"]),
   id: uuidSchema,
+  /**
+   * Whether to use LLM preprocessing for better narration quality.
+   * When false, uses simple HTML-to-text conversion.
+   * Defaults to true if not specified.
+   */
+  useLlmNormalization: z.boolean().optional().default(true),
 });
 
 // ============================================================================
@@ -206,8 +212,8 @@ export const narrationRouter = createTRPCRouter({
       const canRetryLLM =
         !narrationRecord.errorAt || Date.now() - narrationRecord.errorAt.getTime() > RETRY_AFTER_MS;
 
-      // If Groq is not configured or we had a recent error, fall back to plain text
-      if (!isGroqAvailable() || !canRetryLLM) {
+      // If user disabled LLM normalization, Groq is not configured, or we had a recent error, fall back to plain text
+      if (!input.useLlmNormalization || !isGroqAvailable() || !canRetryLLM) {
         const fallbackText = htmlToPlainText(sourceContent);
         trackNarrationGenerated(false, "fallback");
         return {
