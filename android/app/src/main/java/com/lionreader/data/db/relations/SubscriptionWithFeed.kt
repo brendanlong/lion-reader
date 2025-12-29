@@ -16,7 +16,7 @@ data class SubscriptionWithFeed(
     @Embedded
     val subscription: SubscriptionEntity,
     @Embedded(prefix = "feed_")
-    val feed: FeedEntity
+    val feed: FeedEntity,
 ) {
     /** Returns the custom title if set, otherwise falls back to the feed title */
     val displayTitle: String

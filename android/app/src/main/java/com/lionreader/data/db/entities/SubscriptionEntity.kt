@@ -18,10 +18,10 @@ import androidx.room.PrimaryKey
             entity = FeedEntity::class,
             parentColumns = ["id"],
             childColumns = ["feedId"],
-            onDelete = ForeignKey.CASCADE
-        )
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
-    indices = [Index("feedId")]
+    indices = [Index("feedId")],
 )
 data class SubscriptionEntity(
     @PrimaryKey
@@ -30,5 +30,5 @@ data class SubscriptionEntity(
     val customTitle: String?,
     val subscribedAt: Long,
     val unreadCount: Int,
-    val lastSyncedAt: Long
+    val lastSyncedAt: Long,
 )

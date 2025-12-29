@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import com.lionreader.ui.theme.ShimmerBaseDark
@@ -35,9 +34,7 @@ import com.lionreader.ui.theme.ShimmerHighlightLight
  * @return A modifier with the shimmer effect applied
  */
 @Composable
-fun Modifier.shimmerEffect(
-    shape: Shape = RoundedCornerShape(4.dp),
-): Modifier {
+fun Modifier.shimmerEffect(shape: Shape = RoundedCornerShape(4.dp)): Modifier {
     val isDarkTheme = isSystemInDarkTheme()
 
     val baseColor = if (isDarkTheme) ShimmerBaseDark else ShimmerBaseLight
@@ -47,25 +44,29 @@ fun Modifier.shimmerEffect(
     val translateAnim by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1000f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = 1200,
-                easing = LinearEasing,
+        animationSpec =
+            infiniteRepeatable(
+                animation =
+                    tween(
+                        durationMillis = 1200,
+                        easing = LinearEasing,
+                    ),
+                repeatMode = RepeatMode.Restart,
             ),
-            repeatMode = RepeatMode.Restart,
-        ),
         label = "shimmer_translate",
     )
 
-    val shimmerBrush = Brush.linearGradient(
-        colors = listOf(
-            baseColor,
-            highlightColor,
-            baseColor,
-        ),
-        start = Offset(translateAnim - 200f, translateAnim - 200f),
-        end = Offset(translateAnim, translateAnim),
-    )
+    val shimmerBrush =
+        Brush.linearGradient(
+            colors =
+                listOf(
+                    baseColor,
+                    highlightColor,
+                    baseColor,
+                ),
+            start = Offset(translateAnim - 200f, translateAnim - 200f),
+            end = Offset(translateAnim, translateAnim),
+        )
 
     return this
         .clip(shape)
@@ -98,9 +99,7 @@ fun ShimmerBox(
  * @param modifier Modifier for size and positioning
  */
 @Composable
-fun ShimmerCircle(
-    modifier: Modifier = Modifier,
-) {
+fun ShimmerCircle(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier.shimmerEffect(RoundedCornerShape(percent = 50)),
     )

@@ -31,7 +31,10 @@ interface LionReaderApi {
      * @param password User's password
      * @return LoginResponse containing user info and session token
      */
-    suspend fun login(email: String, password: String): ApiResult<LoginResponse>
+    suspend fun login(
+        email: String,
+        password: String,
+    ): ApiResult<LoginResponse>
 
     /**
      * Get available authentication providers.
@@ -114,7 +117,10 @@ interface LionReaderApi {
      * @param ids List of entry IDs to update
      * @param read true to mark as read, false to mark as unread
      */
-    suspend fun markRead(ids: List<String>, read: Boolean): ApiResult<Unit>
+    suspend fun markRead(
+        ids: List<String>,
+        read: Boolean,
+    ): ApiResult<Unit>
 
     /**
      * Star an entry.
@@ -135,89 +141,77 @@ interface LionReaderApi {
  * Implementation of LionReaderApi using ApiClient.
  */
 @Singleton
-class LionReaderApiImpl @Inject constructor(
-    private val apiClient: ApiClient,
-) : LionReaderApi {
+class LionReaderApiImpl
+    @Inject
+    constructor(
+        private val apiClient: ApiClient,
+    ) : LionReaderApi {
+        // ============================================================================
+        // AUTH ENDPOINTS
+        // ============================================================================
 
-    // ============================================================================
-    // AUTH ENDPOINTS
-    // ============================================================================
+        override suspend fun login(
+            email: String,
+            password: String,
+        ): ApiResult<LoginResponse> =
+            apiClient.post(
+                path = "/auth/login",
+                body = LoginRequest(email = email, password = password),
+            )
 
-    override suspend fun login(email: String, password: String): ApiResult<LoginResponse> {
-        return apiClient.post(
-            path = "/auth/login",
-            body = LoginRequest(email = email, password = password),
-        )
+        override suspend fun getAuthProviders(): ApiResult<ProvidersResponse> = apiClient.get(path = "/auth/providers")
+
+        override suspend fun me(): ApiResult<UserResponse> = apiClient.get(path = "/auth/me")
+
+        override suspend fun logout(): ApiResult<Unit> = apiClient.postNoContent(path = "/auth/logout")
+
+        // ============================================================================
+        // SUBSCRIPTION ENDPOINTS
+        // ============================================================================
+
+        override suspend fun listSubscriptions(): ApiResult<SubscriptionsResponse> = apiClient.get(path = "/subscriptions")
+
+        // ============================================================================
+        // TAG ENDPOINTS
+        // ============================================================================
+
+        override suspend fun listTags(): ApiResult<TagsResponse> = apiClient.get(path = "/tags")
+
+        // ============================================================================
+        // ENTRY ENDPOINTS
+        // ============================================================================
+
+        override suspend fun listEntries(
+            feedId: String?,
+            tagId: String?,
+            unreadOnly: Boolean?,
+            starredOnly: Boolean?,
+            sortOrder: SortOrder?,
+            cursor: String?,
+            limit: Int?,
+        ): ApiResult<EntriesResponse> =
+            apiClient.get(path = "/entries") {
+                queryParam("feedId", feedId)
+                queryParam("tagId", tagId)
+                queryParam("unreadOnly", unreadOnly)
+                queryParam("starredOnly", starredOnly)
+                queryParam("sortOrder", sortOrder?.value)
+                queryParam("cursor", cursor)
+                queryParam("limit", limit)
+            }
+
+        override suspend fun getEntry(id: String): ApiResult<EntryResponse> = apiClient.get(path = "/entries/$id")
+
+        override suspend fun markRead(
+            ids: List<String>,
+            read: Boolean,
+        ): ApiResult<Unit> =
+            apiClient.postNoContent(
+                path = "/entries/mark-read",
+                body = MarkReadRequest(ids = ids, read = read),
+            )
+
+        override suspend fun star(id: String): ApiResult<Unit> = apiClient.postNoContent(path = "/entries/$id/star")
+
+        override suspend fun unstar(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "/entries/$id/star")
     }
-
-    override suspend fun getAuthProviders(): ApiResult<ProvidersResponse> {
-        return apiClient.get(path = "/auth/providers")
-    }
-
-    override suspend fun me(): ApiResult<UserResponse> {
-        return apiClient.get(path = "/auth/me")
-    }
-
-    override suspend fun logout(): ApiResult<Unit> {
-        return apiClient.postNoContent(path = "/auth/logout")
-    }
-
-    // ============================================================================
-    // SUBSCRIPTION ENDPOINTS
-    // ============================================================================
-
-    override suspend fun listSubscriptions(): ApiResult<SubscriptionsResponse> {
-        return apiClient.get(path = "/subscriptions")
-    }
-
-    // ============================================================================
-    // TAG ENDPOINTS
-    // ============================================================================
-
-    override suspend fun listTags(): ApiResult<TagsResponse> {
-        return apiClient.get(path = "/tags")
-    }
-
-    // ============================================================================
-    // ENTRY ENDPOINTS
-    // ============================================================================
-
-    override suspend fun listEntries(
-        feedId: String?,
-        tagId: String?,
-        unreadOnly: Boolean?,
-        starredOnly: Boolean?,
-        sortOrder: SortOrder?,
-        cursor: String?,
-        limit: Int?,
-    ): ApiResult<EntriesResponse> {
-        return apiClient.get(path = "/entries") {
-            queryParam("feedId", feedId)
-            queryParam("tagId", tagId)
-            queryParam("unreadOnly", unreadOnly)
-            queryParam("starredOnly", starredOnly)
-            queryParam("sortOrder", sortOrder?.value)
-            queryParam("cursor", cursor)
-            queryParam("limit", limit)
-        }
-    }
-
-    override suspend fun getEntry(id: String): ApiResult<EntryResponse> {
-        return apiClient.get(path = "/entries/$id")
-    }
-
-    override suspend fun markRead(ids: List<String>, read: Boolean): ApiResult<Unit> {
-        return apiClient.postNoContent(
-            path = "/entries/mark-read",
-            body = MarkReadRequest(ids = ids, read = read),
-        )
-    }
-
-    override suspend fun star(id: String): ApiResult<Unit> {
-        return apiClient.postNoContent(path = "/entries/$id/star")
-    }
-
-    override suspend fun unstar(id: String): ApiResult<Unit> {
-        return apiClient.deleteNoContent(path = "/entries/$id/star")
-    }
-}

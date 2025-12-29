@@ -89,11 +89,12 @@ fun LionReaderNavGraph(
         // Entry detail screen
         composable(
             route = Screen.EntryDetail.route,
-            arguments = listOf(
-                navArgument(Screen.ARG_ENTRY_ID) {
-                    type = NavType.StringType
-                },
-            ),
+            arguments =
+                listOf(
+                    navArgument(Screen.ARG_ENTRY_ID) {
+                        type = NavType.StringType
+                    },
+                ),
         ) {
             EntryDetailScreen(
                 onBack = { navController.popBackStack() },

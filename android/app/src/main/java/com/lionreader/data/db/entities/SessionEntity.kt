@@ -16,5 +16,5 @@ data class SessionEntity(
     val userId: String,
     val email: String,
     val createdAt: Long,
-    val expiresAt: Long?
+    val expiresAt: Long?,
 )

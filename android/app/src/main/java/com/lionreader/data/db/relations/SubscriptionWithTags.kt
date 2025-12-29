@@ -10,5 +10,5 @@ import com.lionreader.data.db.entities.TagEntity
  */
 data class SubscriptionWithTags(
     val subscription: SubscriptionWithFeed,
-    val tags: List<TagEntity>
+    val tags: List<TagEntity>,
 )

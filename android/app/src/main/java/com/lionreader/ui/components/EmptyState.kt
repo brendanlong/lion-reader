@@ -34,14 +34,19 @@ import androidx.compose.ui.unit.dp
 enum class EmptyStateType {
     /** No entries in the current view */
     NO_ENTRIES,
+
     /** All entries have been read (unread-only filter) */
     ALL_CAUGHT_UP,
+
     /** No feeds subscribed yet (new user) */
     NO_FEEDS,
+
     /** No starred entries */
     NO_STARRED,
+
     /** Offline with no cached content */
     OFFLINE,
+
     /** Generic empty state */
     GENERIC,
 }
@@ -75,9 +80,10 @@ fun EmptyState(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -127,9 +133,7 @@ fun EmptyState(
  * @param modifier Modifier for the component
  */
 @Composable
-fun NoEntriesEmptyState(
-    modifier: Modifier = Modifier,
-) {
+fun NoEntriesEmptyState(modifier: Modifier = Modifier) {
     EmptyState(
         title = "No Entries",
         message = "No entries in this view yet.",
@@ -170,9 +174,7 @@ fun AllCaughtUpEmptyState(
  * @param modifier Modifier for the component
  */
 @Composable
-fun NoFeedsEmptyState(
-    modifier: Modifier = Modifier,
-) {
+fun NoFeedsEmptyState(modifier: Modifier = Modifier) {
     EmptyState(
         title = "No Feeds",
         message = "You haven't subscribed to any feeds yet. Subscribe to feeds on the web app to see entries here.",
@@ -187,9 +189,7 @@ fun NoFeedsEmptyState(
  * @param modifier Modifier for the component
  */
 @Composable
-fun NoStarredEmptyState(
-    modifier: Modifier = Modifier,
-) {
+fun NoStarredEmptyState(modifier: Modifier = Modifier) {
     EmptyState(
         title = "No Starred Entries",
         message = "You haven't starred any entries yet. Tap the star icon on entries you want to save for later.",

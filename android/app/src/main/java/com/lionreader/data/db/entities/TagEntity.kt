@@ -17,5 +17,5 @@ data class TagEntity(
     /** Hex color string, e.g., "#ff6b6b" */
     val color: String?,
     /** Number of subscriptions with this tag */
-    val feedCount: Int
+    val feedCount: Int,
 )

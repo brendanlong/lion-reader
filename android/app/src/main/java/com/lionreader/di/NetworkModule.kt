@@ -22,7 +22,6 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
-
     /**
      * Provides the HttpClient instance from ApiClient.
      *
@@ -31,9 +30,7 @@ object NetworkModule {
      */
     @Provides
     @Singleton
-    fun provideHttpClient(apiClient: ApiClient): HttpClient {
-        return apiClient.httpClient
-    }
+    fun provideHttpClient(apiClient: ApiClient): HttpClient = apiClient.httpClient
 
     /**
      * Provides the LionReaderApi implementation.
@@ -43,7 +40,5 @@ object NetworkModule {
      */
     @Provides
     @Singleton
-    fun provideLionReaderApi(apiClient: ApiClient): LionReaderApi {
-        return LionReaderApiImpl(apiClient)
-    }
+    fun provideLionReaderApi(apiClient: ApiClient): LionReaderApi = LionReaderApiImpl(apiClient)
 }

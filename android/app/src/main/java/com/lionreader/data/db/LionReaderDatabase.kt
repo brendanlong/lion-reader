@@ -38,13 +38,12 @@ import com.lionreader.data.db.entities.TagEntity
         EntryStateEntity::class,
         TagEntity::class,
         SubscriptionTagEntity::class,
-        PendingActionEntity::class
+        PendingActionEntity::class,
     ],
     version = LionReaderDatabase.VERSION,
-    exportSchema = true
+    exportSchema = true,
 )
 abstract class LionReaderDatabase : RoomDatabase() {
-
     /**
      * Entry data access object
      */

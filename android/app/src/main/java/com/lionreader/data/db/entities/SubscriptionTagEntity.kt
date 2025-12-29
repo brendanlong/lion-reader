@@ -18,21 +18,21 @@ import androidx.room.Index
             entity = SubscriptionEntity::class,
             parentColumns = ["id"],
             childColumns = ["subscriptionId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.CASCADE,
         ),
         ForeignKey(
             entity = TagEntity::class,
             parentColumns = ["id"],
             childColumns = ["tagId"],
-            onDelete = ForeignKey.CASCADE
-        )
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
     indices = [
         Index("subscriptionId"),
-        Index("tagId")
-    ]
+        Index("tagId"),
+    ],
 )
 data class SubscriptionTagEntity(
     val subscriptionId: String,
-    val tagId: String
+    val tagId: String,
 )

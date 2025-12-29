@@ -18,13 +18,13 @@ import androidx.room.PrimaryKey
             entity = EntryEntity::class,
             parentColumns = ["id"],
             childColumns = ["entryId"],
-            onDelete = ForeignKey.CASCADE
-        )
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
     indices = [
         Index("entryId"),
-        Index("createdAt")
-    ]
+        Index("createdAt"),
+    ],
 )
 data class PendingActionEntity(
     @PrimaryKey(autoGenerate = true)
@@ -34,7 +34,7 @@ data class PendingActionEntity(
     val entryId: String,
     val createdAt: Long,
     /** Number of failed sync attempts */
-    val retryCount: Int = 0
+    val retryCount: Int = 0,
 ) {
     companion object {
         const val TYPE_MARK_READ = "mark_read"

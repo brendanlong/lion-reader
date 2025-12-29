@@ -14,7 +14,6 @@ import com.lionreader.data.db.entities.PendingActionEntity
  */
 @Dao
 interface PendingActionDao {
-
     /**
      * Inserts a new pending action.
      *

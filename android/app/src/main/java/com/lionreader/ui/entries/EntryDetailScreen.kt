@@ -34,7 +34,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,13 +79,14 @@ fun EntryDetailScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is EntryDetailEvent.Share -> {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_SUBJECT, event.title)
-                        putExtra(Intent.EXTRA_TEXT, "${event.title}\n${event.url}")
-                    }
+                    val shareIntent =
+                        Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, event.title)
+                            putExtra(Intent.EXTRA_TEXT, "${event.title}\n${event.url}")
+                        }
                     context.startActivity(
-                        Intent.createChooser(shareIntent, "Share article")
+                        Intent.createChooser(shareIntent, "Share article"),
                     )
                 }
                 is EntryDetailEvent.OpenInBrowser -> {
@@ -134,9 +134,10 @@ fun EntryDetailScreen(
             // Loading state - show skeleton
             uiState.isLoading && entry == null -> {
                 EntryDetailSkeleton(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(padding),
                 )
             }
 
@@ -147,9 +148,10 @@ fun EntryDetailScreen(
                     message = uiState.errorMessage ?: "Unknown error",
                     errorType = ErrorType.GENERIC,
                     onRetry = { viewModel.retry() },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(padding),
                 )
             }
 
@@ -159,9 +161,10 @@ fun EntryDetailScreen(
                     entry = entry!!,
                     onLinkClick = { url -> viewModel.openInBrowser(url) },
                     scrollState = scrollState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(padding),
                 )
             }
 
@@ -171,9 +174,10 @@ fun EntryDetailScreen(
                     title = "Entry not found",
                     message = "The article you're looking for could not be found.",
                     errorType = ErrorType.GENERIC,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(padding),
                 )
             }
         }
@@ -211,11 +215,12 @@ private fun EntryDetailTopBar(
                     Icon(
                         imageVector = if (e.isStarred) Icons.Filled.Star else Icons.Outlined.StarBorder,
                         contentDescription = if (e.isStarred) "Remove from starred" else "Add to starred",
-                        tint = if (e.isStarred) {
-                            MaterialTheme.colorScheme.tertiary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        tint =
+                            if (e.isStarred) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                     )
                 }
 
@@ -240,10 +245,11 @@ private fun EntryDetailTopBar(
                 }
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-        ),
+        colors =
+            TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+            ),
     )
 }
 
@@ -260,9 +266,10 @@ private fun EntryDetailContent(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp),
+        modifier =
+            modifier
+                .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp),
     ) {
         // Header section
         EntryHeader(entry = entry)
@@ -270,10 +277,11 @@ private fun EntryDetailContent(
         Spacer(modifier = Modifier.height(24.dp))
 
         // Content section
-        val content = entry.entry.contentCleaned
-            ?: entry.entry.contentOriginal
-            ?: entry.entry.summary
-            ?: "<p>No content available.</p>"
+        val content =
+            entry.entry.contentCleaned
+                ?: entry.entry.contentOriginal
+                ?: entry.entry.summary
+                ?: "<p>No content available.</p>"
 
         HtmlContent(
             html = content,
@@ -290,9 +298,7 @@ private fun EntryDetailContent(
  * Entry header with feed name, title, author, and date.
  */
 @Composable
-private fun EntryHeader(
-    entry: EntryWithState,
-) {
+private fun EntryHeader(entry: EntryWithState) {
     Column(
         modifier = Modifier.fillMaxWidth(),
     ) {

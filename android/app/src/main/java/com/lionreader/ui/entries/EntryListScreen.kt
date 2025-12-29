@@ -120,9 +120,10 @@ fun EntryListScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
         ) {
             // Offline banner at the top
             OfflineBanner(isOnline = uiState.isOnline)
@@ -137,9 +138,10 @@ fun EntryListScreen(
                 onRefresh = viewModel::refresh,
                 onLoadMore = viewModel::loadMore,
                 onShowAll = if (uiState.unreadOnly) viewModel::toggleUnreadOnly else null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .weight(1f),
             )
         }
     }
@@ -176,44 +178,50 @@ private fun EntryListTopBar(
             // Unread filter toggle
             IconButton(onClick = onToggleUnreadOnly) {
                 Icon(
-                    imageVector = if (unreadOnly) {
-                        Icons.Default.Visibility
-                    } else {
-                        Icons.Default.VisibilityOff
-                    },
-                    contentDescription = if (unreadOnly) {
-                        "Showing unread only"
-                    } else {
-                        "Showing all entries"
-                    },
-                    tint = if (unreadOnly) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    imageVector =
+                        if (unreadOnly) {
+                            Icons.Default.Visibility
+                        } else {
+                            Icons.Default.VisibilityOff
+                        },
+                    contentDescription =
+                        if (unreadOnly) {
+                            "Showing unread only"
+                        } else {
+                            "Showing all entries"
+                        },
+                    tint =
+                        if (unreadOnly) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                 )
             }
 
             // Sort order toggle
             IconButton(onClick = onToggleSortOrder) {
                 Icon(
-                    imageVector = if (sortOrder == SortOrder.NEWEST) {
-                        Icons.Default.ArrowDownward
-                    } else {
-                        Icons.Default.ArrowUpward
-                    },
-                    contentDescription = if (sortOrder == SortOrder.NEWEST) {
-                        "Sorted by newest first"
-                    } else {
-                        "Sorted by oldest first"
-                    },
+                    imageVector =
+                        if (sortOrder == SortOrder.NEWEST) {
+                            Icons.Default.ArrowDownward
+                        } else {
+                            Icons.Default.ArrowUpward
+                        },
+                    contentDescription =
+                        if (sortOrder == SortOrder.NEWEST) {
+                            "Sorted by newest first"
+                        } else {
+                            "Sorted by oldest first"
+                        },
                 )
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-        ),
+        colors =
+            TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+            ),
     )
 }
 
@@ -298,7 +306,10 @@ private fun EntryList(
     // Detect when near the end of the list for infinite scroll
     val shouldLoadMore by remember {
         derivedStateOf {
-            val lastVisibleItemIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val lastVisibleItemIndex =
+                listState.layoutInfo.visibleItemsInfo
+                    .lastOrNull()
+                    ?.index ?: 0
             val totalItemsCount = listState.layoutInfo.totalItemsCount
             // Load more when we're within 5 items of the end
             lastVisibleItemIndex >= totalItemsCount - 5 && totalItemsCount > 0
@@ -333,9 +344,10 @@ private fun EntryList(
         if (hasMore || isLoadingMore) {
             item {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(
@@ -347,4 +359,3 @@ private fun EntryList(
         }
     }
 }
-

@@ -98,11 +98,12 @@ fun LoginScreenContent(
         color = MaterialTheme.colorScheme.background,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp)
-                .imePadding(),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 24.dp)
+                    .imePadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -133,13 +134,15 @@ fun LoginScreenContent(
                 placeholder = { Text("you@example.com") },
                 singleLine = true,
                 enabled = !uiState.isLoading,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next,
-                ),
-                keyboardActions = KeyboardActions(
-                    onNext = { focusManager.moveFocus(FocusDirection.Down) },
-                ),
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next,
+                    ),
+                keyboardActions =
+                    KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) },
+                    ),
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -152,40 +155,45 @@ fun LoginScreenContent(
                 label = { Text("Password") },
                 singleLine = true,
                 enabled = !uiState.isLoading,
-                visualTransformation = if (uiState.isPasswordVisible) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
+                visualTransformation =
+                    if (uiState.isPasswordVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
                 trailingIcon = {
                     IconButton(
                         onClick = onTogglePasswordVisibility,
                         enabled = !uiState.isLoading,
                     ) {
                         Icon(
-                            imageVector = if (uiState.isPasswordVisible) {
-                                Icons.Default.VisibilityOff
-                            } else {
-                                Icons.Default.Visibility
-                            },
-                            contentDescription = if (uiState.isPasswordVisible) {
-                                "Hide password"
-                            } else {
-                                "Show password"
-                            },
+                            imageVector =
+                                if (uiState.isPasswordVisible) {
+                                    Icons.Default.VisibilityOff
+                                } else {
+                                    Icons.Default.Visibility
+                                },
+                            contentDescription =
+                                if (uiState.isPasswordVisible) {
+                                    "Hide password"
+                                } else {
+                                    "Show password"
+                                },
                         )
                     }
                 },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        focusManager.clearFocus()
-                        onLogin()
-                    },
-                ),
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                    ),
+                keyboardActions =
+                    KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            onLogin()
+                        },
+                    ),
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -198,9 +206,10 @@ fun LoginScreenContent(
                     onLogin()
                 },
                 enabled = !uiState.isLoading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
             ) {
                 if (uiState.isLoading) {
                     CircularProgressIndicator(
@@ -256,11 +265,12 @@ private fun LoginScreenPreview() {
 private fun LoginScreenLoadingPreview() {
     LionReaderTheme {
         LoginScreenContent(
-            uiState = LoginUiState(
-                email = "user@example.com",
-                password = "password123",
-                isLoading = true,
-            ),
+            uiState =
+                LoginUiState(
+                    email = "user@example.com",
+                    password = "password123",
+                    isLoading = true,
+                ),
             onEmailChange = {},
             onPasswordChange = {},
             onTogglePasswordVisibility = {},
@@ -274,11 +284,12 @@ private fun LoginScreenLoadingPreview() {
 private fun LoginScreenErrorPreview() {
     LionReaderTheme {
         LoginScreenContent(
-            uiState = LoginUiState(
-                email = "user@example.com",
-                password = "wrong",
-                error = "Invalid email or password",
-            ),
+            uiState =
+                LoginUiState(
+                    email = "user@example.com",
+                    password = "wrong",
+                    error = "Invalid email or password",
+                ),
             onEmailChange = {},
             onPasswordChange = {},
             onTogglePasswordVisibility = {},

@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.SignalWifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -33,8 +32,10 @@ import androidx.compose.ui.unit.dp
 enum class ErrorType {
     /** Network connectivity error */
     NETWORK,
+
     /** API or server error */
     API,
+
     /** Generic error */
     GENERIC,
 }
@@ -62,20 +63,22 @@ fun ErrorState(
     retryButtonText: String = "Retry",
 ) {
     val icon = getIconForErrorType(errorType)
-    val iconTint = when (errorType) {
-        ErrorType.NETWORK -> MaterialTheme.colorScheme.onSurfaceVariant
-        ErrorType.API -> MaterialTheme.colorScheme.error
-        ErrorType.GENERIC -> MaterialTheme.colorScheme.error
-    }
+    val iconTint =
+        when (errorType) {
+            ErrorType.NETWORK -> MaterialTheme.colorScheme.onSurfaceVariant
+            ErrorType.API -> MaterialTheme.colorScheme.error
+            ErrorType.GENERIC -> MaterialTheme.colorScheme.error
+        }
 
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -113,9 +116,10 @@ fun ErrorState(
 
                 Button(
                     onClick = onRetry,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                    ),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                        ),
                 ) {
                     Text(text = retryButtonText)
                 }
@@ -140,9 +144,10 @@ fun InlineErrorState(
     onRetry: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(16.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
@@ -223,21 +228,19 @@ fun ApiErrorState(
 /**
  * Gets the default title for an error type.
  */
-private fun getDefaultTitle(errorType: ErrorType): String {
-    return when (errorType) {
+private fun getDefaultTitle(errorType: ErrorType): String =
+    when (errorType) {
         ErrorType.NETWORK -> "No Connection"
         ErrorType.API -> "Something Went Wrong"
         ErrorType.GENERIC -> "Error"
     }
-}
 
 /**
  * Gets the appropriate icon for an error type.
  */
-private fun getIconForErrorType(errorType: ErrorType): ImageVector {
-    return when (errorType) {
+private fun getIconForErrorType(errorType: ErrorType): ImageVector =
+    when (errorType) {
         ErrorType.NETWORK -> Icons.Default.CloudOff
         ErrorType.API -> Icons.Default.Error
         ErrorType.GENERIC -> Icons.Default.ErrorOutline
     }
-}

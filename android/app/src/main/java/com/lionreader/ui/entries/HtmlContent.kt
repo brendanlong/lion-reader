@@ -33,9 +33,10 @@ fun HtmlContent(
     val isDarkTheme = isSystemInDarkTheme()
 
     // Generate styled HTML with theme-appropriate colors
-    val styledHtml = remember(html, isDarkTheme) {
-        generateStyledHtml(html, isDarkTheme)
-    }
+    val styledHtml =
+        remember(html, isDarkTheme) {
+            generateStyledHtml(html, isDarkTheme)
+        }
 
     AndroidView(
         factory = { context ->
@@ -52,24 +53,25 @@ fun HtmlContent(
                 isHorizontalScrollBarEnabled = false
 
                 // Handle link clicks
-                webViewClient = object : WebViewClient() {
-                    @Deprecated("Deprecated in API 24, but we need to support API 26+")
-                    override fun shouldOverrideUrlLoading(
-                        view: WebView?,
-                        url: String?,
-                    ): Boolean {
-                        url?.let { onLinkClick(it) }
-                        return true // Prevent WebView from loading the URL
-                    }
+                webViewClient =
+                    object : WebViewClient() {
+                        @Deprecated("Deprecated in API 24, but we need to support API 26+")
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            url: String?,
+                        ): Boolean {
+                            url?.let { onLinkClick(it) }
+                            return true // Prevent WebView from loading the URL
+                        }
 
-                    override fun shouldOverrideUrlLoading(
-                        view: WebView?,
-                        request: WebResourceRequest?,
-                    ): Boolean {
-                        request?.url?.toString()?.let { onLinkClick(it) }
-                        return true // Prevent WebView from loading the URL
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: WebResourceRequest?,
+                        ): Boolean {
+                            request?.url?.toString()?.let { onLinkClick(it) }
+                            return true // Prevent WebView from loading the URL
+                        }
                     }
-                }
 
                 // Set background to transparent to match theme
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
@@ -97,7 +99,10 @@ fun HtmlContent(
  * @param isDarkTheme Whether dark theme is active
  * @return Complete HTML document with embedded CSS
  */
-private fun generateStyledHtml(html: String, isDarkTheme: Boolean): String {
+private fun generateStyledHtml(
+    html: String,
+    isDarkTheme: Boolean,
+): String {
     // Theme-specific colors
     val textColor = if (isDarkTheme) "#F9FAFB" else "#1F2937"
     val backgroundColor = if (isDarkTheme) "#1F2937" else "#FFFFFF"
@@ -277,5 +282,5 @@ private fun generateStyledHtml(html: String, isDarkTheme: Boolean): String {
             </div>
         </body>
         </html>
-    """.trimIndent()
+        """.trimIndent()
 }

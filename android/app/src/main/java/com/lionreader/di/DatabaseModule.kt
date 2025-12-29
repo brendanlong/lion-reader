@@ -23,7 +23,6 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
-
     /**
      * Provides the Room database instance.
      *
@@ -34,55 +33,45 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideLionReaderDatabase(
-        @ApplicationContext context: Context
-    ): LionReaderDatabase {
-        return Room.databaseBuilder(
-            context,
-            LionReaderDatabase::class.java,
-            LionReaderDatabase.DATABASE_NAME
-        )
+        @ApplicationContext context: Context,
+    ): LionReaderDatabase =
+        Room
+            .databaseBuilder(
+                context,
+                LionReaderDatabase::class.java,
+                LionReaderDatabase.DATABASE_NAME,
+            )
             // TODO: Add proper migrations before production release
             .fallbackToDestructiveMigration()
             .build()
-    }
 
     /**
      * Provides the EntryDao.
      */
     @Provides
-    fun provideEntryDao(database: LionReaderDatabase): EntryDao {
-        return database.entryDao()
-    }
+    fun provideEntryDao(database: LionReaderDatabase): EntryDao = database.entryDao()
 
     /**
      * Provides the EntryStateDao.
      */
     @Provides
-    fun provideEntryStateDao(database: LionReaderDatabase): EntryStateDao {
-        return database.entryStateDao()
-    }
+    fun provideEntryStateDao(database: LionReaderDatabase): EntryStateDao = database.entryStateDao()
 
     /**
      * Provides the PendingActionDao.
      */
     @Provides
-    fun providePendingActionDao(database: LionReaderDatabase): PendingActionDao {
-        return database.pendingActionDao()
-    }
+    fun providePendingActionDao(database: LionReaderDatabase): PendingActionDao = database.pendingActionDao()
 
     /**
      * Provides the SubscriptionDao.
      */
     @Provides
-    fun provideSubscriptionDao(database: LionReaderDatabase): SubscriptionDao {
-        return database.subscriptionDao()
-    }
+    fun provideSubscriptionDao(database: LionReaderDatabase): SubscriptionDao = database.subscriptionDao()
 
     /**
      * Provides the TagDao.
      */
     @Provides
-    fun provideTagDao(database: LionReaderDatabase): TagDao {
-        return database.tagDao()
-    }
+    fun provideTagDao(database: LionReaderDatabase): TagDao = database.tagDao()
 }
