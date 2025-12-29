@@ -8,9 +8,8 @@
 
 "use client";
 
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useQueryClient } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -548,64 +547,24 @@ function EntryContentBody({
  */
 export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProps) {
   const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
 
-  // Helper to update entry in all cached infinite queries
-  const updateEntryInAllLists = useCallback(
-    (
-      id: string,
-      updater: (entry: { id: string; read: boolean; starred: boolean }) => {
-        id: string;
-        read: boolean;
-        starred: boolean;
-      }
-    ) => {
-      // Get all cached infinite query data for entries.list
-      // tRPC query keys have the format [["entries", "list"], { input, type }]
-      const queries = queryClient.getQueriesData<{
-        pages: Array<{
-          items: Array<{ id: string; read: boolean; starred: boolean }>;
-          nextCursor?: string;
-        }>;
-        pageParams: unknown[];
-      }>({
-        queryKey: [["entries", "list"]],
-      });
-
-      // Update each cached query
-      for (const [queryKey, data] of queries) {
-        if (!data) continue;
-
-        const updatedData = {
-          ...data,
-          pages: data.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) => (item.id === id ? updater(item) : item)),
-          })),
-        };
-
-        queryClient.setQueryData(queryKey, updatedData);
-      }
-    },
-    [queryClient]
-  );
-
   // Mark read mutation with optimistic updates
+  // Note: normy automatically propagates entry changes to all cached queries
   const markReadMutation = trpc.entries.markRead.useMutation({
     onMutate: async (variables) => {
-      // Cancel in-flight queries
+      // Cancel in-flight query for optimistic update
       await utils.entries.get.cancel({ id: entryId });
-      await utils.entries.list.cancel();
 
-      // Snapshot current state
+      // Snapshot current state for rollback
       const previousData = utils.entries.get.getData({ id: entryId });
 
-      // Optimistically update individual entry query
+      // Optimistically update the current entry query for instant UI feedback
+      // Note: normy automatically propagates this change to all cached list queries
       utils.entries.get.setData({ id: entryId }, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -614,9 +573,6 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
         };
       });
 
-      // Also update entry in all cached list queries
-      updateEntryInAllLists(entryId, (entry) => ({ ...entry, read: variables.read }));
-
       return { previousData };
     },
     onError: (_error, _variables, context) => {
@@ -624,8 +580,6 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
       if (context?.previousData) {
         utils.entries.get.setData({ id: entryId }, context.previousData);
       }
-      // Re-fetch lists to restore correct state
-      utils.entries.list.invalidate();
       toast.error("Failed to update read status");
     },
     onSettled: () => {
@@ -635,10 +589,10 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
   });
 
   // Star/unstar mutations with optimistic updates
+  // Note: normy automatically propagates entry changes to all cached queries
   const starMutation = trpc.entries.star.useMutation({
     onMutate: async () => {
       await utils.entries.get.cancel({ id: entryId });
-      await utils.entries.list.cancel();
 
       const previousData = utils.entries.get.getData({ id: entryId });
 
@@ -650,17 +604,12 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
         };
       });
 
-      // Also update entry in all cached list queries
-      updateEntryInAllLists(entryId, (entry) => ({ ...entry, starred: true }));
-
       return { previousData };
     },
     onError: (_error, _variables, context) => {
       if (context?.previousData) {
         utils.entries.get.setData({ id: entryId }, context.previousData);
       }
-      // Re-fetch lists to restore correct state
-      utils.entries.list.invalidate();
       toast.error("Failed to star entry");
     },
   });
@@ -668,7 +617,6 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
   const unstarMutation = trpc.entries.unstar.useMutation({
     onMutate: async () => {
       await utils.entries.get.cancel({ id: entryId });
-      await utils.entries.list.cancel();
 
       const previousData = utils.entries.get.getData({ id: entryId });
 
@@ -680,17 +628,12 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
         };
       });
 
-      // Also update entry in all cached list queries
-      updateEntryInAllLists(entryId, (entry) => ({ ...entry, starred: false }));
-
       return { previousData };
     },
     onError: (_error, _variables, context) => {
       if (context?.previousData) {
         utils.entries.get.setData({ id: entryId }, context.previousData);
       }
-      // Re-fetch lists to restore correct state
-      utils.entries.list.invalidate();
       toast.error("Failed to unstar entry");
     },
   });
