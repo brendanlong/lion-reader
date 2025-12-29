@@ -25,23 +25,137 @@ export default function SavedArticlesPage() {
   const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("saved");
   const utils = trpc.useUtils();
 
-  // Mutations for keyboard actions
+  // Mutations for keyboard actions with optimistic updates
   const markReadMutation = trpc.saved.markRead.useMutation({
-    onSuccess: () => {
-      utils.saved.list.invalidate();
+    onMutate: async (variables) => {
+      // Cancel any in-flight queries
+      await utils.saved.list.cancel();
+
+      // Snapshot current state
+      const previousData = utils.saved.list.getInfiniteData({
+        unreadOnly: showUnreadOnly,
+      });
+
+      // Optimistically update articles
+      utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
+            ),
+          })),
+        };
+      });
+
+      // Also update individual article queries
+      for (const id of variables.ids) {
+        utils.saved.get.setData({ id }, (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            article: { ...oldData.article, read: variables.read },
+          };
+        });
+      }
+
+      return { previousData };
+    },
+    onError: (_error, variables, context) => {
+      // Rollback to previous state
+      if (context?.previousData) {
+        utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, context.previousData);
+      }
+      // Invalidate individual article queries to restore correct state
+      for (const id of variables.ids) {
+        utils.saved.get.invalidate({ id });
+      }
+    },
+    onSettled: () => {
+      // Invalidate count as it needs server data
       utils.saved.count.invalidate();
     },
   });
 
   const starMutation = trpc.saved.star.useMutation({
-    onSuccess: () => {
-      utils.saved.list.invalidate();
+    onMutate: async (variables) => {
+      await utils.saved.list.cancel();
+
+      const previousData = utils.saved.list.getInfiniteData({
+        unreadOnly: showUnreadOnly,
+      });
+
+      utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              item.id === variables.id ? { ...item, starred: true } : item
+            ),
+          })),
+        };
+      });
+
+      // Also update individual article query
+      utils.saved.get.setData({ id: variables.id }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          article: { ...oldData.article, starred: true },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, variables, context) => {
+      if (context?.previousData) {
+        utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, context.previousData);
+      }
+      utils.saved.get.invalidate({ id: variables.id });
     },
   });
 
   const unstarMutation = trpc.saved.unstar.useMutation({
-    onSuccess: () => {
-      utils.saved.list.invalidate();
+    onMutate: async (variables) => {
+      await utils.saved.list.cancel();
+
+      const previousData = utils.saved.list.getInfiniteData({
+        unreadOnly: showUnreadOnly,
+      });
+
+      utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              item.id === variables.id ? { ...item, starred: false } : item
+            ),
+          })),
+        };
+      });
+
+      // Also update individual article query
+      utils.saved.get.setData({ id: variables.id }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          article: { ...oldData.article, starred: false },
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, variables, context) => {
+      if (context?.previousData) {
+        utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, context.previousData);
+      }
+      utils.saved.get.invalidate({ id: variables.id });
     },
   });
 
