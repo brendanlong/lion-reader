@@ -70,7 +70,7 @@ export interface NarrationSettings {
    * When enabled, content is processed by an LLM to improve TTS quality
    * (expanding abbreviations, formatting URLs, etc.).
    * When disabled, uses simple HTML-to-text conversion.
-   * Default: true (if available on server)
+   * Default: false
    */
   useLlmNormalization: boolean;
 }
@@ -86,7 +86,7 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   pitch: 1.0,
   highlightEnabled: true,
   autoScrollEnabled: true,
-  useLlmNormalization: true,
+  useLlmNormalization: false,
 };
 
 /**
