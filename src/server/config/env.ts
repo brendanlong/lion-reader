@@ -20,8 +20,12 @@ export const signupConfig = {
 /**
  * Email ingest configuration.
  * INGEST_EMAIL_DOMAIN is the domain for ingest email addresses.
+ * EMAIL_WEBHOOK_SECRET is the shared secret for authenticating email webhook requests.
  */
 export const ingestConfig = {
   /** Domain for ingest email addresses. Email format: {token}@{domain} */
   emailDomain: process.env.INGEST_EMAIL_DOMAIN || "ingest.lionreader.com",
+
+  /** Shared secret for email webhook authentication. Must be set for webhooks to work. */
+  webhookSecret: process.env.EMAIL_WEBHOOK_SECRET,
 };
