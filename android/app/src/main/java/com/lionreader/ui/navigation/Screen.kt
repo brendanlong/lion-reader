@@ -74,7 +74,10 @@ sealed class Screen(
          * @param entryId The entry ID to display
          * @param listContext The route from which this entry was opened, for swipe navigation context
          */
-        fun createRoute(entryId: String, listContext: String? = null): String {
+        fun createRoute(
+            entryId: String,
+            listContext: String? = null,
+        ): String {
             val base = "entry/$entryId"
             return if (listContext != null) {
                 "$base?listContext=$listContext"
