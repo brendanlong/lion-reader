@@ -297,6 +297,13 @@ export const entriesRouter = createTRPCRouter({
         conditions.push(eq(userEntries.starred, true));
       }
 
+      // Apply spam filter: exclude spam entries unless user has showSpam enabled
+      // Filter: entries shown if (NOT is_spam) OR (user.showSpam is true)
+      const showSpam = ctx.session.user.showSpam;
+      if (!showSpam) {
+        conditions.push(eq(entries.isSpam, false));
+      }
+
       // Sort by publishedAt, falling back to fetchedAt if null
       // Use entry.id as tiebreaker for stable ordering
       const sortColumn = sql`COALESCE(${entries.publishedAt}, ${entries.fetchedAt})`;

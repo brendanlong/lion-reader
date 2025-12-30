@@ -12,6 +12,7 @@ export {
   revokeSession,
   revokeSessionByToken,
   revokeAllUserSessions,
+  invalidateUserSessionCaches,
   SESSION_DURATION_DAYS,
   type SessionData,
 } from "./session";
