@@ -26,6 +26,30 @@ data class EntryDetailUiState(
 )
 
 /**
+ * Navigation state for swipe navigation between entries.
+ */
+data class SwipeNavigationState(
+    /** List of entry IDs in display order */
+    val entryIds: List<String> = emptyList(),
+    /** Current position in the entry IDs list */
+    val currentIndex: Int = -1,
+    /** The list context route (e.g., "all", "starred", "feed/xxx") */
+    val listContext: String? = null,
+) {
+    /** Whether there is a previous entry to navigate to */
+    val hasPrevious: Boolean get() = currentIndex > 0
+
+    /** Whether there is a next entry to navigate to */
+    val hasNext: Boolean get() = currentIndex >= 0 && currentIndex < entryIds.size - 1
+
+    /** ID of the previous entry, or null if at the beginning */
+    val previousEntryId: String? get() = if (hasPrevious) entryIds[currentIndex - 1] else null
+
+    /** ID of the next entry, or null if at the end */
+    val nextEntryId: String? get() = if (hasNext) entryIds[currentIndex + 1] else null
+}
+
+/**
  * Events emitted by the ViewModel that require Activity handling.
  *
  * These events are one-shot and need to be handled by the Activity
@@ -72,6 +96,11 @@ class EntryDetailViewModel
         private val entryId: String = savedStateHandle.get<String>(Screen.ARG_ENTRY_ID) ?: ""
 
         /**
+         * The list context for swipe navigation, retrieved from navigation arguments.
+         */
+        private val listContext: String? = savedStateHandle.get<String>(Screen.ARG_LIST_CONTEXT)
+
+        /**
          * UI state for the entry detail screen.
          */
         private val _uiState = MutableStateFlow(EntryDetailUiState())
@@ -84,6 +113,12 @@ class EntryDetailViewModel
         val entry: StateFlow<EntryWithState?> = _entry.asStateFlow()
 
         /**
+         * Swipe navigation state for navigating between entries.
+         */
+        private val _swipeNavState = MutableStateFlow(SwipeNavigationState())
+        val swipeNavState: StateFlow<SwipeNavigationState> = _swipeNavState.asStateFlow()
+
+        /**
          * Channel for one-shot events that need Activity handling.
          */
         private val _events = Channel<EntryDetailEvent>(Channel.BUFFERED)
@@ -92,12 +127,31 @@ class EntryDetailViewModel
         init {
             if (entryId.isNotEmpty()) {
                 loadEntry()
+                loadSwipeNavigationContext()
             } else {
                 _uiState.value =
                     EntryDetailUiState(
                         isLoading = false,
                         errorMessage = "Invalid entry ID",
                     )
+            }
+        }
+
+        /**
+         * Loads the swipe navigation context (entry IDs for the current list).
+         */
+        private fun loadSwipeNavigationContext() {
+            if (listContext == null) return
+
+            viewModelScope.launch {
+                val entryIds = entryRepository.getEntryIdsForContext(listContext)
+                val currentIndex = entryIds.indexOf(entryId)
+
+                _swipeNavState.value = SwipeNavigationState(
+                    entryIds = entryIds,
+                    currentIndex = currentIndex,
+                    listContext = listContext,
+                )
             }
         }
 

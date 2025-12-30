@@ -118,4 +118,45 @@ interface EntryDao {
      */
     @Query("SELECT COUNT(*) FROM entries WHERE feedId = :feedId")
     suspend fun getEntryCountForFeed(feedId: String): Int
+
+    /**
+     * Gets entry IDs ordered by the same criteria as getEntries.
+     *
+     * Used for swipe navigation to determine previous/next entries.
+     * Returns only IDs for efficiency since we just need navigation context.
+     *
+     * @param feedId Optional filter by feed ID
+     * @param tagId Optional filter by tag ID (entries from feeds with this tag)
+     * @param unreadOnly If true, only return unread entries
+     * @param starredOnly If true, only return starred entries
+     * @param sortOrder Sort direction: "newest" or "oldest"
+     * @return List of entry IDs in display order
+     */
+    @Query(
+        """
+        SELECT e.id
+        FROM entries e
+        LEFT JOIN entry_states s ON e.id = s.entryId
+        WHERE (:feedId IS NULL OR e.feedId = :feedId)
+          AND (:tagId IS NULL OR e.feedId IN (
+              SELECT sub.feedId FROM subscriptions sub
+              JOIN subscription_tags st ON sub.id = st.subscriptionId
+              WHERE st.tagId = :tagId
+          ))
+          AND (:unreadOnly = 0 OR COALESCE(s.read, 0) = 0)
+          AND (:starredOnly = 0 OR COALESCE(s.starred, 0) = 1)
+        ORDER BY
+            CASE WHEN :sortOrder = 'newest' THEN COALESCE(e.publishedAt, e.fetchedAt) END DESC,
+            CASE WHEN :sortOrder = 'newest' THEN e.id END DESC,
+            CASE WHEN :sortOrder = 'oldest' THEN COALESCE(e.publishedAt, e.fetchedAt) END ASC,
+            CASE WHEN :sortOrder = 'oldest' THEN e.id END ASC
+        """,
+    )
+    suspend fun getEntryIds(
+        feedId: String?,
+        tagId: String?,
+        unreadOnly: Boolean,
+        starredOnly: Boolean,
+        sortOrder: String,
+    ): List<String>
 }

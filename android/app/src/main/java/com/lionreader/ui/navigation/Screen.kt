@@ -61,13 +61,27 @@ sealed class Screen(
 
     /**
      * Entry detail screen showing full article content.
-     * Requires an entry ID argument.
+     * Requires an entry ID argument and optional list context for swipe navigation.
+     *
+     * @param entryId The ID of the entry to display
+     * @param listContext The route context from which this entry was opened (e.g., "all", "starred", "feed/xxx")
+     *                    Used to determine adjacent entries for swipe navigation.
      */
-    data object EntryDetail : Screen("entry/{entryId}") {
+    data object EntryDetail : Screen("entry/{entryId}?listContext={listContext}") {
         /**
-         * Creates the route with the given entry ID.
+         * Creates the route with the given entry ID and optional list context.
+         *
+         * @param entryId The entry ID to display
+         * @param listContext The route from which this entry was opened, for swipe navigation context
          */
-        fun createRoute(entryId: String): String = "entry/$entryId"
+        fun createRoute(entryId: String, listContext: String? = null): String {
+            val base = "entry/$entryId"
+            return if (listContext != null) {
+                "$base?listContext=$listContext"
+            } else {
+                base
+            }
+        }
     }
 
     companion object {
@@ -75,6 +89,12 @@ sealed class Screen(
          * Route argument name for entry ID in EntryDetail screen.
          */
         const val ARG_ENTRY_ID = "entryId"
+
+        /**
+         * Route argument name for list context in EntryDetail screen.
+         * Contains the route from which entry detail was opened (e.g., "all", "starred", "feed/xxx").
+         */
+        const val ARG_LIST_CONTEXT = "listContext"
 
         /**
          * Route argument name for tag ID in Tag screen.
