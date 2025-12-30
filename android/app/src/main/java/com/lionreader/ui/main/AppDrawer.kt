@@ -139,12 +139,10 @@ fun AppDrawer(
                             TagColorIndicator(color = tag.color)
                         },
                         badge = {
-                            if (tag.feedCount > 0) {
-                                Text(
-                                    text = tag.feedCount.toString(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            if (tag.unreadCount > 0) {
+                                Badge {
+                                    Text(formatCount(tag.unreadCount))
+                                }
                             }
                         },
                         selected = currentRoute == tagRoute,

@@ -29,6 +29,7 @@ import com.lionreader.data.db.entities.TagEntity
  * Database version history:
  * - Version 1: Initial schema with all core entities
  * - Version 2: Remove foreign key from entries.feedId to feeds.id
+ * - Version 3: Add unreadCount column to tags table
  */
 @Database(
     entities = [
@@ -76,7 +77,7 @@ abstract class LionReaderDatabase : RoomDatabase() {
          *
          * Increment when schema changes require a migration.
          */
-        const val VERSION = 2
+        const val VERSION = 3
 
         /**
          * Database file name.

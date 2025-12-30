@@ -151,7 +151,8 @@ class SubscriptionRepository
                             id = tagDto.id,
                             name = tagDto.name,
                             color = tagDto.color,
-                            feedCount = 0, // Will be calculated separately if needed
+                            feedCount = 0, // Will be calculated separately from tags sync
+                            unreadCount = 0, // Will be calculated separately from tags sync
                         )
                     // Store subscription-tag relationship
                     subscriptionTags.add(

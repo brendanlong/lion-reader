@@ -13,6 +13,8 @@ data class TagDto(
     val color: String? = null, // hex color like "#ff6b6b"
     @SerialName("feedCount")
     val feedCount: Int = 0,
+    @SerialName("unreadCount")
+    val unreadCount: Int = 0,
 )
 
 /**
@@ -20,5 +22,5 @@ data class TagDto(
  */
 @Serializable
 data class TagsResponse(
-    val tags: List<TagDto>,
+    val items: List<TagDto>,
 )

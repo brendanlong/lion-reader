@@ -59,7 +59,7 @@ class TagRepository
         suspend fun syncTags(): SyncResult =
             when (val result = api.listTags()) {
                 is ApiResult.Success -> {
-                    val tags = result.data.tags
+                    val tags = result.data.items
                     updateLocalDatabase(tags)
                     SyncResult.Success
                 }
@@ -88,6 +88,7 @@ class TagRepository
                         name = dto.name,
                         color = dto.color,
                         feedCount = dto.feedCount,
+                        unreadCount = dto.unreadCount,
                     )
                 }
             tagDao.insertAll(tagEntities)
