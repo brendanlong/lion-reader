@@ -55,6 +55,7 @@ class ApiClient
                 isLenient = true
                 encodeDefaults = true
                 coerceInputValues = true
+                explicitNulls = false // Don't encode null values - server expects omitted fields, not null
             }
 
         val httpClient: HttpClient =
