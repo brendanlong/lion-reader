@@ -400,31 +400,33 @@ export function NarrationSettings() {
               </div>
             </div>
 
-            {/* Pitch Slider */}
-            <div>
-              <label
-                htmlFor="narration-pitch"
-                className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-              >
-                Pitch: {settings.pitch.toFixed(1)}x
-              </label>
-              <input
-                id="narration-pitch"
-                type="range"
-                min="0.5"
-                max="2"
-                step="0.1"
-                value={settings.pitch}
-                onChange={handlePitchChange}
-                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
-              />
-              <div className="mt-1 flex justify-between text-xs text-zinc-400 dark:text-zinc-500">
-                <span>0.5x</span>
-                <span>1.0x</span>
-                <span>1.5x</span>
-                <span>2.0x</span>
+            {/* Pitch Slider (browser voices only - Piper doesn't support pitch control) */}
+            {settings.provider === "browser" && (
+              <div>
+                <label
+                  htmlFor="narration-pitch"
+                  className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                >
+                  Pitch: {settings.pitch.toFixed(1)}x
+                </label>
+                <input
+                  id="narration-pitch"
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={settings.pitch}
+                  onChange={handlePitchChange}
+                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
+                />
+                <div className="mt-1 flex justify-between text-xs text-zinc-400 dark:text-zinc-500">
+                  <span>0.5x</span>
+                  <span>1.0x</span>
+                  <span>1.5x</span>
+                  <span>2.0x</span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Processing Settings - only shown if AI text processing is available */}
             {isAiTextProcessingAvailable && (
