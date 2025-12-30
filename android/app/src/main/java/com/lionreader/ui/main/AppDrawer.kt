@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Badge
@@ -42,6 +43,7 @@ import com.lionreader.ui.navigation.Screen
  * Displays navigation items for:
  * - All entries
  * - Starred entries
+ * - Saved Articles
  * - Tags with colored indicators
  * - Feeds/Subscriptions with unread counts
  * - Sign Out option
@@ -51,7 +53,9 @@ import com.lionreader.ui.navigation.Screen
  * @param currentRoute Current navigation route for selection state
  * @param totalUnreadCount Total unread count for "All" item badge
  * @param starredUnreadCount Unread count for starred entries badge
+ * @param savedUnreadCount Unread count for saved articles badge
  * @param onNavigate Callback when a navigation item is selected
+ * @param onNavigateToSaved Callback when Saved Articles is clicked
  * @param onSignOut Callback when sign out is clicked
  * @param modifier Modifier for the drawer sheet
  */
@@ -62,7 +66,9 @@ fun AppDrawer(
     currentRoute: String,
     totalUnreadCount: Int,
     starredUnreadCount: Int,
+    savedUnreadCount: Int,
     onNavigate: (String) -> Unit,
+    onNavigateToSaved: () -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -117,6 +123,27 @@ fun AppDrawer(
                 },
                 selected = currentRoute == Screen.Starred.route,
                 onClick = { onNavigate(Screen.Starred.route) },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+            )
+
+            // Saved Articles
+            NavigationDrawerItem(
+                label = { Text("Saved Articles") },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Bookmark,
+                        contentDescription = null,
+                    )
+                },
+                badge = {
+                    if (savedUnreadCount > 0) {
+                        Badge {
+                            Text(formatCount(savedUnreadCount))
+                        }
+                    }
+                },
+                selected = currentRoute == Screen.SavedArticles.route,
+                onClick = onNavigateToSaved,
                 modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
             )
 

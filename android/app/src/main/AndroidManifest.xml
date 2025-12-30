@@ -48,6 +48,20 @@
                     android:pathPrefix="/callback" />
             </intent-filter>
         </activity>
+
+        <!-- Share receiver activity for saving articles from other apps -->
+        <activity
+            android:name=".ShareReceiverActivity"
+            android:exported="true"
+            android:theme="@style/Theme.LionReader.Translucent"
+            android:excludeFromRecents="true"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>
