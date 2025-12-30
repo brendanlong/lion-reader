@@ -18,4 +18,6 @@ data class TagEntity(
     val color: String?,
     /** Number of subscriptions with this tag */
     val feedCount: Int,
+    /** Number of unread entries across all subscriptions with this tag */
+    val unreadCount: Int,
 )
