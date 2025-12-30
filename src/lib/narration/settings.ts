@@ -95,7 +95,7 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   highlightEnabled: true,
   autoScrollEnabled: true,
   useLlmNormalization: false,
-  sentenceGapSeconds: 0.3,
+  sentenceGapSeconds: 0.1,
 };
 
 /**

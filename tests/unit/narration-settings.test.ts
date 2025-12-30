@@ -308,7 +308,7 @@ describe("DEFAULT_NARRATION_SETTINGS", () => {
     expect(DEFAULT_NARRATION_SETTINGS.pitch).toBe(1.0);
     expect(DEFAULT_NARRATION_SETTINGS.highlightEnabled).toBe(true);
     expect(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled).toBe(true);
-    expect(DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds).toBe(0.3);
+    expect(DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds).toBe(0.1);
   });
 });
 
