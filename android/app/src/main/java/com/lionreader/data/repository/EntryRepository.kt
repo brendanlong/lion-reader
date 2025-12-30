@@ -649,7 +649,8 @@ class EntryRepository
                             id = tagDto.id,
                             name = tagDto.name,
                             color = tagDto.color,
-                            feedCount = 0, // Will be calculated separately if needed
+                            feedCount = 0, // Will be calculated separately from tags sync
+                            unreadCount = 0, // Will be calculated separately from tags sync
                         )
                     // Store subscription-tag relationship
                     subscriptionTags.add(
@@ -679,7 +680,7 @@ class EntryRepository
         private suspend fun syncTags(): SyncResult =
             when (val result = api.listTags()) {
                 is ApiResult.Success -> {
-                    val tags = result.data.tags
+                    val tags = result.data.items
                     updateLocalTags(tags)
                     SyncResult.Success
                 }
@@ -708,6 +709,7 @@ class EntryRepository
                         name = dto.name,
                         color = dto.color,
                         feedCount = dto.feedCount,
+                        unreadCount = dto.unreadCount,
                     )
                 }
             tagDao.insertAll(tagEntities)
