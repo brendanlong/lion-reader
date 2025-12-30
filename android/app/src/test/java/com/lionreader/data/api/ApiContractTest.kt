@@ -57,6 +57,15 @@ class ApiContractTest {
             PathWithMethod("POST", "entries/{id}/star"),
             PathWithMethod("DELETE", "entries/{id}/star"),
             PathWithMethod("GET", "entries/starred/count"),
+            // Saved articles endpoints
+            PathWithMethod("POST", "saved"),
+            PathWithMethod("GET", "saved"),
+            PathWithMethod("GET", "saved/{id}"),
+            PathWithMethod("DELETE", "saved/{id}"),
+            PathWithMethod("POST", "saved/mark-read"),
+            PathWithMethod("POST", "saved/{id}/star"),
+            PathWithMethod("DELETE", "saved/{id}/star"),
+            PathWithMethod("GET", "saved/count"),
         )
 
     @BeforeAll

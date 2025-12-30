@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
  * @param onNavigateToEntry Callback when an entry is selected for detail view.
  *                          Parameters: (entryId, listContext) where listContext is the current route
  *                          for swipe navigation support.
+ * @param onNavigateToSaved Callback when Saved Articles is selected from drawer
  * @param mainViewModel ViewModel for main screen state
  * @param drawerViewModel ViewModel for drawer data
  * @param modifier Modifier for the screen
@@ -30,6 +31,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun MainScreen(
     onNavigateToEntry: (entryId: String, listContext: String) -> Unit,
+    onNavigateToSaved: () -> Unit,
     mainViewModel: MainViewModel = hiltViewModel(),
     drawerViewModel: DrawerViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
@@ -39,6 +41,7 @@ fun MainScreen(
     val tags by drawerViewModel.tags.collectAsStateWithLifecycle()
     val totalUnreadCount by drawerViewModel.totalUnreadCount.collectAsStateWithLifecycle()
     val starredUnreadCount by drawerViewModel.starredUnreadCount.collectAsStateWithLifecycle()
+    val savedUnreadCount by drawerViewModel.savedUnreadCount.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -64,11 +67,18 @@ fun MainScreen(
                 currentRoute = uiState.currentRoute,
                 totalUnreadCount = totalUnreadCount,
                 starredUnreadCount = starredUnreadCount,
+                savedUnreadCount = savedUnreadCount,
                 onNavigate = { route ->
                     mainViewModel.navigateTo(route)
                     scope.launch {
                         drawerState.close()
                     }
+                },
+                onNavigateToSaved = {
+                    scope.launch {
+                        drawerState.close()
+                    }
+                    onNavigateToSaved()
                 },
                 onSignOut = {
                     drawerViewModel.signOut()

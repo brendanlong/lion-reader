@@ -13,4 +13,15 @@
         <!-- Enable edge-to-edge -->
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!--
+        Translucent theme for share receiver activity.
+        Shows a dialog-style overlay while saving articles.
+    -->
+    <style name="Theme.LionReader.Translucent" parent="android:Theme.Material.Light.Dialog">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
 </resources>

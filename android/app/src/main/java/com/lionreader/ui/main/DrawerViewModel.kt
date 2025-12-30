@@ -6,6 +6,7 @@ import com.lionreader.data.db.entities.TagEntity
 import com.lionreader.data.db.relations.SubscriptionWithFeed
 import com.lionreader.data.repository.AuthRepository
 import com.lionreader.data.repository.EntryRepository
+import com.lionreader.data.repository.SavedArticleRepository
 import com.lionreader.data.repository.SubscriptionRepository
 import com.lionreader.data.repository.TagRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,6 +33,7 @@ class DrawerViewModel
         private val tagRepository: TagRepository,
         private val authRepository: AuthRepository,
         private val entryRepository: EntryRepository,
+        private val savedArticleRepository: SavedArticleRepository,
     ) : ViewModel() {
         /**
          * All subscriptions with their feed information.
@@ -86,6 +88,14 @@ class DrawerViewModel
         val starredUnreadCount: StateFlow<Int> = _starredUnreadCount.asStateFlow()
 
         /**
+         * Unread count for saved articles.
+         *
+         * Fetched from the server when refreshData() is called.
+         */
+        private val _savedUnreadCount = MutableStateFlow(0)
+        val savedUnreadCount: StateFlow<Int> = _savedUnreadCount.asStateFlow()
+
+        /**
          * Signs out the current user.
          *
          * Clears the session and local data. The auth state change will
@@ -103,7 +113,7 @@ class DrawerViewModel
         }
 
         /**
-         * Syncs subscriptions, tags, and starred count from the server.
+         * Syncs subscriptions, tags, starred count, and saved articles count from the server.
          *
          * Called when the drawer is opened to refresh data.
          */
@@ -113,6 +123,9 @@ class DrawerViewModel
                 tagRepository.syncTags()
                 entryRepository.fetchStarredCount()?.let { count ->
                     _starredUnreadCount.value = count.unread
+                }
+                savedArticleRepository.getCount()?.let { count ->
+                    _savedUnreadCount.value = count.unread
                 }
             }
         }
