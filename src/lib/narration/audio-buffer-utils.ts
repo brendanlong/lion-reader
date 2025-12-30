@@ -13,7 +13,7 @@
  * Default silence gap between sentences in seconds.
  * This provides a natural pause between sentences.
  */
-export const DEFAULT_SENTENCE_GAP_SECONDS = 0.3;
+export const DEFAULT_SENTENCE_GAP_SECONDS = 0.1;
 
 /**
  * Minimum pre-buffer duration in seconds.
