@@ -14,6 +14,8 @@ import com.lionreader.data.repository.AuthRepository
 import com.lionreader.ui.auth.LoginScreen
 import com.lionreader.ui.entries.EntryDetailScreen
 import com.lionreader.ui.main.MainScreen
+import com.lionreader.ui.saved.SavedArticleDetailScreen
+import com.lionreader.ui.saved.SavedArticlesListScreen
 
 /**
  * Main navigation graph for the app.
@@ -26,6 +28,8 @@ import com.lionreader.ui.main.MainScreen
  * - Login: Entry point for unauthenticated users
  * - Main: Container with navigation drawer, hosts entry list views
  * - EntryDetail: Full article view with back navigation
+ * - SavedArticles: List of saved articles for later reading
+ * - SavedArticleDetail: Full saved article view with back navigation
  *
  * @param authRepository Repository for checking authentication state
  * @param navController Navigation controller, uses remembered one by default
@@ -83,6 +87,9 @@ fun LionReaderNavGraph(
                 onNavigateToEntry = { entryId, listContext ->
                     navController.navigate(Screen.EntryDetail.createRoute(entryId, listContext))
                 },
+                onNavigateToSaved = {
+                    navController.navigate(Screen.SavedArticles.route)
+                },
             )
         }
 
@@ -109,6 +116,31 @@ fun LionReaderNavGraph(
                         popUpTo(Screen.EntryDetail.route) { inclusive = true }
                     }
                 },
+            )
+        }
+
+        // Saved articles list screen
+        composable(route = Screen.SavedArticles.route) {
+            SavedArticlesListScreen(
+                onArticleClick = { articleId ->
+                    navController.navigate(Screen.SavedArticleDetail.createRoute(articleId))
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        // Saved article detail screen
+        composable(
+            route = Screen.SavedArticleDetail.route,
+            arguments =
+                listOf(
+                    navArgument(Screen.ARG_SAVED_ARTICLE_ID) {
+                        type = NavType.StringType
+                    },
+                ),
+        ) {
+            SavedArticleDetailScreen(
+                onBack = { navController.popBackStack() },
             )
         }
     }

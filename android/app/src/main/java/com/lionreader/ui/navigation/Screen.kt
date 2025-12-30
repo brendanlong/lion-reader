@@ -87,6 +87,24 @@ sealed class Screen(
         }
     }
 
+    /**
+     * Saved articles list view - shows articles saved for later reading.
+     */
+    data object SavedArticles : Screen("saved") {
+        const val TITLE = "Saved Articles"
+    }
+
+    /**
+     * Saved article detail screen showing full saved article content.
+     * Requires a saved article ID argument.
+     */
+    data object SavedArticleDetail : Screen("saved/{savedArticleId}") {
+        /**
+         * Creates the route with the given saved article ID.
+         */
+        fun createRoute(savedArticleId: String): String = "saved/$savedArticleId"
+    }
+
     companion object {
         /**
          * Route argument name for entry ID in EntryDetail screen.
@@ -108,5 +126,10 @@ sealed class Screen(
          * Route argument name for feed ID in Feed screen.
          */
         const val ARG_FEED_ID = "feedId"
+
+        /**
+         * Route argument name for saved article ID in SavedArticleDetail screen.
+         */
+        const val ARG_SAVED_ARTICLE_ID = "savedArticleId"
     }
 }
