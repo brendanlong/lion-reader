@@ -61,6 +61,7 @@ function createAuthContext(userId: string): Context {
         emailVerifiedAt: null,
         passwordHash: "test-hash",
         inviteId: null,
+        showSpam: false,
         createdAt: now,
         updatedAt: now,
       },
