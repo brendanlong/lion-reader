@@ -30,6 +30,7 @@ export const ErrorCodes = {
   SUBSCRIPTION_NOT_FOUND: "SUBSCRIPTION_NOT_FOUND",
   TAG_NOT_FOUND: "TAG_NOT_FOUND",
   SAVED_ARTICLE_NOT_FOUND: "SAVED_ARTICLE_NOT_FOUND",
+  INGEST_ADDRESS_NOT_FOUND: "INGEST_ADDRESS_NOT_FOUND",
 
   // Validation errors (400)
   VALIDATION_ERROR: "VALIDATION_ERROR",
@@ -43,6 +44,7 @@ export const ErrorCodes = {
   INVITE_INVALID: "INVITE_INVALID",
   INVITE_EXPIRED: "INVITE_EXPIRED",
   INVITE_ALREADY_USED: "INVITE_ALREADY_USED",
+  MAX_INGEST_ADDRESSES_REACHED: "MAX_INGEST_ADDRESSES_REACHED",
 
   // Conflict errors (409)
   ALREADY_SUBSCRIBED: "ALREADY_SUBSCRIBED",
@@ -87,6 +89,7 @@ const errorCodeToTRPCCode: Record<
   SUBSCRIPTION_NOT_FOUND: "NOT_FOUND",
   TAG_NOT_FOUND: "NOT_FOUND",
   SAVED_ARTICLE_NOT_FOUND: "NOT_FOUND",
+  INGEST_ADDRESS_NOT_FOUND: "NOT_FOUND",
   VALIDATION_ERROR: "BAD_REQUEST",
   INVALID_EMAIL: "BAD_REQUEST",
   WEAK_PASSWORD: "BAD_REQUEST",
@@ -98,6 +101,7 @@ const errorCodeToTRPCCode: Record<
   INVITE_INVALID: "BAD_REQUEST",
   INVITE_EXPIRED: "BAD_REQUEST",
   INVITE_ALREADY_USED: "BAD_REQUEST",
+  MAX_INGEST_ADDRESSES_REACHED: "BAD_REQUEST",
   ALREADY_SUBSCRIBED: "CONFLICT",
   OAUTH_ALREADY_LINKED: "CONFLICT",
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
@@ -156,6 +160,15 @@ export const errors = {
     createError(ErrorCodes.SUBSCRIPTION_NOT_FOUND, "Subscription not found"),
 
   tagNotFound: () => createError(ErrorCodes.TAG_NOT_FOUND, "Tag not found"),
+
+  ingestAddressNotFound: () =>
+    createError(ErrorCodes.INGEST_ADDRESS_NOT_FOUND, "Ingest address not found"),
+
+  maxIngestAddressesReached: (limit: number) =>
+    createError(
+      ErrorCodes.MAX_INGEST_ADDRESSES_REACHED,
+      `Maximum number of ingest addresses (${limit}) reached`
+    ),
 
   validation: (message: string, details?: Record<string, unknown>) =>
     createError(ErrorCodes.VALIDATION_ERROR, message, details),

@@ -16,3 +16,12 @@ export const signupConfig = {
   /** Secret for admin API endpoints. If not set, admin endpoints are disabled. */
   allowlistSecret: process.env.ALLOWLIST_SECRET,
 };
+
+/**
+ * Email ingest configuration.
+ * INGEST_EMAIL_DOMAIN is the domain for ingest email addresses.
+ */
+export const ingestConfig = {
+  /** Domain for ingest email addresses. Email format: {token}@{domain} */
+  emailDomain: process.env.INGEST_EMAIL_DOMAIN || "ingest.lionreader.com",
+};
