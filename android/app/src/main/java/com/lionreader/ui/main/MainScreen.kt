@@ -20,14 +20,16 @@ import kotlinx.coroutines.launch
  * EntryListScreen. Manages drawer open/close state and handles navigation
  * between different entry list views.
  *
- * @param onNavigateToEntry Callback when an entry is selected for detail view
+ * @param onNavigateToEntry Callback when an entry is selected for detail view.
+ *                          Parameters: (entryId, listContext) where listContext is the current route
+ *                          for swipe navigation support.
  * @param mainViewModel ViewModel for main screen state
  * @param drawerViewModel ViewModel for drawer data
  * @param modifier Modifier for the screen
  */
 @Composable
 fun MainScreen(
-    onNavigateToEntry: (String) -> Unit,
+    onNavigateToEntry: (entryId: String, listContext: String) -> Unit,
     mainViewModel: MainViewModel = hiltViewModel(),
     drawerViewModel: DrawerViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
@@ -81,7 +83,7 @@ fun MainScreen(
     ) {
         EntryListScreen(
             currentRoute = uiState.currentRoute,
-            onEntryClick = onNavigateToEntry,
+            onEntryClick = { entryId -> onNavigateToEntry(entryId, uiState.currentRoute) },
             onDrawerOpen = {
                 scope.launch {
                     drawerState.open()
