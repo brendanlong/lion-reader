@@ -13,3 +13,12 @@ export {
   type InboundEmail,
   type ProcessEmailResult,
 } from "./process-inbound";
+
+export {
+  attemptUnsubscribe,
+  sendUnsubscribeEmail,
+  sendUnsubscribePost,
+  parseMailtoUrl,
+  getLatestUnsubscribeMailto,
+  type UnsubscribeResult,
+} from "./unsubscribe";
