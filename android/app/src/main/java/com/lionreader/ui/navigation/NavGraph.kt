@@ -80,13 +80,13 @@ fun LionReaderNavGraph(
         // Main screen with navigation drawer
         composable(route = Screen.Main.route) {
             MainScreen(
-                onNavigateToEntry = { entryId ->
-                    navController.navigate(Screen.EntryDetail.createRoute(entryId))
+                onNavigateToEntry = { entryId, listContext ->
+                    navController.navigate(Screen.EntryDetail.createRoute(entryId, listContext))
                 },
             )
         }
 
-        // Entry detail screen
+        // Entry detail screen with swipe navigation support
         composable(
             route = Screen.EntryDetail.route,
             arguments =
@@ -94,10 +94,21 @@ fun LionReaderNavGraph(
                     navArgument(Screen.ARG_ENTRY_ID) {
                         type = NavType.StringType
                     },
+                    navArgument(Screen.ARG_LIST_CONTEXT) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
                 ),
         ) {
             EntryDetailScreen(
                 onBack = { navController.popBackStack() },
+                onNavigateToEntry = { entryId, listContext ->
+                    // Replace current entry with new entry in backstack
+                    navController.navigate(Screen.EntryDetail.createRoute(entryId, listContext)) {
+                        popUpTo(Screen.EntryDetail.route) { inclusive = true }
+                    }
+                },
             )
         }
     }

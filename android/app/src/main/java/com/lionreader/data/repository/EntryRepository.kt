@@ -22,6 +22,7 @@ import com.lionreader.data.db.entities.SubscriptionTagEntity
 import com.lionreader.data.db.entities.TagEntity
 import com.lionreader.data.db.relations.EntryWithState
 import com.lionreader.data.sync.ConnectivityMonitor
+import com.lionreader.ui.navigation.Screen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import java.time.Instant
@@ -815,4 +816,60 @@ class EntryRepository
          * @return Number of pending actions
          */
         suspend fun getPendingActionCount(): Int = pendingActionDao.getPendingCount()
+
+        // ============================================================================
+        // SWIPE NAVIGATION SUPPORT
+        // ============================================================================
+
+        /**
+         * Gets entry IDs for swipe navigation based on a list context route.
+         *
+         * Parses the route to determine filter parameters and returns ordered entry IDs
+         * that match the same criteria as the entry list the user navigated from.
+         *
+         * @param listContext The route from which entry detail was opened (e.g., "all", "starred", "feed/xxx")
+         * @param sortOrder The sort order to use (defaults to NEWEST)
+         * @return List of entry IDs in display order
+         */
+        suspend fun getEntryIdsForContext(
+            listContext: String,
+            sortOrder: SortOrder = SortOrder.NEWEST,
+        ): List<String> {
+            // Parse the list context to determine filters
+            val feedId: String?
+            val tagId: String?
+            val starredOnly: Boolean
+
+            when {
+                listContext == Screen.Starred.route -> {
+                    feedId = null
+                    tagId = null
+                    starredOnly = true
+                }
+                listContext.startsWith("tag/") -> {
+                    feedId = null
+                    tagId = listContext.removePrefix("tag/")
+                    starredOnly = false
+                }
+                listContext.startsWith("feed/") -> {
+                    feedId = listContext.removePrefix("feed/")
+                    tagId = null
+                    starredOnly = false
+                }
+                else -> {
+                    // Default to "all"
+                    feedId = null
+                    tagId = null
+                    starredOnly = false
+                }
+            }
+
+            return entryDao.getEntryIds(
+                feedId = feedId,
+                tagId = tagId,
+                unreadOnly = false, // Don't filter by unread for swipe - user may want to swipe to read entries
+                starredOnly = starredOnly,
+                sortOrder = sortOrder.value,
+            )
+        }
     }
