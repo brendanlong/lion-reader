@@ -31,6 +31,7 @@ export const ErrorCodes = {
   TAG_NOT_FOUND: "TAG_NOT_FOUND",
   SAVED_ARTICLE_NOT_FOUND: "SAVED_ARTICLE_NOT_FOUND",
   INGEST_ADDRESS_NOT_FOUND: "INGEST_ADDRESS_NOT_FOUND",
+  BLOCKED_SENDER_NOT_FOUND: "BLOCKED_SENDER_NOT_FOUND",
 
   // Validation errors (400)
   VALIDATION_ERROR: "VALIDATION_ERROR",
@@ -90,6 +91,7 @@ const errorCodeToTRPCCode: Record<
   TAG_NOT_FOUND: "NOT_FOUND",
   SAVED_ARTICLE_NOT_FOUND: "NOT_FOUND",
   INGEST_ADDRESS_NOT_FOUND: "NOT_FOUND",
+  BLOCKED_SENDER_NOT_FOUND: "NOT_FOUND",
   VALIDATION_ERROR: "BAD_REQUEST",
   INVALID_EMAIL: "BAD_REQUEST",
   WEAK_PASSWORD: "BAD_REQUEST",
@@ -163,6 +165,9 @@ export const errors = {
 
   ingestAddressNotFound: () =>
     createError(ErrorCodes.INGEST_ADDRESS_NOT_FOUND, "Ingest address not found"),
+
+  blockedSenderNotFound: () =>
+    createError(ErrorCodes.BLOCKED_SENDER_NOT_FOUND, "Blocked sender not found"),
 
   maxIngestAddressesReached: (limit: number) =>
     createError(

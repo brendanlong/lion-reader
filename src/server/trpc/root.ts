@@ -17,6 +17,7 @@ import {
   savedRouter,
   narrationRouter,
   ingestAddressesRouter,
+  blockedSendersRouter,
 } from "./routers";
 
 /**
@@ -34,6 +35,7 @@ export const appRouter = createTRPCRouter({
   saved: savedRouter,
   narration: narrationRouter,
   ingestAddresses: ingestAddressesRouter,
+  blockedSenders: blockedSendersRouter,
 });
 
 /**

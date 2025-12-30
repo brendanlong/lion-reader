@@ -17,12 +17,14 @@ import {
   userEntries,
   tags,
   subscriptionTags,
+  blockedSenders,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, detectFeedType, deriveGuid } from "@/server/feed";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import { createInitialFetchJob } from "@/server/jobs/handlers";
 import { publishSubscriptionCreated } from "@/server/redis/pubsub";
+import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import type { FeedType } from "@/server/feed";
 
@@ -705,6 +707,10 @@ export const subscriptionsRouter = createTRPCRouter({
    *
    * Sets unsubscribedAt timestamp instead of deleting the record.
    * This allows users to resubscribe later while preserving their read state.
+   *
+   * For email feeds, this also:
+   * 1. Attempts to send an unsubscribe request (mailto or HTTPS)
+   * 2. Adds the sender to the blocked_senders table
    */
   delete: protectedProcedure
     .meta({
@@ -724,10 +730,14 @@ export const subscriptionsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Verify the subscription exists and belongs to the user
+      // Verify the subscription exists and belongs to the user, and get feed info
       const existing = await ctx.db
-        .select()
+        .select({
+          subscription: subscriptions,
+          feed: feeds,
+        })
         .from(subscriptions)
+        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
         .where(
           and(
             eq(subscriptions.id, input.id),
@@ -741,8 +751,46 @@ export const subscriptionsRouter = createTRPCRouter({
         throw errors.subscriptionNotFound();
       }
 
-      // Soft delete by setting unsubscribedAt
+      const { feed } = existing[0];
       const now = new Date();
+
+      // Handle email feed unsubscription
+      if (feed.type === "email" && feed.emailSenderPattern) {
+        // 1. Attempt to send unsubscribe request
+        const unsubscribeResult = await attemptUnsubscribe(feed.id);
+
+        logger.info("Email unsubscribe attempt completed", {
+          feedId: feed.id,
+          userId,
+          senderEmail: feed.emailSenderPattern,
+          sent: unsubscribeResult.sent,
+          method: unsubscribeResult.method,
+        });
+
+        // 2. Get the mailto URL used for unsubscribe (for potential retry)
+        const listUnsubscribeMailto = await getLatestUnsubscribeMailto(feed.id);
+
+        // 3. Add sender to blocked_senders table
+        await ctx.db
+          .insert(blockedSenders)
+          .values({
+            id: generateUuidv7(),
+            userId,
+            senderEmail: feed.emailSenderPattern,
+            blockedAt: now,
+            listUnsubscribeMailto,
+            unsubscribeSentAt: unsubscribeResult.sent ? now : null,
+          })
+          .onConflictDoNothing(); // Handle case where sender is already blocked
+
+        logger.info("Added sender to blocked list", {
+          userId,
+          senderEmail: feed.emailSenderPattern,
+          unsubscribeSent: unsubscribeResult.sent,
+        });
+      }
+
+      // Soft delete by setting unsubscribedAt
       await ctx.db
         .update(subscriptions)
         .set({
