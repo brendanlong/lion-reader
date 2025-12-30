@@ -153,9 +153,10 @@ fun EntryDetailScreen(
                 onNavigateToEntry = onNavigateToEntry,
                 onLinkClick = { url -> viewModel.openInBrowser(url) },
                 onRetry = { viewModel.retry() },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(padding),
             )
         } else {
             // Fallback to non-swipeable view when no navigation context
@@ -165,9 +166,10 @@ fun EntryDetailScreen(
                 errorMessage = uiState.errorMessage,
                 onLinkClick = { url -> viewModel.openInBrowser(url) },
                 onRetry = { viewModel.retry() },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(padding),
             )
         }
     }
@@ -189,10 +191,11 @@ private fun SwipeableEntryPager(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pagerState = rememberPagerState(
-        initialPage = currentIndex,
-        pageCount = { entryIds.size },
-    )
+    val pagerState =
+        rememberPagerState(
+            initialPage = currentIndex,
+            pageCount = { entryIds.size },
+        )
 
     // Navigate to new entry when user settles on a different page
     LaunchedEffect(pagerState) {
