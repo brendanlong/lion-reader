@@ -59,6 +59,20 @@ const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
  */
 const urlSchema = z.string().url("Invalid URL");
 
+/**
+ * Boolean query parameter schema that handles string coercion.
+ * Query parameters come as strings from HTTP requests, so we need to
+ * handle both boolean and string inputs ("true"/"false").
+ */
+const booleanQueryParam = z
+  .union([z.boolean(), z.enum(["true", "false"])])
+  .optional()
+  .transform((val) => {
+    if (val === "true") return true;
+    if (val === "false") return false;
+    return val;
+  });
+
 // ============================================================================
 // Output Schemas
 // ============================================================================
@@ -386,8 +400,8 @@ export const savedRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        unreadOnly: z.boolean().optional(),
-        starredOnly: z.boolean().optional(),
+        unreadOnly: booleanQueryParam,
+        starredOnly: booleanQueryParam,
         cursor: cursorSchema,
         limit: limitSchema,
       })
