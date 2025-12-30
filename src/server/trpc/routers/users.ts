@@ -11,7 +11,7 @@ import { eq, and, isNull, gt, desc } from "drizzle-orm";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
-import { revokeSession } from "@/server/auth";
+import { revokeSession, invalidateUserSessionCaches } from "@/server/auth";
 
 // ============================================================================
 // Schemas
@@ -252,6 +252,87 @@ export const usersRouter = createTRPCRouter({
           linkedAt: account.linkedAt,
         })),
         hasPassword,
+      };
+    }),
+
+  /**
+   * Get current user preferences.
+   *
+   * Returns user preferences including spam visibility setting.
+   */
+  "me.preferences": protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/users/me/preferences",
+        tags: ["Users"],
+        summary: "Get user preferences",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        showSpam: z.boolean(),
+      })
+    )
+    .query(async ({ ctx }) => {
+      // Return preferences from session (cached from database)
+      return {
+        showSpam: ctx.session.user.showSpam,
+      };
+    }),
+
+  /**
+   * Update user preferences.
+   *
+   * Updates preferences and invalidates session cache to reflect changes immediately.
+   */
+  "me.updatePreferences": protectedProcedure
+    .meta({
+      openapi: {
+        method: "PATCH",
+        path: "/users/me/preferences",
+        tags: ["Users"],
+        summary: "Update user preferences",
+      },
+    })
+    .input(
+      z.object({
+        showSpam: z.boolean().optional(),
+      })
+    )
+    .output(
+      z.object({
+        showSpam: z.boolean(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // Build update object with only provided fields
+      const updateData: { showSpam?: boolean; updatedAt: Date } = {
+        updatedAt: new Date(),
+      };
+
+      if (input.showSpam !== undefined) {
+        updateData.showSpam = input.showSpam;
+      }
+
+      // Update user preferences in database
+      await ctx.db.update(users).set(updateData).where(eq(users.id, userId));
+
+      // Invalidate all session caches for this user so they get fresh data
+      await invalidateUserSessionCaches(userId);
+
+      // Fetch updated preferences to return
+      const updatedUser = await ctx.db
+        .select({ showSpam: users.showSpam })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      return {
+        showSpam: updatedUser[0]?.showSpam ?? false,
       };
     }),
 });
