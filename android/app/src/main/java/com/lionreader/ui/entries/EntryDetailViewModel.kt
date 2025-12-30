@@ -147,11 +147,12 @@ class EntryDetailViewModel
                 val entryIds = entryRepository.getEntryIdsForContext(listContext)
                 val currentIndex = entryIds.indexOf(entryId)
 
-                _swipeNavState.value = SwipeNavigationState(
-                    entryIds = entryIds,
-                    currentIndex = currentIndex,
-                    listContext = listContext,
-                )
+                _swipeNavState.value =
+                    SwipeNavigationState(
+                        entryIds = entryIds,
+                        currentIndex = currentIndex,
+                        listContext = listContext,
+                    )
             }
         }
 
