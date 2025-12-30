@@ -154,16 +154,40 @@ class ShareReceiverActivity : ComponentActivity() {
         // Find the first URL in the text
         val match = urlPattern.find(text)
         if (match != null) {
-            return match.value
+            return cleanUrl(match.value)
         }
 
         // If the entire text looks like a URL (without protocol), add https://
         val trimmed = text.trim()
         if (trimmed.contains(".") && !trimmed.contains(" ")) {
-            return "https://$trimmed"
+            return cleanUrl("https://$trimmed")
         }
 
         return null
+    }
+
+    /**
+     * Cleans trailing punctuation from a URL that may have been captured
+     * when extracting from surrounding text (e.g., "Check out https://example.com.")
+     */
+    private fun cleanUrl(url: String): String {
+        var cleaned = url
+
+        // Remove trailing punctuation that's likely not part of the URL
+        // Common cases: periods, commas, semicolons, colons (but not as part of port)
+        while (cleaned.isNotEmpty()) {
+            val lastChar = cleaned.last()
+            if (lastChar in ".,:;!?") {
+                cleaned = cleaned.dropLast(1)
+            } else if (lastChar == ')' && !cleaned.contains('(')) {
+                // Remove trailing ) only if there's no matching (
+                cleaned = cleaned.dropLast(1)
+            } else {
+                break
+            }
+        }
+
+        return cleaned
     }
 
     private data class SharedContent(
