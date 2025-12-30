@@ -16,6 +16,8 @@ interface SettingsLayoutProps {
 const settingsLinks = [
   { href: "/settings", label: "Account" },
   { href: "/settings/sessions", label: "Sessions" },
+  { href: "/settings/email", label: "Email Subscriptions" },
+  { href: "/settings/blocked-senders", label: "Blocked Senders" },
 ];
 
 export default function SettingsLayout({ children }: SettingsLayoutProps) {
