@@ -86,6 +86,16 @@ export interface UseEntryMutationsResult {
    * Whether any mutation is currently in progress.
    */
   isPending: boolean;
+
+  /**
+   * Whether the markRead mutation is pending.
+   */
+  isMarkReadPending: boolean;
+
+  /**
+   * Whether the star/unstar mutation is pending.
+   */
+  isStarPending: boolean;
 }
 
 /**
@@ -316,6 +326,8 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
 
   const isPending =
     markReadMutation.isPending || starMutation.isPending || unstarMutation.isPending;
+  const isMarkReadPending = markReadMutation.isPending;
+  const isStarPending = starMutation.isPending || unstarMutation.isPending;
 
   return useMemo(
     () => ({
@@ -325,7 +337,9 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       unstar,
       toggleStar,
       isPending,
+      isMarkReadPending,
+      isStarPending,
     }),
-    [markRead, toggleRead, star, unstar, toggleStar, isPending]
+    [markRead, toggleRead, star, unstar, toggleStar, isPending, isMarkReadPending, isStarPending]
   );
 }
