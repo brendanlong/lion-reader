@@ -392,9 +392,9 @@ env:
 
 ### Runtime Behavior
 
-- **Debug builds**: Sentry is disabled (`options.isEnabled = false`)
-- **Release builds without DSN**: Sentry initialization is skipped
-- **Release builds with DSN**: Full crash reporting and performance monitoring
+- **Without DSN**: Sentry initialization is skipped entirely
+- **Debug builds with DSN**: Sentry enabled with `environment = "development"`
+- **Release builds with DSN**: Sentry enabled with `environment = "production"`
 
 ### Customization
 

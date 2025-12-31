@@ -85,9 +85,6 @@ class LionReaderApp :
                 // Capture 100% of transactions for performance monitoring
                 options.tracesSampleRate = 1.0
 
-                // Disable in debug builds to avoid noise during development
-                options.isEnabled = !BuildConfig.DEBUG
-
                 // Add app version as a tag for filtering
                 options.setTag("app.version", BuildConfig.VERSION_NAME)
                 options.setTag("app.version_code", BuildConfig.VERSION_CODE.toString())
