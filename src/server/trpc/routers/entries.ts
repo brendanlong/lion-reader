@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, or, isNull, desc, asc, lte, inArray, sql } from "drizzle-orm";
+import { eq, and, or, isNull, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -62,6 +62,11 @@ const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
 const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
 
 /**
+ * Feed type validation schema for filtering entries by type.
+ */
+const feedTypeSchema = z.enum(["rss", "atom", "json", "email", "saved"]);
+
+/**
  * Boolean query parameter schema that handles string coercion.
  * Query parameters come as strings from HTTP requests, so we need to
  * handle both boolean and string inputs ("true"/"false").
@@ -85,6 +90,7 @@ const booleanQueryParam = z
 const entryListItemSchema = z.object({
   id: z.string(),
   feedId: z.string(),
+  type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
   author: z.string().nullable(),
@@ -102,6 +108,7 @@ const entryListItemSchema = z.object({
 const entryFullSchema = z.object({
   id: z.string(),
   feedId: z.string(),
+  type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
   author: z.string().nullable(),
@@ -229,6 +236,8 @@ export const entriesRouter = createTRPCRouter({
       z.object({
         feedId: uuidSchema.optional(),
         tagId: uuidSchema.optional(),
+        type: feedTypeSchema.optional(),
+        excludeTypes: z.array(feedTypeSchema).optional(),
         unreadOnly: booleanQueryParam,
         starredOnly: booleanQueryParam,
         sortOrder: sortOrderSchema,
@@ -309,6 +318,16 @@ export const entriesRouter = createTRPCRouter({
         conditions.push(eq(userEntries.starred, true));
       }
 
+      // Apply type filter if specified
+      if (input.type) {
+        conditions.push(eq(entries.type, input.type));
+      }
+
+      // Apply excludeTypes filter if specified
+      if (input.excludeTypes && input.excludeTypes.length > 0) {
+        conditions.push(notInArray(entries.type, input.excludeTypes));
+      }
+
       // Apply spam filter: exclude spam entries unless user has showSpam enabled
       // Filter: entries shown if (NOT is_spam) OR (user.showSpam is true)
       const showSpam = ctx.session.user.showSpam;
@@ -368,6 +387,7 @@ export const entriesRouter = createTRPCRouter({
       const items = resultEntries.map(({ entry, feed, userState }) => ({
         id: entry.id,
         feedId: entry.feedId,
+        type: entry.type,
         url: entry.url,
         title: entry.title,
         author: entry.author,
@@ -468,6 +488,7 @@ export const entriesRouter = createTRPCRouter({
         entry: {
           id: entry.id,
           feedId: entry.feedId,
+          type: entry.type,
           url: entry.url,
           title: entry.title,
           author: entry.author,
