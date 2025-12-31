@@ -7,10 +7,9 @@
 
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { useSavedArticleMutations } from "@/lib/hooks";
 import {
   ArticleContentBody,
   ArticleContentSkeleton,
@@ -40,183 +39,45 @@ interface SavedArticleContentProps {
  * Marks the article as read on mount.
  */
 export function SavedArticleContent({ articleId, onBack }: SavedArticleContentProps) {
-  const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the saved article
   const { data, isLoading, isError, error, refetch } = trpc.saved.get.useQuery({ id: articleId });
 
-  // Helper to update article in all cached infinite queries
-  const updateArticleInAllLists = useCallback(
-    (
-      id: string,
-      updater: (article: { id: string; read: boolean; starred: boolean }) => {
-        id: string;
-        read: boolean;
-        starred: boolean;
-      }
-    ) => {
-      // Get all cached infinite query data for saved.list
-      // tRPC query keys have the format [["saved", "list"], { input, type }]
-      const queries = queryClient.getQueriesData<{
-        pages: Array<{
-          items: Array<{ id: string; read: boolean; starred: boolean }>;
-          nextCursor?: string;
-        }>;
-        pageParams: unknown[];
-      }>({
-        queryKey: [["saved", "list"]],
-      });
-
-      // Update each cached query
-      for (const [queryKey, data] of queries) {
-        if (!data) continue;
-
-        const updatedData = {
-          ...data,
-          pages: data.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) => (item.id === id ? updater(item) : item)),
-          })),
-        };
-
-        queryClient.setQueryData(queryKey, updatedData);
-      }
-    },
-    [queryClient]
-  );
-
-  // Mark read mutation with optimistic updates
-  const markReadMutation = trpc.saved.markRead.useMutation({
-    onMutate: async (variables) => {
-      // Cancel in-flight queries
-      await utils.saved.get.cancel({ id: articleId });
-      await utils.saved.list.cancel();
-
-      // Snapshot current state
-      const previousData = utils.saved.get.getData({ id: articleId });
-
-      // Optimistically update individual article query
-      utils.saved.get.setData({ id: articleId }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          article: { ...oldData.article, read: variables.read },
-        };
-      });
-
-      // Also update article in all cached list queries
-      updateArticleInAllLists(articleId, (article) => ({ ...article, read: variables.read }));
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback to previous state
-      if (context?.previousData) {
-        utils.saved.get.setData({ id: articleId }, context.previousData);
-      }
-      // Re-fetch lists to restore correct state
-      utils.saved.list.invalidate();
-      toast.error("Failed to update read status");
-    },
-    onSettled: () => {
-      // Invalidate count as it needs server data (computed server-side)
-      utils.saved.count.invalidate();
-    },
-  });
-
-  // Star/unstar mutations with optimistic updates
-  const starMutation = trpc.saved.star.useMutation({
-    onMutate: async () => {
-      await utils.saved.get.cancel({ id: articleId });
-      await utils.saved.list.cancel();
-
-      const previousData = utils.saved.get.getData({ id: articleId });
-
-      utils.saved.get.setData({ id: articleId }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          article: { ...oldData.article, starred: true },
-        };
-      });
-
-      // Also update article in all cached list queries
-      updateArticleInAllLists(articleId, (article) => ({ ...article, starred: true }));
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.previousData) {
-        utils.saved.get.setData({ id: articleId }, context.previousData);
-      }
-      // Re-fetch lists to restore correct state
-      utils.saved.list.invalidate();
-      toast.error("Failed to star article");
-    },
-  });
-
-  const unstarMutation = trpc.saved.unstar.useMutation({
-    onMutate: async () => {
-      await utils.saved.get.cancel({ id: articleId });
-      await utils.saved.list.cancel();
-
-      const previousData = utils.saved.get.getData({ id: articleId });
-
-      utils.saved.get.setData({ id: articleId }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          article: { ...oldData.article, starred: false },
-        };
-      });
-
-      // Also update article in all cached list queries
-      updateArticleInAllLists(articleId, (article) => ({ ...article, starred: false }));
-
-      return { previousData };
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.previousData) {
-        utils.saved.get.setData({ id: articleId }, context.previousData);
-      }
-      // Re-fetch lists to restore correct state
-      utils.saved.list.invalidate();
-      toast.error("Failed to unstar article");
-    },
-  });
+  // Use the consolidated mutations hook (no list filters since we're in single article view)
+  // normy automatically propagates changes to saved.get when server responds
+  const { markRead, star, unstar, isStarPending, isMarkReadPending } = useSavedArticleMutations();
 
   const article = data?.article;
 
-  // Mark article as read when component mounts and article is loaded
+  // Mark article as read when component mounts and article is loaded (only once)
   useEffect(() => {
-    if (article && !article.read && !hasMarkedRead.current) {
+    if (article && !hasMarkedRead.current) {
       hasMarkedRead.current = true;
-      markReadMutation.mutate({ ids: [articleId], read: true });
+      // Only mark as read if it's currently unread
+      if (!article.read) {
+        markRead([articleId], true);
+      }
     }
-  }, [article, articleId, markReadMutation]);
+  }, [article, articleId, markRead]);
 
   // Handle star toggle
   const handleStarToggle = () => {
     if (!article) return;
 
     if (article.starred) {
-      unstarMutation.mutate({ id: articleId });
+      unstar(articleId);
     } else {
-      starMutation.mutate({ id: articleId });
+      star(articleId);
     }
   };
 
   // Handle read toggle
   const handleReadToggle = () => {
     if (!article) return;
-    markReadMutation.mutate({ ids: [articleId], read: !article.read });
+    markRead([articleId], !article.read);
   };
-
-  const isStarLoading = starMutation.isPending || unstarMutation.isPending;
-  const isReadLoading = markReadMutation.isPending;
 
   // Loading state
   if (isLoading) {
@@ -256,8 +117,8 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
       onBack={onBack}
       onToggleRead={handleReadToggle}
       onToggleStar={handleStarToggle}
-      isStarLoading={isStarLoading}
-      isReadLoading={isReadLoading}
+      isStarLoading={isStarPending}
+      isReadLoading={isMarkReadPending}
       showOriginal={showOriginal}
       setShowOriginal={setShowOriginal}
       narrationArticleType="saved"

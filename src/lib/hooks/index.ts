@@ -50,4 +50,11 @@ export {
   type UseEntryMutationsResult,
 } from "./useEntryMutations";
 
+export {
+  useSavedArticleMutations,
+  type SavedArticleListFilters,
+  type UseSavedArticleMutationsOptions,
+  type UseSavedArticleMutationsResult,
+} from "./useSavedArticleMutations";
+
 export { useEntryUrlState, type UseEntryUrlStateResult } from "./useEntryUrlState";

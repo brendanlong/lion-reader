@@ -7,16 +7,16 @@
 "use client";
 
 import { Suspense, useState, useCallback } from "react";
-import { toast } from "sonner";
 import {
   SavedArticleList,
   SavedArticleContent,
   type SavedArticleListEntryData,
 } from "@/components/saved";
-import { UnreadToggle } from "@/components/entries";
+import { UnreadToggle, SortToggle } from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import {
   useSavedArticleKeyboardShortcuts,
+  useSavedArticleMutations,
   useViewPreferences,
   useEntryUrlState,
 } from "@/lib/hooks";
@@ -31,144 +31,13 @@ function SavedArticlesContent() {
   const [articles, setArticles] = useState<SavedArticleListEntryData[]>([]);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly } = useViewPreferences("saved");
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
+    useViewPreferences("saved");
   const utils = trpc.useUtils();
 
-  // Mutations for keyboard actions with optimistic updates
-  const markReadMutation = trpc.saved.markRead.useMutation({
-    onMutate: async (variables) => {
-      // Cancel any in-flight queries
-      await utils.saved.list.cancel();
-
-      // Snapshot current state
-      const previousData = utils.saved.list.getInfiniteData({
-        unreadOnly: showUnreadOnly,
-      });
-
-      // Optimistically update articles
-      utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
-            ),
-          })),
-        };
-      });
-
-      // Also update individual article queries
-      for (const id of variables.ids) {
-        utils.saved.get.setData({ id }, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            article: { ...oldData.article, read: variables.read },
-          };
-        });
-      }
-
-      return { previousData };
-    },
-    onError: (_error, variables, context) => {
-      // Rollback to previous state
-      if (context?.previousData) {
-        utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, context.previousData);
-      }
-      // Invalidate individual article queries to restore correct state
-      for (const id of variables.ids) {
-        utils.saved.get.invalidate({ id });
-      }
-      toast.error("Failed to update read status");
-    },
-    onSettled: () => {
-      // Invalidate count as it needs server data
-      utils.saved.count.invalidate();
-    },
-  });
-
-  const starMutation = trpc.saved.star.useMutation({
-    onMutate: async (variables) => {
-      await utils.saved.list.cancel();
-
-      const previousData = utils.saved.list.getInfiniteData({
-        unreadOnly: showUnreadOnly,
-      });
-
-      utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              item.id === variables.id ? { ...item, starred: true } : item
-            ),
-          })),
-        };
-      });
-
-      // Also update individual article query
-      utils.saved.get.setData({ id: variables.id }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          article: { ...oldData.article, starred: true },
-        };
-      });
-
-      return { previousData };
-    },
-    onError: (_error, variables, context) => {
-      if (context?.previousData) {
-        utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, context.previousData);
-      }
-      utils.saved.get.invalidate({ id: variables.id });
-      toast.error("Failed to star article");
-    },
-  });
-
-  const unstarMutation = trpc.saved.unstar.useMutation({
-    onMutate: async (variables) => {
-      await utils.saved.list.cancel();
-
-      const previousData = utils.saved.list.getInfiniteData({
-        unreadOnly: showUnreadOnly,
-      });
-
-      utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              item.id === variables.id ? { ...item, starred: false } : item
-            ),
-          })),
-        };
-      });
-
-      // Also update individual article query
-      utils.saved.get.setData({ id: variables.id }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          article: { ...oldData.article, starred: false },
-        };
-      });
-
-      return { previousData };
-    },
-    onError: (_error, variables, context) => {
-      if (context?.previousData) {
-        utils.saved.list.setInfiniteData({ unreadOnly: showUnreadOnly }, context.previousData);
-      }
-      utils.saved.get.invalidate({ id: variables.id });
-      toast.error("Failed to unstar article");
-    },
+  // Use the consolidated mutations hook with list filters
+  const { toggleRead, toggleStar } = useSavedArticleMutations({
+    listFilters: { unreadOnly: showUnreadOnly, sortOrder },
   });
 
   // Keyboard navigation and actions
@@ -178,16 +47,8 @@ function SavedArticlesContent() {
     onClose: closeArticle,
     isArticleOpen: !!openArticleId,
     enabled: keyboardShortcutsEnabled,
-    onToggleRead: (articleId, currentlyRead) => {
-      markReadMutation.mutate({ ids: [articleId], read: !currentlyRead });
-    },
-    onToggleStar: (articleId, currentlyStarred) => {
-      if (currentlyStarred) {
-        unstarMutation.mutate({ id: articleId });
-      } else {
-        starMutation.mutate({ id: articleId });
-      }
-    },
+    onToggleRead: toggleRead,
+    onToggleStar: toggleStar,
     onRefresh: () => {
       utils.saved.list.invalidate();
       utils.saved.count.invalidate();
@@ -221,11 +82,14 @@ function SavedArticlesContent() {
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between sm:mb-6">
         <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Saved</h1>
-        <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+        <div className="flex gap-2">
+          <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
+          <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+        </div>
       </div>
 
       <SavedArticleList
-        filters={{ unreadOnly: showUnreadOnly }}
+        filters={{ unreadOnly: showUnreadOnly, sortOrder }}
         onArticleClick={handleArticleClick}
         selectedArticleId={selectedArticleId}
         onArticlesLoaded={handleArticlesLoaded}

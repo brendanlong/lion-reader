@@ -388,7 +388,8 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       const result = await caller.saved.markRead({ ids: [id1, id2], read: true });
-      expect(result).toEqual({});
+      expect(result.articles).toHaveLength(2);
+      expect(result.articles.every((a) => a.read === true)).toBe(true);
 
       // Verify both are read
       const articles = await db
@@ -408,7 +409,8 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       const result = await caller.saved.markRead({ ids: [id1, id2], read: false });
-      expect(result).toEqual({});
+      expect(result.articles).toHaveLength(2);
+      expect(result.articles.every((a) => a.read === false)).toBe(true);
 
       // Verify both are unread
       const articles = await db
@@ -431,7 +433,10 @@ describe("Saved Articles API", () => {
         ids: [validId, generateUuidv7()],
         read: true,
       });
-      expect(result).toEqual({});
+      // Only the valid article is returned
+      expect(result.articles).toHaveLength(1);
+      expect(result.articles[0].id).toBe(validId);
+      expect(result.articles[0].read).toBe(true);
 
       // Verify valid article is updated
       const dbArticle = await db
@@ -471,7 +476,7 @@ describe("Saved Articles API", () => {
       expect(otherResult[0].read).toBe(false);
     });
 
-    it("returns empty object when no valid IDs provided", async () => {
+    it("returns empty articles array when no valid IDs provided", async () => {
       const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
@@ -480,7 +485,7 @@ describe("Saved Articles API", () => {
         ids: [generateUuidv7()],
         read: true,
       });
-      expect(result).toEqual({});
+      expect(result.articles).toEqual([]);
     });
   });
 
@@ -493,9 +498,11 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       const result = await caller.saved.star({ id: articleId });
-      expect(result).toEqual({});
+      expect(result.article.id).toBe(articleId);
+      expect(result.article.starred).toBe(true);
+      expect(result.article.read).toBe(false);
 
-      // Verify starred
+      // Verify starred in DB
       const dbArticle = await db
         .select()
         .from(savedArticles)
@@ -545,9 +552,11 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       const result = await caller.saved.unstar({ id: articleId });
-      expect(result).toEqual({});
+      expect(result.article.id).toBe(articleId);
+      expect(result.article.starred).toBe(false);
+      expect(result.article.read).toBe(false);
 
-      // Verify unstarred
+      // Verify unstarred in DB
       const dbArticle = await db
         .select()
         .from(savedArticles)
