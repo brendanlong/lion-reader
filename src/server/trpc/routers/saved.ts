@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, lt, inArray, count } from "drizzle-orm";
+import { eq, and, desc, asc, lt, gt, inArray, count } from "drizzle-orm";
 import { JSDOM } from "jsdom";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -73,6 +73,11 @@ const booleanQueryParam = z
     return val;
   });
 
+/**
+ * Sort order validation schema.
+ */
+const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
+
 // ============================================================================
 // Output Schemas
 // ============================================================================
@@ -119,6 +124,31 @@ const savedArticleFullSchema = z.object({
 const savedArticlesListOutputSchema = z.object({
   items: z.array(savedArticleListItemSchema),
   nextCursor: z.string().optional(),
+});
+
+/**
+ * Schema for articles returned from mutation operations.
+ * Used by normy for automatic cache normalization.
+ */
+const savedArticleMutationResultSchema = z.object({
+  id: z.string(),
+  read: z.boolean(),
+  starred: z.boolean(),
+});
+
+/**
+ * Output schema for markRead mutation.
+ */
+const markReadOutputSchema = z.object({
+  articles: z.array(savedArticleMutationResultSchema),
+});
+
+/**
+ * Output schema for star/unstar mutations.
+ * Returns single article for normy cache normalization.
+ */
+const starOutputSchema = z.object({
+  article: savedArticleMutationResultSchema,
 });
 
 // ============================================================================
@@ -385,6 +415,7 @@ export const savedRouter = createTRPCRouter({
    *
    * @param unreadOnly - Optional filter to show only unread articles
    * @param starredOnly - Optional filter to show only starred articles
+   * @param sortOrder - Optional sort order: "newest" (default) or "oldest"
    * @param cursor - Optional pagination cursor (from previous response)
    * @param limit - Optional number of articles per page (default: 50, max: 100)
    * @returns Paginated list of saved articles
@@ -402,6 +433,7 @@ export const savedRouter = createTRPCRouter({
       z.object({
         unreadOnly: booleanQueryParam,
         starredOnly: booleanQueryParam,
+        sortOrder: sortOrderSchema,
         cursor: cursorSchema,
         limit: limitSchema,
       })
@@ -410,34 +442,42 @@ export const savedRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const limit = input.limit ?? DEFAULT_LIMIT;
+      const sortOrder = input.sortOrder ?? "newest";
 
       // Build query conditions
       const conditions = [eq(savedArticles.userId, userId)];
 
-      // Add cursor condition if present
-      if (input.cursor) {
-        const cursorArticleId = decodeCursor(input.cursor);
-        conditions.push(lt(savedArticles.id, cursorArticleId));
+      // Apply unreadOnly filter in the query (more efficient than post-filter)
+      if (input.unreadOnly) {
+        conditions.push(eq(savedArticles.read, false));
       }
 
-      // Query saved articles
+      // Apply starredOnly filter in the query
+      if (input.starredOnly) {
+        conditions.push(eq(savedArticles.starred, true));
+      }
+
+      // Add cursor condition if present
+      // For newest-first (desc), we want articles with ID < cursor
+      // For oldest-first (asc), we want articles with ID > cursor
+      if (input.cursor) {
+        const cursorArticleId = decodeCursor(input.cursor);
+        if (sortOrder === "newest") {
+          conditions.push(lt(savedArticles.id, cursorArticleId));
+        } else {
+          conditions.push(gt(savedArticles.id, cursorArticleId));
+        }
+      }
+
+      // Query saved articles with appropriate sort order
       // We fetch one extra to determine if there are more results
-      let results = await ctx.db
+      const orderByClause = sortOrder === "newest" ? desc(savedArticles.id) : asc(savedArticles.id);
+      const results = await ctx.db
         .select()
         .from(savedArticles)
         .where(and(...conditions))
-        .orderBy(desc(savedArticles.id))
+        .orderBy(orderByClause)
         .limit(limit + 1);
-
-      // Apply unreadOnly filter
-      if (input.unreadOnly) {
-        results = results.filter((article) => !article.read);
-      }
-
-      // Apply starredOnly filter
-      if (input.starredOnly) {
-        results = results.filter((article) => article.starred);
-      }
 
       // Determine if there are more results
       const hasMore = results.length > limit;
@@ -571,7 +611,7 @@ export const savedRouter = createTRPCRouter({
    *
    * @param ids - Array of saved article IDs to mark
    * @param read - Whether to mark as read (true) or unread (false)
-   * @returns Empty object on success
+   * @returns The updated articles with their current state
    */
   markRead: protectedProcedure
     .meta({
@@ -591,7 +631,7 @@ export const savedRouter = createTRPCRouter({
         read: z.boolean(),
       })
     )
-    .output(z.object({}))
+    .output(markReadOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
@@ -603,7 +643,7 @@ export const savedRouter = createTRPCRouter({
         .where(and(inArray(savedArticles.id, input.ids), eq(savedArticles.userId, userId)));
 
       if (existingArticles.length === 0) {
-        return {};
+        return { articles: [] };
       }
 
       const validIds = existingArticles.map((a) => a.id);
@@ -618,14 +658,25 @@ export const savedRouter = createTRPCRouter({
         })
         .where(and(inArray(savedArticles.id, validIds), eq(savedArticles.userId, userId)));
 
-      return {};
+      // Fetch the updated articles to return their current state
+      // This enables normy to automatically update cached queries
+      const updatedArticles = await ctx.db
+        .select({
+          id: savedArticles.id,
+          read: savedArticles.read,
+          starred: savedArticles.starred,
+        })
+        .from(savedArticles)
+        .where(and(inArray(savedArticles.id, validIds), eq(savedArticles.userId, userId)));
+
+      return { articles: updatedArticles };
     }),
 
   /**
    * Star a saved article.
    *
    * @param id - The saved article ID to star
-   * @returns Empty object on success
+   * @returns The updated article with current state
    */
   star: protectedProcedure
     .meta({
@@ -641,7 +692,7 @@ export const savedRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(z.object({}))
+    .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
@@ -667,14 +718,26 @@ export const savedRouter = createTRPCRouter({
         })
         .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)));
 
-      return {};
+      // Fetch the updated article to return its current state
+      // This enables normy to automatically update cached queries
+      const updatedArticle = await ctx.db
+        .select({
+          id: savedArticles.id,
+          read: savedArticles.read,
+          starred: savedArticles.starred,
+        })
+        .from(savedArticles)
+        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
+        .limit(1);
+
+      return { article: updatedArticle[0] };
     }),
 
   /**
    * Unstar a saved article.
    *
    * @param id - The saved article ID to unstar
-   * @returns Empty object on success
+   * @returns The updated article with current state
    */
   unstar: protectedProcedure
     .meta({
@@ -690,7 +753,7 @@ export const savedRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(z.object({}))
+    .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
@@ -716,7 +779,19 @@ export const savedRouter = createTRPCRouter({
         })
         .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)));
 
-      return {};
+      // Fetch the updated article to return its current state
+      // This enables normy to automatically update cached queries
+      const updatedArticle = await ctx.db
+        .select({
+          id: savedArticles.id,
+          read: savedArticles.read,
+          starred: savedArticles.starred,
+        })
+        .from(savedArticles)
+        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
+        .limit(1);
+
+      return { article: updatedArticle[0] };
     }),
 
   /**

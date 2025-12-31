@@ -32,6 +32,11 @@ export interface SavedArticleListFilters {
    * Show only starred articles.
    */
   starredOnly?: boolean;
+
+  /**
+   * Sort order: "newest" (default) or "oldest".
+   */
+  sortOrder?: "newest" | "oldest";
 }
 
 /**
@@ -105,6 +110,7 @@ export function SavedArticleList({
     {
       unreadOnly: filters.unreadOnly,
       starredOnly: filters.starredOnly,
+      sortOrder: filters.sortOrder,
       limit: pageSize,
     },
     {
