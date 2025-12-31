@@ -9,7 +9,14 @@
 import { createHash } from "crypto";
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db";
-import { entries, subscriptions, userEntries, type Entry, type NewEntry } from "../db/schema";
+import {
+  entries,
+  feeds,
+  subscriptions,
+  userEntries,
+  type Entry,
+  type NewEntry,
+} from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
@@ -218,6 +225,7 @@ export async function findEntryByGuid(feedId: string, guid: string): Promise<Ent
  */
 export async function createEntry(
   feedId: string,
+  feedType: "rss" | "atom" | "json" | "email" | "saved",
   parsedEntry: ParsedEntry,
   contentHash: string,
   fetchedAt: Date
@@ -230,6 +238,7 @@ export async function createEntry(
   const newEntry: NewEntry = {
     id: generateUuidv7(),
     feedId,
+    type: feedType,
     guid,
     url: parsedEntry.link ?? null,
     title: parsedEntry.title ?? null,
@@ -291,6 +300,7 @@ export async function updateEntryContent(
  */
 export async function processEntry(
   feedId: string,
+  feedType: "rss" | "atom" | "json" | "email" | "saved",
   parsedEntry: ParsedEntry,
   fetchedAt: Date
 ): Promise<ProcessedEntry> {
@@ -302,7 +312,7 @@ export async function processEntry(
 
   if (!existing) {
     // New entry - create it
-    const entry = await createEntry(feedId, parsedEntry, contentHash, fetchedAt);
+    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt);
 
     // Publish new_entry event for real-time updates
     // Fire and forget - we don't want publishing failures to affect entry processing
@@ -416,6 +426,17 @@ export async function processEntries(
 ): Promise<ProcessEntriesResult> {
   const { fetchedAt = new Date() } = options;
 
+  // Fetch feed type from database
+  const [feedRecord] = await db
+    .select({ type: feeds.type })
+    .from(feeds)
+    .where(eq(feeds.id, feedId))
+    .limit(1);
+
+  if (!feedRecord) {
+    throw new Error(`Feed ${feedId} not found`);
+  }
+
   const results: ProcessedEntry[] = [];
   let newCount = 0;
   let updatedCount = 0;
@@ -423,7 +444,7 @@ export async function processEntries(
 
   for (const item of feed.items) {
     try {
-      const result = await processEntry(feedId, item, fetchedAt);
+      const result = await processEntry(feedId, feedRecord.type, item, fetchedAt);
       results.push(result);
 
       if (result.isNew) {

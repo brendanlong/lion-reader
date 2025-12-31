@@ -1,5 +1,5 @@
 {
-  "id": "96d28c06-c96c-48da-a01f-fc9988a586ae",
+  "id": "fcced27d-4813-4fa7-add3-e7aa25061311",
   "prevId": "b1393e57-94e8-4fa3-b0df-5e48d5a4bb2d",
   "version": "7",
   "dialect": "postgresql",
@@ -102,6 +102,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "type": {
+          "name": "type",
+          "type": "feed_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
         "guid": {
           "name": "guid",
           "type": "text",
@@ -140,6 +147,18 @@
         },
         "summary": {
           "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "site_name": {
+          "name": "site_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_url": {
+          "name": "image_url",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -262,6 +281,21 @@
             },
             {
               "expression": "is_spam",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_entries_type": {
+          "name": "idx_entries_type",
+          "columns": [
+            {
+              "expression": "type",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -465,7 +499,7 @@
       "checkConstraints": {
         "feed_type_user_id": {
           "name": "feed_type_user_id",
-          "value": "(type = 'email') = (user_id IS NOT NULL)"
+          "value": "(type IN ('email', 'saved')) = (user_id IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -1872,7 +1906,7 @@
     "public.feed_type": {
       "name": "feed_type",
       "schema": "public",
-      "values": ["rss", "atom", "json", "email"]
+      "values": ["rss", "atom", "json", "email", "saved"]
     },
     "public.job_status": {
       "name": "job_status",

@@ -380,6 +380,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   const newEntry: NewEntry = {
     id: entryId,
     feedId: feed.id,
+    type: "email",
     guid: email.messageId,
     title: email.subject,
     author: email.from.name || email.from.address,

@@ -38,7 +38,7 @@ export interface ParagraphMapping {
 // ENUMS
 // ============================================================================
 
-export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json", "email"]);
+export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json", "email", "saved"]);
 
 export const jobStatusEnum = pgEnum("job_status", ["pending", "running", "completed", "failed"]);
 
@@ -192,10 +192,12 @@ export const feeds = pgTable(
   },
   (table) => [
     index("idx_feeds_next_fetch").on(table.nextFetchAt),
-    // Email feeds require user_id, other feeds must not have it
-    check("feed_type_user_id", sql`(type = 'email') = (user_id IS NOT NULL)`),
+    // Email and saved feeds require user_id, other feeds must not have it
+    check("feed_type_user_id", sql`(type IN ('email', 'saved')) = (user_id IS NOT NULL)`),
     // Unique constraint for email feeds: one feed per (user, sender)
     unique("uq_feeds_email_user_sender").on(table.userId, table.emailSenderPattern),
+    // Unique constraint for saved feeds: one saved feed per user (partial index)
+    // Note: This is created as a raw SQL index in the migration
   ]
 );
 
@@ -214,9 +216,13 @@ export const entries = pgTable(
     feedId: uuid("feed_id")
       .notNull()
       .references(() => feeds.id, { onDelete: "cascade" }),
+    type: feedTypeEnum("type").notNull(), // Denormalized from feed for type-specific constraints and queries
 
-    // Identifier from source
-    guid: text("guid").notNull(), // from RSS/Atom or email Message-ID
+    // Identifier from source - meaning varies by type:
+    // - rss/atom/json: <guid> or <id> from feed
+    // - email: Message-ID header
+    // - saved: the URL being saved
+    guid: text("guid").notNull(),
 
     // Content
     url: text("url"),
@@ -225,6 +231,10 @@ export const entries = pgTable(
     contentOriginal: text("content_original"),
     contentCleaned: text("content_cleaned"), // Readability-cleaned HTML
     summary: text("summary"), // truncated for previews
+
+    // Saved article metadata (only for type='saved')
+    siteName: text("site_name"),
+    imageUrl: text("image_url"),
 
     // Timestamps
     publishedAt: timestamp("published_at", { withTimezone: true }), // from feed (may be null/inaccurate)
@@ -254,6 +264,12 @@ export const entries = pgTable(
     index("idx_entries_fetched").on(table.feedId, table.fetchedAt),
     // For filtering spam entries
     index("idx_entries_spam").on(table.feedId, table.isSpam),
+    // For filtering by entry type
+    index("idx_entries_type").on(table.type),
+    // Type-specific check constraints (created via raw SQL in migrations):
+    // - entries_spam_only_email: spam fields only for email entries
+    // - entries_unsubscribe_only_email: unsubscribe fields only for email entries
+    // - entries_saved_metadata_only_saved: site_name/image_url only for saved entries
   ]
 );
 

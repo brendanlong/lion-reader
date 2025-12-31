@@ -112,6 +112,7 @@ async function seed() {
       return {
         id: generateUuidv7(),
         feedId: feed.id,
+        type: feed.type,
         guid: `${feed.url}/entry-${i + 1}`,
         url: `${feed.siteUrl}/posts/sample-post-${i + 1}`,
         title: `Sample Post ${i + 1} from ${feed.title}`,
