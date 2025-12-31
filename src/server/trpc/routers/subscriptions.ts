@@ -89,7 +89,7 @@ const tagOutputSchema = z.object({
  */
 const feedOutputSchema = z.object({
   id: z.string(),
-  type: z.enum(["rss", "atom", "json", "email"]),
+  type: z.enum(["rss", "atom", "json", "email", "saved"]),
   url: z.string().nullable(),
   title: z.string().nullable(),
   description: z.string().nullable(),
