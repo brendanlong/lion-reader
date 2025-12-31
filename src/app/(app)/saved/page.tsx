@@ -93,6 +93,8 @@ function SavedArticlesContent() {
         onArticleClick={handleArticleClick}
         selectedArticleId={selectedArticleId}
         onArticlesLoaded={handleArticlesLoaded}
+        onToggleRead={toggleRead}
+        onToggleStar={toggleStar}
         emptyMessage={
           showUnreadOnly
             ? "No unread saved articles. Toggle to show all items."

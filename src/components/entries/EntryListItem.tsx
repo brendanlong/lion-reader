@@ -34,6 +34,14 @@ interface EntryListItemProps {
    * Whether this entry is currently selected (for keyboard navigation).
    */
   selected?: boolean;
+  /**
+   * Callback when the read status indicator is clicked.
+   */
+  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  /**
+   * Callback when the star indicator is clicked.
+   */
+  onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
 }
 
 /**
@@ -44,6 +52,8 @@ export const EntryListItem = memo(function EntryListItem({
   entry,
   onClick,
   selected = false,
+  onToggleRead,
+  onToggleStar,
 }: EntryListItemProps) {
   return (
     <ArticleListItem
@@ -56,6 +66,8 @@ export const EntryListItem = memo(function EntryListItem({
       starred={entry.starred}
       selected={selected}
       onClick={onClick}
+      onToggleRead={onToggleRead}
+      onToggleStar={onToggleStar}
     />
   );
 });

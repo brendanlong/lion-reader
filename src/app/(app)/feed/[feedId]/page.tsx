@@ -225,6 +225,8 @@ function SingleFeedContent() {
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
+        onToggleRead={toggleRead}
+        onToggleStar={toggleStar}
         emptyMessage={
           showUnreadOnly
             ? "No unread entries in this feed. Toggle to show all items."

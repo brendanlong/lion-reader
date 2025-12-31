@@ -34,6 +34,14 @@ interface SavedArticleListItemProps {
    * Whether this article is currently selected (for keyboard navigation).
    */
   selected?: boolean;
+  /**
+   * Callback when the read status indicator is clicked.
+   */
+  onToggleRead?: (articleId: string, currentlyRead: boolean) => void;
+  /**
+   * Callback when the star indicator is clicked.
+   */
+  onToggleStar?: (articleId: string, currentlyStarred: boolean) => void;
 }
 
 /**
@@ -44,6 +52,8 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
   article,
   onClick,
   selected = false,
+  onToggleRead,
+  onToggleStar,
 }: SavedArticleListItemProps) {
   return (
     <ArticleListItem
@@ -56,6 +66,8 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
       starred={article.starred}
       selected={selected}
       onClick={onClick}
+      onToggleRead={onToggleRead}
+      onToggleStar={onToggleStar}
     />
   );
 });
