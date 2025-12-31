@@ -1,7 +1,9 @@
 package com.lionreader.data.api
 
+import com.lionreader.data.api.models.EntriesCountResponse
 import com.lionreader.data.api.models.EntriesResponse
 import com.lionreader.data.api.models.EntryResponse
+import com.lionreader.data.api.models.EntryType
 import com.lionreader.data.api.models.LoginRequest
 import com.lionreader.data.api.models.LoginResponse
 import com.lionreader.data.api.models.MarkReadRequest
@@ -97,6 +99,8 @@ interface LionReaderApi {
      * @param sortOrder Sort order (newest or oldest)
      * @param cursor Pagination cursor from previous response
      * @param limit Maximum number of entries to return
+     * @param type Filter to only include entries of this type
+     * @param excludeTypes Filter to exclude entries of these types
      * @return EntriesResponse containing entries and optional next cursor
      */
     suspend fun listEntries(
@@ -107,6 +111,8 @@ interface LionReaderApi {
         sortOrder: SortOrder? = null,
         cursor: String? = null,
         limit: Int? = null,
+        type: EntryType? = null,
+        excludeTypes: List<EntryType>? = null,
     ): ApiResult<EntriesResponse>
 
     /**
@@ -148,6 +154,22 @@ interface LionReaderApi {
      * @return StarredCountResponse with total and unread counts
      */
     suspend fun getStarredCount(): ApiResult<StarredCountResponse>
+
+    /**
+     * Get the count of entries with optional filters.
+     *
+     * @param feedId Filter by feed ID
+     * @param tagId Filter by tag ID
+     * @param type Filter to only include entries of this type
+     * @param excludeTypes Filter to exclude entries of these types
+     * @return EntriesCountResponse with total and unread counts
+     */
+    suspend fun getEntriesCount(
+        feedId: String? = null,
+        tagId: String? = null,
+        type: EntryType? = null,
+        excludeTypes: List<EntryType>? = null,
+    ): ApiResult<EntriesCountResponse>
 
     // ============================================================================
     // SAVED ARTICLES ENDPOINTS
@@ -283,6 +305,8 @@ class LionReaderApiImpl
             sortOrder: SortOrder?,
             cursor: String?,
             limit: Int?,
+            type: EntryType?,
+            excludeTypes: List<EntryType>?,
         ): ApiResult<EntriesResponse> =
             apiClient.get(path = "entries") {
                 queryParam("feedId", feedId)
@@ -292,6 +316,8 @@ class LionReaderApiImpl
                 queryParam("sortOrder", sortOrder?.value)
                 queryParam("cursor", cursor)
                 queryParam("limit", limit)
+                type?.let { queryParam("type", it.name.lowercase()) }
+                excludeTypes?.forEach { queryParam("excludeTypes", it.name.lowercase()) }
             }
 
         override suspend fun getEntry(id: String): ApiResult<EntryResponse> = apiClient.get(path = "entries/$id")
@@ -310,6 +336,19 @@ class LionReaderApiImpl
         override suspend fun unstar(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "entries/$id/star")
 
         override suspend fun getStarredCount(): ApiResult<StarredCountResponse> = apiClient.get(path = "entries/starred/count")
+
+        override suspend fun getEntriesCount(
+            feedId: String?,
+            tagId: String?,
+            type: EntryType?,
+            excludeTypes: List<EntryType>?,
+        ): ApiResult<EntriesCountResponse> =
+            apiClient.get(path = "entries/count") {
+                queryParam("feedId", feedId)
+                queryParam("tagId", tagId)
+                type?.let { queryParam("type", it.name.lowercase()) }
+                excludeTypes?.forEach { queryParam("excludeTypes", it.name.lowercase()) }
+            }
 
         // ============================================================================
         // SAVED ARTICLES ENDPOINTS

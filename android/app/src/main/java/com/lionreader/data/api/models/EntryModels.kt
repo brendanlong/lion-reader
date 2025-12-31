@@ -4,6 +4,23 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
+ * Type of entry (feed format or saved article).
+ */
+@Serializable
+enum class EntryType {
+    @SerialName("rss")
+    RSS,
+    @SerialName("atom")
+    ATOM,
+    @SerialName("json")
+    JSON,
+    @SerialName("email")
+    EMAIL,
+    @SerialName("saved")
+    SAVED,
+}
+
+/**
  * Entry data from the API.
  */
 @Serializable
@@ -29,6 +46,7 @@ data class EntryDto(
     val feedTitle: String? = null,
     @SerialName("feedUrl")
     val feedUrl: String? = null,
+    val type: EntryType,
 )
 
 /**
@@ -73,6 +91,15 @@ enum class SortOrder(
  */
 @Serializable
 data class StarredCountResponse(
+    val total: Int,
+    val unread: Int,
+)
+
+/**
+ * Response from entries count endpoint.
+ */
+@Serializable
+data class EntriesCountResponse(
     val total: Int,
     val unread: Int,
 )
