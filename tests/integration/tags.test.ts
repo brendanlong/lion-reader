@@ -136,6 +136,7 @@ async function createTestEntry(
     title: options.title ?? `Entry ${entryId}`,
     contentHash: `hash-${entryId}`,
     fetchedAt: now,
+    lastSeenAt: now, // Required for rss/atom/json entries
     createdAt: now,
     updatedAt: now,
   });

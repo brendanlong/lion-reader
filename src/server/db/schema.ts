@@ -237,6 +237,9 @@ export const entries = pgTable(
     // Timestamps
     publishedAt: timestamp("published_at", { withTimezone: true }), // from feed (may be null/inaccurate)
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(), // when we first saw it
+    // Last time this entry was seen in a feed fetch (rss/atom/json only, NULL for email/saved)
+    // Used to determine visibility: entry.lastSeenAt = feed.lastFetchedAt means it's in the current feed
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 
     // Version tracking
     contentHash: text("content_hash").notNull(), // for detecting updates
@@ -268,6 +271,7 @@ export const entries = pgTable(
     // - entries_spam_only_email: spam fields only for email entries
     // - entries_unsubscribe_only_email: unsubscribe fields only for email entries
     // - entries_saved_metadata_only_saved: site_name/image_url only for saved entries
+    // - entries_last_seen_only_fetched: last_seen_at required for rss/atom/json, NULL for email/saved
   ]
 );
 
