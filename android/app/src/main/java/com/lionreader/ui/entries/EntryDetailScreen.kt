@@ -148,6 +148,8 @@ fun EntryDetailScreen(
                 currentIndex = swipeNavState.currentIndex,
                 listContext = swipeNavState.listContext,
                 currentEntry = entry,
+                previousEntry = swipeNavState.previousEntry,
+                nextEntry = swipeNavState.nextEntry,
                 isLoading = uiState.isLoading,
                 errorMessage = uiState.errorMessage,
                 onNavigateToEntry = onNavigateToEntry,
@@ -184,6 +186,8 @@ private fun SwipeableEntryPager(
     currentIndex: Int,
     listContext: String?,
     currentEntry: EntryWithState?,
+    previousEntry: EntryWithState?,
+    nextEntry: EntryWithState?,
     isLoading: Boolean,
     errorMessage: String?,
     onNavigateToEntry: (entryId: String, listContext: String?) -> Unit,
@@ -213,21 +217,45 @@ private fun SwipeableEntryPager(
         modifier = modifier,
         beyondViewportPageCount = 1, // Preload adjacent pages for smoother swiping
     ) { pageIndex ->
-        if (pageIndex == currentIndex) {
-            // Current page - show actual content
-            NonSwipeableEntryContent(
-                entry = currentEntry,
-                isLoading = isLoading,
-                errorMessage = errorMessage,
-                onLinkClick = onLinkClick,
-                onRetry = onRetry,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            // Adjacent pages - show placeholder/skeleton
-            // The actual content will load when user settles on this page
-            Box(modifier = Modifier.fillMaxSize()) {
-                EntryDetailSkeleton(modifier = Modifier.fillMaxSize())
+        when {
+            pageIndex == currentIndex -> {
+                // Current page - show actual content
+                NonSwipeableEntryContent(
+                    entry = currentEntry,
+                    isLoading = isLoading,
+                    errorMessage = errorMessage,
+                    onLinkClick = onLinkClick,
+                    onRetry = onRetry,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            pageIndex == currentIndex - 1 && previousEntry != null -> {
+                // Previous page with preloaded content
+                NonSwipeableEntryContent(
+                    entry = previousEntry,
+                    isLoading = false,
+                    errorMessage = null,
+                    onLinkClick = onLinkClick,
+                    onRetry = onRetry,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            pageIndex == currentIndex + 1 && nextEntry != null -> {
+                // Next page with preloaded content
+                NonSwipeableEntryContent(
+                    entry = nextEntry,
+                    isLoading = false,
+                    errorMessage = null,
+                    onLinkClick = onLinkClick,
+                    onRetry = onRetry,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            else -> {
+                // Other pages - show skeleton while loading
+                Box(modifier = Modifier.fillMaxSize()) {
+                    EntryDetailSkeleton(modifier = Modifier.fillMaxSize())
+                }
             }
         }
     }

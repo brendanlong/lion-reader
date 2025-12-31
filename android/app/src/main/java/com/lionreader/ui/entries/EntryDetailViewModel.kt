@@ -35,6 +35,10 @@ data class SwipeNavigationState(
     val currentIndex: Int = -1,
     /** The list context route (e.g., "all", "starred", "feed/xxx") */
     val listContext: String? = null,
+    /** Preloaded previous entry (if available) */
+    val previousEntry: EntryWithState? = null,
+    /** Preloaded next entry (if available) */
+    val nextEntry: EntryWithState? = null,
 ) {
     /** Whether there is a previous entry to navigate to */
     val hasPrevious: Boolean get() = currentIndex > 0
@@ -153,8 +157,64 @@ class EntryDetailViewModel
                         currentIndex = currentIndex,
                         listContext = listContext,
                     )
+
+                // Preload adjacent entries for instant swipe navigation
+                preloadAdjacentEntries(entryIds, currentIndex)
             }
         }
+
+        /**
+         * Preloads adjacent entries for smoother swipe navigation.
+         *
+         * Fetches the previous and next entries in parallel so their content
+         * is cached locally before the user swipes. Also observes the database
+         * to update the UI state when entries become available.
+         *
+         * @param entryIds List of all entry IDs in the current context
+         * @param currentIndex Index of the current entry
+         */
+        private fun preloadAdjacentEntries(
+            entryIds: List<String>,
+            currentIndex: Int,
+        ) {
+            // Preload and observe previous entry
+            if (currentIndex > 0) {
+                val prevId = entryIds[currentIndex - 1]
+                viewModelScope.launch {
+                    entryRepository.preloadEntry(prevId)
+                }
+                // Observe the entry from database and update state when available
+                viewModelScope.launch {
+                    entryRepository.getEntryFlow(prevId).collect { entry ->
+                        if (entry != null && hasFullContent(entry)) {
+                            _swipeNavState.value = _swipeNavState.value.copy(previousEntry = entry)
+                        }
+                    }
+                }
+            }
+
+            // Preload and observe next entry
+            if (currentIndex >= 0 && currentIndex < entryIds.size - 1) {
+                val nextId = entryIds[currentIndex + 1]
+                viewModelScope.launch {
+                    entryRepository.preloadEntry(nextId)
+                }
+                // Observe the entry from database and update state when available
+                viewModelScope.launch {
+                    entryRepository.getEntryFlow(nextId).collect { entry ->
+                        if (entry != null && hasFullContent(entry)) {
+                            _swipeNavState.value = _swipeNavState.value.copy(nextEntry = entry)
+                        }
+                    }
+                }
+            }
+        }
+
+        /**
+         * Checks if an entry has full content (not just a summary from the list endpoint).
+         */
+        private fun hasFullContent(entry: EntryWithState): Boolean =
+            entry.entry.contentOriginal != null || entry.entry.contentCleaned != null
 
         /**
          * Loads the entry from local storage or fetches from the server.
