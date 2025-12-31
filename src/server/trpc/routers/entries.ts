@@ -823,4 +823,138 @@ export const entriesRouter = createTRPCRouter({
         unread: unreadResult[0]?.count ?? 0,
       };
     }),
+
+  /**
+   * Get count of entries with optional filters.
+   *
+   * Entries are visible to a user only if they have a corresponding
+   * row in the user_entries table for their user_id.
+   *
+   * @param feedId - Optional filter by feed ID
+   * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
+   * @param type - Optional filter by entry type
+   * @param excludeTypes - Optional types to exclude
+   * @returns Count of total and unread entries
+   */
+  count: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/entries/count",
+        tags: ["Entries"],
+        summary: "Get entries count",
+      },
+    })
+    .input(
+      z
+        .object({
+          feedId: uuidSchema.optional(),
+          tagId: uuidSchema.optional(),
+          type: feedTypeSchema.optional(),
+          excludeTypes: z.array(feedTypeSchema).optional(),
+        })
+        .optional()
+    )
+    .output(
+      z.object({
+        total: z.number(),
+        unread: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // Build the base query conditions
+      // Visibility is enforced by inner join with user_entries
+      const conditions = [eq(userEntries.userId, userId)];
+
+      // Entry must be:
+      // 1. From active subscription, OR
+      // 2. Starred, OR
+      // 3. From user's saved feed (type='saved' and feed.userId = userId)
+      const activeSubscriptionFeedIds = ctx.db
+        .select({ feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+      const savedFeedIds = ctx.db
+        .select({ id: feeds.id })
+        .from(feeds)
+        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
+
+      conditions.push(
+        or(
+          inArray(entries.feedId, activeSubscriptionFeedIds),
+          eq(userEntries.starred, true),
+          inArray(entries.feedId, savedFeedIds)
+        )!
+      );
+
+      // Filter by feedId if specified
+      if (input?.feedId) {
+        conditions.push(eq(entries.feedId, input.feedId));
+      }
+
+      // Filter by tagId if specified
+      if (input?.tagId) {
+        // First verify the tag belongs to the user
+        const tagExists = await ctx.db
+          .select({ id: tags.id })
+          .from(tags)
+          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId)))
+          .limit(1);
+
+        if (tagExists.length === 0) {
+          // Tag not found or doesn't belong to user, return zero counts
+          return { total: 0, unread: 0 };
+        }
+
+        // Get feed IDs for subscriptions with this tag
+        // Include starred entries even if no subscriptions have this tag
+        const taggedFeedIds = ctx.db
+          .select({ feedId: subscriptions.feedId })
+          .from(subscriptionTags)
+          .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
+          .where(
+            and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
+          );
+        conditions.push(or(inArray(entries.feedId, taggedFeedIds), eq(userEntries.starred, true))!);
+      }
+
+      // Apply type filter if specified
+      if (input?.type) {
+        conditions.push(eq(entries.type, input.type));
+      }
+
+      // Apply excludeTypes filter if specified
+      if (input?.excludeTypes && input.excludeTypes.length > 0) {
+        conditions.push(notInArray(entries.type, input.excludeTypes));
+      }
+
+      // Apply spam filter: exclude spam entries unless user has showSpam enabled
+      const showSpam = ctx.session.user.showSpam;
+      if (!showSpam) {
+        conditions.push(eq(entries.isSpam, false));
+      }
+
+      // Get total count
+      const totalResult = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(and(...conditions));
+
+      // Get unread count (add read=false condition)
+      const unreadConditions = [...conditions, eq(userEntries.read, false)];
+      const unreadResult = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(and(...unreadConditions));
+
+      return {
+        total: totalResult[0]?.count ?? 0,
+        unread: unreadResult[0]?.count ?? 0,
+      };
+    }),
 });
