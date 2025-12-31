@@ -114,7 +114,8 @@ export function useSavedArticleMutations(
   );
 
   // markRead mutation with optimistic updates
-  const markReadMutation = trpc.saved.markRead.useMutation({
+  // Uses entries.markRead endpoint which works for both feed entries and saved articles
+  const markReadMutation = trpc.entries.markRead.useMutation({
     onMutate: async (variables) => {
       // Skip optimistic updates if no list filters provided
       if (!listFilters) {
@@ -151,13 +152,16 @@ export function useSavedArticleMutations(
       toast.error("Failed to update read status");
     },
     onSettled: () => {
-      // Invalidate count as it needs server data
+      // Invalidate saved articles count
       utils.saved.count.invalidate();
+      // Invalidate entries-related queries for consistency
+      utils.entries.starredCount.invalidate();
     },
   });
 
   // star mutation with optimistic updates
-  const starMutation = trpc.saved.star.useMutation({
+  // Uses entries.star endpoint which works for both feed entries and saved articles
+  const starMutation = trpc.entries.star.useMutation({
     onMutate: async (variables) => {
       // Skip optimistic updates if no list filters provided
       if (!listFilters) {
@@ -191,10 +195,15 @@ export function useSavedArticleMutations(
       }
       toast.error("Failed to star article");
     },
+    onSettled: () => {
+      // Invalidate starred count
+      utils.entries.starredCount.invalidate();
+    },
   });
 
   // unstar mutation with optimistic updates
-  const unstarMutation = trpc.saved.unstar.useMutation({
+  // Uses entries.unstar endpoint which works for both feed entries and saved articles
+  const unstarMutation = trpc.entries.unstar.useMutation({
     onMutate: async (variables) => {
       // Skip optimistic updates if no list filters provided
       if (!listFilters) {
@@ -227,6 +236,10 @@ export function useSavedArticleMutations(
         utils.saved.list.setInfiniteData(queryFilters, context.previousData);
       }
       toast.error("Failed to unstar article");
+    },
+    onSettled: () => {
+      // Invalidate starred count
+      utils.entries.starredCount.invalidate();
     },
   });
 

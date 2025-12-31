@@ -462,6 +462,8 @@ export const savedRouter = createTRPCRouter({
   /**
    * List saved articles with filters and cursor-based pagination.
    *
+   * @deprecated Use entries.list({ type: 'saved' }) instead - provides unified access to all entry types.
+   *
    * @param unreadOnly - Optional filter to show only unread articles
    * @param starredOnly - Optional filter to show only starred articles
    * @param sortOrder - Optional sort order: "newest" (default) or "oldest"
@@ -564,6 +566,8 @@ export const savedRouter = createTRPCRouter({
 
   /**
    * Get a single saved article by ID with full content.
+   *
+   * @deprecated Use entries.get instead - provides unified access to all entry types.
    *
    * @param id - The saved article ID
    * @returns The full saved article with content
@@ -689,6 +693,8 @@ export const savedRouter = createTRPCRouter({
   /**
    * Mark saved articles as read or unread (bulk operation).
    *
+   * @deprecated Use entries.markRead instead - works with all entry types including saved articles.
+   *
    * @param ids - Array of saved article IDs to mark
    * @param read - Whether to mark as read (true) or unread (false)
    * @returns The updated articles with their current state
@@ -764,6 +770,8 @@ export const savedRouter = createTRPCRouter({
   /**
    * Star a saved article.
    *
+   * @deprecated Use entries.star instead - works with all entry types including saved articles.
+   *
    * @param id - The saved article ID to star
    * @returns The updated article with current state
    */
@@ -834,6 +842,8 @@ export const savedRouter = createTRPCRouter({
   /**
    * Unstar a saved article.
    *
+   * @deprecated Use entries.unstar instead - works with all entry types including saved articles.
+   *
    * @param id - The saved article ID to unstar
    * @returns The updated article with current state
    */
@@ -902,6 +912,8 @@ export const savedRouter = createTRPCRouter({
 
   /**
    * Get count of saved articles.
+   *
+   * @deprecated Use entries.count({ type: 'saved' }) instead - provides unified access to all entry types.
    *
    * @returns Count of total and unread saved articles
    */
