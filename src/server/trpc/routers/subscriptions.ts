@@ -181,6 +181,323 @@ function isHtmlContent(contentType: string, content: string): boolean {
 }
 
 // ============================================================================
+// Subscription Helpers
+// ============================================================================
+
+/**
+ * Subscribe to an existing feed that has already been fetched.
+ * Uses lastSeenAt to determine which entries are currently in the feed,
+ * avoiding an unnecessary network request.
+ */
+async function subscribeToExistingFeed(
+  db: typeof import("@/server/db").db,
+  userId: string,
+  feedRecord: typeof feeds.$inferSelect
+): Promise<z.infer<typeof subscriptionWithFeedOutputSchema>> {
+  const feedId = feedRecord.id;
+
+  // Ensure job is enabled and sync next_fetch_at
+  const job = await enableFeedJob(feedId);
+  if (job?.nextRunAt) {
+    await db
+      .update(feeds)
+      .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
+      .where(eq(feeds.id, feedId));
+  }
+
+  // Check for existing subscription
+  const existingSubscription = await db
+    .select()
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+    .limit(1);
+
+  let subscriptionId: string;
+  let subscribedAt: Date;
+
+  if (existingSubscription.length > 0) {
+    const sub = existingSubscription[0];
+
+    if (sub.unsubscribedAt === null) {
+      throw errors.alreadySubscribed();
+    }
+
+    // Reactivate subscription
+    subscriptionId = sub.id;
+    subscribedAt = new Date();
+
+    await db
+      .update(subscriptions)
+      .set({
+        unsubscribedAt: null,
+        subscribedAt: subscribedAt,
+        updatedAt: subscribedAt,
+      })
+      .where(eq(subscriptions.id, subscriptionId));
+  } else {
+    // Create new subscription
+    subscriptionId = generateUuidv7();
+    subscribedAt = new Date();
+
+    await db.insert(subscriptions).values({
+      id: subscriptionId,
+      userId,
+      feedId,
+      subscribedAt,
+      createdAt: subscribedAt,
+      updatedAt: subscribedAt,
+    });
+  }
+
+  // Find entries currently in the feed using lastSeenAt
+  // Entries where lastSeenAt = lastFetchedAt are in the current feed
+  let unreadCount = 0;
+  if (feedRecord.lastFetchedAt) {
+    const matchingEntries = await db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, feedRecord.lastFetchedAt)));
+
+    if (matchingEntries.length > 0) {
+      const pairs = matchingEntries.map((entry) => ({
+        userId,
+        entryId: entry.id,
+      }));
+
+      await db.insert(userEntries).values(pairs).onConflictDoNothing();
+      unreadCount = matchingEntries.length;
+
+      logger.debug("Populated initial user entries via lastSeenAt", {
+        userId,
+        feedId,
+        entryCount: matchingEntries.length,
+      });
+    }
+  }
+
+  publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
+    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+  });
+
+  return {
+    subscription: {
+      id: subscriptionId,
+      feedId,
+      customTitle: null,
+      subscribedAt,
+      unreadCount,
+      tags: [],
+    },
+    feed: {
+      id: feedRecord.id,
+      type: feedRecord.type,
+      url: feedRecord.url,
+      title: feedRecord.title,
+      description: feedRecord.description,
+      siteUrl: feedRecord.siteUrl,
+    },
+  };
+}
+
+/**
+ * Subscribe to a new feed or one that hasn't been fetched yet.
+ * Requires fetching the URL to discover/parse the feed.
+ */
+async function subscribeToNewOrUnfetchedFeed(
+  db: typeof import("@/server/db").db,
+  userId: string,
+  inputUrl: string
+): Promise<z.infer<typeof subscriptionWithFeedOutputSchema>> {
+  let feedUrl = inputUrl;
+
+  // Fetch the URL
+  const { text: content, contentType } = await fetchUrl(feedUrl);
+
+  // If HTML, try to discover feeds
+  let feedContent: string;
+  if (isHtmlContent(contentType, content)) {
+    const discoveredFeeds = discoverFeeds(content, feedUrl);
+
+    if (discoveredFeeds.length === 0) {
+      throw errors.validation("No feeds found at this URL");
+    }
+
+    // Use the first discovered feed
+    feedUrl = discoveredFeeds[0].url;
+
+    // Check if the discovered feed URL exists and has been fetched
+    const existingDiscoveredFeed = await db
+      .select()
+      .from(feeds)
+      .where(eq(feeds.url, feedUrl))
+      .limit(1);
+
+    if (existingDiscoveredFeed.length > 0 && existingDiscoveredFeed[0].lastFetchedAt !== null) {
+      // The discovered feed is already known - use fast path
+      return await subscribeToExistingFeed(
+        db,
+        userId,
+        existingDiscoveredFeed[0] as typeof feeds.$inferSelect
+      );
+    }
+
+    // Fetch the actual feed
+    const feedResult = await fetchUrl(feedUrl);
+    feedContent = feedResult.text;
+  } else {
+    feedContent = content;
+  }
+
+  // Parse the feed
+  let parsedFeed;
+  try {
+    parsedFeed = parseFeed(feedContent);
+  } catch (error) {
+    throw errors.parseError(error instanceof Error ? error.message : "Invalid feed format");
+  }
+
+  // Check if feed already exists (may have been created but not yet fetched)
+  const existingFeed = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
+
+  let feedId: string;
+  let feedRecord: typeof feeds.$inferSelect;
+
+  if (existingFeed.length > 0) {
+    feedId = existingFeed[0].id;
+    feedRecord = existingFeed[0];
+
+    const job = await enableFeedJob(feedId);
+    if (job?.nextRunAt) {
+      await db
+        .update(feeds)
+        .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
+        .where(eq(feeds.id, feedId));
+    }
+  } else {
+    // Create new feed
+    feedId = generateUuidv7();
+    const feedType = detectFeedType(feedContent) as FeedType;
+    const now = new Date();
+
+    const newFeed = {
+      id: feedId,
+      type: feedType === "unknown" ? "rss" : feedType,
+      url: feedUrl,
+      title: parsedFeed.title || null,
+      description: parsedFeed.description || null,
+      siteUrl: parsedFeed.siteUrl || null,
+      nextFetchAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await db.insert(feeds).values(newFeed);
+    feedRecord = newFeed as typeof feeds.$inferSelect;
+
+    await createOrEnableFeedJob(feedId);
+  }
+
+  // Check for existing subscription
+  const existingSubscription = await db
+    .select()
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+    .limit(1);
+
+  let subscriptionId: string;
+  let subscribedAt: Date;
+
+  if (existingSubscription.length > 0) {
+    const sub = existingSubscription[0];
+
+    if (sub.unsubscribedAt === null) {
+      throw errors.alreadySubscribed();
+    }
+
+    subscriptionId = sub.id;
+    subscribedAt = new Date();
+
+    await db
+      .update(subscriptions)
+      .set({
+        unsubscribedAt: null,
+        subscribedAt: subscribedAt,
+        updatedAt: subscribedAt,
+      })
+      .where(eq(subscriptions.id, subscriptionId));
+  } else {
+    subscriptionId = generateUuidv7();
+    subscribedAt = new Date();
+
+    await db.insert(subscriptions).values({
+      id: subscriptionId,
+      userId,
+      feedId,
+      subscribedAt,
+      createdAt: subscribedAt,
+      updatedAt: subscribedAt,
+    });
+  }
+
+  // Populate user_entries for entries currently in the feed (using GUIDs from parsed feed)
+  const feedGuids: string[] = [];
+  for (const item of parsedFeed.items) {
+    try {
+      feedGuids.push(deriveGuid(item));
+    } catch {
+      // Skip items without valid GUIDs
+    }
+  }
+
+  let unreadCount = 0;
+  if (feedGuids.length > 0) {
+    const matchingEntries = await db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(and(eq(entries.feedId, feedId), inArray(entries.guid, feedGuids)));
+
+    if (matchingEntries.length > 0) {
+      const pairs = matchingEntries.map((entry) => ({
+        userId,
+        entryId: entry.id,
+      }));
+
+      await db.insert(userEntries).values(pairs).onConflictDoNothing();
+      unreadCount = matchingEntries.length;
+
+      logger.debug("Populated initial user entries", {
+        userId,
+        feedId,
+        entryCount: matchingEntries.length,
+      });
+    }
+  }
+
+  publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
+    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+  });
+
+  return {
+    subscription: {
+      id: subscriptionId,
+      feedId,
+      customTitle: null,
+      subscribedAt,
+      unreadCount,
+      tags: [],
+    },
+    feed: {
+      id: feedRecord.id,
+      type: feedRecord.type,
+      url: feedRecord.url,
+      title: feedRecord.title,
+      description: feedRecord.description,
+      siteUrl: feedRecord.siteUrl,
+    },
+  };
+}
+
+// ============================================================================
 // Router
 // ============================================================================
 
@@ -218,191 +535,30 @@ export const subscriptionsRouter = createTRPCRouter({
     .output(subscriptionWithFeedOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      let feedUrl = input.url;
+      const feedUrl = input.url;
 
-      // Step 1: Fetch the URL
-      const { text: content, contentType } = await fetchUrl(feedUrl);
-
-      // Step 2: If HTML, try to discover feeds
-      let feedContent: string;
-      if (isHtmlContent(contentType, content)) {
-        const discoveredFeeds = discoverFeeds(content, feedUrl);
-
-        if (discoveredFeeds.length === 0) {
-          throw errors.validation("No feeds found at this URL");
-        }
-
-        // Use the first discovered feed
-        feedUrl = discoveredFeeds[0].url;
-
-        // Fetch the actual feed
-        const feedResult = await fetchUrl(feedUrl);
-        feedContent = feedResult.text;
-      } else {
-        feedContent = content;
-      }
-
-      // Step 3: Parse the feed
-      let parsedFeed;
-      try {
-        parsedFeed = parseFeed(feedContent);
-      } catch (error) {
-        throw errors.parseError(error instanceof Error ? error.message : "Invalid feed format");
-      }
-
-      // Step 4: Check if feed already exists
-      const existingFeed = await ctx.db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
-
-      let feedId: string;
-      let feedRecord: typeof feeds.$inferSelect;
-
-      if (existingFeed.length > 0) {
-        // Feed exists - use it
-        feedId = existingFeed[0].id;
-        feedRecord = existingFeed[0];
-
-        // Ensure job is enabled and sync next_fetch_at
-        const job = await enableFeedJob(feedId);
-        if (job?.nextRunAt) {
-          await ctx.db
-            .update(feeds)
-            .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
-            .where(eq(feeds.id, feedId));
-        }
-      } else {
-        // Create new feed
-        feedId = generateUuidv7();
-        const feedType = detectFeedType(feedContent) as FeedType;
-        const now = new Date();
-
-        const newFeed = {
-          id: feedId,
-          type: feedType === "unknown" ? "rss" : feedType, // Default to RSS if unknown
-          url: feedUrl,
-          title: parsedFeed.title || null,
-          description: parsedFeed.description || null,
-          siteUrl: parsedFeed.siteUrl || null,
-          nextFetchAt: now, // Schedule immediate fetch
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        await ctx.db.insert(feeds).values(newFeed);
-        feedRecord = newFeed as typeof feeds.$inferSelect;
-
-        // Create job for the new feed (enabled, runs immediately)
-        await createOrEnableFeedJob(feedId);
-      }
-
-      // Step 5: Check for existing subscription
-      const existingSubscription = await ctx.db
+      // Check if this exact URL already exists as a feed that's been fetched
+      // If so, we can skip the network request and use lastSeenAt to determine visibility
+      const existingFeedByUrl = await ctx.db
         .select()
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+        .from(feeds)
+        .where(eq(feeds.url, feedUrl))
         .limit(1);
 
-      let subscriptionId: string;
-      let subscribedAt: Date;
+      const canSkipFetch =
+        existingFeedByUrl.length > 0 && existingFeedByUrl[0].lastFetchedAt !== null;
 
-      if (existingSubscription.length > 0) {
-        const sub = existingSubscription[0];
-
-        if (sub.unsubscribedAt === null) {
-          // Already subscribed and active
-          throw errors.alreadySubscribed();
-        }
-
-        // Reactivate subscription
-        subscriptionId = sub.id;
-        subscribedAt = new Date();
-
-        await ctx.db
-          .update(subscriptions)
-          .set({
-            unsubscribedAt: null,
-            subscribedAt: subscribedAt,
-            updatedAt: subscribedAt,
-          })
-          .where(eq(subscriptions.id, subscriptionId));
-      } else {
-        // Create new subscription
-        subscriptionId = generateUuidv7();
-        subscribedAt = new Date();
-
-        await ctx.db.insert(subscriptions).values({
-          id: subscriptionId,
+      if (canSkipFetch) {
+        // Fast path: existing feed that's been fetched - no network request needed
+        return await subscribeToExistingFeed(
+          ctx.db,
           userId,
-          feedId,
-          subscribedAt,
-          createdAt: subscribedAt,
-          updatedAt: subscribedAt,
-        });
+          existingFeedByUrl[0] as typeof feeds.$inferSelect
+        );
       }
 
-      // Step 6: Populate user_entries for entries currently in the feed
-      // This makes existing entries visible to the new subscriber
-      const feedGuids: string[] = [];
-      for (const item of parsedFeed.items) {
-        try {
-          feedGuids.push(deriveGuid(item));
-        } catch {
-          // Skip items without valid GUIDs
-        }
-      }
-
-      let unreadCount = 0;
-      if (feedGuids.length > 0) {
-        // Find entries that exist in our database and match the current feed
-        const matchingEntries = await ctx.db
-          .select({ id: entries.id })
-          .from(entries)
-          .where(and(eq(entries.feedId, feedId), inArray(entries.guid, feedGuids)));
-
-        if (matchingEntries.length > 0) {
-          // Insert user_entries for all matching entries
-          const pairs = matchingEntries.map((entry) => ({
-            userId,
-            entryId: entry.id,
-          }));
-
-          // Bulk insert with ON CONFLICT DO NOTHING (for resubscription case)
-          await ctx.db.insert(userEntries).values(pairs).onConflictDoNothing();
-
-          // All these entries are unread for a new subscription
-          unreadCount = matchingEntries.length;
-
-          logger.debug("Populated initial user entries", {
-            userId,
-            feedId,
-            entryCount: matchingEntries.length,
-          });
-        }
-      }
-
-      // Publish subscription_created event to notify all of the user's SSE connections
-      // This ensures other browser tabs/devices will receive new_entry events for this feed
-      publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
-        logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-      });
-
-      return {
-        subscription: {
-          id: subscriptionId,
-          feedId,
-          customTitle: null,
-          subscribedAt,
-          unreadCount,
-          tags: [], // New subscription has no tags yet
-        },
-        feed: {
-          id: feedRecord.id,
-          type: feedRecord.type,
-          url: feedRecord.url,
-          title: feedRecord.title,
-          description: feedRecord.description,
-          siteUrl: feedRecord.siteUrl,
-        },
-      };
+      // Slow path: need to fetch and potentially discover the feed
+      return await subscribeToNewOrUnfetchedFeed(ctx.db, userId, feedUrl);
     }),
 
   /**

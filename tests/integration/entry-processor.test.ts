@@ -186,12 +186,14 @@ describe("Entry Processor", () => {
       const guid = "entry-123";
 
       // Create entry directly
+      const now = new Date();
       await db.insert(entries).values({
         id: generateUuidv7(),
         feedId: feed.id,
         type: "rss",
         guid,
-        fetchedAt: new Date(),
+        fetchedAt: now,
+        lastSeenAt: now,
         contentHash: "abc123",
       });
 
@@ -214,12 +216,14 @@ describe("Entry Processor", () => {
       const guid = "shared-guid";
 
       // Create entry in feed1
+      const now = new Date();
       await db.insert(entries).values({
         id: generateUuidv7(),
         feedId: feed1.id,
         type: "rss",
         guid,
-        fetchedAt: new Date(),
+        fetchedAt: now,
+        lastSeenAt: now,
         contentHash: "abc123",
       });
 
