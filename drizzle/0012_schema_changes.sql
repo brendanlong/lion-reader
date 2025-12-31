@@ -1,5 +1,3 @@
-ALTER TYPE "public"."feed_type" ADD VALUE 'email';--> statement-breakpoint
-ALTER TYPE "public"."feed_type" ADD VALUE 'saved';--> statement-breakpoint
 CREATE TABLE "blocked_senders" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"user_id" uuid NOT NULL,

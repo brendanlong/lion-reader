@@ -111,6 +111,12 @@ tests/
 - Use `deleted_at` or `unsubscribed_at` patterns, not hard deletes
 - Always filter these out in queries: `WHERE deleted_at IS NULL`
 
+### Migrations
+
+- **Enum additions must be in their own migration file** - PostgreSQL doesn't allow using new enum values in the same transaction they were added. Create a separate migration that only adds the enum values, then a subsequent migration that uses them.
+- Run `pnpm drizzle-kit generate` to create migrations from schema changes
+- Review generated SQL before committing - drizzle may need manual adjustments
+
 ## API Conventions
 
 ### Pagination
