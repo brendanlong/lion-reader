@@ -9,9 +9,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, savedArticles } from "../../src/server/db/schema";
+import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -73,6 +73,7 @@ function createAuthContext(userId: string): Context {
 
 /**
  * Creates a test saved article directly in the database.
+ * Saved articles are now stored as entries with type='saved'.
  */
 async function createTestSavedArticle(
   userId: string,
@@ -86,25 +87,61 @@ async function createTestSavedArticle(
 ): Promise<string> {
   const articleId = generateUuidv7();
   const now = options.savedAt ?? new Date();
-  await db.insert(savedArticles).values({
+  const url = options.url ?? `https://example.com/article-${articleId}`;
+
+  // Get or create the user's saved feed
+  let savedFeedId: string;
+  const existingFeed = await db
+    .select({ id: feeds.id })
+    .from(feeds)
+    .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)))
+    .limit(1);
+
+  if (existingFeed.length > 0) {
+    savedFeedId = existingFeed[0].id;
+  } else {
+    savedFeedId = generateUuidv7();
+    await db.insert(feeds).values({
+      id: savedFeedId,
+      type: "saved",
+      userId,
+      title: "Saved Articles",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  // Create the entry
+  await db.insert(entries).values({
     id: articleId,
-    userId,
-    url: options.url ?? `https://example.com/article-${articleId}`,
+    feedId: savedFeedId,
+    type: "saved",
+    guid: url, // For saved articles, guid = URL
+    url,
     title: options.title ?? `Test Article ${articleId}`,
     siteName: "Example Site",
     author: "Test Author",
     imageUrl: "https://example.com/image.jpg",
     contentOriginal: "<html><body>Original content</body></html>",
     contentCleaned: "<article>Cleaned content</article>",
-    excerpt: "This is a test excerpt for the article.",
+    summary: "This is a test excerpt for the article.",
+    contentHash: "test-hash",
+    publishedAt: now,
+    fetchedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // Create the user_entries row
+  await db.insert(userEntries).values({
+    userId,
+    entryId: articleId,
     read: options.read ?? false,
     readAt: options.read ? now : null,
     starred: options.starred ?? false,
     starredAt: options.starred ? now : null,
-    savedAt: now,
-    createdAt: now,
-    updatedAt: now,
   });
+
   return articleId;
 }
 
@@ -115,13 +152,17 @@ async function createTestSavedArticle(
 describe("Saved Articles API", () => {
   // Clean up tables before each test
   beforeEach(async () => {
-    await db.delete(savedArticles);
+    await db.delete(userEntries);
+    await db.delete(entries);
+    await db.delete(feeds);
     await db.delete(users);
   });
 
   // Clean up after all tests
   afterAll(async () => {
-    await db.delete(savedArticles);
+    await db.delete(userEntries);
+    await db.delete(entries);
+    await db.delete(feeds);
     await db.delete(users);
   });
 
@@ -338,11 +379,7 @@ describe("Saved Articles API", () => {
       expect(result).toEqual({});
 
       // Verify deleted
-      const dbArticle = await db
-        .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, articleId))
-        .limit(1);
+      const dbArticle = await db.select().from(entries).where(eq(entries.id, articleId)).limit(1);
       expect(dbArticle).toHaveLength(0);
     });
 
@@ -370,11 +407,7 @@ describe("Saved Articles API", () => {
       );
 
       // Verify not deleted
-      const dbArticle = await db
-        .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, articleId))
-        .limit(1);
+      const dbArticle = await db.select().from(entries).where(eq(entries.id, articleId)).limit(1);
       expect(dbArticle).toHaveLength(1);
     });
   });
@@ -392,13 +425,13 @@ describe("Saved Articles API", () => {
       expect(result.articles).toHaveLength(2);
       expect(result.articles.every((a) => a.read === true)).toBe(true);
 
-      // Verify both are read
-      const articles = await db
+      // Verify both are read in user_entries
+      const userEntriesResults = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.userId, userId));
-      expect(articles.every((a) => a.read === true)).toBe(true);
-      expect(articles.every((a) => a.readAt !== null)).toBe(true);
+        .from(userEntries)
+        .where(eq(userEntries.userId, userId));
+      expect(userEntriesResults.every((a) => a.read === true)).toBe(true);
+      expect(userEntriesResults.every((a) => a.readAt !== null)).toBe(true);
     });
 
     it("marks articles as unread", async () => {
@@ -413,13 +446,13 @@ describe("Saved Articles API", () => {
       expect(result.articles).toHaveLength(2);
       expect(result.articles.every((a) => a.read === false)).toBe(true);
 
-      // Verify both are unread
-      const articles = await db
+      // Verify both are unread in user_entries
+      const userEntriesResults = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.userId, userId));
-      expect(articles.every((a) => a.read === false)).toBe(true);
-      expect(articles.every((a) => a.readAt === null)).toBe(true);
+        .from(userEntries)
+        .where(eq(userEntries.userId, userId));
+      expect(userEntriesResults.every((a) => a.read === false)).toBe(true);
+      expect(userEntriesResults.every((a) => a.readAt === null)).toBe(true);
     });
 
     it("ignores non-existent article IDs", async () => {
@@ -439,13 +472,13 @@ describe("Saved Articles API", () => {
       expect(result.articles[0].id).toBe(validId);
       expect(result.articles[0].read).toBe(true);
 
-      // Verify valid article is updated
-      const dbArticle = await db
+      // Verify valid article is updated in user_entries
+      const dbUserEntry = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, validId))
+        .from(userEntries)
+        .where(eq(userEntries.entryId, validId))
         .limit(1);
-      expect(dbArticle[0].read).toBe(true);
+      expect(dbUserEntry[0].read).toBe(true);
     });
 
     it("ignores articles belonging to other users", async () => {
@@ -460,19 +493,19 @@ describe("Saved Articles API", () => {
 
       await caller.saved.markRead({ ids: [myArticle, otherArticle], read: true });
 
-      // My article should be updated
+      // My article should be updated in user_entries
       const myResult = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, myArticle))
+        .from(userEntries)
+        .where(and(eq(userEntries.entryId, myArticle), eq(userEntries.userId, userId1)))
         .limit(1);
       expect(myResult[0].read).toBe(true);
 
       // Other user's article should not be updated
       const otherResult = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, otherArticle))
+        .from(userEntries)
+        .where(and(eq(userEntries.entryId, otherArticle), eq(userEntries.userId, userId2)))
         .limit(1);
       expect(otherResult[0].read).toBe(false);
     });
@@ -503,14 +536,14 @@ describe("Saved Articles API", () => {
       expect(result.article.starred).toBe(true);
       expect(result.article.read).toBe(false);
 
-      // Verify starred in DB
-      const dbArticle = await db
+      // Verify starred in user_entries
+      const dbUserEntry = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, articleId))
+        .from(userEntries)
+        .where(eq(userEntries.entryId, articleId))
         .limit(1);
-      expect(dbArticle[0].starred).toBe(true);
-      expect(dbArticle[0].starredAt).not.toBeNull();
+      expect(dbUserEntry[0].starred).toBe(true);
+      expect(dbUserEntry[0].starredAt).not.toBeNull();
     });
 
     it("throws error for non-existent article", async () => {
@@ -534,13 +567,13 @@ describe("Saved Articles API", () => {
 
       await expect(caller.saved.star({ id: articleId })).rejects.toThrow("Saved article not found");
 
-      // Verify not starred
-      const dbArticle = await db
+      // Verify not starred in user_entries
+      const dbUserEntry = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, articleId))
+        .from(userEntries)
+        .where(and(eq(userEntries.entryId, articleId), eq(userEntries.userId, userId1)))
         .limit(1);
-      expect(dbArticle[0].starred).toBe(false);
+      expect(dbUserEntry[0].starred).toBe(false);
     });
   });
 
@@ -557,14 +590,14 @@ describe("Saved Articles API", () => {
       expect(result.article.starred).toBe(false);
       expect(result.article.read).toBe(false);
 
-      // Verify unstarred in DB
-      const dbArticle = await db
+      // Verify unstarred in user_entries
+      const dbUserEntry = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, articleId))
+        .from(userEntries)
+        .where(eq(userEntries.entryId, articleId))
         .limit(1);
-      expect(dbArticle[0].starred).toBe(false);
-      expect(dbArticle[0].starredAt).toBeNull();
+      expect(dbUserEntry[0].starred).toBe(false);
+      expect(dbUserEntry[0].starredAt).toBeNull();
     });
 
     it("throws error for non-existent article", async () => {
@@ -590,13 +623,13 @@ describe("Saved Articles API", () => {
         "Saved article not found"
       );
 
-      // Verify still starred
-      const dbArticle = await db
+      // Verify still starred in user_entries
+      const dbUserEntry = await db
         .select()
-        .from(savedArticles)
-        .where(eq(savedArticles.id, articleId))
+        .from(userEntries)
+        .where(and(eq(userEntries.entryId, articleId), eq(userEntries.userId, userId1)))
         .limit(1);
-      expect(dbArticle[0].starred).toBe(true);
+      expect(dbUserEntry[0].starred).toBe(true);
     });
   });
 
@@ -729,8 +762,8 @@ describe("Saved Articles API", () => {
       // User 2 saves the same URL (verifies URL uniqueness is per-user, not global)
       await createTestSavedArticle(userId2, { url: sharedUrl, title: "User 2's Copy" });
 
-      // Both should have their own copy
-      const articles = await db.select().from(savedArticles);
+      // Both should have their own copy in entries
+      const articles = await db.select().from(entries).where(eq(entries.type, "saved"));
       expect(articles).toHaveLength(2);
       expect(articles.filter((a) => a.url === sharedUrl)).toHaveLength(2);
     });
