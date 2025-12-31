@@ -1,7 +1,7 @@
 -- Create saved feeds for users with existing saved_articles
 INSERT INTO feeds (id, type, user_id, title, created_at, updated_at)
 SELECT
-  gen_uuidv7(),
+  gen_random_uuid(),
   'saved',
   user_id,
   'Saved Articles',
