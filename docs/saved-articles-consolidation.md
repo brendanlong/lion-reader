@@ -69,15 +69,36 @@ CREATE UNIQUE INDEX uq_feeds_saved_user
   WHERE type = 'saved';
 ```
 
-#### 3. Make guid nullable on entries
+#### 3. Add type column to entries
 
-Many feeds don't provide reliable guids, and saved articles don't have them at all.
+Denormalize the feed type onto entries. This enables:
+- Partial unique constraints by entry type
+- Check constraints for type-specific columns
+- Faster queries without joining to feeds
+- Self-documenting schema
+
+```sql
+ALTER TABLE entries
+  ADD COLUMN type feed_type NOT NULL;
+
+-- Ensure entry type matches feed type
+ALTER TABLE entries ADD CONSTRAINT entries_type_matches_feed
+  CHECK (type = (SELECT f.type FROM feeds f WHERE f.id = feed_id));
+  -- Note: This check constraint with subquery may not work in all DBs
+  -- Alternative: enforce in application + trigger for safety
+```
+
+#### 4. Make guid and fetched_at nullable
+
+- `guid`: Only meaningful for feed/email entries, not saved articles
+- `fetched_at`: Only meaningful for feed/email entries (use `created_at` for saved)
 
 ```sql
 ALTER TABLE entries ALTER COLUMN guid DROP NOT NULL;
+ALTER TABLE entries ALTER COLUMN fetched_at DROP NOT NULL;
 ```
 
-#### 4. Add saved article metadata columns to entries
+#### 5. Add saved article metadata columns to entries
 
 ```sql
 ALTER TABLE entries
@@ -87,7 +108,39 @@ ALTER TABLE entries
 
 Note: `excerpt` maps to existing `summary` column.
 
-#### 5. Update unique constraints on entries
+#### 6. Add type-specific check constraints
+
+```sql
+-- RSS/Atom/JSON entries must have guid and fetched_at
+ALTER TABLE entries ADD CONSTRAINT entries_feed_requires_guid
+  CHECK (type NOT IN ('rss', 'atom', 'json') OR (guid IS NOT NULL AND fetched_at IS NOT NULL));
+
+-- Email entries must have fetched_at (guid = message-id, should exist but not strictly required)
+ALTER TABLE entries ADD CONSTRAINT entries_email_requires_fetched
+  CHECK (type != 'email' OR fetched_at IS NOT NULL);
+
+-- Saved articles must have url
+ALTER TABLE entries ADD CONSTRAINT entries_saved_requires_url
+  CHECK (type != 'saved' OR url IS NOT NULL);
+
+-- Spam fields only for email entries
+ALTER TABLE entries ADD CONSTRAINT entries_spam_only_email
+  CHECK (type = 'email' OR (spam_score IS NULL AND is_spam = false));
+
+-- List-unsubscribe fields only for email entries
+ALTER TABLE entries ADD CONSTRAINT entries_unsubscribe_only_email
+  CHECK (type = 'email' OR (
+    list_unsubscribe_mailto IS NULL AND
+    list_unsubscribe_https IS NULL AND
+    list_unsubscribe_post IS NULL
+  ));
+
+-- site_name and image_url only for saved entries
+ALTER TABLE entries ADD CONSTRAINT entries_saved_metadata_only_saved
+  CHECK (type = 'saved' OR (site_name IS NULL AND image_url IS NULL));
+```
+
+#### 7. Update unique constraints on entries
 
 ```sql
 -- Drop existing constraint
@@ -99,14 +152,9 @@ CREATE UNIQUE INDEX uq_entries_feed_guid
   WHERE guid IS NOT NULL;
 
 -- Saved articles: unique by (feed_id, url)
--- Use a join via subquery isn't possible, so we check feed type
--- Option A: Just enforce (feed_id, url) for saved feeds at application level
--- Option B: Denormalize feed type onto entries (adds complexity)
--- Recommendation: Application-level enforcement + general (feed_id, url) index
-
 CREATE UNIQUE INDEX uq_entries_saved_url
-  ON entries (feed_id, url);
-  -- This prevents duplicate URLs in ANY feed, which is reasonable
+  ON entries (feed_id, url)
+  WHERE type = 'saved';
 ```
 
 ### Updated Schema (Drizzle)
@@ -122,26 +170,69 @@ export const feeds = pgTable(
   (table) => [
     // ... existing indexes ...
     check("feed_type_user_id", sql`(type IN ('email', 'saved')) = (user_id IS NOT NULL)`),
-    unique("uq_feeds_saved_user").on(table.userId).where(sql`type = 'saved'`),
+    // Note: Drizzle partial unique indexes may require raw SQL in migrations
   ]
 );
 
 export const entries = pgTable(
   "entries",
   {
-    // ... existing columns ...
-    guid: text("guid"), // Now nullable
-    siteName: text("site_name"), // New
-    imageUrl: text("image_url"), // New
+    id: uuid("id").primaryKey(),
+    feedId: uuid("feed_id").notNull().references(() => feeds.id, { onDelete: "cascade" }),
+    type: feedTypeEnum("type").notNull(), // Denormalized from feed
+
+    // Identifier (nullable - only for feed/email entries)
+    guid: text("guid"),
+
+    // Content
+    url: text("url"),
+    title: text("title"),
+    author: text("author"),
+    contentOriginal: text("content_original"),
+    contentCleaned: text("content_cleaned"),
+    summary: text("summary"),
+
+    // Saved article metadata
+    siteName: text("site_name"),
+    imageUrl: text("image_url"),
+
+    // Timestamps
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }), // Now nullable
+
+    // Version tracking
+    contentHash: text("content_hash").notNull(),
+
+    // Email-specific fields
+    spamScore: real("spam_score"),
+    isSpam: boolean("is_spam").notNull().default(false),
+    listUnsubscribeMailto: text("list_unsubscribe_mailto"),
+    listUnsubscribeHttps: text("list_unsubscribe_https"),
+    listUnsubscribePost: boolean("list_unsubscribe_post"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    // Partial unique index for entries with guids
-    // (Drizzle may need raw SQL for this)
     index("idx_entries_feed").on(table.feedId, table.id),
-    // ...
+    index("idx_entries_type").on(table.type),
+    // Check constraints and partial indexes added via raw SQL in migrations
   ]
 );
 ```
+
+### Column Usage by Entry Type
+
+| Column | rss/atom/json | email | saved |
+|--------|---------------|-------|-------|
+| `guid` | Required | Required (Message-ID) | NULL |
+| `url` | Optional | Optional | Required |
+| `fetched_at` | Required | Required | NULL (use created_at) |
+| `site_name` | NULL | NULL | Optional |
+| `image_url` | NULL | NULL | Optional |
+| `spam_score` | NULL | Optional | NULL |
+| `is_spam` | false | true/false | false |
+| `list_unsubscribe_*` | NULL | Optional | NULL |
 
 ## Saved Feed Management
 
@@ -262,31 +353,64 @@ Start with Option A, migrate to Option B later if desired.
 -- 1. Add 'saved' to feed_type enum
 ALTER TYPE feed_type ADD VALUE 'saved';
 
--- 2. Update check constraint
+-- 2. Update feeds check constraint
 ALTER TABLE feeds DROP CONSTRAINT feed_type_user_id;
 ALTER TABLE feeds ADD CONSTRAINT feed_type_user_id
   CHECK ((type IN ('email', 'saved')) = (user_id IS NOT NULL));
 
--- 3. Add unique constraint for saved feeds
+-- 3. Add unique constraint for saved feeds (one per user)
 CREATE UNIQUE INDEX uq_feeds_saved_user
   ON feeds (user_id)
   WHERE type = 'saved';
 
--- 4. Make guid nullable
-ALTER TABLE entries ALTER COLUMN guid DROP NOT NULL;
+-- 4. Add type column to entries (populate from feed)
+ALTER TABLE entries ADD COLUMN type feed_type;
+UPDATE entries e SET type = f.type FROM feeds f WHERE e.feed_id = f.id;
+ALTER TABLE entries ALTER COLUMN type SET NOT NULL;
 
--- 5. Update entries unique constraint
-ALTER TABLE entries DROP CONSTRAINT uq_entries_feed_guid;
-CREATE UNIQUE INDEX uq_entries_feed_guid
-  ON entries (feed_id, guid)
-  WHERE guid IS NOT NULL;
-CREATE UNIQUE INDEX uq_entries_feed_url
-  ON entries (feed_id, url);
+-- 5. Make guid and fetched_at nullable
+ALTER TABLE entries ALTER COLUMN guid DROP NOT NULL;
+ALTER TABLE entries ALTER COLUMN fetched_at DROP NOT NULL;
 
 -- 6. Add new columns to entries
 ALTER TABLE entries
   ADD COLUMN site_name TEXT,
   ADD COLUMN image_url TEXT;
+
+-- 7. Update entries unique constraints
+ALTER TABLE entries DROP CONSTRAINT uq_entries_feed_guid;
+CREATE UNIQUE INDEX uq_entries_feed_guid
+  ON entries (feed_id, guid)
+  WHERE guid IS NOT NULL;
+CREATE UNIQUE INDEX uq_entries_saved_url
+  ON entries (feed_id, url)
+  WHERE type = 'saved';
+
+-- 8. Add type-specific check constraints
+ALTER TABLE entries ADD CONSTRAINT entries_feed_requires_guid
+  CHECK (type NOT IN ('rss', 'atom', 'json') OR (guid IS NOT NULL AND fetched_at IS NOT NULL));
+
+ALTER TABLE entries ADD CONSTRAINT entries_email_requires_fetched
+  CHECK (type != 'email' OR fetched_at IS NOT NULL);
+
+ALTER TABLE entries ADD CONSTRAINT entries_saved_requires_url
+  CHECK (type != 'saved' OR url IS NOT NULL);
+
+ALTER TABLE entries ADD CONSTRAINT entries_spam_only_email
+  CHECK (type = 'email' OR (spam_score IS NULL AND is_spam = false));
+
+ALTER TABLE entries ADD CONSTRAINT entries_unsubscribe_only_email
+  CHECK (type = 'email' OR (
+    list_unsubscribe_mailto IS NULL AND
+    list_unsubscribe_https IS NULL AND
+    list_unsubscribe_post IS NULL
+  ));
+
+ALTER TABLE entries ADD CONSTRAINT entries_saved_metadata_only_saved
+  CHECK (type = 'saved' OR (site_name IS NULL AND image_url IS NULL));
+
+-- 9. Add index on type for filtering
+CREATE INDEX idx_entries_type ON entries (type);
 ```
 
 ### Step 2: Data Migration
@@ -305,7 +429,7 @@ FROM (SELECT DISTINCT user_id FROM saved_articles) users;
 
 -- Migrate saved articles to entries
 INSERT INTO entries (
-  id, feed_id, guid, url, title, author,
+  id, feed_id, type, guid, url, title, author,
   content_original, content_cleaned, summary,
   site_name, image_url, content_hash,
   published_at, fetched_at, created_at, updated_at
@@ -313,6 +437,7 @@ INSERT INTO entries (
 SELECT
   sa.id,
   f.id,
+  'saved',
   NULL,  -- guid is null for saved articles
   sa.url,
   sa.title,
@@ -324,7 +449,7 @@ SELECT
   sa.image_url,
   sa.content_hash,
   sa.saved_at,  -- use saved_at as published_at
-  sa.saved_at,  -- use saved_at as fetched_at
+  NULL,  -- fetched_at is null for saved articles
   sa.created_at,
   sa.updated_at
 FROM saved_articles sa
@@ -344,11 +469,12 @@ FROM saved_articles sa;
 
 ### Step 3: Update Application Code
 
-1. Update schema.ts with new columns and constraints
-2. Implement `getOrCreateSavedFeed()` helper
-3. Update saved router to use entries table
-4. Update entries.list visibility rules
-5. Update any frontend code that depends on saved_articles structure
+1. Update schema.ts with new `type` column and constraints
+2. Update entry creation code to set `type` from feed type
+3. Implement `getOrCreateSavedFeed()` helper
+4. Update saved router to use entries table
+5. Update entries.list visibility rules
+6. Update any frontend code that depends on saved_articles structure
 
 ### Step 4: Drop Old Table
 
