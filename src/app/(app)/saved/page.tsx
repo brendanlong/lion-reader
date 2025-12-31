@@ -73,8 +73,11 @@ function SavedArticlesContent() {
   }, []);
 
   // If an article is open, show the full content view
+  // Key forces remount when articleId changes, ensuring fresh refs and mutation state
   if (openArticleId) {
-    return <SavedArticleContent articleId={openArticleId} onBack={handleBack} />;
+    return (
+      <SavedArticleContent key={openArticleId} articleId={openArticleId} onBack={handleBack} />
+    );
   }
 
   // Otherwise, show the saved articles list
