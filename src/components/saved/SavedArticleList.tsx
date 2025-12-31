@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { SavedArticleListItem, type SavedArticleListItemData } from "./SavedArticleListItem";
+import { SavedArticleListItem } from "./SavedArticleListItem";
 import { EntryListSkeleton } from "@/components/entries/EntryListSkeleton";
 import {
   ArticleListEmpty,
@@ -44,7 +44,7 @@ export interface SavedArticleListFilters {
  */
 export interface SavedArticleListEntryData {
   id: string;
-  url: string;
+  url: string | null;
   read: boolean;
   starred: boolean;
 }
@@ -109,6 +109,7 @@ export function SavedArticleList({
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Use infinite query for cursor-based pagination
+  // Use unified entries endpoint with type='saved' filter
   const {
     data,
     isLoading,
@@ -118,8 +119,9 @@ export function SavedArticleList({
     hasNextPage,
     isFetchingNextPage,
     refetch,
-  } = trpc.saved.list.useInfiniteQuery(
+  } = trpc.entries.list.useInfiniteQuery(
     {
+      type: "saved",
       unreadOnly: filters.unreadOnly,
       starredOnly: filters.starredOnly,
       sortOrder: filters.sortOrder,
@@ -203,7 +205,7 @@ export function SavedArticleList({
       {allArticles.map((article) => (
         <SavedArticleListItem
           key={article.id}
-          article={article as SavedArticleListItemData}
+          article={article}
           onClick={onArticleClick}
           selected={selectedArticleId === article.id}
           onToggleRead={onToggleRead}

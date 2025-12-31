@@ -10,9 +10,6 @@ import com.lionreader.data.api.models.MarkReadRequest
 import com.lionreader.data.api.models.ProvidersResponse
 import com.lionreader.data.api.models.SaveArticleRequest
 import com.lionreader.data.api.models.SavedArticleResponse
-import com.lionreader.data.api.models.SavedArticlesResponse
-import com.lionreader.data.api.models.SavedCountResponse
-import com.lionreader.data.api.models.SavedMarkReadRequest
 import com.lionreader.data.api.models.SortOrder
 import com.lionreader.data.api.models.StarredCountResponse
 import com.lionreader.data.api.models.SubscriptionsResponse
@@ -190,67 +187,11 @@ interface LionReaderApi {
     ): ApiResult<SavedArticleResponse>
 
     /**
-     * List saved articles with optional filters.
-     *
-     * @param unreadOnly Only return unread articles
-     * @param starredOnly Only return starred articles
-     * @param cursor Pagination cursor from previous response
-     * @param limit Maximum number of articles to return
-     * @return SavedArticlesResponse containing articles and optional next cursor
-     */
-    suspend fun listSavedArticles(
-        unreadOnly: Boolean? = null,
-        starredOnly: Boolean? = null,
-        cursor: String? = null,
-        limit: Int? = null,
-    ): ApiResult<SavedArticlesResponse>
-
-    /**
-     * Get a single saved article by ID with full content.
-     *
-     * @param id Saved article ID
-     * @return SavedArticleResponse containing the article
-     */
-    suspend fun getSavedArticle(id: String): ApiResult<SavedArticleResponse>
-
-    /**
      * Delete a saved article.
      *
      * @param id Saved article ID to delete
      */
     suspend fun deleteSavedArticle(id: String): ApiResult<Unit>
-
-    /**
-     * Mark saved articles as read or unread.
-     *
-     * @param ids List of saved article IDs to update
-     * @param read true to mark as read, false to mark as unread
-     */
-    suspend fun markSavedRead(
-        ids: List<String>,
-        read: Boolean,
-    ): ApiResult<Unit>
-
-    /**
-     * Star a saved article.
-     *
-     * @param id Saved article ID to star
-     */
-    suspend fun starSaved(id: String): ApiResult<Unit>
-
-    /**
-     * Unstar a saved article.
-     *
-     * @param id Saved article ID to unstar
-     */
-    suspend fun unstarSaved(id: String): ApiResult<Unit>
-
-    /**
-     * Get the count of saved articles.
-     *
-     * @return SavedCountResponse with total and unread counts
-     */
-    suspend fun getSavedCount(): ApiResult<SavedCountResponse>
 }
 
 /**
@@ -364,35 +305,5 @@ class LionReaderApiImpl
                 body = SaveArticleRequest(url = url, html = html, title = title),
             )
 
-        override suspend fun listSavedArticles(
-            unreadOnly: Boolean?,
-            starredOnly: Boolean?,
-            cursor: String?,
-            limit: Int?,
-        ): ApiResult<SavedArticlesResponse> =
-            apiClient.get(path = "saved") {
-                queryParam("unreadOnly", unreadOnly)
-                queryParam("starredOnly", starredOnly)
-                queryParam("cursor", cursor)
-                queryParam("limit", limit)
-            }
-
-        override suspend fun getSavedArticle(id: String): ApiResult<SavedArticleResponse> = apiClient.get(path = "saved/$id")
-
         override suspend fun deleteSavedArticle(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "saved/$id")
-
-        override suspend fun markSavedRead(
-            ids: List<String>,
-            read: Boolean,
-        ): ApiResult<Unit> =
-            apiClient.postNoContent(
-                path = "saved/mark-read",
-                body = SavedMarkReadRequest(ids = ids, read = read),
-            )
-
-        override suspend fun starSaved(id: String): ApiResult<Unit> = apiClient.postNoContent(path = "saved/$id/star")
-
-        override suspend fun unstarSaved(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "saved/$id/star")
-
-        override suspend fun getSavedCount(): ApiResult<SavedCountResponse> = apiClient.get(path = "saved/count")
     }

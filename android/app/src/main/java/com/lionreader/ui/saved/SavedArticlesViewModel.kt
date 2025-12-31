@@ -2,7 +2,7 @@ package com.lionreader.ui.saved
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lionreader.data.api.models.SavedArticleListItemDto
+import com.lionreader.data.api.models.EntryDto
 import com.lionreader.data.repository.SavedArticleFilters
 import com.lionreader.data.repository.SavedArticleRepository
 import com.lionreader.data.repository.SavedArticlesResult
@@ -36,8 +36,8 @@ class SavedArticlesViewModel
         val uiState: StateFlow<SavedArticlesUiState> = _uiState.asStateFlow()
 
         // Articles list
-        private val _articles = MutableStateFlow<List<SavedArticleListItemDto>>(emptyList())
-        val articles: StateFlow<List<SavedArticleListItemDto>> = _articles.asStateFlow()
+        private val _articles = MutableStateFlow<List<EntryDto>>(emptyList())
+        val articles: StateFlow<List<EntryDto>> = _articles.asStateFlow()
 
         // Pagination
         private var nextCursor: String? = null

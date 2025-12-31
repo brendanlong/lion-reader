@@ -4,27 +4,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Saved article data from the API (list view, without full content).
- */
-@Serializable
-data class SavedArticleListItemDto(
-    val id: String,
-    val url: String,
-    val title: String? = null,
-    @SerialName("siteName")
-    val siteName: String? = null,
-    val author: String? = null,
-    @SerialName("imageUrl")
-    val imageUrl: String? = null,
-    val excerpt: String? = null,
-    val read: Boolean = false,
-    val starred: Boolean = false,
-    @SerialName("savedAt")
-    val savedAt: String, // ISO 8601
-)
-
-/**
- * Full saved article data from the API (includes content).
+ * Full saved article data returned by the save endpoint.
+ * Note: For listing and getting saved articles, use the unified entries endpoints
+ * which return [EntryListItemDto] and [EntryFullDto] respectively.
  */
 @Serializable
 data class SavedArticleFullDto(
@@ -52,17 +34,7 @@ data class SavedArticleFullDto(
 )
 
 /**
- * Response from list saved articles endpoint (paginated).
- */
-@Serializable
-data class SavedArticlesResponse(
-    val items: List<SavedArticleListItemDto>,
-    @SerialName("nextCursor")
-    val nextCursor: String? = null,
-)
-
-/**
- * Response from get single saved article endpoint.
+ * Response from the save URL endpoint.
  */
 @Serializable
 data class SavedArticleResponse(
@@ -77,22 +49,4 @@ data class SaveArticleRequest(
     val url: String,
     val html: String? = null,
     val title: String? = null,
-)
-
-/**
- * Request body for marking saved articles as read/unread.
- */
-@Serializable
-data class SavedMarkReadRequest(
-    val ids: List<String>,
-    val read: Boolean,
-)
-
-/**
- * Response from saved articles count endpoint.
- */
-@Serializable
-data class SavedCountResponse(
-    val total: Int,
-    val unread: Int,
 )

@@ -50,8 +50,9 @@ function SavedArticlesContent() {
     onToggleRead: toggleRead,
     onToggleStar: toggleStar,
     onRefresh: () => {
-      utils.saved.list.invalidate();
-      utils.saved.count.invalidate();
+      // Invalidate entries queries with saved type filter
+      utils.entries.list.invalidate({ type: "saved" });
+      utils.entries.count.invalidate({ type: "saved" });
     },
     onToggleUnreadOnly: toggleShowUnreadOnly,
   });

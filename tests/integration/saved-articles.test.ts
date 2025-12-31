@@ -4,8 +4,12 @@
  * These tests use a real database to verify saved article CRUD operations
  * and the proper handling of user isolation and authorization.
  *
+ * Saved articles are stored as entries with type='saved' and use the unified
+ * entries.* endpoints for list/get/markRead/star/unstar operations.
+ * Only saved.save and saved.delete are specific to saved articles.
+ *
  * Note: Tests for the `save` procedure that fetch URLs are limited due to
- * network dependencies. We test list/get/delete/markRead/star/unstar thoroughly.
+ * network dependencies.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
@@ -166,13 +170,13 @@ describe("Saved Articles API", () => {
     await db.delete(users);
   });
 
-  describe("saved.list", () => {
+  describe("entries.list with type='saved'", () => {
     it("returns empty list for user with no saved articles", async () => {
       const userId = await createTestUser();
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.saved.list({});
+      const result = await caller.entries.list({ type: "saved" });
 
       expect(result.items).toEqual([]);
       expect(result.nextCursor).toBeUndefined();
@@ -189,7 +193,7 @@ describe("Saved Articles API", () => {
 
       const ctx1 = createAuthContext(userId1);
       const caller1 = createCaller(ctx1);
-      const result1 = await caller1.saved.list({});
+      const result1 = await caller1.entries.list({ type: "saved" });
 
       expect(result1.items).toHaveLength(2);
       expect(result1.items.map((a) => a.title).sort()).toEqual([
@@ -199,7 +203,7 @@ describe("Saved Articles API", () => {
 
       const ctx2 = createAuthContext(userId2);
       const caller2 = createCaller(ctx2);
-      const result2 = await caller2.saved.list({});
+      const result2 = await caller2.entries.list({ type: "saved" });
 
       expect(result2.items).toHaveLength(1);
       expect(result2.items[0].title).toBe("User 2 Article");
@@ -217,7 +221,7 @@ describe("Saved Articles API", () => {
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
-      const result = await caller.saved.list({});
+      const result = await caller.entries.list({ type: "saved" });
 
       expect(result.items).toHaveLength(3);
       expect(result.items[0].id).toBe(id3);
@@ -233,7 +237,7 @@ describe("Saved Articles API", () => {
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
-      const result = await caller.saved.list({ unreadOnly: true });
+      const result = await caller.entries.list({ type: "saved", unreadOnly: true });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("Unread Article");
@@ -247,7 +251,7 @@ describe("Saved Articles API", () => {
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
-      const result = await caller.saved.list({ starredOnly: true });
+      const result = await caller.entries.list({ type: "saved", starredOnly: true });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("Starred Article");
@@ -274,7 +278,11 @@ describe("Saved Articles API", () => {
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
-      const result = await caller.saved.list({ unreadOnly: true, starredOnly: true });
+      const result = await caller.entries.list({
+        type: "saved",
+        unreadOnly: true,
+        starredOnly: true,
+      });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("Unread and Starred");
@@ -293,17 +301,25 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       // Get first page (2 items)
-      const page1 = await caller.saved.list({ limit: 2 });
+      const page1 = await caller.entries.list({ type: "saved", limit: 2 });
       expect(page1.items).toHaveLength(2);
       expect(page1.nextCursor).toBeDefined();
 
       // Get second page
-      const page2 = await caller.saved.list({ limit: 2, cursor: page1.nextCursor });
+      const page2 = await caller.entries.list({
+        type: "saved",
+        limit: 2,
+        cursor: page1.nextCursor,
+      });
       expect(page2.items).toHaveLength(2);
       expect(page2.nextCursor).toBeDefined();
 
       // Get third page
-      const page3 = await caller.saved.list({ limit: 2, cursor: page2.nextCursor });
+      const page3 = await caller.entries.list({
+        type: "saved",
+        limit: 2,
+        cursor: page2.nextCursor,
+      });
       expect(page3.items).toHaveLength(1);
       expect(page3.nextCursor).toBeUndefined();
 
@@ -321,27 +337,27 @@ describe("Saved Articles API", () => {
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
-      const result = await caller.saved.list({ limit: 3 });
+      const result = await caller.entries.list({ type: "saved", limit: 3 });
 
       expect(result.items).toHaveLength(3);
       expect(result.nextCursor).toBeDefined();
     });
   });
 
-  describe("saved.get", () => {
+  describe("entries.get for saved articles", () => {
     it("returns a saved article with full content", async () => {
       const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { title: "Test Article" });
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
-      const result = await caller.saved.get({ id: articleId });
+      const result = await caller.entries.get({ id: articleId });
 
-      expect(result.article.id).toBe(articleId);
-      expect(result.article.title).toBe("Test Article");
-      expect(result.article.contentOriginal).toBe("<html><body>Original content</body></html>");
-      expect(result.article.contentCleaned).toBe("<article>Cleaned content</article>");
-      expect(result.article.excerpt).toBe("This is a test excerpt for the article.");
+      expect(result.entry.id).toBe(articleId);
+      expect(result.entry.title).toBe("Test Article");
+      expect(result.entry.contentOriginal).toBe("<html><body>Original content</body></html>");
+      expect(result.entry.contentCleaned).toBe("<article>Cleaned content</article>");
+      expect(result.entry.summary).toBe("This is a test excerpt for the article.");
     });
 
     it("throws error for non-existent article", async () => {
@@ -349,9 +365,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.get({ id: generateUuidv7() })).rejects.toThrow(
-        "Saved article not found"
-      );
+      await expect(caller.entries.get({ id: generateUuidv7() })).rejects.toThrow("Entry not found");
     });
 
     it("throws error when accessing another user's article", async () => {
@@ -363,7 +377,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId2);
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.get({ id: articleId })).rejects.toThrow("Saved article not found");
+      await expect(caller.entries.get({ id: articleId })).rejects.toThrow("Entry not found");
     });
   });
 
@@ -412,7 +426,7 @@ describe("Saved Articles API", () => {
     });
   });
 
-  describe("saved.markRead", () => {
+  describe("entries.markRead for saved articles", () => {
     it("marks articles as read", async () => {
       const userId = await createTestUser();
       const id1 = await createTestSavedArticle(userId, { read: false });
@@ -421,9 +435,9 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.saved.markRead({ ids: [id1, id2], read: true });
-      expect(result.articles).toHaveLength(2);
-      expect(result.articles.every((a) => a.read === true)).toBe(true);
+      const result = await caller.entries.markRead({ ids: [id1, id2], read: true });
+      expect(result.entries).toHaveLength(2);
+      expect(result.entries.every((a) => a.read === true)).toBe(true);
 
       // Verify both are read in user_entries
       const userEntriesResults = await db
@@ -442,9 +456,9 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.saved.markRead({ ids: [id1, id2], read: false });
-      expect(result.articles).toHaveLength(2);
-      expect(result.articles.every((a) => a.read === false)).toBe(true);
+      const result = await caller.entries.markRead({ ids: [id1, id2], read: false });
+      expect(result.entries).toHaveLength(2);
+      expect(result.entries.every((a) => a.read === false)).toBe(true);
 
       // Verify both are unread in user_entries
       const userEntriesResults = await db
@@ -463,14 +477,14 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       // Should not throw, just ignore invalid ID
-      const result = await caller.saved.markRead({
+      const result = await caller.entries.markRead({
         ids: [validId, generateUuidv7()],
         read: true,
       });
       // Only the valid article is returned
-      expect(result.articles).toHaveLength(1);
-      expect(result.articles[0].id).toBe(validId);
-      expect(result.articles[0].read).toBe(true);
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].id).toBe(validId);
+      expect(result.entries[0].read).toBe(true);
 
       // Verify valid article is updated in user_entries
       const dbUserEntry = await db
@@ -491,7 +505,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId1);
       const caller = createCaller(ctx);
 
-      await caller.saved.markRead({ ids: [myArticle, otherArticle], read: true });
+      await caller.entries.markRead({ ids: [myArticle, otherArticle], read: true });
 
       // My article should be updated in user_entries
       const myResult = await db
@@ -515,15 +529,15 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.saved.markRead({
+      const result = await caller.entries.markRead({
         ids: [generateUuidv7()],
         read: true,
       });
-      expect(result.articles).toEqual([]);
+      expect(result.entries).toEqual([]);
     });
   });
 
-  describe("saved.star", () => {
+  describe("entries.star for saved articles", () => {
     it("stars a saved article", async () => {
       const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { starred: false });
@@ -531,10 +545,10 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.saved.star({ id: articleId });
-      expect(result.article.id).toBe(articleId);
-      expect(result.article.starred).toBe(true);
-      expect(result.article.read).toBe(false);
+      const result = await caller.entries.star({ id: articleId });
+      expect(result.entry.id).toBe(articleId);
+      expect(result.entry.starred).toBe(true);
+      expect(result.entry.read).toBe(false);
 
       // Verify starred in user_entries
       const dbUserEntry = await db
@@ -551,8 +565,8 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.star({ id: generateUuidv7() })).rejects.toThrow(
-        "Saved article not found"
+      await expect(caller.entries.star({ id: generateUuidv7() })).rejects.toThrow(
+        "Entry not found"
       );
     });
 
@@ -565,7 +579,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId2);
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.star({ id: articleId })).rejects.toThrow("Saved article not found");
+      await expect(caller.entries.star({ id: articleId })).rejects.toThrow("Entry not found");
 
       // Verify not starred in user_entries
       const dbUserEntry = await db
@@ -577,7 +591,7 @@ describe("Saved Articles API", () => {
     });
   });
 
-  describe("saved.unstar", () => {
+  describe("entries.unstar for saved articles", () => {
     it("unstars a saved article", async () => {
       const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { starred: true });
@@ -585,10 +599,10 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.saved.unstar({ id: articleId });
-      expect(result.article.id).toBe(articleId);
-      expect(result.article.starred).toBe(false);
-      expect(result.article.read).toBe(false);
+      const result = await caller.entries.unstar({ id: articleId });
+      expect(result.entry.id).toBe(articleId);
+      expect(result.entry.starred).toBe(false);
+      expect(result.entry.read).toBe(false);
 
       // Verify unstarred in user_entries
       const dbUserEntry = await db
@@ -605,8 +619,8 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.unstar({ id: generateUuidv7() })).rejects.toThrow(
-        "Saved article not found"
+      await expect(caller.entries.unstar({ id: generateUuidv7() })).rejects.toThrow(
+        "Entry not found"
       );
     });
 
@@ -619,9 +633,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId2);
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.unstar({ id: articleId })).rejects.toThrow(
-        "Saved article not found"
-      );
+      await expect(caller.entries.unstar({ id: articleId })).rejects.toThrow("Entry not found");
 
       // Verify still starred in user_entries
       const dbUserEntry = await db
@@ -643,7 +655,7 @@ describe("Saved Articles API", () => {
       };
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.list({})).rejects.toThrow("You must be logged in");
+      await expect(caller.entries.list({ type: "saved" })).rejects.toThrow("You must be logged in");
     });
 
     it("requires authentication for get", async () => {
@@ -655,7 +667,7 @@ describe("Saved Articles API", () => {
       };
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.get({ id: generateUuidv7() })).rejects.toThrow(
+      await expect(caller.entries.get({ id: generateUuidv7() })).rejects.toThrow(
         "You must be logged in"
       );
     });
@@ -683,9 +695,9 @@ describe("Saved Articles API", () => {
       };
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.markRead({ ids: [generateUuidv7()], read: true })).rejects.toThrow(
-        "You must be logged in"
-      );
+      await expect(
+        caller.entries.markRead({ ids: [generateUuidv7()], read: true })
+      ).rejects.toThrow("You must be logged in");
     });
 
     it("requires authentication for star", async () => {
@@ -697,7 +709,7 @@ describe("Saved Articles API", () => {
       };
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.star({ id: generateUuidv7() })).rejects.toThrow(
+      await expect(caller.entries.star({ id: generateUuidv7() })).rejects.toThrow(
         "You must be logged in"
       );
     });
@@ -711,7 +723,7 @@ describe("Saved Articles API", () => {
       };
       const caller = createCaller(ctx);
 
-      await expect(caller.saved.unstar({ id: generateUuidv7() })).rejects.toThrow(
+      await expect(caller.entries.unstar({ id: generateUuidv7() })).rejects.toThrow(
         "You must be logged in"
       );
     });
