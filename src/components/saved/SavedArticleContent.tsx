@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -159,6 +160,34 @@ function StarIcon({ filled }: { filled: boolean }) {
 }
 
 /**
+ * Read/Unread indicator icon.
+ * Filled circle for unread, empty circle for read.
+ */
+function ReadStatusIcon({ read }: { read: boolean }) {
+  if (read) {
+    // Empty circle for read
+    return (
+      <svg
+        className="h-4 w-4"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+      </svg>
+    );
+  }
+  // Filled circle for unread
+  return (
+    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
+/**
  * External link icon.
  */
 function ExternalLinkIcon() {
@@ -227,6 +256,8 @@ interface SavedArticleContentBodyProps {
   setShowOriginal: (show: boolean) => void;
   handleStarToggle: () => void;
   isStarLoading: boolean;
+  handleReadToggle: () => void;
+  isReadLoading: boolean;
 }
 
 /**
@@ -241,6 +272,8 @@ function SavedArticleContentBody({
   setShowOriginal,
   handleStarToggle,
   isStarLoading,
+  handleReadToggle,
+  isReadLoading,
 }: SavedArticleContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -349,6 +382,19 @@ function SavedArticleContentBody({
     narration.state.status,
   ]);
 
+  // Keyboard shortcut: m to toggle read/unread
+  useHotkeys(
+    "m",
+    (e) => {
+      e.preventDefault();
+      handleReadToggle();
+    },
+    {
+      enableOnFormTags: false,
+    },
+    [handleReadToggle]
+  );
+
   return (
     <article className="mx-auto max-w-3xl px-4 py-6 sm:py-8">
       {/* Back button */}
@@ -409,6 +455,19 @@ function SavedArticleContentBody({
           >
             <StarIcon filled={article.starred} />
             <span className="ml-2">{article.starred ? "Starred" : "Star"}</span>
+          </Button>
+
+          {/* Mark read/unread button */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleReadToggle}
+            disabled={isReadLoading}
+            aria-label={article.read ? "Mark as unread" : "Mark as read"}
+            title="Keyboard shortcut: m"
+          >
+            <ReadStatusIcon read={article.read} />
+            <span className="ml-2">{article.read ? "Mark Unread" : "Mark Read"}</span>
           </Button>
 
           {/* Content view toggle - only show when both versions exist */}
@@ -663,7 +722,14 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
     }
   };
 
+  // Handle read toggle
+  const handleReadToggle = () => {
+    if (!article) return;
+    markReadMutation.mutate({ ids: [articleId], read: !article.read });
+  };
+
   const isStarLoading = starMutation.isPending || unstarMutation.isPending;
+  const isReadLoading = markReadMutation.isPending;
 
   // Loading state
   if (isLoading) {
@@ -695,6 +761,8 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
       setShowOriginal={setShowOriginal}
       handleStarToggle={handleStarToggle}
       isStarLoading={isStarLoading}
+      handleReadToggle={handleReadToggle}
+      isReadLoading={isReadLoading}
     />
   );
 }
