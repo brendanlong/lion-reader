@@ -131,6 +131,7 @@ async function createTestEntry(
   await db.insert(entries).values({
     id: entryId,
     feedId,
+    type: "rss",
     guid: `guid-${entryId}`,
     title: options.title ?? `Entry ${entryId}`,
     contentHash: `hash-${entryId}`,

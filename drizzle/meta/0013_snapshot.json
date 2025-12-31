@@ -1,9 +1,91 @@
 {
-  "id": "b1393e57-94e8-4fa3-b0df-5e48d5a4bb2d",
-  "prevId": "d4e36c1b-a894-5883-c4bf-8f423e2e0e25",
+  "id": "54b776ea-061e-4e69-b322-a17acb1b3e02",
+  "prevId": "fcced27d-4813-4fa7-add3-e7aa25061311",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.blocked_senders": {
+      "name": "blocked_senders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_email": {
+          "name": "sender_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blocked_at": {
+          "name": "blocked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "list_unsubscribe_mailto": {
+          "name": "list_unsubscribe_mailto",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unsubscribe_sent_at": {
+          "name": "unsubscribe_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_blocked_senders_user": {
+          "name": "idx_blocked_senders_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "blocked_senders_user_id_users_id_fk": {
+          "name": "blocked_senders_user_id_users_id_fk",
+          "tableFrom": "blocked_senders",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_blocked_senders_user_email": {
+          "name": "uq_blocked_senders_user_email",
+          "nullsNotDistinct": false,
+          "columns": ["user_id", "sender_email"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.entries": {
       "name": "entries",
       "schema": "",
@@ -17,6 +99,13 @@
         "feed_id": {
           "name": "feed_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "feed_type",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
         },
@@ -62,6 +151,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "site_name": {
+          "name": "site_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "published_at": {
           "name": "published_at",
           "type": "timestamp with time zone",
@@ -79,6 +180,37 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "spam_score": {
+          "name": "spam_score",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_spam": {
+          "name": "is_spam",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "list_unsubscribe_mailto": {
+          "name": "list_unsubscribe_mailto",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "list_unsubscribe_https": {
+          "name": "list_unsubscribe_https",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "list_unsubscribe_post": {
+          "name": "list_unsubscribe_post",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -137,6 +269,42 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_entries_spam": {
+          "name": "idx_entries_spam",
+          "columns": [
+            {
+              "expression": "feed_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_spam",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_entries_type": {
+          "name": "idx_entries_type",
+          "columns": [
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -181,6 +349,18 @@
         },
         "url": {
           "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email_sender_pattern": {
+          "name": "email_sender_pattern",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -291,13 +471,130 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "feeds_user_id_users_id_fk": {
+          "name": "feeds_user_id_users_id_fk",
+          "tableFrom": "feeds",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "feeds_url_unique": {
           "name": "feeds_url_unique",
           "nullsNotDistinct": false,
           "columns": ["url"]
+        },
+        "uq_feeds_email_user_sender": {
+          "name": "uq_feeds_email_user_sender",
+          "nullsNotDistinct": false,
+          "columns": ["user_id", "email_sender_pattern"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "feed_type_user_id": {
+          "name": "feed_type_user_id",
+          "value": "(type IN ('email', 'saved')) = (user_id IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.ingest_addresses": {
+      "name": "ingest_addresses",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_ingest_addresses_user": {
+          "name": "idx_ingest_addresses_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_ingest_addresses_token": {
+          "name": "idx_ingest_addresses_token",
+          "columns": [
+            {
+              "expression": "token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ingest_addresses_user_id_users_id_fk": {
+          "name": "ingest_addresses_user_id_users_id_fk",
+          "tableFrom": "ingest_addresses",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "ingest_addresses_token_unique": {
+          "name": "ingest_addresses_token_unique",
+          "nullsNotDistinct": false,
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -680,206 +977,6 @@
           "name": "uq_oauth_accounts_provider_account",
           "nullsNotDistinct": false,
           "columns": ["provider", "provider_account_id"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.saved_articles": {
-      "name": "saved_articles",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "site_name": {
-          "name": "site_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "author": {
-          "name": "author",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "image_url": {
-          "name": "image_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content_original": {
-          "name": "content_original",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content_cleaned": {
-          "name": "content_cleaned",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "excerpt": {
-          "name": "excerpt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content_hash": {
-          "name": "content_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "read": {
-          "name": "read",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "starred": {
-          "name": "starred",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "starred_at": {
-          "name": "starred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "saved_at": {
-          "name": "saved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_saved_articles_user": {
-          "name": "idx_saved_articles_user",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_saved_articles_unread": {
-          "name": "idx_saved_articles_unread",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_saved_articles_starred": {
-          "name": "idx_saved_articles_starred",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "starred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "saved_articles_user_id_users_id_fk": {
-          "name": "saved_articles_user_id_users_id_fk",
-          "tableFrom": "saved_articles",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "uq_saved_articles_user_url": {
-          "name": "uq_saved_articles_user_url",
-          "nullsNotDistinct": false,
-          "columns": ["user_id", "url"]
         }
       },
       "policies": {},
@@ -1421,6 +1518,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "show_spam": {
+          "name": "show_spam",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

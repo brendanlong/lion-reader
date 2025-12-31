@@ -189,6 +189,7 @@ describe("Entry Processor", () => {
       await db.insert(entries).values({
         id: generateUuidv7(),
         feedId: feed.id,
+        type: "rss",
         guid,
         fetchedAt: new Date(),
         contentHash: "abc123",
@@ -216,6 +217,7 @@ describe("Entry Processor", () => {
       await db.insert(entries).values({
         id: generateUuidv7(),
         feedId: feed1.id,
+        type: "rss",
         guid,
         fetchedAt: new Date(),
         contentHash: "abc123",
@@ -248,7 +250,7 @@ describe("Entry Processor", () => {
       };
 
       const contentHash = generateContentHash(parsedEntry);
-      const entry = await createEntry(feed.id, parsedEntry, contentHash, fetchedAt);
+      const entry = await createEntry(feed.id, "rss", parsedEntry, contentHash, fetchedAt);
 
       expect(entry.id).toBeDefined();
       expect(entry.feedId).toBe(feed.id);
@@ -273,6 +275,7 @@ describe("Entry Processor", () => {
 
       const entry = await createEntry(
         feed.id,
+        "rss",
         parsedEntry,
         generateContentHash(parsedEntry),
         new Date()
@@ -296,6 +299,7 @@ describe("Entry Processor", () => {
 
       const createdEntry = await createEntry(
         feed.id,
+        "rss",
         initialEntry,
         generateContentHash(initialEntry),
         new Date()
@@ -331,7 +335,7 @@ describe("Entry Processor", () => {
         content: "New content",
       };
 
-      const result = await processEntry(feed.id, parsedEntry, new Date());
+      const result = await processEntry(feed.id, "rss", parsedEntry, new Date());
 
       expect(result.isNew).toBe(true);
       expect(result.isUpdated).toBe(false);
@@ -353,7 +357,7 @@ describe("Entry Processor", () => {
         content: "Original content",
       };
 
-      const createResult = await processEntry(feed.id, initialEntry, new Date());
+      const createResult = await processEntry(feed.id, "rss", initialEntry, new Date());
       expect(createResult.isNew).toBe(true);
 
       // Process with different content
@@ -363,7 +367,7 @@ describe("Entry Processor", () => {
         content: "New content here",
       };
 
-      const updateResult = await processEntry(feed.id, updatedEntry, new Date());
+      const updateResult = await processEntry(feed.id, "rss", updatedEntry, new Date());
 
       expect(updateResult.isNew).toBe(false);
       expect(updateResult.isUpdated).toBe(true);
@@ -384,11 +388,11 @@ describe("Entry Processor", () => {
       };
 
       // First process
-      const result1 = await processEntry(feed.id, entry, new Date());
+      const result1 = await processEntry(feed.id, "rss", entry, new Date());
       expect(result1.isNew).toBe(true);
 
       // Second process with same content
-      const result2 = await processEntry(feed.id, entry, new Date());
+      const result2 = await processEntry(feed.id, "rss", entry, new Date());
 
       expect(result2.isNew).toBe(false);
       expect(result2.isUpdated).toBe(false);

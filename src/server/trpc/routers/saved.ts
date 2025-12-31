@@ -3,17 +3,21 @@
  *
  * Handles saved articles (read-it-later) CRUD operations.
  * Users can save URLs to read later, similar to Pocket or Instapaper.
+ *
+ * Saved articles are stored as entries in a special per-user feed with type='saved'.
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, lt, gt, inArray, count } from "drizzle-orm";
+import { eq, and, desc, asc, lt, gt, inArray, sql } from "drizzle-orm";
 import { JSDOM } from "jsdom";
+import { createHash } from "crypto";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { savedArticles } from "@/server/db/schema";
+import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { cleanContent } from "@/server/feed/content-cleaner";
+import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -257,6 +261,17 @@ function extractMetadata(html: string, url: string): PageMetadata {
   return { title, siteName, author, imageUrl };
 }
 
+/**
+ * Generates a SHA-256 content hash for saved article.
+ * Used for narration deduplication.
+ */
+function generateContentHash(title: string | null, content: string | null): string {
+  const titleStr = title ?? "";
+  const contentStr = content ?? "";
+  const hashInput = `${titleStr}\n${contentStr}`;
+  return createHash("sha256").update(hashInput, "utf8").digest("hex");
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -266,7 +281,7 @@ export const savedRouter = createTRPCRouter({
    * Save a URL for later reading.
    *
    * Extracts metadata (title, og:image, site name, author),
-   * runs Readability for clean content, and stores in saved_articles.
+   * runs Readability for clean content, and stores in entries table.
    *
    * If `html` is provided (e.g., from a bookmarklet capturing the rendered DOM),
    * it's used directly instead of fetching the URL. This is useful for
@@ -298,32 +313,45 @@ export const savedRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const now = new Date();
 
-      // Check if URL is already saved
+      // Get or create the user's saved feed
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
+
+      // Check if URL is already saved (guid = URL for saved articles)
       const existing = await ctx.db
-        .select()
-        .from(savedArticles)
-        .where(and(eq(savedArticles.userId, userId), eq(savedArticles.url, input.url)))
+        .select({
+          entry: entries,
+          userState: userEntries,
+        })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(
+          and(
+            eq(entries.feedId, savedFeedId),
+            eq(entries.guid, input.url),
+            eq(userEntries.userId, userId)
+          )
+        )
         .limit(1);
 
       if (existing.length > 0) {
         // Return existing article instead of error
-        const article = existing[0];
+        const { entry, userState } = existing[0];
         return {
           article: {
-            id: article.id,
-            url: article.url,
-            title: article.title,
-            siteName: article.siteName,
-            author: article.author,
-            imageUrl: article.imageUrl,
-            contentOriginal: article.contentOriginal,
-            contentCleaned: article.contentCleaned,
-            excerpt: article.excerpt,
-            read: article.read,
-            starred: article.starred,
-            savedAt: article.savedAt,
-            readAt: article.readAt,
-            starredAt: article.starredAt,
+            id: entry.id,
+            url: entry.url!,
+            title: entry.title,
+            siteName: entry.siteName,
+            author: entry.author,
+            imageUrl: entry.imageUrl,
+            contentOriginal: entry.contentOriginal,
+            contentCleaned: entry.contentCleaned,
+            excerpt: entry.summary,
+            read: userState.read,
+            starred: userState.starred,
+            savedAt: entry.fetchedAt,
+            readAt: userState.readAt,
+            starredAt: userState.starredAt,
           },
         };
       }
@@ -370,29 +398,50 @@ export const savedRouter = createTRPCRouter({
       const finalTitle = input.title || metadata.title || cleaned?.title || null;
       const finalAuthor = metadata.author || cleaned?.byline || null;
 
-      // Create the saved article
-      const articleId = generateUuidv7();
-      await ctx.db.insert(savedArticles).values({
-        id: articleId,
-        userId,
+      // Compute content hash for narration deduplication
+      const contentHash = generateContentHash(finalTitle, cleaned?.content || html);
+
+      // Create the saved article entry
+      const entryId = generateUuidv7();
+      await ctx.db.insert(entries).values({
+        id: entryId,
+        feedId: savedFeedId,
+        type: "saved",
+        guid: input.url, // For saved articles, guid = URL
         url: input.url,
         title: finalTitle,
-        siteName: metadata.siteName,
         author: finalAuthor,
-        imageUrl: metadata.imageUrl,
         contentOriginal: html,
         contentCleaned: cleaned?.content || null,
-        excerpt,
-        read: false,
-        starred: false,
-        savedAt: now,
+        summary: excerpt,
+        siteName: metadata.siteName,
+        imageUrl: metadata.imageUrl,
+        publishedAt: now, // When saved
+        fetchedAt: now, // When saved
+        contentHash,
+        // Email-specific fields are NULL for saved entries
+        spamScore: null,
+        isSpam: false,
+        listUnsubscribeMailto: null,
+        listUnsubscribeHttps: null,
+        listUnsubscribePost: null,
         createdAt: now,
         updatedAt: now,
       });
 
+      // Create user_entries row
+      await ctx.db.insert(userEntries).values({
+        userId,
+        entryId,
+        read: false,
+        starred: false,
+        readAt: null,
+        starredAt: null,
+      });
+
       return {
         article: {
-          id: articleId,
+          id: entryId,
           url: input.url,
           title: finalTitle,
           siteName: metadata.siteName,
@@ -444,63 +493,70 @@ export const savedRouter = createTRPCRouter({
       const limit = input.limit ?? DEFAULT_LIMIT;
       const sortOrder = input.sortOrder ?? "newest";
 
-      // Build query conditions
-      const conditions = [eq(savedArticles.userId, userId)];
+      // Get or create the user's saved feed
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
 
-      // Apply unreadOnly filter in the query (more efficient than post-filter)
+      // Build query conditions
+      const conditions = [eq(entries.feedId, savedFeedId), eq(userEntries.userId, userId)];
+
+      // Apply unreadOnly filter
       if (input.unreadOnly) {
-        conditions.push(eq(savedArticles.read, false));
+        conditions.push(eq(userEntries.read, false));
       }
 
-      // Apply starredOnly filter in the query
+      // Apply starredOnly filter
       if (input.starredOnly) {
-        conditions.push(eq(savedArticles.starred, true));
+        conditions.push(eq(userEntries.starred, true));
       }
 
       // Add cursor condition if present
-      // For newest-first (desc), we want articles with ID < cursor
-      // For oldest-first (asc), we want articles with ID > cursor
+      // For newest-first (desc), we want entries with ID < cursor
+      // For oldest-first (asc), we want entries with ID > cursor
       if (input.cursor) {
-        const cursorArticleId = decodeCursor(input.cursor);
+        const cursorEntryId = decodeCursor(input.cursor);
         if (sortOrder === "newest") {
-          conditions.push(lt(savedArticles.id, cursorArticleId));
+          conditions.push(lt(entries.id, cursorEntryId));
         } else {
-          conditions.push(gt(savedArticles.id, cursorArticleId));
+          conditions.push(gt(entries.id, cursorEntryId));
         }
       }
 
       // Query saved articles with appropriate sort order
       // We fetch one extra to determine if there are more results
-      const orderByClause = sortOrder === "newest" ? desc(savedArticles.id) : asc(savedArticles.id);
+      const orderByClause = sortOrder === "newest" ? desc(entries.id) : asc(entries.id);
       const results = await ctx.db
-        .select()
-        .from(savedArticles)
+        .select({
+          entry: entries,
+          userState: userEntries,
+        })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
         .where(and(...conditions))
         .orderBy(orderByClause)
         .limit(limit + 1);
 
       // Determine if there are more results
       const hasMore = results.length > limit;
-      const resultArticles = hasMore ? results.slice(0, limit) : results;
+      const resultEntries = hasMore ? results.slice(0, limit) : results;
 
       // Format the output
-      const items = resultArticles.map((article) => ({
-        id: article.id,
-        url: article.url,
-        title: article.title,
-        siteName: article.siteName,
-        author: article.author,
-        imageUrl: article.imageUrl,
-        excerpt: article.excerpt,
-        read: article.read,
-        starred: article.starred,
-        savedAt: article.savedAt,
+      const items = resultEntries.map(({ entry, userState }) => ({
+        id: entry.id,
+        url: entry.url!,
+        title: entry.title,
+        siteName: entry.siteName,
+        author: entry.author,
+        imageUrl: entry.imageUrl,
+        excerpt: entry.summary,
+        read: userState.read,
+        starred: userState.starred,
+        savedAt: entry.fetchedAt,
       }));
 
       // Generate next cursor if there are more results
       const nextCursor =
-        hasMore && resultArticles.length > 0
-          ? encodeCursor(resultArticles[resultArticles.length - 1].id)
+        hasMore && resultEntries.length > 0
+          ? encodeCursor(resultEntries[resultEntries.length - 1].entry.id)
           : undefined;
 
       return { items, nextCursor };
@@ -530,41 +586,57 @@ export const savedRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
+      // Get or create the user's saved feed to ensure it exists
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
+
       // Get the saved article
       const result = await ctx.db
-        .select()
-        .from(savedArticles)
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
+        .select({
+          entry: entries,
+          userState: userEntries,
+        })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(
+          and(
+            eq(entries.id, input.id),
+            eq(entries.feedId, savedFeedId),
+            eq(userEntries.userId, userId)
+          )
+        )
         .limit(1);
 
       if (result.length === 0) {
         throw errors.savedArticleNotFound();
       }
 
-      const article = result[0];
+      const { entry, userState } = result[0];
 
       return {
         article: {
-          id: article.id,
-          url: article.url,
-          title: article.title,
-          siteName: article.siteName,
-          author: article.author,
-          imageUrl: article.imageUrl,
-          contentOriginal: article.contentOriginal,
-          contentCleaned: article.contentCleaned,
-          excerpt: article.excerpt,
-          read: article.read,
-          starred: article.starred,
-          savedAt: article.savedAt,
-          readAt: article.readAt,
-          starredAt: article.starredAt,
+          id: entry.id,
+          url: entry.url!,
+          title: entry.title,
+          siteName: entry.siteName,
+          author: entry.author,
+          imageUrl: entry.imageUrl,
+          contentOriginal: entry.contentOriginal,
+          contentCleaned: entry.contentCleaned,
+          excerpt: entry.summary,
+          read: userState.read,
+          starred: userState.starred,
+          savedAt: entry.fetchedAt,
+          readAt: userState.readAt,
+          starredAt: userState.starredAt,
         },
       };
     }),
 
   /**
    * Delete a saved article (hard delete).
+   *
+   * Saved articles are per-user, so hard delete is safe.
+   * Deleting the entry will cascade to user_entries.
    *
    * @param id - The saved article ID to delete
    * @returns Empty object on success
@@ -587,21 +659,29 @@ export const savedRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Verify the article exists and belongs to the user
+      // Get or create the user's saved feed
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
+
+      // Verify the article exists and belongs to the user's saved feed
       const existing = await ctx.db
-        .select({ id: savedArticles.id })
-        .from(savedArticles)
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
+        .select({ id: entries.id })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(
+          and(
+            eq(entries.id, input.id),
+            eq(entries.feedId, savedFeedId),
+            eq(userEntries.userId, userId)
+          )
+        )
         .limit(1);
 
       if (existing.length === 0) {
         throw errors.savedArticleNotFound();
       }
 
-      // Delete the article
-      await ctx.db
-        .delete(savedArticles)
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)));
+      // Delete the entry (will cascade to user_entries)
+      await ctx.db.delete(entries).where(eq(entries.id, input.id));
 
       return {};
     }),
@@ -636,38 +716,47 @@ export const savedRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const now = new Date();
 
-      // Get articles that belong to the user
-      const existingArticles = await ctx.db
-        .select({ id: savedArticles.id })
-        .from(savedArticles)
-        .where(and(inArray(savedArticles.id, input.ids), eq(savedArticles.userId, userId)));
+      // Get or create the user's saved feed
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
 
-      if (existingArticles.length === 0) {
+      // Get entries that belong to the user's saved feed
+      const existingEntries = await ctx.db
+        .select({ id: entries.id })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(
+          and(
+            inArray(entries.id, input.ids),
+            eq(entries.feedId, savedFeedId),
+            eq(userEntries.userId, userId)
+          )
+        );
+
+      if (existingEntries.length === 0) {
         return { articles: [] };
       }
 
-      const validIds = existingArticles.map((a) => a.id);
+      const validIds = existingEntries.map((e) => e.id);
 
-      // Update all matching articles
+      // Update all matching user_entries
       await ctx.db
-        .update(savedArticles)
+        .update(userEntries)
         .set({
           read: input.read,
           readAt: input.read ? now : null,
-          updatedAt: now,
         })
-        .where(and(inArray(savedArticles.id, validIds), eq(savedArticles.userId, userId)));
+        .where(and(inArray(userEntries.entryId, validIds), eq(userEntries.userId, userId)));
 
       // Fetch the updated articles to return their current state
       // This enables normy to automatically update cached queries
       const updatedArticles = await ctx.db
         .select({
-          id: savedArticles.id,
-          read: savedArticles.read,
-          starred: savedArticles.starred,
+          id: userEntries.entryId,
+          read: userEntries.read,
+          starred: userEntries.starred,
         })
-        .from(savedArticles)
-        .where(and(inArray(savedArticles.id, validIds), eq(savedArticles.userId, userId)));
+        .from(userEntries)
+        .where(and(inArray(userEntries.entryId, validIds), eq(userEntries.userId, userId)));
 
       return { articles: updatedArticles };
     }),
@@ -697,37 +786,46 @@ export const savedRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const now = new Date();
 
-      // Verify the article exists and belongs to the user
+      // Get or create the user's saved feed
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
+
+      // Verify the article exists and belongs to the user's saved feed
       const existing = await ctx.db
-        .select({ id: savedArticles.id })
-        .from(savedArticles)
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
+        .select({ id: entries.id })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(
+          and(
+            eq(entries.id, input.id),
+            eq(entries.feedId, savedFeedId),
+            eq(userEntries.userId, userId)
+          )
+        )
         .limit(1);
 
       if (existing.length === 0) {
         throw errors.savedArticleNotFound();
       }
 
-      // Update the article
+      // Update the user_entries
       await ctx.db
-        .update(savedArticles)
+        .update(userEntries)
         .set({
           starred: true,
           starredAt: now,
-          updatedAt: now,
         })
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)));
+        .where(and(eq(userEntries.entryId, input.id), eq(userEntries.userId, userId)));
 
       // Fetch the updated article to return its current state
       // This enables normy to automatically update cached queries
       const updatedArticle = await ctx.db
         .select({
-          id: savedArticles.id,
-          read: savedArticles.read,
-          starred: savedArticles.starred,
+          id: userEntries.entryId,
+          read: userEntries.read,
+          starred: userEntries.starred,
         })
-        .from(savedArticles)
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
+        .from(userEntries)
+        .where(and(eq(userEntries.entryId, input.id), eq(userEntries.userId, userId)))
         .limit(1);
 
       return { article: updatedArticle[0] };
@@ -756,39 +854,47 @@ export const savedRouter = createTRPCRouter({
     .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const now = new Date();
 
-      // Verify the article exists and belongs to the user
+      // Get or create the user's saved feed
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
+
+      // Verify the article exists and belongs to the user's saved feed
       const existing = await ctx.db
-        .select({ id: savedArticles.id })
-        .from(savedArticles)
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
+        .select({ id: entries.id })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(
+          and(
+            eq(entries.id, input.id),
+            eq(entries.feedId, savedFeedId),
+            eq(userEntries.userId, userId)
+          )
+        )
         .limit(1);
 
       if (existing.length === 0) {
         throw errors.savedArticleNotFound();
       }
 
-      // Update the article
+      // Update the user_entries
       await ctx.db
-        .update(savedArticles)
+        .update(userEntries)
         .set({
           starred: false,
           starredAt: null,
-          updatedAt: now,
         })
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)));
+        .where(and(eq(userEntries.entryId, input.id), eq(userEntries.userId, userId)));
 
       // Fetch the updated article to return its current state
       // This enables normy to automatically update cached queries
       const updatedArticle = await ctx.db
         .select({
-          id: savedArticles.id,
-          read: savedArticles.read,
-          starred: savedArticles.starred,
+          id: userEntries.entryId,
+          read: userEntries.read,
+          starred: userEntries.starred,
         })
-        .from(savedArticles)
-        .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
+        .from(userEntries)
+        .where(and(eq(userEntries.entryId, input.id), eq(userEntries.userId, userId)))
         .limit(1);
 
       return { article: updatedArticle[0] };
@@ -818,17 +924,28 @@ export const savedRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
+      // Get or create the user's saved feed
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
+
       // Get total count
       const totalResult = await ctx.db
-        .select({ count: count() })
-        .from(savedArticles)
-        .where(eq(savedArticles.userId, userId));
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(and(eq(entries.feedId, savedFeedId), eq(userEntries.userId, userId)));
 
       // Get unread count
       const unreadResult = await ctx.db
-        .select({ count: count() })
-        .from(savedArticles)
-        .where(and(eq(savedArticles.userId, userId), eq(savedArticles.read, false)));
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(
+          and(
+            eq(entries.feedId, savedFeedId),
+            eq(userEntries.userId, userId),
+            eq(userEntries.read, false)
+          )
+        );
 
       return {
         total: totalResult[0]?.count ?? 0,

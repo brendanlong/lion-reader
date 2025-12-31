@@ -38,7 +38,7 @@ export interface ParagraphMapping {
 // ENUMS
 // ============================================================================
 
-export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json", "email"]);
+export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json", "email", "saved"]);
 
 export const jobStatusEnum = pgEnum("job_status", ["pending", "running", "completed", "failed"]);
 
@@ -192,10 +192,12 @@ export const feeds = pgTable(
   },
   (table) => [
     index("idx_feeds_next_fetch").on(table.nextFetchAt),
-    // Email feeds require user_id, other feeds must not have it
-    check("feed_type_user_id", sql`(type = 'email') = (user_id IS NOT NULL)`),
+    // Email and saved feeds require user_id, other feeds must not have it
+    check("feed_type_user_id", sql`(type IN ('email', 'saved')) = (user_id IS NOT NULL)`),
     // Unique constraint for email feeds: one feed per (user, sender)
     unique("uq_feeds_email_user_sender").on(table.userId, table.emailSenderPattern),
+    // Unique constraint for saved feeds: one saved feed per user (partial index)
+    // Note: This is created as a raw SQL index in the migration
   ]
 );
 
@@ -214,9 +216,13 @@ export const entries = pgTable(
     feedId: uuid("feed_id")
       .notNull()
       .references(() => feeds.id, { onDelete: "cascade" }),
+    type: feedTypeEnum("type").notNull(), // Denormalized from feed for type-specific constraints and queries
 
-    // Identifier from source
-    guid: text("guid").notNull(), // from RSS/Atom or email Message-ID
+    // Identifier from source - meaning varies by type:
+    // - rss/atom/json: <guid> or <id> from feed
+    // - email: Message-ID header
+    // - saved: the URL being saved
+    guid: text("guid").notNull(),
 
     // Content
     url: text("url"),
@@ -225,6 +231,10 @@ export const entries = pgTable(
     contentOriginal: text("content_original"),
     contentCleaned: text("content_cleaned"), // Readability-cleaned HTML
     summary: text("summary"), // truncated for previews
+
+    // Saved article metadata (only for type='saved')
+    siteName: text("site_name"),
+    imageUrl: text("image_url"),
 
     // Timestamps
     publishedAt: timestamp("published_at", { withTimezone: true }), // from feed (may be null/inaccurate)
@@ -254,6 +264,12 @@ export const entries = pgTable(
     index("idx_entries_fetched").on(table.feedId, table.fetchedAt),
     // For filtering spam entries
     index("idx_entries_spam").on(table.feedId, table.isSpam),
+    // For filtering by entry type
+    index("idx_entries_type").on(table.type),
+    // Type-specific check constraints (created via raw SQL in migrations):
+    // - entries_spam_only_email: spam fields only for email entries
+    // - entries_unsubscribe_only_email: unsubscribe fields only for email entries
+    // - entries_saved_metadata_only_saved: site_name/image_url only for saved entries
   ]
 );
 
@@ -460,55 +476,6 @@ export const websubSubscriptions = pgTable(
 );
 
 // ============================================================================
-// SAVED ARTICLES (Read-it-Later)
-// ============================================================================
-
-/**
- * Saved articles table - stores URLs saved for later reading.
- * Similar to Pocket/Instapaper - articles have read/starred state like feed entries.
- */
-export const savedArticles = pgTable(
-  "saved_articles",
-  {
-    id: uuid("id").primaryKey(), // UUIDv7
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-
-    url: text("url").notNull(),
-    title: text("title"),
-    siteName: text("site_name"),
-    author: text("author"),
-    imageUrl: text("image_url"), // og:image for display
-
-    contentOriginal: text("content_original"),
-    contentCleaned: text("content_cleaned"), // via Readability
-    excerpt: text("excerpt"),
-    contentHash: text("content_hash"), // SHA256 hash for narration deduplication
-
-    // Same read/starred model as entries
-    read: boolean("read").notNull().default(false),
-    readAt: timestamp("read_at", { withTimezone: true }),
-    starred: boolean("starred").notNull().default(false),
-    starredAt: timestamp("starred_at", { withTimezone: true }),
-
-    savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    // Can only save same URL once per user
-    unique("uq_saved_articles_user_url").on(table.userId, table.url),
-    // For listing saved articles by user (UUIDv7 gives time ordering with DESC)
-    index("idx_saved_articles_user").on(table.userId, table.id),
-    // For filtering unread articles
-    index("idx_saved_articles_unread").on(table.userId),
-    // For filtering starred articles
-    index("idx_saved_articles_starred").on(table.userId, table.starredAt),
-  ]
-);
-
-// ============================================================================
 // NARRATION
 // ============================================================================
 
@@ -640,9 +607,6 @@ export type NewSubscriptionTag = typeof subscriptionTags.$inferInsert;
 
 export type WebsubSubscription = typeof websubSubscriptions.$inferSelect;
 export type NewWebsubSubscription = typeof websubSubscriptions.$inferInsert;
-
-export type SavedArticle = typeof savedArticles.$inferSelect;
-export type NewSavedArticle = typeof savedArticles.$inferInsert;
 
 export type NarrationContent = typeof narrationContent.$inferSelect;
 export type NewNarrationContent = typeof narrationContent.$inferInsert;
