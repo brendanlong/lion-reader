@@ -1,11 +1,15 @@
 /**
  * Job handlers for processing different job types.
- * Each handler is responsible for executing a specific job type.
+ *
+ * Each handler executes a specific job type and returns a result that includes
+ * the next run time for the job. The worker uses this to update the job record.
+ *
+ * See docs/job-queue-design.md for the overall architecture.
  */
 
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { feeds, subscriptions, type Feed } from "../db/schema";
+import { feeds, type Feed } from "../db/schema";
 import {
   fetchFeed,
   parseFeed,
@@ -14,7 +18,7 @@ import {
   renewExpiringSubscriptions,
   type FetchFeedResult,
 } from "../feed";
-import { createJob, type JobPayloads } from "./queue";
+import { type JobPayloads } from "./queue";
 import { logger } from "@/lib/logger";
 import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from "../metrics/metrics";
 
@@ -24,6 +28,8 @@ import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from ".
 export interface JobHandlerResult {
   /** Whether the job completed successfully */
   success: boolean;
+  /** When the job should next run */
+  nextRunAt: Date;
   /** Error message if the job failed */
   error?: string;
   /** Any additional metadata about the job execution */
@@ -31,28 +37,14 @@ export interface JobHandlerResult {
 }
 
 /**
- * Checks if a feed has at least one active subscriber.
- *
- * @param feedId - The feed ID to check
- * @returns True if the feed has active subscribers
- */
-async function hasActiveSubscribers(feedId: string): Promise<boolean> {
-  const [result] = await db
-    .select({ count: subscriptions.id })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.feedId, feedId), isNull(subscriptions.unsubscribedAt)))
-    .limit(1);
-
-  return result !== undefined;
-}
-
-/**
  * Handler for fetch_feed jobs.
- * Fetches a feed, processes entries, and schedules the next fetch.
- * Only syncs feeds that have at least one active subscriber.
+ * Fetches a feed, processes entries, and returns the next fetch time.
+ *
+ * Note: This handler no longer checks for active subscribers - that's handled
+ * by the job enable/disable mechanism. If a job is running, the feed has subscribers.
  *
  * @param payload - The job payload containing the feedId
- * @returns Job handler result
+ * @returns Job handler result with next run time
  */
 export async function handleFetchFeed(
   payload: JobPayloads["fetch_feed"]
@@ -70,36 +62,21 @@ export async function handleFetchFeed(
   if (!feed) {
     logger.warn("Feed not found for fetch job", { feedId });
     endFeedFetchTimer("error");
+    // Schedule retry in 1 hour - feed might be deleted
     return {
       success: false,
+      nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
       error: `Feed not found: ${feedId}`,
-    };
-  }
-
-  // Skip fetching feeds without active subscribers
-  const hasSubscribers = await hasActiveSubscribers(feedId);
-  if (!hasSubscribers) {
-    logger.info("Skipping feed fetch - no active subscribers", { feedId, url: feed.url });
-    // Clear nextFetchAt so this feed won't be scheduled again until someone subscribes
-    await db
-      .update(feeds)
-      .set({ nextFetchAt: null, updatedAt: new Date() })
-      .where(eq(feeds.id, feedId));
-    endFeedFetchTimer("success");
-    return {
-      success: true,
-      metadata: {
-        skipped: true,
-        reason: "no_active_subscribers",
-      },
     };
   }
 
   if (!feed.url) {
     logger.warn("Feed has no URL", { feedId });
     endFeedFetchTimer("error");
+    // Email feeds don't have URLs - schedule far future retry
     return {
       success: false,
+      nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       error: `Feed has no URL: ${feedId}`,
     };
   }
@@ -157,7 +134,7 @@ function getMetricsStatus(
  *
  * @param feed - The feed record from the database
  * @param result - The fetch result
- * @returns Job handler result
+ * @returns Job handler result with next run time
  */
 async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<JobHandlerResult> {
   const now = new Date();
@@ -171,9 +148,14 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       } catch (error) {
         // Parsing failed - treat as error
         const errorMessage = error instanceof Error ? error.message : "Failed to parse feed";
-        await updateFeedOnError(feed.id, errorMessage, now);
+        const nextFetch = calculateNextFetch({
+          consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
+          now,
+        });
+        await updateFeedOnError(feed.id, errorMessage, now, nextFetch.nextFetchAt);
         return {
           success: false,
+          nextRunAt: nextFetch.nextFetchAt,
           error: errorMessage,
         };
       }
@@ -208,23 +190,20 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         })
         .where(eq(feeds.id, feed.id));
 
-      // Schedule the next fetch job
-      await scheduleNextFetch(feed.id, nextFetch.nextFetchAt);
-
       return {
         success: true,
+        nextRunAt: nextFetch.nextFetchAt,
         metadata: {
           newEntries: processResult.newCount,
           updatedEntries: processResult.updatedCount,
           unchangedEntries: processResult.unchangedCount,
-          nextFetchAt: nextFetch.nextFetchAt.toISOString(),
           nextFetchReason: nextFetch.reason,
         },
       };
     }
 
     case "not_modified": {
-      // Feed hasn't changed - just update timestamps and schedule next fetch
+      // Feed hasn't changed - just update timestamps
       const nextFetch = calculateNextFetch({
         cacheControl: result.cacheHeaders.cacheControl,
         consecutiveFailures: 0,
@@ -242,13 +221,11 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         })
         .where(eq(feeds.id, feed.id));
 
-      await scheduleNextFetch(feed.id, nextFetch.nextFetchAt);
-
       return {
         success: true,
+        nextRunAt: nextFetch.nextFetchAt,
         metadata: {
           notModified: true,
-          nextFetchAt: nextFetch.nextFetchAt.toISOString(),
           nextFetchReason: nextFetch.reason,
         },
       };
@@ -266,10 +243,9 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         .where(eq(feeds.id, feed.id));
 
       // Schedule immediate retry with new URL
-      await scheduleNextFetch(feed.id, now);
-
       return {
         success: true,
+        nextRunAt: now,
         metadata: {
           redirected: true,
           newUrl: result.redirectUrl,
@@ -279,12 +255,15 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 
     case "client_error": {
       if (result.permanent) {
-        // Permanent error (404, 410) - stop fetching
+        // Permanent error (404, 410) - schedule far in future but don't stop entirely
+        // The job will remain enabled in case the feed comes back
+        const nextFetch = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
         await db
           .update(feeds)
           .set({
             lastFetchedAt: now,
-            nextFetchAt: null, // Don't schedule next fetch
+            nextFetchAt: nextFetch,
             consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
             lastError: result.message,
             updatedAt: now,
@@ -293,6 +272,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 
         return {
           success: false,
+          nextRunAt: nextFetch,
           error: result.message,
           metadata: {
             permanent: true,
@@ -300,7 +280,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         };
       }
 
-      // Temporary client error - increment failures and backoff
+      // Temporary client error - backoff
       return handleTemporaryError(feed, result.message, now);
     }
 
@@ -308,7 +288,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
     case "rate_limited":
     case "network_error":
     case "too_many_redirects": {
-      // Temporary errors - increment failures and backoff
+      // Temporary errors - backoff
       const errorMessage =
         result.status === "too_many_redirects"
           ? `Too many redirects (last: ${result.lastUrl})`
@@ -327,7 +307,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 }
 
 /**
- * Handles temporary errors by incrementing failure count and scheduling retry with backoff.
+ * Handles temporary errors by calculating backoff and updating the feed.
  */
 async function handleTemporaryError(
   feed: Feed,
@@ -352,14 +332,12 @@ async function handleTemporaryError(
     })
     .where(eq(feeds.id, feed.id));
 
-  await scheduleNextFetch(feed.id, nextFetch.nextFetchAt);
-
   return {
     success: false,
+    nextRunAt: nextFetch.nextFetchAt,
     error: errorMessage,
     metadata: {
       consecutiveFailures: newFailureCount,
-      nextFetchAt: nextFetch.nextFetchAt.toISOString(),
     },
   };
 }
@@ -367,99 +345,39 @@ async function handleTemporaryError(
 /**
  * Updates feed on parsing/processing error.
  */
-async function updateFeedOnError(feedId: string, errorMessage: string, now: Date): Promise<void> {
+async function updateFeedOnError(
+  feedId: string,
+  errorMessage: string,
+  now: Date,
+  nextFetchAt: Date
+): Promise<void> {
   const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId)).limit(1);
 
   if (!feed) return;
 
   const newFailureCount = (feed.consecutiveFailures ?? 0) + 1;
 
-  const nextFetch = calculateNextFetch({
-    consecutiveFailures: newFailureCount,
-    now,
-  });
-
   await db
     .update(feeds)
     .set({
       lastFetchedAt: now,
-      nextFetchAt: nextFetch.nextFetchAt,
+      nextFetchAt: nextFetchAt,
       consecutiveFailures: newFailureCount,
       lastError: errorMessage,
       updatedAt: now,
     })
     .where(eq(feeds.id, feedId));
-
-  await scheduleNextFetch(feedId, nextFetch.nextFetchAt);
-}
-
-/**
- * Schedules the next fetch job for a feed.
- *
- * @param feedId - The feed ID
- * @param scheduledFor - When to run the job
- */
-async function scheduleNextFetch(feedId: string, scheduledFor: Date): Promise<void> {
-  await createJob({
-    type: "fetch_feed",
-    payload: { feedId },
-    scheduledFor,
-    maxAttempts: 3,
-  });
-}
-
-/**
- * Creates an initial fetch job for a newly subscribed feed.
- * Used when a user subscribes to a feed for the first time.
- *
- * @param feedId - The feed ID
- */
-export async function createInitialFetchJob(feedId: string): Promise<void> {
-  await createJob({
-    type: "fetch_feed",
-    payload: { feedId },
-    scheduledFor: new Date(), // Run immediately
-    maxAttempts: 3,
-  });
-}
-
-/**
- * Handler for cleanup jobs.
- * Removes old completed jobs from the queue.
- *
- * @param payload - The job payload
- * @returns Job handler result
- */
-export async function handleCleanup(payload: JobPayloads["cleanup"]): Promise<JobHandlerResult> {
-  const { olderThanDays = 7 } = payload;
-
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
-
-  // Import here to avoid circular dependency
-  const { deleteCompletedJobs } = await import("./queue");
-  const deletedCount = await deleteCompletedJobs(cutoffDate);
-
-  return {
-    success: true,
-    metadata: {
-      deletedJobs: deletedCount,
-      cutoffDate: cutoffDate.toISOString(),
-    },
-  };
 }
 
 /**
  * Handler for renew_websub jobs.
  * Renews WebSub subscriptions that are expiring soon.
  *
- * This job should be scheduled to run daily. It finds all active WebSub
- * subscriptions expiring within 24 hours and attempts to renew them.
- * If renewal fails, the subscription is marked as unsubscribed and
- * normal polling will take over.
+ * This job runs daily. It finds all active WebSub subscriptions expiring
+ * within 24 hours and attempts to renew them.
  *
  * @param _payload - The job payload (empty for this job type)
- * @returns Job handler result
+ * @returns Job handler result with next run time (24 hours from now)
  */
 export async function handleRenewWebsub(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -483,11 +401,16 @@ export async function handleRenewWebsub(
     });
   }
 
-  // Schedule the next renewal check for 24 hours from now
-  await scheduleNextRenewalCheck();
+  // Schedule next check for 24 hours from now
+  const nextRunAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  logger.debug("Scheduled next WebSub renewal check", {
+    scheduledFor: nextRunAt.toISOString(),
+  });
 
   return {
     success: true,
+    nextRunAt,
     metadata: {
       checked: result.checked,
       renewed: result.renewed,
@@ -495,53 +418,4 @@ export async function handleRenewWebsub(
       errors: result.errors.length > 0 ? result.errors : undefined,
     },
   };
-}
-
-/**
- * Schedules the next WebSub renewal check for 24 hours from now.
- */
-async function scheduleNextRenewalCheck(): Promise<void> {
-  const nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
-
-  await createJob({
-    type: "renew_websub",
-    payload: {},
-    scheduledFor: nextCheck,
-    maxAttempts: 3,
-  });
-
-  logger.debug("Scheduled next WebSub renewal check", {
-    scheduledFor: nextCheck.toISOString(),
-  });
-}
-
-/**
- * Creates the initial WebSub renewal job.
- * This should be called once on application startup to ensure
- * the renewal job is scheduled.
- */
-export async function ensureWebsubRenewalJobExists(): Promise<void> {
-  // Check if there's already a pending renew_websub job
-  const { listJobs } = await import("./queue");
-  const existingJobs = await listJobs({
-    type: "renew_websub",
-    status: "pending",
-    limit: 1,
-  });
-
-  if (existingJobs.length === 0) {
-    // No pending renewal job exists, create one to run now
-    await createJob({
-      type: "renew_websub",
-      payload: {},
-      scheduledFor: new Date(), // Run immediately
-      maxAttempts: 3,
-    });
-
-    logger.info("Created initial WebSub renewal job");
-  } else {
-    logger.debug("WebSub renewal job already scheduled", {
-      scheduledFor: existingJobs[0].scheduledFor.toISOString(),
-    });
-  }
 }
