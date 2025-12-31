@@ -30,7 +30,7 @@ import { useRouter } from "next/navigation";
  */
 export interface SavedArticleKeyboardData {
   id: string;
-  url: string;
+  url: string | null;
   read: boolean;
   starred: boolean;
 }

@@ -103,9 +103,10 @@ export function useSavedArticleMutations(
   const utils = trpc.useUtils();
   const listFilters = options?.listFilters;
 
-  // Build the query key for the saved articles list
+  // Build the query key for the saved articles list (using entries endpoint with type='saved')
   const queryFilters = useMemo(
     () => ({
+      type: "saved" as const,
       unreadOnly: listFilters?.unreadOnly,
       starredOnly: listFilters?.starredOnly,
       sortOrder: listFilters?.sortOrder,
@@ -123,13 +124,13 @@ export function useSavedArticleMutations(
       }
 
       // Cancel any in-flight queries
-      await utils.saved.list.cancel();
+      await utils.entries.list.cancel();
 
       // Snapshot current state for rollback
-      const previousData = utils.saved.list.getInfiniteData(queryFilters);
+      const previousData = utils.entries.list.getInfiniteData(queryFilters);
 
-      // Optimistically update list (normy propagates to saved.get automatically)
-      utils.saved.list.setInfiniteData(queryFilters, (oldData) => {
+      // Optimistically update list (normy propagates to entries.get automatically)
+      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
         if (!oldData) return oldData;
         return {
           ...oldData,
@@ -147,13 +148,13 @@ export function useSavedArticleMutations(
     onError: (_error, _variables, context) => {
       // Rollback to previous state
       if (context?.previousData && listFilters) {
-        utils.saved.list.setInfiniteData(queryFilters, context.previousData);
+        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
       }
       toast.error("Failed to update read status");
     },
     onSettled: () => {
       // Invalidate saved articles count
-      utils.saved.count.invalidate();
+      utils.entries.count.invalidate({ type: "saved" });
       // Invalidate entries-related queries for consistency
       utils.entries.starredCount.invalidate();
     },
@@ -168,12 +169,12 @@ export function useSavedArticleMutations(
         return { previousData: undefined };
       }
 
-      await utils.saved.list.cancel();
+      await utils.entries.list.cancel();
 
-      const previousData = utils.saved.list.getInfiniteData(queryFilters);
+      const previousData = utils.entries.list.getInfiniteData(queryFilters);
 
-      // Optimistically update list (normy propagates to saved.get automatically)
-      utils.saved.list.setInfiniteData(queryFilters, (oldData) => {
+      // Optimistically update list (normy propagates to entries.get automatically)
+      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
         if (!oldData) return oldData;
         return {
           ...oldData,
@@ -191,7 +192,7 @@ export function useSavedArticleMutations(
     onError: (_error, _variables, context) => {
       // Rollback list
       if (context?.previousData && listFilters) {
-        utils.saved.list.setInfiniteData(queryFilters, context.previousData);
+        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
       }
       toast.error("Failed to star article");
     },
@@ -210,12 +211,12 @@ export function useSavedArticleMutations(
         return { previousData: undefined };
       }
 
-      await utils.saved.list.cancel();
+      await utils.entries.list.cancel();
 
-      const previousData = utils.saved.list.getInfiniteData(queryFilters);
+      const previousData = utils.entries.list.getInfiniteData(queryFilters);
 
-      // Optimistically update list (normy propagates to saved.get automatically)
-      utils.saved.list.setInfiniteData(queryFilters, (oldData) => {
+      // Optimistically update list (normy propagates to entries.get automatically)
+      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
         if (!oldData) return oldData;
         return {
           ...oldData,
@@ -233,7 +234,7 @@ export function useSavedArticleMutations(
     onError: (_error, _variables, context) => {
       // Rollback list
       if (context?.previousData && listFilters) {
-        utils.saved.list.setInfiniteData(queryFilters, context.previousData);
+        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
       }
       toast.error("Failed to unstar article");
     },

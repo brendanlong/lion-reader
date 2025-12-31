@@ -5,10 +5,20 @@
  * Users can save URLs to read later, similar to Pocket or Instapaper.
  *
  * Saved articles are stored as entries in a special per-user feed with type='saved'.
+ *
+ * Most operations on saved articles use the unified entries.* endpoints:
+ * - entries.list({ type: 'saved' }) for listing
+ * - entries.get for fetching single articles
+ * - entries.count({ type: 'saved' }) for counts
+ * - entries.markRead, entries.star, entries.unstar for mutations
+ *
+ * This router only handles:
+ * - saved.save: Save a URL (special content extraction logic)
+ * - saved.delete: Hard delete a saved article (entries use soft delete)
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, lt, gt, inArray, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { JSDOM } from "jsdom";
 import { createHash } from "crypto";
 
@@ -25,16 +35,6 @@ import { logger } from "@/lib/logger";
 // ============================================================================
 
 /**
- * Default number of saved articles to return per page.
- */
-const DEFAULT_LIMIT = 50;
-
-/**
- * Maximum number of saved articles that can be requested per page.
- */
-const MAX_LIMIT = 100;
-
-/**
  * Timeout for fetching URLs in milliseconds.
  */
 const FETCH_TIMEOUT_MS = 30000;
@@ -49,58 +49,13 @@ const FETCH_TIMEOUT_MS = 30000;
 const uuidSchema = z.string().uuid("Invalid saved article ID");
 
 /**
- * Cursor validation schema (base64-encoded article ID).
- */
-const cursorSchema = z.string().optional();
-
-/**
- * Limit validation schema.
- */
-const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
-
-/**
  * URL validation schema.
  */
 const urlSchema = z.string().url("Invalid URL");
 
-/**
- * Boolean query parameter schema that handles string coercion.
- * Query parameters come as strings from HTTP requests, so we need to
- * handle both boolean and string inputs ("true"/"false").
- */
-const booleanQueryParam = z
-  .union([z.boolean(), z.enum(["true", "false"])])
-  .optional()
-  .transform((val) => {
-    if (val === "true") return true;
-    if (val === "false") return false;
-    return val;
-  });
-
-/**
- * Sort order validation schema.
- */
-const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
-
 // ============================================================================
 // Output Schemas
 // ============================================================================
-
-/**
- * Lightweight saved article output schema for list view (no full content).
- */
-const savedArticleListItemSchema = z.object({
-  id: z.string(),
-  url: z.string(),
-  title: z.string().nullable(),
-  siteName: z.string().nullable(),
-  author: z.string().nullable(),
-  imageUrl: z.string().nullable(),
-  excerpt: z.string().nullable(),
-  read: z.boolean(),
-  starred: z.boolean(),
-  savedAt: z.date(),
-});
 
 /**
  * Full saved article output schema for single article view (includes content).
@@ -122,67 +77,9 @@ const savedArticleFullSchema = z.object({
   starredAt: z.date().nullable(),
 });
 
-/**
- * Paginated saved articles list output schema.
- */
-const savedArticlesListOutputSchema = z.object({
-  items: z.array(savedArticleListItemSchema),
-  nextCursor: z.string().optional(),
-});
-
-/**
- * Schema for articles returned from mutation operations.
- * Used by normy for automatic cache normalization.
- */
-const savedArticleMutationResultSchema = z.object({
-  id: z.string(),
-  read: z.boolean(),
-  starred: z.boolean(),
-});
-
-/**
- * Output schema for markRead mutation.
- */
-const markReadOutputSchema = z.object({
-  articles: z.array(savedArticleMutationResultSchema),
-});
-
-/**
- * Output schema for star/unstar mutations.
- * Returns single article for normy cache normalization.
- */
-const starOutputSchema = z.object({
-  article: savedArticleMutationResultSchema,
-});
-
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Decodes a cursor to get the article ID.
- * Cursor is base64-encoded article ID.
- *
- * @param cursor - The cursor string
- * @returns The decoded article ID
- */
-function decodeCursor(cursor: string): string {
-  try {
-    return Buffer.from(cursor, "base64").toString("utf8");
-  } catch {
-    throw errors.validation("Invalid cursor format");
-  }
-}
-
-/**
- * Encodes an article ID as a cursor.
- *
- * @param articleId - The article ID
- * @returns The encoded cursor
- */
-function encodeCursor(articleId: string): string {
-  return Buffer.from(articleId, "utf8").toString("base64");
-}
 
 /**
  * Fetches a URL and returns the HTML content.
@@ -460,183 +357,6 @@ export const savedRouter = createTRPCRouter({
     }),
 
   /**
-   * List saved articles with filters and cursor-based pagination.
-   *
-   * @deprecated Use entries.list({ type: 'saved' }) instead - provides unified access to all entry types.
-   *
-   * @param unreadOnly - Optional filter to show only unread articles
-   * @param starredOnly - Optional filter to show only starred articles
-   * @param sortOrder - Optional sort order: "newest" (default) or "oldest"
-   * @param cursor - Optional pagination cursor (from previous response)
-   * @param limit - Optional number of articles per page (default: 50, max: 100)
-   * @returns Paginated list of saved articles
-   */
-  list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/saved",
-        tags: ["Saved Articles"],
-        summary: "List saved articles",
-      },
-    })
-    .input(
-      z.object({
-        unreadOnly: booleanQueryParam,
-        starredOnly: booleanQueryParam,
-        sortOrder: sortOrderSchema,
-        cursor: cursorSchema,
-        limit: limitSchema,
-      })
-    )
-    .output(savedArticlesListOutputSchema)
-    .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const limit = input.limit ?? DEFAULT_LIMIT;
-      const sortOrder = input.sortOrder ?? "newest";
-
-      // Get or create the user's saved feed
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
-
-      // Build query conditions
-      const conditions = [eq(entries.feedId, savedFeedId), eq(userEntries.userId, userId)];
-
-      // Apply unreadOnly filter
-      if (input.unreadOnly) {
-        conditions.push(eq(userEntries.read, false));
-      }
-
-      // Apply starredOnly filter
-      if (input.starredOnly) {
-        conditions.push(eq(userEntries.starred, true));
-      }
-
-      // Add cursor condition if present
-      // For newest-first (desc), we want entries with ID < cursor
-      // For oldest-first (asc), we want entries with ID > cursor
-      if (input.cursor) {
-        const cursorEntryId = decodeCursor(input.cursor);
-        if (sortOrder === "newest") {
-          conditions.push(lt(entries.id, cursorEntryId));
-        } else {
-          conditions.push(gt(entries.id, cursorEntryId));
-        }
-      }
-
-      // Query saved articles with appropriate sort order
-      // We fetch one extra to determine if there are more results
-      const orderByClause = sortOrder === "newest" ? desc(entries.id) : asc(entries.id);
-      const results = await ctx.db
-        .select({
-          entry: entries,
-          userState: userEntries,
-        })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(and(...conditions))
-        .orderBy(orderByClause)
-        .limit(limit + 1);
-
-      // Determine if there are more results
-      const hasMore = results.length > limit;
-      const resultEntries = hasMore ? results.slice(0, limit) : results;
-
-      // Format the output
-      const items = resultEntries.map(({ entry, userState }) => ({
-        id: entry.id,
-        url: entry.url!,
-        title: entry.title,
-        siteName: entry.siteName,
-        author: entry.author,
-        imageUrl: entry.imageUrl,
-        excerpt: entry.summary,
-        read: userState.read,
-        starred: userState.starred,
-        savedAt: entry.fetchedAt,
-      }));
-
-      // Generate next cursor if there are more results
-      const nextCursor =
-        hasMore && resultEntries.length > 0
-          ? encodeCursor(resultEntries[resultEntries.length - 1].entry.id)
-          : undefined;
-
-      return { items, nextCursor };
-    }),
-
-  /**
-   * Get a single saved article by ID with full content.
-   *
-   * @deprecated Use entries.get instead - provides unified access to all entry types.
-   *
-   * @param id - The saved article ID
-   * @returns The full saved article with content
-   */
-  get: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/saved/{id}",
-        tags: ["Saved Articles"],
-        summary: "Get saved article",
-      },
-    })
-    .input(
-      z.object({
-        id: uuidSchema,
-      })
-    )
-    .output(z.object({ article: savedArticleFullSchema }))
-    .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Get or create the user's saved feed to ensure it exists
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
-
-      // Get the saved article
-      const result = await ctx.db
-        .select({
-          entry: entries,
-          userState: userEntries,
-        })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(
-          and(
-            eq(entries.id, input.id),
-            eq(entries.feedId, savedFeedId),
-            eq(userEntries.userId, userId)
-          )
-        )
-        .limit(1);
-
-      if (result.length === 0) {
-        throw errors.savedArticleNotFound();
-      }
-
-      const { entry, userState } = result[0];
-
-      return {
-        article: {
-          id: entry.id,
-          url: entry.url!,
-          title: entry.title,
-          siteName: entry.siteName,
-          author: entry.author,
-          imageUrl: entry.imageUrl,
-          contentOriginal: entry.contentOriginal,
-          contentCleaned: entry.contentCleaned,
-          excerpt: entry.summary,
-          read: userState.read,
-          starred: userState.starred,
-          savedAt: entry.fetchedAt,
-          readAt: userState.readAt,
-          starredAt: userState.starredAt,
-        },
-      };
-    }),
-
-  /**
    * Delete a saved article (hard delete).
    *
    * Saved articles are per-user, so hard delete is safe.
@@ -688,280 +408,5 @@ export const savedRouter = createTRPCRouter({
       await ctx.db.delete(entries).where(eq(entries.id, input.id));
 
       return {};
-    }),
-
-  /**
-   * Mark saved articles as read or unread (bulk operation).
-   *
-   * @deprecated Use entries.markRead instead - works with all entry types including saved articles.
-   *
-   * @param ids - Array of saved article IDs to mark
-   * @param read - Whether to mark as read (true) or unread (false)
-   * @returns The updated articles with their current state
-   */
-  markRead: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/saved/mark-read",
-        tags: ["Saved Articles"],
-        summary: "Mark saved articles read/unread",
-      },
-    })
-    .input(
-      z.object({
-        ids: z
-          .array(uuidSchema)
-          .min(1, "At least one article ID is required")
-          .max(1000, "Maximum 1000 articles per request"),
-        read: z.boolean(),
-      })
-    )
-    .output(markReadOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const now = new Date();
-
-      // Get or create the user's saved feed
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
-
-      // Get entries that belong to the user's saved feed
-      const existingEntries = await ctx.db
-        .select({ id: entries.id })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(
-          and(
-            inArray(entries.id, input.ids),
-            eq(entries.feedId, savedFeedId),
-            eq(userEntries.userId, userId)
-          )
-        );
-
-      if (existingEntries.length === 0) {
-        return { articles: [] };
-      }
-
-      const validIds = existingEntries.map((e) => e.id);
-
-      // Update all matching user_entries
-      await ctx.db
-        .update(userEntries)
-        .set({
-          read: input.read,
-          readAt: input.read ? now : null,
-        })
-        .where(and(inArray(userEntries.entryId, validIds), eq(userEntries.userId, userId)));
-
-      // Fetch the updated articles to return their current state
-      // This enables normy to automatically update cached queries
-      const updatedArticles = await ctx.db
-        .select({
-          id: userEntries.entryId,
-          read: userEntries.read,
-          starred: userEntries.starred,
-        })
-        .from(userEntries)
-        .where(and(inArray(userEntries.entryId, validIds), eq(userEntries.userId, userId)));
-
-      return { articles: updatedArticles };
-    }),
-
-  /**
-   * Star a saved article.
-   *
-   * @deprecated Use entries.star instead - works with all entry types including saved articles.
-   *
-   * @param id - The saved article ID to star
-   * @returns The updated article with current state
-   */
-  star: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/saved/{id}/star",
-        tags: ["Saved Articles"],
-        summary: "Star saved article",
-      },
-    })
-    .input(
-      z.object({
-        id: uuidSchema,
-      })
-    )
-    .output(starOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const now = new Date();
-
-      // Get or create the user's saved feed
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
-
-      // Verify the article exists and belongs to the user's saved feed
-      const existing = await ctx.db
-        .select({ id: entries.id })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(
-          and(
-            eq(entries.id, input.id),
-            eq(entries.feedId, savedFeedId),
-            eq(userEntries.userId, userId)
-          )
-        )
-        .limit(1);
-
-      if (existing.length === 0) {
-        throw errors.savedArticleNotFound();
-      }
-
-      // Update the user_entries
-      await ctx.db
-        .update(userEntries)
-        .set({
-          starred: true,
-          starredAt: now,
-        })
-        .where(and(eq(userEntries.entryId, input.id), eq(userEntries.userId, userId)));
-
-      // Fetch the updated article to return its current state
-      // This enables normy to automatically update cached queries
-      const updatedArticle = await ctx.db
-        .select({
-          id: userEntries.entryId,
-          read: userEntries.read,
-          starred: userEntries.starred,
-        })
-        .from(userEntries)
-        .where(and(eq(userEntries.entryId, input.id), eq(userEntries.userId, userId)))
-        .limit(1);
-
-      return { article: updatedArticle[0] };
-    }),
-
-  /**
-   * Unstar a saved article.
-   *
-   * @deprecated Use entries.unstar instead - works with all entry types including saved articles.
-   *
-   * @param id - The saved article ID to unstar
-   * @returns The updated article with current state
-   */
-  unstar: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/saved/{id}/star",
-        tags: ["Saved Articles"],
-        summary: "Unstar saved article",
-      },
-    })
-    .input(
-      z.object({
-        id: uuidSchema,
-      })
-    )
-    .output(starOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Get or create the user's saved feed
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
-
-      // Verify the article exists and belongs to the user's saved feed
-      const existing = await ctx.db
-        .select({ id: entries.id })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(
-          and(
-            eq(entries.id, input.id),
-            eq(entries.feedId, savedFeedId),
-            eq(userEntries.userId, userId)
-          )
-        )
-        .limit(1);
-
-      if (existing.length === 0) {
-        throw errors.savedArticleNotFound();
-      }
-
-      // Update the user_entries
-      await ctx.db
-        .update(userEntries)
-        .set({
-          starred: false,
-          starredAt: null,
-        })
-        .where(and(eq(userEntries.entryId, input.id), eq(userEntries.userId, userId)));
-
-      // Fetch the updated article to return its current state
-      // This enables normy to automatically update cached queries
-      const updatedArticle = await ctx.db
-        .select({
-          id: userEntries.entryId,
-          read: userEntries.read,
-          starred: userEntries.starred,
-        })
-        .from(userEntries)
-        .where(and(eq(userEntries.entryId, input.id), eq(userEntries.userId, userId)))
-        .limit(1);
-
-      return { article: updatedArticle[0] };
-    }),
-
-  /**
-   * Get count of saved articles.
-   *
-   * @deprecated Use entries.count({ type: 'saved' }) instead - provides unified access to all entry types.
-   *
-   * @returns Count of total and unread saved articles
-   */
-  count: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/saved/count",
-        tags: ["Saved Articles"],
-        summary: "Get saved articles count",
-      },
-    })
-    .input(z.object({}))
-    .output(
-      z.object({
-        total: z.number(),
-        unread: z.number(),
-      })
-    )
-    .query(async ({ ctx }) => {
-      const userId = ctx.session.user.id;
-
-      // Get or create the user's saved feed
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
-
-      // Get total count
-      const totalResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(and(eq(entries.feedId, savedFeedId), eq(userEntries.userId, userId)));
-
-      // Get unread count
-      const unreadResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(
-          and(
-            eq(entries.feedId, savedFeedId),
-            eq(userEntries.userId, userId),
-            eq(userEntries.read, false)
-          )
-        );
-
-      return {
-        total: totalResult[0]?.count ?? 0,
-        unread: unreadResult[0]?.count ?? 0,
-      };
     }),
 });

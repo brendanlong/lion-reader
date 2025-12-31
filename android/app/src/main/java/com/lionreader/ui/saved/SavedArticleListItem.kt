@@ -28,7 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.lionreader.data.api.models.SavedArticleListItemDto
+import com.lionreader.data.api.models.EntryDto
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
@@ -53,7 +53,7 @@ import java.util.concurrent.TimeUnit
  */
 @Composable
 fun SavedArticleListItem(
-    article: SavedArticleListItemDto,
+    article: EntryDto,
     onClick: () -> Unit,
     onToggleRead: () -> Unit,
     onToggleStar: () -> Unit,
@@ -107,7 +107,7 @@ fun SavedArticleListItem(
 
                     // Site name
                     Text(
-                        text = article.siteName ?: extractDomain(article.url),
+                        text = article.feedTitle ?: article.url?.let { extractDomain(it) } ?: "",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
                         maxLines = 1,
@@ -139,10 +139,10 @@ fun SavedArticleListItem(
             )
 
             // Excerpt
-            article.excerpt?.let { excerpt ->
+            article.summary?.let { summary ->
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = cleanExcerpt(excerpt),
+                    text = cleanExcerpt(summary),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -160,7 +160,7 @@ fun SavedArticleListItem(
             ) {
                 // Relative timestamp
                 Text(
-                    text = formatRelativeTime(article.savedAt),
+                    text = formatRelativeTime(article.fetchedAt),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
                 )

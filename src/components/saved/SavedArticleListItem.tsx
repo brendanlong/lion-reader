@@ -13,18 +13,18 @@ import { getDomain } from "@/lib/format";
 
 /**
  * Saved article data for list display (lightweight, no full content).
+ * Maps to the unified entries endpoint response.
  */
 export interface SavedArticleListItemData {
   id: string;
-  url: string;
+  url: string | null;
   title: string | null;
-  siteName: string | null;
+  feedTitle: string | null; // Used as source name
   author: string | null;
-  imageUrl: string | null;
-  excerpt: string | null;
+  summary: string | null; // Excerpt
   read: boolean;
   starred: boolean;
-  savedAt: Date;
+  fetchedAt: Date; // Used as savedAt
 }
 
 interface SavedArticleListItemProps {
@@ -59,9 +59,9 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
     <ArticleListItem
       id={article.id}
       title={article.title}
-      source={article.siteName ?? getDomain(article.url)}
-      date={article.savedAt}
-      preview={article.excerpt}
+      source={article.feedTitle ?? getDomain(article.url ?? "")}
+      date={article.fetchedAt}
+      preview={article.summary}
       read={article.read}
       starred={article.starred}
       selected={selected}
