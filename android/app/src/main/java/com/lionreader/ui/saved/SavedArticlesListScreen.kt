@@ -40,7 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lionreader.data.api.models.SavedArticleListItemDto
+import com.lionreader.data.api.models.EntryDto
 import kotlinx.coroutines.launch
 
 /**
@@ -176,7 +176,7 @@ private fun SavedArticlesTopBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SavedArticlesContent(
-    articles: List<SavedArticleListItemDto>,
+    articles: List<EntryDto>,
     uiState: SavedArticlesUiState,
     onArticleClick: (String) -> Unit,
     onToggleRead: (String) -> Unit,
@@ -236,7 +236,7 @@ private fun SavedArticlesContent(
  */
 @Composable
 private fun SavedArticlesList(
-    articles: List<SavedArticleListItemDto>,
+    articles: List<EntryDto>,
     hasMore: Boolean,
     isLoadingMore: Boolean,
     onArticleClick: (String) -> Unit,

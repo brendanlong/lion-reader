@@ -365,9 +365,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      await expect(caller.entries.get({ id: generateUuidv7() })).rejects.toThrow(
-        "Saved article not found"
-      );
+      await expect(caller.entries.get({ id: generateUuidv7() })).rejects.toThrow("Entry not found");
     });
 
     it("throws error when accessing another user's article", async () => {
@@ -379,9 +377,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId2);
       const caller = createCaller(ctx);
 
-      await expect(caller.entries.get({ id: articleId })).rejects.toThrow(
-        "Saved article not found"
-      );
+      await expect(caller.entries.get({ id: articleId })).rejects.toThrow("Entry not found");
     });
   });
 
@@ -570,7 +566,7 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       await expect(caller.entries.star({ id: generateUuidv7() })).rejects.toThrow(
-        "Saved article not found"
+        "Entry not found"
       );
     });
 
@@ -583,9 +579,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId2);
       const caller = createCaller(ctx);
 
-      await expect(caller.entries.star({ id: articleId })).rejects.toThrow(
-        "Saved article not found"
-      );
+      await expect(caller.entries.star({ id: articleId })).rejects.toThrow("Entry not found");
 
       // Verify not starred in user_entries
       const dbUserEntry = await db
@@ -626,7 +620,7 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       await expect(caller.entries.unstar({ id: generateUuidv7() })).rejects.toThrow(
-        "Saved article not found"
+        "Entry not found"
       );
     });
 
@@ -639,9 +633,7 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId2);
       const caller = createCaller(ctx);
 
-      await expect(caller.entries.unstar({ id: articleId })).rejects.toThrow(
-        "Saved article not found"
-      );
+      await expect(caller.entries.unstar({ id: articleId })).rejects.toThrow("Entry not found");
 
       // Verify still starred in user_entries
       const dbUserEntry = await db

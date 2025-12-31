@@ -3,7 +3,7 @@ package com.lionreader.ui.saved
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lionreader.data.api.models.SavedArticleFullDto
+import com.lionreader.data.api.models.EntryDto
 import com.lionreader.data.repository.SavedArticleFetchResult
 import com.lionreader.data.repository.SavedArticleRepository
 import com.lionreader.ui.navigation.Screen
@@ -75,8 +75,8 @@ class SavedArticleDetailViewModel
         /**
          * Current saved article.
          */
-        private val _article = MutableStateFlow<SavedArticleFullDto?>(null)
-        val article: StateFlow<SavedArticleFullDto?> = _article.asStateFlow()
+        private val _article = MutableStateFlow<EntryDto?>(null)
+        val article: StateFlow<EntryDto?> = _article.asStateFlow()
 
         /**
          * Channel for one-shot events that need Activity handling.
