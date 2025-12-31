@@ -70,25 +70,10 @@ function AllEntriesContent() {
     setEntries(loadedEntries);
   }, []);
 
-  // Handler to toggle read status (passed to EntryContent)
-  const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => {
-      toggleRead(entryId, currentlyRead);
-    },
-    [toggleRead]
-  );
-
   // If an entry is open, show the full content view
   // Key forces remount when entryId changes, ensuring fresh refs and mutation state
   if (openEntryId) {
-    return (
-      <EntryContent
-        key={openEntryId}
-        entryId={openEntryId}
-        onBack={handleBack}
-        onToggleRead={handleToggleRead}
-      />
-    );
+    return <EntryContent key={openEntryId} entryId={openEntryId} onBack={handleBack} />;
   }
 
   // Otherwise, show the entry list

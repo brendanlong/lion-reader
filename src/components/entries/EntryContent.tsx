@@ -30,12 +30,6 @@ interface EntryContentProps {
    * Optional callback when the back button is clicked.
    */
   onBack?: () => void;
-
-  /**
-   * Optional callback when read status should be toggled.
-   * Receives the entry ID and its current read status.
-   */
-  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
 }
 
 /**
@@ -44,7 +38,7 @@ interface EntryContentProps {
  * Fetches and displays the full content of an entry.
  * Marks the entry as read on mount.
  */
-export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProps) {
+export function EntryContent({ entryId, onBack }: EntryContentProps) {
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
@@ -80,10 +74,10 @@ export function EntryContent({ entryId, onBack, onToggleRead }: EntryContentProp
     }
   };
 
-  // Handle read toggle
+  // Handle read toggle - use local mutation for consistent loading state
   const handleReadToggle = () => {
-    if (!entry || !onToggleRead) return;
-    onToggleRead(entryId, entry.read);
+    if (!entry) return;
+    markRead([entryId], !entry.read);
   };
 
   // Loading state
