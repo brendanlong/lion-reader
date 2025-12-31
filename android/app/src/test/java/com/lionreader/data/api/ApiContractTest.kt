@@ -50,22 +50,17 @@ class ApiContractTest {
             PathWithMethod("GET", "subscriptions"),
             // Tag endpoints
             PathWithMethod("GET", "tags"),
-            // Entry endpoints
+            // Entry endpoints (unified API for all entry types including saved)
             PathWithMethod("GET", "entries"),
             PathWithMethod("GET", "entries/{id}"),
             PathWithMethod("POST", "entries/mark-read"),
             PathWithMethod("POST", "entries/{id}/star"),
             PathWithMethod("DELETE", "entries/{id}/star"),
             PathWithMethod("GET", "entries/starred/count"),
-            // Saved articles endpoints
+            PathWithMethod("GET", "entries/count"),
+            // Saved articles endpoints (only save and delete - other operations use entries)
             PathWithMethod("POST", "saved"),
-            PathWithMethod("GET", "saved"),
-            PathWithMethod("GET", "saved/{id}"),
             PathWithMethod("DELETE", "saved/{id}"),
-            PathWithMethod("POST", "saved/mark-read"),
-            PathWithMethod("POST", "saved/{id}/star"),
-            PathWithMethod("DELETE", "saved/{id}/star"),
-            PathWithMethod("GET", "saved/count"),
         )
 
     @BeforeAll

@@ -2,9 +2,10 @@ package com.lionreader.data.repository
 
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
-import com.lionreader.data.api.models.SavedArticleFullDto
-import com.lionreader.data.api.models.SavedArticleListItemDto
-import com.lionreader.data.api.models.SavedCountResponse
+import com.lionreader.data.api.models.EntriesCountResponse
+import com.lionreader.data.api.models.EntryFullDto
+import com.lionreader.data.api.models.EntryListItemDto
+import com.lionreader.data.api.models.EntryType
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -13,7 +14,7 @@ import javax.inject.Singleton
  */
 sealed class SavedArticlesResult {
     data class Success(
-        val articles: List<SavedArticleListItemDto>,
+        val articles: List<EntryListItemDto>,
         val nextCursor: String? = null,
     ) : SavedArticlesResult()
 
@@ -32,7 +33,7 @@ sealed class SavedArticlesResult {
  */
 sealed class SavedArticleFetchResult {
     data class Success(
-        val article: SavedArticleFullDto,
+        val article: EntryFullDto,
     ) : SavedArticleFetchResult()
 
     data object NotFound : SavedArticleFetchResult()
@@ -89,6 +90,8 @@ class SavedArticleRepository
         /**
          * Lists saved articles with optional filters.
          *
+         * Uses the unified entries endpoint with type='saved' filter.
+         *
          * @param filters Filter options
          * @param cursor Pagination cursor from previous response
          * @return SavedArticlesResult with articles or error
@@ -99,7 +102,8 @@ class SavedArticleRepository
         ): SavedArticlesResult =
             when (
                 val result =
-                    api.listSavedArticles(
+                    api.listEntries(
+                        type = EntryType.SAVED,
                         unreadOnly = if (filters.unreadOnly) true else null,
                         starredOnly = if (filters.starredOnly) true else null,
                         cursor = cursor,
@@ -129,13 +133,15 @@ class SavedArticleRepository
         /**
          * Gets a single saved article by ID.
          *
+         * Uses the unified entries endpoint.
+         *
          * @param id Saved article ID
          * @return SavedArticleFetchResult with article or error
          */
         suspend fun getSavedArticle(id: String): SavedArticleFetchResult =
-            when (val result = api.getSavedArticle(id)) {
+            when (val result = api.getEntry(id)) {
                 is ApiResult.Success -> {
-                    SavedArticleFetchResult.Success(result.data.article)
+                    SavedArticleFetchResult.Success(result.data.entry)
                 }
                 is ApiResult.Error -> {
                     if (result.code == "NOT_FOUND") {
@@ -267,10 +273,12 @@ class SavedArticleRepository
         /**
          * Gets the count of saved articles.
          *
-         * @return SavedCountResponse with total and unread counts, or null on failure
+         * Uses the unified entries count endpoint with type='saved' filter.
+         *
+         * @return EntriesCountResponse with total and unread counts, or null on failure
          */
-        suspend fun getCount(): SavedCountResponse? =
-            when (val result = api.getSavedCount()) {
+        suspend fun getCount(): EntriesCountResponse? =
+            when (val result = api.getEntriesCount(type = EntryType.SAVED)) {
                 is ApiResult.Success -> result.data
                 else -> null
             }

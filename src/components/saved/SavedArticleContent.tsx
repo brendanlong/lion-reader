@@ -42,14 +42,14 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
-  // Fetch the saved article
-  const { data, isLoading, isError, error, refetch } = trpc.saved.get.useQuery({ id: articleId });
+  // Fetch the saved article using unified entries endpoint
+  const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: articleId });
 
   // Use the consolidated mutations hook (no list filters since we're in single article view)
-  // normy automatically propagates changes to saved.get when server responds
+  // normy automatically propagates changes to entries.get when server responds
   const { markRead, star, unstar, isStarPending, isMarkReadPending } = useSavedArticleMutations();
 
-  const article = data?.article;
+  const article = data?.entry;
 
   // Mark article as read when component mounts and article is loaded (only once)
   useEffect(() => {
@@ -104,14 +104,14 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
     <ArticleContentBody
       articleId={articleId}
       title={article.title ?? "Untitled"}
-      source={article.siteName ?? getDomain(article.url)}
+      source={article.feedTitle ?? getDomain(article.url ?? "")}
       author={article.author}
-      url={article.url}
-      date={article.savedAt}
+      url={article.url ?? ""}
+      date={article.fetchedAt}
       datePrefix="Saved"
       contentOriginal={article.contentOriginal}
       contentCleaned={article.contentCleaned}
-      fallbackContent={article.excerpt}
+      fallbackContent={article.summary}
       read={article.read}
       starred={article.starred}
       onBack={onBack}
