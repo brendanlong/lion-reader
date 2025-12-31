@@ -13,6 +13,7 @@ import com.lionreader.data.repository.SubscriptionRepository
 import com.lionreader.data.repository.SyncRepository
 import com.lionreader.data.repository.TagRepository
 import com.lionreader.data.sync.ConnectivityMonitor
+import com.lionreader.data.sync.SyncErrorNotifier
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -113,5 +114,6 @@ object RepositoryModule {
         api: LionReaderApi,
         pendingActionDao: PendingActionDao,
         entryStateDao: EntryStateDao,
-    ): SyncRepository = SyncRepository(api, pendingActionDao, entryStateDao)
+        syncErrorNotifier: SyncErrorNotifier,
+    ): SyncRepository = SyncRepository(api, pendingActionDao, entryStateDao, syncErrorNotifier)
 }

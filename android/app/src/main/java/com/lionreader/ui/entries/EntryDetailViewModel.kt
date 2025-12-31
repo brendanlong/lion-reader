@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lionreader.data.db.relations.EntryWithState
 import com.lionreader.data.repository.EntryFetchResult
 import com.lionreader.data.repository.EntryRepository
+import com.lionreader.data.sync.SyncErrorNotifier
 import com.lionreader.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -93,6 +94,7 @@ class EntryDetailViewModel
     constructor(
         private val savedStateHandle: SavedStateHandle,
         private val entryRepository: EntryRepository,
+        private val syncErrorNotifier: SyncErrorNotifier,
     ) : ViewModel() {
         /**
          * The entry ID retrieved from navigation arguments.
@@ -129,6 +131,13 @@ class EntryDetailViewModel
         val events = _events.receiveAsFlow()
 
         init {
+            // Observe sync errors
+            viewModelScope.launch {
+                syncErrorNotifier.errors.collect { error ->
+                    _uiState.value = _uiState.value.copy(errorMessage = error.message)
+                }
+            }
+
             if (entryId.isNotEmpty()) {
                 loadEntry()
                 loadSwipeNavigationContext()
