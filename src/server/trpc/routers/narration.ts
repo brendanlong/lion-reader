@@ -10,14 +10,9 @@ import { eq, and } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 import { errors } from "../errors";
-import { entries, savedArticles, narrationContent, userEntries } from "@/server/db/schema";
+import { entries, narrationContent, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import {
-  generateNarration,
-  htmlToPlainText,
-  computeContentHash,
-  isGroqAvailable,
-} from "@/server/services/narration";
+import { generateNarration, htmlToPlainText, isGroqAvailable } from "@/server/services/narration";
 import { logger } from "@/lib/logger";
 import {
   trackNarrationGenerated,
@@ -45,7 +40,9 @@ const uuidSchema = z.string().uuid("Invalid ID");
 
 /**
  * Input for narration generation.
- * Supports both feed entries and saved articles.
+ * Supports both feed entries and saved articles (which are now also entries).
+ * The 'type' parameter is kept for backwards compatibility but both types
+ * are now handled the same way since saved articles are stored as entries.
  */
 const generateInputSchema = z.object({
   type: z.enum(["entry", "saved"]),
@@ -93,8 +90,8 @@ export const narrationRouter = createTRPCRouter({
    * If not found or needs regeneration, calls LLM to generate narration.
    * Falls back to plain text conversion if LLM is unavailable or errors.
    *
-   * @param type - 'entry' for feed entries, 'saved' for saved articles
-   * @param id - The entry or saved article ID
+   * @param type - 'entry' for feed entries, 'saved' for saved articles (both are entries now)
+   * @param id - The entry ID
    * @returns Narration text, whether it was cached, and the source (llm or fallback)
    */
   generate: protectedProcedure
@@ -111,55 +108,28 @@ export const narrationRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Fetch the article based on type
-      let sourceContent: string;
-      let contentHash: string;
+      // Fetch the entry with visibility check via user_entries join
+      // Both regular entries and saved articles are in the entries table now
+      const entryResult = await ctx.db
+        .select({
+          id: entries.id,
+          contentCleaned: entries.contentCleaned,
+          contentOriginal: entries.contentOriginal,
+          contentHash: entries.contentHash,
+        })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(and(eq(entries.id, input.id), eq(userEntries.userId, userId)))
+        .limit(1);
 
-      if (input.type === "entry") {
-        // Get the entry with visibility check via user_entries join
-        const entryResult = await ctx.db
-          .select({
-            id: entries.id,
-            contentCleaned: entries.contentCleaned,
-            contentOriginal: entries.contentOriginal,
-            contentHash: entries.contentHash,
-          })
-          .from(entries)
-          .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-          .where(and(eq(entries.id, input.id), eq(userEntries.userId, userId)))
-          .limit(1);
-
-        if (entryResult.length === 0) {
-          throw errors.entryNotFound();
-        }
-
-        const entry = entryResult[0];
-        sourceContent = entry.contentCleaned || entry.contentOriginal || "";
-        contentHash = entry.contentHash;
-      } else {
-        // Get the saved article
-        const articleResult = await ctx.db
-          .select({
-            id: savedArticles.id,
-            userId: savedArticles.userId,
-            contentCleaned: savedArticles.contentCleaned,
-            contentOriginal: savedArticles.contentOriginal,
-            contentHash: savedArticles.contentHash,
-          })
-          .from(savedArticles)
-          .where(and(eq(savedArticles.id, input.id), eq(savedArticles.userId, userId)))
-          .limit(1);
-
-        if (articleResult.length === 0) {
-          throw errors.savedArticleNotFound();
-        }
-
-        const article = articleResult[0];
-        sourceContent = article.contentCleaned || article.contentOriginal || "";
-
-        // Compute content hash if not already stored
-        contentHash = article.contentHash || computeContentHash(sourceContent);
+      if (entryResult.length === 0) {
+        // Return appropriate error based on input type for backwards compatibility
+        throw input.type === "saved" ? errors.savedArticleNotFound() : errors.entryNotFound();
       }
+
+      const entry = entryResult[0];
+      const sourceContent = entry.contentCleaned || entry.contentOriginal || "";
+      const contentHash = entry.contentHash;
 
       // Handle empty content
       if (!sourceContent.trim()) {

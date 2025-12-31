@@ -246,14 +246,26 @@ export const entriesRouter = createTRPCRouter({
       // Visibility is enforced by inner join with user_entries
       const conditions = [eq(userEntries.userId, userId)];
 
-      // Entries must be from an active subscription OR be starred
-      // Starred entries are explicitly saved by the user and should persist after unsubscribing
+      // Entry must be:
+      // 1. From active subscription, OR
+      // 2. Starred, OR
+      // 3. From user's saved feed (type='saved' and feed.userId = userId)
       const activeSubscriptionFeedIds = ctx.db
         .select({ feedId: subscriptions.feedId })
         .from(subscriptions)
         .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+      const savedFeedIds = ctx.db
+        .select({ id: feeds.id })
+        .from(feeds)
+        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
+
       conditions.push(
-        or(inArray(entries.feedId, activeSubscriptionFeedIds), eq(userEntries.starred, true))!
+        or(
+          inArray(entries.feedId, activeSubscriptionFeedIds),
+          eq(userEntries.starred, true),
+          inArray(entries.feedId, savedFeedIds)
+        )!
       );
 
       // Filter by feedId if specified
@@ -425,8 +437,9 @@ export const entriesRouter = createTRPCRouter({
 
       const { entry, feed, userState } = result[0];
 
-      // Entry must be starred OR from an active subscription
+      // Entry must be starred OR from an active subscription OR from user's saved feed
       if (!userState.starred) {
+        // Check for active subscription
         const activeSubscription = await ctx.db
           .select({ id: subscriptions.id })
           .from(subscriptions)
@@ -439,7 +452,14 @@ export const entriesRouter = createTRPCRouter({
           )
           .limit(1);
 
-        if (activeSubscription.length === 0) {
+        // Check if it's from user's saved feed
+        const savedFeed = await ctx.db
+          .select({ id: feeds.id })
+          .from(feeds)
+          .where(and(eq(feeds.id, entry.feedId), eq(feeds.type, "saved"), eq(feeds.userId, userId)))
+          .limit(1);
+
+        if (activeSubscription.length === 0 && savedFeed.length === 0) {
           throw errors.entryNotFound();
         }
       }
