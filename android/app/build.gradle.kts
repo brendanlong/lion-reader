@@ -11,6 +11,7 @@ plugins {
     alias(libs.plugins.hilt)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.sentry)
 }
 
 // Load local.properties if exists (for keystore configuration)
@@ -43,6 +44,10 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.fly.dev\"")
         buildConfigField("String", "API_BASE_PATH", "\"/api/v1\"")
         buildConfigField("boolean", "LOGGING_ENABLED", "false")
+
+        // Sentry DSN - read from environment variable, defaults to empty string (disabled)
+        val sentryDsn = System.getenv("SENTRY_DSN") ?: ""
+        buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
     }
 
     signingConfigs {
@@ -185,6 +190,40 @@ tasks.withType<Detekt>().configureEach {
     }
 }
 
+// Sentry configuration
+sentry {
+    // Generates a JVM (Java, Kotlin, etc.) source bundle and uploads your source code to Sentry.
+    // This enables source context, showing snippets of code around the location of stack frames.
+    includeSourceContext.set(true)
+
+    // Includes the source code of native code for Sentry
+    includeNativeSources.set(true)
+
+    // Adds ProGuard/R8 mappings upload during release builds
+    autoUploadProguardMapping.set(true)
+
+    // Enables automatic breadcrumbs for common events
+    tracingInstrumentation {
+        enabled.set(true)
+        features.set(
+            setOf(
+                io.sentry.android.gradle.extensions.InstrumentationFeature.DATABASE,
+                io.sentry.android.gradle.extensions.InstrumentationFeature.FILE_IO,
+                io.sentry.android.gradle.extensions.InstrumentationFeature.OKHTTP,
+                io.sentry.android.gradle.extensions.InstrumentationFeature.COMPOSE,
+            ),
+        )
+    }
+
+    // Configure auth token from environment variable
+    // This is required for uploading source maps and ProGuard mappings
+    authToken.set(System.getenv("SENTRY_AUTH_TOKEN"))
+
+    // Configure organization and project from environment variables
+    org.set(System.getenv("SENTRY_ORG"))
+    projectName.set(System.getenv("SENTRY_PROJECT"))
+}
+
 // Enable JUnit 5 for unit tests
 tasks.withType<Test> {
     useJUnitPlatform()
@@ -230,6 +269,9 @@ dependencies {
 
     // Security
     implementation(libs.security.crypto)
+
+    // Sentry (Error Monitoring)
+    implementation(libs.sentry.android)
 
     // WorkManager
     implementation(libs.work.runtime.ktx)

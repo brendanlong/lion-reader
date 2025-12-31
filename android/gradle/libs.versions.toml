@@ -47,6 +47,9 @@ hiltNavigationCompose = "1.2.0"
 ktlint = "12.1.2"
 detekt = "1.23.7"
 
+# Monitoring
+sentry = "8.0.0"
+
 # Testing
 junit4 = "4.13.2"
 junit5 = "5.10.3"
@@ -146,6 +149,9 @@ mockk-android = { group = "io.mockk", name = "mockk-android", version.ref = "moc
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 
+# Sentry
+sentry-android = { group = "io.sentry", name = "sentry-android", version.ref = "sentry" }
+
 [bundles]
 coroutines = ["kotlinx-coroutines-core", "kotlinx-coroutines-android"]
 lifecycle = ["androidx-lifecycle-runtime-ktx", "androidx-lifecycle-runtime-compose", "androidx-lifecycle-viewmodel-compose"]
@@ -162,3 +168,4 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+sentry = { id = "io.sentry.android.gradle", version.ref = "sentry" }
