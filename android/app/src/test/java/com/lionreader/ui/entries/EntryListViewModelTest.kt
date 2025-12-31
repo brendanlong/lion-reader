@@ -11,6 +11,7 @@ import com.lionreader.data.repository.SubscriptionRepository
 import com.lionreader.data.repository.SyncResult
 import com.lionreader.data.repository.TagRepository
 import com.lionreader.data.sync.ConnectivityMonitorInterface
+import com.lionreader.data.sync.SyncErrorNotifier
 import com.lionreader.ui.navigation.Screen
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -18,6 +19,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -51,6 +53,7 @@ class EntryListViewModelTest {
     private lateinit var subscriptionRepository: SubscriptionRepository
     private lateinit var tagRepository: TagRepository
     private lateinit var connectivityMonitor: ConnectivityMonitorInterface
+    private lateinit var syncErrorNotifier: SyncErrorNotifier
 
     private lateinit var viewModel: EntryListViewModel
 
@@ -86,9 +89,11 @@ class EntryListViewModelTest {
         subscriptionRepository = mockk(relaxed = true)
         tagRepository = mockk(relaxed = true)
         connectivityMonitor = mockk<ConnectivityMonitorInterface>(relaxed = true)
+        syncErrorNotifier = mockk<SyncErrorNotifier>(relaxed = true)
 
         // Default mock setup
         every { connectivityMonitor.isOnline } returns MutableStateFlow(true)
+        every { syncErrorNotifier.errors } returns MutableSharedFlow()
         every { connectivityMonitor.checkOnline() } returns true
         every { entryRepository.getEntries(any()) } returns flowOf(listOf(testEntry))
         coEvery { entryRepository.syncEntries(any(), any()) } returns
@@ -110,6 +115,7 @@ class EntryListViewModelTest {
             subscriptionRepository = subscriptionRepository,
             tagRepository = tagRepository,
             connectivityMonitor = connectivityMonitor,
+            syncErrorNotifier = syncErrorNotifier,
         )
 
     @Nested
