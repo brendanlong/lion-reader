@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   entries,
@@ -235,6 +235,9 @@ export async function createEntry(
   // Clean the content using Readability
   const cleaningResult = cleanEntryContent(parsedEntry, parsedEntry.link ?? undefined);
 
+  // Only rss/atom/json entries track lastSeenAt (for visibility on subscription)
+  const isFetchedType = feedType === "rss" || feedType === "atom" || feedType === "json";
+
   const newEntry: NewEntry = {
     id: generateUuidv7(),
     feedId,
@@ -248,6 +251,7 @@ export async function createEntry(
     summary: cleaningResult.summary,
     publishedAt: parsedEntry.pubDate ?? null,
     fetchedAt,
+    lastSeenAt: isFetchedType ? fetchedAt : null,
     contentHash,
   };
 
@@ -357,6 +361,32 @@ export async function processEntry(
 }
 
 /**
+ * Updates lastSeenAt for entries seen in the current fetch.
+ * This is used to track which entries are currently in the feed,
+ * enabling subscription without re-fetching.
+ *
+ * Only applies to rss/atom/json feeds - email/saved entries don't use lastSeenAt.
+ *
+ * @param entryIds - Array of entry IDs seen in this fetch
+ * @param lastSeenAt - Timestamp to set (should match feed.lastFetchedAt)
+ */
+async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Promise<void> {
+  if (entryIds.length === 0) {
+    return;
+  }
+
+  // Batch update in chunks to avoid hitting query limits
+  const BATCH_SIZE = 1000;
+  for (let i = 0; i < entryIds.length; i += BATCH_SIZE) {
+    const batch = entryIds.slice(i, i + BATCH_SIZE);
+    await db
+      .update(entries)
+      .set({ lastSeenAt, updatedAt: new Date() })
+      .where(inArray(entries.id, batch));
+  }
+}
+
+/**
  * Creates user_entries records for a feed's active subscribers.
  * This makes entries visible to all currently-subscribed users.
  *
@@ -461,9 +491,18 @@ export async function processEntries(
     }
   }
 
+  const allEntryIds = results.map((r) => r.id);
+
+  // Update lastSeenAt for all entries in this fetch (rss/atom/json only)
+  // This enables subscribing to existing feeds without re-fetching
+  const isFetchedType =
+    feedRecord.type === "rss" || feedRecord.type === "atom" || feedRecord.type === "json";
+  if (isFetchedType) {
+    await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
+  }
+
   // Create user_entries for all processed entries
   // This makes entries visible to all currently-subscribed users
-  const allEntryIds = results.map((r) => r.id);
   await createUserEntriesForFeed(feedId, allEntryIds);
 
   return {
