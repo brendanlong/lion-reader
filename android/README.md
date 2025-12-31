@@ -11,6 +11,7 @@ Native Android client for Lion Reader, an RSS feed reader application.
 - [Build Variants](#build-variants)
 - [Release Process](#release-process)
 - [Keystore Setup](#keystore-setup)
+- [Error Monitoring (Sentry)](#error-monitoring-sentry)
 - [Play Store Listing](#play-store-listing)
 - [Architecture](#architecture)
 
@@ -322,6 +323,89 @@ For GitHub Actions or other CI/CD systems:
    echo "$KEYSTORE_BASE64" | base64 -d > lion-reader-release.jks
    export LION_READER_KEYSTORE_PATH=$(pwd)/lion-reader-release.jks
    ```
+
+## Error Monitoring (Sentry)
+
+The app integrates [Sentry](https://sentry.io/) for crash reporting and performance monitoring in production builds.
+
+### Features
+
+- **Crash Reporting**: Automatic capture of unhandled exceptions
+- **Performance Monitoring**: Transaction tracing with 100% sample rate
+- **Source Context**: Stack traces include source code snippets
+- **Auto-Instrumentation**: Database, File I/O, OkHttp, and Compose operations
+- **ProGuard Mapping**: Automatic upload for deobfuscated stack traces
+
+### Configuration
+
+Sentry is **disabled by default** and only activates when a valid DSN is provided. It is also disabled in debug builds to avoid noise during development.
+
+#### Required Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `SENTRY_DSN` | Sentry project DSN (e.g., `https://xxx@yyy.ingest.sentry.io/zzz`) |
+| `SENTRY_AUTH_TOKEN` | Auth token for uploading source maps and ProGuard mappings |
+| `SENTRY_ORG` | Sentry organization slug |
+| `SENTRY_PROJECT` | Sentry project slug |
+
+#### Getting Sentry Credentials
+
+1. **SENTRY_DSN**: In Sentry, go to your project → Settings → Client Keys (DSN)
+
+2. **SENTRY_AUTH_TOKEN**: Create at https://sentry.io/settings/auth-tokens/
+   - Required scopes: `project:releases`, `org:read`
+
+3. **SENTRY_ORG**: Your organization slug from your Sentry URL (e.g., `my-org` from `sentry.io/organizations/my-org/`)
+
+4. **SENTRY_PROJECT**: Your project slug from Settings → General Settings
+
+#### Local Development
+
+For local release builds with Sentry enabled, set environment variables:
+
+```bash
+export SENTRY_DSN="https://your-key@your-org.ingest.sentry.io/project-id"
+export SENTRY_AUTH_TOKEN="your-auth-token"
+export SENTRY_ORG="your-org"
+export SENTRY_PROJECT="your-project"
+```
+
+#### CI/CD Integration (GitHub Actions)
+
+Add these as repository secrets in GitHub (Settings → Secrets and variables → Actions):
+
+- `SENTRY_DSN`
+- `SENTRY_AUTH_TOKEN`
+- `SENTRY_ORG`
+- `SENTRY_PROJECT`
+
+Then reference them in your workflow:
+
+```yaml
+env:
+  SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+  SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+  SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+  SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+```
+
+### Runtime Behavior
+
+- **Debug builds**: Sentry is disabled (`options.isEnabled = false`)
+- **Release builds without DSN**: Sentry initialization is skipped
+- **Release builds with DSN**: Full crash reporting and performance monitoring
+
+### Customization
+
+Sentry configuration is in `app/build.gradle.kts` (Gradle plugin) and `LionReaderApp.kt` (runtime options). Key settings:
+
+```kotlin
+// In LionReaderApp.kt
+options.tracesSampleRate = 1.0  // 100% of transactions (adjust for high-traffic apps)
+options.isEnableAutoSessionTracking = true
+options.environment = if (BuildConfig.DEBUG) "development" else "production"
+```
 
 ## Play Store Listing
 
