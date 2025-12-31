@@ -40,8 +40,6 @@ export interface ParagraphMapping {
 
 export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json", "email", "saved"]);
 
-export const jobStatusEnum = pgEnum("job_status", ["pending", "running", "completed", "failed"]);
-
 export const websubStateEnum = pgEnum("websub_state", ["pending", "active", "unsubscribed"]);
 
 // ============================================================================
@@ -403,35 +401,40 @@ export const userEntries = pgTable(
 
 // ============================================================================
 // JOB QUEUE
+// See docs/job-queue-design.md for detailed documentation.
 // ============================================================================
 
 /**
  * Jobs table - Postgres-based job queue for background processing.
- * Jobs are idempotent and safe to retry.
+ *
+ * One job per scheduled task (e.g., one per feed for fetch_feed jobs).
+ * Jobs are persistent and reused across runs, not created/completed per execution.
  */
 export const jobs = pgTable(
   "jobs",
   {
     id: uuid("id").primaryKey(),
-    type: text("type").notNull(), // 'fetch_feed', 'cleanup', etc.
+    type: text("type").notNull(), // 'fetch_feed', 'renew_websub'
     payload: text("payload").notNull().default("{}"), // JSON payload
 
-    // Scheduling
-    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull().defaultNow(),
-    startedAt: timestamp("started_at", { withTimezone: true }),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Scheduling state
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+    runningSince: timestamp("running_since", { withTimezone: true }), // NULL = not running
 
-    // Status and retries
-    status: jobStatusEnum("status").notNull().default("pending"),
-    attempts: integer("attempts").notNull().default(0),
-    maxAttempts: integer("max_attempts").notNull().default(3),
+    // Tracking
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     lastError: text("last_error"),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("idx_jobs_pending").on(table.scheduledFor),
-    index("idx_jobs_status").on(table.status),
+    // Index for polling: enabled jobs that are due
+    index("idx_jobs_polling").on(table.nextRunAt),
+    // Index for looking up feed jobs by feedId
+    index("idx_jobs_feed_id").on(sql`(${table.payload}->>'feedId')`),
   ]
 );
 

@@ -5,23 +5,13 @@
  * - Polls for due jobs at configurable intervals
  * - Supports concurrent job processing
  * - Graceful shutdown on SIGTERM/SIGINT
- * - Automatic stale job recovery
+ * - Stale job recovery (handled automatically in claim query)
+ *
+ * See docs/job-queue-design.md for the overall architecture.
  */
 
-import {
-  claimJob,
-  completeJob,
-  failJob,
-  getJobPayload,
-  resetStaleJobs,
-  type JobType,
-} from "./queue";
-import {
-  handleFetchFeed,
-  handleCleanup,
-  handleRenewWebsub,
-  type JobHandlerResult,
-} from "./handlers";
+import { claimJob, finishJob, getJobPayload, type JobType } from "./queue";
+import { handleFetchFeed, handleRenewWebsub, type JobHandlerResult } from "./handlers";
 import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
@@ -37,10 +27,6 @@ export interface WorkerConfig {
   concurrency?: number;
   /** Job types to process (default: all types) */
   jobTypes?: JobType[];
-  /** Stale job timeout in milliseconds (default: 5 minutes) */
-  staleJobTimeoutMs?: number;
-  /** How often to check for stale jobs in milliseconds (default: 60000) */
-  staleJobCheckIntervalMs?: number;
   /** Logger function for worker events */
   logger?: WorkerLogger;
 }
@@ -75,8 +61,6 @@ interface WorkerState {
   activeJobs: number;
   /** Polling interval timer */
   pollTimer: ReturnType<typeof setTimeout> | null;
-  /** Stale job check timer */
-  staleCheckTimer: ReturnType<typeof setInterval> | null;
   /** Promise that resolves when shutdown is complete */
   shutdownPromise: Promise<void> | null;
   /** Resolve function for shutdown promise */
@@ -129,14 +113,7 @@ export interface WorkerStats {
  * @returns Worker instance
  */
 export function createWorker(config: WorkerConfig = {}): Worker {
-  const {
-    pollIntervalMs = 5000,
-    concurrency = 5,
-    jobTypes,
-    staleJobTimeoutMs = 5 * 60 * 1000,
-    staleJobCheckIntervalMs = 60 * 1000,
-    logger = defaultLogger,
-  } = config;
+  const { pollIntervalMs = 5000, concurrency = 5, jobTypes, logger = defaultLogger } = config;
 
   // Worker state
   const state: WorkerState = {
@@ -144,7 +121,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
     shuttingDown: false,
     activeJobs: 0,
     pollTimer: null,
-    staleCheckTimer: null,
     shutdownPromise: null,
     shutdownResolve: null,
   };
@@ -164,7 +140,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
     try {
       logger.info(`Processing job ${job.id}`, {
         type: job.type,
-        attempt: job.attempts,
+        consecutiveFailures: job.consecutiveFailures,
       });
 
       let result: JobHandlerResult;
@@ -175,19 +151,16 @@ export function createWorker(config: WorkerConfig = {}): Worker {
           result = await handleFetchFeed(payload);
           break;
         }
-        case "cleanup": {
-          const payload = getJobPayload<"cleanup">(job);
-          result = await handleCleanup(payload);
-          break;
-        }
         case "renew_websub": {
           const payload = getJobPayload<"renew_websub">(job);
           result = await handleRenewWebsub(payload);
           break;
         }
         default: {
+          // Unknown job type - schedule far in future
           result = {
             success: false,
+            nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
             error: `Unknown job type: ${job.type}`,
           };
         }
@@ -195,29 +168,32 @@ export function createWorker(config: WorkerConfig = {}): Worker {
 
       const duration = Date.now() - startTime;
 
-      if (result.success) {
-        await completeJob(job.id);
-        totalSucceeded++;
+      // Finish the job (update its state for next run)
+      await finishJob(job.id, {
+        success: result.success,
+        nextRunAt: result.nextRunAt,
+        error: result.error,
+      });
 
-        // Track job success metrics
+      if (result.success) {
+        totalSucceeded++;
         trackJobProcessed(job.type, "success", duration);
 
         logger.info(`Job ${job.id} completed`, {
           type: job.type,
           durationMs: duration,
+          nextRunAt: result.nextRunAt.toISOString(),
           metadata: result.metadata,
         });
       } else {
-        await failJob(job.id, result.error ?? "Unknown error");
         totalFailed++;
-
-        // Track job failure metrics
         trackJobProcessed(job.type, "failure", duration);
 
         logger.warn(`Job ${job.id} failed`, {
           type: job.type,
           durationMs: duration,
           error: result.error,
+          nextRunAt: result.nextRunAt.toISOString(),
           metadata: result.metadata,
         });
       }
@@ -225,10 +201,25 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-      await failJob(job.id, errorMessage);
-      totalFailed++;
+      // On exception, schedule retry with backoff
+      const nextRunAt = new Date(Date.now() + 60 * 1000); // 1 minute
 
-      // Track job exception as failure
+      try {
+        await finishJob(job.id, {
+          success: false,
+          nextRunAt,
+          error: errorMessage,
+        });
+      } catch (finishError) {
+        // If we can't even finish the job, log it
+        logger.error("Failed to finish job after exception", {
+          jobId: job.id,
+          originalError: errorMessage,
+          finishError: finishError instanceof Error ? finishError.message : "Unknown",
+        });
+      }
+
+      totalFailed++;
       trackJobProcessed(job.type, "failure", duration);
 
       logger.error(`Job ${job.id} threw exception`, {
@@ -242,7 +233,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         tags: { jobType: job.type },
         extra: {
           jobId: job.id,
-          attempt: job.attempts,
+          consecutiveFailures: job.consecutiveFailures,
           payload: job.payload,
           durationMs: duration,
         },
@@ -314,26 +305,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
   }
 
   /**
-   * Checks for and resets stale jobs.
-   */
-  async function checkStaleJobs(): Promise<void> {
-    if (state.shuttingDown) {
-      return;
-    }
-
-    try {
-      const resetCount = await resetStaleJobs(staleJobTimeoutMs);
-      if (resetCount > 0) {
-        logger.warn(`Reset ${resetCount} stale jobs`);
-      }
-    } catch (error) {
-      logger.error("Failed to check stale jobs", {
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  }
-
-  /**
    * Starts the worker.
    */
   async function start(): Promise<void> {
@@ -350,14 +321,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       concurrency,
       jobTypes: jobTypes ?? "all",
     });
-
-    // Start stale job check interval
-    state.staleCheckTimer = setInterval(() => {
-      void checkStaleJobs();
-    }, staleJobCheckIntervalMs);
-
-    // Initial stale job check
-    await checkStaleJobs();
 
     // Start polling
     void poll();
@@ -378,15 +341,10 @@ export function createWorker(config: WorkerConfig = {}): Worker {
 
     state.shuttingDown = true;
 
-    // Clear timers
+    // Clear poll timer
     if (state.pollTimer) {
       clearTimeout(state.pollTimer);
       state.pollTimer = null;
-    }
-
-    if (state.staleCheckTimer) {
-      clearInterval(state.staleCheckTimer);
-      state.staleCheckTimer = null;
     }
 
     // Wait for active jobs to complete

@@ -1,36 +1,40 @@
 /**
  * Job queue module exports.
+ *
+ * See docs/job-queue-design.md for the overall architecture.
  */
 
 export {
   // Core queue functions
   createJob,
   claimJob,
-  completeJob,
-  failJob,
+  finishJob,
   getJob,
   getJobPayload,
   listJobs,
 
-  // Maintenance functions
-  deleteCompletedJobs,
-  resetStaleJobs,
+  // Feed job functions
+  getFeedJob,
+  createOrEnableFeedJob,
+  enableFeedJob,
+  syncFeedJobEnabled,
+  updateFeedJobNextRun,
 
-  // Utility functions
-  calculateBackoff,
+  // System job functions
+  ensureRenewWebsubJobExists,
 
   // Types
   type JobPayloads,
   type JobType,
   type CreateJobOptions,
   type ClaimJobOptions,
+  type FinishJobOptions,
 } from "./queue";
 
 export {
   // Job handlers
   handleFetchFeed,
-  handleCleanup,
-  createInitialFetchJob,
+  handleRenewWebsub,
 
   // Types
   type JobHandlerResult,
