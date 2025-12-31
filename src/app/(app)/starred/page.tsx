@@ -78,9 +78,15 @@ function StarredEntriesContent() {
   );
 
   // If an entry is open, show the full content view
+  // Key forces remount when entryId changes, ensuring fresh refs and mutation state
   if (openEntryId) {
     return (
-      <EntryContent entryId={openEntryId} onBack={handleBack} onToggleRead={handleToggleRead} />
+      <EntryContent
+        key={openEntryId}
+        entryId={openEntryId}
+        onBack={handleBack}
+        onToggleRead={handleToggleRead}
+      />
     );
   }
 
