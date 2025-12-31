@@ -78,6 +78,20 @@
       "when": 1735464000000,
       "tag": "0010_invalidate_narration_for_image_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1767119886557,
+      "tag": "0011_whole_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1767119886600,
+      "tag": "0012_email_subscriptions",
+      "breakpoints": true
     }
   ]
 }

@@ -64,6 +64,7 @@ interface CachedSession {
   userEmailVerifiedAt: string | null;
   userPasswordHash: string | null;
   userInviteId: string | null;
+  userShowSpam: boolean;
 }
 
 // ============================================================================
@@ -131,6 +132,7 @@ function serializeForCache(data: SessionData): string {
     userEmailVerifiedAt: data.user.emailVerifiedAt?.toISOString() ?? null,
     userPasswordHash: data.user.passwordHash,
     userInviteId: data.user.inviteId ?? null,
+    userShowSpam: data.user.showSpam,
   };
   return JSON.stringify(cached);
 }
@@ -160,6 +162,7 @@ function deserializeFromCache(data: string): SessionData {
       emailVerifiedAt: cached.userEmailVerifiedAt ? new Date(cached.userEmailVerifiedAt) : null,
       passwordHash: cached.userPasswordHash,
       inviteId: cached.userInviteId ?? null,
+      showSpam: cached.userShowSpam ?? false,
     },
   };
 }
@@ -341,4 +344,33 @@ export async function revokeAllUserSessions(userId: string): Promise<number> {
   }
 
   return result.rowCount ?? 0;
+}
+
+/**
+ * Invalidates all session caches for a user without revoking the sessions.
+ * Useful when user preferences are updated and cached session data needs refresh.
+ *
+ * @param userId - The user ID whose session caches to invalidate
+ */
+export async function invalidateUserSessionCaches(userId: string): Promise<void> {
+  // Get all active sessions for this user
+  const activeSessions = await db
+    .select({ tokenHash: sessions.tokenHash })
+    .from(sessions)
+    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+
+  if (activeSessions.length === 0) {
+    return;
+  }
+
+  // Invalidate all cache entries
+  try {
+    const pipeline = redis.pipeline();
+    for (const session of activeSessions) {
+      pipeline.del(getCacheKey(session.tokenHash));
+    }
+    await pipeline.exec();
+  } catch (err) {
+    console.error("Failed to invalidate session caches:", err);
+  }
 }

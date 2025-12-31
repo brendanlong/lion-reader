@@ -1,16 +1,19 @@
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -35,7 +38,7 @@ export interface ParagraphMapping {
 // ENUMS
 // ============================================================================
 
-export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json"]);
+export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json", "email"]);
 
 export const jobStatusEnum = pgEnum("job_status", ["pending", "running", "completed", "failed"]);
 
@@ -75,6 +78,9 @@ export const users = pgTable("users", {
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   passwordHash: text("password_hash"), // null if OAuth-only (future)
   inviteId: uuid("invite_id").references(() => invites.id, { onDelete: "set null" }),
+
+  // Preferences
+  showSpam: boolean("show_spam").notNull().default(false), // Show spam entries from email feeds
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -146,6 +152,8 @@ export const oauthAccounts = pgTable(
 
 /**
  * Feeds table - stores canonical feed data shared across users.
+ * For email feeds (type='email'), the feed is user-specific and uses email_sender_pattern.
+ * For URL-based feeds (rss/atom/json), feeds are shared across users.
  */
 export const feeds = pgTable(
   "feeds",
@@ -154,6 +162,10 @@ export const feeds = pgTable(
     type: feedTypeEnum("type").notNull(),
 
     url: text("url").unique(), // For URL-based feeds
+
+    // For email feeds - user ownership and sender pattern
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }), // Only set for email feeds
+    emailSenderPattern: text("email_sender_pattern"), // Normalized sender email for email feeds
 
     // Metadata from feed
     title: text("title"),
@@ -178,7 +190,13 @@ export const feeds = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("idx_feeds_next_fetch").on(table.nextFetchAt)]
+  (table) => [
+    index("idx_feeds_next_fetch").on(table.nextFetchAt),
+    // Email feeds require user_id, other feeds must not have it
+    check("feed_type_user_id", sql`(type = 'email') = (user_id IS NOT NULL)`),
+    // Unique constraint for email feeds: one feed per (user, sender)
+    unique("uq_feeds_email_user_sender").on(table.userId, table.emailSenderPattern),
+  ]
 );
 
 // ============================================================================
@@ -198,7 +216,7 @@ export const entries = pgTable(
       .references(() => feeds.id, { onDelete: "cascade" }),
 
     // Identifier from source
-    guid: text("guid").notNull(), // from RSS/Atom
+    guid: text("guid").notNull(), // from RSS/Atom or email Message-ID
 
     // Content
     url: text("url"),
@@ -215,6 +233,15 @@ export const entries = pgTable(
     // Version tracking
     contentHash: text("content_hash").notNull(), // for detecting updates
 
+    // Spam tracking (for email entries)
+    spamScore: real("spam_score"), // Provider's spam score
+    isSpam: boolean("is_spam").notNull().default(false), // Provider's spam verdict
+
+    // List-Unsubscribe info (for email entries, used when unsubscribing)
+    listUnsubscribeMailto: text("list_unsubscribe_mailto"), // mailto: URL from header
+    listUnsubscribeHttps: text("list_unsubscribe_https"), // https: URL from header
+    listUnsubscribePost: boolean("list_unsubscribe_post"), // true if one-click POST supported
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -225,6 +252,8 @@ export const entries = pgTable(
     index("idx_entries_feed").on(table.feedId, table.id),
     // For finding entries by fetched time (visibility filtering)
     index("idx_entries_fetched").on(table.feedId, table.fetchedAt),
+    // For filtering spam entries
+    index("idx_entries_spam").on(table.feedId, table.isSpam),
   ]
 );
 
@@ -514,6 +543,65 @@ export const narrationContent = pgTable(
 );
 
 // ============================================================================
+// EMAIL SUBSCRIPTIONS
+// ============================================================================
+
+/**
+ * Ingest addresses table - unique email addresses for receiving newsletters.
+ * Each user can have multiple ingest addresses (up to 5, enforced in application).
+ * Email format: {token}@ingest.lionreader.com
+ */
+export const ingestAddresses = pgTable(
+  "ingest_addresses",
+  {
+    id: uuid("id").primaryKey(), // UUIDv7
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    token: text("token").unique().notNull(), // Random token for the email address
+    label: text("label"), // User-provided name for the address
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }), // Soft delete, rejects future emails
+  },
+  (table) => [
+    // For listing addresses by user
+    index("idx_ingest_addresses_user").on(table.userId),
+    // For looking up by token during email processing
+    index("idx_ingest_addresses_token").on(table.token),
+  ]
+);
+
+/**
+ * Blocked senders table - stores senders that the user has blocked.
+ * When a user unsubscribes from an email feed, the sender is added here.
+ * Future emails from blocked senders are silently dropped.
+ */
+export const blockedSenders = pgTable(
+  "blocked_senders",
+  {
+    id: uuid("id").primaryKey(), // UUIDv7
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    senderEmail: text("sender_email").notNull(), // Normalized sender email (lowercased, plus codes stripped)
+    blockedAt: timestamp("blocked_at", { withTimezone: true }).notNull().defaultNow(),
+
+    // Store unsubscribe info for potential retry
+    listUnsubscribeMailto: text("list_unsubscribe_mailto"),
+    unsubscribeSentAt: timestamp("unsubscribe_sent_at", { withTimezone: true }),
+  },
+  (table) => [
+    // Unique constraint: one block per (user, sender)
+    unique("uq_blocked_senders_user_email").on(table.userId, table.senderEmail),
+    // For listing blocked senders by user
+    index("idx_blocked_senders_user").on(table.userId),
+  ]
+);
+
+// ============================================================================
 // TYPE EXPORTS
 // ============================================================================
 
@@ -558,3 +646,9 @@ export type NewSavedArticle = typeof savedArticles.$inferInsert;
 
 export type NarrationContent = typeof narrationContent.$inferSelect;
 export type NewNarrationContent = typeof narrationContent.$inferInsert;
+
+export type IngestAddress = typeof ingestAddresses.$inferSelect;
+export type NewIngestAddress = typeof ingestAddresses.$inferInsert;
+
+export type BlockedSender = typeof blockedSenders.$inferSelect;
+export type NewBlockedSender = typeof blockedSenders.$inferInsert;
