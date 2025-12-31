@@ -3,9 +3,9 @@ package com.lionreader.data.repository
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
 import com.lionreader.data.api.models.EntriesCountResponse
-import com.lionreader.data.api.models.EntryFullDto
-import com.lionreader.data.api.models.EntryListItemDto
+import com.lionreader.data.api.models.EntryDto
 import com.lionreader.data.api.models.EntryType
+import com.lionreader.data.api.models.SavedArticleFullDto
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,7 +14,7 @@ import javax.inject.Singleton
  */
 sealed class SavedArticlesResult {
     data class Success(
-        val articles: List<EntryListItemDto>,
+        val articles: List<EntryDto>,
         val nextCursor: String? = null,
     ) : SavedArticlesResult()
 
@@ -33,7 +33,7 @@ sealed class SavedArticlesResult {
  */
 sealed class SavedArticleFetchResult {
     data class Success(
-        val article: EntryFullDto,
+        val article: EntryDto,
     ) : SavedArticleFetchResult()
 
     data object NotFound : SavedArticleFetchResult()
