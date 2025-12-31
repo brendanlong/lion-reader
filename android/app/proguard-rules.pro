@@ -234,6 +234,16 @@
 }
 
 # ================================================
+# Sentry
+# ================================================
+-keep class io.sentry.** { *; }
+-keep interface io.sentry.** { *; }
+-dontwarn io.sentry.**
+
+# Keep Sentry's native libraries
+-keep class io.sentry.android.ndk.** { *; }
+
+# ================================================
 # Debugging - remove for production if needed
 # ================================================
 # Uncomment the following to keep more info for debugging crashes:
