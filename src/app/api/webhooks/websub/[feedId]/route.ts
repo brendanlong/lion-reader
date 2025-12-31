@@ -17,7 +17,7 @@ import {
   parseFeed,
   processEntries,
 } from "@/server/feed";
-import { createJob } from "@/server/jobs/queue";
+import { updateFeedJobNextRun } from "@/server/jobs/queue";
 import { trackWebsubNotificationReceived } from "@/server/metrics/metrics";
 import { logger } from "@/lib/logger";
 import { isValidUuid } from "@/lib/uuidv7";
@@ -216,21 +216,17 @@ export async function POST(
 /**
  * Schedules a backup polling job for a feed.
  * Uses a longer interval than normal since WebSub is active.
+ * Updates the existing job's next_run_at rather than creating a new job.
  */
 async function scheduleBackupPoll(feedId: string): Promise<void> {
-  const scheduledFor = new Date(Date.now() + WEBSUB_BACKUP_POLL_INTERVAL_MS);
+  const nextRunAt = new Date(Date.now() + WEBSUB_BACKUP_POLL_INTERVAL_MS);
 
   try {
-    await createJob({
-      type: "fetch_feed",
-      payload: { feedId },
-      scheduledFor,
-      maxAttempts: 3,
-    });
+    await updateFeedJobNextRun(feedId, nextRunAt);
 
     logger.debug("Scheduled WebSub backup poll", {
       feedId,
-      scheduledFor: scheduledFor.toISOString(),
+      nextRunAt: nextRunAt.toISOString(),
     });
   } catch (error) {
     // Don't let scheduling errors affect the response

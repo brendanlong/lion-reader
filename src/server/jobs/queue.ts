@@ -1,13 +1,19 @@
 /**
  * Postgres-based job queue implementation.
  *
+ * Uses a "one job per task" model where jobs are persistent scheduled tasks
+ * rather than ephemeral run records. For example, each feed has exactly one
+ * fetch_feed job that gets updated after each run.
+ *
  * Uses row locking (SELECT FOR UPDATE SKIP LOCKED) for concurrent job claiming,
  * ensuring only one worker can process a job at a time.
+ *
+ * See docs/job-queue-design.md for detailed documentation.
  */
 
-import { and, eq, lte, sql, desc } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { db } from "../db";
-import { jobs, type Job } from "../db/schema";
+import { jobs, subscriptions, type Job } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 
 /**
@@ -17,14 +23,14 @@ type RawJobRow = {
   id: string;
   type: string;
   payload: string;
-  scheduled_for: string;
-  started_at: string | null;
-  completed_at: string | null;
-  status: "pending" | "running" | "completed" | "failed";
-  attempts: number;
-  max_attempts: number;
+  enabled: boolean;
+  next_run_at: string | null;
+  running_since: string | null;
+  last_run_at: string | null;
   last_error: string | null;
+  consecutive_failures: number;
   created_at: string;
+  updated_at: string;
 } & Record<string, unknown>;
 
 /**
@@ -35,28 +41,32 @@ function rowToJob(row: RawJobRow): Job {
     id: row.id,
     type: row.type,
     payload: row.payload,
-    scheduledFor: new Date(row.scheduled_for),
-    startedAt: row.started_at ? new Date(row.started_at) : null,
-    completedAt: row.completed_at ? new Date(row.completed_at) : null,
-    status: row.status,
-    attempts: row.attempts,
-    maxAttempts: row.max_attempts,
+    enabled: row.enabled,
+    nextRunAt: row.next_run_at ? new Date(row.next_run_at) : null,
+    runningSince: row.running_since ? new Date(row.running_since) : null,
+    lastRunAt: row.last_run_at ? new Date(row.last_run_at) : null,
     lastError: row.last_error,
+    consecutiveFailures: row.consecutive_failures,
     createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
   };
 }
 
 /**
  * Job payload types for different job types.
- * Add new job types here as needed.
  */
 export interface JobPayloads {
   fetch_feed: { feedId: string };
-  cleanup: { olderThanDays?: number };
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
 }
 
 export type JobType = keyof JobPayloads;
+
+/**
+ * Stale job threshold in milliseconds.
+ * Jobs running longer than this are assumed to have crashed and can be reclaimed.
+ */
+const STALE_JOB_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Options for creating a new job.
@@ -64,8 +74,8 @@ export type JobType = keyof JobPayloads;
 export interface CreateJobOptions<T extends JobType> {
   type: T;
   payload: JobPayloads[T];
-  scheduledFor?: Date;
-  maxAttempts?: number;
+  nextRunAt?: Date;
+  enabled?: boolean;
 }
 
 /**
@@ -76,39 +86,27 @@ export interface ClaimJobOptions {
 }
 
 /**
- * Base backoff duration in milliseconds (1 minute).
+ * Options for finishing a job.
  */
-const BASE_BACKOFF_MS = 60 * 1000;
-
-/**
- * Maximum backoff duration in milliseconds (about 4 hours - 2^8 minutes).
- */
-const MAX_BACKOFF_MS = 256 * 60 * 1000;
-
-/**
- * Calculates the backoff delay for a given attempt number.
- * Uses exponential backoff: 1 minute * 2^(attempt-1)
- * Caps at MAX_BACKOFF_MS.
- *
- * @param attempt The attempt number (1-based)
- * @returns Delay in milliseconds
- */
-export function calculateBackoff(attempt: number): number {
-  // attempt 1 -> 1 min, attempt 2 -> 2 min, attempt 3 -> 4 min, etc.
-  const delay = BASE_BACKOFF_MS * Math.pow(2, attempt - 1);
-  return Math.min(delay, MAX_BACKOFF_MS);
+export interface FinishJobOptions {
+  success: boolean;
+  nextRunAt: Date;
+  error?: string;
 }
 
 /**
  * Creates a new job in the queue.
+ * This should only be called when creating a new scheduled task
+ * (e.g., when a feed is first subscribed to).
  *
  * @param options Job creation options
  * @returns The created job
  */
 export async function createJob<T extends JobType>(options: CreateJobOptions<T>): Promise<Job> {
-  const { type, payload, scheduledFor = new Date(), maxAttempts = 3 } = options;
+  const { type, payload, nextRunAt = new Date(), enabled = true } = options;
 
   const id = generateUuidv7();
+  const now = new Date();
 
   const [job] = await db
     .insert(jobs)
@@ -116,10 +114,10 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
       id,
       type,
       payload: JSON.stringify(payload),
-      scheduledFor,
-      maxAttempts,
-      status: "pending",
-      attempts: 0,
+      enabled,
+      nextRunAt,
+      createdAt: now,
+      updatedAt: now,
     })
     .returning();
 
@@ -132,18 +130,20 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
  * Uses SELECT FOR UPDATE SKIP LOCKED to ensure only one worker
  * can claim a job at a time, without blocking other workers.
  *
+ * Jobs are claimed if:
+ * - enabled = true
+ * - next_run_at <= now
+ * - running_since is NULL OR older than stale threshold (5 minutes)
+ *
  * @param options Claim options (optional type filter)
  * @returns The claimed job, or null if no jobs are available
  */
 export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | null> {
   const { types } = options;
   const now = new Date();
+  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
 
-  // Use a raw SQL query with FOR UPDATE SKIP LOCKED
-  // This atomically finds and locks a job that:
-  // 1. Has status 'pending'
-  // 2. Is scheduled for now or earlier
-  // 3. Matches the type filter (if provided)
+  // Build type filter if provided
   const typeFilter =
     types && types.length > 0
       ? sql`AND type = ANY(ARRAY[${sql.join(
@@ -155,15 +155,15 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
   const result = await db.execute<RawJobRow>(sql`
     UPDATE ${jobs}
     SET
-      status = 'running',
-      started_at = ${now},
-      attempts = attempts + 1
+      running_since = ${now},
+      updated_at = ${now}
     WHERE id = (
       SELECT id FROM ${jobs}
-      WHERE status = 'pending'
-        AND scheduled_for <= ${now}
+      WHERE enabled = true
+        AND next_run_at <= ${now}
+        AND (running_since IS NULL OR running_since < ${staleThreshold})
         ${typeFilter}
-      ORDER BY scheduled_for ASC
+      ORDER BY next_run_at ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
@@ -178,83 +178,67 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
 }
 
 /**
- * Marks a job as completed.
+ * Finishes a job after execution, updating its state for the next run.
  *
- * @param jobId The ID of the job to complete
+ * On success:
+ * - running_since = NULL
+ * - last_run_at = now
+ * - next_run_at = provided value
+ * - last_error = NULL
+ * - consecutive_failures = 0
+ *
+ * On failure:
+ * - running_since = NULL
+ * - last_run_at = now
+ * - next_run_at = provided value (should include backoff)
+ * - last_error = provided error
+ * - consecutive_failures++
+ *
+ * @param jobId The ID of the job to finish
+ * @param options Finish options
  * @returns The updated job
- * @throws Error if the job is not found
  */
-export async function completeJob(jobId: string): Promise<Job> {
+export async function finishJob(jobId: string, options: FinishJobOptions): Promise<Job> {
+  const { success, nextRunAt, error } = options;
   const now = new Date();
 
-  const [job] = await db
-    .update(jobs)
-    .set({
-      status: "completed",
-      completedAt: now,
-    })
-    .where(eq(jobs.id, jobId))
-    .returning();
-
-  if (!job) {
-    throw new Error(`Job not found: ${jobId}`);
-  }
-
-  return job;
-}
-
-/**
- * Marks a job as failed and handles retries.
- *
- * If the job has not exceeded max attempts, it will be rescheduled
- * with exponential backoff. Otherwise, it will be marked as failed.
- *
- * @param jobId The ID of the job to fail
- * @param error The error message
- * @returns The updated job
- * @throws Error if the job is not found
- */
-export async function failJob(jobId: string, error: string): Promise<Job> {
-  const now = new Date();
-
-  // First, get the current job state
-  const [currentJob] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
-
-  if (!currentJob) {
-    throw new Error(`Job not found: ${jobId}`);
-  }
-
-  // Check if we should retry
-  const shouldRetry = currentJob.attempts < currentJob.maxAttempts;
-
-  if (shouldRetry) {
-    // Calculate next retry time with exponential backoff
-    const backoffMs = calculateBackoff(currentJob.attempts);
-    const nextRetryAt = new Date(now.getTime() + backoffMs);
-
+  if (success) {
     const [job] = await db
       .update(jobs)
       .set({
-        status: "pending",
-        startedAt: null,
-        scheduledFor: nextRetryAt,
-        lastError: error,
+        runningSince: null,
+        lastRunAt: now,
+        nextRunAt,
+        lastError: null,
+        consecutiveFailures: 0,
+        updatedAt: now,
       })
       .where(eq(jobs.id, jobId))
       .returning();
+
+    if (!job) {
+      throw new Error(`Job not found: ${jobId}`);
+    }
 
     return job;
   } else {
-    // Max retries exceeded, mark as failed permanently
+    // For failure, increment consecutive_failures
     const [job] = await db
       .update(jobs)
       .set({
-        status: "failed",
-        completedAt: now,
-        lastError: error,
+        runningSince: null,
+        lastRunAt: now,
+        nextRunAt,
+        lastError: error ?? "Unknown error",
+        consecutiveFailures: sql`${jobs.consecutiveFailures} + 1`,
+        updatedAt: now,
       })
       .where(eq(jobs.id, jobId))
       .returning();
+
+    if (!job) {
+      throw new Error(`Job not found: ${jobId}`);
+    }
 
     return job;
   }
@@ -283,6 +267,154 @@ export function getJobPayload<T extends JobType>(job: Job): JobPayloads[T] {
 }
 
 /**
+ * Gets a feed job by feed ID.
+ *
+ * @param feedId The feed ID
+ * @returns The job, or null if not found
+ */
+export async function getFeedJob(feedId: string): Promise<Job | null> {
+  const result = await db.execute<RawJobRow>(sql`
+    SELECT * FROM ${jobs}
+    WHERE type = 'fetch_feed'
+      AND payload::json->>'feedId' = ${feedId}
+    LIMIT 1
+  `);
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return rowToJob(result.rows[0]);
+}
+
+/**
+ * Creates or enables a job for a feed.
+ * Idempotent - if a job already exists, enables it if disabled.
+ *
+ * @param feedId The feed ID
+ * @param nextRunAt When the job should run (default: now)
+ * @returns The job (created or updated)
+ */
+export async function createOrEnableFeedJob(feedId: string, nextRunAt?: Date): Promise<Job> {
+  const now = new Date();
+  const runAt = nextRunAt ?? now;
+
+  // Try to enable existing job first
+  const result = await db.execute<RawJobRow>(sql`
+    UPDATE ${jobs}
+    SET
+      enabled = true,
+      next_run_at = COALESCE(next_run_at, ${runAt}),
+      updated_at = ${now}
+    WHERE type = 'fetch_feed'
+      AND payload::json->>'feedId' = ${feedId}
+    RETURNING *
+  `);
+
+  if (result.rows.length > 0) {
+    return rowToJob(result.rows[0]);
+  }
+
+  // No existing job, create new one
+  return createJob({
+    type: "fetch_feed",
+    payload: { feedId },
+    nextRunAt: runAt,
+    enabled: true,
+  });
+}
+
+/**
+ * Enables a feed job if it exists and is disabled.
+ * Returns the job's next_run_at so it can be synced to feeds.next_fetch_at.
+ *
+ * @param feedId The feed ID
+ * @returns The job if found and enabled, null otherwise
+ */
+export async function enableFeedJob(feedId: string): Promise<Job | null> {
+  const now = new Date();
+
+  const result = await db.execute<RawJobRow>(sql`
+    UPDATE ${jobs}
+    SET
+      enabled = true,
+      updated_at = ${now}
+    WHERE type = 'fetch_feed'
+      AND payload::json->>'feedId' = ${feedId}
+    RETURNING *
+  `);
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return rowToJob(result.rows[0]);
+}
+
+/**
+ * Syncs a feed job's enabled state based on whether the feed has active subscribers.
+ * This should be called after a subscription is deleted to check if the job should be disabled.
+ *
+ * @param feedId The feed ID
+ * @returns Object with the job's new enabled state, or null if job not found
+ */
+export async function syncFeedJobEnabled(
+  feedId: string
+): Promise<{ enabled: boolean; job: Job } | null> {
+  const now = new Date();
+
+  // Atomically update enabled based on whether there are active subscribers
+  const result = await db.execute<RawJobRow>(sql`
+    UPDATE ${jobs}
+    SET
+      enabled = EXISTS (
+        SELECT 1 FROM ${subscriptions}
+        WHERE ${subscriptions.feedId} = ${feedId}
+          AND ${subscriptions.unsubscribedAt} IS NULL
+      ),
+      updated_at = ${now}
+    WHERE type = 'fetch_feed'
+      AND payload::json->>'feedId' = ${feedId}
+    RETURNING *
+  `);
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  const job = rowToJob(result.rows[0]);
+  return { enabled: job.enabled, job };
+}
+
+/**
+ * Updates a feed job's next_run_at.
+ * Used by WebSub to schedule backup polls.
+ *
+ * @param feedId The feed ID
+ * @param nextRunAt The new next run time
+ * @returns The updated job, or null if not found
+ */
+export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Promise<Job | null> {
+  const now = new Date();
+
+  const result = await db.execute<RawJobRow>(sql`
+    UPDATE ${jobs}
+    SET
+      next_run_at = ${nextRunAt},
+      updated_at = ${now}
+    WHERE type = 'fetch_feed'
+      AND payload::json->>'feedId' = ${feedId}
+    RETURNING *
+  `);
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return rowToJob(result.rows[0]);
+}
+
+/**
  * Lists jobs with optional filtering.
  *
  * @param options Filter options
@@ -290,22 +422,22 @@ export function getJobPayload<T extends JobType>(job: Job): JobPayloads[T] {
  */
 export async function listJobs(
   options: {
-    status?: Job["status"];
+    enabled?: boolean;
     type?: JobType;
     limit?: number;
   } = {}
 ): Promise<Job[]> {
-  const { status, type, limit = 100 } = options;
+  const { enabled, type, limit = 100 } = options;
 
   const conditions = [];
-  if (status) {
-    conditions.push(eq(jobs.status, status));
+  if (enabled !== undefined) {
+    conditions.push(eq(jobs.enabled, enabled));
   }
   if (type) {
     conditions.push(eq(jobs.type, type));
   }
 
-  const query = db.select().from(jobs).orderBy(desc(jobs.scheduledFor)).limit(limit);
+  const query = db.select().from(jobs).limit(limit);
 
   if (conditions.length > 0) {
     return query.where(and(...conditions));
@@ -315,39 +447,25 @@ export async function listJobs(
 }
 
 /**
- * Deletes completed jobs older than a specified date.
- * Useful for cleanup.
+ * Ensures the renew_websub job exists.
+ * Creates it if it doesn't exist, does nothing if it does.
+ * Should be called at application startup.
  *
- * @param olderThan Delete jobs completed before this date
- * @returns Number of deleted jobs
+ * @returns The job (created or existing)
  */
-export async function deleteCompletedJobs(olderThan: Date): Promise<number> {
-  const result = await db
-    .delete(jobs)
-    .where(and(eq(jobs.status, "completed"), lte(jobs.completedAt, olderThan)))
-    .returning({ id: jobs.id });
+export async function ensureRenewWebsubJobExists(): Promise<Job> {
+  // Check if job already exists
+  const [existingJob] = await db.select().from(jobs).where(eq(jobs.type, "renew_websub")).limit(1);
 
-  return result.length;
-}
+  if (existingJob) {
+    return existingJob;
+  }
 
-/**
- * Resets stale running jobs that may have been abandoned.
- * Jobs are considered stale if they've been running for longer than the timeout.
- *
- * @param timeoutMs Timeout in milliseconds (default: 5 minutes)
- * @returns Number of reset jobs
- */
-export async function resetStaleJobs(timeoutMs: number = 5 * 60 * 1000): Promise<number> {
-  const staleThreshold = new Date(Date.now() - timeoutMs);
-
-  const result = await db
-    .update(jobs)
-    .set({
-      status: "pending",
-      startedAt: null,
-    })
-    .where(and(eq(jobs.status, "running"), lte(jobs.startedAt, staleThreshold)))
-    .returning({ id: jobs.id });
-
-  return result.length;
+  // Create the job
+  return createJob({
+    type: "renew_websub",
+    payload: {},
+    nextRunAt: new Date(),
+    enabled: true,
+  });
 }

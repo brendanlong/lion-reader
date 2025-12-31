@@ -358,37 +358,32 @@ CREATE INDEX idx_websub_expiring ON websub_subscriptions(expires_at)
 
 -- ============================================================================
 -- JOB QUEUE
+-- See docs/job-queue-design.md for detailed documentation.
 -- ============================================================================
-
-CREATE TYPE job_status AS ENUM ('pending', 'running', 'completed', 'failed');
 
 CREATE TABLE jobs (
   id uuid PRIMARY KEY,
-  type text NOT NULL,  -- 'fetch_feed', 'process_email', 'renew_websub', 'cleanup'
+  type text NOT NULL,  -- 'fetch_feed', 'renew_websub'
   payload jsonb NOT NULL DEFAULT '{}',
 
-  -- Scheduling
-  scheduled_for timestamptz NOT NULL DEFAULT now(),
-  started_at timestamptz,
-  completed_at timestamptz,
+  -- Scheduling state
+  enabled boolean NOT NULL DEFAULT true,
+  next_run_at timestamptz,
+  running_since timestamptz,  -- NULL = not running, timestamp = running
 
-  -- Status and retries
-  status job_status NOT NULL DEFAULT 'pending',
-  attempts int NOT NULL DEFAULT 0,
-  max_attempts int NOT NULL DEFAULT 3,
+  -- Tracking
+  last_run_at timestamptz,
   last_error text,
+  consecutive_failures int NOT NULL DEFAULT 0,
 
-  -- Locking (for distributed workers)
-  locked_by text,
-  locked_at timestamptz,
-
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_jobs_pending ON jobs(scheduled_for)
-  WHERE status = 'pending';
-CREATE INDEX idx_jobs_running ON jobs(locked_at)
-  WHERE status = 'running';
+-- Index for polling: enabled jobs that are due
+CREATE INDEX idx_jobs_polling ON jobs(next_run_at) WHERE enabled = true;
+-- Index for looking up feed jobs by feedId
+CREATE INDEX idx_jobs_feed_id ON jobs((payload->>'feedId')) WHERE type = 'fetch_feed';
 
 -- ============================================================================
 -- HELPER FUNCTIONS

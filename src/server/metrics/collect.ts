@@ -54,23 +54,39 @@ export async function collectJobQueueMetrics(): Promise<void> {
   if (!metricsEnabled) return;
 
   // Count jobs by type and status
-  const jobCounts = await db
+  // In the new schema: enabled=true jobs are "pending", running_since IS NOT NULL are "running"
+  const pendingCounts = await db
     .select({
       type: jobs.type,
-      status: jobs.status,
       count: sql<number>`count(*)::int`,
     })
     .from(jobs)
-    .where(sql`${jobs.status} IN ('pending', 'running')`)
-    .groupBy(jobs.type, jobs.status);
+    .where(sql`${jobs.enabled} = true AND ${jobs.runningSince} IS NULL`)
+    .groupBy(jobs.type);
 
-  updateJobQueueMetrics(
-    jobCounts.map((row) => ({
+  const runningCounts = await db
+    .select({
+      type: jobs.type,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(jobs)
+    .where(sql`${jobs.runningSince} IS NOT NULL`)
+    .groupBy(jobs.type);
+
+  const jobCounts = [
+    ...pendingCounts.map((row) => ({
       type: row.type,
-      status: row.status,
+      status: "pending" as const,
       count: row.count,
-    }))
-  );
+    })),
+    ...runningCounts.map((row) => ({
+      type: row.type,
+      status: "running" as const,
+      count: row.count,
+    })),
+  ];
+
+  updateJobQueueMetrics(jobCounts);
 }
 
 /**

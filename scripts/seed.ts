@@ -159,11 +159,15 @@ async function seed() {
 
   // Create a sample job
   console.log("\nCreating sample job...");
+  const now = new Date();
   await db.insert(schema.jobs).values({
     id: generateUuidv7(),
     type: "fetch_feed",
     payload: JSON.stringify({ feedId: feeds[0].id }),
-    scheduledFor: new Date(),
+    enabled: true,
+    nextRunAt: now,
+    createdAt: now,
+    updatedAt: now,
   });
   console.log("  Created 1 sample job");
 

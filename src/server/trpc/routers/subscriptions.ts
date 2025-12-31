@@ -22,7 +22,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, detectFeedType, deriveGuid } from "@/server/feed";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
-import { createInitialFetchJob } from "@/server/jobs/handlers";
+import { createOrEnableFeedJob, enableFeedJob, syncFeedJobEnabled } from "@/server/jobs/queue";
 import { publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
@@ -260,6 +260,15 @@ export const subscriptionsRouter = createTRPCRouter({
         // Feed exists - use it
         feedId = existingFeed[0].id;
         feedRecord = existingFeed[0];
+
+        // Ensure job is enabled and sync next_fetch_at
+        const job = await enableFeedJob(feedId);
+        if (job?.nextRunAt) {
+          await ctx.db
+            .update(feeds)
+            .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
+            .where(eq(feeds.id, feedId));
+        }
       } else {
         // Create new feed
         feedId = generateUuidv7();
@@ -281,8 +290,8 @@ export const subscriptionsRouter = createTRPCRouter({
         await ctx.db.insert(feeds).values(newFeed);
         feedRecord = newFeed as typeof feeds.$inferSelect;
 
-        // Schedule initial fetch job for the new feed
-        await createInitialFetchJob(feedId);
+        // Create job for the new feed (enabled, runs immediately)
+        await createOrEnableFeedJob(feedId);
       }
 
       // Step 5: Check for existing subscription
@@ -799,6 +808,18 @@ export const subscriptionsRouter = createTRPCRouter({
         })
         .where(eq(subscriptions.id, input.id));
 
+      // Sync job enabled state - if this was the last subscriber, job will be disabled
+      const syncResult = await syncFeedJobEnabled(feed.id);
+      if (syncResult && !syncResult.enabled) {
+        // Job was disabled (no more subscribers) - clear next_fetch_at
+        await ctx.db
+          .update(feeds)
+          .set({ nextFetchAt: null, updatedAt: now })
+          .where(eq(feeds.id, feed.id));
+
+        logger.debug("Feed job disabled - no active subscribers", { feedId: feed.id });
+      }
+
       return { success: true };
     }),
 
@@ -918,8 +939,15 @@ export const subscriptionsRouter = createTRPCRouter({
           let feedId: string;
 
           if (existingFeed.length > 0) {
-            // Feed exists - use it
+            // Feed exists - ensure job is enabled and sync next_fetch_at
             feedId = existingFeed[0].id;
+            const job = await enableFeedJob(feedId);
+            if (job?.nextRunAt) {
+              await ctx.db
+                .update(feeds)
+                .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
+                .where(eq(feeds.id, feedId));
+            }
           } else {
             // Create new feed record
             feedId = generateUuidv7();
@@ -936,8 +964,8 @@ export const subscriptionsRouter = createTRPCRouter({
               updatedAt: now,
             });
 
-            // Schedule initial fetch job for the new feed
-            await createInitialFetchJob(feedId);
+            // Create job for the new feed (enabled, runs immediately)
+            await createOrEnableFeedJob(feedId);
           }
 
           // Check for existing soft-deleted subscription

@@ -8,19 +8,20 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { jobs } from "../../src/server/db/schema";
+import { jobs, feeds, subscriptions, users } from "../../src/server/db/schema";
 import {
   createJob,
   claimJob,
-  completeJob,
-  failJob,
+  finishJob,
   getJob,
   getJobPayload,
   listJobs,
-  calculateBackoff,
-  resetStaleJobs,
-  deleteCompletedJobs,
+  createOrEnableFeedJob,
+  enableFeedJob,
+  syncFeedJobEnabled,
+  updateFeedJobNextRun,
 } from "../../src/server/jobs";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
 
 // A valid UUID that doesn't exist in the database
 const NON_EXISTENT_JOB_ID = "00000000-0000-7000-8000-000000000000";
@@ -29,11 +30,17 @@ describe("Job Queue", () => {
   // Clean up jobs table before each test
   beforeEach(async () => {
     await db.delete(jobs);
+    await db.delete(subscriptions);
+    await db.delete(feeds);
+    await db.delete(users);
   });
 
   // Clean up after all tests
   afterAll(async () => {
     await db.delete(jobs);
+    await db.delete(subscriptions);
+    await db.delete(feeds);
+    await db.delete(users);
   });
 
   describe("createJob", () => {
@@ -45,49 +52,48 @@ describe("Job Queue", () => {
 
       expect(job.id).toBeDefined();
       expect(job.type).toBe("fetch_feed");
-      expect(job.status).toBe("pending");
-      expect(job.attempts).toBe(0);
-      expect(job.maxAttempts).toBe(3);
-      expect(job.scheduledFor).toBeInstanceOf(Date);
-      expect(job.startedAt).toBeNull();
-      expect(job.completedAt).toBeNull();
+      expect(job.enabled).toBe(true);
+      expect(job.consecutiveFailures).toBe(0);
+      expect(job.nextRunAt).toBeInstanceOf(Date);
+      expect(job.runningSince).toBeNull();
+      expect(job.lastRunAt).toBeNull();
       expect(job.lastError).toBeNull();
 
       const payload = getJobPayload<"fetch_feed">(job);
       expect(payload.feedId).toBe("test-feed-id");
     });
 
-    it("creates a job with custom scheduledFor", async () => {
+    it("creates a job with custom nextRunAt", async () => {
       const futureDate = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
       const job = await createJob({
         type: "fetch_feed",
         payload: { feedId: "test-feed-id" },
-        scheduledFor: futureDate,
+        nextRunAt: futureDate,
       });
 
-      expect(job.scheduledFor.getTime()).toBe(futureDate.getTime());
+      expect(job.nextRunAt!.getTime()).toBe(futureDate.getTime());
     });
 
-    it("creates a job with custom maxAttempts", async () => {
+    it("creates a disabled job", async () => {
       const job = await createJob({
         type: "fetch_feed",
         payload: { feedId: "test-feed-id" },
-        maxAttempts: 5,
+        enabled: false,
       });
 
-      expect(job.maxAttempts).toBe(5);
+      expect(job.enabled).toBe(false);
     });
 
-    it("creates a cleanup job with optional payload", async () => {
+    it("creates a renew_websub job with empty payload", async () => {
       const job = await createJob({
-        type: "cleanup",
-        payload: { olderThanDays: 30 },
+        type: "renew_websub",
+        payload: {},
       });
 
-      expect(job.type).toBe("cleanup");
-      const payload = getJobPayload<"cleanup">(job);
-      expect(payload.olderThanDays).toBe(30);
+      expect(job.type).toBe("renew_websub");
+      const payload = getJobPayload<"renew_websub">(job);
+      expect(payload).toEqual({});
     });
   });
 
@@ -102,9 +108,7 @@ describe("Job Queue", () => {
 
       expect(claimed).not.toBeNull();
       expect(claimed!.id).toBe(created.id);
-      expect(claimed!.status).toBe("running");
-      expect(claimed!.attempts).toBe(1);
-      expect(claimed!.startedAt).toBeInstanceOf(Date);
+      expect(claimed!.runningSince).toBeInstanceOf(Date);
     });
 
     it("returns null when no jobs are available", async () => {
@@ -118,14 +122,25 @@ describe("Job Queue", () => {
       await createJob({
         type: "fetch_feed",
         payload: { feedId: "test-feed-id" },
-        scheduledFor: futureDate,
+        nextRunAt: futureDate,
       });
 
       const claimed = await claimJob();
       expect(claimed).toBeNull();
     });
 
-    it("claims jobs in scheduledFor order (oldest first)", async () => {
+    it("does not claim disabled jobs", async () => {
+      await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+        enabled: false,
+      });
+
+      const claimed = await claimJob();
+      expect(claimed).toBeNull();
+    });
+
+    it("claims jobs in nextRunAt order (oldest first)", async () => {
       const now = new Date();
       const earlier = new Date(now.getTime() - 60 * 1000); // 1 minute ago
 
@@ -133,18 +148,24 @@ describe("Job Queue", () => {
       const job2 = await createJob({
         type: "fetch_feed",
         payload: { feedId: "feed-2" },
-        scheduledFor: now,
+        nextRunAt: now,
       });
 
       const job1 = await createJob({
         type: "fetch_feed",
         payload: { feedId: "feed-1" },
-        scheduledFor: earlier,
+        nextRunAt: earlier,
       });
 
       // Should claim the earlier job first
       const claimed1 = await claimJob();
       expect(claimed1!.id).toBe(job1.id);
+
+      // Finish job1 so we can claim job2
+      await finishJob(job1.id, {
+        success: true,
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
 
       const claimed2 = await claimJob();
       expect(claimed2!.id).toBe(job2.id);
@@ -152,7 +173,7 @@ describe("Job Queue", () => {
 
     it("filters jobs by type", async () => {
       await createJob({
-        type: "cleanup",
+        type: "renew_websub",
         payload: {},
       });
 
@@ -166,10 +187,9 @@ describe("Job Queue", () => {
       expect(claimed).not.toBeNull();
       expect(claimed!.type).toBe("fetch_feed");
 
-      // The cleanup job should still be pending
-      const remainingJobs = await listJobs({ status: "pending" });
+      // The renew_websub job should still be pending
+      const remainingJobs = await listJobs({ enabled: true, type: "renew_websub" });
       expect(remainingJobs).toHaveLength(1);
-      expect(remainingJobs[0].type).toBe("cleanup");
     });
 
     it("does not claim already running jobs", async () => {
@@ -182,9 +202,31 @@ describe("Job Queue", () => {
       const claimed1 = await claimJob();
       expect(claimed1!.id).toBe(created.id);
 
-      // Try to claim again - should get null
+      // Try to claim again - should get null (job is still running)
       const claimed2 = await claimJob();
       expect(claimed2).toBeNull();
+    });
+
+    it("reclaims stale jobs (running > 5 minutes)", async () => {
+      const job = await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+      });
+
+      // Claim the job
+      await claimJob();
+
+      // Manually set running_since to 10 minutes ago
+      const staleTime = new Date(Date.now() - 10 * 60 * 1000);
+      await db
+        .update(jobs)
+        .set({ runningSince: staleTime })
+        .where(sql`id = ${job.id}`);
+
+      // Should be able to reclaim the stale job
+      const reclaimed = await claimJob();
+      expect(reclaimed).not.toBeNull();
+      expect(reclaimed!.id).toBe(job.id);
     });
   });
 
@@ -239,101 +281,111 @@ describe("Job Queue", () => {
     });
   });
 
-  describe("completeJob", () => {
-    it("marks a job as completed", async () => {
+  describe("finishJob", () => {
+    it("finishes a job successfully", async () => {
       await createJob({
         type: "fetch_feed",
         payload: { feedId: "test-feed-id" },
       });
 
       const claimed = await claimJob();
-      const completed = await completeJob(claimed!.id);
+      const nextRunAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
-      expect(completed.status).toBe("completed");
-      expect(completed.completedAt).toBeInstanceOf(Date);
+      const finished = await finishJob(claimed!.id, {
+        success: true,
+        nextRunAt,
+      });
+
+      expect(finished.runningSince).toBeNull();
+      expect(finished.lastRunAt).toBeInstanceOf(Date);
+      expect(finished.nextRunAt!.getTime()).toBe(nextRunAt.getTime());
+      expect(finished.lastError).toBeNull();
+      expect(finished.consecutiveFailures).toBe(0);
+    });
+
+    it("finishes a job with failure", async () => {
+      await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+      });
+
+      const claimed = await claimJob();
+      const nextRunAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes from now
+
+      const finished = await finishJob(claimed!.id, {
+        success: false,
+        nextRunAt,
+        error: "Connection timeout",
+      });
+
+      expect(finished.runningSince).toBeNull();
+      expect(finished.lastRunAt).toBeInstanceOf(Date);
+      expect(finished.nextRunAt!.getTime()).toBe(nextRunAt.getTime());
+      expect(finished.lastError).toBe("Connection timeout");
+      expect(finished.consecutiveFailures).toBe(1);
+    });
+
+    it("increments consecutiveFailures on repeated failures", async () => {
+      const job = await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+      });
+
+      // First failure
+      await claimJob();
+      await finishJob(job.id, {
+        success: false,
+        nextRunAt: new Date(),
+        error: "Error 1",
+      });
+
+      // Second failure
+      await claimJob();
+      const finished = await finishJob(job.id, {
+        success: false,
+        nextRunAt: new Date(),
+        error: "Error 2",
+      });
+
+      expect(finished.consecutiveFailures).toBe(2);
+      expect(finished.lastError).toBe("Error 2");
+    });
+
+    it("resets consecutiveFailures on success", async () => {
+      const job = await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+      });
+
+      // Fail twice
+      await claimJob();
+      await finishJob(job.id, {
+        success: false,
+        nextRunAt: new Date(),
+        error: "Error 1",
+      });
+      await claimJob();
+      await finishJob(job.id, {
+        success: false,
+        nextRunAt: new Date(),
+        error: "Error 2",
+      });
+
+      // Succeed
+      await claimJob();
+      const finished = await finishJob(job.id, {
+        success: true,
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+
+      expect(finished.consecutiveFailures).toBe(0);
+      expect(finished.lastError).toBeNull();
     });
 
     it("throws error for non-existent job", async () => {
-      await expect(completeJob(NON_EXISTENT_JOB_ID)).rejects.toThrow(
-        `Job not found: ${NON_EXISTENT_JOB_ID}`
-      );
-    });
-  });
-
-  describe("failJob", () => {
-    it("reschedules job for retry when attempts < maxAttempts", async () => {
-      const created = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-        maxAttempts: 3,
-      });
-
-      // Claim and fail the job
-      await claimJob();
-      const failed = await failJob(created.id, "Connection timeout");
-
-      expect(failed.status).toBe("pending");
-      expect(failed.attempts).toBe(1); // Was incremented during claim
-      expect(failed.lastError).toBe("Connection timeout");
-      expect(failed.startedAt).toBeNull();
-      expect(failed.scheduledFor.getTime()).toBeGreaterThan(Date.now());
-    });
-
-    it("marks job as permanently failed when attempts >= maxAttempts", async () => {
-      const created = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-        maxAttempts: 1,
-      });
-
-      // Claim and fail the job (attempt 1 of 1)
-      await claimJob();
-      const failed = await failJob(created.id, "Permanent failure");
-
-      expect(failed.status).toBe("failed");
-      expect(failed.attempts).toBe(1);
-      expect(failed.lastError).toBe("Permanent failure");
-      expect(failed.completedAt).toBeInstanceOf(Date);
-    });
-
-    it("uses exponential backoff for retry scheduling", async () => {
-      const created = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-        maxAttempts: 5,
-      });
-
-      // First attempt
-      await claimJob();
-      const beforeFail1 = Date.now();
-      const failed1 = await failJob(created.id, "Error 1");
-
-      // First retry should be ~1 minute later
-      const delay1 = failed1.scheduledFor.getTime() - beforeFail1;
-      expect(delay1).toBeGreaterThanOrEqual(55 * 1000); // Allow some tolerance
-      expect(delay1).toBeLessThanOrEqual(65 * 1000);
-
-      // Wait a bit and retry (simulating time passing by updating scheduledFor)
-      await db
-        .update(jobs)
-        .set({ scheduledFor: new Date(Date.now() - 1000) })
-        .where(sql`id = ${created.id}`);
-
-      // Second attempt
-      await claimJob();
-      const beforeFail2 = Date.now();
-      const failed2 = await failJob(created.id, "Error 2");
-
-      // Second retry should be ~2 minutes later
-      const delay2 = failed2.scheduledFor.getTime() - beforeFail2;
-      expect(delay2).toBeGreaterThanOrEqual(110 * 1000); // Allow some tolerance
-      expect(delay2).toBeLessThanOrEqual(130 * 1000);
-    });
-
-    it("throws error for non-existent job", async () => {
-      await expect(failJob(NON_EXISTENT_JOB_ID, "Error")).rejects.toThrow(
-        `Job not found: ${NON_EXISTENT_JOB_ID}`
-      );
+      await expect(
+        finishJob(NON_EXISTENT_JOB_ID, { success: true, nextRunAt: new Date() })
+      ).rejects.toThrow(`Job not found: ${NON_EXISTENT_JOB_ID}`);
     });
   });
 
@@ -364,7 +416,7 @@ describe("Job Queue", () => {
         payload: { feedId: "feed-1" },
       });
       await createJob({
-        type: "cleanup",
+        type: "renew_websub",
         payload: {},
       });
 
@@ -372,25 +424,23 @@ describe("Job Queue", () => {
       expect(allJobs).toHaveLength(2);
     });
 
-    it("filters by status", async () => {
-      const job1 = await createJob({
+    it("filters by enabled", async () => {
+      await createJob({
         type: "fetch_feed",
         payload: { feedId: "feed-1" },
+        enabled: true,
       });
       await createJob({
         type: "fetch_feed",
         payload: { feedId: "feed-2" },
+        enabled: false,
       });
 
-      // Complete job1
-      await claimJob();
-      await completeJob(job1.id);
+      const enabledJobs = await listJobs({ enabled: true });
+      expect(enabledJobs).toHaveLength(1);
 
-      const pendingJobs = await listJobs({ status: "pending" });
-      expect(pendingJobs).toHaveLength(1);
-
-      const completedJobs = await listJobs({ status: "completed" });
-      expect(completedJobs).toHaveLength(1);
+      const disabledJobs = await listJobs({ enabled: false });
+      expect(disabledJobs).toHaveLength(1);
     });
 
     it("filters by type", async () => {
@@ -399,7 +449,7 @@ describe("Job Queue", () => {
         payload: { feedId: "feed-1" },
       });
       await createJob({
-        type: "cleanup",
+        type: "renew_websub",
         payload: {},
       });
 
@@ -421,88 +471,200 @@ describe("Job Queue", () => {
     });
   });
 
-  describe("deleteCompletedJobs", () => {
-    it("deletes completed jobs older than specified date", async () => {
-      const job = await createJob({
+  describe("feed job helpers", () => {
+    it("createOrEnableFeedJob creates a new job", async () => {
+      const feedId = generateUuidv7();
+      const job = await createOrEnableFeedJob(feedId);
+
+      expect(job.type).toBe("fetch_feed");
+      expect(job.enabled).toBe(true);
+      expect(getJobPayload<"fetch_feed">(job).feedId).toBe(feedId);
+    });
+
+    it("createOrEnableFeedJob enables existing disabled job", async () => {
+      const feedId = generateUuidv7();
+
+      // Create a disabled job
+      await createJob({
         type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        payload: { feedId },
+        enabled: false,
       });
 
-      await claimJob();
-      await completeJob(job.id);
+      // Should enable it, not create a new one
+      const job = await createOrEnableFeedJob(feedId);
 
-      // Delete jobs completed more than 1 hour ago (should not delete)
-      const deleted1 = await deleteCompletedJobs(new Date(Date.now() - 60 * 60 * 1000));
-      expect(deleted1).toBe(0);
+      expect(job.enabled).toBe(true);
 
-      // Delete jobs completed before now + 1 hour (should delete)
-      const deleted2 = await deleteCompletedJobs(new Date(Date.now() + 60 * 60 * 1000));
-      expect(deleted2).toBe(1);
+      // Should only be one job
+      const allJobs = await listJobs({ type: "fetch_feed" });
+      expect(allJobs).toHaveLength(1);
+    });
 
-      const remainingJobs = await listJobs();
-      expect(remainingJobs).toHaveLength(0);
+    it("enableFeedJob enables a disabled job", async () => {
+      const feedId = generateUuidv7();
+
+      await createJob({
+        type: "fetch_feed",
+        payload: { feedId },
+        enabled: false,
+      });
+
+      const job = await enableFeedJob(feedId);
+
+      expect(job).not.toBeNull();
+      expect(job!.enabled).toBe(true);
+    });
+
+    it("enableFeedJob returns null if job doesn't exist", async () => {
+      const feedId = generateUuidv7();
+      const job = await enableFeedJob(feedId);
+      expect(job).toBeNull();
+    });
+
+    it("updateFeedJobNextRun updates the next run time", async () => {
+      const feedId = generateUuidv7();
+      const originalTime = new Date(Date.now() + 60 * 60 * 1000);
+
+      await createJob({
+        type: "fetch_feed",
+        payload: { feedId },
+        nextRunAt: originalTime,
+      });
+
+      const newTime = new Date(Date.now() + 4 * 60 * 60 * 1000);
+      const updated = await updateFeedJobNextRun(feedId, newTime);
+
+      expect(updated).not.toBeNull();
+      expect(updated!.nextRunAt!.getTime()).toBe(newTime.getTime());
     });
   });
 
-  describe("resetStaleJobs", () => {
-    it("resets jobs that have been running too long", async () => {
-      const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+  describe("syncFeedJobEnabled", () => {
+    it("disables job when no active subscribers", async () => {
+      // Create a test user
+      const userId = generateUuidv7();
+      await db.insert(users).values({
+        id: userId,
+        email: "test@example.com",
+        passwordHash: "hash",
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
 
-      // Claim the job
-      await claimJob();
-
-      // Manually set started_at to a long time ago
-      const staleTime = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes ago
-      await db
-        .update(jobs)
-        .set({ startedAt: staleTime })
-        .where(sql`id = ${job.id}`);
-
-      // Reset stale jobs (timeout: 5 minutes)
-      const resetCount = await resetStaleJobs(5 * 60 * 1000);
-      expect(resetCount).toBe(1);
-
-      // Job should be pending again
-      const resetJob = await getJob(job.id);
-      expect(resetJob!.status).toBe("pending");
-      expect(resetJob!.startedAt).toBeNull();
-    });
-
-    it("does not reset recent running jobs", async () => {
-      const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+      // Create a feed
+      const feedId = generateUuidv7();
+      await db.insert(feeds).values({
+        id: feedId,
+        type: "rss",
+        url: "https://example.com/feed.xml",
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
 
-      // Claim the job (just started)
-      await claimJob();
+      // Create a job
+      await createJob({
+        type: "fetch_feed",
+        payload: { feedId },
+        enabled: true,
+      });
 
-      // Reset stale jobs (timeout: 5 minutes)
-      const resetCount = await resetStaleJobs(5 * 60 * 1000);
-      expect(resetCount).toBe(0);
+      // No subscriptions - job should be disabled
+      const result = await syncFeedJobEnabled(feedId);
 
-      // Job should still be running
-      const stillRunning = await getJob(job.id);
-      expect(stillRunning!.status).toBe("running");
-    });
-  });
-
-  describe("calculateBackoff", () => {
-    it("doubles delay for each attempt", () => {
-      expect(calculateBackoff(1)).toBe(60 * 1000); // 1 minute
-      expect(calculateBackoff(2)).toBe(2 * 60 * 1000); // 2 minutes
-      expect(calculateBackoff(3)).toBe(4 * 60 * 1000); // 4 minutes
-      expect(calculateBackoff(4)).toBe(8 * 60 * 1000); // 8 minutes
-      expect(calculateBackoff(5)).toBe(16 * 60 * 1000); // 16 minutes
+      expect(result).not.toBeNull();
+      expect(result!.enabled).toBe(false);
     });
 
-    it("caps at maximum backoff", () => {
-      // Max is 256 minutes = 4 hours 16 minutes
-      expect(calculateBackoff(10)).toBe(256 * 60 * 1000);
-      expect(calculateBackoff(20)).toBe(256 * 60 * 1000);
+    it("keeps job enabled when there are active subscribers", async () => {
+      // Create a test user
+      const userId = generateUuidv7();
+      await db.insert(users).values({
+        id: userId,
+        email: "test@example.com",
+        passwordHash: "hash",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Create a feed
+      const feedId = generateUuidv7();
+      await db.insert(feeds).values({
+        id: feedId,
+        type: "rss",
+        url: "https://example.com/feed.xml",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Create an active subscription
+      await db.insert(subscriptions).values({
+        id: generateUuidv7(),
+        userId,
+        feedId,
+        subscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Create a job
+      await createJob({
+        type: "fetch_feed",
+        payload: { feedId },
+        enabled: true,
+      });
+
+      // Has subscriber - job should stay enabled
+      const result = await syncFeedJobEnabled(feedId);
+
+      expect(result).not.toBeNull();
+      expect(result!.enabled).toBe(true);
+    });
+
+    it("keeps job disabled when subscriber has unsubscribed", async () => {
+      // Create a test user
+      const userId = generateUuidv7();
+      await db.insert(users).values({
+        id: userId,
+        email: "test@example.com",
+        passwordHash: "hash",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Create a feed
+      const feedId = generateUuidv7();
+      await db.insert(feeds).values({
+        id: feedId,
+        type: "rss",
+        url: "https://example.com/feed.xml",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Create an unsubscribed subscription
+      await db.insert(subscriptions).values({
+        id: generateUuidv7(),
+        userId,
+        feedId,
+        subscribedAt: new Date(),
+        unsubscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Create a job
+      await createJob({
+        type: "fetch_feed",
+        payload: { feedId },
+        enabled: true,
+      });
+
+      // No active subscribers - job should be disabled
+      const result = await syncFeedJobEnabled(feedId);
+
+      expect(result).not.toBeNull();
+      expect(result!.enabled).toBe(false);
     });
   });
 });
