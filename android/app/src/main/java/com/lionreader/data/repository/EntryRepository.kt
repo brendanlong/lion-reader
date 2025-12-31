@@ -817,6 +817,61 @@ class EntryRepository
          */
         suspend fun getPendingActionCount(): Int = pendingActionDao.getPendingCount()
 
+        /**
+         * Preloads an entry by fetching its full content if not already cached.
+         *
+         * This is a fire-and-forget operation for preloading adjacent entries
+         * during swipe navigation. Errors are logged but not propagated.
+         *
+         * @param id Entry ID to preload
+         */
+        suspend fun preloadEntry(id: String) {
+            try {
+                // Check if we already have full content
+                val localEntry = entryDao.getEntryWithState(id).firstOrNull()
+                val hasFullContent =
+                    localEntry?.entry?.contentOriginal != null ||
+                        localEntry?.entry?.contentCleaned != null
+
+                if (hasFullContent) {
+                    // Already have full content, no need to fetch
+                    return
+                }
+
+                // Fetch from server to get full content
+                when (val result = api.getEntry(id)) {
+                    is ApiResult.Success -> {
+                        val dto = result.data.entry
+                        val entity = mapEntryDtoToEntity(dto)
+                        entryDao.insertEntries(listOf(entity))
+
+                        // Only create state if we didn't already have a local entry
+                        if (localEntry == null) {
+                            val state =
+                                EntryStateEntity(
+                                    entryId = dto.id,
+                                    read = dto.read,
+                                    starred = dto.starred,
+                                    readAt = null,
+                                    starredAt = null,
+                                    pendingSync = false,
+                                    lastModifiedAt = System.currentTimeMillis(),
+                                )
+                            entryStateDao.upsertState(state)
+                        }
+                        Log.d(TAG, "Preloaded entry: $id")
+                    }
+                    else -> {
+                        // Silently ignore errors for preloading
+                        Log.d(TAG, "Failed to preload entry: $id")
+                    }
+                }
+            } catch (e: Exception) {
+                // Silently ignore errors for preloading
+                Log.d(TAG, "Exception preloading entry: $id", e)
+            }
+        }
+
         // ============================================================================
         // SWIPE NAVIGATION SUPPORT
         // ============================================================================
