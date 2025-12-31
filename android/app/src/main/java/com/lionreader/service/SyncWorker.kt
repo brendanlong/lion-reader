@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import com.lionreader.data.repository.EntryRepository
 import com.lionreader.data.repository.SyncRepository
 import com.lionreader.data.repository.SyncResult
+import com.lionreader.data.sync.SyncErrorNotifier
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -31,6 +32,7 @@ class SyncWorker
         @Assisted workerParams: WorkerParameters,
         private val syncRepository: SyncRepository,
         private val entryRepository: EntryRepository,
+        private val syncErrorNotifier: SyncErrorNotifier,
     ) : CoroutineWorker(appContext, workerParams) {
         companion object {
             private const val TAG = "SyncWorker"
@@ -83,11 +85,18 @@ class SyncWorker
 
                     is SyncResult.NetworkError -> {
                         Log.w(TAG, "Network error during sync")
+                        syncErrorNotifier.emit("Sync error: Network error")
                         handleRetry("Network error")
                     }
 
                     is SyncResult.Error -> {
                         Log.e(TAG, "Sync error: ${syncResult.code} - ${syncResult.message}")
+
+                        // Emit error to UI
+                        syncErrorNotifier.emit(
+                            message = "Sync error: ${syncResult.message}",
+                            isAuthError = syncResult.code == "UNAUTHORIZED",
+                        )
 
                         // Don't retry for auth errors - require user intervention
                         if (syncResult.code == "UNAUTHORIZED") {
@@ -100,6 +109,7 @@ class SyncWorker
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Exception during sync", e)
+                syncErrorNotifier.emit("Sync error: ${e.message ?: "Unknown error"}")
                 handleRetry(e.message ?: "Unknown error")
             }
         }

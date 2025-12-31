@@ -6,6 +6,7 @@ import com.lionreader.data.api.LionReaderApi
 import com.lionreader.data.db.dao.EntryStateDao
 import com.lionreader.data.db.dao.PendingActionDao
 import com.lionreader.data.db.entities.PendingActionEntity
+import com.lionreader.data.sync.SyncErrorNotifier
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,6 +35,7 @@ class SyncRepository
         private val api: LionReaderApi,
         private val pendingActionDao: PendingActionDao,
         private val entryStateDao: EntryStateDao,
+        private val syncErrorNotifier: SyncErrorNotifier,
     ) {
         companion object {
             private const val TAG = "SyncRepository"
@@ -119,6 +121,16 @@ class SyncRepository
 
             // Clean up failed actions that exceeded max retries
             pendingActionDao.deleteFailedActions()
+
+            // Emit errors to UI if any occurred
+            if (errors.isNotEmpty()) {
+                errors.forEach { error ->
+                    syncErrorNotifier.emit(
+                        message = "Sync error: $error",
+                        isAuthError = error.contains("Session expired", ignoreCase = true),
+                    )
+                }
+            }
 
             return PendingSyncResult(
                 success = failedCount == 0,

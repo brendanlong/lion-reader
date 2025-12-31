@@ -10,6 +10,7 @@ import com.lionreader.data.repository.EntryRepository
 import com.lionreader.data.repository.SubscriptionRepository
 import com.lionreader.data.repository.TagRepository
 import com.lionreader.data.sync.ConnectivityMonitorInterface
+import com.lionreader.data.sync.SyncErrorNotifier
 import com.lionreader.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -48,6 +49,7 @@ class EntryListViewModel
         private val subscriptionRepository: SubscriptionRepository,
         private val tagRepository: TagRepository,
         private val connectivityMonitor: ConnectivityMonitorInterface,
+        private val syncErrorNotifier: SyncErrorNotifier,
     ) : ViewModel() {
         companion object {
             private const val PAGE_SIZE = 50
@@ -147,6 +149,13 @@ class EntryListViewModel
             viewModelScope.launch {
                 connectivityMonitor.isOnline.collect { isOnline ->
                     _uiState.value = _uiState.value.copy(isOnline = isOnline)
+                }
+            }
+
+            // Observe sync errors
+            viewModelScope.launch {
+                syncErrorNotifier.errors.collect { error ->
+                    _uiState.value = _uiState.value.copy(errorMessage = error.message)
                 }
             }
 
