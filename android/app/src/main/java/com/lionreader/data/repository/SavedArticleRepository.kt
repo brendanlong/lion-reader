@@ -201,6 +201,9 @@ class SavedArticleRepository
         /**
          * Marks saved articles as read or unread.
          *
+         * Uses the unified entries endpoint since saved articles share the same
+         * underlying entry data.
+         *
          * @param ids List of saved article IDs
          * @param read true to mark as read, false to mark as unread
          * @return true if successful, false otherwise
@@ -209,7 +212,7 @@ class SavedArticleRepository
             ids: List<String>,
             read: Boolean,
         ): Boolean =
-            when (api.markSavedRead(ids, read)) {
+            when (api.markRead(ids, read)) {
                 is ApiResult.Success -> true
                 else -> false
             }
@@ -217,11 +220,14 @@ class SavedArticleRepository
         /**
          * Stars a saved article.
          *
+         * Uses the unified entries endpoint since saved articles share the same
+         * underlying entry data.
+         *
          * @param id Saved article ID
          * @return true if successful, false otherwise
          */
         suspend fun star(id: String): Boolean =
-            when (api.starSaved(id)) {
+            when (api.star(id)) {
                 is ApiResult.Success -> true
                 else -> false
             }
@@ -229,11 +235,14 @@ class SavedArticleRepository
         /**
          * Unstars a saved article.
          *
+         * Uses the unified entries endpoint since saved articles share the same
+         * underlying entry data.
+         *
          * @param id Saved article ID
          * @return true if successful, false otherwise
          */
         suspend fun unstar(id: String): Boolean =
-            when (api.unstarSaved(id)) {
+            when (api.unstar(id)) {
                 is ApiResult.Success -> true
                 else -> false
             }
