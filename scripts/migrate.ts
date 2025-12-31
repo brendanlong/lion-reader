@@ -4,35 +4,22 @@
  * Usage: pnpm db:migrate
  *
  * This script:
- * 1. Runs drizzle-kit migrate to apply pending database migrations
+ * 1. Runs migrations using our custom runner (each migration in its own transaction)
  * 2. Flushes all Redis caches to ensure cached data is consistent with new schema
  */
 
-import { spawn } from "child_process";
-
 import Redis from "ioredis";
 
-async function runDrizzleMigrate(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    console.log("Running database migrations...");
+import { runMigrations } from "./run-migrations";
 
-    const child = spawn("pnpm", ["drizzle-kit", "migrate"], {
-      stdio: "inherit",
-      shell: true,
-    });
+async function runDatabaseMigrations(): Promise<void> {
+  const databaseUrl = process.env.DATABASE_URL;
 
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`drizzle-kit migrate exited with code ${code}`));
-      }
-    });
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL environment variable is not set");
+  }
 
-    child.on("error", (err) => {
-      reject(err);
-    });
-  });
+  await runMigrations(databaseUrl);
 }
 
 async function flushRedisCache(): Promise<void> {
@@ -61,7 +48,7 @@ async function flushRedisCache(): Promise<void> {
 
 async function main() {
   try {
-    await runDrizzleMigrate();
+    await runDatabaseMigrations();
     await flushRedisCache();
     console.log("\nMigration completed successfully!");
   } catch (error) {
