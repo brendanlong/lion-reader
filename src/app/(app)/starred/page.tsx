@@ -100,6 +100,8 @@ function StarredEntriesContent() {
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
+        onToggleRead={toggleRead}
+        onToggleStar={toggleStar}
         emptyMessage={
           showUnreadOnly
             ? "No unread starred entries. Toggle to show all starred items."

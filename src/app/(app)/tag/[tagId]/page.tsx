@@ -216,6 +216,8 @@ function TagEntriesContent() {
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
+        onToggleRead={toggleRead}
+        onToggleStar={toggleStar}
         emptyMessage={
           showUnreadOnly
             ? `No unread entries from feeds tagged with "${tag.name}". Toggle to show all items.`

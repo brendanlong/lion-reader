@@ -81,6 +81,16 @@ interface SavedArticleListProps {
    * Used by parent components for keyboard navigation and actions.
    */
   onArticlesLoaded?: (articles: SavedArticleListEntryData[]) => void;
+
+  /**
+   * Callback when the read status indicator is clicked.
+   */
+  onToggleRead?: (articleId: string, currentlyRead: boolean) => void;
+
+  /**
+   * Callback when the star indicator is clicked.
+   */
+  onToggleStar?: (articleId: string, currentlyStarred: boolean) => void;
 }
 
 /**
@@ -93,6 +103,8 @@ export function SavedArticleList({
   emptyMessage = "No saved articles to display",
   selectedArticleId,
   onArticlesLoaded,
+  onToggleRead,
+  onToggleStar,
 }: SavedArticleListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
@@ -194,6 +206,8 @@ export function SavedArticleList({
           article={article as SavedArticleListItemData}
           onClick={onArticleClick}
           selected={selectedArticleId === article.id}
+          onToggleRead={onToggleRead}
+          onToggleStar={onToggleStar}
         />
       ))}
 

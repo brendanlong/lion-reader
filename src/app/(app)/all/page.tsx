@@ -101,6 +101,8 @@ function AllEntriesContent() {
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
         onEntriesLoaded={handleEntriesLoaded}
+        onToggleRead={toggleRead}
+        onToggleStar={toggleStar}
         emptyMessage={
           showUnreadOnly
             ? "No unread entries. Toggle to show all items."
