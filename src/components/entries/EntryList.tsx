@@ -90,6 +90,16 @@ interface EntryListProps {
    * Used by parent components for keyboard navigation and actions.
    */
   onEntriesLoaded?: (entries: EntryListEntryData[]) => void;
+
+  /**
+   * Callback when the read status indicator is clicked.
+   */
+  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+
+  /**
+   * Callback when the star indicator is clicked.
+   */
+  onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
 }
 
 /**
@@ -102,6 +112,8 @@ export function EntryList({
   emptyMessage = "No entries to display",
   selectedEntryId,
   onEntriesLoaded,
+  onToggleRead,
+  onToggleStar,
 }: EntryListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
@@ -205,6 +217,8 @@ export function EntryList({
           entry={entry as EntryListItemData}
           onClick={onEntryClick}
           selected={selectedEntryId === entry.id}
+          onToggleRead={onToggleRead}
+          onToggleStar={onToggleStar}
         />
       ))}
 

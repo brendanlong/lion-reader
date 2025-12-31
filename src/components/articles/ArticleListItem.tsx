@@ -32,6 +32,10 @@ export interface ArticleListItemProps {
   selected?: boolean;
   /** Callback when the article is clicked */
   onClick?: (id: string) => void;
+  /** Callback when the read status indicator is clicked */
+  onToggleRead?: (id: string, currentlyRead: boolean) => void;
+  /** Callback when the star indicator is clicked */
+  onToggleStar?: (id: string, currentlyStarred: boolean) => void;
 }
 
 /**
@@ -69,6 +73,8 @@ export const ArticleListItem = memo(function ArticleListItem({
   starred,
   selected = false,
   onClick,
+  onToggleRead,
+  onToggleStar,
 }: ArticleListItemProps) {
   const displayTitle = title ?? "Untitled";
 
@@ -81,6 +87,16 @@ export const ArticleListItem = memo(function ArticleListItem({
       e.preventDefault();
       onClick?.(id);
     }
+  };
+
+  const handleToggleRead = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleRead?.(id, read);
+  };
+
+  const handleToggleStar = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleStar?.(id, starred);
   };
 
   return (
@@ -96,14 +112,28 @@ export const ArticleListItem = memo(function ArticleListItem({
       <div className="flex items-start gap-3">
         {/* Read/Unread Indicator */}
         <div className="mt-1.5 shrink-0">
-          <span
-            className={`block h-2.5 w-2.5 rounded-full ${
-              read
-                ? "border border-zinc-300 bg-transparent dark:border-zinc-600"
-                : "bg-blue-500 dark:bg-blue-400"
-            }`}
-            aria-hidden="true"
-          />
+          {onToggleRead ? (
+            <button
+              type="button"
+              onClick={handleToggleRead}
+              className={`block h-2.5 w-2.5 rounded-full transition-colors ${
+                read
+                  ? "border border-zinc-300 bg-transparent hover:border-blue-400 hover:bg-blue-100 dark:border-zinc-600 dark:hover:border-blue-400 dark:hover:bg-blue-900/50"
+                  : "bg-blue-500 hover:bg-blue-600 dark:bg-blue-400 dark:hover:bg-blue-300"
+              }`}
+              aria-label={read ? "Mark as unread" : "Mark as read"}
+              title={read ? "Mark as unread" : "Mark as read"}
+            />
+          ) : (
+            <span
+              className={`block h-2.5 w-2.5 rounded-full ${
+                read
+                  ? "border border-zinc-300 bg-transparent dark:border-zinc-600"
+                  : "bg-blue-500 dark:bg-blue-400"
+              }`}
+              aria-hidden="true"
+            />
+          )}
         </div>
 
         <div className="min-w-0 flex-1">
@@ -120,12 +150,42 @@ export const ArticleListItem = memo(function ArticleListItem({
             </h3>
 
             {/* Starred Indicator */}
-            {starred && (
-              <span className="shrink-0 text-amber-500 dark:text-amber-400" aria-label="Starred">
-                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+            {onToggleStar ? (
+              <button
+                type="button"
+                onClick={handleToggleStar}
+                className={`shrink-0 transition-colors ${
+                  starred
+                    ? "text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300"
+                    : "text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-amber-400 dark:text-zinc-600 dark:hover:text-amber-400"
+                }`}
+                aria-label={starred ? "Remove from starred" : "Add to starred"}
+                title={starred ? "Remove from starred" : "Add to starred"}
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill={starred ? "currentColor" : "none"}
+                  stroke="currentColor"
+                  strokeWidth={starred ? 0 : 1.5}
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                >
                   <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                 </svg>
-              </span>
+              </button>
+            ) : (
+              starred && (
+                <span className="shrink-0 text-amber-500 dark:text-amber-400" aria-label="Starred">
+                  <svg
+                    className="h-4 w-4"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                    aria-hidden="true"
+                  >
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                </span>
+              )
             )}
           </div>
 
