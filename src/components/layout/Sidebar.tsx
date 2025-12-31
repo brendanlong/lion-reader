@@ -49,10 +49,10 @@ export function Sidebar({ onClose }: SidebarProps) {
     },
   });
 
-  // Calculate total unread count
+  // Calculate total unread count (subscriptions + saved articles)
   const totalUnreadCount =
-    subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.subscription.unreadCount, 0) ??
-    0;
+    (subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.subscription.unreadCount, 0) ??
+      0) + (savedCountQuery.data?.unread ?? 0);
 
   const isActiveLink = (href: string) => {
     if (href === "/all") {
