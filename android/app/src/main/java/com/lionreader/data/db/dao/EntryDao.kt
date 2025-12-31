@@ -1,9 +1,8 @@
 package com.lionreader.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import com.lionreader.data.db.entities.EntryEntity
 import com.lionreader.data.db.relations.EntryWithState
 import kotlinx.coroutines.flow.Flow
@@ -85,11 +84,15 @@ interface EntryDao {
     fun getEntryWithState(id: String): Flow<EntryWithState?>
 
     /**
-     * Inserts or replaces a list of entries.
+     * Inserts or updates a list of entries.
      *
-     * @param entries The entries to insert
+     * Uses @Upsert to update existing rows instead of delete+insert.
+     * This is critical because delete+insert would cascade delete
+     * pending actions due to foreign key constraints.
+     *
+     * @param entries The entries to insert or update
      */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertEntries(entries: List<EntryEntity>)
 
     /**
