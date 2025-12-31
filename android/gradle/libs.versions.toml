@@ -49,6 +49,7 @@ detekt = "1.23.7"
 
 # Monitoring
 sentry = "8.0.0"
+sentryPlugin = "5.12.2"
 
 # Testing
 junit4 = "4.13.2"
@@ -168,4 +169,4 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
-sentry = { id = "io.sentry.android.gradle", version.ref = "sentry" }
+sentry = { id = "io.sentry.android.gradle", version.ref = "sentryPlugin" }
