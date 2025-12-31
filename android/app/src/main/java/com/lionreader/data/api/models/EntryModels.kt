@@ -10,12 +10,16 @@ import kotlinx.serialization.Serializable
 enum class EntryType {
     @SerialName("rss")
     RSS,
+
     @SerialName("atom")
     ATOM,
+
     @SerialName("json")
     JSON,
+
     @SerialName("email")
     EMAIL,
+
     @SerialName("saved")
     SAVED,
 }
