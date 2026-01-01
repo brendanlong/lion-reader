@@ -102,20 +102,21 @@ function TagEntriesContent() {
     listFilters: { tagId, unreadOnly: showUnreadOnly, sortOrder },
   });
 
-  // Keyboard navigation and actions
-  const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
-    entries,
-    onOpenEntry: setOpenEntryId,
-    onClose: closeEntry,
-    isEntryOpen: !!openEntryId,
-    enabled: keyboardShortcutsEnabled,
-    onToggleRead: toggleRead,
-    onToggleStar: toggleStar,
-    onRefresh: () => {
-      utils.entries.list.invalidate();
-    },
-    onToggleUnreadOnly: toggleShowUnreadOnly,
-  });
+  // Keyboard navigation and actions (also provides swipe navigation functions)
+  const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
+    useKeyboardShortcuts({
+      entries,
+      onOpenEntry: setOpenEntryId,
+      onClose: closeEntry,
+      isEntryOpen: !!openEntryId,
+      enabled: keyboardShortcutsEnabled,
+      onToggleRead: toggleRead,
+      onToggleStar: toggleStar,
+      onRefresh: () => {
+        utils.entries.list.invalidate();
+      },
+      onToggleUnreadOnly: toggleShowUnreadOnly,
+    });
 
   // Fetch tag info
   const tagsQuery = trpc.tags.list.useQuery();
@@ -142,7 +143,15 @@ function TagEntriesContent() {
   // If an entry is open, show the full content view
   // Key forces remount when entryId changes, ensuring fresh refs and mutation state
   if (openEntryId) {
-    return <EntryContent key={openEntryId} entryId={openEntryId} onBack={handleBack} />;
+    return (
+      <EntryContent
+        key={openEntryId}
+        entryId={openEntryId}
+        onBack={handleBack}
+        onSwipeNext={goToNextEntry}
+        onSwipePrevious={goToPreviousEntry}
+      />
+    );
   }
 
   // Show loading state while checking tag
