@@ -152,55 +152,55 @@ describe("calculateNextFetch", () => {
   });
 
   describe("with failures (exponential backoff)", () => {
-    it("uses 5 minute backoff for 1 failure", () => {
+    it("uses 30 minute backoff for 1 failure", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 1,
         now: fixedNow,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T12:05:00Z"));
-      expect(result.intervalSeconds).toBe(5 * 60); // 5 minutes
+      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T12:30:00Z"));
+      expect(result.intervalSeconds).toBe(30 * 60); // 30 minutes
       expect(result.reason).toBe("failure_backoff");
     });
 
-    it("uses 10 minute backoff for 2 failures", () => {
+    it("uses 1 hour backoff for 2 failures", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 2,
         now: fixedNow,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T12:10:00Z"));
-      expect(result.intervalSeconds).toBe(10 * 60); // 10 minutes
+      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T13:00:00Z"));
+      expect(result.intervalSeconds).toBe(60 * 60); // 1 hour
       expect(result.reason).toBe("failure_backoff");
     });
 
-    it("uses 20 minute backoff for 3 failures", () => {
+    it("uses 2 hour backoff for 3 failures", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 3,
         now: fixedNow,
       });
 
-      expect(result.intervalSeconds).toBe(20 * 60); // 20 minutes
+      expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours
       expect(result.reason).toBe("failure_backoff");
     });
 
-    it("uses 40 minute backoff for 4 failures", () => {
+    it("uses 4 hour backoff for 4 failures", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 4,
         now: fixedNow,
       });
 
-      expect(result.intervalSeconds).toBe(40 * 60); // 40 minutes
+      expect(result.intervalSeconds).toBe(4 * 60 * 60); // 4 hours
       expect(result.reason).toBe("failure_backoff");
     });
 
-    it("uses approximately 1.3 hours backoff for 5 failures", () => {
+    it("uses 8 hour backoff for 5 failures", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 5,
         now: fixedNow,
       });
 
-      expect(result.intervalSeconds).toBe(80 * 60); // 80 minutes
+      expect(result.intervalSeconds).toBe(8 * 60 * 60); // 8 hours
       expect(result.reason).toBe("failure_backoff");
     });
 
@@ -232,7 +232,7 @@ describe("calculateNextFetch", () => {
       });
 
       // Should use failure backoff, not cache control
-      expect(result.intervalSeconds).toBe(20 * 60); // 20 minutes
+      expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours
       expect(result.reason).toBe("failure_backoff");
     });
 
@@ -265,42 +265,42 @@ describe("calculateNextFetch", () => {
 });
 
 describe("calculateFailureBackoff", () => {
-  it("returns 5 minutes for 1 failure", () => {
-    expect(calculateFailureBackoff(1)).toBe(5 * 60);
+  it("returns 30 minutes for 1 failure", () => {
+    expect(calculateFailureBackoff(1)).toBe(30 * 60);
   });
 
-  it("returns 10 minutes for 2 failures", () => {
-    expect(calculateFailureBackoff(2)).toBe(10 * 60);
+  it("returns 1 hour for 2 failures", () => {
+    expect(calculateFailureBackoff(2)).toBe(60 * 60);
   });
 
-  it("returns 20 minutes for 3 failures", () => {
-    expect(calculateFailureBackoff(3)).toBe(20 * 60);
+  it("returns 2 hours for 3 failures", () => {
+    expect(calculateFailureBackoff(3)).toBe(2 * 60 * 60);
   });
 
-  it("returns 40 minutes for 4 failures", () => {
-    expect(calculateFailureBackoff(4)).toBe(40 * 60);
+  it("returns 4 hours for 4 failures", () => {
+    expect(calculateFailureBackoff(4)).toBe(4 * 60 * 60);
   });
 
-  it("returns 80 minutes for 5 failures", () => {
-    expect(calculateFailureBackoff(5)).toBe(80 * 60);
+  it("returns 8 hours for 5 failures", () => {
+    expect(calculateFailureBackoff(5)).toBe(8 * 60 * 60);
   });
 
-  it("returns 160 minutes for 6 failures", () => {
-    expect(calculateFailureBackoff(6)).toBe(160 * 60);
+  it("returns 16 hours for 6 failures", () => {
+    expect(calculateFailureBackoff(6)).toBe(16 * 60 * 60);
   });
 
-  it("returns 320 minutes for 7 failures", () => {
-    expect(calculateFailureBackoff(7)).toBe(320 * 60);
+  it("returns 32 hours for 7 failures", () => {
+    expect(calculateFailureBackoff(7)).toBe(32 * 60 * 60);
   });
 
-  it("returns 640 minutes for 8 failures", () => {
-    expect(calculateFailureBackoff(8)).toBe(640 * 60);
+  it("returns 64 hours for 8 failures", () => {
+    expect(calculateFailureBackoff(8)).toBe(64 * 60 * 60);
   });
 
-  it("caps at max interval for 9 failures (would exceed 7 days)", () => {
-    // 5 * 2^8 = 1280 minutes = 76800 seconds
+  it("returns 128 hours for 9 failures", () => {
+    // 30 * 2^8 = 7680 minutes = 460800 seconds
     // This is less than 7 days (604800 seconds)
-    expect(calculateFailureBackoff(9)).toBe(1280 * 60);
+    expect(calculateFailureBackoff(9)).toBe(128 * 60 * 60);
   });
 
   it("returns max interval for 10 failures", () => {
@@ -313,9 +313,9 @@ describe("calculateFailureBackoff", () => {
     expect(calculateFailureBackoff(1000)).toBe(MAX_FETCH_INTERVAL_SECONDS);
   });
 
-  it("follows exponential pattern 5 * 2^(n-1)", () => {
+  it("follows exponential pattern 30 * 2^(n-1)", () => {
     for (let i = 1; i <= 9; i++) {
-      const expected = Math.min(5 * 60 * Math.pow(2, i - 1), MAX_FETCH_INTERVAL_SECONDS);
+      const expected = Math.min(30 * 60 * Math.pow(2, i - 1), MAX_FETCH_INTERVAL_SECONDS);
       expect(calculateFailureBackoff(i)).toBe(expected);
     }
   });

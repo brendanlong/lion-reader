@@ -17,8 +17,8 @@ export const DEFAULT_FETCH_INTERVAL_SECONDS = 15 * 60; // 900
 /** Maximum consecutive failures before permanent max backoff */
 export const MAX_CONSECUTIVE_FAILURES = 10;
 
-/** Base backoff time for failures: 5 minutes */
-const FAILURE_BASE_BACKOFF_SECONDS = 5 * 60; // 300
+/** Base backoff time for failures: 30 minutes */
+const FAILURE_BASE_BACKOFF_SECONDS = 30 * 60; // 1800
 
 /**
  * Options for calculating the next fetch time.
@@ -82,7 +82,7 @@ export type NextFetchReason =
  * calculateNextFetch({
  *   consecutiveFailures: 3,
  * })
- * // => { nextFetchAt: Date, intervalSeconds: 2400, reason: "failure_backoff" }
+ * // => { nextFetchAt: Date, intervalSeconds: 7200, reason: "failure_backoff" }
  *
  * @example
  * // No cache headers (default)
@@ -143,17 +143,15 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
 /**
  * Calculates the backoff interval for consecutive failures.
  *
- * Uses exponential backoff with base of 5 minutes:
- * - 1 failure: 5 minutes
- * - 2 failures: 10 minutes
- * - 3 failures: 20 minutes
- * - 4 failures: 40 minutes
- * - 5 failures: 80 minutes (~1.3 hours)
- * - 6 failures: 160 minutes (~2.7 hours)
- * - 7 failures: 320 minutes (~5.3 hours)
- * - 8 failures: 640 minutes (~10.7 hours)
- * - 9 failures: 1280 minutes (~21.3 hours)
- * - 10+ failures: 7 days (max)
+ * Uses exponential backoff with base of 30 minutes:
+ * - 1 failure: 30 minutes
+ * - 2 failures: 1 hour
+ * - 3 failures: 2 hours
+ * - 4 failures: 4 hours
+ * - 5 failures: 8 hours
+ * - 6 failures: 16 hours
+ * - 7 failures: 32 hours (~1.3 days)
+ * - 8+ failures: 7 days (max)
  *
  * @param consecutiveFailures - Number of consecutive failures (1 or more)
  * @returns Backoff interval in seconds
