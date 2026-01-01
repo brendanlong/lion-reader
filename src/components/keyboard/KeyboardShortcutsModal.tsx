@@ -30,8 +30,8 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
     title: "Navigation",
     shortcuts: [
-      { keys: ["j"], description: "Next entry" },
-      { keys: ["k"], description: "Previous entry" },
+      { keys: ["j"], description: "Next entry (in list or when viewing)" },
+      { keys: ["k"], description: "Previous entry (in list or when viewing)" },
       { keys: ["o"], description: "Open selected entry" },
       { keys: ["Enter"], description: "Open selected entry" },
       { keys: ["Escape"], description: "Close entry / deselect" },

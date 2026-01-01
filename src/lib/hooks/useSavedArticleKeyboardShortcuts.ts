@@ -5,7 +5,7 @@
  * Similar to useKeyboardShortcuts but adapted for saved articles.
  *
  * Features:
- * - j/k navigation (next/previous article)
+ * - j/k navigation (next/previous article in list, or navigate between articles when viewing)
  * - o/Enter to open selected article
  * - Escape to close article or deselect
  * - m to toggle read/unread
@@ -226,6 +226,46 @@ export function useSavedArticleKeyboardShortcuts(
     // If already at the first article, do nothing
   }, [articleIds, getSelectedIndex]);
 
+  // Navigate to and open the next article (for use when viewing an article)
+  const goToNextArticle = useCallback(() => {
+    if (articleIds.length === 0 || !onOpenArticle) return;
+
+    const currentIndex = getSelectedIndex();
+
+    if (currentIndex === -1) {
+      // Nothing selected, go to the first article
+      const nextId = articleIds[0];
+      setSelectedArticleId(nextId);
+      onOpenArticle(nextId);
+    } else if (currentIndex < articleIds.length - 1) {
+      // Go to next article
+      const nextId = articleIds[currentIndex + 1];
+      setSelectedArticleId(nextId);
+      onOpenArticle(nextId);
+    }
+    // If already at the last article, do nothing
+  }, [articleIds, getSelectedIndex, onOpenArticle]);
+
+  // Navigate to and open the previous article (for use when viewing an article)
+  const goToPreviousArticle = useCallback(() => {
+    if (articleIds.length === 0 || !onOpenArticle) return;
+
+    const currentIndex = getSelectedIndex();
+
+    if (currentIndex === -1) {
+      // Nothing selected, go to the last article
+      const prevId = articleIds[articleIds.length - 1];
+      setSelectedArticleId(prevId);
+      onOpenArticle(prevId);
+    } else if (currentIndex > 0) {
+      // Go to previous article
+      const prevId = articleIds[currentIndex - 1];
+      setSelectedArticleId(prevId);
+      onOpenArticle(prevId);
+    }
+    // If already at the first article, do nothing
+  }, [articleIds, getSelectedIndex, onOpenArticle]);
+
   // Open the currently selected article
   const openSelected = useCallback(() => {
     if (selectedArticleId && onOpenArticle) {
@@ -263,32 +303,40 @@ export function useSavedArticleKeyboardShortcuts(
   }, [effectiveSelectedArticleId]);
 
   // Keyboard shortcuts
-  // j - next article (only when article is not open)
+  // j - next article (select in list, or navigate to next when viewing)
   useHotkeys(
     "j",
     (e) => {
       e.preventDefault();
-      selectNext();
+      if (isArticleOpen) {
+        goToNextArticle();
+      } else {
+        selectNext();
+      }
     },
     {
-      enabled: enabled && !isArticleOpen,
+      enabled: enabled,
       enableOnFormTags: false,
     },
-    [selectNext, isArticleOpen, enabled]
+    [selectNext, goToNextArticle, isArticleOpen, enabled]
   );
 
-  // k - previous article (only when article is not open)
+  // k - previous article (select in list, or navigate to previous when viewing)
   useHotkeys(
     "k",
     (e) => {
       e.preventDefault();
-      selectPrevious();
+      if (isArticleOpen) {
+        goToPreviousArticle();
+      } else {
+        selectPrevious();
+      }
     },
     {
-      enabled: enabled && !isArticleOpen,
+      enabled: enabled,
       enableOnFormTags: false,
     },
-    [selectPrevious, isArticleOpen, enabled]
+    [selectPrevious, goToPreviousArticle, isArticleOpen, enabled]
   );
 
   // o - open selected article (only when article is not open)
