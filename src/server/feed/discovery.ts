@@ -3,6 +3,8 @@
  * Parses HTML to find <link rel="alternate"> tags pointing to RSS/Atom/JSON feeds.
  */
 
+import { JSDOM } from "jsdom";
+
 /**
  * A discovered feed from an HTML page.
  */
@@ -49,38 +51,6 @@ export const COMMON_FEED_PATHS = [
   "/blog/atom.xml",
   "/.rss",
 ];
-
-/**
- * Regular expression to match <link> tags in HTML.
- * Captures the entire tag content for attribute extraction.
- * Handles self-closing and regular link tags.
- */
-const LINK_TAG_REGEX = /<link\s+([^>]*?)(?:\/?>|>)/gi;
-
-/**
- * Regular expression to extract an attribute value.
- * Handles double-quoted, single-quoted, and unquoted values.
- */
-function getAttributeRegex(attrName: string): RegExp {
-  return new RegExp(`${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
-}
-
-/**
- * Extracts an attribute value from a tag's attribute string.
- *
- * @param attributes - The attribute string from within a tag
- * @param attrName - The attribute name to extract
- * @returns The attribute value, or undefined if not found
- */
-function extractAttribute(attributes: string, attrName: string): string | undefined {
-  const regex = getAttributeRegex(attrName);
-  const match = regex.exec(attributes);
-  if (!match) {
-    return undefined;
-  }
-  // Return whichever capture group matched (double-quoted, single-quoted, or unquoted)
-  return match[1] ?? match[2] ?? match[3];
-}
 
 /**
  * Checks if a rel attribute value indicates an alternate link.
@@ -155,27 +125,30 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
   const feeds: DiscoveredFeed[] = [];
   const seenUrls = new Set<string>();
 
-  // Find all link tags
-  let match: RegExpExecArray | null;
-  while ((match = LINK_TAG_REGEX.exec(html)) !== null) {
-    const attributes = match[1];
+  // Parse HTML using JSDOM
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
 
+  // Find all link tags with rel="alternate"
+  const linkElements = doc.querySelectorAll("link");
+
+  for (const link of linkElements) {
     // Check if this is a rel="alternate" link
-    const rel = extractAttribute(attributes, "rel");
+    const rel = link.getAttribute("rel") ?? undefined;
     if (!isAlternateRel(rel)) {
       continue;
     }
 
     // Check if the type is a feed type
-    const type = extractAttribute(attributes, "type");
-    const feedType = getFeedTypeFromMime(type);
+    const type = link.getAttribute("type");
+    const feedType = getFeedTypeFromMime(type ?? undefined);
     if (feedType === null) {
       continue;
     }
 
     // Extract and resolve the href
-    const href = extractAttribute(attributes, "href");
-    const resolvedUrl = resolveUrl(href, baseUrl);
+    const href = link.getAttribute("href");
+    const resolvedUrl = resolveUrl(href ?? undefined, baseUrl);
     if (!resolvedUrl) {
       continue;
     }
@@ -187,7 +160,7 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
     seenUrls.add(resolvedUrl);
 
     // Extract title if present
-    const title = extractAttribute(attributes, "title");
+    const title = link.getAttribute("title");
 
     feeds.push({
       url: resolvedUrl,

@@ -460,9 +460,8 @@ describe("discoverFeeds", () => {
       const feeds = discoverFeeds(html, "https://example.com");
 
       expect(feeds).toHaveLength(1);
-      // Note: HTML entities are preserved as-is (not decoded)
-      // This is acceptable for MVP; full entity decoding would require a proper HTML parser
-      expect(feeds[0].title).toBe("Tom &amp; Jerry's Feed");
+      // JSDOM properly decodes HTML entities
+      expect(feeds[0].title).toBe("Tom & Jerry's Feed");
     });
   });
 

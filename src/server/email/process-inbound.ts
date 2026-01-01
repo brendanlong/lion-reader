@@ -7,6 +7,7 @@
 
 import { createHash } from "crypto";
 import { eq, and } from "drizzle-orm";
+import { JSDOM } from "jsdom";
 import { db } from "../db";
 import {
   feeds,
@@ -192,13 +193,17 @@ export function generateEmailContentHash(subject: string, content: string): stri
 }
 
 /**
- * Strips HTML tags from a string.
+ * Strips HTML tags from a string using JSDOM.
  *
  * @param html - HTML string to strip
  * @returns Plain text string
  */
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").trim();
+  if (!html) {
+    return "";
+  }
+  const dom = new JSDOM(html);
+  return dom.window.document.body.textContent?.trim() || "";
 }
 
 /**
