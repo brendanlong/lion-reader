@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
@@ -260,12 +260,20 @@ export interface ArticleContentBodyProps {
   narrationArticleType: "entry" | "saved";
   /** Optional domain for footer link (defaults to extracting from url) */
   footerLinkDomain?: string;
+  /** Callback when swiping to next article */
+  onSwipeNext?: () => void;
+  /** Callback when swiping to previous article */
+  onSwipePrevious?: () => void;
 }
 
 /**
  * Shared component for rendering article content with narration highlighting.
  * Used by both EntryContent and SavedArticleContent.
  */
+// Swipe gesture configuration
+const SWIPE_THRESHOLD = 50; // Minimum horizontal distance for swipe
+const MAX_VERTICAL_DISTANCE = 100; // Maximum vertical movement allowed
+
 export function ArticleContentBody({
   articleId,
   title,
@@ -288,8 +296,11 @@ export function ArticleContentBody({
   setShowOriginal,
   narrationArticleType,
   footerLinkDomain,
+  onSwipeNext,
+  onSwipePrevious,
 }: ArticleContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Check if both content versions are available for toggle
   const hasBothVersions = Boolean(contentCleaned && contentOriginal);
@@ -391,6 +402,51 @@ export function ArticleContentBody({
     narration.state.status,
   ]);
 
+  // Swipe gesture handlers
+  const swipeEnabled = Boolean(onSwipeNext || onSwipePrevious);
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (!swipeEnabled) return;
+      const touch = e.touches[0];
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    },
+    [swipeEnabled]
+  );
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (!swipeEnabled || !touchStartRef.current) return;
+
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - touchStartRef.current.x;
+      const deltaY = touch.clientY - touchStartRef.current.y;
+
+      // Reset touch start
+      touchStartRef.current = null;
+
+      // Check if vertical movement is too large (user is scrolling, not swiping)
+      if (Math.abs(deltaY) > MAX_VERTICAL_DISTANCE) {
+        return;
+      }
+
+      // Check if horizontal movement meets threshold
+      if (Math.abs(deltaX) < SWIPE_THRESHOLD) {
+        return;
+      }
+
+      // Determine swipe direction
+      if (deltaX < 0 && onSwipeNext) {
+        // Swipe left -> next entry
+        onSwipeNext();
+      } else if (deltaX > 0 && onSwipePrevious) {
+        // Swipe right -> previous entry
+        onSwipePrevious();
+      }
+    },
+    [swipeEnabled, onSwipeNext, onSwipePrevious]
+  );
+
   // Keyboard shortcut: m to toggle read/unread
   useHotkeys(
     "m",
@@ -408,7 +464,11 @@ export function ArticleContentBody({
   const displayFooterDomain = footerLinkDomain ?? (url ? getDomain(url) : "original site");
 
   return (
-    <article className="mx-auto max-w-3xl px-4 py-6 sm:py-8">
+    <article
+      className="mx-auto max-w-3xl px-4 py-6 sm:py-8"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Back button */}
       {onBack && (
         <button

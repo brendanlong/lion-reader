@@ -58,3 +58,9 @@ export {
 } from "./useSavedArticleMutations";
 
 export { useEntryUrlState, type UseEntryUrlStateResult } from "./useEntryUrlState";
+
+export {
+  useSwipeGestures,
+  type UseSwipeGesturesOptions,
+  type UseSwipeGesturesResult,
+} from "./useSwipeGestures";

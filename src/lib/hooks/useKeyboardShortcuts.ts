@@ -125,6 +125,18 @@ export interface UseKeyboardShortcutsResult {
    * Clear selection.
    */
   clearSelection: () => void;
+
+  /**
+   * Navigate to and open the next entry.
+   * Used for swipe gestures and keyboard navigation when viewing an entry.
+   */
+  goToNextEntry: () => void;
+
+  /**
+   * Navigate to and open the previous entry.
+   * Used for swipe gestures and keyboard navigation when viewing an entry.
+   */
+  goToPreviousEntry: () => void;
 }
 
 /**
@@ -567,5 +579,7 @@ export function useKeyboardShortcuts(
     selectPrevious,
     openSelected,
     clearSelection,
+    goToNextEntry,
+    goToPreviousEntry,
   };
 }

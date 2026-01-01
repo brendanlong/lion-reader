@@ -30,6 +30,16 @@ interface EntryContentProps {
    * Optional callback when the back button is clicked.
    */
   onBack?: () => void;
+
+  /**
+   * Optional callback when swiping to next entry.
+   */
+  onSwipeNext?: () => void;
+
+  /**
+   * Optional callback when swiping to previous entry.
+   */
+  onSwipePrevious?: () => void;
 }
 
 /**
@@ -38,7 +48,7 @@ interface EntryContentProps {
  * Fetches and displays the full content of an entry.
  * Marks the entry as read on mount.
  */
-export function EntryContent({ entryId, onBack }: EntryContentProps) {
+export function EntryContent({ entryId, onBack, onSwipeNext, onSwipePrevious }: EntryContentProps) {
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
@@ -123,6 +133,8 @@ export function EntryContent({ entryId, onBack }: EntryContentProps) {
       setShowOriginal={setShowOriginal}
       narrationArticleType="entry"
       footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
+      onSwipeNext={onSwipeNext}
+      onSwipePrevious={onSwipePrevious}
     />
   );
 }
