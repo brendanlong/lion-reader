@@ -87,7 +87,41 @@ interface SavedArticleCreatedEventData {
   timestamp: string;
 }
 
-type UserEventData = SubscriptionCreatedEventData | SavedArticleCreatedEventData;
+/**
+ * Event data structure from the SSE endpoint for import progress events.
+ */
+interface ImportProgressEventData {
+  type: "import_progress";
+  userId: string;
+  importId: string;
+  feedUrl: string;
+  feedStatus: "imported" | "skipped" | "failed";
+  imported: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  timestamp: string;
+}
+
+/**
+ * Event data structure from the SSE endpoint for import completed events.
+ */
+interface ImportCompletedEventData {
+  type: "import_completed";
+  userId: string;
+  importId: string;
+  imported: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  timestamp: string;
+}
+
+type UserEventData =
+  | SubscriptionCreatedEventData
+  | SavedArticleCreatedEventData
+  | ImportProgressEventData
+  | ImportCompletedEventData;
 
 type SSEEventData = FeedEventData | UserEventData;
 
@@ -144,6 +178,56 @@ function parseEventData(data: string): SSEEventData | null {
         type: event.type,
         userId: event.userId,
         entryId: event.entryId,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+      };
+    }
+
+    // Handle user events - import_progress
+    if (
+      event.type === "import_progress" &&
+      typeof event.userId === "string" &&
+      typeof event.importId === "string" &&
+      typeof event.feedUrl === "string" &&
+      (event.feedStatus === "imported" ||
+        event.feedStatus === "skipped" ||
+        event.feedStatus === "failed") &&
+      typeof event.imported === "number" &&
+      typeof event.skipped === "number" &&
+      typeof event.failed === "number" &&
+      typeof event.total === "number"
+    ) {
+      return {
+        type: event.type,
+        userId: event.userId,
+        importId: event.importId,
+        feedUrl: event.feedUrl,
+        feedStatus: event.feedStatus,
+        imported: event.imported,
+        skipped: event.skipped,
+        failed: event.failed,
+        total: event.total,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+      };
+    }
+
+    // Handle user events - import_completed
+    if (
+      event.type === "import_completed" &&
+      typeof event.userId === "string" &&
+      typeof event.importId === "string" &&
+      typeof event.imported === "number" &&
+      typeof event.skipped === "number" &&
+      typeof event.failed === "number" &&
+      typeof event.total === "number"
+    ) {
+      return {
+        type: event.type,
+        userId: event.userId,
+        importId: event.importId,
+        imported: event.imported,
+        skipped: event.skipped,
+        failed: event.failed,
+        total: event.total,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
       };
     }
@@ -252,9 +336,26 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
 
         // Also invalidate the count
         utils.entries.count.invalidate({ type: "saved" });
+      } else if (data.type === "import_progress") {
+        // An OPML import made progress - invalidate the import query
+        utils.imports.get.invalidate({ id: data.importId });
+        utils.imports.list.invalidate();
+
+        // If a feed was imported, also invalidate subscriptions
+        if (data.feedStatus === "imported") {
+          utils.subscriptions.list.invalidate();
+        }
+      } else if (data.type === "import_completed") {
+        // An OPML import completed - invalidate import queries
+        utils.imports.get.invalidate({ id: data.importId });
+        utils.imports.list.invalidate();
+
+        // Also refresh subscriptions and entries since new feeds may have entries now
+        utils.subscriptions.list.invalidate();
+        utils.entries.list.invalidate();
       }
     },
-    [utils.entries, utils.subscriptions]
+    [utils.entries, utils.subscriptions, utils.imports]
   );
 
   /**
@@ -344,6 +445,8 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         eventSource.addEventListener("entry_updated", handleEvent);
         eventSource.addEventListener("subscription_created", handleEvent);
         eventSource.addEventListener("saved_article_created", handleEvent);
+        eventSource.addEventListener("import_progress", handleEvent);
+        eventSource.addEventListener("import_completed", handleEvent);
 
         eventSource.onerror = () => {
           // EventSource will automatically try to reconnect, but we'll handle

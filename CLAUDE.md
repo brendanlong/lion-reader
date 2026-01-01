@@ -113,9 +113,12 @@ tests/
 
 ### Migrations
 
-- **Enum additions must be in their own migration file** - PostgreSQL doesn't allow using new enum values in the same transaction they were added. Create a separate migration that only adds the enum values, then a subsequent migration that uses them.
-- Run `pnpm drizzle-kit generate` to create migrations from schema changes
-- Review generated SQL before committing - drizzle may need manual adjustments
+- **Write SQL migrations manually** in `drizzle/` folder - we don't use `drizzle-kit generate`
+- Name migrations with incrementing prefix: `0016_descriptive_name.sql`
+- Use `--> statement-breakpoint` to separate SQL statements
+- **Enum additions must be in their own migration file** - PostgreSQL doesn't allow using new enum values in the same transaction they were added
+- Run migrations with `pnpm db:migrate`
+- Apply to test database with `pnpm db:migrate:test`
 
 ## API Conventions
 

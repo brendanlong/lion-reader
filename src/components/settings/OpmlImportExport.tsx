@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
@@ -24,7 +24,7 @@ import { parseOpml, type OpmlFeed } from "@/server/feed/opml";
 interface ImportResult {
   url: string;
   title: string | null;
-  status: "imported" | "skipped" | "failed";
+  status: "imported" | "skipped" | "failed" | "pending";
   error?: string;
 }
 
@@ -32,7 +32,8 @@ type ImportState =
   | { type: "idle" }
   | { type: "parsing" }
   | { type: "preview"; feeds: OpmlFeed[]; opmlContent: string }
-  | { type: "importing" }
+  | { type: "queuing" } // Brief state while mutation is in flight
+  | { type: "importing"; importId: string; totalFeeds: number }
   | {
       type: "complete";
       imported: number;
@@ -64,47 +65,115 @@ export function OpmlImportExport() {
 // ============================================================================
 
 function ImportSection() {
-  const [importState, setImportState] = useState<ImportState>({ type: "idle" });
+  // Base state for the import flow
+  const [baseState, setBaseState] = useState<
+    | { type: "idle" }
+    | { type: "parsing" }
+    | { type: "preview"; feeds: OpmlFeed[]; opmlContent: string }
+    | { type: "queuing" }
+    | { type: "importing"; importId: string; totalFeeds: number }
+    | {
+        type: "complete";
+        imported: number;
+        skipped: number;
+        failed: number;
+        results: ImportResult[];
+      }
+  >({ type: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
 
+  // Query to poll for import status when importing
+  const importQuery = trpc.imports.get.useQuery(
+    { id: baseState.type === "importing" ? baseState.importId : "" },
+    {
+      enabled: baseState.type === "importing",
+      refetchInterval: (query) => {
+        // Stop polling once complete or failed
+        const status = query.state.data?.status;
+        if (status === "completed" || status === "failed") {
+          return false;
+        }
+        return 1000; // Poll every second while in progress
+      },
+    }
+  );
+
+  // Derive the effective import state from the query data
+  // This replaces the useEffect approach to avoid setState in effects
+  const importState: ImportState = (() => {
+    if (baseState.type === "importing" && importQuery.data) {
+      const status = importQuery.data.status;
+      if (status === "completed" || status === "failed") {
+        return {
+          type: "complete" as const,
+          imported: importQuery.data.importedCount,
+          skipped: importQuery.data.skippedCount,
+          failed: importQuery.data.failedCount,
+          results: importQuery.data.results,
+        };
+      }
+    }
+    return baseState;
+  })();
+
+  // Invalidate subscriptions when import completes
+  const prevCompleted = useRef(false);
+  useEffect(() => {
+    const isCompleted = importState.type === "complete" && baseState.type === "importing";
+    if (isCompleted && !prevCompleted.current) {
+      prevCompleted.current = true;
+      utils.subscriptions.list.invalidate();
+    } else if (baseState.type !== "importing") {
+      prevCompleted.current = false;
+    }
+  }, [importState.type, baseState.type, utils.subscriptions.list]);
+
   const importMutation = trpc.subscriptions.import.useMutation({
     onSuccess: (data) => {
-      setImportState({
-        type: "complete",
-        imported: data.imported,
-        skipped: data.skipped,
-        failed: data.failed,
-        results: data.results,
-      });
-      // Invalidate subscriptions cache to refresh the sidebar
-      utils.subscriptions.list.invalidate();
+      if (data.totalFeeds === 0) {
+        // Empty OPML, show complete immediately
+        setBaseState({
+          type: "complete",
+          imported: 0,
+          skipped: 0,
+          failed: 0,
+          results: [],
+        });
+      } else {
+        // Start polling for progress
+        setBaseState({
+          type: "importing",
+          importId: data.importId,
+          totalFeeds: data.totalFeeds,
+        });
+      }
     },
     onError: (err) => {
       setError(err.message || "Failed to import feeds");
-      setImportState({ type: "idle" });
+      setBaseState({ type: "idle" });
       toast.error("Failed to import feeds");
     },
   });
 
   const handleFileSelect = useCallback(async (file: File) => {
     setError(null);
-    setImportState({ type: "parsing" });
+    setBaseState({ type: "parsing" });
 
     // Validate file type
     if (!file.name.endsWith(".opml") && !file.name.endsWith(".xml")) {
       setError("Please select an OPML or XML file");
-      setImportState({ type: "idle" });
+      setBaseState({ type: "idle" });
       return;
     }
 
     // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       setError("File is too large (max 5MB)");
-      setImportState({ type: "idle" });
+      setBaseState({ type: "idle" });
       return;
     }
 
@@ -114,14 +183,14 @@ function ImportSection() {
 
       if (feeds.length === 0) {
         setError("No feeds found in the OPML file");
-        setImportState({ type: "idle" });
+        setBaseState({ type: "idle" });
         return;
       }
 
-      setImportState({ type: "preview", feeds, opmlContent: content });
+      setBaseState({ type: "preview", feeds, opmlContent: content });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to parse OPML file");
-      setImportState({ type: "idle" });
+      setBaseState({ type: "idle" });
     }
   }, []);
 
@@ -161,12 +230,12 @@ function ImportSection() {
   const handleImport = useCallback(() => {
     if (importState.type !== "preview") return;
 
-    setImportState({ type: "importing" });
+    setBaseState({ type: "queuing" });
     importMutation.mutate({ opml: importState.opmlContent });
   }, [importState, importMutation]);
 
   const handleReset = useCallback(() => {
-    setImportState({ type: "idle" });
+    setBaseState({ type: "idle" });
     setError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -262,7 +331,7 @@ function ImportSection() {
         />
       )}
 
-      {importState.type === "importing" && (
+      {(importState.type === "queuing" || importState.type === "importing") && (
         <div className="py-4">
           <div className="mb-2 flex items-center">
             <svg className="h-5 w-5 animate-spin text-blue-500" viewBox="0 0 24 24">
@@ -285,6 +354,24 @@ function ImportSection() {
               Importing feeds...
             </span>
           </div>
+          {importState.type === "importing" && importQuery.data && (
+            <div className="mb-2">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                <div
+                  className="h-full bg-blue-500 transition-all duration-300"
+                  style={{
+                    width: `${((importQuery.data.importedCount + importQuery.data.skippedCount + importQuery.data.failedCount) / importState.totalFeeds) * 100}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                {importQuery.data.importedCount +
+                  importQuery.data.skippedCount +
+                  importQuery.data.failedCount}{" "}
+                of {importState.totalFeeds} feeds processed
+              </p>
+            </div>
+          )}
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             This may take a moment depending on the number of feeds.
           </p>

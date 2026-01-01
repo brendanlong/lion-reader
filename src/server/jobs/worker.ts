@@ -11,7 +11,12 @@
  */
 
 import { claimJob, finishJob, getJobPayload, type JobType } from "./queue";
-import { handleFetchFeed, handleRenewWebsub, type JobHandlerResult } from "./handlers";
+import {
+  handleFetchFeed,
+  handleRenewWebsub,
+  handleProcessOpmlImport,
+  type JobHandlerResult,
+} from "./handlers";
 import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
@@ -154,6 +159,11 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         case "renew_websub": {
           const payload = getJobPayload<"renew_websub">(job);
           result = await handleRenewWebsub(payload);
+          break;
+        }
+        case "process_opml_import": {
+          const payload = getJobPayload<"process_opml_import">(job);
+          result = await handleProcessOpmlImport(payload);
           break;
         }
         default: {
