@@ -8,6 +8,7 @@
 
 import { createHash } from "crypto";
 import { eq, and, isNull, inArray } from "drizzle-orm";
+import { JSDOM } from "jsdom";
 import { db } from "../db";
 import {
   entries,
@@ -116,9 +117,18 @@ function truncate(text: string, maxLength: number): string {
 
 /**
  * Strips HTML tags from a string for use in summaries.
+ * Uses JSDOM to properly parse HTML and extract text content,
+ * which handles edge cases like nested tags and malformed HTML.
  */
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").trim();
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  // Remove script and style elements before extracting text
+  document.querySelectorAll("script, style").forEach((el) => el.remove());
+
+  // Get text content - this naturally strips all HTML tags
+  return (document.body.textContent ?? "").trim();
 }
 
 /**
