@@ -160,6 +160,23 @@ describe("Entry Processor", () => {
       expect(generateSummary(entry)).toBe("This is bold text.");
     });
 
+    it("removes style tags and their content", () => {
+      const entry: ParsedEntry = {
+        content: "<style>#content img { max-width: 100% }</style><p>Actual content here.</p>",
+      };
+
+      expect(generateSummary(entry)).toBe("Actual content here.");
+    });
+
+    it("removes script tags and their content", () => {
+      const entry: ParsedEntry = {
+        content:
+          '<script>alert("bad")</script><p>Visible text.</p><script type="text/javascript">more code</script>',
+      };
+
+      expect(generateSummary(entry)).toBe("Visible text.");
+    });
+
     it("truncates long content to 300 characters", () => {
       const longContent = "A".repeat(500);
       const entry: ParsedEntry = {
