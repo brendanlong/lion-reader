@@ -5,7 +5,7 @@
  * Uses react-hotkeys-hook for keyboard event handling.
  *
  * Features:
- * - j/k navigation (next/previous entry)
+ * - j/k navigation (next/previous entry in list, or navigate between entries when viewing)
  * - o/Enter to open selected entry
  * - Escape to close entry or deselect
  * - m to toggle read/unread
@@ -256,6 +256,46 @@ export function useKeyboardShortcuts(
     // If already at the first entry, do nothing
   }, [entryIds, getSelectedIndex]);
 
+  // Navigate to and open the next entry (for use when viewing an entry)
+  const goToNextEntry = useCallback(() => {
+    if (entryIds.length === 0 || !onOpenEntry) return;
+
+    const currentIndex = getSelectedIndex();
+
+    if (currentIndex === -1) {
+      // Nothing selected, go to the first entry
+      const nextId = entryIds[0];
+      setSelectedEntryId(nextId);
+      onOpenEntry(nextId);
+    } else if (currentIndex < entryIds.length - 1) {
+      // Go to next entry
+      const nextId = entryIds[currentIndex + 1];
+      setSelectedEntryId(nextId);
+      onOpenEntry(nextId);
+    }
+    // If already at the last entry, do nothing
+  }, [entryIds, getSelectedIndex, onOpenEntry]);
+
+  // Navigate to and open the previous entry (for use when viewing an entry)
+  const goToPreviousEntry = useCallback(() => {
+    if (entryIds.length === 0 || !onOpenEntry) return;
+
+    const currentIndex = getSelectedIndex();
+
+    if (currentIndex === -1) {
+      // Nothing selected, go to the last entry
+      const prevId = entryIds[entryIds.length - 1];
+      setSelectedEntryId(prevId);
+      onOpenEntry(prevId);
+    } else if (currentIndex > 0) {
+      // Go to previous entry
+      const prevId = entryIds[currentIndex - 1];
+      setSelectedEntryId(prevId);
+      onOpenEntry(prevId);
+    }
+    // If already at the first entry, do nothing
+  }, [entryIds, getSelectedIndex, onOpenEntry]);
+
   // Open the currently selected entry
   const openSelected = useCallback(() => {
     if (selectedEntryId && onOpenEntry) {
@@ -292,32 +332,40 @@ export function useKeyboardShortcuts(
   }, [effectiveSelectedEntryId]);
 
   // Keyboard shortcuts
-  // j - next entry (only when entry is not open)
+  // j - next entry (select in list, or navigate to next when viewing)
   useHotkeys(
     "j",
     (e) => {
       e.preventDefault();
-      selectNext();
+      if (isEntryOpen) {
+        goToNextEntry();
+      } else {
+        selectNext();
+      }
     },
     {
-      enabled: enabled && !isEntryOpen,
+      enabled: enabled,
       enableOnFormTags: false,
     },
-    [selectNext, isEntryOpen, enabled]
+    [selectNext, goToNextEntry, isEntryOpen, enabled]
   );
 
-  // k - previous entry (only when entry is not open)
+  // k - previous entry (select in list, or navigate to previous when viewing)
   useHotkeys(
     "k",
     (e) => {
       e.preventDefault();
-      selectPrevious();
+      if (isEntryOpen) {
+        goToPreviousEntry();
+      } else {
+        selectPrevious();
+      }
     },
     {
-      enabled: enabled && !isEntryOpen,
+      enabled: enabled,
       enableOnFormTags: false,
     },
-    [selectPrevious, isEntryOpen, enabled]
+    [selectPrevious, goToPreviousEntry, isEntryOpen, enabled]
   );
 
   // o - open selected entry (only when entry is not open)
