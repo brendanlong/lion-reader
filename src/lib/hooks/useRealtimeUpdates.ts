@@ -67,15 +67,27 @@ interface FeedEventData {
 }
 
 /**
- * Event data structure from the SSE endpoint for user events.
+ * Event data structure from the SSE endpoint for subscription events.
  */
-interface UserEventData {
+interface SubscriptionCreatedEventData {
   type: "subscription_created";
   userId: string;
   feedId: string;
   subscriptionId: string;
   timestamp: string;
 }
+
+/**
+ * Event data structure from the SSE endpoint for saved article events.
+ */
+interface SavedArticleCreatedEventData {
+  type: "saved_article_created";
+  userId: string;
+  entryId: string;
+  timestamp: string;
+}
+
+type UserEventData = SubscriptionCreatedEventData | SavedArticleCreatedEventData;
 
 type SSEEventData = FeedEventData | UserEventData;
 
@@ -106,7 +118,7 @@ function parseEventData(data: string): SSEEventData | null {
       };
     }
 
-    // Handle user events
+    // Handle user events - subscription_created
     if (
       event.type === "subscription_created" &&
       typeof event.userId === "string" &&
@@ -118,6 +130,20 @@ function parseEventData(data: string): SSEEventData | null {
         userId: event.userId,
         feedId: event.feedId,
         subscriptionId: event.subscriptionId,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+      };
+    }
+
+    // Handle user events - saved_article_created
+    if (
+      event.type === "saved_article_created" &&
+      typeof event.userId === "string" &&
+      typeof event.entryId === "string"
+    ) {
+      return {
+        type: event.type,
+        userId: event.userId,
+        entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
       };
     }
@@ -219,6 +245,13 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         // This handles the race condition where new_entry events arrive before
         // the subscription_created event.
         utils.entries.list.invalidate();
+      } else if (data.type === "saved_article_created") {
+        // A saved article was created (from bookmarklet in another window)
+        // Invalidate the saved articles list to show the new article
+        utils.entries.list.invalidate({ type: "saved" });
+
+        // Also invalidate the count
+        utils.entries.count.invalidate({ type: "saved" });
       }
     },
     [utils.entries, utils.subscriptions]
@@ -310,6 +343,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         eventSource.addEventListener("new_entry", handleEvent);
         eventSource.addEventListener("entry_updated", handleEvent);
         eventSource.addEventListener("subscription_created", handleEvent);
+        eventSource.addEventListener("saved_article_created", handleEvent);
 
         eventSource.onerror = () => {
           // EventSource will automatically try to reconnect, but we'll handle
