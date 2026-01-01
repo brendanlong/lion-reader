@@ -5,6 +5,7 @@
  * Provides endpoints for fetching and parsing feeds without saving them.
  */
 
+import { JSDOM } from "jsdom";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "../trpc";
@@ -157,18 +158,20 @@ function isHtmlContent(contentType: string, content: string): boolean {
 
 /**
  * Truncates text to a maximum length, adding ellipsis if needed.
+ * Uses JSDOM to strip HTML tags.
  *
- * @param text - The text to truncate
+ * @param text - The text to truncate (may contain HTML)
  * @param maxLength - Maximum length
- * @returns Truncated text
+ * @returns Truncated plain text
  */
 function truncateText(text: string | undefined, maxLength: number): string | null {
   if (!text) {
     return null;
   }
 
-  // Strip HTML tags for summary
-  const stripped = text.replace(/<[^>]*>/g, "").trim();
+  // Strip HTML tags using JSDOM
+  const dom = new JSDOM(text);
+  const stripped = dom.window.document.body.textContent?.trim() || "";
 
   if (stripped.length <= maxLength) {
     return stripped;
