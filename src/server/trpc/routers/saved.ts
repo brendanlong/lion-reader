@@ -29,6 +29,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { logger } from "@/lib/logger";
+import { publishSavedArticleCreated } from "@/server/redis/pubsub";
 
 // ============================================================================
 // Constants
@@ -335,6 +336,9 @@ export const savedRouter = createTRPCRouter({
         readAt: null,
         starredAt: null,
       });
+
+      // Publish event to notify other browser windows/tabs
+      await publishSavedArticleCreated(userId, entryId);
 
       return {
         article: {

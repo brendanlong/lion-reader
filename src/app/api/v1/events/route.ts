@@ -7,6 +7,8 @@
  * Events:
  * - new_entry: A new entry was added to a subscribed feed
  * - entry_updated: An existing entry's content was updated
+ * - subscription_created: User subscribed to a new feed
+ * - saved_article_created: User saved a new article via bookmarklet
  *
  * Heartbeat: Sent every 30 seconds as a comment (: heartbeat)
  */
@@ -262,7 +264,7 @@ export async function GET(req: Request): Promise<Response> {
 
         // Handle incoming messages
         subscriber.on("message", (channel: string, message: string) => {
-          // Handle user events (subscription_created)
+          // Handle user events (subscription_created, saved_article_created)
           if (channel === userEventsChannel) {
             const event = parseUserEvent(message);
             if (!event) return;
@@ -271,6 +273,10 @@ export async function GET(req: Request): Promise<Response> {
               // Subscribe to the new feed's channel
               subscribeToFeed(event.feedId);
 
+              // Forward the event to the client
+              send(formatSSEUserEvent(event));
+              trackSSEEventSent(event.type);
+            } else if (event.type === "saved_article_created") {
               // Forward the event to the client
               send(formatSSEUserEvent(event));
               trackSSEEventSent(event.type);

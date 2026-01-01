@@ -17,7 +17,7 @@ export type FeedEventType = "new_entry" | "entry_updated";
 /**
  * User event types that can be published.
  */
-export type UserEventType = "subscription_created";
+export type UserEventType = "subscription_created" | "saved_article_created";
 
 /**
  * Base event payload interface for feed events.
@@ -63,9 +63,21 @@ export interface SubscriptionCreatedEvent {
 }
 
 /**
+ * Event published when a user saves an article via bookmarklet.
+ * This is sent to all of the user's active SSE connections so they can
+ * refresh the saved articles list.
+ */
+export interface SavedArticleCreatedEvent {
+  type: "saved_article_created";
+  userId: string;
+  entryId: string;
+  timestamp: string;
+}
+
+/**
  * Union type for all user events.
  */
-export type UserEvent = SubscriptionCreatedEvent;
+export type UserEvent = SubscriptionCreatedEvent | SavedArticleCreatedEvent;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -213,6 +225,26 @@ export async function publishSubscriptionCreated(
 }
 
 /**
+ * Publishes a saved_article_created event when a user saves an article.
+ * This notifies all of the user's SSE connections to refresh the saved articles list.
+ *
+ * @param userId - The ID of the user who saved the article
+ * @param entryId - The ID of the saved entry
+ * @returns The number of subscribers that received the message
+ */
+export async function publishSavedArticleCreated(userId: string, entryId: string): Promise<number> {
+  const client = getPublisherClient();
+  const event: SavedArticleCreatedEvent = {
+    type: "saved_article_created",
+    userId,
+    entryId,
+    timestamp: new Date().toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
  * Creates a new Redis client for subscribing to feed events.
  * Each subscriber should use its own connection as Redis requires
  * dedicated connections for subscriptions.
@@ -318,6 +350,20 @@ export function parseUserEvent(message: string): UserEvent | null {
           userId: event.userId,
           feedId: event.feedId,
           subscriptionId: event.subscriptionId,
+          timestamp: event.timestamp,
+        };
+      }
+
+      if (
+        event.type === "saved_article_created" &&
+        typeof event.userId === "string" &&
+        typeof event.entryId === "string" &&
+        typeof event.timestamp === "string"
+      ) {
+        return {
+          type: "saved_article_created",
+          userId: event.userId,
+          entryId: event.entryId,
           timestamp: event.timestamp,
         };
       }
