@@ -21,7 +21,12 @@ import {
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
-import { cleanContent, generateCleanedSummary, type CleanedContent } from "./content-cleaner";
+import {
+  cleanContent,
+  generateCleanedSummary,
+  absolutizeUrls,
+  type CleanedContent,
+} from "./content-cleaner";
 import { logger } from "@/lib/logger";
 
 /**
@@ -200,8 +205,14 @@ export function cleanEntryContent(
     summary = truncate(stripHtml(originalContent), 300);
   }
 
+  // Absolutize relative URLs in original content if we have a base URL
+  // (cleaned content is already absolutized in cleanContent)
+  const absolutizedOriginal = entryUrl
+    ? absolutizeUrls(originalContent, entryUrl)
+    : originalContent;
+
   return {
-    contentOriginal: originalContent,
+    contentOriginal: absolutizedOriginal,
     contentCleaned: cleaned?.content ?? null,
     summary,
   };

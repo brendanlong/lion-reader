@@ -21,6 +21,7 @@ import androidx.compose.ui.viewinterop.AndroidView
  *
  * @param html The HTML content to render
  * @param onLinkClick Callback when a link is clicked in the content
+ * @param baseUrl Optional base URL for resolving relative URLs in the content (e.g., image src)
  * @param modifier Modifier for the WebView container
  */
 @SuppressLint("SetJavaScriptEnabled")
@@ -28,6 +29,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 fun HtmlContent(
     html: String,
     onLinkClick: (String) -> Unit,
+    baseUrl: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val isDarkTheme = isSystemInDarkTheme()
@@ -79,7 +81,7 @@ fun HtmlContent(
         },
         update = { webView ->
             webView.loadDataWithBaseURL(
-                null,
+                baseUrl,
                 styledHtml,
                 "text/html",
                 "UTF-8",
