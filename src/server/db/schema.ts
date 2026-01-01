@@ -576,6 +576,79 @@ export const blockedSenders = pgTable(
 );
 
 // ============================================================================
+// OPML IMPORTS
+// ============================================================================
+
+/**
+ * Status of an individual feed in an OPML import.
+ */
+export type OpmlImportFeedStatus = "pending" | "imported" | "skipped" | "failed";
+
+/**
+ * Individual feed result in an OPML import.
+ */
+export interface OpmlImportFeedResult {
+  url: string;
+  title: string | null;
+  status: OpmlImportFeedStatus;
+  error?: string;
+  feedId?: string;
+  subscriptionId?: string;
+}
+
+/**
+ * Feed data parsed from OPML file.
+ */
+export interface OpmlImportFeedData {
+  xmlUrl: string;
+  title?: string;
+  htmlUrl?: string;
+  category?: string[];
+}
+
+/**
+ * OPML imports table - tracks asynchronous OPML import jobs.
+ * Allows returning immediately to the user while processing feeds in the background.
+ */
+export const opmlImports = pgTable(
+  "opml_imports",
+  {
+    id: uuid("id").primaryKey(), // UUIDv7
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    // Status: pending (queued), processing (job running), completed (done), failed (job error)
+    status: text("status").notNull().default("pending"), // 'pending' | 'processing' | 'completed' | 'failed'
+
+    // Counts
+    totalFeeds: integer("total_feeds").notNull(),
+    importedCount: integer("imported_count").notNull().default(0),
+    skippedCount: integer("skipped_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+
+    // The parsed OPML feeds to import
+    feedsData: jsonb("feeds_data").$type<OpmlImportFeedData[]>().notNull(),
+
+    // Results for each feed (populated as import progresses)
+    results: jsonb("results").$type<OpmlImportFeedResult[]>().notNull().default([]),
+
+    // Error message if the job itself failed
+    error: text("error"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    // For listing imports by user
+    index("idx_opml_imports_user").on(table.userId),
+    // For finding pending imports
+    index("idx_opml_imports_status").on(table.status),
+  ]
+);
+
+// ============================================================================
 // TYPE EXPORTS
 // ============================================================================
 
@@ -623,3 +696,6 @@ export type NewIngestAddress = typeof ingestAddresses.$inferInsert;
 
 export type BlockedSender = typeof blockedSenders.$inferSelect;
 export type NewBlockedSender = typeof blockedSenders.$inferInsert;
+
+export type OpmlImport = typeof opmlImports.$inferSelect;
+export type NewOpmlImport = typeof opmlImports.$inferInsert;

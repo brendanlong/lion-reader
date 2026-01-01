@@ -7,9 +7,15 @@
  * See docs/job-queue-design.md for the overall architecture.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db";
-import { feeds, type Feed } from "../db/schema";
+import {
+  feeds,
+  subscriptions,
+  opmlImports,
+  type Feed,
+  type OpmlImportFeedResult,
+} from "../db/schema";
 import {
   fetchFeed,
   parseFeed,
@@ -18,9 +24,15 @@ import {
   renewExpiringSubscriptions,
   type FetchFeedResult,
 } from "../feed";
-import { type JobPayloads } from "./queue";
+import { type JobPayloads, createOrEnableFeedJob, enableFeedJob } from "./queue";
 import { logger } from "@/lib/logger";
 import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from "../metrics/metrics";
+import {
+  publishImportProgress,
+  publishImportCompleted,
+  publishSubscriptionCreated,
+} from "../redis/pubsub";
+import { generateUuidv7 } from "@/lib/uuidv7";
 
 /**
  * Result of a job handler execution.
@@ -418,4 +430,306 @@ export async function handleRenewWebsub(
       errors: result.errors.length > 0 ? result.errors : undefined,
     },
   };
+}
+
+/**
+ * Handler for process_opml_import jobs.
+ * Processes an OPML import in the background, publishing progress events
+ * as each feed is processed.
+ *
+ * This is a one-time job - it completes and is not rescheduled.
+ *
+ * @param payload - The job payload containing the importId
+ * @returns Job handler result
+ */
+export async function handleProcessOpmlImport(
+  payload: JobPayloads["process_opml_import"]
+): Promise<JobHandlerResult> {
+  const { importId } = payload;
+
+  logger.info("Starting OPML import processing", { importId });
+
+  // Get the import record
+  const [importRecord] = await db
+    .select()
+    .from(opmlImports)
+    .where(eq(opmlImports.id, importId))
+    .limit(1);
+
+  if (!importRecord) {
+    logger.warn("Import record not found", { importId });
+    return {
+      success: false,
+      nextRunAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // Far future - job won't run again
+      error: `Import record not found: ${importId}`,
+    };
+  }
+
+  const userId = importRecord.userId;
+
+  // Update status to processing
+  await db
+    .update(opmlImports)
+    .set({ status: "processing", updatedAt: new Date() })
+    .where(eq(opmlImports.id, importId));
+
+  try {
+    // Get existing subscriptions for the user
+    const existingSubscriptions = await db
+      .select({
+        feedUrl: feeds.url,
+      })
+      .from(subscriptions)
+      .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+    const existingUrls = new Set(existingSubscriptions.map((s) => s.feedUrl));
+
+    // Process each feed
+    const results: OpmlImportFeedResult[] = [];
+    let imported = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const opmlFeed of importRecord.feedsData) {
+      const feedUrl = opmlFeed.xmlUrl;
+      const feedTitle = opmlFeed.title ?? null;
+
+      // Check if already subscribed
+      if (existingUrls.has(feedUrl)) {
+        results.push({
+          url: feedUrl,
+          title: feedTitle,
+          status: "skipped",
+          error: "Already subscribed",
+        });
+        skipped++;
+
+        // Publish progress event
+        await publishImportProgress(userId, importId, feedUrl, "skipped", {
+          imported,
+          skipped,
+          failed,
+          total: importRecord.totalFeeds,
+        });
+
+        // Update import record with current progress
+        await db
+          .update(opmlImports)
+          .set({
+            skippedCount: skipped,
+            results,
+            updatedAt: new Date(),
+          })
+          .where(eq(opmlImports.id, importId));
+
+        continue;
+      }
+
+      try {
+        // Check if feed already exists in database
+        const existingFeed = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
+
+        let feedId: string;
+
+        if (existingFeed.length > 0) {
+          // Feed exists - ensure job is enabled and sync next_fetch_at
+          feedId = existingFeed[0].id;
+          const job = await enableFeedJob(feedId);
+          if (job?.nextRunAt) {
+            await db
+              .update(feeds)
+              .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
+              .where(eq(feeds.id, feedId));
+          }
+        } else {
+          // Create new feed record
+          feedId = generateUuidv7();
+          const now = new Date();
+
+          await db.insert(feeds).values({
+            id: feedId,
+            type: "rss" as const, // Default to RSS, will be updated on first fetch
+            url: feedUrl,
+            title: feedTitle,
+            siteUrl: opmlFeed.htmlUrl ?? null,
+            nextFetchAt: now, // Schedule immediate fetch
+            createdAt: now,
+            updatedAt: now,
+          });
+
+          // Create job for the new feed (enabled, runs immediately)
+          await createOrEnableFeedJob(feedId);
+        }
+
+        // Check for existing soft-deleted subscription
+        const existingSub = await db
+          .select()
+          .from(subscriptions)
+          .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+          .limit(1);
+
+        const now = new Date();
+        const subscriptionId = generateUuidv7();
+        let actualSubscriptionId = subscriptionId;
+
+        if (existingSub.length > 0 && existingSub[0].unsubscribedAt !== null) {
+          // Reactivate soft-deleted subscription
+          actualSubscriptionId = existingSub[0].id;
+          await db
+            .update(subscriptions)
+            .set({
+              unsubscribedAt: null,
+              subscribedAt: now,
+              updatedAt: now,
+            })
+            .where(eq(subscriptions.id, actualSubscriptionId));
+        } else if (existingSub.length === 0) {
+          // Create new subscription
+          await db.insert(subscriptions).values({
+            id: subscriptionId,
+            userId,
+            feedId,
+            subscribedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+
+        // Publish subscription_created event (fire and forget)
+        publishSubscriptionCreated(userId, feedId, actualSubscriptionId).catch((err) => {
+          logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+        });
+
+        // Add to existing URLs set to prevent duplicates within this import
+        existingUrls.add(feedUrl);
+
+        results.push({
+          url: feedUrl,
+          title: feedTitle,
+          status: "imported",
+          feedId,
+          subscriptionId: actualSubscriptionId,
+        });
+        imported++;
+
+        // Publish progress event
+        await publishImportProgress(userId, importId, feedUrl, "imported", {
+          imported,
+          skipped,
+          failed,
+          total: importRecord.totalFeeds,
+        });
+
+        // Update import record with current progress
+        await db
+          .update(opmlImports)
+          .set({
+            importedCount: imported,
+            results,
+            updatedAt: new Date(),
+          })
+          .where(eq(opmlImports.id, importId));
+
+        logger.info("OPML import: feed imported", { feedUrl, userId, importId });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        results.push({
+          url: feedUrl,
+          title: feedTitle,
+          status: "failed",
+          error: errorMessage,
+        });
+        failed++;
+
+        // Publish progress event
+        await publishImportProgress(userId, importId, feedUrl, "failed", {
+          imported,
+          skipped,
+          failed,
+          total: importRecord.totalFeeds,
+        });
+
+        // Update import record with current progress
+        await db
+          .update(opmlImports)
+          .set({
+            failedCount: failed,
+            results,
+            updatedAt: new Date(),
+          })
+          .where(eq(opmlImports.id, importId));
+
+        logger.warn("OPML import: feed import failed", {
+          feedUrl,
+          userId,
+          importId,
+          error: errorMessage,
+        });
+      }
+    }
+
+    // Mark import as completed
+    const completedAt = new Date();
+    await db
+      .update(opmlImports)
+      .set({
+        status: "completed",
+        importedCount: imported,
+        skippedCount: skipped,
+        failedCount: failed,
+        results,
+        completedAt,
+        updatedAt: completedAt,
+      })
+      .where(eq(opmlImports.id, importId));
+
+    // Publish completed event
+    await publishImportCompleted(userId, importId, {
+      imported,
+      skipped,
+      failed,
+      total: importRecord.totalFeeds,
+    });
+
+    logger.info("OPML import completed", {
+      importId,
+      userId,
+      imported,
+      skipped,
+      failed,
+      total: importRecord.totalFeeds,
+    });
+
+    return {
+      success: true,
+      nextRunAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // Far future - one-time job
+      metadata: {
+        imported,
+        skipped,
+        failed,
+        total: importRecord.totalFeeds,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    // Mark import as failed
+    await db
+      .update(opmlImports)
+      .set({
+        status: "failed",
+        error: errorMessage,
+        updatedAt: new Date(),
+      })
+      .where(eq(opmlImports.id, importId));
+
+    logger.error("OPML import job failed", { importId, error: errorMessage });
+
+    return {
+      success: false,
+      nextRunAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // Far future - don't retry
+      error: errorMessage,
+    };
+  }
 }

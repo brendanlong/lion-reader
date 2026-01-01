@@ -17,7 +17,11 @@ export type FeedEventType = "new_entry" | "entry_updated";
 /**
  * User event types that can be published.
  */
-export type UserEventType = "subscription_created" | "saved_article_created";
+export type UserEventType =
+  | "subscription_created"
+  | "saved_article_created"
+  | "import_progress"
+  | "import_completed";
 
 /**
  * Base event payload interface for feed events.
@@ -75,9 +79,48 @@ export interface SavedArticleCreatedEvent {
 }
 
 /**
+ * Event published when an OPML import makes progress (a feed is processed).
+ * Sent after each feed is processed so the UI can show real-time progress.
+ */
+export interface ImportProgressEvent {
+  type: "import_progress";
+  userId: string;
+  importId: string;
+  /** The URL of the feed that was just processed */
+  feedUrl: string;
+  /** Status of this feed: imported, skipped, or failed */
+  feedStatus: "imported" | "skipped" | "failed";
+  /** Current counts */
+  imported: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  timestamp: string;
+}
+
+/**
+ * Event published when an OPML import completes (all feeds processed).
+ */
+export interface ImportCompletedEvent {
+  type: "import_completed";
+  userId: string;
+  importId: string;
+  /** Final counts */
+  imported: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  timestamp: string;
+}
+
+/**
  * Union type for all user events.
  */
-export type UserEvent = SubscriptionCreatedEvent | SavedArticleCreatedEvent;
+export type UserEvent =
+  | SubscriptionCreatedEvent
+  | SavedArticleCreatedEvent
+  | ImportProgressEvent
+  | ImportCompletedEvent;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -245,6 +288,58 @@ export async function publishSavedArticleCreated(userId: string, entryId: string
 }
 
 /**
+ * Publishes an import_progress event when a feed in an OPML import is processed.
+ * This notifies the user's SSE connections to update the import progress UI.
+ */
+export async function publishImportProgress(
+  userId: string,
+  importId: string,
+  feedUrl: string,
+  feedStatus: "imported" | "skipped" | "failed",
+  counts: { imported: number; skipped: number; failed: number; total: number }
+): Promise<number> {
+  const client = getPublisherClient();
+  const event: ImportProgressEvent = {
+    type: "import_progress",
+    userId,
+    importId,
+    feedUrl,
+    feedStatus,
+    imported: counts.imported,
+    skipped: counts.skipped,
+    failed: counts.failed,
+    total: counts.total,
+    timestamp: new Date().toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes an import_completed event when an OPML import finishes.
+ * This notifies the user's SSE connections that the import is done.
+ */
+export async function publishImportCompleted(
+  userId: string,
+  importId: string,
+  counts: { imported: number; skipped: number; failed: number; total: number }
+): Promise<number> {
+  const client = getPublisherClient();
+  const event: ImportCompletedEvent = {
+    type: "import_completed",
+    userId,
+    importId,
+    imported: counts.imported,
+    skipped: counts.skipped,
+    failed: counts.failed,
+    total: counts.total,
+    timestamp: new Date().toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
  * Creates a new Redis client for subscribing to feed events.
  * Each subscriber should use its own connection as Redis requires
  * dedicated connections for subscriptions.
@@ -364,6 +459,56 @@ export function parseUserEvent(message: string): UserEvent | null {
           type: "saved_article_created",
           userId: event.userId,
           entryId: event.entryId,
+          timestamp: event.timestamp,
+        };
+      }
+
+      if (
+        event.type === "import_progress" &&
+        typeof event.userId === "string" &&
+        typeof event.importId === "string" &&
+        typeof event.feedUrl === "string" &&
+        (event.feedStatus === "imported" ||
+          event.feedStatus === "skipped" ||
+          event.feedStatus === "failed") &&
+        typeof event.imported === "number" &&
+        typeof event.skipped === "number" &&
+        typeof event.failed === "number" &&
+        typeof event.total === "number" &&
+        typeof event.timestamp === "string"
+      ) {
+        return {
+          type: "import_progress",
+          userId: event.userId,
+          importId: event.importId,
+          feedUrl: event.feedUrl,
+          feedStatus: event.feedStatus,
+          imported: event.imported,
+          skipped: event.skipped,
+          failed: event.failed,
+          total: event.total,
+          timestamp: event.timestamp,
+        };
+      }
+
+      if (
+        event.type === "import_completed" &&
+        typeof event.userId === "string" &&
+        typeof event.importId === "string" &&
+        typeof event.imported === "number" &&
+        typeof event.skipped === "number" &&
+        typeof event.failed === "number" &&
+        typeof event.total === "number" &&
+        typeof event.timestamp === "string"
+      ) {
+        return {
+          type: "import_completed",
+          userId: event.userId,
+          importId: event.importId,
+          imported: event.imported,
+          skipped: event.skipped,
+          failed: event.failed,
+          total: event.total,
           timestamp: event.timestamp,
         };
       }
