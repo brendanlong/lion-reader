@@ -283,6 +283,7 @@ private fun SavedArticleDetailContent(
         HtmlContent(
             html = content,
             onLinkClick = onLinkClick,
+            baseUrl = article.url,
             modifier = Modifier.fillMaxWidth(),
         )
 

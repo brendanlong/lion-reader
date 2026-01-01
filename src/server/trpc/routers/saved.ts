@@ -280,7 +280,7 @@ export const savedRouter = createTRPCRouter({
       // Extract metadata
       const metadata = extractMetadata(html, input.url);
 
-      // Run Readability for clean content
+      // Run Readability for clean content (also absolutizes URLs internally)
       const cleaned = cleanContent(html, { url: input.url });
 
       // Generate excerpt

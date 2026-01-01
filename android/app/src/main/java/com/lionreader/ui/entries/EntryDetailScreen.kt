@@ -418,6 +418,7 @@ private fun EntryDetailContent(
         HtmlContent(
             html = content,
             onLinkClick = onLinkClick,
+            baseUrl = entry.entry.url,
             modifier = Modifier.fillMaxWidth(),
         )
 

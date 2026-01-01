@@ -10,6 +10,110 @@ import { JSDOM } from "jsdom";
 import { logger } from "@/lib/logger";
 
 /**
+ * Attributes that may contain URLs that should be absolutized.
+ */
+const URL_ATTRIBUTES = ["src", "href", "poster", "srcset"] as const;
+
+/**
+ * Absolutizes all relative URLs in HTML content.
+ *
+ * Converts relative URLs in src, href, poster, and srcset attributes
+ * to absolute URLs using the provided base URL.
+ *
+ * @param html - The HTML content to process
+ * @param baseUrl - The base URL for resolving relative URLs
+ * @returns HTML with all relative URLs converted to absolute
+ */
+export function absolutizeUrls(html: string, baseUrl: string): string {
+  try {
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+
+    // Find all elements with URL attributes
+    for (const attr of URL_ATTRIBUTES) {
+      const elements = document.querySelectorAll(`[${attr}]`);
+
+      for (const element of elements) {
+        const value = element.getAttribute(attr);
+        if (!value) continue;
+
+        if (attr === "srcset") {
+          // srcset has a special format: "url width, url width, ..."
+          const absolutizedSrcset = absolutizeSrcset(value, baseUrl);
+          element.setAttribute(attr, absolutizedSrcset);
+        } else {
+          // Regular URL attribute
+          const absoluteUrl = resolveUrl(value, baseUrl);
+          if (absoluteUrl && absoluteUrl !== value) {
+            element.setAttribute(attr, absoluteUrl);
+          }
+        }
+      }
+    }
+
+    // Return the body's innerHTML (we only care about the content, not the wrapper)
+    return document.body.innerHTML;
+  } catch (error) {
+    logger.warn("Failed to absolutize URLs in content", {
+      baseUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Return original HTML if absolutizing fails
+    return html;
+  }
+}
+
+/**
+ * Resolves a potentially relative URL against a base URL.
+ *
+ * @param url - The URL to resolve (may be relative or absolute)
+ * @param baseUrl - The base URL for resolution
+ * @returns The absolute URL, or null if resolution fails
+ */
+function resolveUrl(url: string, baseUrl: string): string | null {
+  try {
+    // Skip data: URLs and javascript: URLs
+    if (url.startsWith("data:") || url.startsWith("javascript:")) {
+      return url;
+    }
+
+    const resolved = new URL(url, baseUrl);
+    return resolved.href;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Absolutizes URLs in a srcset attribute value.
+ *
+ * srcset format: "url width, url width, ..." where width is optional
+ * Example: "image.jpg 1x, image@2x.jpg 2x"
+ *
+ * @param srcset - The srcset attribute value
+ * @param baseUrl - The base URL for resolution
+ * @returns The srcset with absolute URLs
+ */
+function absolutizeSrcset(srcset: string, baseUrl: string): string {
+  return srcset
+    .split(",")
+    .map((entry) => {
+      const parts = entry.trim().split(/\s+/);
+      if (parts.length === 0) return entry;
+
+      const url = parts[0];
+      const descriptor = parts.slice(1).join(" ");
+
+      const absoluteUrl = resolveUrl(url, baseUrl);
+      if (absoluteUrl) {
+        return descriptor ? `${absoluteUrl} ${descriptor}` : absoluteUrl;
+      }
+      return entry;
+    })
+    .join(", ");
+}
+
+/**
  * Result of content cleaning operation.
  */
 export interface CleanedContent {
@@ -127,8 +231,11 @@ export function cleanContent(
       return null;
     }
 
+    // Absolutize relative URLs in the cleaned content if we have a base URL
+    const content = url ? absolutizeUrls(article.content, url) : article.content;
+
     return {
-      content: article.content,
+      content,
       textContent,
       excerpt: article.excerpt ?? "",
       title: article.title ?? null,

@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { cleanContent, generateCleanedSummary } from "@/server/feed/content-cleaner";
+import {
+  cleanContent,
+  generateCleanedSummary,
+  absolutizeUrls,
+} from "@/server/feed/content-cleaner";
 
 describe("cleanContent", () => {
   describe("basic functionality", () => {
@@ -394,5 +398,150 @@ describe("generateCleanedSummary", () => {
     const summary = generateCleanedSummary(cleaned);
 
     expect(summary).toBe("");
+  });
+});
+
+describe("absolutizeUrls", () => {
+  const baseUrl = "https://example.com/articles/test-article";
+
+  describe("image src attributes", () => {
+    it("should convert relative image src to absolute", () => {
+      const html = '<img src="/images/photo.jpg" alt="Test">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('src="https://example.com/images/photo.jpg"');
+    });
+
+    it("should convert relative path image src to absolute", () => {
+      const html = '<img src="../images/photo.jpg" alt="Test">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('src="https://example.com/images/photo.jpg"');
+    });
+
+    it("should convert same-directory relative image src to absolute", () => {
+      const html = '<img src="photo.jpg" alt="Test">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('src="https://example.com/articles/photo.jpg"');
+    });
+
+    it("should leave absolute image src unchanged", () => {
+      const html = '<img src="https://cdn.example.com/image.jpg" alt="Test">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('src="https://cdn.example.com/image.jpg"');
+    });
+
+    it("should preserve data: URLs", () => {
+      const html = '<img src="data:image/png;base64,abc123" alt="Test">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('src="data:image/png;base64,abc123"');
+    });
+  });
+
+  describe("link href attributes", () => {
+    it("should convert relative href to absolute", () => {
+      const html = '<a href="/page">Link</a>';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('href="https://example.com/page"');
+    });
+
+    it("should leave absolute href unchanged", () => {
+      const html = '<a href="https://other.com/page">Link</a>';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('href="https://other.com/page"');
+    });
+
+    it("should preserve javascript: URLs", () => {
+      const html = '<a href="javascript:void(0)">Click</a>';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('href="javascript:void(0)"');
+    });
+  });
+
+  describe("srcset attributes", () => {
+    it("should convert relative URLs in srcset", () => {
+      const html =
+        '<img srcset="/images/small.jpg 1x, /images/large.jpg 2x" src="/images/default.jpg">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain("https://example.com/images/small.jpg 1x");
+      expect(result).toContain("https://example.com/images/large.jpg 2x");
+    });
+
+    it("should handle srcset with width descriptors", () => {
+      const html = '<img srcset="/images/small.jpg 480w, /images/large.jpg 800w">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain("https://example.com/images/small.jpg 480w");
+      expect(result).toContain("https://example.com/images/large.jpg 800w");
+    });
+
+    it("should leave absolute URLs in srcset unchanged", () => {
+      const html = '<img srcset="https://cdn.example.com/small.jpg 1x">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain("https://cdn.example.com/small.jpg 1x");
+    });
+  });
+
+  describe("video poster attributes", () => {
+    it("should convert relative poster URL to absolute", () => {
+      const html = '<video poster="/images/poster.jpg"></video>';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('poster="https://example.com/images/poster.jpg"');
+    });
+  });
+
+  describe("multiple elements", () => {
+    it("should absolutize URLs in all elements", () => {
+      const html = `
+        <article>
+          <img src="/image1.jpg">
+          <a href="/link1">Link 1</a>
+          <img src="/image2.jpg">
+          <a href="/link2">Link 2</a>
+        </article>
+      `;
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('src="https://example.com/image1.jpg"');
+      expect(result).toContain('src="https://example.com/image2.jpg"');
+      expect(result).toContain('href="https://example.com/link1"');
+      expect(result).toContain('href="https://example.com/link2"');
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle empty HTML", () => {
+      const html = "";
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toBe("");
+    });
+
+    it("should handle HTML with no URL attributes", () => {
+      const html = "<p>Just some text</p>";
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain("Just some text");
+    });
+
+    it("should handle invalid base URL gracefully", () => {
+      const html = '<img src="/image.jpg">';
+      // Should not throw, returns original
+      expect(() => absolutizeUrls(html, "not-a-valid-url")).not.toThrow();
+    });
+  });
+
+  describe("integration with cleanContent", () => {
+    it("should absolutize URLs in cleaned content", () => {
+      const html = `
+        <article>
+          <h1>Test Article</h1>
+          <p>This article has an image with a relative URL.</p>
+          <img src="/images/test.jpg" alt="Test">
+          <p>And a link with a relative URL: <a href="/other-page">click here</a>.</p>
+          <p>Third paragraph for Readability.</p>
+        </article>
+      `;
+
+      const result = cleanContent(html, { url: "https://example.com/articles/test" });
+
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('src="https://example.com/images/test.jpg"');
+      expect(result!.content).toContain('href="https://example.com/other-page"');
+    });
   });
 });
