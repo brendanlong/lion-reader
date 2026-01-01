@@ -58,6 +58,7 @@ function rowToJob(row: RawJobRow): Job {
 export interface JobPayloads {
   fetch_feed: { feedId: string };
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
+  process_opml_import: { importId: string }; // Process an OPML import in the background
 }
 
 export type JobType = keyof JobPayloads;

@@ -18,11 +18,18 @@ import {
   tags,
   subscriptionTags,
   blockedSenders,
+  opmlImports,
+  type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, detectFeedType, deriveGuid } from "@/server/feed";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
-import { createOrEnableFeedJob, enableFeedJob, syncFeedJobEnabled } from "@/server/jobs/queue";
+import {
+  createOrEnableFeedJob,
+  enableFeedJob,
+  syncFeedJobEnabled,
+  createJob,
+} from "@/server/jobs/queue";
 import { publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
@@ -1010,17 +1017,8 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(
       z.object({
-        imported: z.number(),
-        skipped: z.number(),
-        failed: z.number(),
-        results: z.array(
-          z.object({
-            url: z.string(),
-            title: z.string().nullable(),
-            status: z.enum(["imported", "skipped", "failed"]),
-            error: z.string().optional(),
-          })
-        ),
+        importId: z.string(),
+        totalFeeds: z.number(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1037,171 +1035,73 @@ export const subscriptionsRouter = createTRPCRouter({
       }
 
       if (opmlFeeds.length === 0) {
-        return {
-          imported: 0,
-          skipped: 0,
-          failed: 0,
+        // Create a completed import record with no feeds
+        const importId = generateUuidv7();
+        const now = new Date();
+
+        await ctx.db.insert(opmlImports).values({
+          id: importId,
+          userId,
+          status: "completed",
+          totalFeeds: 0,
+          importedCount: 0,
+          skippedCount: 0,
+          failedCount: 0,
+          feedsData: [],
           results: [],
+          completedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        return {
+          importId,
+          totalFeeds: 0,
         };
       }
 
-      // Step 2: Get existing subscriptions for the user
-      const existingSubscriptions = await ctx.db
-        .select({
-          feedUrl: feeds.url,
-        })
-        .from(subscriptions)
-        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+      // Step 2: Create import record
+      const importId = generateUuidv7();
+      const now = new Date();
 
-      const existingUrls = new Set(existingSubscriptions.map((s) => s.feedUrl));
+      // Convert OpmlFeed[] to OpmlImportFeedData[]
+      const feedsData: OpmlImportFeedData[] = opmlFeeds.map((feed) => ({
+        xmlUrl: feed.xmlUrl,
+        title: feed.title,
+        htmlUrl: feed.htmlUrl,
+        category: feed.category,
+      }));
 
-      // Step 3: Process each feed
-      const results: Array<{
-        url: string;
-        title: string | null;
-        status: "imported" | "skipped" | "failed";
-        error?: string;
-      }> = [];
-
-      let imported = 0;
-      let skipped = 0;
-      let failed = 0;
-
-      for (const opmlFeed of opmlFeeds) {
-        const feedUrl = opmlFeed.xmlUrl;
-        const feedTitle = opmlFeed.title ?? null;
-
-        // Check if already subscribed
-        if (existingUrls.has(feedUrl)) {
-          results.push({
-            url: feedUrl,
-            title: feedTitle,
-            status: "skipped",
-            error: "Already subscribed",
-          });
-          skipped++;
-          continue;
-        }
-
-        try {
-          // Check if feed already exists in database
-          const existingFeed = await ctx.db
-            .select()
-            .from(feeds)
-            .where(eq(feeds.url, feedUrl))
-            .limit(1);
-
-          let feedId: string;
-
-          if (existingFeed.length > 0) {
-            // Feed exists - ensure job is enabled and sync next_fetch_at
-            feedId = existingFeed[0].id;
-            const job = await enableFeedJob(feedId);
-            if (job?.nextRunAt) {
-              await ctx.db
-                .update(feeds)
-                .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
-                .where(eq(feeds.id, feedId));
-            }
-          } else {
-            // Create new feed record
-            feedId = generateUuidv7();
-            const now = new Date();
-
-            await ctx.db.insert(feeds).values({
-              id: feedId,
-              type: "rss" as const, // Default to RSS, will be updated on first fetch
-              url: feedUrl,
-              title: feedTitle,
-              siteUrl: opmlFeed.htmlUrl ?? null,
-              nextFetchAt: now, // Schedule immediate fetch
-              createdAt: now,
-              updatedAt: now,
-            });
-
-            // Create job for the new feed (enabled, runs immediately)
-            await createOrEnableFeedJob(feedId);
-          }
-
-          // Check for existing soft-deleted subscription
-          const existingSub = await ctx.db
-            .select()
-            .from(subscriptions)
-            .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-            .limit(1);
-
-          const now = new Date();
-          const subscriptionId = generateUuidv7();
-
-          let actualSubscriptionId = subscriptionId;
-
-          if (existingSub.length > 0 && existingSub[0].unsubscribedAt !== null) {
-            // Reactivate soft-deleted subscription
-            actualSubscriptionId = existingSub[0].id;
-            await ctx.db
-              .update(subscriptions)
-              .set({
-                unsubscribedAt: null,
-                subscribedAt: now,
-                updatedAt: now,
-              })
-              .where(eq(subscriptions.id, actualSubscriptionId));
-          } else if (existingSub.length === 0) {
-            // Create new subscription
-            await ctx.db.insert(subscriptions).values({
-              id: subscriptionId,
-              userId,
-              feedId,
-              subscribedAt: now,
-              createdAt: now,
-              updatedAt: now,
-            });
-          }
-
-          // Publish subscription_created event (fire and forget)
-          publishSubscriptionCreated(userId, feedId, actualSubscriptionId).catch((err) => {
-            logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-          });
-
-          // Add to existing URLs set to prevent duplicates within this import
-          existingUrls.add(feedUrl);
-
-          results.push({
-            url: feedUrl,
-            title: feedTitle,
-            status: "imported",
-          });
-          imported++;
-
-          logger.info("OPML import: feed imported", { feedUrl, userId });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : "Unknown error";
-          results.push({
-            url: feedUrl,
-            title: feedTitle,
-            status: "failed",
-            error: errorMessage,
-          });
-          failed++;
-
-          logger.warn("OPML import: feed import failed", { feedUrl, userId, error: errorMessage });
-        }
-      }
-
-      logger.info("OPML import completed", {
+      await ctx.db.insert(opmlImports).values({
+        id: importId,
         userId,
-        imported,
-        skipped,
-        failed,
-        total: opmlFeeds.length,
+        status: "pending",
+        totalFeeds: opmlFeeds.length,
+        importedCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        feedsData,
+        results: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Step 3: Queue background job to process the import
+      await createJob({
+        type: "process_opml_import",
+        payload: { importId },
+        nextRunAt: now, // Run immediately
+      });
+
+      logger.info("OPML import queued", {
+        importId,
+        userId,
+        totalFeeds: opmlFeeds.length,
       });
 
       return {
-        imported,
-        skipped,
-        failed,
-        results,
+        importId,
+        totalFeeds: opmlFeeds.length,
       };
     }),
 

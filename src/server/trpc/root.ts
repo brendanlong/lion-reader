@@ -18,6 +18,7 @@ import {
   narrationRouter,
   ingestAddressesRouter,
   blockedSendersRouter,
+  importsRouter,
 } from "./routers";
 
 /**
@@ -36,6 +37,7 @@ export const appRouter = createTRPCRouter({
   narration: narrationRouter,
   ingestAddresses: ingestAddressesRouter,
   blockedSenders: blockedSendersRouter,
+  imports: importsRouter,
 });
 
 /**
