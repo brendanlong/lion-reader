@@ -30,6 +30,16 @@ interface SavedArticleContentProps {
    * Optional callback when the back button is clicked.
    */
   onBack?: () => void;
+
+  /**
+   * Optional callback when swiping to next article.
+   */
+  onSwipeNext?: () => void;
+
+  /**
+   * Optional callback when swiping to previous article.
+   */
+  onSwipePrevious?: () => void;
 }
 
 /**
@@ -38,7 +48,12 @@ interface SavedArticleContentProps {
  * Fetches and displays the full content of a saved article.
  * Marks the article as read on mount.
  */
-export function SavedArticleContent({ articleId, onBack }: SavedArticleContentProps) {
+export function SavedArticleContent({
+  articleId,
+  onBack,
+  onSwipeNext,
+  onSwipePrevious,
+}: SavedArticleContentProps) {
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
@@ -122,6 +137,8 @@ export function SavedArticleContent({ articleId, onBack }: SavedArticleContentPr
       showOriginal={showOriginal}
       setShowOriginal={setShowOriginal}
       narrationArticleType="saved"
+      onSwipeNext={onSwipeNext}
+      onSwipePrevious={onSwipePrevious}
     />
   );
 }

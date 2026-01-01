@@ -125,6 +125,18 @@ export interface UseSavedArticleKeyboardShortcutsResult {
    * Clear selection.
    */
   clearSelection: () => void;
+
+  /**
+   * Navigate to and open the next article.
+   * Used for swipe gestures and keyboard navigation when viewing an article.
+   */
+  goToNextArticle: () => void;
+
+  /**
+   * Navigate to and open the previous article.
+   * Used for swipe gestures and keyboard navigation when viewing an article.
+   */
+  goToPreviousArticle: () => void;
 }
 
 /**
@@ -538,5 +550,7 @@ export function useSavedArticleKeyboardShortcuts(
     selectPrevious,
     openSelected,
     clearSelection,
+    goToNextArticle,
+    goToPreviousArticle,
   };
 }

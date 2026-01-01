@@ -40,22 +40,23 @@ function SavedArticlesContent() {
     listFilters: { unreadOnly: showUnreadOnly, sortOrder },
   });
 
-  // Keyboard navigation and actions
-  const { selectedArticleId, setSelectedArticleId } = useSavedArticleKeyboardShortcuts({
-    articles,
-    onOpenArticle: setOpenArticleId,
-    onClose: closeArticle,
-    isArticleOpen: !!openArticleId,
-    enabled: keyboardShortcutsEnabled,
-    onToggleRead: toggleRead,
-    onToggleStar: toggleStar,
-    onRefresh: () => {
-      // Invalidate entries queries with saved type filter
-      utils.entries.list.invalidate({ type: "saved" });
-      utils.entries.count.invalidate({ type: "saved" });
-    },
-    onToggleUnreadOnly: toggleShowUnreadOnly,
-  });
+  // Keyboard navigation and actions (also provides swipe navigation functions)
+  const { selectedArticleId, setSelectedArticleId, goToNextArticle, goToPreviousArticle } =
+    useSavedArticleKeyboardShortcuts({
+      articles,
+      onOpenArticle: setOpenArticleId,
+      onClose: closeArticle,
+      isArticleOpen: !!openArticleId,
+      enabled: keyboardShortcutsEnabled,
+      onToggleRead: toggleRead,
+      onToggleStar: toggleStar,
+      onRefresh: () => {
+        // Invalidate entries queries with saved type filter
+        utils.entries.list.invalidate({ type: "saved" });
+        utils.entries.count.invalidate({ type: "saved" });
+      },
+      onToggleUnreadOnly: toggleShowUnreadOnly,
+    });
 
   const handleArticleClick = useCallback(
     (articleId: string) => {
@@ -77,7 +78,13 @@ function SavedArticlesContent() {
   // Key forces remount when articleId changes, ensuring fresh refs and mutation state
   if (openArticleId) {
     return (
-      <SavedArticleContent key={openArticleId} articleId={openArticleId} onBack={handleBack} />
+      <SavedArticleContent
+        key={openArticleId}
+        articleId={openArticleId}
+        onBack={handleBack}
+        onSwipeNext={goToNextArticle}
+        onSwipePrevious={goToPreviousArticle}
+      />
     );
   }
 
