@@ -48,6 +48,7 @@ interface RssItem {
   link?: string | { __cdata?: string; "#text"?: string };
   description?: string | { __cdata?: string; "#text"?: string };
   pubDate?: string;
+  "dc:date"?: string | { __cdata?: string; "#text"?: string };
   guid?: string | { "#text"?: string; "@_isPermaLink"?: string; __cdata?: string };
   author?: string | { __cdata?: string; "#text"?: string };
   "dc:creator"?: string | { __cdata?: string; "#text"?: string };
@@ -286,6 +287,9 @@ function parseRssItem(item: RssItem): ParsedEntry {
   // Prefer dc:creator over author for author name
   const author = extractText(item["dc:creator"]) || extractText(item.author);
 
+  // Prefer pubDate (RSS 2.0) over dc:date (RSS 1.0/Dublin Core)
+  const pubDate = parseRssDate(item.pubDate) || parseRssDate(extractText(item["dc:date"]));
+
   return {
     guid: extractGuid(item.guid),
     link: extractLink(item.link),
@@ -293,7 +297,7 @@ function parseRssItem(item: RssItem): ParsedEntry {
     author,
     content,
     summary,
-    pubDate: parseRssDate(item.pubDate),
+    pubDate,
   };
 }
 
