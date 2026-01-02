@@ -355,6 +355,66 @@ describe("parseRssFeed", () => {
       expect(feed.selfUrl).toBeUndefined();
     });
   });
+
+  describe("RSS 1.0 / RDF feed support", () => {
+    it("parses dc:date in RSS 1.0 items", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                 xmlns="http://purl.org/rss/1.0/"
+                 xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <channel>
+            <title>RSS 1.0 Feed</title>
+            <link>https://example.com</link>
+          </channel>
+          <item>
+            <title>Post with dc:date</title>
+            <link>https://example.com/post-1</link>
+            <dc:date>2010-12-19T00:00:00Z</dc:date>
+          </item>
+        </rdf:RDF>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.items).toHaveLength(1);
+      expect(feed.items[0].title).toBe("Post with dc:date");
+      expect(feed.items[0].pubDate).toEqual(new Date("2010-12-19T00:00:00Z"));
+    });
+
+    it("prefers pubDate over dc:date when both are present", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <channel>
+            <title>Mixed Date Feed</title>
+            <item>
+              <title>Post with both dates</title>
+              <pubDate>Mon, 01 Jan 2024 12:00:00 GMT</pubDate>
+              <dc:date>2010-12-19T00:00:00Z</dc:date>
+            </item>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+    });
+
+    it("falls back to dc:date when pubDate is missing", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <channel>
+            <title>DC Date Only Feed</title>
+            <item>
+              <title>Post with dc:date only</title>
+              <dc:date>2015-06-15T10:30:00Z</dc:date>
+            </item>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.items[0].pubDate).toEqual(new Date("2015-06-15T10:30:00Z"));
+    });
+  });
 });
 
 describe("parseRssDate", () => {
