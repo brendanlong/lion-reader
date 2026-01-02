@@ -248,10 +248,6 @@ export interface ArticleContentBodyProps {
   onToggleRead: () => void;
   /** Callback to toggle star status */
   onToggleStar: () => void;
-  /** Whether star mutation is in progress */
-  isStarLoading: boolean;
-  /** Whether read mutation is in progress */
-  isReadLoading: boolean;
   /** Whether to show original content */
   showOriginal: boolean;
   /** Callback to set show original state */
@@ -290,8 +286,6 @@ export function ArticleContentBody({
   onBack,
   onToggleRead,
   onToggleStar,
-  isStarLoading,
-  isReadLoading,
   showOriginal,
   setShowOriginal,
   narrationArticleType,
@@ -518,7 +512,6 @@ export function ArticleContentBody({
             variant={starred ? "primary" : "secondary"}
             size="sm"
             onClick={onToggleStar}
-            disabled={isStarLoading}
             className={
               starred
                 ? "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-500 dark:text-white dark:hover:bg-amber-600"
@@ -535,7 +528,6 @@ export function ArticleContentBody({
             variant="secondary"
             size="sm"
             onClick={onToggleRead}
-            disabled={isReadLoading}
             aria-label={read ? "Mark as unread" : "Mark as read"}
             title="Keyboard shortcut: m"
           >

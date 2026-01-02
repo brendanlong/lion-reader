@@ -58,7 +58,7 @@ export function EntryContent({ entryId, onBack, onSwipeNext, onSwipePrevious }: 
   // Entry mutations without list filters (this component operates on a single entry)
   // Note: optimistic updates happen at the list level in parent components,
   // normy automatically propagates changes to entries.get when server responds
-  const { markRead, star, unstar, isStarPending, isMarkReadPending } = useEntryMutations();
+  const { markRead, star, unstar } = useEntryMutations();
 
   const entry = data?.entry;
 
@@ -127,8 +127,6 @@ export function EntryContent({ entryId, onBack, onSwipeNext, onSwipePrevious }: 
       onBack={onBack}
       onToggleRead={handleReadToggle}
       onToggleStar={handleStarToggle}
-      isStarLoading={isStarPending}
-      isReadLoading={isMarkReadPending}
       showOriginal={showOriginal}
       setShowOriginal={setShowOriginal}
       narrationArticleType="entry"
