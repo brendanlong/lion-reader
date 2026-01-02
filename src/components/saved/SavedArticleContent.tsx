@@ -62,7 +62,7 @@ export function SavedArticleContent({
 
   // Use the consolidated mutations hook (no list filters since we're in single article view)
   // normy automatically propagates changes to entries.get when server responds
-  const { markRead, star, unstar, isStarPending, isMarkReadPending } = useSavedArticleMutations();
+  const { markRead, star, unstar } = useSavedArticleMutations();
 
   const article = data?.entry;
 
@@ -132,8 +132,6 @@ export function SavedArticleContent({
       onBack={onBack}
       onToggleRead={handleReadToggle}
       onToggleStar={handleStarToggle}
-      isStarLoading={isStarPending}
-      isReadLoading={isMarkReadPending}
       showOriginal={showOriginal}
       setShowOriginal={setShowOriginal}
       narrationArticleType="saved"
