@@ -24,6 +24,25 @@ export interface ParsedEntry {
 }
 
 /**
+ * Update interval hints from RSS Syndication namespace.
+ * Used to calculate refresh intervals based on feed-provided hints.
+ *
+ * @see http://web.resource.org/rss/1.0/modules/syndication/
+ */
+export interface SyndicationHints {
+  /**
+   * Period for updates: "hourly", "daily", "weekly", "monthly", "yearly"
+   * @example "daily" means the feed updates once per day
+   */
+  updatePeriod?: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+  /**
+   * Frequency of updates within the period.
+   * @example updatePeriod="daily" + updateFrequency=2 means twice per day
+   */
+  updateFrequency?: number;
+}
+
+/**
  * A parsed feed from any format (RSS, Atom, JSON Feed).
  */
 export interface ParsedFeed {
@@ -42,4 +61,17 @@ export interface ParsedFeed {
   hubUrl?: string;
   /** Self link URL (canonical URL of the feed) */
   selfUrl?: string;
+
+  /**
+   * RSS 2.0 <ttl> element: time-to-live in minutes.
+   * Indicates how long a channel can be cached before refreshing.
+   * @see https://www.rssboard.org/rss-specification#ltttlgtSubelementOfLtchannelgt
+   */
+  ttlMinutes?: number;
+
+  /**
+   * Syndication namespace hints for update frequency.
+   * @see http://web.resource.org/rss/1.0/modules/syndication/
+   */
+  syndication?: SyndicationHints;
 }

@@ -4,15 +4,34 @@
  */
 
 import { type CacheControl, getEffectiveMaxAge } from "./cache-headers";
+import type { SyndicationHints } from "./types";
 
-/** Minimum interval between fetches: 1 minute */
-export const MIN_FETCH_INTERVAL_SECONDS = 60;
+/**
+ * Default minimum interval between fetches: 60 minutes.
+ * This can be overridden via the FEED_MIN_FETCH_INTERVAL_MINUTES environment variable.
+ */
+export const DEFAULT_MIN_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
+
+/**
+ * Gets the configured minimum fetch interval in seconds.
+ * Reads from FEED_MIN_FETCH_INTERVAL_MINUTES env var, defaults to 60 minutes.
+ */
+export function getMinFetchIntervalSeconds(): number {
+  const envValue = process.env.FEED_MIN_FETCH_INTERVAL_MINUTES;
+  if (envValue) {
+    const minutes = parseInt(envValue, 10);
+    if (!isNaN(minutes) && minutes > 0) {
+      return minutes * 60;
+    }
+  }
+  return DEFAULT_MIN_FETCH_INTERVAL_SECONDS;
+}
 
 /** Maximum interval between fetches: 7 days */
 export const MAX_FETCH_INTERVAL_SECONDS = 7 * 24 * 60 * 60; // 604800
 
-/** Default interval when no cache headers: 15 minutes */
-export const DEFAULT_FETCH_INTERVAL_SECONDS = 15 * 60; // 900
+/** Default interval when no hints available: 60 minutes */
+export const DEFAULT_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
 
 /** Maximum consecutive failures before permanent max backoff */
 export const MAX_CONSECUTIVE_FAILURES = 10;
@@ -21,11 +40,63 @@ export const MAX_CONSECUTIVE_FAILURES = 10;
 const FAILURE_BASE_BACKOFF_SECONDS = 30 * 60; // 1800
 
 /**
+ * Seconds per syndication period.
+ */
+const PERIOD_SECONDS: Record<NonNullable<SyndicationHints["updatePeriod"]>, number> = {
+  hourly: 60 * 60,
+  daily: 24 * 60 * 60,
+  weekly: 7 * 24 * 60 * 60,
+  monthly: 30 * 24 * 60 * 60,
+  yearly: 365 * 24 * 60 * 60,
+};
+
+/**
+ * Converts syndication hints to an interval in seconds.
+ * Returns undefined if hints are invalid or incomplete.
+ *
+ * @example
+ * // updatePeriod="daily", updateFrequency=2 means twice per day
+ * // Interval = 24 hours / 2 = 12 hours
+ * syndicationToSeconds({ updatePeriod: "daily", updateFrequency: 2 }) // 43200
+ */
+export function syndicationToSeconds(hints: SyndicationHints | undefined): number | undefined {
+  if (!hints?.updatePeriod) {
+    return undefined;
+  }
+
+  const periodSeconds = PERIOD_SECONDS[hints.updatePeriod];
+  if (periodSeconds === undefined) {
+    return undefined;
+  }
+
+  // Default frequency is 1 if not specified
+  const frequency = hints.updateFrequency ?? 1;
+  if (frequency <= 0) {
+    return undefined;
+  }
+
+  // Interval = period / frequency
+  return Math.floor(periodSeconds / frequency);
+}
+
+/**
+ * Feed hints for scheduling extracted from the feed itself.
+ */
+export interface FeedHints {
+  /** RSS 2.0 <ttl> element value in minutes */
+  ttlMinutes?: number;
+  /** Syndication namespace hints */
+  syndication?: SyndicationHints;
+}
+
+/**
  * Options for calculating the next fetch time.
  */
 export interface CalculateNextFetchOptions {
   /** Parsed Cache-Control directives from the response */
   cacheControl?: CacheControl;
+  /** Feed-provided hints (TTL, syndication) */
+  feedHints?: FeedHints;
   /** Number of consecutive fetch failures */
   consecutiveFailures?: number;
   /** The reference time to calculate from (defaults to now) */
@@ -51,19 +122,52 @@ export type NextFetchReason =
   | "cache_control" // Used Cache-Control max-age
   | "cache_control_clamped_min" // Cache-Control was below minimum, clamped up
   | "cache_control_clamped_max" // Cache-Control was above maximum, clamped down
-  | "default" // No cache headers, using default
+  | "ttl" // Used RSS <ttl> element
+  | "ttl_clamped_min" // TTL was below minimum, clamped up
+  | "ttl_clamped_max" // TTL was above maximum, clamped down
+  | "syndication" // Used syndication namespace hints
+  | "syndication_clamped_min" // Syndication was below minimum, clamped up
+  | "syndication_clamped_max" // Syndication was above maximum, clamped down
+  | "default" // No hints available, using default
   | "failure_backoff"; // Exponential backoff due to failures
 
 /**
- * Calculates the next fetch time for a feed based on cache headers and failure count.
+ * Clamps a value to the configured bounds and returns the result with appropriate reason.
+ */
+function clampInterval(
+  intervalSeconds: number,
+  baseReason: "cache_control" | "ttl" | "syndication"
+): { intervalSeconds: number; reason: NextFetchReason } {
+  const minInterval = getMinFetchIntervalSeconds();
+
+  if (intervalSeconds < minInterval) {
+    return {
+      intervalSeconds: minInterval,
+      reason: `${baseReason}_clamped_min` as NextFetchReason,
+    };
+  }
+
+  if (intervalSeconds > MAX_FETCH_INTERVAL_SECONDS) {
+    return {
+      intervalSeconds: MAX_FETCH_INTERVAL_SECONDS,
+      reason: `${baseReason}_clamped_max` as NextFetchReason,
+    };
+  }
+
+  return { intervalSeconds, reason: baseReason };
+}
+
+/**
+ * Calculates the next fetch time for a feed based on various hints.
  *
- * Rules:
+ * Priority order:
  * 1. If there are consecutive failures, use exponential backoff
- * 2. Otherwise, use Cache-Control max-age (clamped to bounds)
- * 3. If no cache headers, use default interval (15 minutes)
+ * 2. Use Cache-Control max-age from HTTP response (clamped to bounds)
+ * 3. Use feed hints: RSS <ttl> element or syndication namespace (clamped to bounds)
+ * 4. If no hints available, use default interval (60 minutes)
  *
  * Bounds:
- * - Minimum: 1 minute (never poll faster)
+ * - Minimum: 60 minutes by default (configurable via FEED_MIN_FETCH_INTERVAL_MINUTES)
  * - Maximum: 7 days (always check eventually)
  * - Failures capped at 10 (then max backoff)
  *
@@ -78,6 +182,20 @@ export type NextFetchReason =
  * // => { nextFetchAt: Date, intervalSeconds: 3600, reason: "cache_control" }
  *
  * @example
+ * // With feed TTL hint
+ * calculateNextFetch({
+ *   feedHints: { ttlMinutes: 120 },
+ * })
+ * // => { nextFetchAt: Date, intervalSeconds: 7200, reason: "ttl" }
+ *
+ * @example
+ * // With syndication hints
+ * calculateNextFetch({
+ *   feedHints: { syndication: { updatePeriod: "daily", updateFrequency: 2 } },
+ * })
+ * // => { nextFetchAt: Date, intervalSeconds: 43200, reason: "syndication" }
+ *
+ * @example
  * // With failures (exponential backoff)
  * calculateNextFetch({
  *   consecutiveFailures: 3,
@@ -85,14 +203,14 @@ export type NextFetchReason =
  * // => { nextFetchAt: Date, intervalSeconds: 7200, reason: "failure_backoff" }
  *
  * @example
- * // No cache headers (default)
+ * // No hints (default)
  * calculateNextFetch({})
- * // => { nextFetchAt: Date, intervalSeconds: 900, reason: "default" }
+ * // => { nextFetchAt: Date, intervalSeconds: 3600, reason: "default" }
  */
 export function calculateNextFetch(options: CalculateNextFetchOptions = {}): NextFetchResult {
-  const { cacheControl, consecutiveFailures = 0, now = new Date() } = options;
+  const { cacheControl, feedHints, consecutiveFailures = 0, now = new Date() } = options;
 
-  // If there are failures, use exponential backoff
+  // 1. If there are failures, use exponential backoff
   if (consecutiveFailures > 0) {
     const intervalSeconds = calculateFailureBackoff(consecutiveFailures);
     return {
@@ -102,37 +220,46 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
     };
   }
 
-  // Try to use Cache-Control max-age
+  // 2. Try to use Cache-Control max-age (HTTP headers take precedence)
   if (cacheControl) {
     const effectiveMaxAge = getEffectiveMaxAge(cacheControl);
 
     if (effectiveMaxAge !== undefined) {
-      // Clamp to bounds
-      if (effectiveMaxAge < MIN_FETCH_INTERVAL_SECONDS) {
-        return {
-          nextFetchAt: addSeconds(now, MIN_FETCH_INTERVAL_SECONDS),
-          intervalSeconds: MIN_FETCH_INTERVAL_SECONDS,
-          reason: "cache_control_clamped_min",
-        };
-      }
-
-      if (effectiveMaxAge > MAX_FETCH_INTERVAL_SECONDS) {
-        return {
-          nextFetchAt: addSeconds(now, MAX_FETCH_INTERVAL_SECONDS),
-          intervalSeconds: MAX_FETCH_INTERVAL_SECONDS,
-          reason: "cache_control_clamped_max",
-        };
-      }
-
+      const { intervalSeconds, reason } = clampInterval(effectiveMaxAge, "cache_control");
       return {
-        nextFetchAt: addSeconds(now, effectiveMaxAge),
-        intervalSeconds: effectiveMaxAge,
-        reason: "cache_control",
+        nextFetchAt: addSeconds(now, intervalSeconds),
+        intervalSeconds,
+        reason,
       };
     }
   }
 
-  // Default: 15 minutes
+  // 3. Try feed hints
+  if (feedHints) {
+    // 3a. Try RSS <ttl> element (value is in minutes)
+    if (feedHints.ttlMinutes !== undefined && feedHints.ttlMinutes > 0) {
+      const ttlSeconds = feedHints.ttlMinutes * 60;
+      const { intervalSeconds, reason } = clampInterval(ttlSeconds, "ttl");
+      return {
+        nextFetchAt: addSeconds(now, intervalSeconds),
+        intervalSeconds,
+        reason,
+      };
+    }
+
+    // 3b. Try syndication namespace hints
+    const syndicationSeconds = syndicationToSeconds(feedHints.syndication);
+    if (syndicationSeconds !== undefined) {
+      const { intervalSeconds, reason } = clampInterval(syndicationSeconds, "syndication");
+      return {
+        nextFetchAt: addSeconds(now, intervalSeconds),
+        intervalSeconds,
+        reason,
+      };
+    }
+  }
+
+  // 4. Default: 60 minutes
   return {
     nextFetchAt: addSeconds(now, DEFAULT_FETCH_INTERVAL_SECONDS),
     intervalSeconds: DEFAULT_FETCH_INTERVAL_SECONDS,
