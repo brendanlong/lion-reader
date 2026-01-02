@@ -175,9 +175,13 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       // Process entries (create new, update changed)
       const processResult = await processEntries(feed.id, parsedFeed, { fetchedAt: now });
 
-      // Calculate next fetch time based on cache headers
+      // Calculate next fetch time based on cache headers and feed hints
       const nextFetch = calculateNextFetch({
         cacheControl: result.cacheHeaders.cacheControl,
+        feedHints: {
+          ttlMinutes: parsedFeed.ttlMinutes,
+          syndication: parsedFeed.syndication,
+        },
         consecutiveFailures: 0, // Reset failures on success
         now,
       });

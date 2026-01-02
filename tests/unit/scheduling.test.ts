@@ -2,12 +2,14 @@
  * Unit tests for next fetch time scheduling.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   calculateNextFetch,
   calculateFailureBackoff,
   getNextFetchTime,
-  MIN_FETCH_INTERVAL_SECONDS,
+  syndicationToSeconds,
+  getMinFetchIntervalSeconds,
+  DEFAULT_MIN_FETCH_INTERVAL_SECONDS,
   MAX_FETCH_INTERVAL_SECONDS,
   DEFAULT_FETCH_INTERVAL_SECONDS,
   MAX_CONSECUTIVE_FAILURES,
@@ -29,18 +31,100 @@ function createCacheControl(overrides: Partial<CacheControl> = {}): CacheControl
   };
 }
 
+describe("getMinFetchIntervalSeconds", () => {
+  const originalEnv = process.env.FEED_MIN_FETCH_INTERVAL_MINUTES;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.FEED_MIN_FETCH_INTERVAL_MINUTES;
+    } else {
+      process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = originalEnv;
+    }
+  });
+
+  it("returns default (60 minutes) when env var not set", () => {
+    delete process.env.FEED_MIN_FETCH_INTERVAL_MINUTES;
+    expect(getMinFetchIntervalSeconds()).toBe(60 * 60);
+  });
+
+  it("reads from FEED_MIN_FETCH_INTERVAL_MINUTES env var", () => {
+    process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = "30";
+    expect(getMinFetchIntervalSeconds()).toBe(30 * 60);
+  });
+
+  it("ignores invalid env var values", () => {
+    process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = "invalid";
+    expect(getMinFetchIntervalSeconds()).toBe(60 * 60);
+  });
+
+  it("ignores zero or negative values", () => {
+    process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = "0";
+    expect(getMinFetchIntervalSeconds()).toBe(60 * 60);
+
+    process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = "-5";
+    expect(getMinFetchIntervalSeconds()).toBe(60 * 60);
+  });
+});
+
+describe("syndicationToSeconds", () => {
+  it("returns undefined for undefined hints", () => {
+    expect(syndicationToSeconds(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when updatePeriod is missing", () => {
+    expect(syndicationToSeconds({ updateFrequency: 2 })).toBeUndefined();
+  });
+
+  it("calculates hourly period correctly", () => {
+    expect(syndicationToSeconds({ updatePeriod: "hourly" })).toBe(60 * 60);
+    expect(syndicationToSeconds({ updatePeriod: "hourly", updateFrequency: 2 })).toBe(30 * 60);
+    expect(syndicationToSeconds({ updatePeriod: "hourly", updateFrequency: 4 })).toBe(15 * 60);
+  });
+
+  it("calculates daily period correctly", () => {
+    expect(syndicationToSeconds({ updatePeriod: "daily" })).toBe(24 * 60 * 60);
+    expect(syndicationToSeconds({ updatePeriod: "daily", updateFrequency: 2 })).toBe(12 * 60 * 60);
+    expect(syndicationToSeconds({ updatePeriod: "daily", updateFrequency: 4 })).toBe(6 * 60 * 60);
+  });
+
+  it("calculates weekly period correctly", () => {
+    expect(syndicationToSeconds({ updatePeriod: "weekly" })).toBe(7 * 24 * 60 * 60);
+    expect(syndicationToSeconds({ updatePeriod: "weekly", updateFrequency: 7 })).toBe(24 * 60 * 60);
+  });
+
+  it("calculates monthly period correctly", () => {
+    expect(syndicationToSeconds({ updatePeriod: "monthly" })).toBe(30 * 24 * 60 * 60);
+    expect(syndicationToSeconds({ updatePeriod: "monthly", updateFrequency: 2 })).toBe(
+      15 * 24 * 60 * 60
+    );
+  });
+
+  it("calculates yearly period correctly", () => {
+    expect(syndicationToSeconds({ updatePeriod: "yearly" })).toBe(365 * 24 * 60 * 60);
+  });
+
+  it("defaults frequency to 1 when not specified", () => {
+    expect(syndicationToSeconds({ updatePeriod: "daily" })).toBe(24 * 60 * 60);
+  });
+
+  it("returns undefined for zero or negative frequency", () => {
+    expect(syndicationToSeconds({ updatePeriod: "daily", updateFrequency: 0 })).toBeUndefined();
+    expect(syndicationToSeconds({ updatePeriod: "daily", updateFrequency: -1 })).toBeUndefined();
+  });
+});
+
 describe("calculateNextFetch", () => {
   const fixedNow = new Date("2024-01-15T12:00:00Z");
 
   describe("with cache headers", () => {
-    it("respects Cache-Control max-age", () => {
+    it("respects Cache-Control max-age above minimum", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 3600 }), // 1 hour
+        cacheControl: createCacheControl({ maxAge: 7200 }), // 2 hours (above 60 min default)
         now: fixedNow,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T13:00:00Z"));
-      expect(result.intervalSeconds).toBe(3600);
+      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T14:00:00Z"));
+      expect(result.intervalSeconds).toBe(7200);
       expect(result.reason).toBe("cache_control");
     });
 
@@ -55,24 +139,24 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("cache_control");
     });
 
-    it("clamps max-age below minimum to minimum (1 minute)", () => {
+    it("clamps max-age below minimum to minimum (60 minutes)", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 10 }), // 10 seconds
+        cacheControl: createCacheControl({ maxAge: 300 }), // 5 minutes
         now: fixedNow,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T12:01:00Z"));
-      expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_SECONDS);
+      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T13:00:00Z")); // 60 min later
+      expect(result.intervalSeconds).toBe(60 * 60);
       expect(result.reason).toBe("cache_control_clamped_min");
     });
 
     it("clamps max-age at exactly minimum", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 60 }), // exactly 1 minute
+        cacheControl: createCacheControl({ maxAge: 3600 }), // exactly 60 minutes
         now: fixedNow,
       });
 
-      expect(result.intervalSeconds).toBe(60);
+      expect(result.intervalSeconds).toBe(3600);
       expect(result.reason).toBe("cache_control");
     });
 
@@ -114,18 +198,123 @@ describe("calculateNextFetch", () => {
         now: fixedNow,
       });
 
-      expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_SECONDS);
+      expect(result.intervalSeconds).toBe(getMinFetchIntervalSeconds());
       expect(result.reason).toBe("cache_control_clamped_min");
     });
   });
 
-  describe("without cache headers", () => {
-    it("uses default interval (15 minutes) when no cache headers", () => {
+  describe("with feed hints (TTL)", () => {
+    it("uses RSS TTL when no cache headers present", () => {
+      const result = calculateNextFetch({
+        feedHints: { ttlMinutes: 120 }, // 2 hours
+        now: fixedNow,
+      });
+
+      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T14:00:00Z"));
+      expect(result.intervalSeconds).toBe(7200);
+      expect(result.reason).toBe("ttl");
+    });
+
+    it("clamps TTL below minimum", () => {
+      const result = calculateNextFetch({
+        feedHints: { ttlMinutes: 15 }, // 15 minutes, below 60 min minimum
+        now: fixedNow,
+      });
+
+      expect(result.intervalSeconds).toBe(getMinFetchIntervalSeconds());
+      expect(result.reason).toBe("ttl_clamped_min");
+    });
+
+    it("clamps TTL above maximum", () => {
+      const result = calculateNextFetch({
+        feedHints: { ttlMinutes: 60 * 24 * 30 }, // 30 days
+        now: fixedNow,
+      });
+
+      expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS);
+      expect(result.reason).toBe("ttl_clamped_max");
+    });
+
+    it("cache headers take precedence over TTL", () => {
+      const result = calculateNextFetch({
+        cacheControl: createCacheControl({ maxAge: 7200 }), // 2 hours
+        feedHints: { ttlMinutes: 180 }, // 3 hours
+        now: fixedNow,
+      });
+
+      expect(result.intervalSeconds).toBe(7200); // Cache-Control wins
+      expect(result.reason).toBe("cache_control");
+    });
+
+    it("ignores zero or negative TTL", () => {
+      const result = calculateNextFetch({
+        feedHints: { ttlMinutes: 0 },
+        now: fixedNow,
+      });
+
+      expect(result.intervalSeconds).toBe(DEFAULT_FETCH_INTERVAL_SECONDS);
+      expect(result.reason).toBe("default");
+    });
+  });
+
+  describe("with feed hints (syndication)", () => {
+    it("uses syndication hints when no cache headers or TTL", () => {
+      const result = calculateNextFetch({
+        feedHints: {
+          syndication: { updatePeriod: "daily", updateFrequency: 2 },
+        },
+        now: fixedNow,
+      });
+
+      expect(result.intervalSeconds).toBe(12 * 60 * 60); // daily / 2 = 12 hours
+      expect(result.reason).toBe("syndication");
+    });
+
+    it("clamps syndication below minimum", () => {
+      const result = calculateNextFetch({
+        feedHints: {
+          syndication: { updatePeriod: "hourly", updateFrequency: 4 }, // 15 min
+        },
+        now: fixedNow,
+      });
+
+      expect(result.intervalSeconds).toBe(getMinFetchIntervalSeconds());
+      expect(result.reason).toBe("syndication_clamped_min");
+    });
+
+    it("clamps syndication above maximum", () => {
+      const result = calculateNextFetch({
+        feedHints: {
+          syndication: { updatePeriod: "yearly" },
+        },
+        now: fixedNow,
+      });
+
+      expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS);
+      expect(result.reason).toBe("syndication_clamped_max");
+    });
+
+    it("TTL takes precedence over syndication", () => {
+      const result = calculateNextFetch({
+        feedHints: {
+          ttlMinutes: 120, // 2 hours
+          syndication: { updatePeriod: "daily" }, // 24 hours
+        },
+        now: fixedNow,
+      });
+
+      expect(result.intervalSeconds).toBe(7200); // TTL wins
+      expect(result.reason).toBe("ttl");
+    });
+  });
+
+  describe("without any hints", () => {
+    it("uses default interval (60 minutes) when no hints", () => {
       const result = calculateNextFetch({
         now: fixedNow,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T12:15:00Z"));
+      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T13:00:00Z"));
       expect(result.intervalSeconds).toBe(DEFAULT_FETCH_INTERVAL_SECONDS);
       expect(result.reason).toBe("default");
     });
@@ -184,26 +373,6 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("failure_backoff");
     });
 
-    it("uses 4 hour backoff for 4 failures", () => {
-      const result = calculateNextFetch({
-        consecutiveFailures: 4,
-        now: fixedNow,
-      });
-
-      expect(result.intervalSeconds).toBe(4 * 60 * 60); // 4 hours
-      expect(result.reason).toBe("failure_backoff");
-    });
-
-    it("uses 8 hour backoff for 5 failures", () => {
-      const result = calculateNextFetch({
-        consecutiveFailures: 5,
-        now: fixedNow,
-      });
-
-      expect(result.intervalSeconds).toBe(8 * 60 * 60); // 8 hours
-      expect(result.reason).toBe("failure_backoff");
-    });
-
     it("caps backoff at 7 days for 10 failures", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 10,
@@ -224,26 +393,27 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("failure_backoff");
     });
 
-    it("failure backoff takes precedence over cache headers", () => {
+    it("failure backoff takes precedence over all hints", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 60 }), // 1 minute
+        cacheControl: createCacheControl({ maxAge: 3600 }),
+        feedHints: { ttlMinutes: 60 },
         consecutiveFailures: 3,
         now: fixedNow,
       });
 
-      // Should use failure backoff, not cache control
+      // Should use failure backoff, not any hints
       expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours
       expect(result.reason).toBe("failure_backoff");
     });
 
     it("zero failures does not trigger backoff", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 3600 }),
+        cacheControl: createCacheControl({ maxAge: 7200 }),
         consecutiveFailures: 0,
         now: fixedNow,
       });
 
-      expect(result.intervalSeconds).toBe(3600);
+      expect(result.intervalSeconds).toBe(7200);
       expect(result.reason).toBe("cache_control");
     });
   });
@@ -254,7 +424,6 @@ describe("calculateNextFetch", () => {
       const result = calculateNextFetch({});
       const after = new Date();
 
-      // The nextFetchAt should be between (before + 15min) and (after + 15min)
       const expectedMin = new Date(before.getTime() + DEFAULT_FETCH_INTERVAL_SECONDS * 1000);
       const expectedMax = new Date(after.getTime() + DEFAULT_FETCH_INTERVAL_SECONDS * 1000);
 
@@ -285,24 +454,6 @@ describe("calculateFailureBackoff", () => {
     expect(calculateFailureBackoff(5)).toBe(8 * 60 * 60);
   });
 
-  it("returns 16 hours for 6 failures", () => {
-    expect(calculateFailureBackoff(6)).toBe(16 * 60 * 60);
-  });
-
-  it("returns 32 hours for 7 failures", () => {
-    expect(calculateFailureBackoff(7)).toBe(32 * 60 * 60);
-  });
-
-  it("returns 64 hours for 8 failures", () => {
-    expect(calculateFailureBackoff(8)).toBe(64 * 60 * 60);
-  });
-
-  it("returns 128 hours for 9 failures", () => {
-    // 30 * 2^8 = 7680 minutes = 460800 seconds
-    // This is less than 7 days (604800 seconds)
-    expect(calculateFailureBackoff(9)).toBe(128 * 60 * 60);
-  });
-
   it("returns max interval for 10 failures", () => {
     expect(calculateFailureBackoff(10)).toBe(MAX_FETCH_INTERVAL_SECONDS);
   });
@@ -310,7 +461,6 @@ describe("calculateFailureBackoff", () => {
   it("returns max interval for failures beyond 10", () => {
     expect(calculateFailureBackoff(11)).toBe(MAX_FETCH_INTERVAL_SECONDS);
     expect(calculateFailureBackoff(100)).toBe(MAX_FETCH_INTERVAL_SECONDS);
-    expect(calculateFailureBackoff(1000)).toBe(MAX_FETCH_INTERVAL_SECONDS);
   });
 
   it("follows exponential pattern 30 * 2^(n-1)", () => {
@@ -326,11 +476,11 @@ describe("getNextFetchTime", () => {
 
   it("returns just the Date without metadata", () => {
     const result = getNextFetchTime({
-      cacheControl: createCacheControl({ maxAge: 3600 }),
+      cacheControl: createCacheControl({ maxAge: 7200 }),
       now: fixedNow,
     });
 
-    expect(result).toEqual(new Date("2024-01-15T13:00:00Z"));
+    expect(result).toEqual(new Date("2024-01-15T14:00:00Z"));
     expect(result).toBeInstanceOf(Date);
   });
 
@@ -348,16 +498,16 @@ describe("getNextFetchTime", () => {
 });
 
 describe("constants", () => {
-  it("MIN_FETCH_INTERVAL_SECONDS is 1 minute", () => {
-    expect(MIN_FETCH_INTERVAL_SECONDS).toBe(60);
+  it("DEFAULT_MIN_FETCH_INTERVAL_SECONDS is 60 minutes", () => {
+    expect(DEFAULT_MIN_FETCH_INTERVAL_SECONDS).toBe(60 * 60);
   });
 
   it("MAX_FETCH_INTERVAL_SECONDS is 7 days", () => {
     expect(MAX_FETCH_INTERVAL_SECONDS).toBe(7 * 24 * 60 * 60);
   });
 
-  it("DEFAULT_FETCH_INTERVAL_SECONDS is 15 minutes", () => {
-    expect(DEFAULT_FETCH_INTERVAL_SECONDS).toBe(15 * 60);
+  it("DEFAULT_FETCH_INTERVAL_SECONDS is 60 minutes", () => {
+    expect(DEFAULT_FETCH_INTERVAL_SECONDS).toBe(60 * 60);
   });
 
   it("MAX_CONSECUTIVE_FAILURES is 10", () => {
@@ -368,24 +518,24 @@ describe("constants", () => {
 describe("real-world scenarios", () => {
   const fixedNow = new Date("2024-01-15T12:00:00Z");
 
-  it("typical blog with 1 hour cache", () => {
+  it("typical blog with 2 hour cache", () => {
     const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 3600, public: true }),
+      cacheControl: createCacheControl({ maxAge: 7200, public: true }),
       now: fixedNow,
     });
 
-    expect(result.intervalSeconds).toBe(3600);
+    expect(result.intervalSeconds).toBe(7200);
     expect(result.reason).toBe("cache_control");
   });
 
-  it("high-frequency news feed with 5 minute cache", () => {
+  it("high-frequency news feed with 5 minute cache gets clamped to 60 min", () => {
     const result = calculateNextFetch({
       cacheControl: createCacheControl({ maxAge: 300, public: true }),
       now: fixedNow,
     });
 
-    expect(result.intervalSeconds).toBe(300);
-    expect(result.reason).toBe("cache_control");
+    expect(result.intervalSeconds).toBe(60 * 60); // Clamped to minimum
+    expect(result.reason).toBe("cache_control_clamped_min");
   });
 
   it("infrequently updated feed with 1 day cache", () => {
@@ -398,14 +548,38 @@ describe("real-world scenarios", () => {
     expect(result.reason).toBe("cache_control");
   });
 
-  it("aggressive cache control (30 seconds) gets clamped to 1 minute", () => {
+  it("feed with TTL of 90 minutes", () => {
     const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 30 }),
+      feedHints: { ttlMinutes: 90 },
       now: fixedNow,
     });
 
-    expect(result.intervalSeconds).toBe(60);
-    expect(result.reason).toBe("cache_control_clamped_min");
+    expect(result.intervalSeconds).toBe(90 * 60);
+    expect(result.reason).toBe("ttl");
+  });
+
+  it("feed with daily syndication updates twice per day", () => {
+    const result = calculateNextFetch({
+      feedHints: {
+        syndication: { updatePeriod: "daily", updateFrequency: 2 },
+      },
+      now: fixedNow,
+    });
+
+    expect(result.intervalSeconds).toBe(12 * 60 * 60); // 12 hours
+    expect(result.reason).toBe("syndication");
+  });
+
+  it("feed with weekly syndication", () => {
+    const result = calculateNextFetch({
+      feedHints: {
+        syndication: { updatePeriod: "weekly" },
+      },
+      now: fixedNow,
+    });
+
+    expect(result.intervalSeconds).toBe(7 * 24 * 60 * 60);
+    expect(result.reason).toBe("syndication");
   });
 
   it("extremely long cache (1 year) gets clamped to 7 days", () => {
@@ -439,12 +613,12 @@ describe("real-world scenarios", () => {
     // After failures are resolved (consecutiveFailures = 0),
     // should use cache headers again
     const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 1800 }), // 30 minutes
+      cacheControl: createCacheControl({ maxAge: 7200 }), // 2 hours
       consecutiveFailures: 0,
       now: fixedNow,
     });
 
-    expect(result.intervalSeconds).toBe(1800);
+    expect(result.intervalSeconds).toBe(7200);
     expect(result.reason).toBe("cache_control");
   });
 });

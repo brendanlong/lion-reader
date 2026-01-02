@@ -4,7 +4,7 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
-import type { ParsedFeed, ParsedEntry } from "./types";
+import type { ParsedFeed, ParsedEntry, SyndicationHints } from "./types";
 
 /**
  * Options for configuring the XML parser.
@@ -93,6 +93,10 @@ interface AtomFeed {
   logo?: string | { "#text"?: string; __cdata?: string };
   author?: AtomPerson | AtomPerson[];
   entry?: AtomEntry | AtomEntry[];
+  /** Syndication namespace: update period (hourly, daily, weekly, monthly, yearly) */
+  "sy:updatePeriod"?: string | { "#text"?: string };
+  /** Syndication namespace: update frequency (number of times per period) */
+  "sy:updateFrequency"?: string | number | { "#text"?: string | number };
 }
 
 /**
@@ -220,6 +224,69 @@ function extractPersonName(person: AtomPerson | AtomPerson[] | undefined): strin
   }
 
   return extractText(firstPerson.name);
+}
+
+/**
+ * Valid update period values from the Syndication namespace.
+ */
+const VALID_UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
+type UpdatePeriod = (typeof VALID_UPDATE_PERIODS)[number];
+
+/**
+ * Extracts syndication namespace hints from Atom feed.
+ */
+function extractSyndicationHints(feed: AtomFeed): SyndicationHints | undefined {
+  const periodRaw = feed["sy:updatePeriod"];
+  const frequencyRaw = feed["sy:updateFrequency"];
+
+  // If neither is present, return undefined
+  if (periodRaw === undefined && frequencyRaw === undefined) {
+    return undefined;
+  }
+
+  const hints: SyndicationHints = {};
+
+  // Extract period
+  if (periodRaw !== undefined) {
+    let periodValue: string | undefined;
+    if (typeof periodRaw === "string") {
+      periodValue = periodRaw;
+    } else if (periodRaw["#text"] !== undefined) {
+      periodValue = periodRaw["#text"];
+    }
+
+    if (periodValue) {
+      const normalized = periodValue.toLowerCase().trim() as UpdatePeriod;
+      if (VALID_UPDATE_PERIODS.includes(normalized)) {
+        hints.updatePeriod = normalized;
+      }
+    }
+  }
+
+  // Extract frequency
+  if (frequencyRaw !== undefined) {
+    let freqValue: string | number | undefined;
+    if (typeof frequencyRaw === "string" || typeof frequencyRaw === "number") {
+      freqValue = frequencyRaw;
+    } else if (frequencyRaw["#text"] !== undefined) {
+      freqValue = frequencyRaw["#text"];
+    }
+
+    if (freqValue !== undefined) {
+      const parsed =
+        typeof freqValue === "number" ? freqValue : parseInt(String(freqValue).trim(), 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        hints.updateFrequency = parsed;
+      }
+    }
+  }
+
+  // Only return if we got at least one valid hint
+  if (hints.updatePeriod !== undefined || hints.updateFrequency !== undefined) {
+    return hints;
+  }
+
+  return undefined;
 }
 
 /**
@@ -363,5 +430,6 @@ export function parseAtomFeed(xml: string): ParsedFeed {
     items: entries.map(parseAtomEntry),
     hubUrl: extractLinkByRel(feed.link, "hub"),
     selfUrl: extractLinkByRel(feed.link, "self"),
+    syndication: extractSyndicationHints(feed),
   };
 }

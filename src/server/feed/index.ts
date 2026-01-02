@@ -3,7 +3,7 @@
  * Exports types and parsers for RSS, Atom, and JSON Feed formats.
  */
 
-export type { ParsedFeed, ParsedEntry } from "./types";
+export type { ParsedFeed, ParsedEntry, SyndicationHints } from "./types";
 export { parseRssFeed, parseRssDate } from "./rss-parser";
 export { parseAtomFeed } from "./atom-parser";
 export {
@@ -46,11 +46,14 @@ export {
   calculateNextFetch,
   calculateFailureBackoff,
   getNextFetchTime,
-  MIN_FETCH_INTERVAL_SECONDS,
+  syndicationToSeconds,
+  getMinFetchIntervalSeconds,
+  DEFAULT_MIN_FETCH_INTERVAL_SECONDS,
   MAX_FETCH_INTERVAL_SECONDS,
   DEFAULT_FETCH_INTERVAL_SECONDS,
   MAX_CONSECUTIVE_FAILURES,
   type CalculateNextFetchOptions,
+  type FeedHints,
   type NextFetchResult,
   type NextFetchReason,
 } from "./scheduling";
