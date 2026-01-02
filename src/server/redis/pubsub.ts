@@ -19,6 +19,7 @@ export type FeedEventType = "new_entry" | "entry_updated";
  */
 export type UserEventType =
   | "subscription_created"
+  | "subscription_deleted"
   | "saved_article_created"
   | "import_progress"
   | "import_completed";
@@ -60,6 +61,20 @@ export type FeedEvent = NewEntryEvent | EntryUpdatedEvent;
  */
 export interface SubscriptionCreatedEvent {
   type: "subscription_created";
+  userId: string;
+  feedId: string;
+  subscriptionId: string;
+  timestamp: string;
+}
+
+/**
+ * Event published when a user unsubscribes from a feed.
+ * This is sent to all of the user's active SSE connections so they can:
+ * 1. Remove the feedId from their filter set
+ * 2. Refresh the subscriptions list
+ */
+export interface SubscriptionDeletedEvent {
+  type: "subscription_deleted";
   userId: string;
   feedId: string;
   subscriptionId: string;
@@ -118,6 +133,7 @@ export interface ImportCompletedEvent {
  */
 export type UserEvent =
   | SubscriptionCreatedEvent
+  | SubscriptionDeletedEvent
   | SavedArticleCreatedEvent
   | ImportProgressEvent
   | ImportCompletedEvent;
@@ -258,6 +274,34 @@ export async function publishSubscriptionCreated(
   const client = getPublisherClient();
   const event: SubscriptionCreatedEvent = {
     type: "subscription_created",
+    userId,
+    feedId,
+    subscriptionId,
+    timestamp: new Date().toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes a subscription_deleted event when a user unsubscribes from a feed.
+ * This notifies all of the user's SSE connections to:
+ * 1. Remove the feedId from their filter set (so they stop receiving new_entry events for it)
+ * 2. Refresh the subscriptions list in the UI
+ *
+ * @param userId - The ID of the user who unsubscribed
+ * @param feedId - The ID of the feed they unsubscribed from
+ * @param subscriptionId - The ID of the subscription that was deleted
+ * @returns The number of subscribers that received the message
+ */
+export async function publishSubscriptionDeleted(
+  userId: string,
+  feedId: string,
+  subscriptionId: string
+): Promise<number> {
+  const client = getPublisherClient();
+  const event: SubscriptionDeletedEvent = {
+    type: "subscription_deleted",
     userId,
     feedId,
     subscriptionId,
@@ -442,6 +486,22 @@ export function parseUserEvent(message: string): UserEvent | null {
       ) {
         return {
           type: "subscription_created",
+          userId: event.userId,
+          feedId: event.feedId,
+          subscriptionId: event.subscriptionId,
+          timestamp: event.timestamp,
+        };
+      }
+
+      if (
+        event.type === "subscription_deleted" &&
+        typeof event.userId === "string" &&
+        typeof event.feedId === "string" &&
+        typeof event.subscriptionId === "string" &&
+        typeof event.timestamp === "string"
+      ) {
+        return {
+          type: "subscription_deleted",
           userId: event.userId,
           feedId: event.feedId,
           subscriptionId: event.subscriptionId,
