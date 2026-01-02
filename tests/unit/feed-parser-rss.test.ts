@@ -415,6 +415,157 @@ describe("parseRssFeed", () => {
       expect(feed.items[0].pubDate).toEqual(new Date("2015-06-15T10:30:00Z"));
     });
   });
+
+  describe("TTL element", () => {
+    it("parses ttl element as minutes", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Feed with TTL</title>
+            <ttl>60</ttl>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.ttlMinutes).toBe(60);
+    });
+
+    it("handles missing ttl element", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Feed without TTL</title>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.ttlMinutes).toBeUndefined();
+    });
+
+    it("ignores invalid ttl values", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Feed with invalid TTL</title>
+            <ttl>not-a-number</ttl>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.ttlMinutes).toBeUndefined();
+    });
+
+    it("ignores zero or negative ttl values", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Feed with zero TTL</title>
+            <ttl>0</ttl>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.ttlMinutes).toBeUndefined();
+    });
+  });
+
+  describe("Syndication namespace", () => {
+    it("parses sy:updatePeriod and sy:updateFrequency", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">
+          <channel>
+            <title>Syndication Feed</title>
+            <sy:updatePeriod>daily</sy:updatePeriod>
+            <sy:updateFrequency>2</sy:updateFrequency>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.syndication).toEqual({
+        updatePeriod: "daily",
+        updateFrequency: 2,
+      });
+    });
+
+    it("parses sy:updatePeriod alone", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">
+          <channel>
+            <title>Syndication Feed</title>
+            <sy:updatePeriod>weekly</sy:updatePeriod>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.syndication).toEqual({
+        updatePeriod: "weekly",
+      });
+    });
+
+    it("handles all valid update periods", () => {
+      const periods = ["hourly", "daily", "weekly", "monthly", "yearly"];
+
+      for (const period of periods) {
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+          <rss version="2.0" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">
+            <channel>
+              <title>Syndication Feed</title>
+              <sy:updatePeriod>${period}</sy:updatePeriod>
+            </channel>
+          </rss>`;
+
+        const feed = parseRssFeed(xml);
+        expect(feed.syndication?.updatePeriod).toBe(period);
+      }
+    });
+
+    it("normalizes updatePeriod to lowercase", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">
+          <channel>
+            <title>Syndication Feed</title>
+            <sy:updatePeriod>DAILY</sy:updatePeriod>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.syndication?.updatePeriod).toBe("daily");
+    });
+
+    it("ignores invalid update periods", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">
+          <channel>
+            <title>Syndication Feed</title>
+            <sy:updatePeriod>biweekly</sy:updatePeriod>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.syndication).toBeUndefined();
+    });
+
+    it("handles missing syndication elements", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>No Syndication Feed</title>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.syndication).toBeUndefined();
+    });
+  });
 });
 
 describe("parseRssDate", () => {

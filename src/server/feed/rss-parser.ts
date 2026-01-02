@@ -4,7 +4,7 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
-import type { ParsedFeed, ParsedEntry } from "./types";
+import type { ParsedFeed, ParsedEntry, SyndicationHints } from "./types";
 
 /**
  * Options for configuring the XML parser.
@@ -38,6 +38,12 @@ interface RssChannel {
   };
   "atom:link"?: { "@_rel"?: string; "@_href"?: string } | { "@_rel"?: string; "@_href"?: string }[];
   item?: RssItem | RssItem[];
+  /** RSS 2.0 TTL element - time to live in minutes */
+  ttl?: string | number | { "#text"?: string | number };
+  /** Syndication namespace: update period (hourly, daily, weekly, monthly, yearly) */
+  "sy:updatePeriod"?: string | { "#text"?: string };
+  /** Syndication namespace: update frequency (number of times per period) */
+  "sy:updateFrequency"?: string | number | { "#text"?: string | number };
 }
 
 /**
@@ -235,6 +241,99 @@ export function parseRssDate(dateString: string | undefined): Date | undefined {
 }
 
 /**
+ * Extracts TTL (time to live) value from RSS channel.
+ * Returns the value in minutes, or undefined if not present/invalid.
+ */
+function extractTtl(
+  ttl: string | number | { "#text"?: string | number } | undefined
+): number | undefined {
+  if (ttl === undefined || ttl === null) {
+    return undefined;
+  }
+
+  let value: string | number | undefined;
+  if (typeof ttl === "string" || typeof ttl === "number") {
+    value = ttl;
+  } else if (ttl["#text"] !== undefined) {
+    value = ttl["#text"];
+  }
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = typeof value === "number" ? value : parseInt(String(value).trim(), 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+/**
+ * Valid update period values from the Syndication namespace.
+ */
+const VALID_UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
+type UpdatePeriod = (typeof VALID_UPDATE_PERIODS)[number];
+
+/**
+ * Extracts syndication namespace hints from RSS channel.
+ */
+function extractSyndicationHints(channel: RssChannel): SyndicationHints | undefined {
+  const periodRaw = channel["sy:updatePeriod"];
+  const frequencyRaw = channel["sy:updateFrequency"];
+
+  // If neither is present, return undefined
+  if (periodRaw === undefined && frequencyRaw === undefined) {
+    return undefined;
+  }
+
+  const hints: SyndicationHints = {};
+
+  // Extract period
+  if (periodRaw !== undefined) {
+    let periodValue: string | undefined;
+    if (typeof periodRaw === "string") {
+      periodValue = periodRaw;
+    } else if (periodRaw["#text"] !== undefined) {
+      periodValue = periodRaw["#text"];
+    }
+
+    if (periodValue) {
+      const normalized = periodValue.toLowerCase().trim() as UpdatePeriod;
+      if (VALID_UPDATE_PERIODS.includes(normalized)) {
+        hints.updatePeriod = normalized;
+      }
+    }
+  }
+
+  // Extract frequency
+  if (frequencyRaw !== undefined) {
+    let freqValue: string | number | undefined;
+    if (typeof frequencyRaw === "string" || typeof frequencyRaw === "number") {
+      freqValue = frequencyRaw;
+    } else if (frequencyRaw["#text"] !== undefined) {
+      freqValue = frequencyRaw["#text"];
+    }
+
+    if (freqValue !== undefined) {
+      const parsed =
+        typeof freqValue === "number" ? freqValue : parseInt(String(freqValue).trim(), 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        hints.updateFrequency = parsed;
+      }
+    }
+  }
+
+  // Only return if we got at least one valid hint
+  if (hints.updatePeriod !== undefined || hints.updateFrequency !== undefined) {
+    return hints;
+  }
+
+  return undefined;
+}
+
+/**
  * Extracts WebSub hub URL from atom:link elements.
  */
 function extractHubUrl(
@@ -341,5 +440,7 @@ export function parseRssFeed(xml: string): ParsedFeed {
     items: items.map(parseRssItem),
     hubUrl: extractHubUrl(channel["atom:link"]),
     selfUrl: extractSelfUrl(channel["atom:link"]),
+    ttlMinutes: extractTtl(channel.ttl),
+    syndication: extractSyndicationHints(channel),
   };
 }
