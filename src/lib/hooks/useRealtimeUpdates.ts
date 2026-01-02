@@ -67,10 +67,21 @@ interface FeedEventData {
 }
 
 /**
- * Event data structure from the SSE endpoint for subscription events.
+ * Event data structure from the SSE endpoint for subscription created events.
  */
 interface SubscriptionCreatedEventData {
   type: "subscription_created";
+  userId: string;
+  feedId: string;
+  subscriptionId: string;
+  timestamp: string;
+}
+
+/**
+ * Event data structure from the SSE endpoint for subscription deleted events.
+ */
+interface SubscriptionDeletedEventData {
+  type: "subscription_deleted";
   userId: string;
   feedId: string;
   subscriptionId: string;
@@ -119,6 +130,7 @@ interface ImportCompletedEventData {
 
 type UserEventData =
   | SubscriptionCreatedEventData
+  | SubscriptionDeletedEventData
   | SavedArticleCreatedEventData
   | ImportProgressEventData
   | ImportCompletedEventData;
@@ -155,6 +167,22 @@ function parseEventData(data: string): SSEEventData | null {
     // Handle user events - subscription_created
     if (
       event.type === "subscription_created" &&
+      typeof event.userId === "string" &&
+      typeof event.feedId === "string" &&
+      typeof event.subscriptionId === "string"
+    ) {
+      return {
+        type: event.type,
+        userId: event.userId,
+        feedId: event.feedId,
+        subscriptionId: event.subscriptionId,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+      };
+    }
+
+    // Handle user events - subscription_deleted
+    if (
+      event.type === "subscription_deleted" &&
       typeof event.userId === "string" &&
       typeof event.feedId === "string" &&
       typeof event.subscriptionId === "string"
@@ -329,6 +357,13 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         // This handles the race condition where new_entry events arrive before
         // the subscription_created event.
         utils.entries.list.invalidate();
+      } else if (data.type === "subscription_deleted") {
+        // A subscription was deleted (possibly from another tab/device)
+        // Invalidate subscriptions to remove the feed from the sidebar
+        utils.subscriptions.list.invalidate();
+
+        // Also invalidate entries to remove entries from the deleted feed
+        utils.entries.list.invalidate();
       } else if (data.type === "saved_article_created") {
         // A saved article was created (from bookmarklet in another window)
         // Invalidate the saved articles list to show the new article
@@ -444,6 +479,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         eventSource.addEventListener("new_entry", handleEvent);
         eventSource.addEventListener("entry_updated", handleEvent);
         eventSource.addEventListener("subscription_created", handleEvent);
+        eventSource.addEventListener("subscription_deleted", handleEvent);
         eventSource.addEventListener("saved_article_created", handleEvent);
         eventSource.addEventListener("import_progress", handleEvent);
         eventSource.addEventListener("import_completed", handleEvent);

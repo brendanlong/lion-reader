@@ -8,6 +8,7 @@
  * - new_entry: A new entry was added to a subscribed feed
  * - entry_updated: An existing entry's content was updated
  * - subscription_created: User subscribed to a new feed
+ * - subscription_deleted: User unsubscribed from a feed
  * - saved_article_created: User saved a new article via bookmarklet
  *
  * Heartbeat: Sent every 30 seconds as a comment (: heartbeat)
@@ -224,6 +225,21 @@ export async function GET(req: Request): Promise<Response> {
         });
       }
 
+      /**
+       * Unsubscribes from a feed's event channel
+       */
+      function unsubscribeFromFeed(feedId: string): void {
+        if (isCleanedUp || !subscriber) return;
+
+        const channel = getFeedEventsChannel(feedId);
+        if (!subscribedFeedChannels.has(channel)) return;
+
+        subscribedFeedChannels.delete(channel);
+        subscriber.unsubscribe(channel).catch((err) => {
+          console.error(`Failed to unsubscribe from feed channel ${feedId}:`, err);
+        });
+      }
+
       // Set up abort handler for client disconnection
       req.signal.addEventListener("abort", () => {
         cleanup();
@@ -264,7 +280,7 @@ export async function GET(req: Request): Promise<Response> {
 
         // Handle incoming messages
         subscriber.on("message", (channel: string, message: string) => {
-          // Handle user events (subscription_created, saved_article_created)
+          // Handle user events (subscription_created, subscription_deleted, saved_article_created)
           if (channel === userEventsChannel) {
             const event = parseUserEvent(message);
             if (!event) return;
@@ -272,6 +288,13 @@ export async function GET(req: Request): Promise<Response> {
             if (event.type === "subscription_created") {
               // Subscribe to the new feed's channel
               subscribeToFeed(event.feedId);
+
+              // Forward the event to the client
+              send(formatSSEUserEvent(event));
+              trackSSEEventSent(event.type);
+            } else if (event.type === "subscription_deleted") {
+              // Unsubscribe from the feed's channel
+              unsubscribeFromFeed(event.feedId);
 
               // Forward the event to the client
               send(formatSSEUserEvent(event));

@@ -30,7 +30,7 @@ import {
   syncFeedJobEnabled,
   createJob,
 } from "@/server/jobs/queue";
-import { publishSubscriptionCreated } from "@/server/redis/pubsub";
+import { publishSubscriptionCreated, publishSubscriptionDeleted } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import type { FeedType } from "@/server/feed";
@@ -970,6 +970,15 @@ export const subscriptionsRouter = createTRPCRouter({
           updatedAt: now,
         })
         .where(eq(subscriptions.id, input.id));
+
+      // Publish subscription_deleted event so other tabs/windows can update
+      publishSubscriptionDeleted(userId, feed.id, input.id).catch((err) => {
+        logger.error("Failed to publish subscription_deleted event", {
+          err,
+          userId,
+          feedId: feed.id,
+        });
+      });
 
       // Sync job enabled state - if this was the last subscriber, job will be disabled
       const syncResult = await syncFeedJobEnabled(feed.id);
