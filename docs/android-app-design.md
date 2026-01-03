@@ -1596,6 +1596,16 @@ class GoogleAuthManager(
 
 ## V2: Audio Narration
 
+Audio narration allows users to listen to articles using Android's built-in text-to-speech.
+Content is converted from HTML to plain text on-device, enabling fully offline narration.
+
+### Design Principles
+
+1. **Offline-first**: Client-side HTML-to-text conversion works without network
+2. **Zero cost**: Android TTS is built-in, no API fees
+3. **Background playback**: Foreground service with MediaSession for system integration
+4. **Paragraph navigation**: Skip forward/back navigates by paragraph (not article)
+
 ### Architecture
 
 ```
@@ -1603,44 +1613,138 @@ class GoogleAuthManager(
 │                    Narration Architecture                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  Entry Content                                                   │
+│  Entry Content (HTML)                                            │
 │       │                                                          │
 │       ▼                                                          │
-│  ┌─────────────┐     ┌─────────────┐                            │
-│  │ Narration   │────▶│   Server    │  (LLM preprocessing)       │
-│  │ Repository  │◀────│   API       │                            │
-│  └──────┬──────┘     └─────────────┘                            │
-│         │                                                        │
-│         ▼                                                        │
-│  ┌─────────────┐     ┌─────────────┐                            │
-│  │ Narration   │────▶│ MediaPlayer │  (TTS or audio file)       │
-│  │ Service     │◀────│   /TTS      │                            │
-│  │ (Foreground)│     └─────────────┘                            │
-│  └──────┬──────┘                                                │
-│         │                                                        │
-│         ▼                                                        │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │              MediaSession / Notification                 │    │
+│  │ HtmlToTextConverter (Jsoup)                              │    │
+│  │ - Extracts text from block elements (p, h1-h6, li, etc.) │    │
+│  │ - Handles images (alt text), code blocks, blockquotes    │    │
+│  │ - Returns List<String> of paragraphs                     │    │
+│  └──────────────────────────┬──────────────────────────────┘    │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │ NarrationService (Foreground Service)                    │    │
+│  │ - Android TextToSpeech engine                            │    │
+│  │ - Speaks paragraphs sequentially                         │    │
+│  │ - Auto-advances on paragraph completion                  │    │
+│  └──────────────────────────┬──────────────────────────────┘    │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │ MediaSession + Notification                              │    │
 │  │  ┌─────┐  ┌───────────────────────┐  ┌─────┐            │    │
 │  │  │ ⏮️  │  │   Article Title        │  │ ⏭️  │            │    │
 │  │  │ ⏯️  │  │   Feed Name           │  │     │            │    │
 │  │  └─────┘  └───────────────────────┘  └─────┘            │    │
+│  │                                                          │    │
+│  │  Skip buttons = paragraph navigation (not article)       │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### HTML to Text Conversion
+
+Uses Jsoup (similar to web app's JSDOM approach) for reliable HTML parsing:
+
+```kotlin
+/**
+ * Converts HTML content to a list of speakable paragraphs.
+ *
+ * Block elements (p, h1-h6, blockquote, pre, li, figure, table) become
+ * separate paragraphs. Special content is converted to spoken descriptions:
+ * - Headings: Prefixed with "Heading:" or "Subheading:"
+ * - Images: "Image: alt text" or "Image"
+ * - Code blocks: "Code block: ... End code block."
+ * - Blockquotes: "Quote: ... End quote."
+ */
+object HtmlToTextConverter {
+    private val BLOCK_ELEMENTS = setOf(
+        "p", "h1", "h2", "h3", "h4", "h5", "h6",
+        "blockquote", "pre", "li", "figure", "table"
+    )
+
+    fun convert(html: String): List<String> {
+        if (html.isBlank()) return emptyList()
+
+        val doc = Jsoup.parse(html)
+        val paragraphs = mutableListOf<String>()
+
+        // Process block elements in document order
+        for (element in doc.body().select(BLOCK_ELEMENTS.joinToString(", "))) {
+            // Skip nested block elements (already processed by parent)
+            if (element.parents().any { it.tagName() in BLOCK_ELEMENTS }) continue
+
+            val text = processElement(element)
+            if (text.isNotBlank()) {
+                paragraphs.add(text.trim())
+            }
+        }
+
+        return paragraphs
+    }
+
+    private fun processElement(el: Element): String {
+        return when (el.tagName()) {
+            "h1", "h2" -> "Heading: ${el.text()}"
+            "h3", "h4", "h5", "h6" -> "Subheading: ${el.text()}"
+            "pre" -> "Code block: ${el.text()}. End code block."
+            "blockquote" -> "Quote: ${el.text()}. End quote."
+            "figure" -> {
+                val alt = el.selectFirst("img")?.attr("alt")
+                    ?: el.selectFirst("figcaption")?.text()
+                if (alt.isNullOrBlank()) "Image" else "Image: $alt"
+            }
+            "table" -> {
+                val rows = el.select("tr").map { row ->
+                    row.select("th, td").joinToString(", ") { it.text() }
+                }
+                "Table: ${rows.joinToString(". ")}. End table."
+            }
+            else -> processInlineContent(el)
+        }
+    }
+
+    private fun processInlineContent(el: Element): String {
+        // Replace inline images with spoken description
+        el.select("img").forEach { img ->
+            val alt = img.attr("alt").ifBlank { "image" }
+            img.replaceWith(TextNode("[Image: $alt]"))
+        }
+        return el.text()
+    }
+}
+```
+
 ### Foreground Service for Background Playback
 
 ```kotlin
+@AndroidEntryPoint
 class NarrationService : Service() {
+    @Inject lateinit var htmlToTextConverter: HtmlToTextConverter
+
     private var mediaSession: MediaSessionCompat? = null
     private var tts: TextToSpeech? = null
+    private var ttsReady = false
+
+    // Current playback state
     private var currentEntry: EntryEntity? = null
-    private var narrationText: String? = null
     private var paragraphs: List<String> = emptyList()
     private var currentParagraphIndex = 0
     private var isPlaying = false
+
+    // Binder for UI communication
+    private val binder = NarrationBinder()
+    private val _playbackState = MutableStateFlow<NarrationState>(NarrationState.Idle)
+    val playbackState: StateFlow<NarrationState> = _playbackState.asStateFlow()
+
+    inner class NarrationBinder : Binder() {
+        fun getService(): NarrationService = this@NarrationService
+    }
+
+    override fun onBind(intent: Intent): IBinder = binder
 
     override fun onCreate() {
         super.onCreate()
@@ -1649,6 +1753,7 @@ class NarrationService : Service() {
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.US
+                ttsReady = true
             }
         }
 
@@ -1657,45 +1762,44 @@ class NarrationService : Service() {
             setCallback(mediaSessionCallback)
             isActive = true
         }
-
-        // Start as foreground service
-        startForeground(NOTIFICATION_ID, createNotification())
     }
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
-        override fun onPlay() {
-            resumePlayback()
-        }
-
-        override fun onPause() {
-            pausePlayback()
-        }
-
-        override fun onStop() {
-            stopPlayback()
-        }
-
-        override fun onSkipToNext() {
-            skipToNextParagraph()
-        }
-
-        override fun onSkipToPrevious() {
-            skipToPreviousParagraph()
-        }
+        override fun onPlay() = resumePlayback()
+        override fun onPause() = pausePlayback()
+        override fun onStop() = stopPlayback()
+        override fun onSkipToNext() = skipToNextParagraph()
+        override fun onSkipToPrevious() = skipToPreviousParagraph()
     }
 
-    fun startNarration(entry: EntryEntity, narration: String) {
+    fun startNarration(entry: EntryEntity) {
         currentEntry = entry
-        narrationText = narration
-        paragraphs = narration.split("\n\n").filter { it.isNotBlank() }
+
+        // Convert HTML to paragraphs
+        val content = entry.contentCleaned ?: entry.contentOriginal ?: entry.summary ?: ""
+        paragraphs = htmlToTextConverter.convert(content)
+
+        if (paragraphs.isEmpty()) {
+            _playbackState.value = NarrationState.Error("No content to narrate")
+            return
+        }
+
         currentParagraphIndex = 0
 
-        updateNotification()
+        // Start foreground service
+        startForeground(NOTIFICATION_ID, createNotification())
+
         playCurrentParagraph()
     }
 
     private fun playCurrentParagraph() {
+        if (!ttsReady) {
+            _playbackState.value = NarrationState.Error("TTS not ready")
+            return
+        }
+
         if (currentParagraphIndex >= paragraphs.size) {
+            // Finished all paragraphs
             stopPlayback()
             return
         }
@@ -1703,19 +1807,26 @@ class NarrationService : Service() {
         val paragraph = paragraphs[currentParagraphIndex]
         isPlaying = true
 
+        _playbackState.value = NarrationState.Playing(
+            currentParagraph = currentParagraphIndex,
+            totalParagraphs = paragraphs.size,
+            entryTitle = currentEntry?.title ?: "Untitled"
+        )
+
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onDone(utteranceId: String?) {
-                currentParagraphIndex++
-                playCurrentParagraph()
+                if (isPlaying) {
+                    currentParagraphIndex++
+                    playCurrentParagraph()
+                }
             }
 
             override fun onError(utteranceId: String?) {
-                // Handle error
+                _playbackState.value = NarrationState.Error("TTS error")
             }
 
             override fun onStart(utteranceId: String?) {
-                // Update UI with current paragraph
-                broadcastProgress()
+                updateNotification()
             }
         })
 
@@ -1729,35 +1840,65 @@ class NarrationService : Service() {
         updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
     }
 
-    private fun pausePlayback() {
+    fun pausePlayback() {
         tts?.stop()
         isPlaying = false
+
+        _playbackState.value = NarrationState.Paused(
+            currentParagraph = currentParagraphIndex,
+            totalParagraphs = paragraphs.size,
+            entryTitle = currentEntry?.title ?: "Untitled"
+        )
+
         updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
+        updateNotification()
     }
 
-    private fun resumePlayback() {
+    fun resumePlayback() {
         playCurrentParagraph()
     }
 
-    private fun stopPlayback() {
+    fun stopPlayback() {
         tts?.stop()
         isPlaying = false
         currentEntry = null
+        paragraphs = emptyList()
+
+        _playbackState.value = NarrationState.Idle
+
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    private fun skipToNextParagraph() {
+    fun skipToNextParagraph() {
         if (currentParagraphIndex < paragraphs.size - 1) {
+            tts?.stop()
             currentParagraphIndex++
-            playCurrentParagraph()
+            if (isPlaying) {
+                playCurrentParagraph()
+            } else {
+                _playbackState.value = NarrationState.Paused(
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntry?.title ?: "Untitled"
+                )
+            }
         }
     }
 
-    private fun skipToPreviousParagraph() {
+    fun skipToPreviousParagraph() {
         if (currentParagraphIndex > 0) {
+            tts?.stop()
             currentParagraphIndex--
-            playCurrentParagraph()
+            if (isPlaying) {
+                playCurrentParagraph()
+            } else {
+                _playbackState.value = NarrationState.Paused(
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntry?.title ?: "Untitled"
+                )
+            }
         }
     }
 
@@ -1766,7 +1907,8 @@ class NarrationService : Service() {
 
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle(currentEntry?.title ?: "Lion Reader")
-            .setContentText(currentEntry?.feedTitle ?: "Playing article")
+            .setContentText("${currentParagraphIndex + 1} of ${paragraphs.size}")
+            .setSubText(currentEntry?.feedTitle)
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setStyle(
@@ -1774,22 +1916,31 @@ class NarrationService : Service() {
                     .setMediaSession(mediaSession?.sessionToken)
                     .setShowActionsInCompactView(0, 1, 2)
             )
-            .addAction(
-                R.drawable.ic_skip_previous,
-                "Previous",
-                createPendingIntent(ACTION_PREVIOUS)
-            )
+            .addAction(R.drawable.ic_skip_previous, "Previous", createPendingIntent(ACTION_PREVIOUS))
             .addAction(
                 if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play,
                 if (isPlaying) "Pause" else "Play",
                 createPendingIntent(if (isPlaying) ACTION_PAUSE else ACTION_PLAY)
             )
-            .addAction(
-                R.drawable.ic_skip_next,
-                "Next",
-                createPendingIntent(ACTION_NEXT)
-            )
+            .addAction(R.drawable.ic_skip_next, "Next", createPendingIntent(ACTION_NEXT))
             .build()
+    }
+
+    private fun createNotificationChannel(): String {
+        val channelId = "narration"
+        val channel = NotificationChannel(
+            channelId,
+            "Narration",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Audio narration playback"
+            setShowBadge(false)
+        }
+
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
+
+        return channelId
     }
 
     private fun updatePlaybackState(state: Int) {
@@ -1805,17 +1956,38 @@ class NarrationService : Service() {
             .build()
 
         mediaSession?.setPlaybackState(playbackState)
-        updateNotification()
     }
 
-    private fun broadcastProgress() {
-        // Broadcast current paragraph for UI highlighting
-        LocalBroadcastManager.getInstance(this).sendBroadcast(
-            Intent(ACTION_NARRATION_PROGRESS).apply {
-                putExtra("paragraphIndex", currentParagraphIndex)
-                putExtra("totalParagraphs", paragraphs.size)
-            }
+    private fun updateNotification() {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(NOTIFICATION_ID, createNotification())
+    }
+
+    private fun createPendingIntent(action: String): PendingIntent {
+        val intent = Intent(this, NarrationService::class.java).apply {
+            this.action = action
+        }
+        return PendingIntent.getService(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_PLAY -> resumePlayback()
+            ACTION_PAUSE -> pausePlayback()
+            ACTION_NEXT -> skipToNextParagraph()
+            ACTION_PREVIOUS -> skipToPreviousParagraph()
+            ACTION_STOP -> stopPlayback()
+        }
+        return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        mediaSession?.release()
+        tts?.shutdown()
+        super.onDestroy()
     }
 
     companion object {
@@ -1824,113 +1996,51 @@ class NarrationService : Service() {
         const val ACTION_PAUSE = "com.lionreader.PAUSE"
         const val ACTION_NEXT = "com.lionreader.NEXT"
         const val ACTION_PREVIOUS = "com.lionreader.PREVIOUS"
-        const val ACTION_NARRATION_PROGRESS = "com.lionreader.NARRATION_PROGRESS"
+        const val ACTION_STOP = "com.lionreader.STOP"
     }
 }
 ```
 
-### Narration Repository
+### UI State
 
 ```kotlin
-class NarrationRepository(
-    private val api: LionReaderApi,
-    private val narrationDao: NarrationDao
-) {
-    suspend fun getNarration(entryId: String): Result<NarrationResult> {
-        // Check cache first
-        val cached = narrationDao.getNarration(entryId)
-        if (cached != null) {
-            return Result.success(
-                NarrationResult(
-                    text = cached.narrationText,
-                    cached = true,
-                    source = cached.source
-                )
-            )
-        }
-
-        // Fetch from API
-        return try {
-            val response = api.generateNarration(type = "entry", id = entryId)
-
-            // Cache locally
-            narrationDao.insert(
-                NarrationEntity(
-                    entryId = entryId,
-                    narrationText = response.narration,
-                    source = response.source,
-                    generatedAt = System.currentTimeMillis()
-                )
-            )
-
-            Result.success(
-                NarrationResult(
-                    text = response.narration,
-                    cached = response.cached,
-                    source = response.source
-                )
-            )
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+sealed class NarrationState {
+    data object Idle : NarrationState()
+    data object Loading : NarrationState()
+    data class Playing(
+        val currentParagraph: Int,
+        val totalParagraphs: Int,
+        val entryTitle: String
+    ) : NarrationState()
+    data class Paused(
+        val currentParagraph: Int,
+        val totalParagraphs: Int,
+        val entryTitle: String
+    ) : NarrationState()
+    data class Error(val message: String) : NarrationState()
 }
-
-data class NarrationResult(
-    val text: String,
-    val cached: Boolean,
-    val source: String  // "llm" or "fallback"
-)
 ```
 
 ### UI Integration
 
 ```kotlin
 @Composable
-fun EntryDetailScreen(
-    entryId: String,
-    viewModel: EntryDetailViewModel = hiltViewModel(),
-    narrationViewModel: NarrationViewModel = hiltViewModel(),
-    onBack: () -> Unit
-) {
-    val entry by viewModel.entry.collectAsState()
-    val narrationState by narrationViewModel.state.collectAsState()
-
-    Scaffold(
-        topBar = { /* ... */ },
-        bottomBar = {
-            // Narration controls
-            entry?.let { e ->
-                NarrationControls(
-                    state = narrationState,
-                    onPlay = { narrationViewModel.play(e.entry) },
-                    onPause = { narrationViewModel.pause() },
-                    onSkipPrevious = { narrationViewModel.skipPrevious() },
-                    onSkipNext = { narrationViewModel.skipNext() }
-                )
-            }
-        }
-    ) { padding ->
-        // Entry content...
-    }
-}
-
-@Composable
 fun NarrationControls(
     state: NarrationState,
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onSkipPrevious: () -> Unit,
-    onSkipNext: () -> Unit
+    onSkipNext: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         tonalElevation = 4.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1950,7 +2060,10 @@ fun NarrationControls(
                 }
 
                 is NarrationState.Playing -> {
-                    IconButton(onClick = onSkipPrevious) {
+                    IconButton(
+                        onClick = onSkipPrevious,
+                        enabled = state.currentParagraph > 0
+                    ) {
                         Icon(Icons.Default.SkipPrevious, "Previous paragraph")
                     }
 
@@ -1962,19 +2075,27 @@ fun NarrationControls(
                         )
                     }
 
-                    IconButton(onClick = onSkipNext) {
+                    IconButton(
+                        onClick = onSkipNext,
+                        enabled = state.currentParagraph < state.totalParagraphs - 1
+                    ) {
                         Icon(Icons.Default.SkipNext, "Next paragraph")
                     }
 
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     Text(
-                        text = "${state.currentParagraph + 1}/${state.totalParagraphs}",
+                        text = "${state.currentParagraph + 1} of ${state.totalParagraphs}",
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 8.dp)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 is NarrationState.Paused -> {
-                    IconButton(onClick = onSkipPrevious) {
+                    IconButton(
+                        onClick = onSkipPrevious,
+                        enabled = state.currentParagraph > 0
+                    ) {
                         Icon(Icons.Default.SkipPrevious, "Previous paragraph")
                     }
 
@@ -1986,16 +2107,35 @@ fun NarrationControls(
                         )
                     }
 
-                    IconButton(onClick = onSkipNext) {
+                    IconButton(
+                        onClick = onSkipNext,
+                        enabled = state.currentParagraph < state.totalParagraphs - 1
+                    ) {
                         Icon(Icons.Default.SkipNext, "Next paragraph")
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = "${state.currentParagraph + 1} of ${state.totalParagraphs}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 is NarrationState.Error -> {
+                    Icon(
+                        Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Narration unavailable",
+                        text = state.message,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = onPlay) {
                         Icon(Icons.Default.Refresh, "Retry")
                     }
@@ -2004,19 +2144,36 @@ fun NarrationControls(
         }
     }
 }
+```
 
-sealed class NarrationState {
-    data object Idle : NarrationState()
-    data object Loading : NarrationState()
-    data class Playing(
-        val currentParagraph: Int,
-        val totalParagraphs: Int
-    ) : NarrationState()
-    data class Paused(
-        val currentParagraph: Int,
-        val totalParagraphs: Int
-    ) : NarrationState()
-    data class Error(val message: String) : NarrationState()
+### Manifest Configuration
+
+```xml
+<!-- AndroidManifest.xml -->
+<manifest>
+    <!-- Required for foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <application>
+        <service
+            android:name=".service.NarrationService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+    </application>
+</manifest>
+```
+
+### Dependencies
+
+```kotlin
+// build.gradle.kts (app module)
+dependencies {
+    // HTML parsing for narration
+    implementation("org.jsoup:jsoup:1.18.3")
+
+    // Media session for playback controls
+    implementation("androidx.media:media:1.7.0")
 }
 ```
 
@@ -2050,13 +2207,14 @@ sealed class NarrationState {
 | HTTP | Ktor Client | Kotlin-native, multiplatform ready |
 | JSON | Kotlinx Serialization | Native, fast, no reflection |
 | Secure Storage | EncryptedSharedPreferences | Token security |
+| HTML Parsing | Jsoup | Reliable HTML to text conversion |
 
 ### Background
 
 | Component | Library | Rationale |
 |-----------|---------|-----------|
 | Background Work | WorkManager | Battery-efficient, constraint-aware |
-| Media | Media3 / MediaSession | Modern media controls |
+| Media | MediaSessionCompat | System media controls integration |
 | TTS | Android TextToSpeech | Built-in, no API cost |
 
 ### Development
@@ -2092,8 +2250,7 @@ app/
 │   │   │   └── repository/
 │   │   │       ├── EntryRepository.kt
 │   │   │       ├── SubscriptionRepository.kt
-│   │   │       ├── AuthRepository.kt
-│   │   │       └── NarrationRepository.kt
+│   │   │       └── AuthRepository.kt
 │   │   │
 │   │   ├── domain/
 │   │   │   ├── model/                 # Domain models
@@ -2114,9 +2271,10 @@ app/
 │   │   │   │   ├── EntryDetailScreen.kt
 │   │   │   │   └── EntryDetailViewModel.kt
 │   │   │   │
-│   │   │   └── narration/             # V2
+│   │   │   └── narration/
 │   │   │       ├── NarrationControls.kt
-│   │   │       └── NarrationViewModel.kt
+│   │   │       ├── NarrationViewModel.kt
+│   │   │       └── HtmlToTextConverter.kt
 │   │   │
 │   │   ├── service/
 │   │   │   ├── SyncWorker.kt          # Background sync
@@ -2153,10 +2311,10 @@ app/
 
 ### V2 Deliverables
 
-1. **Narration**: TTS-based article reading
+1. **Narration**: TTS-based article reading with client-side HTML conversion
 2. **Background playback**: Foreground service with MediaSession
 3. **Media controls**: Notification controls, lock screen, Bluetooth
-4. **Paragraph navigation**: Skip forward/back through content
+4. **Paragraph navigation**: Skip forward/back through content (not articles)
 
 ### Key Technical Decisions
 
@@ -2165,3 +2323,4 @@ app/
 3. **Foreground service**: Required for background audio on modern Android
 4. **WorkManager**: Battery-efficient background sync
 5. **Compose**: Modern, declarative UI with less boilerplate
+6. **Client-side HTML parsing**: Jsoup for offline narration support

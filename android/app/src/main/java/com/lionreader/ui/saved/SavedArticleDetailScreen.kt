@@ -3,12 +3,14 @@ package com.lionreader.ui.saved
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -46,6 +48,8 @@ import com.lionreader.data.api.models.EntryDto
 import com.lionreader.ui.components.ErrorState
 import com.lionreader.ui.components.ErrorType
 import com.lionreader.ui.entries.HtmlContent
+import com.lionreader.ui.narration.NarrationControls
+import com.lionreader.ui.narration.NarrationViewModel
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -67,10 +71,12 @@ import java.util.Locale
 fun SavedArticleDetailScreen(
     onBack: () -> Unit,
     viewModel: SavedArticleDetailViewModel = hiltViewModel(),
+    narrationViewModel: NarrationViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val article by viewModel.article.collectAsStateWithLifecycle()
+    val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -132,59 +138,99 @@ fun SavedArticleDetailScreen(
             }
         },
     ) { padding ->
-        when {
-            // Loading state
-            uiState.isLoading && article == null -> {
-                Column(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    CircularProgressIndicator()
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+        ) {
+            // Main content
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+            ) {
+                when {
+                    // Loading state
+                    uiState.isLoading && article == null -> {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+
+                    // Error state with no article
+                    uiState.errorMessage != null && article == null -> {
+                        ErrorState(
+                            title = "Unable to load article",
+                            message = uiState.errorMessage ?: "Unknown error",
+                            errorType = ErrorType.GENERIC,
+                            onRetry = { viewModel.retry() },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+
+                    // Article content
+                    article != null -> {
+                        SavedArticleDetailContent(
+                            article = article!!,
+                            onLinkClick = { url -> viewModel.openInBrowser(url) },
+                            scrollState = scrollState,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+
+                    // Fallback empty state
+                    else -> {
+                        ErrorState(
+                            title = "Article not found",
+                            message = "The article you're looking for could not be found.",
+                            errorType = ErrorType.GENERIC,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
 
-            // Error state with no article
-            uiState.errorMessage != null && article == null -> {
-                ErrorState(
-                    title = "Unable to load article",
-                    message = uiState.errorMessage ?: "Unknown error",
-                    errorType = ErrorType.GENERIC,
-                    onRetry = { viewModel.retry() },
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                )
-            }
+            // Narration controls
+            article?.let { currentArticle ->
+                val content =
+                    currentArticle.contentCleaned
+                        ?: currentArticle.contentOriginal
 
-            // Article content
-            article != null -> {
-                SavedArticleDetailContent(
-                    article = article!!,
-                    onLinkClick = { url -> viewModel.openInBrowser(url) },
-                    scrollState = scrollState,
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                )
-            }
-
-            // Fallback empty state
-            else -> {
-                ErrorState(
-                    title = "Article not found",
-                    message = "The article you're looking for could not be found.",
-                    errorType = ErrorType.GENERIC,
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                )
+                content?.let {
+                    NarrationControls(
+                        narrationState = narrationState,
+                        onPlay = {
+                            narrationViewModel.startNarration(
+                                entryId = currentArticle.id,
+                                title = currentArticle.title ?: "Untitled",
+                                feedTitle = currentArticle.feedTitle,
+                                content = it,
+                            )
+                        },
+                        onPause = { narrationViewModel.pauseNarration() },
+                        onResume = { narrationViewModel.resumeNarration() },
+                        onSkipPrevious = { narrationViewModel.skipBackward() },
+                        onSkipNext = { narrationViewModel.skipForward() },
+                        onRetry = {
+                            narrationViewModel.startNarration(
+                                entryId = currentArticle.id,
+                                title = currentArticle.title ?: "Untitled",
+                                feedTitle = currentArticle.feedTitle,
+                                content = it,
+                            )
+                        },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .imePadding(),
+                    )
+                }
             }
         }
     }
