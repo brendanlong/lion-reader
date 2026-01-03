@@ -147,15 +147,17 @@ fun EntryDetailScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
         ) {
             // Main content
             Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
             ) {
                 // Use swipeable pager when we have navigation context
                 if (swipeNavState.entryIds.isNotEmpty() && swipeNavState.currentIndex >= 0) {
@@ -188,8 +190,9 @@ fun EntryDetailScreen(
 
             // Narration controls
             entry?.let { currentEntry ->
-                val content = currentEntry.entry.contentCleaned
-                    ?: currentEntry.entry.contentOriginal
+                val content =
+                    currentEntry.entry.contentCleaned
+                        ?: currentEntry.entry.contentOriginal
 
                 content?.let {
                     NarrationControls(
@@ -199,7 +202,7 @@ fun EntryDetailScreen(
                                 entryId = currentEntry.entry.id,
                                 title = currentEntry.entry.title ?: "Untitled",
                                 feedTitle = currentEntry.entry.feedTitle,
-                                content = it
+                                content = it,
                             )
                         },
                         onPause = { narrationViewModel.pauseNarration() },
@@ -211,12 +214,13 @@ fun EntryDetailScreen(
                                 entryId = currentEntry.entry.id,
                                 title = currentEntry.entry.title ?: "Untitled",
                                 feedTitle = currentEntry.entry.feedTitle,
-                                content = it
+                                content = it,
                             )
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .imePadding(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .imePadding(),
                     )
                 }
             }

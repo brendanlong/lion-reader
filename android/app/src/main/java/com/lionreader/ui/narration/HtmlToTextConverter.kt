@@ -58,15 +58,15 @@ object HtmlToTextConverter {
         return paragraphs
     }
 
-    private fun processElement(el: Element): String {
-        return when (el.tagName()) {
+    private fun processElement(el: Element): String =
+        when (el.tagName()) {
             "h1", "h2" -> "Heading: ${el.text()}"
             "h3", "h4", "h5", "h6" -> "Subheading: ${el.text()}"
             "pre" -> "Code block: ${el.text()}. End code block."
-            "blockquote" -> "Quote: ${el.text()}. End quote."
+            "blockquote" -> "Quote: ${el.text().trimEnd('.')}. End quote."
             "figure" -> {
                 val alt =
-                    el.selectFirst("img")?.attr("alt")
+                    el.selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }
                         ?: el.selectFirst("figcaption")?.text()
                 if (alt.isNullOrBlank()) "Image" else "Image: $alt"
             }
@@ -79,7 +79,6 @@ object HtmlToTextConverter {
             }
             else -> processInlineContent(el)
         }
-    }
 
     private fun processInlineContent(el: Element): String {
         // Replace inline images with spoken description
