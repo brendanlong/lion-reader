@@ -19,6 +19,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LionReader">
 
+        <!-- Disable Sentry auto-initialization so we can control it in LionReaderApp -->
+        <meta-data android:name="io.sentry.auto-init" android:value="false" />
+
         <!-- Disable default WorkManager initialization to use custom Configuration -->
         <provider
             android:name="androidx.startup.InitializationProvider"
