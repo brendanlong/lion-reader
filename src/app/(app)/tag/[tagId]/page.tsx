@@ -6,7 +6,7 @@
 
 "use client";
 
-import { Suspense, useState, useCallback } from "react";
+import { Suspense, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
@@ -140,6 +140,19 @@ function TagEntriesContent() {
     setEntries(loadedEntries);
   }, []);
 
+  // Calculate next and previous entry IDs for prefetching
+  const { nextEntryId, previousEntryId } = useMemo(() => {
+    if (!openEntryId) return { nextEntryId: undefined, previousEntryId: undefined };
+
+    const currentIndex = entries.findIndex((e) => e.id === openEntryId);
+    if (currentIndex === -1) return { nextEntryId: undefined, previousEntryId: undefined };
+
+    return {
+      nextEntryId: currentIndex < entries.length - 1 ? entries[currentIndex + 1].id : undefined,
+      previousEntryId: currentIndex > 0 ? entries[currentIndex - 1].id : undefined,
+    };
+  }, [openEntryId, entries]);
+
   // If an entry is open, show the full content view
   // Key forces remount when entryId changes, ensuring fresh refs and mutation state
   if (openEntryId) {
@@ -150,6 +163,8 @@ function TagEntriesContent() {
         onBack={handleBack}
         onSwipeNext={goToNextEntry}
         onSwipePrevious={goToPreviousEntry}
+        nextEntryId={nextEntryId}
+        previousEntryId={previousEntryId}
       />
     );
   }
