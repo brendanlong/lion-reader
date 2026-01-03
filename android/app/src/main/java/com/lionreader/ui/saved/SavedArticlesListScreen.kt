@@ -1,5 +1,6 @@
 package com.lionreader.ui.saved
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -77,6 +78,9 @@ fun SavedArticlesListScreen(
             }
         }
     }
+
+    // Handle system back gesture to ensure proper navigation
+    BackHandler(onBack = onBack)
 
     Scaffold(
         modifier = modifier,

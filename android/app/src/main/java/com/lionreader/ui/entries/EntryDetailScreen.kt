@@ -2,6 +2,7 @@ package com.lionreader.ui.entries
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -128,6 +129,9 @@ fun EntryDetailScreen(
             }
         }
     }
+
+    // Handle system back gesture to ensure proper navigation back to the originating list
+    BackHandler(onBack = onBack)
 
     Scaffold(
         modifier = modifier,
