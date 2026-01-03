@@ -1,7 +1,26 @@
+import { execSync } from "child_process";
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
+// Get git commit SHA at build time
+function getGitCommitSha(): string | undefined {
+  // First check environment variable (set by CI/CD systems like Vercel, Fly.io)
+  if (process.env.GIT_COMMIT_SHA) {
+    return process.env.GIT_COMMIT_SHA;
+  }
+  // Fall back to git command
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
 const nextConfig: NextConfig = {
+  env: {
+    // Inject git commit SHA at build time
+    GIT_COMMIT_SHA: getGitCommitSha(),
+  },
   // Handle piper-tts-web which has conditional Node.js code (require('fs'))
   // that the bundler tries to resolve even though it only runs in Node.js
   webpack: (config, { isServer }) => {
