@@ -40,6 +40,16 @@ interface EntryContentProps {
    * Optional callback when swiping to previous entry.
    */
   onSwipePrevious?: () => void;
+
+  /**
+   * Optional ID of the next entry to prefetch.
+   */
+  nextEntryId?: string;
+
+  /**
+   * Optional ID of the previous entry to prefetch.
+   */
+  previousEntryId?: string;
 }
 
 /**
@@ -48,12 +58,25 @@ interface EntryContentProps {
  * Fetches and displays the full content of an entry.
  * Marks the entry as read on mount.
  */
-export function EntryContent({ entryId, onBack, onSwipeNext, onSwipePrevious }: EntryContentProps) {
+export function EntryContent({
+  entryId,
+  onBack,
+  onSwipeNext,
+  onSwipePrevious,
+  nextEntryId,
+  previousEntryId,
+}: EntryContentProps) {
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
+
+  // Prefetch next and previous entries with active observers to keep them in cache
+  // These queries run in parallel and don't block the main entry fetch
+  // We don't use their loading states, so they're invisible to the UI
+  trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
+  trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
   // Entry mutations without list filters (this component operates on a single entry)
   // Note: optimistic updates happen at the list level in parent components,

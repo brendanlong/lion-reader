@@ -40,6 +40,16 @@ interface SavedArticleContentProps {
    * Optional callback when swiping to previous article.
    */
   onSwipePrevious?: () => void;
+
+  /**
+   * Optional ID of the next article to prefetch.
+   */
+  nextArticleId?: string;
+
+  /**
+   * Optional ID of the previous article to prefetch.
+   */
+  previousArticleId?: string;
 }
 
 /**
@@ -53,12 +63,20 @@ export function SavedArticleContent({
   onBack,
   onSwipeNext,
   onSwipePrevious,
+  nextArticleId,
+  previousArticleId,
 }: SavedArticleContentProps) {
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the saved article using unified entries endpoint
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: articleId });
+
+  // Prefetch next and previous articles with active observers to keep them in cache
+  // These queries run in parallel and don't block the main article fetch
+  // We don't use their loading states, so they're invisible to the UI
+  trpc.entries.get.useQuery({ id: nextArticleId! }, { enabled: !!nextArticleId });
+  trpc.entries.get.useQuery({ id: previousArticleId! }, { enabled: !!previousArticleId });
 
   // Use the consolidated mutations hook (no list filters since we're in single article view)
   // normy automatically propagates changes to entries.get when server responds
