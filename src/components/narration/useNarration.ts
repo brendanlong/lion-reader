@@ -187,7 +187,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       if (!usePiper) {
         // Translate narration paragraph index to DOM element index using the mapping
         const mapping = paragraphMapRef.current[newState.currentParagraph];
-        const domElementIndex = mapping ? mapping.o[0] : newState.currentParagraph;
+        const domElementIndex = mapping ? mapping.o : newState.currentParagraph;
 
         setState({
           ...newState,
@@ -287,7 +287,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         onPositionChange: (position: PlaybackPosition, totalParagraphs: number) => {
           // Translate narration paragraph index to DOM element index using the mapping
           const mapping = paragraphMapRef.current[position.paragraph];
-          const domElementIndex = mapping ? mapping.o[0] : position.paragraph;
+          const domElementIndex = mapping ? mapping.o : position.paragraph;
 
           setState((prev) => ({
             ...prev,
@@ -376,6 +376,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
             useLlmNormalization: settings.useLlmNormalization,
           });
           narration = result.narration;
+          // Store the paragraph map from server for index translation during highlighting
+          paragraphMapRef.current = result.paragraphMap;
         }
 
         if (narration) {
@@ -456,6 +458,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           useLlmNormalization: settings.useLlmNormalization,
         });
         narration = result.narration;
+        // Store the paragraph map from server for index translation during highlighting
+        paragraphMapRef.current = result.paragraphMap;
       }
 
       if (narration) {
