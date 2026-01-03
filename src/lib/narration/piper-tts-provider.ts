@@ -11,10 +11,7 @@
 import type { TTSProvider, TTSVoice, SpeakOptions } from "./types";
 import { ENHANCED_VOICES, findEnhancedVoice } from "./enhanced-voices";
 import { splitIntoSentences } from "./sentence-splitter";
-import {
-  concatenateAudioBuffers,
-  DEFAULT_SENTENCE_GAP_SECONDS,
-} from "./audio-buffer-utils";
+import { concatenateAudioBuffers, DEFAULT_SENTENCE_GAP_SECONDS } from "./audio-buffer-utils";
 
 /**
  * Dynamically imports the piper-tts-web module.
@@ -487,8 +484,9 @@ export class PiperTTSProvider implements TTSProvider {
 
   /**
    * Gets or creates the AudioContext.
+   * Public to allow external components to manipulate audio buffers.
    */
-  private getAudioContext(): AudioContext {
+  getAudioContext(): AudioContext {
     if (!this.audioContext) {
       this.audioContext = new AudioContext();
     }
