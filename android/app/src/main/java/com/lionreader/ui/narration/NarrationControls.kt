@@ -152,9 +152,9 @@ private fun PlayingControls(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Paragraph counter
+        // Paragraph counter (display as 1-indexed for users)
         Text(
-            text = "$currentParagraph of $totalParagraphs",
+            text = "${currentParagraph + 1} of $totalParagraphs",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -211,9 +211,9 @@ private fun PausedControls(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Paragraph counter
+        // Paragraph counter (display as 1-indexed for users)
         Text(
-            text = "$currentParagraph of $totalParagraphs",
+            text = "${currentParagraph + 1} of $totalParagraphs",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
