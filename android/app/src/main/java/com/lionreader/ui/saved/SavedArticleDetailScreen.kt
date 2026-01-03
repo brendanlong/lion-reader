@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.data.api.models.EntryDto
+import com.lionreader.service.NarrationState
 import com.lionreader.ui.components.ErrorState
 import com.lionreader.ui.components.ErrorType
 import com.lionreader.ui.entries.HtmlContent
@@ -182,6 +183,7 @@ fun SavedArticleDetailScreen(
                     article != null -> {
                         SavedArticleDetailContent(
                             article = article!!,
+                            narrationState = narrationState,
                             onLinkClick = { url -> viewModel.openInBrowser(url) },
                             scrollState = scrollState,
                             modifier = Modifier.fillMaxSize(),
@@ -309,10 +311,30 @@ private fun SavedArticleDetailTopBar(
 @Composable
 private fun SavedArticleDetailContent(
     article: EntryDto,
+    narrationState: NarrationState,
     onLinkClick: (String) -> Unit,
     scrollState: androidx.compose.foundation.ScrollState,
     modifier: Modifier = Modifier,
 ) {
+    // Calculate the highlighted paragraph index based on narration state
+    // Only highlight if narrating this specific article
+    val highlightedParagraphIndex =
+        when (narrationState) {
+            is NarrationState.Playing ->
+                if (narrationState.entryId == article.id) {
+                    narrationState.currentParagraph
+                } else {
+                    null
+                }
+            is NarrationState.Paused ->
+                if (narrationState.entryId == article.id) {
+                    narrationState.currentParagraph
+                } else {
+                    null
+                }
+            else -> null
+        }
+
     Column(
         modifier =
             modifier
@@ -334,6 +356,7 @@ private fun SavedArticleDetailContent(
             html = content,
             onLinkClick = onLinkClick,
             baseUrl = article.url,
+            highlightedParagraphIndex = highlightedParagraphIndex,
             modifier = Modifier.fillMaxWidth(),
         )
 

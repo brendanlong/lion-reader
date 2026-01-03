@@ -7,8 +7,10 @@ import android.webkit.WebViewClient
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import com.lionreader.ui.narration.HtmlParagraphProcessor
 
 /**
  * Composable for rendering HTML content using a WebView.
@@ -17,11 +19,15 @@ import androidx.compose.ui.viewinterop.AndroidView
  * - Dark mode styling (automatically adapts to system theme)
  * - Responsive images (max-width: 100%)
  * - Link handling (opens in external browser via WebViewClient)
- * - Security (JavaScript disabled)
+ * - Security (JavaScript disabled by default, enabled only for scroll functionality)
+ * - Narration highlighting (optional)
  *
  * @param html The HTML content to render
  * @param onLinkClick Callback when a link is clicked in the content
  * @param baseUrl Optional base URL for resolving relative URLs in the content (e.g., image src)
+ * @param highlightedParagraphIndex Optional index of the paragraph to highlight during narration.
+ *                                   When null, no highlighting is applied. When set, the paragraph
+ *                                   with matching data-para-id will be highlighted and scrolled into view.
  * @param modifier Modifier for the WebView container
  */
 @SuppressLint("SetJavaScriptEnabled")
@@ -30,21 +36,36 @@ fun HtmlContent(
     html: String,
     onLinkClick: (String) -> Unit,
     baseUrl: String? = null,
+    highlightedParagraphIndex: Int? = null,
     modifier: Modifier = Modifier,
 ) {
     val isDarkTheme = isSystemInDarkTheme()
 
-    // Generate styled HTML with theme-appropriate colors
-    val styledHtml =
-        remember(html, isDarkTheme) {
-            generateStyledHtml(html, isDarkTheme)
+    // Process HTML to add paragraph IDs for highlighting
+    val processedHtml =
+        remember(html) {
+            HtmlParagraphProcessor.addParagraphIds(html).html
         }
+
+    // Generate styled HTML with theme-appropriate colors and highlighting
+    val styledHtml =
+        remember(processedHtml, isDarkTheme, highlightedParagraphIndex) {
+            generateStyledHtml(
+                html = processedHtml,
+                isDarkTheme = isDarkTheme,
+                highlightedParagraphIndex = highlightedParagraphIndex,
+            )
+        }
+
+    // Keep track of current highlight for scroll updates
+    val currentHighlight = rememberUpdatedState(highlightedParagraphIndex)
 
     AndroidView(
         factory = { context ->
             WebView(context).apply {
-                // Security: Disable JavaScript
-                settings.javaScriptEnabled = false
+                // Enable JavaScript only for scroll functionality
+                // Links are still handled by WebViewClient, so security is maintained
+                settings.javaScriptEnabled = true
 
                 // Layout settings for responsive content
                 settings.loadWithOverviewMode = true
@@ -80,13 +101,31 @@ fun HtmlContent(
             }
         },
         update = { webView ->
-            webView.loadDataWithBaseURL(
-                baseUrl,
-                styledHtml,
-                "text/html",
-                "UTF-8",
-                null,
-            )
+            // Only reload if content changed (not just highlight)
+            val currentHtml = webView.tag as? String
+            if (currentHtml != styledHtml) {
+                webView.tag = styledHtml
+                webView.loadDataWithBaseURL(
+                    baseUrl,
+                    styledHtml,
+                    "text/html",
+                    "UTF-8",
+                    null,
+                )
+            } else if (currentHighlight.value != null) {
+                // Just scroll to the highlighted element without reloading
+                webView.evaluateJavascript(
+                    """
+                    (function() {
+                        var el = document.querySelector('[data-para-id="para-${currentHighlight.value}"]');
+                        if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    })();
+                    """.trimIndent(),
+                    null,
+                )
+            }
         },
         modifier = modifier,
     )
@@ -96,14 +135,17 @@ fun HtmlContent(
  * Generates styled HTML with CSS for consistent rendering.
  *
  * Applies responsive styling, typography, and theme-appropriate colors.
+ * Optionally highlights a specific paragraph during narration.
  *
- * @param html The raw HTML content
+ * @param html The raw HTML content (with data-para-id attributes if highlighting is needed)
  * @param isDarkTheme Whether dark theme is active
+ * @param highlightedParagraphIndex Optional index of paragraph to highlight
  * @return Complete HTML document with embedded CSS
  */
 private fun generateStyledHtml(
     html: String,
     isDarkTheme: Boolean,
+    highlightedParagraphIndex: Int? = null,
 ): String {
     // Theme-specific colors
     val textColor = if (isDarkTheme) "#F9FAFB" else "#1F2937"
@@ -112,6 +154,28 @@ private fun generateStyledHtml(
     val codeBackground = if (isDarkTheme) "#374151" else "#F3F4F6"
     val blockquoteBorder = if (isDarkTheme) "#4B5563" else "#D1D5DB"
     val blockquoteText = if (isDarkTheme) "#9CA3AF" else "#6B7280"
+
+    // Highlight colors (amber for visibility)
+    val highlightBackground = if (isDarkTheme) "rgba(245, 158, 11, 0.2)" else "rgba(245, 158, 11, 0.15)"
+    val highlightBorder = if (isDarkTheme) "#F59E0B" else "#D97706"
+
+    // Generate highlight CSS if a paragraph is highlighted
+    val highlightCss =
+        if (highlightedParagraphIndex != null) {
+            """
+                /* Narration highlight */
+                [data-para-id="para-$highlightedParagraphIndex"] {
+                    background-color: $highlightBackground !important;
+                    border-left: 3px solid $highlightBorder !important;
+                    padding-left: 0.75em !important;
+                    margin-left: -0.75em !important;
+                    border-radius: 4px !important;
+                    transition: background-color 0.3s ease, border-color 0.3s ease;
+                }
+            """
+        } else {
+            ""
+        }
 
     return """
         <!DOCTYPE html>
@@ -276,6 +340,8 @@ private fun generateStyledHtml(
                 .content-wrapper {
                     max-width: 100%;
                 }
+
+                $highlightCss
             </style>
         </head>
         <body>

@@ -14,18 +14,32 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import com.lionreader.R
+import com.lionreader.data.api.ApiResult
+import com.lionreader.data.api.LionReaderApi
 import com.lionreader.ui.narration.HtmlToTextConverter
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.Locale
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class NarrationService : Service() {
+    @Inject
+    lateinit var api: LionReaderApi
+
     private var mediaSession: MediaSessionCompat? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+
+    // Coroutine scope for async operations
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // Current playback state
     private var currentEntryId: String? = null
@@ -34,6 +48,7 @@ class NarrationService : Service() {
     private var paragraphs: List<String> = emptyList()
     private var currentParagraphIndex = 0
     private var isPlaying = false
+    private var currentSource: NarrationSource = NarrationSource.LOCAL
 
     // Binder for UI communication
     private val binder = NarrationBinder()
@@ -89,19 +104,80 @@ class NarrationService : Service() {
         currentEntryTitle = title
         currentFeedTitle = feedTitle
 
-        // Convert HTML to paragraphs
-        paragraphs = HtmlToTextConverter.convert(content)
+        // Set loading state
+        _playbackState.value = NarrationState.Loading
+
+        // Start foreground service with loading notification
+        startForeground(NOTIFICATION_ID, createNotification())
+
+        // Try to get LLM-cleaned text from server, fall back to local conversion
+        serviceScope.launch {
+            val (narrationText, source) = fetchNarrationText(entryId, content)
+            startPlaybackWithText(narrationText, source)
+        }
+    }
+
+    /**
+     * Fetches narration text from the server with LLM cleanup.
+     * Falls back to local HTML-to-text conversion if server is unavailable.
+     *
+     * @param entryId The entry ID to fetch narration for
+     * @param htmlContent The HTML content as fallback
+     * @return Pair of narration text and source (LLM or LOCAL)
+     */
+    private suspend fun fetchNarrationText(
+        entryId: String,
+        htmlContent: String,
+    ): Pair<String, NarrationSource> =
+        try {
+            when (val result = api.generateNarration(entryId)) {
+                is ApiResult.Success -> {
+                    val response = result.data
+                    val source =
+                        if (response.source == "llm") {
+                            NarrationSource.LLM
+                        } else {
+                            NarrationSource.LOCAL
+                        }
+                    Pair(response.narration, source)
+                }
+                is ApiResult.Error -> {
+                    // API error, fall back to local conversion
+                    val localText = HtmlToTextConverter.convert(htmlContent).joinToString("\n\n")
+                    Pair(localText, NarrationSource.LOCAL)
+                }
+            }
+        } catch (e: Exception) {
+            // Network or other error, fall back to local conversion
+            val localText = HtmlToTextConverter.convert(htmlContent).joinToString("\n\n")
+            Pair(localText, NarrationSource.LOCAL)
+        }
+
+    /**
+     * Starts playback with the given narration text.
+     */
+    private fun startPlaybackWithText(
+        narrationText: String,
+        source: NarrationSource,
+    ) {
+        // Split into paragraphs by double newlines
+        paragraphs =
+            narrationText
+                .split(Regex("\n\n+"))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
 
         if (paragraphs.isEmpty()) {
             _playbackState.value = NarrationState.Error("No content to narrate")
+            stopForeground(STOP_FOREGROUND_REMOVE)
             return
         }
 
         currentParagraphIndex = 0
+        currentSource = source
 
-        // Start foreground service
-        startForeground(NOTIFICATION_ID, createNotification())
-
+        // Update notification and start playback
+        updateNotification()
         playCurrentParagraph()
     }
 
@@ -126,6 +202,7 @@ class NarrationService : Service() {
                 currentParagraph = currentParagraphIndex,
                 totalParagraphs = paragraphs.size,
                 entryTitle = currentEntryTitle ?: "Untitled",
+                source = currentSource,
             )
 
         tts?.setOnUtteranceProgressListener(
@@ -167,6 +244,7 @@ class NarrationService : Service() {
                 currentParagraph = currentParagraphIndex,
                 totalParagraphs = paragraphs.size,
                 entryTitle = currentEntryTitle ?: "Untitled",
+                source = currentSource,
             )
 
         updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
@@ -184,6 +262,7 @@ class NarrationService : Service() {
         currentEntryTitle = null
         currentFeedTitle = null
         paragraphs = emptyList()
+        currentSource = NarrationSource.LOCAL
 
         _playbackState.value = NarrationState.Idle
 
@@ -204,6 +283,7 @@ class NarrationService : Service() {
                         currentParagraph = currentParagraphIndex,
                         totalParagraphs = paragraphs.size,
                         entryTitle = currentEntryTitle ?: "Untitled",
+                        source = currentSource,
                     )
             }
         }
@@ -222,6 +302,7 @@ class NarrationService : Service() {
                         currentParagraph = currentParagraphIndex,
                         totalParagraphs = paragraphs.size,
                         entryTitle = currentEntryTitle ?: "Untitled",
+                        source = currentSource,
                     )
             }
         }
@@ -325,6 +406,7 @@ class NarrationService : Service() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         mediaSession?.release()
         tts?.shutdown()
         super.onDestroy()
