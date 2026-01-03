@@ -139,15 +139,17 @@ fun SavedArticleDetailScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
         ) {
             // Main content
             Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
             ) {
                 when {
                     // Loading state
@@ -196,8 +198,9 @@ fun SavedArticleDetailScreen(
 
             // Narration controls
             article?.let { currentArticle ->
-                val content = currentArticle.contentCleaned
-                    ?: currentArticle.contentOriginal
+                val content =
+                    currentArticle.contentCleaned
+                        ?: currentArticle.contentOriginal
 
                 content?.let {
                     NarrationControls(
@@ -207,7 +210,7 @@ fun SavedArticleDetailScreen(
                                 entryId = currentArticle.id,
                                 title = currentArticle.title ?: "Untitled",
                                 feedTitle = currentArticle.feedTitle,
-                                content = it
+                                content = it,
                             )
                         },
                         onPause = { narrationViewModel.pauseNarration() },
@@ -219,12 +222,13 @@ fun SavedArticleDetailScreen(
                                 entryId = currentArticle.id,
                                 title = currentArticle.title ?: "Untitled",
                                 feedTitle = currentArticle.feedTitle,
-                                content = it
+                                content = it,
                             )
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .imePadding(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .imePadding(),
                     )
                 }
             }

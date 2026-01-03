@@ -127,9 +127,7 @@ private fun IdleControls(
 }
 
 @Composable
-private fun LoadingControls(
-    modifier: Modifier = Modifier,
-) {
+private fun LoadingControls(modifier: Modifier = Modifier) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,

@@ -280,7 +280,7 @@ class HtmlToTextConverterTest {
 
         val result = HtmlToTextConverter.convert(html)
 
-        assertEquals(10, result.size)
+        assertEquals(11, result.size)
         assertEquals("Heading: Article Title", result[0])
         assertTrue(result[1].contains("Introduction paragraph"))
         assertEquals("Heading: First Section", result[2])
@@ -291,6 +291,7 @@ class HtmlToTextConverterTest {
         assertTrue(result[7].contains("Code block:"))
         assertEquals("Point one", result[8])
         assertEquals("Point two", result[9])
+        assertEquals("Conclusion paragraph.", result[10])
     }
 
     @Test
@@ -351,7 +352,7 @@ class HtmlToTextConverterTest {
 
         val result = HtmlToTextConverter.convert(html)
 
-        assertEquals(9, result.size)
+        assertEquals(10, result.size)
         assertEquals("Heading: How to Build Better Software", result[0])
         assertEquals("Software development is both an art and a science.", result[1])
         assertEquals("Heading: Best Practices", result[2])
@@ -361,6 +362,8 @@ class HtmlToTextConverterTest {
         assertEquals("Document clearly", result[6])
         assertEquals("Subheading: Code Example", result[7])
         assertTrue(result[8].startsWith("Code block:"))
+        assertTrue(result[9].contains("[Image: lightbulb]"))
+        assertTrue(result[9].contains("good code is readable code"))
     }
 
     @Test
