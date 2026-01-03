@@ -152,7 +152,6 @@ export function SavedArticleContent({
       onToggleStar={handleStarToggle}
       showOriginal={showOriginal}
       setShowOriginal={setShowOriginal}
-      narrationArticleType="saved"
       onSwipeNext={onSwipeNext}
       onSwipePrevious={onSwipePrevious}
     />

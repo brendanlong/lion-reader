@@ -252,8 +252,6 @@ export interface ArticleContentBodyProps {
   showOriginal: boolean;
   /** Callback to set show original state */
   setShowOriginal: (show: boolean) => void;
-  /** The article type for narration */
-  narrationArticleType: "entry" | "saved";
   /** Optional domain for footer link (defaults to extracting from url) */
   footerLinkDomain?: string;
   /** Callback when swiping to next article */
@@ -288,7 +286,6 @@ export function ArticleContentBody({
   onToggleStar,
   showOriginal,
   setShowOriginal,
-  narrationArticleType,
   footerLinkDomain,
   onSwipeNext,
   onSwipePrevious,
@@ -306,7 +303,6 @@ export function ArticleContentBody({
   const narrationSupported = isNarrationSupported();
   const narration = useNarration({
     id: articleId,
-    type: narrationArticleType,
     title,
     feedTitle: source,
     content: contentToDisplay,
@@ -563,7 +559,6 @@ export function ArticleContentBody({
           {/* Narration controls - pass narration state for controlled mode */}
           <NarrationControls
             articleId={articleId}
-            articleType={narrationArticleType}
             title={title}
             feedTitle={source}
             narration={narration}

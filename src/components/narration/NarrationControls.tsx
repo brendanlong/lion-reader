@@ -13,7 +13,6 @@
  * ```tsx
  * <NarrationControls
  *   articleId="..."
- *   articleType="entry"
  *   title="Article Title"
  *   feedTitle="Feed Name"
  * />
@@ -33,8 +32,6 @@ import { Button } from "@/components/ui/button";
 export interface NarrationControlsProps {
   /** The article ID (entry or saved article) */
   articleId: string;
-  /** Type of article: 'entry' for feed entries, 'saved' for saved articles */
-  articleType: "entry" | "saved";
   /** Title of the article (for Media Session) */
   title: string;
   /** Feed or site name (for Media Session) */
@@ -155,7 +152,6 @@ function NarrationIcon() {
  */
 export function NarrationControls({
   articleId,
-  articleType,
   title,
   feedTitle,
   artwork,
@@ -170,7 +166,6 @@ export function NarrationControls({
   return (
     <NarrationControlsInner
       articleId={articleId}
-      articleType={articleType}
       title={title}
       feedTitle={feedTitle}
       artwork={artwork}
@@ -186,7 +181,6 @@ export function NarrationControls({
  */
 function NarrationControlsInner({
   articleId,
-  articleType,
   title,
   feedTitle,
   artwork,
@@ -196,7 +190,6 @@ function NarrationControlsInner({
   // Use internal narration hook only when external state is not provided
   const internalNarration = useNarration({
     id: articleId,
-    type: articleType,
     title,
     feedTitle,
     artwork,
