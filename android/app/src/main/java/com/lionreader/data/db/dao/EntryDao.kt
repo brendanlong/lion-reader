@@ -20,6 +20,7 @@ interface EntryDao {
      *
      * @param feedId Optional filter by feed ID
      * @param tagId Optional filter by tag ID (entries from feeds with this tag)
+     * @param uncategorized If true, only return entries from feeds with no tags
      * @param unreadOnly If true, only return unread entries
      * @param starredOnly If true, only return starred entries
      * @param sortOrder Sort direction: "newest" or "oldest"
@@ -38,6 +39,12 @@ interface EntryDao {
               JOIN subscription_tags st ON sub.id = st.subscriptionId
               WHERE st.tagId = :tagId
           ))
+          AND (:uncategorized = 0 OR e.feedId IN (
+              SELECT sub.feedId FROM subscriptions sub
+              WHERE sub.id NOT IN (
+                  SELECT st.subscriptionId FROM subscription_tags st
+              )
+          ))
           AND (:unreadOnly = 0 OR COALESCE(s.read, 0) = 0)
           AND (:starredOnly = 0 OR COALESCE(s.starred, 0) = 1)
         ORDER BY
@@ -51,6 +58,7 @@ interface EntryDao {
     fun getEntries(
         feedId: String?,
         tagId: String?,
+        uncategorized: Boolean,
         unreadOnly: Boolean,
         starredOnly: Boolean,
         sortOrder: String,
@@ -130,6 +138,7 @@ interface EntryDao {
      *
      * @param feedId Optional filter by feed ID
      * @param tagId Optional filter by tag ID (entries from feeds with this tag)
+     * @param uncategorized If true, only return entries from feeds with no tags
      * @param unreadOnly If true, only return unread entries
      * @param starredOnly If true, only return starred entries
      * @param sortOrder Sort direction: "newest" or "oldest"
@@ -146,6 +155,12 @@ interface EntryDao {
               JOIN subscription_tags st ON sub.id = st.subscriptionId
               WHERE st.tagId = :tagId
           ))
+          AND (:uncategorized = 0 OR e.feedId IN (
+              SELECT sub.feedId FROM subscriptions sub
+              WHERE sub.id NOT IN (
+                  SELECT st.subscriptionId FROM subscription_tags st
+              )
+          ))
           AND (:unreadOnly = 0 OR COALESCE(s.read, 0) = 0)
           AND (:starredOnly = 0 OR COALESCE(s.starred, 0) = 1)
         ORDER BY
@@ -158,6 +173,7 @@ interface EntryDao {
     suspend fun getEntryIds(
         feedId: String?,
         tagId: String?,
+        uncategorized: Boolean,
         unreadOnly: Boolean,
         starredOnly: Boolean,
         sortOrder: String,

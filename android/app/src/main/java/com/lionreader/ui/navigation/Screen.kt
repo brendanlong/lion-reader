@@ -95,6 +95,13 @@ sealed class Screen(
     }
 
     /**
+     * Uncategorized entries view - shows entries from subscriptions with no tags.
+     */
+    data object Uncategorized : Screen("uncategorized") {
+        const val TITLE = "Uncategorized"
+    }
+
+    /**
      * Saved article detail screen showing full saved article content.
      * Requires a saved article ID argument.
      */

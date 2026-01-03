@@ -69,6 +69,20 @@ class SubscriptionRepository
         fun getTotalUnreadCount(): Flow<Int> = subscriptionDao.getTotalUnreadCount()
 
         /**
+         * Gets the unread count for uncategorized subscriptions (those with no tags).
+         *
+         * @return Flow of the uncategorized unread count
+         */
+        fun getUncategorizedUnreadCount(): Flow<Int> = subscriptionDao.getUncategorizedUnreadCount()
+
+        /**
+         * Gets subscriptions that have no tags (uncategorized).
+         *
+         * @return Flow of uncategorized subscriptions with feed information
+         */
+        fun getUncategorizedSubscriptions(): Flow<List<SubscriptionWithFeed>> = subscriptionDao.getUncategorizedWithFeeds()
+
+        /**
          * Gets a subscription by its feed ID.
          *
          * @param feedId The feed ID

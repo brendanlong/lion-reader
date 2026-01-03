@@ -44,6 +44,7 @@ import com.lionreader.ui.navigation.Screen
  * - All entries
  * - Starred entries
  * - Saved Articles
+ * - Uncategorized entries (feeds with no tags)
  * - Tags with colored indicators
  * - Feeds/Subscriptions with unread counts
  * - Sign Out option
@@ -54,6 +55,7 @@ import com.lionreader.ui.navigation.Screen
  * @param totalUnreadCount Total unread count for "All" item badge
  * @param starredUnreadCount Unread count for starred entries badge
  * @param savedUnreadCount Unread count for saved articles badge
+ * @param uncategorizedUnreadCount Unread count for uncategorized entries badge
  * @param onNavigate Callback when a navigation item is selected
  * @param onNavigateToSaved Callback when Saved Articles is clicked
  * @param onSignOut Callback when sign out is clicked
@@ -67,6 +69,7 @@ fun AppDrawer(
     totalUnreadCount: Int,
     starredUnreadCount: Int,
     savedUnreadCount: Int,
+    uncategorizedUnreadCount: Int,
     onNavigate: (String) -> Unit,
     onNavigateToSaved: () -> Unit,
     onSignOut: () -> Unit,
@@ -144,6 +147,33 @@ fun AppDrawer(
                 },
                 selected = currentRoute == Screen.SavedArticles.route,
                 onClick = onNavigateToSaved,
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+            )
+
+            // Uncategorized
+            NavigationDrawerItem(
+                label = { Text("Uncategorized") },
+                icon = {
+                    // Gray color indicator similar to web app
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(12.dp)
+                                .background(
+                                    color = Color(0xFF6B7280),
+                                    shape = CircleShape,
+                                ),
+                    )
+                },
+                badge = {
+                    if (uncategorizedUnreadCount > 0) {
+                        Badge {
+                            Text(formatCount(uncategorizedUnreadCount))
+                        }
+                    }
+                },
+                selected = currentRoute == Screen.Uncategorized.route,
+                onClick = { onNavigate(Screen.Uncategorized.route) },
                 modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
             )
 

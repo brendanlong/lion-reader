@@ -42,6 +42,7 @@ fun MainScreen(
     val totalUnreadCount by drawerViewModel.totalUnreadCount.collectAsStateWithLifecycle()
     val starredUnreadCount by drawerViewModel.starredUnreadCount.collectAsStateWithLifecycle()
     val savedUnreadCount by drawerViewModel.savedUnreadCount.collectAsStateWithLifecycle()
+    val uncategorizedUnreadCount by drawerViewModel.uncategorizedUnreadCount.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -68,6 +69,7 @@ fun MainScreen(
                 totalUnreadCount = totalUnreadCount,
                 starredUnreadCount = starredUnreadCount,
                 savedUnreadCount = savedUnreadCount,
+                uncategorizedUnreadCount = uncategorizedUnreadCount,
                 onNavigate = { route ->
                     mainViewModel.navigateTo(route)
                     scope.launch {
