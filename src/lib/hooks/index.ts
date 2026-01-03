@@ -47,6 +47,7 @@ export {
 export {
   useEntryMutations,
   type EntryListFilters,
+  type MarkAllReadOptions,
   type UseEntryMutationsOptions,
   type UseEntryMutationsResult,
 } from "./useEntryMutations";

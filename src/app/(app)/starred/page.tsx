@@ -14,6 +14,7 @@ import {
   SortToggle,
   type EntryListEntryData,
 } from "@/components/entries";
+import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import {
   useKeyboardShortcuts,
@@ -27,16 +28,26 @@ import { trpc } from "@/lib/trpc/client";
 function StarredEntriesContent() {
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
   const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
+  const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
     useViewPreferences("starred");
   const utils = trpc.useUtils();
 
+  // Get starred entries count (total and unread)
+  const starredCountQuery = trpc.entries.starredCount.useQuery();
+  const unreadStarredCount = starredCountQuery.data?.unread ?? 0;
+
   // Entry mutations with optimistic updates
-  const { toggleRead, toggleStar } = useEntryMutations({
+  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
     listFilters: { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
   });
+
+  const handleMarkAllRead = useCallback(() => {
+    markAllRead({ starredOnly: true });
+    setShowMarkAllReadDialog(false);
+  }, [markAllRead]);
 
   // Keyboard navigation and actions (also provides swipe navigation functions)
   const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
@@ -105,6 +116,31 @@ function StarredEntriesContent() {
       <div className="mb-4 flex items-center justify-between sm:mb-6">
         <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Starred</h1>
         <div className="flex gap-2">
+          {unreadStarredCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowMarkAllReadDialog(true)}
+              className="inline-flex items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:focus:ring-zinc-400"
+              title="Mark all as read"
+              aria-label="Mark all as read"
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span className="ml-1.5 hidden text-sm sm:inline">Mark All Read</span>
+            </button>
+          )}
           <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
           <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
         </div>
@@ -122,6 +158,15 @@ function StarredEntriesContent() {
             ? "No unread starred entries. Toggle to show all starred items."
             : "No starred entries yet. Star entries to save them for later."
         }
+      />
+
+      <MarkAllReadDialog
+        isOpen={showMarkAllReadDialog}
+        contextDescription="starred entries"
+        unreadCount={unreadStarredCount}
+        isLoading={isMarkAllReadPending}
+        onConfirm={handleMarkAllRead}
+        onCancel={() => setShowMarkAllReadDialog(false)}
       />
     </div>
   );

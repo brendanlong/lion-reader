@@ -565,6 +565,8 @@ export const entriesRouter = createTRPCRouter({
    * Mark all entries as read with optional filters.
    *
    * @param feedId - Optional filter to mark only entries from a specific feed
+   * @param tagId - Optional filter to mark only entries from feeds with this tag
+   * @param starredOnly - Optional filter to mark only starred entries
    * @param before - Optional filter to mark only entries fetched before this date
    * @returns The count of entries marked as read
    */
@@ -580,6 +582,8 @@ export const entriesRouter = createTRPCRouter({
     .input(
       z.object({
         feedId: uuidSchema.optional(),
+        tagId: uuidSchema.optional(),
+        starredOnly: z.boolean().optional(),
         before: z.coerce.date().optional(),
       })
     )
@@ -609,6 +613,58 @@ export const entriesRouter = createTRPCRouter({
             feedEntryIds.map((e) => e.id)
           )
         );
+      }
+
+      // If tagId is provided, filter entries by feeds with this tag
+      if (input.tagId) {
+        // First verify the tag belongs to the user
+        const tagExists = await ctx.db
+          .select({ id: tags.id })
+          .from(tags)
+          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId)))
+          .limit(1);
+
+        if (tagExists.length === 0) {
+          // Tag not found or doesn't belong to user
+          return { count: 0 };
+        }
+
+        // Get feed IDs for subscriptions with this tag
+        const taggedSubscriptions = await ctx.db
+          .select({ feedId: subscriptions.feedId })
+          .from(subscriptionTags)
+          .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
+          .where(
+            and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
+          );
+
+        if (taggedSubscriptions.length === 0) {
+          return { count: 0 };
+        }
+
+        const taggedFeedIds = taggedSubscriptions.map((s) => s.feedId);
+
+        // Get entry IDs for these feeds
+        const taggedEntryIds = await ctx.db
+          .select({ id: entries.id })
+          .from(entries)
+          .where(inArray(entries.feedId, taggedFeedIds));
+
+        if (taggedEntryIds.length === 0) {
+          return { count: 0 };
+        }
+
+        conditions.push(
+          inArray(
+            userEntries.entryId,
+            taggedEntryIds.map((e) => e.id)
+          )
+        );
+      }
+
+      // If starredOnly is true, filter to only starred entries
+      if (input.starredOnly) {
+        conditions.push(eq(userEntries.starred, true));
       }
 
       // If before date is provided, filter entries by fetchedAt
