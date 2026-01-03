@@ -143,6 +143,18 @@ export function EntryList({
     }
   );
 
+  // Get tRPC utils for prefetching on mousedown
+  const utils = trpc.useUtils();
+
+  // Prefetch entry data on mousedown (before click completes)
+  // This gives a 50-150ms head start with near-zero false positives
+  const handlePrefetch = useCallback(
+    (entryId: string) => {
+      utils.entries.get.fetch({ id: entryId });
+    },
+    [utils]
+  );
+
   // Flatten all pages into a single array of entries
   const allEntries = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
 
@@ -219,6 +231,7 @@ export function EntryList({
           selected={selectedEntryId === entry.id}
           onToggleRead={onToggleRead}
           onToggleStar={onToggleStar}
+          onPrefetch={handlePrefetch}
         />
       ))}
 

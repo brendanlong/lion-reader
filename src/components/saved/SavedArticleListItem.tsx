@@ -42,6 +42,10 @@ interface SavedArticleListItemProps {
    * Callback when the star indicator is clicked.
    */
   onToggleStar?: (articleId: string, currentlyStarred: boolean) => void;
+  /**
+   * Callback to prefetch article data on mousedown (before click completes).
+   */
+  onPrefetch?: (articleId: string) => void;
 }
 
 /**
@@ -54,6 +58,7 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
   selected = false,
   onToggleRead,
   onToggleStar,
+  onPrefetch,
 }: SavedArticleListItemProps) {
   return (
     <ArticleListItem
@@ -68,6 +73,7 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
       onClick={onClick}
       onToggleRead={onToggleRead}
       onToggleStar={onToggleStar}
+      onPrefetch={onPrefetch}
     />
   );
 });

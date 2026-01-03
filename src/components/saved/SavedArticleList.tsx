@@ -134,6 +134,18 @@ export function SavedArticleList({
     }
   );
 
+  // Get tRPC utils for prefetching on mousedown
+  const utils = trpc.useUtils();
+
+  // Prefetch article data on mousedown (before click completes)
+  // This gives a 50-150ms head start with near-zero false positives
+  const handlePrefetch = useCallback(
+    (articleId: string) => {
+      utils.entries.get.fetch({ id: articleId });
+    },
+    [utils]
+  );
+
   // Flatten all pages into a single array of articles
   const allArticles = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
 
@@ -210,6 +222,7 @@ export function SavedArticleList({
           selected={selectedArticleId === article.id}
           onToggleRead={onToggleRead}
           onToggleStar={onToggleStar}
+          onPrefetch={handlePrefetch}
         />
       ))}
 
