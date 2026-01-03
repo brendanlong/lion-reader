@@ -13,25 +13,27 @@ describe("standalone image handling", () => {
     const html = '<p>1</p><img alt="image description"><p>2</p><p>3</p>';
     const result = htmlToNarrationInput(html);
 
-    // Should have 4 paragraph IDs: p, img, p, p
-    expect(result.paragraphOrder).toEqual(["para-0", "para-1", "para-2", "para-3"]);
+    // Should have 4 paragraphs: p, img, p, p
+    expect(result.paragraphs).toHaveLength(4);
+    expect(result.paragraphs.map((p) => p.id)).toEqual([0, 1, 2, 3]);
 
     // Should include alt text in narration
-    expect(result.inputText).toContain("[P:0] 1");
-    expect(result.inputText).toContain("[P:1] [IMAGE: image description]");
-    expect(result.inputText).toContain("[P:2] 2");
-    expect(result.inputText).toContain("[P:3] 3");
+    expect(result.paragraphs[0]).toEqual({ id: 0, text: "1" });
+    expect(result.paragraphs[1]).toEqual({ id: 1, text: "Image: image description" });
+    expect(result.paragraphs[2]).toEqual({ id: 2, text: "2" });
+    expect(result.paragraphs[3]).toEqual({ id: 3, text: "3" });
   });
 
   it("should handle standalone img without alt text", () => {
     const html = "<p>1</p><img><p>2</p>";
     const result = htmlToNarrationInput(html);
 
-    // Should have 3 paragraph IDs
-    expect(result.paragraphOrder).toEqual(["para-0", "para-1", "para-2"]);
+    // Should have 3 paragraphs
+    expect(result.paragraphs).toHaveLength(3);
+    expect(result.paragraphs.map((p) => p.id)).toEqual([0, 1, 2]);
 
     // Should use default description
-    expect(result.inputText).toContain("[P:1] [IMAGE: image]");
+    expect(result.paragraphs[1]).toEqual({ id: 1, text: "Image: image" });
   });
 
   it("should handle mix of standalone and figure-wrapped images", () => {
@@ -43,11 +45,11 @@ describe("standalone image handling", () => {
     `;
     const result = htmlToNarrationInput(html);
 
-    // Should have 4 paragraph IDs: p, img, figure, p
-    expect(result.paragraphOrder).toHaveLength(4);
+    // Should have 4 paragraphs: p, img, figure, p
+    expect(result.paragraphs).toHaveLength(4);
 
     // Both images should be in narration
-    expect(result.inputText).toContain("[IMAGE: standalone image]");
-    expect(result.inputText).toContain("[IMAGE: figure image]");
+    expect(result.paragraphs.some((p) => p.text === "Image: standalone image")).toBe(true);
+    expect(result.paragraphs.some((p) => p.text === "Image: figure image")).toBe(true);
   });
 });

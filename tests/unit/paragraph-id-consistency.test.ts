@@ -23,11 +23,11 @@ describe("paragraph ID consistency between server and client", () => {
     const clientResult = addParagraphIdsToHtml(html);
 
     // Should produce same paragraph count
-    expect(serverResult.paragraphOrder.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphOrder.length).toBe(3); // p, img, p
+    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
+    expect(serverResult.paragraphs.length).toBe(3); // p, img, p
 
     // Check server-side order
-    expect(serverResult.paragraphOrder).toEqual(["para-0", "para-1", "para-2"]);
+    expect(serverResult.paragraphs.map((p) => p.id)).toEqual([0, 1, 2]);
 
     // Verify client-side HTML has matching IDs
     expect(clientResult.html).toContain('data-para-id="para-0"');
@@ -41,8 +41,8 @@ describe("paragraph ID consistency between server and client", () => {
     const serverResult = htmlToNarrationInput(html);
     const clientResult = addParagraphIdsToHtml(html);
 
-    expect(serverResult.paragraphOrder.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphOrder.length).toBe(4); // h2, p, img, p
+    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
+    expect(serverResult.paragraphs.length).toBe(4); // h2, p, img, p
   });
 
   it("should exclude images inside paragraphs", () => {
@@ -52,8 +52,8 @@ describe("paragraph ID consistency between server and client", () => {
     const clientResult = addParagraphIdsToHtml(html);
 
     // Should only have 2 paragraphs (inline image shouldn't get its own ID)
-    expect(serverResult.paragraphOrder.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphOrder.length).toBe(2); // p, p
+    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
+    expect(serverResult.paragraphs.length).toBe(2); // p, p
   });
 
   it("should exclude images inside figures", () => {
@@ -63,8 +63,8 @@ describe("paragraph ID consistency between server and client", () => {
     const clientResult = addParagraphIdsToHtml(html);
 
     // Should have 3 elements: p, figure, p (not the img inside figure)
-    expect(serverResult.paragraphOrder.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphOrder.length).toBe(3); // p, figure, p
+    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
+    expect(serverResult.paragraphs.length).toBe(3); // p, figure, p
   });
 
   it("should handle complex article with multiple standalone images", () => {
@@ -81,7 +81,7 @@ describe("paragraph ID consistency between server and client", () => {
     const clientResult = addParagraphIdsToHtml(html);
 
     // h1, p, img, p, img, p = 6 elements
-    expect(serverResult.paragraphOrder.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphOrder.length).toBe(6);
+    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
+    expect(serverResult.paragraphs.length).toBe(6);
   });
 });
