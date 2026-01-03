@@ -6,8 +6,9 @@
 # =============================================================================
 FROM node:20-alpine AS base
 
-# Enable corepack for pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install bash for startup script and enable corepack for pnpm
+RUN apk add --no-cache bash && \
+    corepack enable && corepack prepare pnpm@latest --activate
 
 # Set working directory
 WORKDIR /app
