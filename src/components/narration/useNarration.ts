@@ -8,7 +8,7 @@
  * Usage:
  * ```tsx
  * function ArticleView({ articleId }: { articleId: string }) {
- *   const narration = useNarration({ id: articleId, type: 'entry', title: 'Article Title', feedTitle: 'Feed' });
+ *   const narration = useNarration({ id: articleId, title: 'Article Title', feedTitle: 'Feed' });
  *
  *   return (
  *     <NarrationControls
@@ -50,8 +50,6 @@ import { MIN_PREBUFFER_DURATION_SECONDS } from "@/lib/narration/audio-buffer-uti
 export interface UseNarrationConfig {
   /** The article ID (entry or saved article) */
   id: string;
-  /** Type of article: 'entry' for feed entries, 'saved' for saved articles */
-  type: "entry" | "saved";
   /** Title of the article (for Media Session) */
   title: string;
   /** Feed or site name (for Media Session) */
@@ -140,11 +138,11 @@ function splitIntoParagraphs(text: string): string[] {
  * - Integrating with Media Session API
  * - Using user's voice/rate/pitch preferences
  *
- * @param config - Configuration including article ID, type, and metadata
+ * @param config - Configuration including article ID and metadata
  * @returns Object with narration state and control functions
  */
 export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
-  const { id, type, title, feedTitle, artwork, content } = config;
+  const { id, title, feedTitle, artwork, content } = config;
 
   // State
   const [state, setState] = useState<NarrationState>(DEFAULT_STATE);
@@ -284,10 +282,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       let nextIndex = currentIndex + 1;
 
       // Keep buffering until we have enough duration or run out of paragraphs
-      while (
-        bufferedDuration < MIN_PREBUFFER_DURATION_SECONDS &&
-        nextIndex < paragraphs.length
-      ) {
+      while (bufferedDuration < MIN_PREBUFFER_DURATION_SECONDS && nextIndex < paragraphs.length) {
         // Skip if already cached or being buffered
         if (audioCacheRef.current.has(nextIndex) || bufferingRef.current.has(nextIndex)) {
           const existingBuffer = audioCacheRef.current.get(nextIndex);
@@ -442,7 +437,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           // Call server for LLM processing
           const result = await generateMutation.mutateAsync({
             id,
-            type,
             useLlmNormalization: settings.useLlmNormalization,
           });
           narration = result.narration;
@@ -522,7 +516,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         // Call server for LLM processing
         const result = await generateMutation.mutateAsync({
           id,
-          type,
           useLlmNormalization: settings.useLlmNormalization,
         });
         narration = result.narration;
@@ -569,7 +562,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     settings.useLlmNormalization,
     generateMutation,
     id,
-    type,
     content,
     speakPiperParagraph,
   ]);
