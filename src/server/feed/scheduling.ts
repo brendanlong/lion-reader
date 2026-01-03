@@ -33,6 +33,12 @@ export const MAX_FETCH_INTERVAL_SECONDS = 7 * 24 * 60 * 60; // 604800
 /** Default interval when no hints available: 60 minutes */
 export const DEFAULT_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
 
+/** Default jitter fraction: 10% of interval */
+export const DEFAULT_JITTER_FRACTION = 0.1;
+
+/** Maximum jitter: 30 minutes (prevents long-interval feeds from being too delayed) */
+export const MAX_JITTER_SECONDS = 30 * 60; // 1800
+
 /** Maximum consecutive failures before permanent max backoff */
 export const MAX_CONSECUTIVE_FAILURES = 10;
 
@@ -101,6 +107,11 @@ export interface CalculateNextFetchOptions {
   consecutiveFailures?: number;
   /** The reference time to calculate from (defaults to now) */
   now?: Date;
+  /**
+   * Random number source for jitter (returns 0-1, like Math.random).
+   * Defaults to Math.random. Pass a fixed value for deterministic tests.
+   */
+  randomSource?: () => number;
 }
 
 /**
@@ -208,62 +219,71 @@ function clampInterval(
  * // => { nextFetchAt: Date, intervalSeconds: 3600, reason: "default" }
  */
 export function calculateNextFetch(options: CalculateNextFetchOptions = {}): NextFetchResult {
-  const { cacheControl, feedHints, consecutiveFailures = 0, now = new Date() } = options;
+  const {
+    cacheControl,
+    feedHints,
+    consecutiveFailures = 0,
+    now = new Date(),
+    randomSource = Math.random,
+  } = options;
+
+  let intervalSeconds: number;
+  let reason: NextFetchReason;
 
   // 1. If there are failures, use exponential backoff
   if (consecutiveFailures > 0) {
-    const intervalSeconds = calculateFailureBackoff(consecutiveFailures);
-    return {
-      nextFetchAt: addSeconds(now, intervalSeconds),
-      intervalSeconds,
-      reason: "failure_backoff",
-    };
+    intervalSeconds = calculateFailureBackoff(consecutiveFailures);
+    reason = "failure_backoff";
   }
-
   // 2. Try to use Cache-Control max-age (HTTP headers take precedence)
-  if (cacheControl) {
+  else if (cacheControl) {
     const effectiveMaxAge = getEffectiveMaxAge(cacheControl);
 
     if (effectiveMaxAge !== undefined) {
-      const { intervalSeconds, reason } = clampInterval(effectiveMaxAge, "cache_control");
-      return {
-        nextFetchAt: addSeconds(now, intervalSeconds),
-        intervalSeconds,
-        reason,
-      };
+      const clamped = clampInterval(effectiveMaxAge, "cache_control");
+      intervalSeconds = clamped.intervalSeconds;
+      reason = clamped.reason;
+    } else {
+      intervalSeconds = DEFAULT_FETCH_INTERVAL_SECONDS;
+      reason = "default";
     }
   }
-
   // 3. Try feed hints
-  if (feedHints) {
+  else if (feedHints) {
     // 3a. Try RSS <ttl> element (value is in minutes)
     if (feedHints.ttlMinutes !== undefined && feedHints.ttlMinutes > 0) {
       const ttlSeconds = feedHints.ttlMinutes * 60;
-      const { intervalSeconds, reason } = clampInterval(ttlSeconds, "ttl");
-      return {
-        nextFetchAt: addSeconds(now, intervalSeconds),
-        intervalSeconds,
-        reason,
-      };
+      const clamped = clampInterval(ttlSeconds, "ttl");
+      intervalSeconds = clamped.intervalSeconds;
+      reason = clamped.reason;
     }
-
     // 3b. Try syndication namespace hints
-    const syndicationSeconds = syndicationToSeconds(feedHints.syndication);
-    if (syndicationSeconds !== undefined) {
-      const { intervalSeconds, reason } = clampInterval(syndicationSeconds, "syndication");
-      return {
-        nextFetchAt: addSeconds(now, intervalSeconds),
-        intervalSeconds,
-        reason,
-      };
+    else {
+      const syndicationSeconds = syndicationToSeconds(feedHints.syndication);
+      if (syndicationSeconds !== undefined) {
+        const clamped = clampInterval(syndicationSeconds, "syndication");
+        intervalSeconds = clamped.intervalSeconds;
+        reason = clamped.reason;
+      } else {
+        intervalSeconds = DEFAULT_FETCH_INTERVAL_SECONDS;
+        reason = "default";
+      }
     }
   }
-
   // 4. Default: 60 minutes
+  else {
+    intervalSeconds = DEFAULT_FETCH_INTERVAL_SECONDS;
+    reason = "default";
+  }
+
+  // Apply jitter to spread out fetches and prevent thundering herd
+  const jitterSeconds = calculateJitter(intervalSeconds, randomSource());
+  const totalSeconds = intervalSeconds + jitterSeconds;
+
   return {
-    nextFetchAt: addSeconds(now, DEFAULT_FETCH_INTERVAL_SECONDS),
-    intervalSeconds: DEFAULT_FETCH_INTERVAL_SECONDS,
-    reason: "default",
+    nextFetchAt: addSeconds(now, totalSeconds),
+    intervalSeconds: totalSeconds,
+    reason,
   };
 }
 
@@ -308,6 +328,37 @@ export function calculateFailureBackoff(consecutiveFailures: number): number {
  */
 function addSeconds(date: Date, seconds: number): Date {
   return new Date(date.getTime() + seconds * 1000);
+}
+
+/**
+ * Calculates jitter to add to a fetch interval.
+ *
+ * Jitter is used to spread out feed fetches over time, preventing
+ * thundering herd problems when many feeds are added at once.
+ *
+ * The jitter is calculated as a fraction of the interval (default 10%),
+ * but capped at a maximum value (default 30 minutes) to ensure
+ * long-interval feeds aren't delayed too much.
+ *
+ * @param intervalSeconds - The base interval in seconds
+ * @param randomValue - A random value between 0 and 1
+ * @returns Jitter in seconds to add to the interval
+ *
+ * @example
+ * // 60 min interval with random=0.5 → 3 min jitter (50% of 10% of 60)
+ * calculateJitter(3600, 0.5) // 180
+ *
+ * @example
+ * // 7 day interval with random=1.0 → 30 min jitter (capped)
+ * calculateJitter(604800, 1.0) // 1800
+ */
+export function calculateJitter(intervalSeconds: number, randomValue: number): number {
+  // Max jitter is 10% of interval, but never more than 30 minutes
+  const maxJitterForInterval = Math.min(
+    intervalSeconds * DEFAULT_JITTER_FRACTION,
+    MAX_JITTER_SECONDS
+  );
+  return Math.floor(maxJitterForInterval * randomValue);
 }
 
 /**
