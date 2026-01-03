@@ -1,5 +1,16 @@
 package com.lionreader.service
 
+/**
+ * Source of the narration text.
+ */
+enum class NarrationSource {
+    /** Text was processed by LLM for better TTS quality */
+    LLM,
+
+    /** Text was converted locally without LLM processing */
+    LOCAL,
+}
+
 sealed class NarrationState {
     data object Idle : NarrationState()
 
@@ -10,6 +21,10 @@ sealed class NarrationState {
         val currentParagraph: Int,
         val totalParagraphs: Int,
         val entryTitle: String,
+        /** Source of the narration text */
+        val source: NarrationSource = NarrationSource.LOCAL,
+        /** HTML element index to highlight (translated from narration paragraph index) */
+        val highlightedElementIndex: Int = currentParagraph,
     ) : NarrationState()
 
     data class Paused(
@@ -17,6 +32,10 @@ sealed class NarrationState {
         val currentParagraph: Int,
         val totalParagraphs: Int,
         val entryTitle: String,
+        /** Source of the narration text */
+        val source: NarrationSource = NarrationSource.LOCAL,
+        /** HTML element index to highlight (translated from narration paragraph index) */
+        val highlightedElementIndex: Int = currentParagraph,
     ) : NarrationState()
 
     data class Error(

@@ -7,6 +7,9 @@ import com.lionreader.data.api.models.EntryType
 import com.lionreader.data.api.models.LoginRequest
 import com.lionreader.data.api.models.LoginResponse
 import com.lionreader.data.api.models.MarkReadRequest
+import com.lionreader.data.api.models.NarrationAiAvailableResponse
+import com.lionreader.data.api.models.NarrationGenerateRequest
+import com.lionreader.data.api.models.NarrationGenerateResponse
 import com.lionreader.data.api.models.ProvidersResponse
 import com.lionreader.data.api.models.SaveArticleRequest
 import com.lionreader.data.api.models.SavedArticleResponse
@@ -192,6 +195,32 @@ interface LionReaderApi {
      * @param id Saved article ID to delete
      */
     suspend fun deleteSavedArticle(id: String): ApiResult<Unit>
+
+    // ============================================================================
+    // NARRATION ENDPOINTS
+    // ============================================================================
+
+    /**
+     * Generate narration-ready text for an entry.
+     *
+     * Uses LLM preprocessing to convert article content to TTS-ready text.
+     * Falls back to plain text conversion if LLM is unavailable.
+     *
+     * @param id Entry ID to generate narration for
+     * @param useLlmNormalization Whether to use LLM for text normalization (default true)
+     * @return NarrationGenerateResponse containing narration text and source info
+     */
+    suspend fun generateNarration(
+        id: String,
+        useLlmNormalization: Boolean = true,
+    ): ApiResult<NarrationGenerateResponse>
+
+    /**
+     * Check if AI text processing is available on the server.
+     *
+     * @return NarrationAiAvailableResponse indicating availability
+     */
+    suspend fun isAiTextProcessingAvailable(): ApiResult<NarrationAiAvailableResponse>
 }
 
 /**
@@ -306,4 +335,20 @@ class LionReaderApiImpl
             )
 
         override suspend fun deleteSavedArticle(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "saved/$id")
+
+        // ============================================================================
+        // NARRATION ENDPOINTS
+        // ============================================================================
+
+        override suspend fun generateNarration(
+            id: String,
+            useLlmNormalization: Boolean,
+        ): ApiResult<NarrationGenerateResponse> =
+            apiClient.post(
+                path = "narration/generate",
+                body = NarrationGenerateRequest(id = id, useLlmNormalization = useLlmNormalization),
+            )
+
+        override suspend fun isAiTextProcessingAvailable(): ApiResult<NarrationAiAvailableResponse> =
+            apiClient.get(path = "narration/ai-available")
     }

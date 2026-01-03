@@ -193,13 +193,13 @@ export function createMemoizedAddParagraphIds(
 
 /**
  * Paragraph mapping entry for highlighting support.
- * Maps a narration paragraph index to one or more original paragraph indices.
+ * Maps a narration paragraph index to the original HTML element index.
  */
 export interface ParagraphMapEntry {
   /** Narration paragraph index */
   n: number;
-  /** Original paragraph indices (can be multiple if combined) */
-  o: number[];
+  /** Original HTML element index (corresponds to data-para-id) */
+  o: number;
 }
 
 /**
@@ -417,7 +417,7 @@ export function htmlToClientNarration(html: string): ClientNarrationResult {
       narrationParagraphs.push(text);
       paragraphMap.push({
         n: narrationIndex,
-        o: [elementIndex],
+        o: elementIndex,
       });
     }
   });

@@ -1,8 +1,20 @@
 package com.lionreader.ui.narration
 
+import com.lionreader.data.api.models.ParagraphMapEntry
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.TextNode
+
+/**
+ * Result of converting HTML to narration text.
+ *
+ * @property paragraphs List of speakable paragraph strings
+ * @property paragraphMap Mapping from narration paragraph index to original HTML element index
+ */
+data class ConversionResult(
+    val paragraphs: List<String>,
+    val paragraphMap: List<ParagraphMapEntry>,
+)
 
 /**
  * Converts HTML content to a list of speakable paragraphs for narration.
@@ -33,30 +45,45 @@ object HtmlToTextConverter {
         )
 
     /**
+     * Converts HTML to a list of speakable paragraphs with paragraph mapping.
+     *
+     * @param html The HTML content to convert
+     * @return ConversionResult with paragraphs and mapping to original element indices
+     */
+    fun convertWithMapping(html: String): ConversionResult {
+        if (html.isBlank()) return ConversionResult(emptyList(), emptyList())
+
+        val doc = Jsoup.parse(html)
+        val paragraphs = mutableListOf<String>()
+        val paragraphMap = mutableListOf<ParagraphMapEntry>()
+
+        // Get all block elements in document order
+        val allBlockElements =
+            doc
+                .body()
+                .select(BLOCK_ELEMENTS.joinToString(", "))
+                .filter { el -> el.parents().none { it.tagName() in BLOCK_ELEMENTS } }
+
+        // Process each element, tracking the original index
+        allBlockElements.forEachIndexed { elementIndex, element ->
+            val text = processElement(element)
+            if (text.isNotBlank()) {
+                val narrationIndex = paragraphs.size
+                paragraphs.add(text.trim())
+                paragraphMap.add(ParagraphMapEntry(n = narrationIndex, o = elementIndex))
+            }
+        }
+
+        return ConversionResult(paragraphs, paragraphMap)
+    }
+
+    /**
      * Converts HTML to a list of speakable paragraphs.
      *
      * @param html The HTML content to convert
      * @return List of paragraph strings, one per block element. Empty paragraphs are filtered out.
      */
-    fun convert(html: String): List<String> {
-        if (html.isBlank()) return emptyList()
-
-        val doc = Jsoup.parse(html)
-        val paragraphs = mutableListOf<String>()
-
-        // Process block elements in document order
-        for (element in doc.body().select(BLOCK_ELEMENTS.joinToString(", "))) {
-            // Skip nested block elements (already processed by parent)
-            if (element.parents().any { it.tagName() in BLOCK_ELEMENTS }) continue
-
-            val text = processElement(element)
-            if (text.isNotBlank()) {
-                paragraphs.add(text.trim())
-            }
-        }
-
-        return paragraphs
-    }
+    fun convert(html: String): List<String> = convertWithMapping(html).paragraphs
 
     private fun processElement(el: Element): String =
         when (el.tagName()) {

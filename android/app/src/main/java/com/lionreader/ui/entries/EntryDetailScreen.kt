@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.data.db.relations.EntryWithState
+import com.lionreader.service.NarrationState
 import com.lionreader.ui.components.EntryDetailSkeleton
 import com.lionreader.ui.components.ErrorState
 import com.lionreader.ui.components.ErrorType
@@ -174,6 +175,7 @@ fun EntryDetailScreen(
                         nextEntry = swipeNavState.nextEntry,
                         isLoading = uiState.isLoading,
                         errorMessage = uiState.errorMessage,
+                        narrationState = narrationState,
                         onNavigateToEntry = onNavigateToEntry,
                         onLinkClick = { url -> viewModel.openInBrowser(url) },
                         onRetry = { viewModel.retry() },
@@ -185,6 +187,7 @@ fun EntryDetailScreen(
                         entry = entry,
                         isLoading = uiState.isLoading,
                         errorMessage = uiState.errorMessage,
+                        narrationState = narrationState,
                         onLinkClick = { url -> viewModel.openInBrowser(url) },
                         onRetry = { viewModel.retry() },
                         modifier = Modifier.fillMaxSize(),
@@ -245,6 +248,7 @@ private fun SwipeableEntryPager(
     nextEntry: EntryWithState?,
     isLoading: Boolean,
     errorMessage: String?,
+    narrationState: NarrationState,
     onNavigateToEntry: (entryId: String, listContext: String?) -> Unit,
     onLinkClick: (String) -> Unit,
     onRetry: () -> Unit,
@@ -279,28 +283,31 @@ private fun SwipeableEntryPager(
                     entry = currentEntry,
                     isLoading = isLoading,
                     errorMessage = errorMessage,
+                    narrationState = narrationState,
                     onLinkClick = onLinkClick,
                     onRetry = onRetry,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
             pageIndex == currentIndex - 1 && previousEntry != null -> {
-                // Previous page with preloaded content
+                // Previous page with preloaded content (no highlighting on adjacent pages)
                 NonSwipeableEntryContent(
                     entry = previousEntry,
                     isLoading = false,
                     errorMessage = null,
+                    narrationState = NarrationState.Idle,
                     onLinkClick = onLinkClick,
                     onRetry = onRetry,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
             pageIndex == currentIndex + 1 && nextEntry != null -> {
-                // Next page with preloaded content
+                // Next page with preloaded content (no highlighting on adjacent pages)
                 NonSwipeableEntryContent(
                     entry = nextEntry,
                     isLoading = false,
                     errorMessage = null,
+                    narrationState = NarrationState.Idle,
                     onLinkClick = onLinkClick,
                     onRetry = onRetry,
                     modifier = Modifier.fillMaxSize(),
@@ -326,6 +333,7 @@ private fun NonSwipeableEntryContent(
     entry: EntryWithState?,
     isLoading: Boolean,
     errorMessage: String?,
+    narrationState: NarrationState,
     onLinkClick: (String) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -353,6 +361,7 @@ private fun NonSwipeableEntryContent(
         entry != null -> {
             EntryDetailContent(
                 entry = entry,
+                narrationState = narrationState,
                 onLinkClick = onLinkClick,
                 scrollState = scrollState,
                 modifier = modifier,
@@ -448,10 +457,31 @@ private fun EntryDetailTopBar(
 @Composable
 private fun EntryDetailContent(
     entry: EntryWithState,
+    narrationState: NarrationState,
     onLinkClick: (String) -> Unit,
     scrollState: androidx.compose.foundation.ScrollState,
     modifier: Modifier = Modifier,
 ) {
+    // Calculate the highlighted paragraph index based on narration state
+    // Only highlight if narrating this specific entry
+    // Use highlightedElementIndex which is translated from narration index to element index
+    val highlightedParagraphIndex =
+        when (narrationState) {
+            is NarrationState.Playing ->
+                if (narrationState.entryId == entry.entry.id) {
+                    narrationState.highlightedElementIndex
+                } else {
+                    null
+                }
+            is NarrationState.Paused ->
+                if (narrationState.entryId == entry.entry.id) {
+                    narrationState.highlightedElementIndex
+                } else {
+                    null
+                }
+            else -> null
+        }
+
     Column(
         modifier =
             modifier
@@ -474,6 +504,7 @@ private fun EntryDetailContent(
             html = content,
             onLinkClick = onLinkClick,
             baseUrl = entry.entry.url,
+            highlightedParagraphIndex = highlightedParagraphIndex,
             modifier = Modifier.fillMaxWidth(),
         )
 

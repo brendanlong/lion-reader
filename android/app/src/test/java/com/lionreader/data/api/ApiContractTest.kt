@@ -61,6 +61,9 @@ class ApiContractTest {
             // Saved articles endpoints (only save and delete - other operations use entries)
             PathWithMethod("POST", "saved"),
             PathWithMethod("DELETE", "saved/{id}"),
+            // Narration endpoints
+            PathWithMethod("POST", "narration/generate"),
+            PathWithMethod("GET", "narration/ai-available"),
         )
 
     @BeforeAll
