@@ -14,7 +14,7 @@ describe("htmlToPlainText image handling", () => {
     const result = htmlToPlainText(html);
 
     expect(result).toContain("Before");
-    expect(result).toContain("[Image: A test image]");
+    expect(result).toContain("Image: A test image");
     expect(result).toContain("After");
 
     // Should have 3 paragraphs when split
@@ -27,7 +27,7 @@ describe("htmlToPlainText image handling", () => {
     const result = htmlToPlainText(html);
 
     expect(result).toContain("Before");
-    expect(result).toContain("[Image]");
+    expect(result).toContain("Image");
     expect(result).toContain("After");
 
     const paragraphs = result.split("\n\n").filter((p) => p.trim().length > 0);
@@ -45,9 +45,9 @@ describe("htmlToPlainText image handling", () => {
     const result = htmlToPlainText(html);
 
     expect(result).toContain("Paragraph 1");
-    expect(result).toContain("[Image: First image]");
+    expect(result).toContain("Image: First image");
     expect(result).toContain("Paragraph 2");
-    expect(result).toContain("[Image: Second image]");
+    expect(result).toContain("Image: Second image");
     expect(result).toContain("Paragraph 3");
 
     const paragraphs = result.split("\n\n").filter((p) => p.trim().length > 0);
@@ -60,7 +60,7 @@ describe("htmlToPlainText image handling", () => {
 
     // Inline images become text within the paragraph
     expect(result).toContain("Text with");
-    expect(result).toContain("[Image: inline image]");
+    expect(result).toContain("Image: inline image");
     expect(result).toContain("more text");
   });
 
@@ -75,7 +75,7 @@ describe("htmlToPlainText image handling", () => {
     // This matches the 3 paragraph IDs that client-side will assign
     expect(paragraphs).toHaveLength(3);
     expect(paragraphs[0]).toBe("1");
-    expect(paragraphs[1]).toBe("[Image: 2]");
+    expect(paragraphs[1]).toBe("Image: 2");
     expect(paragraphs[2]).toBe("3");
   });
 
@@ -92,9 +92,9 @@ describe("htmlToPlainText image handling", () => {
 
     expect(result).toContain("Title");
     expect(result).toContain("Intro");
-    expect(result).toContain("[Image: diagram]"); // standalone image
+    expect(result).toContain("Image: diagram"); // standalone image
     expect(result).toContain("Explanation");
-    expect(result).toContain("[Image: figure image]"); // image in figure
+    expect(result).toContain("Image: figure image"); // image in figure
     expect(result).toContain("Conclusion");
   });
 });
