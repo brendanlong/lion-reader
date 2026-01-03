@@ -21,7 +21,8 @@
     "db:migrate:test": "dotenv -o -e .env.test -- tsx scripts/migrate.ts",
     "test": "pnpm db:migrate:test && dotenv -o -e .env.test -- vitest",
     "test:unit": "dotenv -o -e .env.test -- vitest run tests/unit",
-    "test:integration": "pnpm db:migrate:test && dotenv -o -e .env.test -- vitest run tests/integration"
+    "test:integration": "pnpm db:migrate:test && dotenv -o -e .env.test -- vitest run tests/integration",
+    "worker": "tsx scripts/worker.ts"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": [
