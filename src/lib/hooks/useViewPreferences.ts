@@ -174,6 +174,20 @@ function notifyListeners(key: string): void {
 }
 
 /**
+ * Get view preferences synchronously (for use outside of React components).
+ *
+ * This is useful for prefetching in event handlers where hooks can't be called.
+ *
+ * @param viewType - The type of view (all, starred, feed, tag, saved)
+ * @param viewId - Optional ID for feed or tag views
+ * @returns The current view preferences
+ */
+export function getViewPreferences(viewType: ViewType, viewId?: string): ViewPreferences {
+  const key = getStorageKey(viewType, viewId);
+  return getSnapshotCached(key);
+}
+
+/**
  * Hook for managing view preferences with localStorage persistence.
  *
  * Uses useSyncExternalStore for proper React 18 concurrent mode support.

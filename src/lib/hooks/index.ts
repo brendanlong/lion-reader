@@ -38,6 +38,7 @@ export {
 
 export {
   useViewPreferences,
+  getViewPreferences,
   type ViewType,
   type ViewPreferences,
   type UseViewPreferencesResult,
