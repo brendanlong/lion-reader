@@ -84,16 +84,6 @@ export {
   type VoiceErrorInfo,
 } from "./errors";
 
-// Paragraph mapping for highlighting
-export {
-  parseNarrationOutput,
-  createPositionalMapping,
-  stripMarkers,
-  hasParaMarkers,
-  type ParagraphMapping,
-  type NarrationToOriginal,
-} from "./paragraph-mapping";
-
 // HTML to narration input conversion
 export {
   htmlToNarrationInput,

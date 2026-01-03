@@ -67,17 +67,6 @@ export interface UseNarrationConfig {
 }
 
 /**
- * Paragraph mapping entry for highlighting support.
- * Maps a narration paragraph index to one or more original paragraph indices.
- */
-export interface ParagraphMapEntry {
-  /** Narration paragraph index */
-  n: number;
-  /** Original paragraph indices (can be multiple if LLM combined) */
-  o: number[];
-}
-
-/**
  * Return type for the useNarration hook.
  */
 export interface UseNarrationReturn {
@@ -97,8 +86,6 @@ export interface UseNarrationReturn {
   stop: () => void;
   /** Whether narration is supported in this browser */
   isSupported: boolean;
-  /** Paragraph mapping for highlighting (narration index -> original indices) */
-  paragraphMap: ParagraphMapEntry[] | null;
   /** Processed HTML with data-para-id attributes (only for client-side narration) */
   processedHtml: string | null;
 }
@@ -151,7 +138,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [narrationText, setNarrationText] = useState<string | null>(null);
   const [isSupported] = useState(() => isNarrationSupported());
-  const [paragraphMap, setParagraphMap] = useState<ParagraphMapEntry[] | null>(null);
   const [processedHtml, setProcessedHtml] = useState<string | null>(null);
 
   // Refs
@@ -284,10 +270,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       let nextIndex = currentIndex + 1;
 
       // Keep buffering until we have enough duration or run out of paragraphs
-      while (
-        bufferedDuration < MIN_PREBUFFER_DURATION_SECONDS &&
-        nextIndex < paragraphs.length
-      ) {
+      while (bufferedDuration < MIN_PREBUFFER_DURATION_SECONDS && nextIndex < paragraphs.length) {
         // Skip if already cached or being buffered
         if (audioCacheRef.current.has(nextIndex) || bufferingRef.current.has(nextIndex)) {
           const existingBuffer = audioCacheRef.current.get(nextIndex);
@@ -429,14 +412,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
       try {
         let narration: string;
-        let paragraphMapResult: ParagraphMapEntry[] | null = null;
         let processedHtmlResult: string | null = null;
 
         // If LLM normalization is disabled and we have content, process client-side
         if (!settings.useLlmNormalization && content) {
           const clientResult = htmlToClientNarration(content);
           narration = clientResult.narrationText;
-          paragraphMapResult = clientResult.paragraphMap;
           processedHtmlResult = clientResult.processedHtml;
         } else {
           // Call server for LLM processing
@@ -446,12 +427,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
             useLlmNormalization: settings.useLlmNormalization,
           });
           narration = result.narration;
-          paragraphMapResult = result.paragraphMap ?? null;
         }
 
         if (narration) {
           setNarrationText(narration);
-          setParagraphMap(paragraphMapResult);
           setProcessedHtml(processedHtmlResult);
           const paragraphs = splitIntoParagraphs(narration);
           piperParagraphsRef.current = paragraphs;
@@ -509,14 +488,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
     try {
       let narration: string;
-      let paragraphMapResult: ParagraphMapEntry[] | null = null;
       let processedHtmlResult: string | null = null;
 
       // If LLM normalization is disabled and we have content, process client-side
       if (!settings.useLlmNormalization && content) {
         const clientResult = htmlToClientNarration(content);
         narration = clientResult.narrationText;
-        paragraphMapResult = clientResult.paragraphMap;
         processedHtmlResult = clientResult.processedHtml;
       } else {
         // Call server for LLM processing
@@ -526,12 +503,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           useLlmNormalization: settings.useLlmNormalization,
         });
         narration = result.narration;
-        paragraphMapResult = result.paragraphMap ?? null;
       }
 
       if (narration) {
         setNarrationText(narration);
-        setParagraphMap(paragraphMapResult);
         setProcessedHtml(processedHtmlResult);
         narrator.loadArticle(narration);
 
@@ -667,15 +642,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     narratorRef.current.stop();
   }, [isSupported, usePiper]);
 
-  // Clear audio cache and paragraph map when article or voice changes
+  // Clear audio cache and processed HTML when article or voice changes
   useEffect(() => {
     // Clear the cache when article or voice changes
     audioCacheRef.current.clear();
     bufferingRef.current.clear();
     piperParagraphsRef.current = [];
     piperCurrentIndexRef.current = 0;
-    // Clear paragraph map and processed HTML when article changes
-    setParagraphMap(null);
+    // Clear processed HTML when article changes
     setProcessedHtml(null);
     setNarrationText(null);
   }, [id, settings.voiceId]);
@@ -707,7 +681,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     skipBackward,
     stop,
     isSupported,
-    paragraphMap,
     processedHtml,
   };
 }

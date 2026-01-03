@@ -33,44 +33,57 @@ const BLOCK_ELEMENTS = new Set([
 ]);
 
 /**
+ * A paragraph in the narration input, ready to be sent to LLM as JSON.
+ */
+export interface NarrationInputParagraph {
+  /** Paragraph index (0-based) */
+  id: number;
+  /** The text to narrate, already in speakable form */
+  text: string;
+}
+
+/**
  * Result of converting HTML to narration input.
  */
 export interface HtmlToNarrationInputResult {
-  /** Text content with [P:X] markers for LLM processing */
-  inputText: string;
-  /** Array of paragraph identifiers in order they appear */
-  paragraphOrder: string[];
+  /** Array of paragraphs with IDs and text */
+  paragraphs: NarrationInputParagraph[];
 }
 
 /**
  * Converts an element's text content for narration.
+ * Returns text in speakable form (no structural markers like [HEADING]).
  * Handles special elements like images, code blocks, etc.
  */
 function getElementNarrationText(el: Element): string {
   const tagName = el.tagName.toLowerCase();
 
-  // Handle headings
-  if (tagName === "h1" || tagName === "h2") {
-    return `[HEADING] ${el.textContent?.trim() || ""}`;
-  }
-  if (tagName === "h3" || tagName === "h4" || tagName === "h5" || tagName === "h6") {
-    return `[SUBHEADING] ${el.textContent?.trim() || ""}`;
+  // Handle headings - just return the text (no marker)
+  if (
+    tagName === "h1" ||
+    tagName === "h2" ||
+    tagName === "h3" ||
+    tagName === "h4" ||
+    tagName === "h5" ||
+    tagName === "h6"
+  ) {
+    return el.textContent?.trim() || "";
   }
 
   // Handle code blocks
   if (tagName === "pre") {
     const codeContent = el.textContent?.trim() || "";
-    return `[CODE BLOCK]\n${codeContent}\n[END CODE BLOCK]`;
+    return `Code block: ${codeContent} End code block.`;
   }
 
   // Handle blockquotes
   if (tagName === "blockquote") {
-    return `[QUOTE]\n${el.textContent?.trim() || ""}\n[END QUOTE]`;
+    return `Quote: ${el.textContent?.trim() || ""} End quote.`;
   }
 
-  // Handle lists (ul/ol get markers but their text comes from li children)
+  // Handle lists (ul/ol don't have their own text - skip)
   if (tagName === "ul" || tagName === "ol") {
-    return "[LIST]";
+    return "";
   }
 
   // Handle list items
@@ -83,7 +96,7 @@ function getElementNarrationText(el: Element): string {
     const img = el.querySelector("img");
     const figcaption = el.querySelector("figcaption");
     const alt = img?.getAttribute("alt") || figcaption?.textContent?.trim() || "no description";
-    return `[IMAGE: ${alt}]`;
+    return `Image: ${alt}`;
   }
 
   // Handle tables
@@ -96,16 +109,16 @@ function getElementNarrationText(el: Element): string {
         cells.push(cell.textContent?.trim() || "");
       });
       if (cells.length > 0) {
-        rows.push(`[ROW] ${cells.join(" | ")}`);
+        rows.push(cells.join(", "));
       }
     });
-    return `[TABLE]\n${rows.join("\n")}\n[END TABLE]`;
+    return `Table: ${rows.join(". ")} End table.`;
   }
 
   // Handle standalone images
   if (tagName === "img") {
     const alt = el.getAttribute("alt") || "image";
-    return `[IMAGE: ${alt}]`;
+    return `Image: ${alt}`;
   }
 
   // Handle regular paragraphs - process links and inline elements
@@ -149,7 +162,7 @@ function processInlineContent(el: Element): string {
       } else if (childTag === "img") {
         // Inline image
         const alt = childEl.getAttribute("alt") || "image";
-        text += `[IMAGE: ${alt}]`;
+        text += `Image: ${alt}`;
       } else {
         // Recurse for other inline elements (strong, em, span, etc.)
         text += processInlineContent(childEl);
@@ -161,29 +174,30 @@ function processInlineContent(el: Element): string {
 }
 
 /**
- * Converts HTML to structured text for LLM processing with paragraph markers.
+ * Converts HTML to structured paragraphs for LLM processing.
  * Uses DOM parsing to ensure paragraph indices are assigned in document order,
  * matching the client-side paragraph ID assignment.
  *
- * Adds [P:X] markers to indicate original paragraph indices, which the LLM
- * will transform to [PARA:X] markers in its output for highlighting support.
+ * Returns an array of paragraphs with IDs and text in speakable form.
+ * The LLM will use these IDs in [PARA:X] markers in its output for highlighting support.
  *
  * @param html - HTML content to convert
- * @returns Object with inputText (marked text) and paragraphOrder (paragraph IDs)
+ * @returns Object with paragraphs array (id and text for each paragraph)
  *
  * @example
  * const result = htmlToNarrationInput('<h2>Title</h2><p>Content</p>');
  * // Returns {
- * //   inputText: "[P:0] [HEADING] Title\n\n[P:1] Content",
- * //   paragraphOrder: ["para-0", "para-1"]
+ * //   paragraphs: [
+ * //     { id: 0, text: "Title" },
+ * //     { id: 1, text: "Content" }
+ * //   ]
  * // }
  */
 export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
   // Handle empty input
   if (!html || html.trim() === "") {
     return {
-      inputText: "",
-      paragraphOrder: [],
+      paragraphs: [],
     };
   }
 
@@ -229,33 +243,28 @@ export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
     return 0;
   });
 
-  const paragraphOrder: string[] = [];
-  const lines: string[] = [];
+  const paragraphs: NarrationInputParagraph[] = [];
 
   combinedElements.forEach((el, index) => {
-    const id = `para-${index}`;
-    paragraphOrder.push(id);
-
-    const marker = `[P:${index}]`;
     const text = getElementNarrationText(el);
 
-    if (text) {
-      lines.push(`${marker} ${text}`);
+    // Normalize whitespace
+    const normalizedText = text
+      .replace(/\u00A0/g, " ") // Convert nbsp to regular space
+      .replace(/ +/g, " ") // Collapse multiple spaces
+      .trim();
+
+    // Filter out empty paragraphs
+    if (normalizedText) {
+      paragraphs.push({
+        id: index,
+        text: normalizedText,
+      });
     }
   });
 
-  // Join with double newlines for paragraph separation
-  let inputText = lines.join("\n\n");
-
-  // Normalize whitespace
-  inputText = inputText
-    .replace(/\u00A0/g, " ") // Convert nbsp to regular space
-    .replace(/ +/g, " ") // Collapse multiple spaces
-    .replace(/\n{3,}/g, "\n\n"); // Collapse multiple newlines
-
   return {
-    inputText: inputText.trim(),
-    paragraphOrder,
+    paragraphs,
   };
 }
 
@@ -323,9 +332,9 @@ export function htmlToPlainText(html: string): string {
       if (tagName === "img") {
         const alt = el.getAttribute("alt");
         if (alt) {
-          parts.push(`\n\n[Image: ${alt}]\n\n`);
+          parts.push(`\n\nImage: ${alt}\n\n`);
         } else {
-          parts.push("\n\n[Image]\n\n");
+          parts.push("\n\nImage\n\n");
         }
         return;
       }

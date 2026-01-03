@@ -1,41 +1,35 @@
 /**
  * Test for structured JSON narration output.
  *
- * Verifies that the new JSON-based LLM output format is correctly
- * parsed and converted to paragraph mappings.
+ * Verifies that the JSON-based LLM output format is correctly
+ * parsed with the forgiving schema (id as string or number, text nullable).
  */
 
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 
-// Schema from narration.ts
-const narrationParagraphSchema = z.object({
-  sourceIds: z.array(z.string()),
-  text: z.string(),
+// Schema from narration.ts - forgiving of id as string or number
+const llmParagraphSchema = z.object({
+  id: z
+    .union([z.number(), z.string()])
+    .transform((val) => (typeof val === "string" ? parseInt(val, 10) : val)),
+  text: z
+    .string()
+    .nullable()
+    .transform((val) => val ?? ""),
 });
 
 const llmOutputSchema = z.object({
-  paragraphs: z.array(narrationParagraphSchema),
+  paragraphs: z.array(llmParagraphSchema),
 });
 
-type LLMOutput = z.infer<typeof llmOutputSchema>;
-
 describe("structured JSON narration format", () => {
-  it("should validate correct JSON output", () => {
-    const validOutput: LLMOutput = {
+  it("should validate correct JSON output with numeric ids", () => {
+    const validOutput = {
       paragraphs: [
-        {
-          sourceIds: ["para-0"],
-          text: "Introduction.",
-        },
-        {
-          sourceIds: ["para-1", "para-2"],
-          text: "Doctor Smith said this is important. Here's more detail.",
-        },
-        {
-          sourceIds: ["para-3"],
-          text: "Image: diagram showing architecture.",
-        },
+        { id: 0, text: "Introduction." },
+        { id: 1, text: "Doctor Smith said this is important." },
+        { id: 2, text: "Image: diagram showing architecture." },
       ],
     };
 
@@ -43,7 +37,24 @@ describe("structured JSON narration format", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.paragraphs).toHaveLength(3);
-      expect(result.data.paragraphs[1].sourceIds).toEqual(["para-1", "para-2"]);
+      expect(result.data.paragraphs[0].id).toBe(0);
+      expect(result.data.paragraphs[1].id).toBe(1);
+    }
+  });
+
+  it("should accept string ids and convert to numbers", () => {
+    const outputWithStringIds = {
+      paragraphs: [
+        { id: "0", text: "First paragraph." },
+        { id: "1", text: "Second paragraph." },
+      ],
+    };
+
+    const result = llmOutputSchema.safeParse(outputWithStringIds);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.paragraphs[0].id).toBe(0);
+      expect(result.data.paragraphs[1].id).toBe(1);
     }
   });
 
@@ -51,7 +62,7 @@ describe("structured JSON narration format", () => {
     const invalidOutput = {
       paragraphs: [
         {
-          sourceIds: ["para-0"],
+          id: 0,
           // Missing 'text' field
         },
       ],
@@ -61,74 +72,70 @@ describe("structured JSON narration format", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should reject invalid sourceIds format", () => {
-    const invalidOutput = {
+  it("should accept null text and convert to empty string", () => {
+    const outputWithNullText = {
       paragraphs: [
-        {
-          sourceIds: "para-0", // Should be array, not string
-          text: "Some text",
-        },
+        { id: 0, text: "First paragraph." },
+        { id: 1, text: null }, // Intentionally skip this paragraph
+        { id: 2, text: "Third paragraph." },
       ],
     };
 
-    const result = llmOutputSchema.safeParse(invalidOutput);
-    expect(result.success).toBe(false);
+    const result = llmOutputSchema.safeParse(outputWithNullText);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.paragraphs[1].text).toBe("");
+    }
   });
 
-  it("should handle image alt text literally", () => {
-    const outputWithImage: LLMOutput = {
+  it("should accept empty string text for skipped paragraphs", () => {
+    const outputWithEmptyText = {
       paragraphs: [
-        {
-          sourceIds: ["para-0"],
-          text: "Introduction.",
-        },
-        {
-          sourceIds: ["para-1"],
-          text: "Image: diagram showing architecture.",
-        },
-        {
-          sourceIds: ["para-2"],
-          text: "Image, Photo of a cat.",
-        },
+        { id: 0, text: "First paragraph." },
+        { id: 1, text: "" }, // Garbage paragraph marked for skip
+        { id: 2, text: "Third paragraph." },
+      ],
+    };
+
+    const result = llmOutputSchema.safeParse(outputWithEmptyText);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.paragraphs[1].text).toBe("");
+    }
+  });
+
+  it("should handle image alt text", () => {
+    const outputWithImage = {
+      paragraphs: [
+        { id: 0, text: "Introduction." },
+        { id: 1, text: "Image: diagram showing architecture." },
+        { id: 2, text: "Image, Photo of a cat." },
       ],
     };
 
     const result = llmOutputSchema.safeParse(outputWithImage);
     expect(result.success).toBe(true);
     if (result.success) {
-      // Verify image text is preserved literally
       expect(result.data.paragraphs[1].text).toBe("Image: diagram showing architecture.");
       expect(result.data.paragraphs[2].text).toBe("Image, Photo of a cat.");
     }
   });
 
-  it("should extract paragraph indices from sourceIds", () => {
-    const sourceIds = ["para-0", "para-5", "para-12"];
-
-    const indices = sourceIds
-      .map((id) => {
-        const match = id.match(/^para-(\d+)$/);
-        return match ? parseInt(match[1], 10) : -1;
-      })
-      .filter((idx) => idx !== -1);
-
-    expect(indices).toEqual([0, 5, 12]);
-  });
-
-  it("should handle combined paragraphs correctly", () => {
-    const output: LLMOutput = {
-      paragraphs: [
-        {
-          sourceIds: ["para-0", "para-1", "para-2"],
-          text: "Combined narration from three original paragraphs.",
-        },
-      ],
+  it("should reject non-object paragraphs", () => {
+    const invalidOutput = {
+      paragraphs: ["just a string", "another string"],
     };
 
-    const result = llmOutputSchema.safeParse(output);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.paragraphs[0].sourceIds).toHaveLength(3);
-    }
+    const result = llmOutputSchema.safeParse(invalidOutput);
+    expect(result.success).toBe(false);
+  });
+
+  it("should reject missing paragraphs array", () => {
+    const invalidOutput = {
+      text: "Some text without paragraphs array",
+    };
+
+    const result = llmOutputSchema.safeParse(invalidOutput);
+    expect(result.success).toBe(false);
   });
 });
