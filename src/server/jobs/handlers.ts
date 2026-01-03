@@ -436,6 +436,11 @@ export async function handleRenewWebsub(
   };
 }
 
+// Batch size for database updates during OPML import.
+// Instead of updating the database after every feed (which causes freezes with large imports),
+// we batch updates to reduce database load. Redis events still fire per-feed for real-time UI.
+const OPML_IMPORT_DB_BATCH_SIZE = 10;
+
 /**
  * Handler for process_opml_import jobs.
  * Processes an OPML import in the background, publishing progress events
@@ -494,6 +499,25 @@ export async function handleProcessOpmlImport(
     let imported = 0;
     let skipped = 0;
     let failed = 0;
+    let feedsProcessedSinceLastDbUpdate = 0;
+
+    // Helper to update import progress in database (batched to reduce load)
+    const flushProgressToDb = async (force = false) => {
+      feedsProcessedSinceLastDbUpdate++;
+      if (force || feedsProcessedSinceLastDbUpdate >= OPML_IMPORT_DB_BATCH_SIZE) {
+        await db
+          .update(opmlImports)
+          .set({
+            importedCount: imported,
+            skippedCount: skipped,
+            failedCount: failed,
+            results,
+            updatedAt: new Date(),
+          })
+          .where(eq(opmlImports.id, importId));
+        feedsProcessedSinceLastDbUpdate = 0;
+      }
+    };
 
     for (const opmlFeed of importRecord.feedsData) {
       const feedUrl = opmlFeed.xmlUrl;
@@ -517,15 +541,8 @@ export async function handleProcessOpmlImport(
           total: importRecord.totalFeeds,
         });
 
-        // Update import record with current progress
-        await db
-          .update(opmlImports)
-          .set({
-            skippedCount: skipped,
-            results,
-            updatedAt: new Date(),
-          })
-          .where(eq(opmlImports.id, importId));
+        // Update import record with current progress (batched)
+        await flushProgressToDb();
 
         continue;
       }
@@ -625,15 +642,8 @@ export async function handleProcessOpmlImport(
           total: importRecord.totalFeeds,
         });
 
-        // Update import record with current progress
-        await db
-          .update(opmlImports)
-          .set({
-            importedCount: imported,
-            results,
-            updatedAt: new Date(),
-          })
-          .where(eq(opmlImports.id, importId));
+        // Update import record with current progress (batched)
+        await flushProgressToDb();
 
         logger.info("OPML import: feed imported", { feedUrl, userId, importId });
       } catch (error) {
@@ -654,15 +664,8 @@ export async function handleProcessOpmlImport(
           total: importRecord.totalFeeds,
         });
 
-        // Update import record with current progress
-        await db
-          .update(opmlImports)
-          .set({
-            failedCount: failed,
-            results,
-            updatedAt: new Date(),
-          })
-          .where(eq(opmlImports.id, importId));
+        // Update import record with current progress (batched)
+        await flushProgressToDb();
 
         logger.warn("OPML import: feed import failed", {
           feedUrl,
