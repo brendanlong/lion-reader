@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -48,6 +49,8 @@ import com.lionreader.data.db.relations.EntryWithState
 import com.lionreader.ui.components.EntryDetailSkeleton
 import com.lionreader.ui.components.ErrorState
 import com.lionreader.ui.components.ErrorType
+import com.lionreader.ui.narration.NarrationControls
+import com.lionreader.ui.narration.NarrationViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -76,11 +79,13 @@ fun EntryDetailScreen(
     onBack: () -> Unit,
     onNavigateToEntry: (entryId: String, listContext: String?) -> Unit = { _, _ -> },
     viewModel: EntryDetailViewModel = hiltViewModel(),
+    narrationViewModel: NarrationViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val entry by viewModel.entry.collectAsStateWithLifecycle()
     val swipeNavState by viewModel.swipeNavState.collectAsStateWithLifecycle()
+    val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -141,38 +146,80 @@ fun EntryDetailScreen(
             }
         },
     ) { padding ->
-        // Use swipeable pager when we have navigation context
-        if (swipeNavState.entryIds.isNotEmpty() && swipeNavState.currentIndex >= 0) {
-            SwipeableEntryPager(
-                entryIds = swipeNavState.entryIds,
-                currentIndex = swipeNavState.currentIndex,
-                listContext = swipeNavState.listContext,
-                currentEntry = entry,
-                previousEntry = swipeNavState.previousEntry,
-                nextEntry = swipeNavState.nextEntry,
-                isLoading = uiState.isLoading,
-                errorMessage = uiState.errorMessage,
-                onNavigateToEntry = onNavigateToEntry,
-                onLinkClick = { url -> viewModel.openInBrowser(url) },
-                onRetry = { viewModel.retry() },
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-            )
-        } else {
-            // Fallback to non-swipeable view when no navigation context
-            NonSwipeableEntryContent(
-                entry = entry,
-                isLoading = uiState.isLoading,
-                errorMessage = uiState.errorMessage,
-                onLinkClick = { url -> viewModel.openInBrowser(url) },
-                onRetry = { viewModel.retry() },
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            // Main content
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                // Use swipeable pager when we have navigation context
+                if (swipeNavState.entryIds.isNotEmpty() && swipeNavState.currentIndex >= 0) {
+                    SwipeableEntryPager(
+                        entryIds = swipeNavState.entryIds,
+                        currentIndex = swipeNavState.currentIndex,
+                        listContext = swipeNavState.listContext,
+                        currentEntry = entry,
+                        previousEntry = swipeNavState.previousEntry,
+                        nextEntry = swipeNavState.nextEntry,
+                        isLoading = uiState.isLoading,
+                        errorMessage = uiState.errorMessage,
+                        onNavigateToEntry = onNavigateToEntry,
+                        onLinkClick = { url -> viewModel.openInBrowser(url) },
+                        onRetry = { viewModel.retry() },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    // Fallback to non-swipeable view when no navigation context
+                    NonSwipeableEntryContent(
+                        entry = entry,
+                        isLoading = uiState.isLoading,
+                        errorMessage = uiState.errorMessage,
+                        onLinkClick = { url -> viewModel.openInBrowser(url) },
+                        onRetry = { viewModel.retry() },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+
+            // Narration controls
+            entry?.let { currentEntry ->
+                val content = currentEntry.entry.contentCleaned
+                    ?: currentEntry.entry.contentOriginal
+
+                content?.let {
+                    NarrationControls(
+                        narrationState = narrationState,
+                        onPlay = {
+                            narrationViewModel.startNarration(
+                                entryId = currentEntry.entry.id,
+                                title = currentEntry.entry.title ?: "Untitled",
+                                feedTitle = currentEntry.entry.feedTitle,
+                                content = it
+                            )
+                        },
+                        onPause = { narrationViewModel.pauseNarration() },
+                        onResume = { narrationViewModel.resumeNarration() },
+                        onSkipPrevious = { narrationViewModel.skipBackward() },
+                        onSkipNext = { narrationViewModel.skipForward() },
+                        onRetry = {
+                            narrationViewModel.startNarration(
+                                entryId = currentEntry.entry.id,
+                                title = currentEntry.entry.title ?: "Untitled",
+                                feedTitle = currentEntry.entry.feedTitle,
+                                content = it
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .imePadding(),
+                    )
+                }
+            }
         }
     }
 }
