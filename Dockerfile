@@ -89,6 +89,8 @@ COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/drizzle ./drizzle
 
 # Copy source files needed by worker (tsx runs on raw TypeScript)
+# tsconfig.json is needed for path alias resolution (@/ -> src/)
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder /app/src ./src
 
 # Copy scripts (migrations, worker, startup)
