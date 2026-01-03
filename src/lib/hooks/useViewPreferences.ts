@@ -2,7 +2,7 @@
  * useViewPreferences Hook
  *
  * Manages user preferences for entry/article list views.
- * Persists preferences in localStorage per view (all, starred, feed, tag, saved).
+ * Persists preferences in localStorage per view (all, starred, feed, tag, saved, uncategorized).
  *
  * Preferences include:
  * - showUnreadOnly: Whether to show only unread items (default: true)
@@ -15,7 +15,7 @@ import { useSyncExternalStore, useCallback, useMemo } from "react";
 /**
  * View types for storing separate preferences.
  */
-export type ViewType = "all" | "starred" | "feed" | "tag" | "saved";
+export type ViewType = "all" | "starred" | "feed" | "tag" | "saved" | "uncategorized";
 
 /**
  * View preference settings.
@@ -178,7 +178,7 @@ function notifyListeners(key: string): void {
  *
  * This is useful for prefetching in event handlers where hooks can't be called.
  *
- * @param viewType - The type of view (all, starred, feed, tag, saved)
+ * @param viewType - The type of view (all, starred, feed, tag, saved, uncategorized)
  * @param viewId - Optional ID for feed or tag views
  * @returns The current view preferences
  */
@@ -192,7 +192,7 @@ export function getViewPreferences(viewType: ViewType, viewId?: string): ViewPre
  *
  * Uses useSyncExternalStore for proper React 18 concurrent mode support.
  *
- * @param viewType - The type of view (all, starred, feed, tag, saved)
+ * @param viewType - The type of view (all, starred, feed, tag, saved, uncategorized)
  * @param viewId - Optional ID for feed or tag views
  * @returns View preferences and setters
  *

@@ -27,6 +27,11 @@ export interface EntryListFilters {
   tagId?: string;
 
   /**
+   * Show only entries from uncategorized feeds (feeds with no tags).
+   */
+  uncategorized?: boolean;
+
+  /**
    * Show only unread entries.
    */
   unreadOnly?: boolean;
@@ -66,6 +71,11 @@ export interface MarkAllReadOptions {
    * Filter by specific tag ID.
    */
   tagId?: string;
+
+  /**
+   * Mark only entries from uncategorized feeds (feeds with no tags).
+   */
+  uncategorized?: boolean;
 
   /**
    * Mark only starred entries.
