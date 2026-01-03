@@ -211,7 +211,10 @@ function NarrationControlsInner({
   const { status, currentParagraph, totalParagraphs } = state;
   const isPlaying = status === "playing";
   const isPaused = status === "paused";
-  const isActive = isPlaying || isPaused;
+  // Consider "loading" as active when we already have paragraphs (buffering mid-playback)
+  // vs initial generation (no paragraphs yet)
+  const isBufferingMidPlayback = status === "loading" && totalParagraphs > 0;
+  const isActive = isPlaying || isPaused || isBufferingMidPlayback;
 
   /**
    * Handle play/pause button click.
@@ -228,7 +231,10 @@ function NarrationControlsInner({
   let mainButtonLabel: string;
   let mainButtonIcon: React.ReactNode;
 
-  if (isLoading) {
+  // Show loading state for both initial generation and mid-playback buffering
+  const showLoadingState = isLoading || isBufferingMidPlayback;
+
+  if (showLoadingState) {
     mainButtonLabel = "Generating...";
     mainButtonIcon = <LoadingSpinner />;
   } else if (isPlaying) {
@@ -250,7 +256,7 @@ function NarrationControlsInner({
           variant="ghost"
           size="sm"
           onClick={skipBackward}
-          disabled={isLoading || currentParagraph === 0}
+          disabled={showLoadingState || currentParagraph === 0}
           aria-label="Previous paragraph"
           className="min-w-[36px] px-2"
         >
@@ -263,7 +269,7 @@ function NarrationControlsInner({
         variant="secondary"
         size="sm"
         onClick={handlePlayPause}
-        disabled={isLoading}
+        disabled={showLoadingState}
         aria-label={mainButtonLabel}
       >
         {mainButtonIcon}
@@ -276,7 +282,7 @@ function NarrationControlsInner({
           variant="ghost"
           size="sm"
           onClick={skipForward}
-          disabled={isLoading || currentParagraph >= totalParagraphs - 1}
+          disabled={showLoadingState || currentParagraph >= totalParagraphs - 1}
           aria-label="Next paragraph"
           className="min-w-[36px] px-2"
         >
