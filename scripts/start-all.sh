@@ -15,8 +15,8 @@ cleanup() {
   kill $WORKER_PID 2>/dev/null || true
   wait $WORKER_PID 2>/dev/null || true
 }
-trap cleanup SIGTERM SIGINT
+trap cleanup SIGTERM SIGINT EXIT
 
 # Start API in foreground
 echo "Starting API server..."
-exec pnpm start
+pnpm start
