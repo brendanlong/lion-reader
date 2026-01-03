@@ -10,6 +10,22 @@
 import { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
+
+// Configure DOMPurify to open all external links in new tabs
+// This hook runs after each element is sanitized
+if (typeof window !== "undefined") {
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    // Only process anchor elements with href attributes
+    if (node.tagName === "A" && node.hasAttribute("href")) {
+      const href = node.getAttribute("href") ?? "";
+      // Only add target="_blank" for http/https links (external links)
+      if (href.startsWith("http://") || href.startsWith("https://")) {
+        node.setAttribute("target", "_blank");
+        node.setAttribute("rel", "noopener noreferrer");
+      }
+    }
+  });
+}
 import { Button } from "@/components/ui/button";
 import {
   NarrationControls,
