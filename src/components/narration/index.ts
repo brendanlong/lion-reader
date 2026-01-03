@@ -17,7 +17,6 @@ export {
   computeHighlightedParagraphs,
   type UseNarrationHighlightProps,
   type UseNarrationHighlightResult,
-  type ParagraphMapEntry,
 } from "./useNarrationHighlight";
 export { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
 export { NarrationHighlightStyles } from "./NarrationHighlightStyles";
