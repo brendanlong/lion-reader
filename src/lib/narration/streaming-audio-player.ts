@@ -367,7 +367,6 @@ export class StreamingAudioPlayer {
     if (!this.config) return;
 
     this.position = { ...pos };
-    this.notifyPositionChange();
 
     // Check if we have audio for the first sentence
     const paragraphCache = this.getOrCreateParagraphCache(pos.paragraph);
@@ -401,7 +400,6 @@ export class StreamingAudioPlayer {
       if (paragraphIndex < this.paragraphs.length - 1) {
         // Move to next paragraph
         this.position = { paragraph: paragraphIndex + 1, sentence: 0 };
-        this.notifyPositionChange();
         await this.generateAndPlayFirstSentence(paragraphIndex + 1, 0);
       } else {
         // End of all paragraphs
@@ -462,6 +460,9 @@ export class StreamingAudioPlayer {
     const audio = paragraphCache.audio[sentenceIndex];
     if (!audio) return;
 
+    // Notify position change now that audio is about to start playing
+    this.notifyPositionChange();
+
     // Create a gap buffer if not the last sentence in paragraph
     const isLastInParagraph = sentenceIndex >= paragraphCache.sentences.length - 1;
     const isLastParagraph = paragraphIndex >= this.paragraphs.length - 1;
@@ -485,12 +486,10 @@ export class StreamingAudioPlayer {
         if (!isLastInParagraph) {
           // Next sentence in same paragraph
           this.position.sentence = sentenceIndex + 1;
-          this.notifyPositionChange();
           this.playNextSentence();
         } else if (!isLastParagraph) {
           // Next paragraph
           this.position = { paragraph: paragraphIndex + 1, sentence: 0 };
-          this.notifyPositionChange();
           this.playNextSentence();
         } else {
           // End of all content
@@ -527,7 +526,6 @@ export class StreamingAudioPlayer {
       // Move to next paragraph
       if (paragraph < this.paragraphs.length - 1) {
         this.position = { paragraph: paragraph + 1, sentence: 0 };
-        this.notifyPositionChange();
         await this.playNextSentence();
       } else {
         // End
