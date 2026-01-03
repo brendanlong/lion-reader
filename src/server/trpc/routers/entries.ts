@@ -236,6 +236,7 @@ export const entriesRouter = createTRPCRouter({
       z.object({
         feedId: uuidSchema.optional(),
         tagId: uuidSchema.optional(),
+        uncategorized: booleanQueryParam,
         type: feedTypeSchema.optional(),
         excludeTypes: z.array(feedTypeSchema).optional(),
         unreadOnly: booleanQueryParam,
@@ -306,6 +307,30 @@ export const entriesRouter = createTRPCRouter({
             and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
           );
         conditions.push(or(inArray(entries.feedId, taggedFeedIds), eq(userEntries.starred, true))!);
+      }
+
+      // Filter by uncategorized if specified
+      if (input.uncategorized) {
+        // Get subscription IDs that have tags
+        const taggedSubscriptionIds = ctx.db
+          .select({ subscriptionId: subscriptionTags.subscriptionId })
+          .from(subscriptionTags);
+
+        // Get feed IDs for subscriptions with no tags
+        const uncategorizedFeedIds = ctx.db
+          .select({ feedId: subscriptions.feedId })
+          .from(subscriptions)
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              isNull(subscriptions.unsubscribedAt),
+              notInArray(subscriptions.id, taggedSubscriptionIds)
+            )
+          );
+
+        conditions.push(
+          or(inArray(entries.feedId, uncategorizedFeedIds), eq(userEntries.starred, true))!
+        );
       }
 
       // Apply unreadOnly filter
@@ -583,6 +608,7 @@ export const entriesRouter = createTRPCRouter({
       z.object({
         feedId: uuidSchema.optional(),
         tagId: uuidSchema.optional(),
+        uncategorized: z.boolean().optional(),
         starredOnly: z.boolean().optional(),
         before: z.coerce.date().optional(),
       })
@@ -658,6 +684,64 @@ export const entriesRouter = createTRPCRouter({
           inArray(
             userEntries.entryId,
             taggedEntryIds.map((e) => e.id)
+          )
+        );
+      }
+
+      // If uncategorized is true, filter entries by feeds with no tags
+      if (input.uncategorized) {
+        // Get subscription IDs that have tags
+        const taggedSubscriptionIds = await ctx.db
+          .select({ subscriptionId: subscriptionTags.subscriptionId })
+          .from(subscriptionTags);
+
+        // Get feed IDs for subscriptions with no tags
+        let uncategorizedFeedIds: string[];
+        if (taggedSubscriptionIds.length === 0) {
+          // No tagged subscriptions, all active subscriptions are uncategorized
+          const allSubscriptions = await ctx.db
+            .select({ feedId: subscriptions.feedId })
+            .from(subscriptions)
+            .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+          uncategorizedFeedIds = allSubscriptions.map((s) => s.feedId);
+        } else {
+          // Get subscriptions that are not in the tagged list
+          const uncategorizedSubscriptions = await ctx.db
+            .select({ feedId: subscriptions.feedId })
+            .from(subscriptions)
+            .where(
+              and(
+                eq(subscriptions.userId, userId),
+                isNull(subscriptions.unsubscribedAt),
+                notInArray(
+                  subscriptions.id,
+                  taggedSubscriptionIds.map((s) => s.subscriptionId)
+                )
+              )
+            );
+
+          uncategorizedFeedIds = uncategorizedSubscriptions.map((s) => s.feedId);
+        }
+
+        if (uncategorizedFeedIds.length === 0) {
+          return { count: 0 };
+        }
+
+        // Get entry IDs for these feeds
+        const uncategorizedEntryIds = await ctx.db
+          .select({ id: entries.id })
+          .from(entries)
+          .where(inArray(entries.feedId, uncategorizedFeedIds));
+
+        if (uncategorizedEntryIds.length === 0) {
+          return { count: 0 };
+        }
+
+        conditions.push(
+          inArray(
+            userEntries.entryId,
+            uncategorizedEntryIds.map((e) => e.id)
           )
         );
       }
@@ -906,6 +990,7 @@ export const entriesRouter = createTRPCRouter({
         .object({
           feedId: uuidSchema.optional(),
           tagId: uuidSchema.optional(),
+          uncategorized: booleanQueryParam,
           type: feedTypeSchema.optional(),
           excludeTypes: z.array(feedTypeSchema).optional(),
         })
@@ -975,6 +1060,30 @@ export const entriesRouter = createTRPCRouter({
             and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
           );
         conditions.push(or(inArray(entries.feedId, taggedFeedIds), eq(userEntries.starred, true))!);
+      }
+
+      // Filter by uncategorized if specified
+      if (input?.uncategorized) {
+        // Get subscription IDs that have tags
+        const taggedSubscriptionIds = ctx.db
+          .select({ subscriptionId: subscriptionTags.subscriptionId })
+          .from(subscriptionTags);
+
+        // Get feed IDs for subscriptions with no tags
+        const uncategorizedFeedIds = ctx.db
+          .select({ feedId: subscriptions.feedId })
+          .from(subscriptions)
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              isNull(subscriptions.unsubscribedAt),
+              notInArray(subscriptions.id, taggedSubscriptionIds)
+            )
+          );
+
+        conditions.push(
+          or(inArray(entries.feedId, uncategorizedFeedIds), eq(userEntries.starred, true))!
+        );
       }
 
       // Apply type filter if specified
