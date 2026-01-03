@@ -53,7 +53,14 @@ CRITICAL: One input paragraph → One output paragraph. Do NOT combine or split.
 
 RULES:
 - Keep paragraph IDs exactly as provided (as numbers)
-- Expand abbreviations: Dr. → Doctor, etc. → et cetera, px → pixels
+- Expand abbreviations based on context:
+  - Titles before names: "Dr. Smith" → "Doctor Smith", "Mr. Jones" → "Mister Jones"
+  - Units after numbers: "10 px" → "10 pixels", "5 ms" → "5 milliseconds"
+  - General abbreviations: "etc." → "et cetera", "e.g." → "for example"
+- Keep acronyms and product names intact - interpret based on context:
+  - Standalone acronyms: "tl;dr" → "TL;DR", "api" → "API", "html" → "HTML"
+  - Product versions: "iPhone 15 Pro" stays as-is, "Pixel 8" stays as-is
+  - Model names that look like abbreviations: "iPhone SE" stays as-is
 - Image alt text is already speakable - clean up if needed, don't rephrase
 - Skip garbage content (ellipsis, ads, junk) using empty string: "text": ""
 - Keep content faithful - do NOT summarize or editorialize
@@ -64,8 +71,9 @@ INPUT:
   "paragraphs": [
     { "id": 0, "text": "Title" },
     { "id": 1, "text": "Dr. Smith said hello." },
-    { "id": 2, "text": "Image: diagram showing architecture" },
-    { "id": 3, "text": "..." }
+    { "id": 2, "text": "The margin is 10 px." },
+    { "id": 3, "text": "tl;dr: it works great" },
+    { "id": 4, "text": "..." }
   ]
 }
 
@@ -74,8 +82,9 @@ OUTPUT:
   "paragraphs": [
     { "id": 0, "text": "Title." },
     { "id": 1, "text": "Doctor Smith said hello." },
-    { "id": 2, "text": "Image: diagram showing architecture." },
-    { "id": 3, "text": "" }
+    { "id": 2, "text": "The margin is 10 pixels." },
+    { "id": 3, "text": "TL;DR: it works great." },
+    { "id": 4, "text": "" }
   ]
 }
 
