@@ -155,13 +155,27 @@ const DEFAULT_TIMEOUT_MS = 30000;
 /** Default maximum redirects to follow */
 const DEFAULT_MAX_REDIRECTS = 5;
 
-/** Build the User-Agent string, optionally including contact email */
+/**
+ * Build the User-Agent string with optional metadata.
+ *
+ * Format: LionReader/1.0 (+URL) [commit] (email)
+ * - URL: NEXT_PUBLIC_APP_URL if set, otherwise GitHub repo
+ * - commit: Git commit SHA if available
+ * - email: Contact email if configured
+ */
 function buildUserAgent(): string {
-  const base = "LionReader/1.0 (+https://github.com/brendanlong/lion-reader)";
-  if (fetcherConfig.contactEmail) {
-    return `${base} (${fetcherConfig.contactEmail})`;
+  const url = fetcherConfig.appUrl ?? "https://github.com/brendanlong/lion-reader";
+  let ua = `LionReader/1.0 (+${url})`;
+
+  if (fetcherConfig.commitSha) {
+    ua += ` [${fetcherConfig.commitSha}]`;
   }
-  return base;
+
+  if (fetcherConfig.contactEmail) {
+    ua += ` (${fetcherConfig.contactEmail})`;
+  }
+
+  return ua;
 }
 
 /** Default User-Agent */
