@@ -18,6 +18,15 @@ export const signupConfig = {
 };
 
 /**
+ * Feed fetcher configuration.
+ * FETCHER_CONTACT_EMAIL is an optional contact email included in the User-Agent header.
+ */
+export const fetcherConfig = {
+  /** Optional contact email to include in User-Agent header for feed requests. */
+  contactEmail: process.env.FETCHER_CONTACT_EMAIL,
+};
+
+/**
  * Email ingest configuration.
  * INGEST_EMAIL_DOMAIN is the domain for ingest email addresses.
  * EMAIL_WEBHOOK_SECRET is the shared secret for authenticating email webhook requests.

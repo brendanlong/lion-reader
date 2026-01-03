@@ -3,6 +3,7 @@
  * Handles conditional GET requests, redirects, and error handling.
  */
 
+import { fetcherConfig } from "../config/env";
 import { parseCacheHeaders, type ParsedCacheHeaders } from "./cache-headers";
 
 /**
@@ -154,8 +155,17 @@ const DEFAULT_TIMEOUT_MS = 30000;
 /** Default maximum redirects to follow */
 const DEFAULT_MAX_REDIRECTS = 5;
 
+/** Build the User-Agent string, optionally including contact email */
+function buildUserAgent(): string {
+  const base = "LionReader/1.0 (+https://github.com/brendanlong/lion-reader)";
+  if (fetcherConfig.contactEmail) {
+    return `${base} (${fetcherConfig.contactEmail})`;
+  }
+  return base;
+}
+
 /** Default User-Agent */
-const DEFAULT_USER_AGENT = "LionReader/1.0 (+https://github.com/brendanlong/lion-reader)";
+const DEFAULT_USER_AGENT = buildUserAgent();
 
 /**
  * Parses the Retry-After header value.
