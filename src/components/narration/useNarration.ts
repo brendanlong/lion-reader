@@ -40,7 +40,10 @@ import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
-import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
+import {
+  htmlToClientNarration,
+  type ParagraphMapEntry,
+} from "@/lib/narration/client-paragraph-ids";
 import {
   StreamingAudioPlayer,
   type PlaybackPosition,
@@ -159,6 +162,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const streamingPlayerRef = useRef<StreamingAudioPlayer | null>(null);
   // Track if we've already set up playback tracking for this session
   const hasTrackedPlaybackRef = useRef(false);
+  // Paragraph mapping for translating narration indices to DOM element indices
+  const paragraphMapRef = useRef<ParagraphMapEntry[]>([]);
 
   // Get user settings
   const [settings] = useNarrationSettings();
@@ -180,7 +185,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     const unsubscribe = narratorRef.current.onStateChange((newState) => {
       // Only update state from ArticleNarrator if we're using browser voices
       if (!usePiper) {
-        setState(newState);
+        // Translate narration paragraph index to DOM element index using the mapping
+        const mapping = paragraphMapRef.current[newState.currentParagraph];
+        const domElementIndex = mapping ? mapping.o[0] : newState.currentParagraph;
+
+        setState({
+          ...newState,
+          currentParagraph: domElementIndex,
+        });
       }
     });
 
@@ -273,9 +285,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           }));
         },
         onPositionChange: (position: PlaybackPosition, totalParagraphs: number) => {
+          // Translate narration paragraph index to DOM element index using the mapping
+          const mapping = paragraphMapRef.current[position.paragraph];
+          const domElementIndex = mapping ? mapping.o[0] : position.paragraph;
+
           setState((prev) => ({
             ...prev,
-            currentParagraph: position.paragraph,
+            currentParagraph: domElementIndex,
             totalParagraphs,
           }));
         },
@@ -351,6 +367,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           const clientResult = htmlToClientNarration(content);
           narration = clientResult.narrationText;
           processedHtmlResult = clientResult.processedHtml;
+          // Store the paragraph map for index translation during highlighting
+          paragraphMapRef.current = clientResult.paragraphMap;
         } else {
           // Call server for LLM processing
           const result = await generateMutation.mutateAsync({
@@ -429,6 +447,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         const clientResult = htmlToClientNarration(content);
         narration = clientResult.narrationText;
         processedHtmlResult = clientResult.processedHtml;
+        // Store the paragraph map for index translation during highlighting
+        paragraphMapRef.current = clientResult.paragraphMap;
       } else {
         // Call server for LLM processing
         const result = await generateMutation.mutateAsync({
@@ -563,6 +583,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     }
     // Reset playback tracking
     hasTrackedPlaybackRef.current = false;
+    // Clear paragraph map when article changes
+    paragraphMapRef.current = [];
     // Clear processed HTML when article changes
     setProcessedHtml(null);
     setNarrationText(null);
