@@ -296,14 +296,14 @@ export function Sidebar({ onClose }: SidebarProps) {
                         <span className="truncate">{title}</span>
                       </span>
                       {subscription.unreadCount > 0 && (
-                        <span className="shrink-0 text-xs text-zinc-500 transition-opacity group-hover:opacity-0 dark:text-zinc-400">
+                        <span className="shrink-0 text-xs text-zinc-500 group-hover:hidden dark:text-zinc-400">
                           ({subscription.unreadCount})
                         </span>
                       )}
                     </Link>
 
                     {/* Action buttons - visible on hover/touch */}
-                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 lg:opacity-0">
+                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                       {/* Edit button */}
                       <button
                         onClick={(e) => {
