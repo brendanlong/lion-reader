@@ -309,7 +309,6 @@ export function ArticleContentBody({
   });
 
   const { highlightedParagraphIds } = useNarrationHighlight({
-    paragraphMap: narration.paragraphMap,
     currentParagraphIndex: narration.state.currentParagraph,
     isPlaying: narration.state.status === "playing",
   });
@@ -318,9 +317,9 @@ export function ArticleContentBody({
   const [narrationSettings] = useNarrationSettings();
 
   // Determine if we should process HTML for highlighting
-  // We process it whenever narration has been activated (paragraphMap exists or state is not idle)
+  // We process it whenever narration has been activated (processedHtml exists or state is not idle)
   const shouldProcessForHighlighting =
-    narrationSupported && (narration.paragraphMap !== null || narration.state.status !== "idle");
+    narrationSupported && (narration.processedHtml !== null || narration.state.status !== "idle");
 
   // Sanitize and optionally process HTML content for highlighting
   const sanitizedContent = useMemo(() => {
