@@ -35,6 +35,7 @@ import javax.inject.Singleton
 data class EntryFilters(
     val feedId: String? = null,
     val tagId: String? = null,
+    val uncategorized: Boolean = false,
     val unreadOnly: Boolean = false,
     val starredOnly: Boolean = false,
     val sortOrder: SortOrder = SortOrder.NEWEST,
@@ -117,6 +118,7 @@ class EntryRepository
             entryDao.getEntries(
                 feedId = filters.feedId,
                 tagId = filters.tagId,
+                uncategorized = filters.uncategorized,
                 unreadOnly = filters.unreadOnly,
                 starredOnly = filters.starredOnly,
                 sortOrder = filters.sortOrder.value,
@@ -252,6 +254,7 @@ class EntryRepository
                 api.listEntries(
                     feedId = filters.feedId,
                     tagId = filters.tagId,
+                    uncategorized = if (filters.uncategorized) true else null,
                     unreadOnly = if (filters.unreadOnly) true else null,
                     starredOnly = if (filters.starredOnly) true else null,
                     sortOrder = filters.sortOrder,
@@ -893,28 +896,39 @@ class EntryRepository
             // Parse the list context to determine filters
             val feedId: String?
             val tagId: String?
+            val uncategorized: Boolean
             val starredOnly: Boolean
 
             when {
                 listContext == Screen.Starred.route -> {
                     feedId = null
                     tagId = null
+                    uncategorized = false
                     starredOnly = true
+                }
+                listContext == Screen.Uncategorized.route -> {
+                    feedId = null
+                    tagId = null
+                    uncategorized = true
+                    starredOnly = false
                 }
                 listContext.startsWith("tag/") -> {
                     feedId = null
                     tagId = listContext.removePrefix("tag/")
+                    uncategorized = false
                     starredOnly = false
                 }
                 listContext.startsWith("feed/") -> {
                     feedId = listContext.removePrefix("feed/")
                     tagId = null
+                    uncategorized = false
                     starredOnly = false
                 }
                 else -> {
                     // Default to "all"
                     feedId = null
                     tagId = null
+                    uncategorized = false
                     starredOnly = false
                 }
             }
@@ -922,6 +936,7 @@ class EntryRepository
             return entryDao.getEntryIds(
                 feedId = feedId,
                 tagId = tagId,
+                uncategorized = uncategorized,
                 unreadOnly = false, // Don't filter by unread for swipe - user may want to swipe to read entries
                 starredOnly = starredOnly,
                 sortOrder = sortOrder.value,

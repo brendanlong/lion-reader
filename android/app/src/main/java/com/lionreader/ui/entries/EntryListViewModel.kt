@@ -61,6 +61,7 @@ class EntryListViewModel
         // Route-based filter parameters (updated via setRoute)
         private val _feedId = MutableStateFlow<String?>(null)
         private val _tagId = MutableStateFlow<String?>(null)
+        private val _uncategorized = MutableStateFlow(false)
         private val _starredOnly = MutableStateFlow(false)
         private val _currentRoute =
             MutableStateFlow(
@@ -100,6 +101,7 @@ class EntryListViewModel
             combine(
                 _feedId,
                 _tagId,
+                _uncategorized,
                 _starredOnly,
                 _unreadOnly,
                 _sortOrder,
@@ -108,14 +110,16 @@ class EntryListViewModel
                 @Suppress("UNCHECKED_CAST")
                 val feedId = values[0] as String?
                 val tagId = values[1] as String?
-                val starredOnly = values[2] as Boolean
-                val unreadOnly = values[3] as Boolean
-                val sortOrder = values[4] as SortOrder
-                val offset = values[5] as Int
+                val uncategorized = values[2] as Boolean
+                val starredOnly = values[3] as Boolean
+                val unreadOnly = values[4] as Boolean
+                val sortOrder = values[5] as SortOrder
+                val offset = values[6] as Int
 
                 EntryFilters(
                     feedId = feedId,
                     tagId = tagId,
+                    uncategorized = uncategorized,
                     unreadOnly = unreadOnly,
                     starredOnly = starredOnly,
                     sortOrder = sortOrder,
@@ -192,6 +196,7 @@ class EntryListViewModel
             // Parse route to extract filter parameters
             val newFeedId: String?
             val newTagId: String?
+            val newUncategorized: Boolean
             val newStarredOnly: Boolean
             val staticTitle: String
 
@@ -199,18 +204,28 @@ class EntryListViewModel
                 route == Screen.Starred.route -> {
                     newFeedId = null
                     newTagId = null
+                    newUncategorized = false
                     newStarredOnly = true
                     staticTitle = Screen.Starred.TITLE
+                }
+                route == Screen.Uncategorized.route -> {
+                    newFeedId = null
+                    newTagId = null
+                    newUncategorized = true
+                    newStarredOnly = false
+                    staticTitle = Screen.Uncategorized.TITLE
                 }
                 route.startsWith("tag/") -> {
                     newFeedId = null
                     newTagId = route.removePrefix("tag/")
+                    newUncategorized = false
                     newStarredOnly = false
                     staticTitle = "Tag" // Will be resolved dynamically
                 }
                 route.startsWith("feed/") -> {
                     newFeedId = route.removePrefix("feed/")
                     newTagId = null
+                    newUncategorized = false
                     newStarredOnly = false
                     staticTitle = "Feed" // Will be resolved dynamically
                 }
@@ -218,6 +233,7 @@ class EntryListViewModel
                     // Default to "all"
                     newFeedId = null
                     newTagId = null
+                    newUncategorized = false
                     newStarredOnly = false
                     staticTitle = Screen.All.TITLE
                 }
@@ -226,6 +242,7 @@ class EntryListViewModel
             // Update filter state
             _feedId.value = newFeedId
             _tagId.value = newTagId
+            _uncategorized.value = newUncategorized
             _starredOnly.value = newStarredOnly
 
             // Update UI with static title first
@@ -237,7 +254,7 @@ class EntryListViewModel
 
             // Resolve dynamic title and sync
             viewModelScope.launch {
-                val dynamicTitle = resolveDynamicTitle(newFeedId, newTagId, newStarredOnly)
+                val dynamicTitle = resolveDynamicTitle(newFeedId, newTagId, newUncategorized, newStarredOnly)
                 _uiState.value = _uiState.value.copy(title = dynamicTitle)
                 syncEntries()
             }
@@ -249,10 +266,12 @@ class EntryListViewModel
         private suspend fun resolveDynamicTitle(
             feedId: String?,
             tagId: String?,
+            uncategorized: Boolean,
             starredOnly: Boolean,
         ): String =
             when {
                 starredOnly -> Screen.Starred.TITLE
+                uncategorized -> Screen.Uncategorized.TITLE
                 feedId != null -> {
                     subscriptionRepository.getSubscriptionByFeedId(feedId)?.displayTitle ?: "Feed"
                 }
@@ -274,6 +293,7 @@ class EntryListViewModel
                         EntryFilters(
                             feedId = _feedId.value,
                             tagId = _tagId.value,
+                            uncategorized = _uncategorized.value,
                             unreadOnly = _unreadOnly.value,
                             starredOnly = _starredOnly.value,
                             sortOrder = _sortOrder.value,
@@ -401,6 +421,7 @@ class EntryListViewModel
                             EntryFilters(
                                 feedId = _feedId.value,
                                 tagId = _tagId.value,
+                                uncategorized = _uncategorized.value,
                                 unreadOnly = _unreadOnly.value,
                                 starredOnly = _starredOnly.value,
                                 sortOrder = _sortOrder.value,
@@ -452,6 +473,7 @@ class EntryListViewModel
                             EntryFilters(
                                 feedId = _feedId.value,
                                 tagId = _tagId.value,
+                                uncategorized = _uncategorized.value,
                                 unreadOnly = _unreadOnly.value,
                                 starredOnly = _starredOnly.value,
                                 sortOrder = _sortOrder.value,
