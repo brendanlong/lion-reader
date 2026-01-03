@@ -313,7 +313,6 @@ export function ArticleContentBody({
   });
 
   const { highlightedParagraphIds } = useNarrationHighlight({
-    paragraphMap: null,
     currentParagraphIndex: narration.state.currentParagraph,
     isPlaying: narration.state.status === "playing",
   });
