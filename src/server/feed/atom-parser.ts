@@ -26,6 +26,16 @@ const parserOptions = {
 };
 
 /**
+ * Decodes XML numeric character references that fast-xml-parser doesn't handle.
+ * Handles both decimal (&#039;) and hexadecimal (&#x27;) forms.
+ */
+function decodeNumericEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+/**
  * Atom link element structure.
  */
 interface AtomLink {
@@ -109,6 +119,7 @@ interface ParsedAtom {
 /**
  * Extracts text from various possible structures.
  * Handles plain strings, CDATA sections, and text constructs.
+ * Decodes numeric character references (&#039; &#x27;) that the XML parser doesn't handle.
  */
 function extractText(
   value: string | { __cdata?: string; "#text"?: string } | undefined
@@ -116,98 +127,128 @@ function extractText(
   if (value === undefined || value === null) {
     return undefined;
   }
+
+  let text: string | undefined;
   if (typeof value === "string") {
-    return value.trim() || undefined;
+    text = value;
+  } else if (value.__cdata !== undefined) {
+    // Handle CDATA wrapped content
+    text = typeof value.__cdata === "string" ? value.__cdata : "";
+  } else if (value["#text"] !== undefined) {
+    // Handle text node
+    text = typeof value["#text"] === "string" ? value["#text"] : "";
   }
-  // Handle CDATA wrapped content
-  if (value.__cdata !== undefined) {
-    return (typeof value.__cdata === "string" ? value.__cdata : "").trim() || undefined;
+
+  if (text === undefined) {
+    return undefined;
   }
-  // Handle text node
-  if (value["#text"] !== undefined) {
-    return (typeof value["#text"] === "string" ? value["#text"] : "").trim() || undefined;
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
   }
-  return undefined;
+
+  return decodeNumericEntities(trimmed);
 }
 
 /**
  * Extracts content from an Atom text construct (title, summary, etc).
  * Handles plain text, HTML, and XHTML types.
+ * Decodes numeric character references.
  */
 function extractTextConstruct(value: string | AtomTextConstruct | undefined): string | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
+
+  let text: string | undefined;
+
   if (typeof value === "string") {
-    return value.trim() || undefined;
-  }
+    text = value;
+  } else {
+    const type = value["@_type"] || "text";
 
-  const type = value["@_type"] || "text";
-
-  // Handle XHTML - it's wrapped in a div element
-  if (type === "xhtml" && value.div !== undefined) {
-    // For XHTML, we'd need to serialize the div content
-    // For now, return as JSON string if it's an object, or string if it's a string
-    if (typeof value.div === "string") {
-      return value.div.trim() || undefined;
+    // Handle XHTML - it's wrapped in a div element
+    if (type === "xhtml" && value.div !== undefined) {
+      // For XHTML, we'd need to serialize the div content
+      // For now, return as JSON string if it's an object, or string if it's a string
+      if (typeof value.div === "string") {
+        text = value.div;
+      } else {
+        // Complex XHTML - serialize as best we can
+        return JSON.stringify(value.div);
+      }
+    } else if (value.__cdata !== undefined) {
+      // Handle CDATA wrapped content
+      text = typeof value.__cdata === "string" ? value.__cdata : "";
+    } else if (value["#text"] !== undefined) {
+      // Handle text node (for html and text types)
+      text = typeof value["#text"] === "string" ? value["#text"] : "";
     }
-    // Complex XHTML - serialize as best we can
-    return JSON.stringify(value.div);
   }
 
-  // Handle CDATA wrapped content
-  if (value.__cdata !== undefined) {
-    return (typeof value.__cdata === "string" ? value.__cdata : "").trim() || undefined;
+  if (text === undefined) {
+    return undefined;
   }
 
-  // Handle text node (for html and text types)
-  if (value["#text"] !== undefined) {
-    return (typeof value["#text"] === "string" ? value["#text"] : "").trim() || undefined;
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
   }
 
-  return undefined;
+  return decodeNumericEntities(trimmed);
 }
 
 /**
  * Extracts content from an Atom content element.
  * Similar to text construct but with src attribute support.
+ * Decodes numeric character references.
  */
 function extractContent(value: string | AtomContent | undefined): string | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
+
+  let text: string | undefined;
+
   if (typeof value === "string") {
-    return value.trim() || undefined;
+    text = value;
+  } else {
+    // If content has src attribute, it's an out-of-line content
+    // We can't fetch it here, so return undefined
+    if (value["@_src"]) {
+      return undefined;
+    }
+
+    const type = value["@_type"] || "text";
+
+    // Handle XHTML - it's wrapped in a div element
+    if (type === "xhtml" && value.div !== undefined) {
+      if (typeof value.div === "string") {
+        text = value.div;
+      } else {
+        // Complex XHTML - serialize as best we can
+        return JSON.stringify(value.div);
+      }
+    } else if (value.__cdata !== undefined) {
+      // Handle CDATA wrapped content
+      text = typeof value.__cdata === "string" ? value.__cdata : "";
+    } else if (value["#text"] !== undefined) {
+      // Handle text node
+      text = typeof value["#text"] === "string" ? value["#text"] : "";
+    }
   }
 
-  // If content has src attribute, it's an out-of-line content
-  // We can't fetch it here, so return undefined
-  if (value["@_src"]) {
+  if (text === undefined) {
     return undefined;
   }
 
-  const type = value["@_type"] || "text";
-
-  // Handle XHTML - it's wrapped in a div element
-  if (type === "xhtml" && value.div !== undefined) {
-    if (typeof value.div === "string") {
-      return value.div.trim() || undefined;
-    }
-    // Complex XHTML - serialize as best we can
-    return JSON.stringify(value.div);
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
   }
 
-  // Handle CDATA wrapped content
-  if (value.__cdata !== undefined) {
-    return (typeof value.__cdata === "string" ? value.__cdata : "").trim() || undefined;
-  }
-
-  // Handle text node
-  if (value["#text"] !== undefined) {
-    return (typeof value["#text"] === "string" ? value["#text"] : "").trim() || undefined;
-  }
-
-  return undefined;
+  return decodeNumericEntities(trimmed);
 }
 
 /**

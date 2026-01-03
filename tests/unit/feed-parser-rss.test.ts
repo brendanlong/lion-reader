@@ -286,6 +286,65 @@ describe("parseRssFeed", () => {
     });
   });
 
+  describe("numeric character reference decoding", () => {
+    it("decodes decimal numeric character references in titles", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Flameeyes&#039;s Weblog</title>
+            <item>
+              <title>Comment by Flameeyes&#039;s Friend</title>
+              <link>https://example.com/post</link>
+            </item>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.title).toBe("Flameeyes's Weblog");
+      expect(feed.items[0].title).toBe("Comment by Flameeyes's Friend");
+    });
+
+    it("decodes hexadecimal numeric character references", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Test &#x27;hex&#x27; entities</title>
+            <item>
+              <title>Entry with &#x22;quotes&#x22;</title>
+              <link>https://example.com/post</link>
+            </item>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.title).toBe("Test 'hex' entities");
+      expect(feed.items[0].title).toBe('Entry with "quotes"');
+    });
+
+    it("decodes numeric entities in description and content", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+          <channel>
+            <title>Entity Feed</title>
+            <description>Feed about Tom&#039;s adventures</description>
+            <item>
+              <title>Post</title>
+              <description>It&#039;s a summary</description>
+              <content:encoded>The full content&#039;s here</content:encoded>
+            </item>
+          </channel>
+        </rss>`;
+
+      const feed = parseRssFeed(xml);
+
+      expect(feed.description).toBe("Feed about Tom's adventures");
+      expect(feed.items[0].summary).toBe("It's a summary");
+      expect(feed.items[0].content).toBe("The full content's here");
+    });
+  });
+
   describe("guid element variations", () => {
     it("parses simple guid string", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
