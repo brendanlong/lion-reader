@@ -40,12 +40,8 @@ const uuidSchema = z.string().uuid("Invalid ID");
 
 /**
  * Input for narration generation.
- * Supports both feed entries and saved articles (which are now also entries).
- * The 'type' parameter is kept for backwards compatibility but both types
- * are now handled the same way since saved articles are stored as entries.
  */
 const generateInputSchema = z.object({
-  type: z.enum(["entry", "saved"]),
   id: uuidSchema,
   /**
    * Whether to use LLM preprocessing for better narration quality.
@@ -84,13 +80,12 @@ const generateOutputSchema = z.object({
 
 export const narrationRouter = createTRPCRouter({
   /**
-   * Generate narration for an entry or saved article.
+   * Generate narration for an entry.
    *
    * Looks up existing narration by content hash for deduplication.
    * If not found or needs regeneration, calls LLM to generate narration.
    * Falls back to plain text conversion if LLM is unavailable or errors.
    *
-   * @param type - 'entry' for feed entries, 'saved' for saved articles (both are entries now)
    * @param id - The entry ID
    * @returns Narration text, whether it was cached, and the source (llm or fallback)
    */
@@ -123,8 +118,7 @@ export const narrationRouter = createTRPCRouter({
         .limit(1);
 
       if (entryResult.length === 0) {
-        // Return appropriate error based on input type for backwards compatibility
-        throw input.type === "saved" ? errors.savedArticleNotFound() : errors.entryNotFound();
+        throw errors.entryNotFound();
       }
 
       const entry = entryResult[0];

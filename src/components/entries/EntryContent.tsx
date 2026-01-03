@@ -152,7 +152,6 @@ export function EntryContent({
       onToggleStar={handleStarToggle}
       showOriginal={showOriginal}
       setShowOriginal={setShowOriginal}
-      narrationArticleType="entry"
       footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
       onSwipeNext={onSwipeNext}
       onSwipePrevious={onSwipePrevious}
