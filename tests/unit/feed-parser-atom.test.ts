@@ -248,6 +248,44 @@ describe("parseAtomFeed", () => {
 
       expect(feed.items[0].content).toBe("<p>HTML in CDATA</p>");
     });
+
+    it("decodes decimal numeric character references", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Flameeyes&#039;s Atom Feed</title>
+          <id>urn:uuid:entity-test</id>
+          <updated>2024-01-01T12:00:00Z</updated>
+          <entry>
+            <title>Entry with &#039;quotes&#039;</title>
+            <id>urn:uuid:entity-entry</id>
+            <updated>2024-01-01T12:00:00Z</updated>
+          </entry>
+        </feed>`;
+
+      const feed = parseAtomFeed(xml);
+
+      expect(feed.title).toBe("Flameeyes's Atom Feed");
+      expect(feed.items[0].title).toBe("Entry with 'quotes'");
+    });
+
+    it("decodes hexadecimal numeric character references", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Test &#x27;hex&#x27; entities</title>
+          <id>urn:uuid:hex-test</id>
+          <updated>2024-01-01T12:00:00Z</updated>
+          <entry>
+            <title>Entry with &#x22;quotes&#x22;</title>
+            <id>urn:uuid:hex-entry</id>
+            <updated>2024-01-01T12:00:00Z</updated>
+          </entry>
+        </feed>`;
+
+      const feed = parseAtomFeed(xml);
+
+      expect(feed.title).toBe("Test 'hex' entities");
+      expect(feed.items[0].title).toBe('Entry with "quotes"');
+    });
   });
 
   describe("link relation handling", () => {

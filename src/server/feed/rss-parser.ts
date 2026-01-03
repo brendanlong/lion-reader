@@ -26,6 +26,16 @@ const parserOptions = {
 };
 
 /**
+ * Decodes XML numeric character references that fast-xml-parser doesn't handle.
+ * Handles both decimal (&#039;) and hexadecimal (&#x27;) forms.
+ */
+function decodeNumericEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+/**
  * Parsed RSS channel structure from fast-xml-parser.
  * This represents the raw parsed XML structure before normalization.
  */
@@ -83,6 +93,7 @@ interface ParsedRss {
 /**
  * Extracts text content from various possible structures.
  * Handles plain strings, CDATA sections, and nested text nodes.
+ * Decodes numeric character references (&#039; &#x27;) that the XML parser doesn't handle.
  */
 function extractText(
   value: string | { __cdata?: string; "#text"?: string } | undefined
@@ -90,23 +101,34 @@ function extractText(
   if (value === undefined || value === null) {
     return undefined;
   }
+
+  let text: string | undefined;
   if (typeof value === "string") {
-    return value.trim() || undefined;
+    text = value;
+  } else if (value.__cdata !== undefined) {
+    // Handle CDATA wrapped content
+    text = typeof value.__cdata === "string" ? value.__cdata : "";
+  } else if (value["#text"] !== undefined) {
+    // Handle text node
+    text = typeof value["#text"] === "string" ? value["#text"] : "";
   }
-  // Handle CDATA wrapped content
-  if (value.__cdata !== undefined) {
-    return (typeof value.__cdata === "string" ? value.__cdata : "").trim() || undefined;
+
+  if (text === undefined) {
+    return undefined;
   }
-  // Handle text node
-  if (value["#text"] !== undefined) {
-    return (typeof value["#text"] === "string" ? value["#text"] : "").trim() || undefined;
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
   }
-  return undefined;
+
+  return decodeNumericEntities(trimmed);
 }
 
 /**
  * Extracts the GUID from an RSS item.
  * The guid element can be a plain string or an object with text and attributes.
+ * Decodes numeric character references.
  */
 function extractGuid(
   guid: string | { "#text"?: string; "@_isPermaLink"?: string; __cdata?: string } | undefined
@@ -114,23 +136,32 @@ function extractGuid(
   if (guid === undefined || guid === null) {
     return undefined;
   }
+
+  let text: string | undefined;
   if (typeof guid === "string") {
-    return guid.trim() || undefined;
+    text = guid;
+  } else if (guid["#text"] !== undefined) {
+    text = typeof guid["#text"] === "string" ? guid["#text"] : "";
+  } else if (guid.__cdata !== undefined) {
+    text = typeof guid.__cdata === "string" ? guid.__cdata : "";
   }
-  // Handle object with #text property
-  if (guid["#text"] !== undefined) {
-    return (typeof guid["#text"] === "string" ? guid["#text"] : "").trim() || undefined;
+
+  if (text === undefined) {
+    return undefined;
   }
-  // Handle CDATA
-  if (guid.__cdata !== undefined) {
-    return (typeof guid.__cdata === "string" ? guid.__cdata : "").trim() || undefined;
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
   }
-  return undefined;
+
+  return decodeNumericEntities(trimmed);
 }
 
 /**
  * Extracts the link from an RSS item or channel.
  * Handles various link formats including arrays and atom:link elements.
+ * Decodes numeric character references.
  */
 function extractLink(
   link: string | { __cdata?: string; "#text"?: string } | undefined
@@ -138,21 +169,32 @@ function extractLink(
   if (link === undefined || link === null) {
     return undefined;
   }
+
+  let text: string | undefined;
   if (typeof link === "string") {
-    return link.trim() || undefined;
+    text = link;
+  } else if (link.__cdata !== undefined) {
+    text = typeof link.__cdata === "string" ? link.__cdata : "";
+  } else if (link["#text"] !== undefined) {
+    text = typeof link["#text"] === "string" ? link["#text"] : "";
   }
-  if (link.__cdata !== undefined) {
-    return (typeof link.__cdata === "string" ? link.__cdata : "").trim() || undefined;
+
+  if (text === undefined) {
+    return undefined;
   }
-  if (link["#text"] !== undefined) {
-    return (typeof link["#text"] === "string" ? link["#text"] : "").trim() || undefined;
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
   }
-  return undefined;
+
+  return decodeNumericEntities(trimmed);
 }
 
 /**
  * Extracts the site URL from the channel's link element.
  * The link element can be a string, array, or atom:link object.
+ * Decodes numeric character references.
  */
 function extractChannelLink(
   link: string | string[] | { "@_href"?: string; "#text"?: string }[] | undefined
@@ -160,21 +202,34 @@ function extractChannelLink(
   if (link === undefined || link === null) {
     return undefined;
   }
+
+  let text: string | undefined;
   if (typeof link === "string") {
-    return link.trim() || undefined;
-  }
-  if (Array.isArray(link)) {
+    text = link;
+  } else if (Array.isArray(link)) {
     // Return the first string link
     for (const l of link) {
       if (typeof l === "string") {
-        return l.trim() || undefined;
+        text = l;
+        break;
       }
       if (typeof l === "object" && l["#text"]) {
-        return l["#text"].trim() || undefined;
+        text = l["#text"];
+        break;
       }
     }
   }
-  return undefined;
+
+  if (text === undefined) {
+    return undefined;
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return decodeNumericEntities(trimmed);
 }
 
 /**
