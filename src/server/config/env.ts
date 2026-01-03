@@ -19,11 +19,15 @@ export const signupConfig = {
 
 /**
  * Feed fetcher configuration.
- * FETCHER_CONTACT_EMAIL is an optional contact email included in the User-Agent header.
+ * These values are included in the User-Agent header for feed requests.
  */
 export const fetcherConfig = {
-  /** Optional contact email to include in User-Agent header for feed requests. */
+  /** Optional contact email to include in User-Agent header. */
   contactEmail: process.env.FETCHER_CONTACT_EMAIL,
+  /** App URL to include in User-Agent header (uses NEXT_PUBLIC_APP_URL). */
+  appUrl: process.env.NEXT_PUBLIC_APP_URL,
+  /** Git commit SHA, injected at build time via next.config.ts. */
+  commitSha: process.env.GIT_COMMIT_SHA,
 };
 
 /**
