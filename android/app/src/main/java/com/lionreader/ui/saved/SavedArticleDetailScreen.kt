@@ -318,17 +318,18 @@ private fun SavedArticleDetailContent(
 ) {
     // Calculate the highlighted paragraph index based on narration state
     // Only highlight if narrating this specific article
+    // Use highlightedElementIndex which is translated from narration index to element index
     val highlightedParagraphIndex =
         when (narrationState) {
             is NarrationState.Playing ->
                 if (narrationState.entryId == article.id) {
-                    narrationState.currentParagraph
+                    narrationState.highlightedElementIndex
                 } else {
                     null
                 }
             is NarrationState.Paused ->
                 if (narrationState.entryId == article.id) {
-                    narrationState.currentParagraph
+                    narrationState.highlightedElementIndex
                 } else {
                     null
                 }

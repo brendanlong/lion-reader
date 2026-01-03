@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import com.lionreader.R
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
+import com.lionreader.data.api.models.ParagraphMapEntry
 import com.lionreader.ui.narration.HtmlToTextConverter
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -46,6 +47,7 @@ class NarrationService : Service() {
     private var currentEntryTitle: String? = null
     private var currentFeedTitle: String? = null
     private var paragraphs: List<String> = emptyList()
+    private var paragraphMap: List<ParagraphMapEntry> = emptyList()
     private var currentParagraphIndex = 0
     private var isPlaying = false
     private var currentSource: NarrationSource = NarrationSource.LOCAL
@@ -112,10 +114,19 @@ class NarrationService : Service() {
 
         // Try to get LLM-cleaned text from server, fall back to local conversion
         serviceScope.launch {
-            val (narrationText, source) = fetchNarrationText(entryId, content)
-            startPlaybackWithText(narrationText, source)
+            val result = fetchNarrationText(entryId, content)
+            startPlaybackWithText(result.text, result.source, result.paragraphMap)
         }
     }
+
+    /**
+     * Result of fetching narration text.
+     */
+    private data class NarrationFetchResult(
+        val text: String,
+        val source: NarrationSource,
+        val paragraphMap: List<ParagraphMapEntry>,
+    )
 
     /**
      * Fetches narration text from the server with LLM cleanup.
@@ -123,12 +134,12 @@ class NarrationService : Service() {
      *
      * @param entryId The entry ID to fetch narration for
      * @param htmlContent The HTML content as fallback
-     * @return Pair of narration text and source (LLM or LOCAL)
+     * @return NarrationFetchResult with text, source, and paragraph mapping
      */
     private suspend fun fetchNarrationText(
         entryId: String,
         htmlContent: String,
-    ): Pair<String, NarrationSource> =
+    ): NarrationFetchResult =
         try {
             when (val result = api.generateNarration(entryId)) {
                 is ApiResult.Success -> {
@@ -139,23 +150,36 @@ class NarrationService : Service() {
                         } else {
                             NarrationSource.LOCAL
                         }
-                    Pair(response.narration, source)
+                    NarrationFetchResult(response.narration, source, response.paragraphMap)
                 }
                 is ApiResult.Error,
                 is ApiResult.NetworkError,
                 is ApiResult.RateLimited,
                 ApiResult.Unauthorized,
                 -> {
-                    // API error, fall back to local conversion
-                    val localText = HtmlToTextConverter.convert(htmlContent).joinToString("\n\n")
-                    Pair(localText, NarrationSource.LOCAL)
+                    // API error, fall back to local conversion with mapping
+                    val conversionResult = HtmlToTextConverter.convertWithMapping(htmlContent)
+                    NarrationFetchResult(
+                        conversionResult.paragraphs.joinToString("\n\n"),
+                        NarrationSource.LOCAL,
+                        conversionResult.paragraphMap,
+                    )
                 }
             }
         } catch (e: Exception) {
-            // Network or other error, fall back to local conversion
-            val localText = HtmlToTextConverter.convert(htmlContent).joinToString("\n\n")
-            Pair(localText, NarrationSource.LOCAL)
+            // Network or other error, fall back to local conversion with mapping
+            val conversionResult = HtmlToTextConverter.convertWithMapping(htmlContent)
+            NarrationFetchResult(
+                conversionResult.paragraphs.joinToString("\n\n"),
+                NarrationSource.LOCAL,
+                conversionResult.paragraphMap,
+            )
         }
+
+    /**
+     * Translates a narration paragraph index to the corresponding HTML element index.
+     */
+    private fun getElementIndex(narrationIndex: Int): Int = paragraphMap.find { it.n == narrationIndex }?.o ?: narrationIndex
 
     /**
      * Starts playback with the given narration text.
@@ -163,6 +187,7 @@ class NarrationService : Service() {
     private fun startPlaybackWithText(
         narrationText: String,
         source: NarrationSource,
+        mapping: List<ParagraphMapEntry>,
     ) {
         // Split into paragraphs by double newlines
         paragraphs =
@@ -170,6 +195,9 @@ class NarrationService : Service() {
                 .split(Regex("\n\n+"))
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
+
+        // Store the paragraph map for highlighting
+        paragraphMap = mapping
 
         if (paragraphs.isEmpty()) {
             _playbackState.value = NarrationState.Error("No content to narrate")
@@ -207,6 +235,7 @@ class NarrationService : Service() {
                 totalParagraphs = paragraphs.size,
                 entryTitle = currentEntryTitle ?: "Untitled",
                 source = currentSource,
+                highlightedElementIndex = getElementIndex(currentParagraphIndex),
             )
 
         tts?.setOnUtteranceProgressListener(
@@ -249,6 +278,7 @@ class NarrationService : Service() {
                 totalParagraphs = paragraphs.size,
                 entryTitle = currentEntryTitle ?: "Untitled",
                 source = currentSource,
+                highlightedElementIndex = getElementIndex(currentParagraphIndex),
             )
 
         updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
@@ -266,6 +296,7 @@ class NarrationService : Service() {
         currentEntryTitle = null
         currentFeedTitle = null
         paragraphs = emptyList()
+        paragraphMap = emptyList()
         currentSource = NarrationSource.LOCAL
 
         _playbackState.value = NarrationState.Idle
@@ -288,6 +319,7 @@ class NarrationService : Service() {
                         totalParagraphs = paragraphs.size,
                         entryTitle = currentEntryTitle ?: "Untitled",
                         source = currentSource,
+                        highlightedElementIndex = getElementIndex(currentParagraphIndex),
                     )
             }
         }
@@ -307,6 +339,7 @@ class NarrationService : Service() {
                         totalParagraphs = paragraphs.size,
                         entryTitle = currentEntryTitle ?: "Untitled",
                         source = currentSource,
+                        highlightedElementIndex = getElementIndex(currentParagraphIndex),
                     )
             }
         }

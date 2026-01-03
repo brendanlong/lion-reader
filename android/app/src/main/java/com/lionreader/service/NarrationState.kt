@@ -23,6 +23,8 @@ sealed class NarrationState {
         val entryTitle: String,
         /** Source of the narration text */
         val source: NarrationSource = NarrationSource.LOCAL,
+        /** HTML element index to highlight (translated from narration paragraph index) */
+        val highlightedElementIndex: Int = currentParagraph,
     ) : NarrationState()
 
     data class Paused(
@@ -32,6 +34,8 @@ sealed class NarrationState {
         val entryTitle: String,
         /** Source of the narration text */
         val source: NarrationSource = NarrationSource.LOCAL,
+        /** HTML element index to highlight (translated from narration paragraph index) */
+        val highlightedElementIndex: Int = currentParagraph,
     ) : NarrationState()
 
     data class Error(

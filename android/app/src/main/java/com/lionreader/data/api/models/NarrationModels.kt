@@ -14,6 +14,18 @@ data class NarrationGenerateRequest(
 )
 
 /**
+ * Paragraph mapping entry for highlighting support.
+ * Maps a narration paragraph index to the original HTML element index.
+ */
+@Serializable
+data class ParagraphMapEntry(
+    /** Narration paragraph index */
+    val n: Int,
+    /** Original HTML element index (corresponds to data-para-id) */
+    val o: Int,
+)
+
+/**
  * Response from the narration generation endpoint.
  */
 @Serializable
@@ -24,6 +36,8 @@ data class NarrationGenerateResponse(
     val cached: Boolean,
     /** Source of the narration: "llm" or "fallback" */
     val source: String,
+    /** Paragraph mapping for highlighting (narration index -> element index) */
+    val paragraphMap: List<ParagraphMapEntry>,
 )
 
 /**

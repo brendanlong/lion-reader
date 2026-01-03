@@ -12,7 +12,12 @@ import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 import { errors } from "../errors";
 import { entries, narrationContent, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { generateNarration, htmlToPlainText, isGroqAvailable } from "@/server/services/narration";
+import {
+  generateNarration,
+  htmlToNarrationInput,
+  isGroqAvailable,
+  type ParagraphMapEntry,
+} from "@/server/services/narration";
 import { logger } from "@/lib/logger";
 import {
   trackNarrationGenerated,
@@ -56,12 +61,28 @@ const generateInputSchema = z.object({
 // ============================================================================
 
 /**
+ * Paragraph mapping entry schema.
+ * Maps a narration paragraph index to the original HTML element index.
+ */
+const paragraphMapEntrySchema = z.object({
+  /** Narration paragraph index */
+  n: z.number(),
+  /** Original HTML element index (corresponds to data-para-id) */
+  o: z.number(),
+});
+
+/**
  * Narration generation result schema.
  */
 const generateOutputSchema = z.object({
   narration: z.string(),
   cached: z.boolean(),
   source: z.enum(["llm", "fallback"]),
+  /**
+   * Paragraph mapping for highlighting.
+   * Maps each narration paragraph index to its original HTML element index.
+   */
+  paragraphMap: z.array(paragraphMapEntrySchema),
 });
 
 // ============================================================================
@@ -122,6 +143,7 @@ export const narrationRouter = createTRPCRouter({
           narration: "",
           cached: false,
           source: "fallback" as const,
+          paragraphMap: [],
         };
       }
 
@@ -153,10 +175,28 @@ export const narrationRouter = createTRPCRouter({
       // Return cached narration if available
       if (narrationRecord.contentNarration) {
         trackNarrationGenerated(true, "llm");
+        // Regenerate paragraph mapping from the source content
+        // We need this because we don't cache the mapping in the database
+        const { paragraphs } = htmlToNarrationInput(sourceContent);
+        // Count paragraphs in cached narration to build the mapping
+        const cachedParagraphs = narrationRecord.contentNarration
+          .split(/\n\n+/)
+          .filter((p) => p.trim().length > 0);
+        // Build mapping: assume 1:1 correspondence with non-empty input paragraphs
+        // This works because the LLM maintains paragraph order
+        const paragraphMap: ParagraphMapEntry[] = [];
+        let narrationIdx = 0;
+        for (const p of paragraphs) {
+          if (narrationIdx < cachedParagraphs.length) {
+            paragraphMap.push({ n: narrationIdx, o: p.id });
+            narrationIdx++;
+          }
+        }
         return {
           narration: narrationRecord.contentNarration,
           cached: true,
           source: "llm" as const,
+          paragraphMap,
         };
       }
 
@@ -166,12 +206,19 @@ export const narrationRouter = createTRPCRouter({
 
       // If user disabled LLM normalization, Groq is not configured, or we had a recent error, fall back to plain text
       if (!input.useLlmNormalization || !isGroqAvailable() || !canRetryLLM) {
-        const fallbackText = htmlToPlainText(sourceContent);
+        // Generate narration with paragraph mapping using the same path as LLM
+        const { paragraphs } = htmlToNarrationInput(sourceContent);
+        const paragraphMap: ParagraphMapEntry[] = paragraphs.map((p, idx) => ({
+          n: idx,
+          o: p.id,
+        }));
+        const fallbackText = paragraphs.map((p) => p.text).join("\n\n");
         trackNarrationGenerated(false, "fallback");
         return {
           narration: fallbackText,
           cached: false,
           source: "fallback" as const,
+          paragraphMap,
         };
       }
 
@@ -193,6 +240,7 @@ export const narrationRouter = createTRPCRouter({
             narration: result.text,
             cached: false,
             source: "fallback" as const,
+            paragraphMap: result.paragraphMap,
           };
         }
 
@@ -212,6 +260,7 @@ export const narrationRouter = createTRPCRouter({
           narration: result.text,
           cached: false,
           source: "llm" as const,
+          paragraphMap: result.paragraphMap,
         };
       } catch (error) {
         // Stop the timer even on error
@@ -235,13 +284,19 @@ export const narrationRouter = createTRPCRouter({
           })
           .where(eq(narrationContent.id, narrationRecord.id));
 
-        // Fall back to plain text
-        const fallbackText = htmlToPlainText(sourceContent);
+        // Fall back to plain text with paragraph mapping
+        const { paragraphs } = htmlToNarrationInput(sourceContent);
+        const paragraphMap: ParagraphMapEntry[] = paragraphs.map((p, idx) => ({
+          n: idx,
+          o: p.id,
+        }));
+        const fallbackText = paragraphs.map((p) => p.text).join("\n\n");
         trackNarrationGenerated(false, "fallback");
         return {
           narration: fallbackText,
           cached: false,
           source: "fallback" as const,
+          paragraphMap,
         };
       }
     }),
