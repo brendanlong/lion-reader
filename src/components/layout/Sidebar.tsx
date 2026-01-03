@@ -7,11 +7,12 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { getViewPreferences, useViewPreferences } from "@/lib/hooks";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 
@@ -50,6 +51,90 @@ export function Sidebar({ onClose }: SidebarProps) {
     },
   });
 
+  // Get view preferences for prefetching with correct filters
+  const allPrefs = useViewPreferences("all");
+  const starredPrefs = useViewPreferences("starred");
+  const savedPrefs = useViewPreferences("saved");
+
+  // Prefetch entry list on mousedown for faster navigation
+  const prefetchEntryList = useCallback(
+    (options: {
+      feedId?: string;
+      tagId?: string;
+      type?: "saved";
+      starredOnly?: boolean;
+      unreadOnly?: boolean;
+      sortOrder?: "newest" | "oldest";
+    }) => {
+      utils.entries.list.prefetchInfinite(
+        {
+          feedId: options.feedId,
+          tagId: options.tagId,
+          type: options.type,
+          starredOnly: options.starredOnly,
+          unreadOnly: options.unreadOnly,
+          sortOrder: options.sortOrder,
+          limit: 20,
+        },
+        {
+          pages: 1,
+          getNextPageParam: (lastPage) => lastPage.nextCursor,
+        }
+      );
+    },
+    [utils]
+  );
+
+  // Mousedown handlers for prefetching
+  const handleAllMouseDown = useCallback(() => {
+    prefetchEntryList({
+      unreadOnly: allPrefs.showUnreadOnly,
+      sortOrder: allPrefs.sortOrder,
+    });
+  }, [prefetchEntryList, allPrefs.showUnreadOnly, allPrefs.sortOrder]);
+
+  const handleStarredMouseDown = useCallback(() => {
+    prefetchEntryList({
+      starredOnly: true,
+      unreadOnly: starredPrefs.showUnreadOnly,
+      sortOrder: starredPrefs.sortOrder,
+    });
+  }, [prefetchEntryList, starredPrefs.showUnreadOnly, starredPrefs.sortOrder]);
+
+  const handleSavedMouseDown = useCallback(() => {
+    prefetchEntryList({
+      type: "saved",
+      unreadOnly: savedPrefs.showUnreadOnly,
+      sortOrder: savedPrefs.sortOrder,
+    });
+  }, [prefetchEntryList, savedPrefs.showUnreadOnly, savedPrefs.sortOrder]);
+
+  const handleFeedMouseDown = useCallback(
+    (feedId: string) => {
+      // Use sync function for per-feed preferences (can't call hooks in callbacks)
+      const prefs = getViewPreferences("feed", feedId);
+      prefetchEntryList({
+        feedId,
+        unreadOnly: prefs.showUnreadOnly,
+        sortOrder: prefs.sortOrder,
+      });
+    },
+    [prefetchEntryList]
+  );
+
+  const handleTagMouseDown = useCallback(
+    (tagId: string) => {
+      // Use sync function for per-tag preferences (can't call hooks in callbacks)
+      const prefs = getViewPreferences("tag", tagId);
+      prefetchEntryList({
+        tagId,
+        unreadOnly: prefs.showUnreadOnly,
+        sortOrder: prefs.sortOrder,
+      });
+    },
+    [prefetchEntryList]
+  );
+
   // Calculate total unread count (subscriptions + saved articles)
   const totalUnreadCount =
     (subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.subscription.unreadCount, 0) ??
@@ -86,6 +171,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/all"
             onClick={handleClose}
+            onMouseDown={handleAllMouseDown}
             className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActiveLink("/all")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -103,6 +189,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/starred"
             onClick={handleClose}
+            onMouseDown={handleStarredMouseDown}
             className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActiveLink("/starred")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -120,6 +207,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/saved"
             onClick={handleClose}
+            onMouseDown={handleSavedMouseDown}
             className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActiveLink("/saved")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -179,6 +267,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                     <Link
                       href={feedHref}
                       onClick={handleClose}
+                      onMouseDown={() => handleFeedMouseDown(feed.id)}
                       className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
                         isActive
                           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -301,6 +390,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                       <Link
                         href={tagHref}
                         onClick={handleClose}
+                        onMouseDown={() => handleTagMouseDown(tag.id)}
                         className={`flex min-h-[40px] items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
                           isActive
                             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
