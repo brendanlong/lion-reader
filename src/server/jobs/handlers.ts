@@ -474,7 +474,81 @@ export async function handleProcessOpmlImport(
     };
   }
 
+  // If already completed or failed, don't reprocess
+  if (importRecord.status === "completed" || importRecord.status === "failed") {
+    logger.info("Import already finished, skipping", { importId, status: importRecord.status });
+    return {
+      success: true,
+      nextRunAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // Far future - job won't run again
+    };
+  }
+
   const userId = importRecord.userId;
+
+  // Check if a previous run completed processing but crashed before updating status.
+  // This can happen if the worker was killed between finishing the loop and the final update.
+  // We detect this by checking if all feeds have been processed, using either:
+  // 1. The results array length matching total feeds (most accurate)
+  // 2. The counts adding up to total feeds (for cases where results array wasn't fully saved)
+  const processedByResults = importRecord.results.length === importRecord.totalFeeds;
+  const processedByCounts =
+    importRecord.importedCount + importRecord.skippedCount + importRecord.failedCount ===
+    importRecord.totalFeeds;
+
+  if (importRecord.status === "processing" && (processedByResults || processedByCounts)) {
+    // Use counts from results array if available, otherwise use stored counts
+    const imported = processedByResults
+      ? importRecord.results.filter((r) => r.status === "imported").length
+      : importRecord.importedCount;
+    const skipped = processedByResults
+      ? importRecord.results.filter((r) => r.status === "skipped").length
+      : importRecord.skippedCount;
+    const failed = processedByResults
+      ? importRecord.results.filter((r) => r.status === "failed").length
+      : importRecord.failedCount;
+
+    logger.info("Recovering previously completed import", {
+      importId,
+      imported,
+      skipped,
+      failed,
+      total: importRecord.totalFeeds,
+    });
+
+    // Mark import as completed
+    const completedAt = new Date();
+    await db
+      .update(opmlImports)
+      .set({
+        status: "completed",
+        importedCount: imported,
+        skippedCount: skipped,
+        failedCount: failed,
+        completedAt,
+        updatedAt: completedAt,
+      })
+      .where(eq(opmlImports.id, importId));
+
+    // Publish completed event
+    await publishImportCompleted(userId, importId, {
+      imported,
+      skipped,
+      failed,
+      total: importRecord.totalFeeds,
+    });
+
+    return {
+      success: true,
+      nextRunAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // Far future - one-time job
+      metadata: {
+        recovered: true,
+        imported,
+        skipped,
+        failed,
+        total: importRecord.totalFeeds,
+      },
+    };
+  }
 
   // Update status to processing
   await db
