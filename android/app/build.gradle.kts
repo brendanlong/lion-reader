@@ -267,6 +267,12 @@ dependencies {
     // Coil (Image Loading)
     implementation(libs.coil.compose)
 
+    // HTML parsing (for narration)
+    implementation("org.jsoup:jsoup:1.18.3")
+
+    // Media session for playback controls
+    implementation("androidx.media:media:1.7.0")
+
     // Security
     implementation(libs.security.crypto)
 
