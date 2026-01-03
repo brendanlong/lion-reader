@@ -141,7 +141,11 @@ class NarrationService : Service() {
                         }
                     Pair(response.narration, source)
                 }
-                is ApiResult.Error -> {
+                is ApiResult.Error,
+                is ApiResult.NetworkError,
+                is ApiResult.RateLimited,
+                ApiResult.Unauthorized,
+                -> {
                     // API error, fall back to local conversion
                     val localText = HtmlToTextConverter.convert(htmlContent).joinToString("\n\n")
                     Pair(localText, NarrationSource.LOCAL)
