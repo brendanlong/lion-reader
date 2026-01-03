@@ -6,7 +6,7 @@
 
 "use client";
 
-import { Suspense, useState, useCallback } from "react";
+import { Suspense, useState, useCallback, useMemo } from "react";
 import {
   SavedArticleList,
   SavedArticleContent,
@@ -74,6 +74,19 @@ function SavedArticlesContent() {
     setArticles(loadedArticles);
   }, []);
 
+  // Calculate next and previous article IDs for prefetching
+  const { nextArticleId, previousArticleId } = useMemo(() => {
+    if (!openArticleId) return { nextArticleId: undefined, previousArticleId: undefined };
+
+    const currentIndex = articles.findIndex((a) => a.id === openArticleId);
+    if (currentIndex === -1) return { nextArticleId: undefined, previousArticleId: undefined };
+
+    return {
+      nextArticleId: currentIndex < articles.length - 1 ? articles[currentIndex + 1].id : undefined,
+      previousArticleId: currentIndex > 0 ? articles[currentIndex - 1].id : undefined,
+    };
+  }, [openArticleId, articles]);
+
   // If an article is open, show the full content view
   // Key forces remount when articleId changes, ensuring fresh refs and mutation state
   if (openArticleId) {
@@ -84,6 +97,8 @@ function SavedArticlesContent() {
         onBack={handleBack}
         onSwipeNext={goToNextArticle}
         onSwipePrevious={goToPreviousArticle}
+        nextArticleId={nextArticleId}
+        previousArticleId={previousArticleId}
       />
     );
   }
