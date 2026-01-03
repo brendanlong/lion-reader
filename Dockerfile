@@ -88,8 +88,9 @@ COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/src/server/db/schema.ts ./src/server/db/schema.ts
 
-# Copy migration scripts
+# Copy scripts (migrations, worker, startup)
 COPY --from=builder /app/scripts ./scripts
+RUN chmod +x scripts/start-all.sh
 
 # Switch to non-root user
 USER nextjs

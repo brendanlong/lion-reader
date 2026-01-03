@@ -13,8 +13,9 @@ export async function register() {
     await import("./sentry.server.config");
 
     // Start the background worker for feed fetching
-    // Only start in non-test environments
-    if (process.env.NODE_ENV !== "test") {
+    // Only start in non-test environments and when not using a separate worker process
+    const useEmbeddedWorker = process.env.DISABLE_EMBEDDED_WORKER !== "true";
+    if (process.env.NODE_ENV !== "test" && useEmbeddedWorker) {
       const { createWorker } = await import("./src/server/jobs/worker");
       const { logger } = await import("./src/lib/logger");
 
