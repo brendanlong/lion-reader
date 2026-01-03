@@ -54,6 +54,26 @@ export interface UseEntryMutationsOptions {
 }
 
 /**
+ * Options for the markAllRead mutation.
+ */
+export interface MarkAllReadOptions {
+  /**
+   * Filter by specific feed ID.
+   */
+  feedId?: string;
+
+  /**
+   * Filter by specific tag ID.
+   */
+  tagId?: string;
+
+  /**
+   * Mark only starred entries.
+   */
+  starredOnly?: boolean;
+}
+
+/**
  * Result of the useEntryMutations hook.
  */
 export interface UseEntryMutationsResult {
@@ -66,6 +86,11 @@ export interface UseEntryMutationsResult {
    * Toggle the read status of an entry.
    */
   toggleRead: (entryId: string, currentlyRead: boolean) => void;
+
+  /**
+   * Mark all entries as read with optional filters.
+   */
+  markAllRead: (options?: MarkAllReadOptions) => void;
 
   /**
    * Star an entry.
@@ -91,6 +116,11 @@ export interface UseEntryMutationsResult {
    * Whether the markRead mutation is pending.
    */
   isMarkReadPending: boolean;
+
+  /**
+   * Whether the markAllRead mutation is pending.
+   */
+  isMarkAllReadPending: boolean;
 
   /**
    * Whether the star/unstar mutation is pending.
@@ -191,6 +221,23 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       utils.tags.list.invalidate();
       // Invalidate starred count as it may have changed
       utils.entries.starredCount.invalidate();
+    },
+  });
+
+  // markAllRead mutation - marks all entries matching filters as read
+  const markAllReadMutation = trpc.entries.markAllRead.useMutation({
+    onSuccess: () => {
+      // Invalidate all entry lists to refetch with updated read status
+      utils.entries.list.invalidate();
+      // Invalidate subscription counts as they need server data
+      utils.subscriptions.list.invalidate();
+      // Invalidate tag unread counts
+      utils.tags.list.invalidate();
+      // Invalidate starred count as it may have changed
+      utils.entries.starredCount.invalidate();
+    },
+    onError: () => {
+      toast.error("Failed to mark all as read");
     },
   });
 
@@ -299,6 +346,13 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     [markReadMutation]
   );
 
+  const markAllRead = useCallback(
+    (options?: MarkAllReadOptions) => {
+      markAllReadMutation.mutate(options ?? {});
+    },
+    [markAllReadMutation]
+  );
+
   const star = useCallback(
     (entryId: string) => {
       starMutation.mutate({ id: entryId });
@@ -325,21 +379,38 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
   );
 
   const isPending =
-    markReadMutation.isPending || starMutation.isPending || unstarMutation.isPending;
+    markReadMutation.isPending ||
+    markAllReadMutation.isPending ||
+    starMutation.isPending ||
+    unstarMutation.isPending;
   const isMarkReadPending = markReadMutation.isPending;
+  const isMarkAllReadPending = markAllReadMutation.isPending;
   const isStarPending = starMutation.isPending || unstarMutation.isPending;
 
   return useMemo(
     () => ({
       markRead,
       toggleRead,
+      markAllRead,
       star,
       unstar,
       toggleStar,
       isPending,
       isMarkReadPending,
+      isMarkAllReadPending,
       isStarPending,
     }),
-    [markRead, toggleRead, star, unstar, toggleStar, isPending, isMarkReadPending, isStarPending]
+    [
+      markRead,
+      toggleRead,
+      markAllRead,
+      star,
+      unstar,
+      toggleStar,
+      isPending,
+      isMarkReadPending,
+      isMarkAllReadPending,
+      isStarPending,
+    ]
   );
 }
