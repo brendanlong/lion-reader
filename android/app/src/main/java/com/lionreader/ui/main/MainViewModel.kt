@@ -80,6 +80,7 @@ class MainViewModel
             when {
                 route == Screen.All.route -> Screen.All.TITLE
                 route == Screen.Starred.route -> Screen.Starred.TITLE
+                route == Screen.Uncategorized.route -> Screen.Uncategorized.TITLE
                 route.startsWith("tag/") -> {
                     val tagId = route.removePrefix("tag/")
                     tagRepository.getTag(tagId)?.name ?: "Tag"

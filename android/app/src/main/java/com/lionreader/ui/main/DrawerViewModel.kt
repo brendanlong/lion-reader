@@ -80,6 +80,20 @@ class DrawerViewModel
                 )
 
         /**
+         * Unread count for uncategorized subscriptions (those with no tags).
+         *
+         * Used to display badge on "Uncategorized" navigation item.
+         */
+        val uncategorizedUnreadCount: StateFlow<Int> =
+            subscriptionRepository
+                .getUncategorizedUnreadCount()
+                .stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = 0,
+                )
+
+        /**
          * Unread count for starred entries.
          *
          * Fetched from the server when refreshData() is called.

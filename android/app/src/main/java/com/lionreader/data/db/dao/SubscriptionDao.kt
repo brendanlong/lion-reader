@@ -147,4 +147,44 @@ interface SubscriptionDao {
      */
     @Query("SELECT COALESCE(SUM(unreadCount), 0) FROM subscriptions")
     fun getTotalUnreadCount(): Flow<Int>
+
+    /**
+     * Gets the unread count for subscriptions with no tags (uncategorized).
+     *
+     * @return Sum of unread counts for uncategorized subscriptions
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(s.unreadCount), 0) FROM subscriptions s
+        WHERE s.id NOT IN (
+            SELECT st.subscriptionId FROM subscription_tags st
+        )
+        """,
+    )
+    fun getUncategorizedUnreadCount(): Flow<Int>
+
+    /**
+     * Gets subscriptions that have no tags (uncategorized).
+     *
+     * @return Flow of uncategorized subscriptions with feeds
+     */
+    @Query(
+        """
+        SELECT s.*,
+               f.id AS feed_id,
+               f.type AS feed_type,
+               f.url AS feed_url,
+               f.title AS feed_title,
+               f.description AS feed_description,
+               f.siteUrl AS feed_siteUrl,
+               f.lastSyncedAt AS feed_lastSyncedAt
+        FROM subscriptions s
+        JOIN feeds f ON s.feedId = f.id
+        WHERE s.id NOT IN (
+            SELECT st.subscriptionId FROM subscription_tags st
+        )
+        ORDER BY COALESCE(s.customTitle, f.title) ASC
+        """,
+    )
+    fun getUncategorizedWithFeeds(): Flow<List<SubscriptionWithFeed>>
 }
