@@ -279,11 +279,13 @@ export function useKeyboardShortcuts(
       const nextId = entryIds[0];
       setSelectedEntryId(nextId);
       onOpenEntry(nextId);
+      window.scrollTo(0, 0);
     } else if (currentIndex < entryIds.length - 1) {
       // Go to next entry
       const nextId = entryIds[currentIndex + 1];
       setSelectedEntryId(nextId);
       onOpenEntry(nextId);
+      window.scrollTo(0, 0);
     }
     // If already at the last entry, do nothing
   }, [entryIds, getSelectedIndex, onOpenEntry]);
@@ -299,11 +301,13 @@ export function useKeyboardShortcuts(
       const prevId = entryIds[entryIds.length - 1];
       setSelectedEntryId(prevId);
       onOpenEntry(prevId);
+      window.scrollTo(0, 0);
     } else if (currentIndex > 0) {
       // Go to previous entry
       const prevId = entryIds[currentIndex - 1];
       setSelectedEntryId(prevId);
       onOpenEntry(prevId);
+      window.scrollTo(0, 0);
     }
     // If already at the first entry, do nothing
   }, [entryIds, getSelectedIndex, onOpenEntry]);
