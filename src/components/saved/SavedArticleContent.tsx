@@ -40,6 +40,16 @@ interface SavedArticleContentProps {
    * Optional callback when swiping to previous article.
    */
   onSwipePrevious?: () => void;
+
+  /**
+   * Optional ID of the next article to prefetch.
+   */
+  nextArticleId?: string;
+
+  /**
+   * Optional ID of the previous article to prefetch.
+   */
+  previousArticleId?: string;
 }
 
 /**
@@ -53,6 +63,8 @@ export function SavedArticleContent({
   onBack,
   onSwipeNext,
   onSwipePrevious,
+  nextArticleId,
+  previousArticleId,
 }: SavedArticleContentProps) {
   const hasMarkedRead = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -60,11 +72,24 @@ export function SavedArticleContent({
   // Fetch the saved article using unified entries endpoint
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: articleId });
 
+  // Get tRPC utils for prefetching
+  const utils = trpc.useUtils();
+
   // Use the consolidated mutations hook (no list filters since we're in single article view)
   // normy automatically propagates changes to entries.get when server responds
   const { markRead, star, unstar } = useSavedArticleMutations();
 
   const article = data?.entry;
+
+  // Prefetch next and previous articles for instant navigation
+  useEffect(() => {
+    if (nextArticleId) {
+      utils.entries.get.prefetch({ id: nextArticleId });
+    }
+    if (previousArticleId) {
+      utils.entries.get.prefetch({ id: previousArticleId });
+    }
+  }, [nextArticleId, previousArticleId, utils.entries.get]);
 
   // Mark article as read when component mounts and article is loaded (only once)
   useEffect(() => {
