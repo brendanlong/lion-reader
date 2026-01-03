@@ -33,6 +33,11 @@ export interface EntryListFilters {
   tagId?: string;
 
   /**
+   * Show only entries from uncategorized feeds (feeds with no tags).
+   */
+  uncategorized?: boolean;
+
+  /**
    * Show only unread entries.
    */
   unreadOnly?: boolean;
