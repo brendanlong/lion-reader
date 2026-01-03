@@ -249,11 +249,13 @@ export function useSavedArticleKeyboardShortcuts(
       const nextId = articleIds[0];
       setSelectedArticleId(nextId);
       onOpenArticle(nextId);
+      window.scrollTo(0, 0);
     } else if (currentIndex < articleIds.length - 1) {
       // Go to next article
       const nextId = articleIds[currentIndex + 1];
       setSelectedArticleId(nextId);
       onOpenArticle(nextId);
+      window.scrollTo(0, 0);
     }
     // If already at the last article, do nothing
   }, [articleIds, getSelectedIndex, onOpenArticle]);
@@ -269,11 +271,13 @@ export function useSavedArticleKeyboardShortcuts(
       const prevId = articleIds[articleIds.length - 1];
       setSelectedArticleId(prevId);
       onOpenArticle(prevId);
+      window.scrollTo(0, 0);
     } else if (currentIndex > 0) {
       // Go to previous article
       const prevId = articleIds[currentIndex - 1];
       setSelectedArticleId(prevId);
       onOpenArticle(prevId);
+      window.scrollTo(0, 0);
     }
     // If already at the first article, do nothing
   }, [articleIds, getSelectedIndex, onOpenArticle]);
