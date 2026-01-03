@@ -18,6 +18,19 @@ export const signupConfig = {
 };
 
 /**
+ * Feed fetcher configuration.
+ * These values are included in the User-Agent header for feed requests.
+ */
+export const fetcherConfig = {
+  /** Optional contact email to include in User-Agent header. */
+  contactEmail: process.env.FETCHER_CONTACT_EMAIL,
+  /** App URL to include in User-Agent header (uses NEXT_PUBLIC_APP_URL). */
+  appUrl: process.env.NEXT_PUBLIC_APP_URL,
+  /** Git commit SHA, injected at build time via next.config.ts. */
+  commitSha: process.env.GIT_COMMIT_SHA,
+};
+
+/**
  * Email ingest configuration.
  * INGEST_EMAIL_DOMAIN is the domain for ingest email addresses.
  * EMAIL_WEBHOOK_SECRET is the shared secret for authenticating email webhook requests.

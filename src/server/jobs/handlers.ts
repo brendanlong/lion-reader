@@ -97,6 +97,7 @@ export async function handleFetchFeed(
   const fetchResult = await fetchFeed(feed.url, {
     etag: feed.etag ?? undefined,
     lastModified: feed.lastModifiedHeader ?? undefined,
+    feedId,
   });
 
   // Process the result based on status
