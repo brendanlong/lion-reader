@@ -532,8 +532,8 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("Hello world\n\nGoodbye world");
       expect(result.paragraphMap).toEqual([
-        { n: 0, o: [0] },
-        { n: 1, o: [1] },
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
       ]);
       expect(result.processedHtml).toContain('data-para-id="para-0"');
       expect(result.processedHtml).toContain('data-para-id="para-1"');
@@ -563,9 +563,9 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("Before\n\nImage: A photo of a cat\n\nAfter");
       expect(result.paragraphMap).toEqual([
-        { n: 0, o: [0] },
-        { n: 1, o: [1] },
-        { n: 2, o: [2] },
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
+        { n: 2, o: 2 },
       ]);
     });
 
@@ -579,8 +579,8 @@ describe("htmlToClientNarration", () => {
       // para-0 is p "Before", para-1 is img (skipped in narration), para-2 is p "After"
       // So narration paragraph 0 maps to DOM element 0, narration paragraph 1 maps to DOM element 2
       expect(result.paragraphMap).toEqual([
-        { n: 0, o: [0] },
-        { n: 1, o: [2] },
+        { n: 0, o: 0 },
+        { n: 1, o: 2 },
       ]);
       // But the image still gets its ID in the DOM
       expect(result.processedHtml).toContain('data-para-id="para-1"');
@@ -593,8 +593,8 @@ describe("htmlToClientNarration", () => {
       expect(result.narrationText).toBe("Before\n\nAfter");
       // Same mapping as above - image is skipped in narration
       expect(result.paragraphMap).toEqual([
-        { n: 0, o: [0] },
-        { n: 1, o: [2] },
+        { n: 0, o: 0 },
+        { n: 1, o: 2 },
       ]);
     });
 
@@ -603,7 +603,7 @@ describe("htmlToClientNarration", () => {
       const result = htmlToClientNarration(html);
 
       expect(result.narrationText).toBe("Image: A cat photo");
-      expect(result.paragraphMap).toEqual([{ n: 0, o: [0] }]);
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
 
     it("handles figure with image alt text", () => {
@@ -618,7 +618,7 @@ describe("htmlToClientNarration", () => {
       const result = htmlToClientNarration(html);
 
       expect(result.narrationText).toBe("Some text Image: a cute cat more text");
-      expect(result.paragraphMap).toEqual([{ n: 0, o: [0] }]);
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
 
     it("handles multiple inline images within a paragraph", () => {
@@ -660,8 +660,8 @@ describe("htmlToClientNarration", () => {
       expect(result.narrationText).toBe("Before\n\nAfter");
       // para-0 is p, para-1 is pre (skipped), para-2 is p
       expect(result.paragraphMap).toEqual([
-        { n: 0, o: [0] },
-        { n: 1, o: [2] },
+        { n: 0, o: 0 },
+        { n: 1, o: 2 },
       ]);
     });
   });
@@ -675,8 +675,8 @@ describe("htmlToClientNarration", () => {
       expect(result.narrationText).toBe("Item 1\n\nItem 2");
       // ul is para-0 (skipped), li are para-1 and para-2
       expect(result.paragraphMap).toEqual([
-        { n: 0, o: [1] },
-        { n: 1, o: [2] },
+        { n: 0, o: 1 },
+        { n: 1, o: 2 },
       ]);
     });
   });
@@ -688,9 +688,9 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("Main Title\n\nContent\n\nSection");
       expect(result.paragraphMap).toEqual([
-        { n: 0, o: [0] },
-        { n: 1, o: [1] },
-        { n: 2, o: [2] },
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
+        { n: 2, o: 2 },
       ]);
     });
   });
@@ -713,7 +713,7 @@ describe("htmlToClientNarration", () => {
 
       // Verify paragraph map correctly maps narration indices to element indices
       for (const mapping of result.paragraphMap) {
-        const targetId = `para-${mapping.o[0]}`;
+        const targetId = `para-${mapping.o}`;
         const element = container.querySelector(`[data-para-id="${targetId}"]`);
         expect(element).not.toBeNull();
       }
@@ -731,8 +731,8 @@ describe("htmlToClientNarration", () => {
       expect(narrationParagraphs[1]).toBe("After image");
 
       // Paragraph map should correctly point to DOM element indices
-      expect(result.paragraphMap[0]).toEqual({ n: 0, o: [0] }); // "Before image" -> para-0
-      expect(result.paragraphMap[1]).toEqual({ n: 1, o: [2] }); // "After image" -> para-2 (skipping para-1 which is the image)
+      expect(result.paragraphMap[0]).toEqual({ n: 0, o: 0 }); // "Before image" -> para-0
+      expect(result.paragraphMap[1]).toEqual({ n: 1, o: 2 }); // "After image" -> para-2 (skipping para-1 which is the image)
 
       // Verify the processed HTML has all 3 elements with IDs
       expect(result.processedHtml).toContain('data-para-id="para-0"');
@@ -747,7 +747,7 @@ describe("htmlToClientNarration", () => {
       const result = htmlToClientNarration(html);
 
       expect(result.narrationText).toBe("A famous quote goes here.");
-      expect(result.paragraphMap).toEqual([{ n: 0, o: [0] }]);
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
   });
 
@@ -757,7 +757,7 @@ describe("htmlToClientNarration", () => {
       const result = htmlToClientNarration(html);
 
       expect(result.narrationText).toBe("A, B. C, D");
-      expect(result.paragraphMap).toEqual([{ n: 0, o: [0] }]);
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
   });
 });
