@@ -5,6 +5,10 @@
  * This provider offers high-quality neural text-to-speech that runs
  * entirely in the browser.
  *
+ * Audio generation runs in a Web Worker to prevent blocking the main UI thread.
+ * Only audio decoding and playback happen on the main thread (AudioContext
+ * requires main thread access).
+ *
  * @module narration/piper-tts-provider
  */
 
@@ -12,58 +16,11 @@ import type { TTSProvider, TTSVoice, SpeakOptions } from "./types";
 import { ENHANCED_VOICES, findEnhancedVoice } from "./enhanced-voices";
 import { splitIntoSentences } from "./sentence-splitter";
 import { concatenateAudioBuffers, DEFAULT_SENTENCE_GAP_SECONDS } from "./audio-buffer-utils";
-
-/**
- * Dynamically imports the piper-tts-web module.
- * This allows for code splitting and lazy loading.
- */
-async function getPiperTTS(): Promise<typeof import("@mintplex-labs/piper-tts-web")> {
-  return import("@mintplex-labs/piper-tts-web");
-}
-
-/**
- * Tracks the voice ID currently loaded in the TtsSession singleton.
- * The piper-tts-web library uses a singleton pattern that doesn't reload
- * the voice model when switching voices - it only updates the voiceId string.
- * We need to manually reset the singleton when switching to a different voice.
- */
-let currentlyLoadedVoiceId: string | null = null;
-
-/**
- * Resets the TtsSession singleton if a different voice is requested.
- * This works around a limitation in the piper-tts-web library where
- * the singleton caches the first voice model and reuses it even when
- * a different voiceId is requested.
- */
-async function ensureCorrectVoiceLoaded(
-  piper: typeof import("@mintplex-labs/piper-tts-web"),
-  voiceId: string
-): Promise<void> {
-  if (currentlyLoadedVoiceId !== null && currentlyLoadedVoiceId !== voiceId) {
-    // Reset the singleton to force loading the new voice model
-    // The TtsSession class uses a static _instance property for the singleton
-    const TtsSession = piper.TtsSession as typeof piper.TtsSession & {
-      _instance: unknown | null;
-    };
-    TtsSession._instance = null;
-  }
-  currentlyLoadedVoiceId = voiceId;
-}
-
-/**
- * Custom WASM paths configuration.
- * We serve ONNX WASM files locally because the default CDN URL is broken.
- * Piper WASM files are served from jsdelivr which works correctly.
- */
-const CUSTOM_WASM_PATHS = {
-  // Serve ONNX WASM from our public folder (the default cdnjs URL returns 404)
-  onnxWasm: "/onnx/",
-  // These work from the default CDN
-  piperData:
-    "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.data",
-  piperWasm:
-    "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm",
-};
+import {
+  getPiperWorkerClient,
+  isWebWorkerSupported,
+  type PiperWorkerClient,
+} from "./piper-worker-client";
 
 /**
  * Default speech rate (1.0 = normal speed).
@@ -104,6 +61,7 @@ export class VoiceNotDownloadedError extends Error {
  * - Natural sounding voices
  * - Offline capability (after voice download)
  * - Consistent quality across browsers
+ * - Background thread processing (Web Worker) to prevent UI blocking
  *
  * Limitations:
  * - Requires voice model download (~17-50 MB per voice)
@@ -121,6 +79,7 @@ export class PiperTTSProvider implements TTSProvider {
   private pausedAt = 0;
   private startedAt = 0;
   private currentBuffer: AudioBuffer | null = null;
+  private workerClient: PiperWorkerClient | null = null;
 
   /**
    * Checks if Piper TTS is available in the current environment.
@@ -128,6 +87,7 @@ export class PiperTTSProvider implements TTSProvider {
    * Requires:
    * - AudioContext for audio playback
    * - Origin Private File System for model storage (via navigator.storage)
+   * - Web Workers for background processing
    */
   isAvailable(): boolean {
     if (typeof window === "undefined") {
@@ -140,7 +100,20 @@ export class PiperTTSProvider implements TTSProvider {
     // Check for storage API (used by piper-tts-web for OPFS)
     const hasStorageAPI = "storage" in navigator && "getDirectory" in navigator.storage;
 
-    return hasAudioContext && hasStorageAPI;
+    // Check for Web Worker support
+    const hasWebWorker = isWebWorkerSupported();
+
+    return hasAudioContext && hasStorageAPI && hasWebWorker;
+  }
+
+  /**
+   * Gets the worker client, creating it if needed.
+   */
+  private getWorkerClient(): PiperWorkerClient {
+    if (!this.workerClient) {
+      this.workerClient = getPiperWorkerClient();
+    }
+    return this.workerClient;
   }
 
   /**
@@ -171,6 +144,8 @@ export class PiperTTSProvider implements TTSProvider {
   /**
    * Downloads a voice model for offline use.
    *
+   * Downloads happen in the Web Worker to avoid blocking the UI.
+   *
    * @param voiceId - The voice ID to download.
    * @param onProgress - Optional callback for download progress.
    * @throws Error if the voice ID is unknown.
@@ -181,13 +156,8 @@ export class PiperTTSProvider implements TTSProvider {
       throw new Error(`Unknown voice: ${voiceId}`);
     }
 
-    const piper = await getPiperTTS();
-
-    await piper.download(voiceId, (progress) => {
-      if (progress.total > 0) {
-        onProgress?.(progress.loaded / progress.total);
-      }
-    });
+    const client = this.getWorkerClient();
+    await client.downloadVoice(voiceId, onProgress);
 
     // Ensure progress shows 100% on completion
     onProgress?.(1);
@@ -199,8 +169,8 @@ export class PiperTTSProvider implements TTSProvider {
    * @param voiceId - The voice ID to remove.
    */
   async removeVoice(voiceId: string): Promise<void> {
-    const piper = await getPiperTTS();
-    await piper.remove(voiceId);
+    const client = this.getWorkerClient();
+    await client.removeVoice(voiceId);
   }
 
   /**
@@ -210,10 +180,10 @@ export class PiperTTSProvider implements TTSProvider {
    */
   async getStoredVoiceIds(): Promise<string[]> {
     try {
-      const piper = await getPiperTTS();
-      return await piper.stored();
+      const client = this.getWorkerClient();
+      return await client.getStoredVoiceIds();
     } catch {
-      // If OPFS is not available or fails, return empty array
+      // If worker fails, return empty array
       return [];
     }
   }
@@ -221,6 +191,9 @@ export class PiperTTSProvider implements TTSProvider {
   /**
    * Generates audio for text without playing it.
    * Useful for pre-buffering upcoming paragraphs.
+   *
+   * Audio synthesis happens in a Web Worker to prevent blocking the UI.
+   * Only audio decoding happens on the main thread (required by AudioContext).
    *
    * @param text - The text to synthesize.
    * @param voiceId - The voice ID to use.
@@ -244,22 +217,13 @@ export class PiperTTSProvider implements TTSProvider {
       throw new VoiceNotDownloadedError(voiceId);
     }
 
-    // Generate audio using Piper with custom WASM paths
-    const piper = await getPiperTTS();
+    // Generate audio in the Web Worker (ONNX inference runs off main thread)
+    const client = this.getWorkerClient();
+    const audioData = await client.generateAudio(text, voiceId);
 
-    // Ensure the correct voice model is loaded (reset singleton if switching voices)
-    await ensureCorrectVoiceLoaded(piper, voiceId);
-
-    const session = await piper.TtsSession.create({
-      voiceId,
-      wasmPaths: CUSTOM_WASM_PATHS,
-    });
-    const wavBlob = await session.predict(text);
-
-    // Decode the audio
-    const arrayBuffer = await wavBlob.arrayBuffer();
+    // Decode the audio on main thread (AudioContext requires main thread)
     const audioContext = this.getAudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const audioBuffer = await audioContext.decodeAudioData(audioData);
 
     return audioBuffer;
   }
