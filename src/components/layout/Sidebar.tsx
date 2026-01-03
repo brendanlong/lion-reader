@@ -296,7 +296,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                         <span className="truncate">{title}</span>
                       </span>
                       {subscription.unreadCount > 0 && (
-                        <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                        <span className="shrink-0 text-xs text-zinc-500 transition-opacity group-hover:opacity-0 dark:text-zinc-400">
                           ({subscription.unreadCount})
                         </span>
                       )}
