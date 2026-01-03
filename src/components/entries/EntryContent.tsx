@@ -72,8 +72,11 @@ export function EntryContent({
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
 
-  // Get tRPC utils for prefetching
-  const utils = trpc.useUtils();
+  // Prefetch next and previous entries with active observers to keep them in cache
+  // These queries run in parallel and don't block the main entry fetch
+  // We don't use their loading states, so they're invisible to the UI
+  trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
+  trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
   // Entry mutations without list filters (this component operates on a single entry)
   // Note: optimistic updates happen at the list level in parent components,
@@ -81,16 +84,6 @@ export function EntryContent({
   const { markRead, star, unstar } = useEntryMutations();
 
   const entry = data?.entry;
-
-  // Prefetch next and previous entries for instant navigation
-  useEffect(() => {
-    if (nextEntryId) {
-      utils.entries.get.prefetch({ id: nextEntryId });
-    }
-    if (previousEntryId) {
-      utils.entries.get.prefetch({ id: previousEntryId });
-    }
-  }, [nextEntryId, previousEntryId, utils.entries.get]);
 
   // Mark entry as read when component mounts and entry is loaded (only once)
   useEffect(() => {

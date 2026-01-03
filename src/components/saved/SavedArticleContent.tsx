@@ -72,24 +72,17 @@ export function SavedArticleContent({
   // Fetch the saved article using unified entries endpoint
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: articleId });
 
-  // Get tRPC utils for prefetching
-  const utils = trpc.useUtils();
+  // Prefetch next and previous articles with active observers to keep them in cache
+  // These queries run in parallel and don't block the main article fetch
+  // We don't use their loading states, so they're invisible to the UI
+  trpc.entries.get.useQuery({ id: nextArticleId! }, { enabled: !!nextArticleId });
+  trpc.entries.get.useQuery({ id: previousArticleId! }, { enabled: !!previousArticleId });
 
   // Use the consolidated mutations hook (no list filters since we're in single article view)
   // normy automatically propagates changes to entries.get when server responds
   const { markRead, star, unstar } = useSavedArticleMutations();
 
   const article = data?.entry;
-
-  // Prefetch next and previous articles for instant navigation
-  useEffect(() => {
-    if (nextArticleId) {
-      utils.entries.get.prefetch({ id: nextArticleId });
-    }
-    if (previousArticleId) {
-      utils.entries.get.prefetch({ id: previousArticleId });
-    }
-  }, [nextArticleId, previousArticleId, utils.entries.get]);
 
   // Mark article as read when component mounts and article is loaded (only once)
   useEffect(() => {
