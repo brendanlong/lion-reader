@@ -87,7 +87,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 # Copy drizzle config and migrations for release_command
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/src/server/db/schema.ts ./src/server/db/schema.ts
+
+# Copy source files needed by worker (tsx runs on raw TypeScript)
+COPY --from=builder /app/src ./src
 
 # Copy scripts (migrations, worker, startup)
 COPY --from=builder /app/scripts ./scripts
