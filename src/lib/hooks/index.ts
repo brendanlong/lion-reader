@@ -66,3 +66,5 @@ export {
   type UseSwipeGesturesOptions,
   type UseSwipeGesturesResult,
 } from "./useSwipeGestures";
+
+export { useExpandedTags, type UseExpandedTagsResult } from "./useExpandedTags";
