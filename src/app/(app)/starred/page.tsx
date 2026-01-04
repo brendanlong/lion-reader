@@ -97,83 +97,84 @@ function StarredEntriesContent() {
     [entryListQuery]
   );
 
-  // If an entry is open, show the full content view
-  // Key forces remount when entryId changes, ensuring fresh refs and mutation state
-  if (openEntryId) {
-    return (
-      <EntryContent
-        key={openEntryId}
-        entryId={openEntryId}
-        listFilters={{ starredOnly: true, unreadOnly: showUnreadOnly, sortOrder }}
-        onBack={handleBack}
-        onSwipeNext={goToNextEntry}
-        onSwipePrevious={goToPreviousEntry}
-        nextEntryId={entryListQuery.nextEntryId}
-        previousEntryId={entryListQuery.previousEntryId}
-      />
-    );
-  }
-
-  // Otherwise, show the starred entries list
+  // Render both list and content, hiding the list when viewing an entry.
+  // This preserves scroll position and enables seamless j/k navigation.
   return (
-    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      <div className="mb-4 flex items-center justify-between sm:mb-6">
-        <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Starred</h1>
-        <div className="flex gap-2">
-          {unreadStarredCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowMarkAllReadDialog(true)}
-              className="inline-flex items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:focus:ring-zinc-400"
-              title="Mark all as read"
-              aria-label="Mark all as read"
-            >
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                aria-hidden="true"
+    <>
+      {/* Entry content - only rendered when an entry is open */}
+      {openEntryId && (
+        <EntryContent
+          key={openEntryId}
+          entryId={openEntryId}
+          listFilters={{ starredOnly: true, unreadOnly: showUnreadOnly, sortOrder }}
+          onBack={handleBack}
+          onSwipeNext={goToNextEntry}
+          onSwipePrevious={goToPreviousEntry}
+          nextEntryId={entryListQuery.nextEntryId}
+          previousEntryId={entryListQuery.previousEntryId}
+        />
+      )}
+
+      {/* Entry list - always mounted but hidden when viewing an entry */}
+      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
+        <div className="mb-4 flex items-center justify-between sm:mb-6">
+          <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Starred</h1>
+          <div className="flex gap-2">
+            {unreadStarredCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowMarkAllReadDialog(true)}
+                className="inline-flex items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:focus:ring-zinc-400"
+                title="Mark all as read"
+                aria-label="Mark all as read"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <span className="ml-1.5 hidden text-sm sm:inline">Mark All Read</span>
-            </button>
-          )}
-          <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
-          <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <span className="ml-1.5 hidden text-sm sm:inline">Mark All Read</span>
+              </button>
+            )}
+            <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
+            <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+          </div>
         </div>
+
+        <EntryList
+          filters={{ starredOnly: true, unreadOnly: showUnreadOnly, sortOrder }}
+          onEntryClick={handleEntryClick}
+          selectedEntryId={selectedEntryId}
+          onToggleRead={toggleRead}
+          onToggleStar={toggleStar}
+          externalEntries={entryListQuery.entries}
+          externalQueryState={externalQueryState}
+          emptyMessage={
+            showUnreadOnly
+              ? "No unread starred entries. Toggle to show all starred items."
+              : "No starred entries yet. Star entries to save them for later."
+          }
+        />
+
+        <MarkAllReadDialog
+          isOpen={showMarkAllReadDialog}
+          contextDescription="starred entries"
+          unreadCount={unreadStarredCount}
+          isLoading={isMarkAllReadPending}
+          onConfirm={handleMarkAllRead}
+          onCancel={() => setShowMarkAllReadDialog(false)}
+        />
       </div>
-
-      <EntryList
-        filters={{ starredOnly: true, unreadOnly: showUnreadOnly, sortOrder }}
-        onEntryClick={handleEntryClick}
-        selectedEntryId={selectedEntryId}
-        onToggleRead={toggleRead}
-        onToggleStar={toggleStar}
-        externalEntries={entryListQuery.entries}
-        externalQueryState={externalQueryState}
-        emptyMessage={
-          showUnreadOnly
-            ? "No unread starred entries. Toggle to show all starred items."
-            : "No starred entries yet. Star entries to save them for later."
-        }
-      />
-
-      <MarkAllReadDialog
-        isOpen={showMarkAllReadDialog}
-        contextDescription="starred entries"
-        unreadCount={unreadStarredCount}
-        isLoading={isMarkAllReadPending}
-        onConfirm={handleMarkAllRead}
-        onCancel={() => setShowMarkAllReadDialog(false)}
-      />
-    </div>
+    </>
   );
 }
 

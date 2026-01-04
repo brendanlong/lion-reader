@@ -297,8 +297,11 @@ export function useSavedArticleKeyboardShortcuts(
   const effectiveSelectedArticleId = isSelectedArticleValid ? selectedArticleId : null;
 
   // Scroll selected article into view using useLayoutEffect to ensure DOM is ready
+  // Only scroll when list is visible (not hidden). This handles both:
+  // 1. Selection changes while viewing the list
+  // 2. Returning to list view after viewing an article
   useLayoutEffect(() => {
-    if (effectiveSelectedArticleId) {
+    if (effectiveSelectedArticleId && !isArticleOpen) {
       const element = document.querySelector(`[data-entry-id="${effectiveSelectedArticleId}"]`);
       if (element) {
         element.scrollIntoView({
@@ -307,7 +310,7 @@ export function useSavedArticleKeyboardShortcuts(
         });
       }
     }
-  }, [effectiveSelectedArticleId]);
+  }, [effectiveSelectedArticleId, isArticleOpen]);
 
   // Keyboard shortcuts
   // j - next article (select in list, or navigate to next when viewing)
