@@ -2,29 +2,30 @@
  * Unit tests for PiperTTSProvider.
  *
  * These tests verify the PiperTTSProvider implementation.
- * Since Piper TTS requires browser APIs (AudioContext, OPFS), we mock these
- * for unit testing.
+ * Since Piper TTS requires browser APIs (AudioContext, OPFS, Web Workers),
+ * we mock these for unit testing.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { TTSVoice } from "../../src/lib/narration/types";
 
-// Hoist the mock function so it can be used in vi.mock factory
-const { mockPredict } = vi.hoisted(() => ({
-  mockPredict: vi.fn(),
+// Hoist the mock functions so they can be used in vi.mock factory
+const { mockWorkerClient, mockIsWebWorkerSupported } = vi.hoisted(() => ({
+  mockWorkerClient: {
+    getStoredVoiceIds: vi.fn(),
+    downloadVoice: vi.fn(),
+    removeVoice: vi.fn(),
+    generateAudio: vi.fn(),
+    terminate: vi.fn(),
+    isAvailable: vi.fn().mockReturnValue(true),
+  },
+  mockIsWebWorkerSupported: vi.fn().mockReturnValue(true),
 }));
 
-// Mock the piper-tts-web module
-vi.mock("@mintplex-labs/piper-tts-web", () => ({
-  TtsSession: {
-    create: vi.fn().mockResolvedValue({
-      predict: mockPredict,
-    }),
-  },
-  download: vi.fn(),
-  remove: vi.fn(),
-  stored: vi.fn(),
-  flush: vi.fn(),
+// Mock the worker client module
+vi.mock("../../src/lib/narration/piper-worker-client", () => ({
+  getPiperWorkerClient: vi.fn(() => mockWorkerClient),
+  isWebWorkerSupported: mockIsWebWorkerSupported,
 }));
 
 // Import after mocking
@@ -32,7 +33,6 @@ import {
   PiperTTSProvider,
   VoiceNotDownloadedError,
 } from "../../src/lib/narration/piper-tts-provider";
-import * as piperTTS from "@mintplex-labs/piper-tts-web";
 
 // Mock AudioContext
 class MockAudioContext {
@@ -137,7 +137,7 @@ describe("PiperTTSProvider", () => {
     });
 
     it("returns enhanced voices with download status", async () => {
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
+      mockWorkerClient.getStoredVoiceIds.mockResolvedValue(["en_US-lessac-medium"]);
 
       const voices = await provider.getVoices();
 
@@ -155,7 +155,7 @@ describe("PiperTTSProvider", () => {
     });
 
     it("handles storage errors gracefully", async () => {
-      vi.mocked(piperTTS.stored).mockRejectedValue(new Error("Storage error"));
+      mockWorkerClient.getStoredVoiceIds.mockRejectedValue(new Error("Storage error"));
 
       const voices = await provider.getVoices();
 
@@ -166,7 +166,10 @@ describe("PiperTTSProvider", () => {
 
   describe("getStoredVoiceIds", () => {
     it("returns stored voice IDs", async () => {
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium", "en_GB-alba-medium"]);
+      mockWorkerClient.getStoredVoiceIds.mockResolvedValue([
+        "en_US-lessac-medium",
+        "en_GB-alba-medium",
+      ]);
 
       const voiceIds = await provider.getStoredVoiceIds();
 
@@ -174,7 +177,7 @@ describe("PiperTTSProvider", () => {
     });
 
     it("returns empty array on error", async () => {
-      vi.mocked(piperTTS.stored).mockRejectedValue(new Error("OPFS error"));
+      mockWorkerClient.getStoredVoiceIds.mockRejectedValue(new Error("Worker error"));
 
       const voiceIds = await provider.getStoredVoiceIds();
 
@@ -184,18 +187,21 @@ describe("PiperTTSProvider", () => {
 
   describe("downloadVoice", () => {
     it("downloads a known voice", async () => {
-      vi.mocked(piperTTS.download).mockResolvedValue(undefined);
+      mockWorkerClient.downloadVoice.mockResolvedValue(undefined);
 
       await provider.downloadVoice("en_US-lessac-medium");
 
-      expect(piperTTS.download).toHaveBeenCalledWith("en_US-lessac-medium", expect.any(Function));
+      // When no progress callback is provided, undefined is passed
+      expect(mockWorkerClient.downloadVoice).toHaveBeenCalledWith("en_US-lessac-medium", undefined);
     });
 
     it("calls progress callback", async () => {
-      vi.mocked(piperTTS.download).mockImplementation(async (_voiceId, callback) => {
-        callback?.({ url: "test", loaded: 50, total: 100 });
-        callback?.({ url: "test", loaded: 100, total: 100 });
-      });
+      mockWorkerClient.downloadVoice.mockImplementation(
+        async (_voiceId: string, onProgress?: (progress: number) => void) => {
+          onProgress?.(0.5);
+          onProgress?.(1);
+        }
+      );
 
       const onProgress = vi.fn();
       await provider.downloadVoice("en_US-lessac-medium", onProgress);
@@ -213,11 +219,11 @@ describe("PiperTTSProvider", () => {
 
   describe("removeVoice", () => {
     it("removes a voice from storage", async () => {
-      vi.mocked(piperTTS.remove).mockResolvedValue(undefined);
+      mockWorkerClient.removeVoice.mockResolvedValue(undefined);
 
       await provider.removeVoice("en_US-lessac-medium");
 
-      expect(piperTTS.remove).toHaveBeenCalledWith("en_US-lessac-medium");
+      expect(mockWorkerClient.removeVoice).toHaveBeenCalledWith("en_US-lessac-medium");
     });
   });
 
@@ -243,7 +249,7 @@ describe("PiperTTSProvider", () => {
     });
 
     it("calls onError when voice is not downloaded", async () => {
-      vi.mocked(piperTTS.stored).mockResolvedValue([]);
+      mockWorkerClient.getStoredVoiceIds.mockResolvedValue([]);
 
       const onError = vi.fn();
 
@@ -257,11 +263,11 @@ describe("PiperTTSProvider", () => {
 
     it("generates audio and plays it", async () => {
       // Mock the voice as downloaded
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
+      mockWorkerClient.getStoredVoiceIds.mockResolvedValue(["en_US-lessac-medium"]);
 
-      // Mock predict to return a WAV blob
-      const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      mockPredict.mockResolvedValue(mockBlob);
+      // Mock generateAudio to return audio data (ArrayBuffer)
+      const mockAudioData = new ArrayBuffer(1000);
+      mockWorkerClient.generateAudio.mockResolvedValue(mockAudioData);
 
       const onStart = vi.fn();
       const onEnd = vi.fn();
@@ -272,11 +278,7 @@ describe("PiperTTSProvider", () => {
         onEnd,
       });
 
-      expect(piperTTS.TtsSession.create).toHaveBeenCalledWith({
-        voiceId: "en_US-lessac-medium",
-        wasmPaths: expect.any(Object),
-      });
-      expect(mockPredict).toHaveBeenCalledWith("Hello");
+      expect(mockWorkerClient.generateAudio).toHaveBeenCalledWith("Hello", "en_US-lessac-medium");
       expect(onStart).toHaveBeenCalled();
     });
 
@@ -293,9 +295,9 @@ describe("PiperTTSProvider", () => {
   describe("stop", () => {
     it("stops current playback", async () => {
       // Set up mock for playing state
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
-      const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      mockPredict.mockResolvedValue(mockBlob);
+      mockWorkerClient.getStoredVoiceIds.mockResolvedValue(["en_US-lessac-medium"]);
+      const mockAudioData = new ArrayBuffer(1000);
+      mockWorkerClient.generateAudio.mockResolvedValue(mockAudioData);
 
       await provider.speak("Hello", { voiceId: "en_US-lessac-medium" });
 
@@ -325,9 +327,9 @@ describe("PiperTTSProvider", () => {
   describe("close", () => {
     it("closes the audio context", async () => {
       // Trigger creation of audio context by speaking
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
-      const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      mockPredict.mockResolvedValue(mockBlob);
+      mockWorkerClient.getStoredVoiceIds.mockResolvedValue(["en_US-lessac-medium"]);
+      const mockAudioData = new ArrayBuffer(1000);
+      mockWorkerClient.generateAudio.mockResolvedValue(mockAudioData);
 
       await provider.speak("Hello", { voiceId: "en_US-lessac-medium" });
       await provider.close();
