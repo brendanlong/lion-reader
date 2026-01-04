@@ -6,6 +6,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Binder
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
@@ -39,6 +42,46 @@ class NarrationService : Service() {
     private var mediaSession: MediaSessionCompat? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+
+    // Audio focus management - required for Bluetooth media button routing
+    private lateinit var audioManager: AudioManager
+    private lateinit var audioFocusRequest: AudioFocusRequest
+    private var hasAudioFocus = false
+    private var wasPlayingBeforeFocusLoss = false
+
+    private val audioFocusChangeListener =
+        AudioManager.OnAudioFocusChangeListener { focusChange ->
+            when (focusChange) {
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    // Regained focus - resume if we were playing before
+                    if (wasPlayingBeforeFocusLoss && !isPlaying) {
+                        resumePlayback()
+                    }
+                    wasPlayingBeforeFocusLoss = false
+                }
+                AudioManager.AUDIOFOCUS_LOSS -> {
+                    // Permanent loss - stop playback
+                    wasPlayingBeforeFocusLoss = false
+                    if (isPlaying) {
+                        pausePlayback()
+                    }
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    // Temporary loss (e.g., phone call) - pause and remember state
+                    if (isPlaying) {
+                        wasPlayingBeforeFocusLoss = true
+                        pausePlayback()
+                    }
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    // Could duck, but for TTS it's better to pause
+                    if (isPlaying) {
+                        wasPlayingBeforeFocusLoss = true
+                        pausePlayback()
+                    }
+                }
+            }
+        }
 
     // Coroutine scope for async operations
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -75,6 +118,22 @@ class NarrationService : Service() {
                     ttsReady = true
                 }
             }
+
+        // Initialize audio focus management
+        audioManager = getSystemService(AudioManager::class.java)
+        val audioAttributes =
+            AudioAttributes
+                .Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+        audioFocusRequest =
+            AudioFocusRequest
+                .Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(audioAttributes)
+                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                .setWillPauseWhenDucked(true)
+                .build()
 
         // Create media session
         mediaSession =
@@ -242,6 +301,16 @@ class NarrationService : Service() {
             return
         }
 
+        // Request audio focus before playing - this is critical for Bluetooth media button routing
+        if (!hasAudioFocus) {
+            val result = audioManager.requestAudioFocus(audioFocusRequest)
+            if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                _playbackState.value = NarrationState.Error("Could not acquire audio focus")
+                return
+            }
+            hasAudioFocus = true
+        }
+
         val paragraph = paragraphs[currentParagraphIndex]
         isPlaying = true
 
@@ -323,6 +392,13 @@ class NarrationService : Service() {
         paragraphs = emptyList()
         paragraphMap = emptyList()
         currentSource = NarrationSource.LOCAL
+
+        // Abandon audio focus when stopping playback
+        if (hasAudioFocus) {
+            audioManager.abandonAudioFocusRequest(audioFocusRequest)
+            hasAudioFocus = false
+        }
+        wasPlayingBeforeFocusLoss = false
 
         _playbackState.value = NarrationState.Idle
 
@@ -475,6 +551,11 @@ class NarrationService : Service() {
     }
 
     override fun onDestroy() {
+        // Abandon audio focus on destroy
+        if (hasAudioFocus) {
+            audioManager.abandonAudioFocusRequest(audioFocusRequest)
+            hasAudioFocus = false
+        }
         serviceScope.cancel()
         mediaSession?.release()
         tts?.shutdown()
