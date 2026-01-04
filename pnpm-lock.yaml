@@ -56,6 +56,9 @@ importers:
       groq-sdk:
         specifier: ^0.37.0
         version: 0.37.0
+      html-entities:
+        specifier: ^2.6.0
+        version: 2.6.0
       ioredis:
         specifier: ^5.8.2
         version: 5.8.2
@@ -2975,6 +2978,9 @@ packages:
   html-encoding-sniffer@6.0.0:
     resolution: {integrity: sha512-CV9TW3Y3f8/wT0BRFc1/KAVQ3TUHiXmaAb6VW9vtiMFf7SLoMd1PdAc4W3KFOFETBJUb90KatHqlsZMWV+R9Gg==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=24.0.0}
+
+  html-entities@2.6.0:
+    resolution: {integrity: sha512-kig+rMn/QOVRvr7c86gQ8lWXq+Hkv6CbAH1hLu+RG338StTpE8Z0b44SDVaqVu7HGKf27frdmUYEs9hTUX/cLQ==}
 
   http-errors@2.0.1:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
@@ -7332,6 +7338,8 @@ snapshots:
       '@exodus/bytes': 1.6.0
     transitivePeerDependencies:
       - '@exodus/crypto'
+
+  html-entities@2.6.0: {}
 
   http-errors@2.0.1:
     dependencies:

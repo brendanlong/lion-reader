@@ -3,6 +3,7 @@
  * Parses Atom feeds into a unified ParsedFeed format.
  */
 
+import { decode } from "html-entities";
 import { XMLParser } from "fast-xml-parser";
 import type { ParsedFeed, ParsedEntry, SyndicationHints } from "./types";
 
@@ -25,15 +26,6 @@ const parserOptions = {
   removeNSPrefix: false,
 };
 
-/**
- * Decodes XML numeric character references that fast-xml-parser doesn't handle.
- * Handles both decimal (&#039;) and hexadecimal (&#x27;) forms.
- */
-function decodeNumericEntities(text: string): string {
-  return text
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
-}
 
 /**
  * Atom link element structure.
@@ -119,7 +111,7 @@ interface ParsedAtom {
 /**
  * Extracts text from various possible structures.
  * Handles plain strings, CDATA sections, and text constructs.
- * Decodes numeric character references (&#039; &#x27;) that the XML parser doesn't handle.
+ * Decodes HTML entities (both numeric like &#039; and named like &rsquo;).
  */
 function extractText(
   value: string | { __cdata?: string; "#text"?: string } | undefined
@@ -148,13 +140,13 @@ function extractText(
     return undefined;
   }
 
-  return decodeNumericEntities(trimmed);
+  return decode(trimmed);
 }
 
 /**
  * Extracts content from an Atom text construct (title, summary, etc).
  * Handles plain text, HTML, and XHTML types.
- * Decodes numeric character references.
+ * Decodes HTML entities.
  */
 function extractTextConstruct(value: string | AtomTextConstruct | undefined): string | undefined {
   if (value === undefined || value === null) {
@@ -196,13 +188,13 @@ function extractTextConstruct(value: string | AtomTextConstruct | undefined): st
     return undefined;
   }
 
-  return decodeNumericEntities(trimmed);
+  return decode(trimmed);
 }
 
 /**
  * Extracts content from an Atom content element.
  * Similar to text construct but with src attribute support.
- * Decodes numeric character references.
+ * Decodes HTML entities.
  */
 function extractContent(value: string | AtomContent | undefined): string | undefined {
   if (value === undefined || value === null) {
@@ -248,7 +240,7 @@ function extractContent(value: string | AtomContent | undefined): string | undef
     return undefined;
   }
 
-  return decodeNumericEntities(trimmed);
+  return decode(trimmed);
 }
 
 /**
