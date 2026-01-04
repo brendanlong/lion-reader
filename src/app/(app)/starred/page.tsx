@@ -104,6 +104,7 @@ function StarredEntriesContent() {
       <EntryContent
         key={openEntryId}
         entryId={openEntryId}
+        listFilters={{ starredOnly: true, unreadOnly: showUnreadOnly, sortOrder }}
         onBack={handleBack}
         onSwipeNext={goToNextEntry}
         onSwipePrevious={goToPreviousEntry}

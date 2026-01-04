@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { useEntryMutations } from "@/lib/hooks";
+import { useEntryMutations, type EntryListFilters } from "@/lib/hooks";
 import {
   ArticleContentBody,
   ArticleContentSkeleton,
@@ -25,6 +25,12 @@ interface EntryContentProps {
    * The ID of the entry to display.
    */
   entryId: string;
+
+  /**
+   * Filters for the entry list. Used for optimistic updates when marking
+   * entries as read, so they get filtered from the list immediately.
+   */
+  listFilters?: EntryListFilters;
 
   /**
    * Optional callback when the back button is clicked.
@@ -60,6 +66,7 @@ interface EntryContentProps {
  */
 export function EntryContent({
   entryId,
+  listFilters,
   onBack,
   onSwipeNext,
   onSwipePrevious,
@@ -78,10 +85,9 @@ export function EntryContent({
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
-  // Entry mutations without list filters (this component operates on a single entry)
-  // Note: optimistic updates happen at the list level in parent components,
-  // normy automatically propagates changes to entries.get when server responds
-  const { markRead, star, unstar } = useEntryMutations();
+  // Entry mutations with list filters for optimistic updates
+  // When marking an entry as read, this ensures it gets filtered from the list immediately
+  const { markRead, star, unstar } = useEntryMutations({ listFilters });
 
   const entry = data?.entry;
 
