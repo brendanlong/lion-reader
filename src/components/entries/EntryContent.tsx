@@ -57,6 +57,7 @@ interface EntryContentProps {
  *
  * Fetches and displays the full content of an entry.
  * Marks the entry as read on mount.
+ * Fetches full content from article URL if enabled for the subscription.
  */
 export function EntryContent({
   entryId,
@@ -67,6 +68,7 @@ export function EntryContent({
   previousEntryId,
 }: EntryContentProps) {
   const hasMarkedRead = useRef(false);
+  const hasTriggeredFullContentFetch = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the entry
@@ -83,7 +85,31 @@ export function EntryContent({
   // normy automatically propagates changes to entries.get when server responds
   const { markRead, star, unstar } = useEntryMutations();
 
+  // Full content fetch mutation
+  const fetchFullContentMutation = trpc.entries.fetchFullContent.useMutation({
+    onSuccess: () => {
+      // Refetch the entry to get the updated contentFull
+      refetch();
+    },
+  });
+
   const entry = data?.entry;
+
+  // Trigger full content fetch if enabled and not yet fetched
+  useEffect(() => {
+    if (
+      entry &&
+      entry.fetchFullContent &&
+      entry.url &&
+      !entry.contentFull &&
+      !entry.contentFullFetchedAt && // Not yet attempted
+      !hasTriggeredFullContentFetch.current &&
+      !fetchFullContentMutation.isPending
+    ) {
+      hasTriggeredFullContentFetch.current = true;
+      fetchFullContentMutation.mutate({ id: entryId });
+    }
+  }, [entry, entryId, fetchFullContentMutation]);
 
   // Mark entry as read when component mounts and entry is loaded (only once)
   useEffect(() => {
@@ -127,28 +153,66 @@ export function EntryContent({
   } else if (!entry) {
     content = <ArticleContentError message="Entry not found" onRetry={() => refetch()} />;
   } else {
+    // Use full content if available, otherwise fall back to cleaned content from feed
+    const effectiveContentCleaned = entry.contentFull ?? entry.contentCleaned;
+
+    // Show loading indicator if we're fetching full content
+    const isLoadingFullContent =
+      entry.fetchFullContent &&
+      entry.url &&
+      !entry.contentFull &&
+      !entry.contentFullFetchedAt &&
+      fetchFullContentMutation.isPending;
+
     content = (
-      <ArticleContentBody
-        articleId={entryId}
-        title={entry.title ?? "Untitled"}
-        source={entry.feedTitle ?? "Unknown Feed"}
-        author={entry.author}
-        url={entry.url}
-        date={entry.publishedAt ?? entry.fetchedAt}
-        contentOriginal={entry.contentOriginal}
-        contentCleaned={entry.contentCleaned}
-        fallbackContent={entry.summary}
-        read={entry.read}
-        starred={entry.starred}
-        onBack={onBack}
-        onToggleRead={handleReadToggle}
-        onToggleStar={handleStarToggle}
-        showOriginal={showOriginal}
-        setShowOriginal={setShowOriginal}
-        footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
-        onSwipeNext={onSwipeNext}
-        onSwipePrevious={onSwipePrevious}
-      />
+      <>
+        {isLoadingFullContent && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
+            <svg
+              className="h-4 w-4 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            <span>Loading full article...</span>
+          </div>
+        )}
+        <ArticleContentBody
+          articleId={entryId}
+          title={entry.title ?? "Untitled"}
+          source={entry.feedTitle ?? "Unknown Feed"}
+          author={entry.author}
+          url={entry.url}
+          date={entry.publishedAt ?? entry.fetchedAt}
+          contentOriginal={entry.contentOriginal}
+          contentCleaned={effectiveContentCleaned}
+          fallbackContent={entry.summary}
+          read={entry.read}
+          starred={entry.starred}
+          onBack={onBack}
+          onToggleRead={handleReadToggle}
+          onToggleStar={handleStarToggle}
+          showOriginal={showOriginal}
+          setShowOriginal={setShowOriginal}
+          footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
+          onSwipeNext={onSwipeNext}
+          onSwipePrevious={onSwipePrevious}
+        />
+      </>
     );
   }
 

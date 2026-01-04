@@ -119,6 +119,7 @@ export const narrationRouter = createTRPCRouter({
       const entryResult = await ctx.db
         .select({
           id: entries.id,
+          contentFull: entries.contentFull,
           contentCleaned: entries.contentCleaned,
           contentOriginal: entries.contentOriginal,
           contentHash: entries.contentHash,
@@ -133,7 +134,9 @@ export const narrationRouter = createTRPCRouter({
       }
 
       const entry = entryResult[0];
-      const sourceContent = entry.contentCleaned || entry.contentOriginal || "";
+      // Use full content if available, otherwise fall back to cleaned/original
+      const sourceContent =
+        entry.contentFull || entry.contentCleaned || entry.contentOriginal || "";
       const contentHash = entry.contentHash;
 
       // Handle empty content

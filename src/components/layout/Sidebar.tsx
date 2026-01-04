@@ -30,6 +30,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     id: string;
     title: string;
     customTitle: string | null;
+    fetchFullContent: boolean;
     tagIds: string[];
   } | null>(null);
 
@@ -415,6 +416,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                                       id: subscription.id,
                                       title,
                                       customTitle: subscription.customTitle,
+                                      fetchFullContent: subscription.fetchFullContent,
                                       tagIds: subscription.tags.map((t) => t.id),
                                     });
                                   }}
@@ -582,6 +584,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                                     id: subscription.id,
                                     title,
                                     customTitle: subscription.customTitle,
+                                    fetchFullContent: subscription.fetchFullContent,
                                     tagIds: subscription.tags.map((t) => t.id),
                                   });
                                 }}
@@ -663,6 +666,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         subscriptionId={editTarget?.id ?? ""}
         currentTitle={editTarget?.title ?? ""}
         currentCustomTitle={editTarget?.customTitle ?? null}
+        currentFetchFullContent={editTarget?.fetchFullContent ?? false}
         currentTagIds={editTarget?.tagIds ?? []}
         onClose={() => {
           setEditTarget(null);

@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 import { eq, and, or, isNull, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
+import { createHash } from "crypto";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -22,6 +23,8 @@ import {
   subscriptionTags,
   tags,
 } from "@/server/db/schema";
+import { cleanContent } from "@/server/feed/content-cleaner";
+import { logger } from "@/lib/logger";
 
 // ============================================================================
 // Constants
@@ -31,6 +34,11 @@ import {
  * Default number of entries to return per page.
  */
 const DEFAULT_LIMIT = 50;
+
+/**
+ * Timeout for fetching full content from article URLs (30 seconds).
+ */
+const FETCH_TIMEOUT_MS = 30000;
 
 /**
  * Maximum number of entries that can be requested per page.
@@ -114,6 +122,9 @@ const entryFullSchema = z.object({
   author: z.string().nullable(),
   contentOriginal: z.string().nullable(),
   contentCleaned: z.string().nullable(),
+  contentFull: z.string().nullable(),
+  contentFullFetchedAt: z.date().nullable(),
+  contentFullError: z.string().nullable(),
   summary: z.string().nullable(),
   publishedAt: z.date().nullable(),
   fetchedAt: z.date(),
@@ -121,6 +132,7 @@ const entryFullSchema = z.object({
   starred: z.boolean(),
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
+  fetchFullContent: z.boolean(),
 });
 
 /**
@@ -482,21 +494,29 @@ export const entriesRouter = createTRPCRouter({
 
       const { entry, feed, userState } = result[0];
 
-      // Entry must be starred OR from an active subscription OR from user's saved feed
-      if (!userState.starred) {
-        // Check for active subscription
-        const activeSubscription = await ctx.db
-          .select({ id: subscriptions.id })
-          .from(subscriptions)
-          .where(
-            and(
-              eq(subscriptions.userId, userId),
-              eq(subscriptions.feedId, entry.feedId),
-              isNull(subscriptions.unsubscribedAt)
-            )
+      // Get subscription to check fetchFullContent setting
+      let fetchFullContent = false;
+      const activeSubscription = await ctx.db
+        .select({
+          id: subscriptions.id,
+          fetchFullContent: subscriptions.fetchFullContent,
+        })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            eq(subscriptions.feedId, entry.feedId),
+            isNull(subscriptions.unsubscribedAt)
           )
-          .limit(1);
+        )
+        .limit(1);
 
+      if (activeSubscription.length > 0) {
+        fetchFullContent = activeSubscription[0].fetchFullContent;
+      }
+
+      // Entry must be starred OR from an active subscription OR from user's saved feed
+      if (!userState.starred && activeSubscription.length === 0) {
         // Check if it's from user's saved feed
         const savedFeed = await ctx.db
           .select({ id: feeds.id })
@@ -504,7 +524,7 @@ export const entriesRouter = createTRPCRouter({
           .where(and(eq(feeds.id, entry.feedId), eq(feeds.type, "saved"), eq(feeds.userId, userId)))
           .limit(1);
 
-        if (activeSubscription.length === 0 && savedFeed.length === 0) {
+        if (savedFeed.length === 0) {
           throw errors.entryNotFound();
         }
       }
@@ -519,6 +539,9 @@ export const entriesRouter = createTRPCRouter({
           author: entry.author,
           contentOriginal: entry.contentOriginal,
           contentCleaned: entry.contentCleaned,
+          contentFull: entry.contentFull,
+          contentFullFetchedAt: entry.contentFullFetchedAt,
+          contentFullError: entry.contentFullError,
           summary: entry.summary,
           publishedAt: entry.publishedAt,
           fetchedAt: entry.fetchedAt,
@@ -526,6 +549,7 @@ export const entriesRouter = createTRPCRouter({
           starred: userState.starred,
           feedTitle: feed.title,
           feedUrl: feed.url,
+          fetchFullContent,
         },
       };
     }),
@@ -1120,6 +1144,193 @@ export const entriesRouter = createTRPCRouter({
       return {
         total: totalResult[0]?.count ?? 0,
         unread: unreadResult[0]?.count ?? 0,
+      };
+    }),
+
+  /**
+   * Fetch full content for an entry from its URL.
+   *
+   * Fetches the article URL, extracts content using Readability,
+   * and stores the result in the database. Also updates the content hash
+   * so narration can use the full content.
+   *
+   * @param id - The entry ID
+   * @returns The full content or error
+   */
+  fetchFullContent: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/entries/{id}/fetch-full-content",
+        tags: ["Entries"],
+        summary: "Fetch full content from article URL",
+      },
+    })
+    .input(
+      z.object({
+        id: uuidSchema,
+      })
+    )
+    .output(
+      z.object({
+        contentFull: z.string().nullable(),
+        contentFullFetchedAt: z.date().nullable(),
+        contentFullError: z.string().nullable(),
+        contentHash: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // Get the entry with visibility check via user_entries
+      const result = await ctx.db
+        .select({
+          entry: entries,
+        })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(and(eq(entries.id, input.id), eq(userEntries.userId, userId)))
+        .limit(1);
+
+      if (result.length === 0) {
+        throw errors.entryNotFound();
+      }
+
+      const { entry } = result[0];
+
+      // Check if entry has a URL to fetch
+      if (!entry.url) {
+        throw errors.validation("Entry has no URL to fetch");
+      }
+
+      // If we already have fetched content, return it
+      if (entry.contentFull && entry.contentFullFetchedAt) {
+        return {
+          contentFull: entry.contentFull,
+          contentFullFetchedAt: entry.contentFullFetchedAt,
+          contentFullError: entry.contentFullError,
+          contentHash: entry.contentHash,
+        };
+      }
+
+      const now = new Date();
+
+      // Fetch the page
+      let html: string;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+        try {
+          const response = await fetch(entry.url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "LionReader/1.0 (+https://lionreader.com)",
+              Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+            redirect: "follow",
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const contentType = response.headers.get("content-type") || "";
+          if (
+            !contentType.includes("text/html") &&
+            !contentType.includes("application/xhtml+xml")
+          ) {
+            throw new Error(`Invalid content type: ${contentType}`);
+          }
+
+          html = await response.text();
+        } finally {
+          clearTimeout(timeout);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+        logger.warn("Failed to fetch full content", {
+          entryId: entry.id,
+          url: entry.url,
+          error: errorMessage,
+        });
+
+        // Store the error
+        await ctx.db
+          .update(entries)
+          .set({
+            contentFullError: errorMessage,
+            contentFullFetchedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(entries.id, entry.id));
+
+        return {
+          contentFull: null,
+          contentFullFetchedAt: now,
+          contentFullError: errorMessage,
+          contentHash: entry.contentHash,
+        };
+      }
+
+      // Run Readability to extract content
+      const cleaned = cleanContent(html, { url: entry.url });
+
+      if (!cleaned) {
+        const errorMessage = "Could not extract content from page";
+
+        logger.warn("Readability failed to extract content", {
+          entryId: entry.id,
+          url: entry.url,
+        });
+
+        await ctx.db
+          .update(entries)
+          .set({
+            contentFullError: errorMessage,
+            contentFullFetchedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(entries.id, entry.id));
+
+        return {
+          contentFull: null,
+          contentFullFetchedAt: now,
+          contentFullError: errorMessage,
+          contentHash: entry.contentHash,
+        };
+      }
+
+      // Compute new content hash for full content (used by narration)
+      const titleStr = entry.title ?? "";
+      const contentStr = cleaned.content;
+      const hashInput = `${titleStr}\n${contentStr}`;
+      const newContentHash = createHash("sha256").update(hashInput, "utf8").digest("hex");
+
+      // Store the full content
+      await ctx.db
+        .update(entries)
+        .set({
+          contentFull: cleaned.content,
+          contentFullFetchedAt: now,
+          contentFullError: null,
+          contentHash: newContentHash, // Update hash so narration uses full content
+          updatedAt: now,
+        })
+        .where(eq(entries.id, entry.id));
+
+      logger.info("Fetched full content for entry", {
+        entryId: entry.id,
+        url: entry.url,
+        contentLength: cleaned.content.length,
+      });
+
+      return {
+        contentFull: cleaned.content,
+        contentFullFetchedAt: now,
+        contentFullError: null,
+        contentHash: newContentHash,
       };
     }),
 });

@@ -211,6 +211,11 @@ export const entries = pgTable(
     contentCleaned: text("content_cleaned"), // Readability-cleaned HTML
     summary: text("summary"), // truncated for previews
 
+    // Full content fetched from article URL (using Readability)
+    contentFull: text("content_full"), // Full article content fetched from URL
+    contentFullFetchedAt: timestamp("content_full_fetched_at", { withTimezone: true }),
+    contentFullError: text("content_full_error"), // Error message if fetch failed
+
     // Saved article metadata (only for type='saved')
     siteName: text("site_name"),
     imageUrl: text("image_url"),
@@ -327,6 +332,7 @@ export const subscriptions = pgTable(
       .references(() => feeds.id, { onDelete: "cascade" }),
 
     customTitle: text("custom_title"), // user's override for feed title
+    fetchFullContent: boolean("fetch_full_content").notNull().default(false), // fetch full article from URL
 
     subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull().defaultNow(), // critical for visibility
     unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }), // soft delete

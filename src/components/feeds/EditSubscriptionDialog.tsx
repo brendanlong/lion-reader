@@ -20,6 +20,7 @@ interface EditSubscriptionDialogProps {
   subscriptionId: string;
   currentTitle: string;
   currentCustomTitle: string | null;
+  currentFetchFullContent: boolean;
   currentTagIds: string[];
   onClose: () => void;
 }
@@ -36,6 +37,7 @@ interface EditSubscriptionFormProps {
   subscriptionId: string;
   currentTitle: string;
   currentCustomTitle: string | null;
+  currentFetchFullContent: boolean;
   currentTagIds: string[];
   onClose: () => void;
 }
@@ -53,6 +55,7 @@ export function EditSubscriptionDialog({
   subscriptionId,
   currentTitle,
   currentCustomTitle,
+  currentFetchFullContent,
   currentTagIds,
   onClose,
 }: EditSubscriptionDialogProps) {
@@ -80,6 +83,7 @@ export function EditSubscriptionDialog({
             subscriptionId={subscriptionId}
             currentTitle={currentTitle}
             currentCustomTitle={currentCustomTitle}
+            currentFetchFullContent={currentFetchFullContent}
             currentTagIds={currentTagIds}
             onClose={onClose}
           />
@@ -97,11 +101,13 @@ function EditSubscriptionForm({
   subscriptionId,
   currentTitle,
   currentCustomTitle,
+  currentFetchFullContent,
   currentTagIds,
   onClose,
 }: EditSubscriptionFormProps) {
   // Initialize state with current values
   const [customTitle, setCustomTitle] = useState(currentCustomTitle ?? "");
+  const [fetchFullContent, setFetchFullContent] = useState(currentFetchFullContent);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(currentTagIds);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,12 +123,16 @@ function EditSubscriptionForm({
     try {
       setError(null);
 
-      // Update custom title if changed
+      // Update custom title and/or fetchFullContent if changed
       const newCustomTitle = customTitle.trim() || null;
-      if (newCustomTitle !== currentCustomTitle) {
+      const titleChanged = newCustomTitle !== currentCustomTitle;
+      const fetchFullContentChanged = fetchFullContent !== currentFetchFullContent;
+
+      if (titleChanged || fetchFullContentChanged) {
         await updateMutation.mutateAsync({
           id: subscriptionId,
-          customTitle: newCustomTitle,
+          ...(titleChanged && { customTitle: newCustomTitle }),
+          ...(fetchFullContentChanged && { fetchFullContent }),
         });
       }
 
@@ -182,6 +192,27 @@ function EditSubscriptionForm({
           onChange={(e) => setCustomTitle(e.target.value)}
           disabled={isPending}
         />
+      </div>
+
+      {/* Fetch Full Content Toggle */}
+      <div className="mb-4">
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={fetchFullContent}
+            onChange={(e) => setFetchFullContent(e.target.checked)}
+            disabled={isPending}
+            className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:ring-zinc-400"
+          />
+          <div>
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Fetch full content
+            </span>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Load the full article from the website instead of the feed summary
+            </p>
+          </div>
+        </label>
       </div>
 
       {/* Tags */}
