@@ -6,22 +6,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Hoist the mock for isWebWorkerSupported
-const { mockIsWebWorkerSupported } = vi.hoisted(() => ({
-  mockIsWebWorkerSupported: vi.fn().mockReturnValue(true),
-}));
-
-// Mock the worker client module
-vi.mock("../../src/lib/narration/piper-worker-client", () => ({
-  getPiperWorkerClient: vi.fn(() => ({
-    getStoredVoiceIds: vi.fn().mockResolvedValue([]),
-    downloadVoice: vi.fn(),
-    removeVoice: vi.fn(),
-    generateAudio: vi.fn(),
-    terminate: vi.fn(),
-    isAvailable: vi.fn().mockReturnValue(true),
-  })),
-  isWebWorkerSupported: mockIsWebWorkerSupported,
+// Mock the piper-tts-web module
+vi.mock("@mintplex-labs/piper-tts-web", () => ({
+  predict: vi.fn(),
+  download: vi.fn(),
+  remove: vi.fn(),
+  stored: vi.fn().mockResolvedValue([]),
+  flush: vi.fn(),
 }));
 
 // Mock AudioContext for Piper tests
