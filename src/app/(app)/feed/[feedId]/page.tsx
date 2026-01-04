@@ -170,6 +170,7 @@ function SingleFeedContent() {
       <EntryContent
         key={openEntryId}
         entryId={openEntryId}
+        listFilters={{ feedId, unreadOnly: showUnreadOnly, sortOrder }}
         onBack={handleBack}
         onSwipeNext={goToNextEntry}
         onSwipePrevious={goToPreviousEntry}
