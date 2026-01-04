@@ -208,9 +208,17 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
           ...oldData,
           pages: oldData.pages.map((page) => ({
             ...page,
-            items: page.items.map((item) =>
-              variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
-            ),
+            items: page.items
+              .map((item) =>
+                variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
+              )
+              // Filter out entries that no longer match the unreadOnly filter
+              .filter((item) => {
+                if (listFilters?.unreadOnly && item.read) {
+                  return false;
+                }
+                return true;
+              }),
           })),
         };
       });
@@ -315,9 +323,15 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
           ...oldData,
           pages: oldData.pages.map((page) => ({
             ...page,
-            items: page.items.map((item) =>
-              item.id === variables.id ? { ...item, starred: false } : item
-            ),
+            items: page.items
+              .map((item) => (item.id === variables.id ? { ...item, starred: false } : item))
+              // Filter out entries that no longer match the starredOnly filter
+              .filter((item) => {
+                if (listFilters?.starredOnly && !item.starred) {
+                  return false;
+                }
+                return true;
+              }),
           })),
         };
       });
