@@ -3,6 +3,7 @@
  * Parses RSS 2.0 feeds into a unified ParsedFeed format.
  */
 
+import { decode } from "html-entities";
 import { XMLParser } from "fast-xml-parser";
 import type { ParsedFeed, ParsedEntry, SyndicationHints } from "./types";
 
@@ -25,15 +26,6 @@ const parserOptions = {
   removeNSPrefix: false,
 };
 
-/**
- * Decodes XML numeric character references that fast-xml-parser doesn't handle.
- * Handles both decimal (&#039;) and hexadecimal (&#x27;) forms.
- */
-function decodeNumericEntities(text: string): string {
-  return text
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
-}
 
 /**
  * Parsed RSS channel structure from fast-xml-parser.
@@ -93,7 +85,7 @@ interface ParsedRss {
 /**
  * Extracts text content from various possible structures.
  * Handles plain strings, CDATA sections, and nested text nodes.
- * Decodes numeric character references (&#039; &#x27;) that the XML parser doesn't handle.
+ * Decodes HTML entities (both numeric like &#039; and named like &rsquo;).
  */
 function extractText(
   value: string | { __cdata?: string; "#text"?: string } | undefined
@@ -122,13 +114,13 @@ function extractText(
     return undefined;
   }
 
-  return decodeNumericEntities(trimmed);
+  return decode(trimmed);
 }
 
 /**
  * Extracts the GUID from an RSS item.
  * The guid element can be a plain string or an object with text and attributes.
- * Decodes numeric character references.
+ * Decodes HTML entities.
  */
 function extractGuid(
   guid: string | { "#text"?: string; "@_isPermaLink"?: string; __cdata?: string } | undefined
@@ -155,13 +147,13 @@ function extractGuid(
     return undefined;
   }
 
-  return decodeNumericEntities(trimmed);
+  return decode(trimmed);
 }
 
 /**
  * Extracts the link from an RSS item or channel.
  * Handles various link formats including arrays and atom:link elements.
- * Decodes numeric character references.
+ * Decodes HTML entities.
  */
 function extractLink(
   link: string | { __cdata?: string; "#text"?: string } | undefined
@@ -188,13 +180,13 @@ function extractLink(
     return undefined;
   }
 
-  return decodeNumericEntities(trimmed);
+  return decode(trimmed);
 }
 
 /**
  * Extracts the site URL from the channel's link element.
  * The link element can be a string, array, or atom:link object.
- * Decodes numeric character references.
+ * Decodes HTML entities.
  */
 function extractChannelLink(
   link: string | string[] | { "@_href"?: string; "#text"?: string }[] | undefined
@@ -229,7 +221,7 @@ function extractChannelLink(
     return undefined;
   }
 
-  return decodeNumericEntities(trimmed);
+  return decode(trimmed);
 }
 
 /**

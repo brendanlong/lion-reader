@@ -50,6 +50,7 @@
     "drizzle-orm": "^0.45.1",
     "fast-xml-parser": "^5.3.3",
     "groq-sdk": "^0.37.0",
+    "html-entities": "^2.6.0",
     "ioredis": "^5.8.2",
     "jsdom": "^27.4.0",
     "next": "16.1.1",
