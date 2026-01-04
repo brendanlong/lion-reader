@@ -84,12 +84,6 @@ export function SavedArticleContent({
 
   const article = data?.entry;
 
-  // Scroll to top when component mounts (i.e., when navigating to a new article)
-  // This is done here rather than in keyboard handlers because React renders async
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
-
   // Mark article as read when component mounts and article is loaded (only once)
   useEffect(() => {
     if (article && !hasMarkedRead.current) {
@@ -118,48 +112,45 @@ export function SavedArticleContent({
     markRead([articleId], !article.read);
   };
 
-  // Loading state
+  // Determine content based on loading/error/success state
+  let content: React.ReactNode;
   if (isLoading) {
-    return <ArticleContentSkeleton />;
-  }
-
-  // Error state
-  if (isError) {
-    return (
+    content = <ArticleContentSkeleton />;
+  } else if (isError) {
+    content = (
       <ArticleContentError
         message={error?.message ?? "Failed to load article"}
         onRetry={() => refetch()}
       />
     );
+  } else if (!article) {
+    content = <ArticleContentError message="Article not found" onRetry={() => refetch()} />;
+  } else {
+    content = (
+      <ArticleContentBody
+        articleId={articleId}
+        title={article.title ?? "Untitled"}
+        source={article.feedTitle ?? getDomain(article.url ?? "")}
+        author={article.author}
+        url={article.url ?? ""}
+        date={article.fetchedAt}
+        datePrefix="Saved"
+        contentOriginal={article.contentOriginal}
+        contentCleaned={article.contentCleaned}
+        fallbackContent={article.summary}
+        read={article.read}
+        starred={article.starred}
+        onBack={onBack}
+        onToggleRead={handleReadToggle}
+        onToggleStar={handleStarToggle}
+        showOriginal={showOriginal}
+        setShowOriginal={setShowOriginal}
+        onSwipeNext={onSwipeNext}
+        onSwipePrevious={onSwipePrevious}
+      />
+    );
   }
 
-  // Article not found
-  if (!article) {
-    return <ArticleContentError message="Article not found" onRetry={() => refetch()} />;
-  }
-
-  // Render the article content using shared component
-  return (
-    <ArticleContentBody
-      articleId={articleId}
-      title={article.title ?? "Untitled"}
-      source={article.feedTitle ?? getDomain(article.url ?? "")}
-      author={article.author}
-      url={article.url ?? ""}
-      date={article.fetchedAt}
-      datePrefix="Saved"
-      contentOriginal={article.contentOriginal}
-      contentCleaned={article.contentCleaned}
-      fallbackContent={article.summary}
-      read={article.read}
-      starred={article.starred}
-      onBack={onBack}
-      onToggleRead={handleReadToggle}
-      onToggleStar={handleStarToggle}
-      showOriginal={showOriginal}
-      setShowOriginal={setShowOriginal}
-      onSwipeNext={onSwipeNext}
-      onSwipePrevious={onSwipePrevious}
-    />
-  );
+  // Wrap in scroll container - each article gets its own container that starts at scroll 0
+  return <div className="h-full overflow-y-auto">{content}</div>;
 }
