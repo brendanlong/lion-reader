@@ -16,6 +16,8 @@ primary_region = "lax"
 [deploy]
   # Run migrations before starting the new app version
   release_command = "pnpm db:migrate"
+  # Rolling deployment: update one machine at a time for zero-downtime deploys
+  strategy = "rolling"
 
 # Single process runs both API and worker (worker is niced for lower CPU priority)
 [processes]
@@ -34,7 +36,8 @@ primary_region = "lax"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1
+  # Need at least 2 machines for zero-downtime rolling deploys
+  min_machines_running = 2
   processes = ["app"]
 
   [http_service.concurrency]
@@ -42,28 +45,16 @@ primary_region = "lax"
     hard_limit = 250
     soft_limit = 200
 
+  # Health check for the http_service (v2 format)
+  [http_service.checks]
+    [http_service.checks.health]
+      interval = "15s"
+      timeout = "5s"
+      # Grace period for Next.js startup + DB connection pooling
+      grace_period = "30s"
+      path = "/api/health"
+
 [[vm]]
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
-
-# Health check configuration
-[[services]]
-  protocol = "tcp"
-  internal_port = 3000
-  processes = ["app"]
-
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-    force_https = true
-
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
-
-  [[services.http_checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "10s"
-    path = "/api/health"
