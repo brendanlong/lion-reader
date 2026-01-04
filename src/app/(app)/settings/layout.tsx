@@ -18,6 +18,7 @@ const settingsLinks = [
   { href: "/settings/sessions", label: "Sessions" },
   { href: "/settings/email", label: "Email Subscriptions" },
   { href: "/settings/blocked-senders", label: "Blocked Senders" },
+  { href: "/settings/broken-feeds", label: "Broken Feeds" },
 ];
 
 export default function SettingsLayout({ children }: SettingsLayoutProps) {
