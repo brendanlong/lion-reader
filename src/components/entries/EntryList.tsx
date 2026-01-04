@@ -9,7 +9,8 @@
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { EntryListItem, type EntryListItemData } from "./EntryListItem";
+import { type EntryListData } from "@/lib/hooks";
+import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import {
   ArticleListEmpty,
@@ -158,7 +159,7 @@ interface EntryListProps {
    * External entries provided by parent (e.g., from useEntryListQuery).
    * When provided, the component won't create its own query.
    */
-  externalEntries?: EntryListEntryData[];
+  externalEntries?: EntryListData[];
 
   /**
    * External query state when using externalEntries.
@@ -315,7 +316,7 @@ export function EntryList({
       {allEntries.map((entry) => (
         <EntryListItem
           key={entry.id}
-          entry={entry as EntryListItemData}
+          entry={entry}
           onClick={onEntryClick}
           selected={selectedEntryId === entry.id}
           onToggleRead={onToggleRead}
