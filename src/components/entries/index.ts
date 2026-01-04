@@ -6,7 +6,12 @@
 
 export { EntryListItem, type EntryListItemData } from "./EntryListItem";
 export { EntryListSkeleton } from "./EntryListSkeleton";
-export { EntryList, type EntryListFilters, type EntryListEntryData } from "./EntryList";
+export {
+  EntryList,
+  type EntryListFilters,
+  type EntryListEntryData,
+  type ExternalQueryState,
+} from "./EntryList";
 export { EntryContent } from "./EntryContent";
 export { UnreadToggle } from "./UnreadToggle";
 export { SortToggle } from "./SortToggle";
