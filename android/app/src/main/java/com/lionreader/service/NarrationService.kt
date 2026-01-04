@@ -13,6 +13,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
+import androidx.media.session.MediaButtonReceiver
 import com.lionreader.R
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
@@ -94,6 +95,22 @@ class NarrationService : Service() {
             override fun onSkipToNext() = skipToNextParagraph()
 
             override fun onSkipToPrevious() = skipToPreviousParagraph()
+
+            // Handle play/pause toggle from Bluetooth headphone buttons
+            override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
+                val keyEvent = mediaButtonEvent?.getParcelableExtra<android.view.KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                if (keyEvent?.action == android.view.KeyEvent.ACTION_DOWN) {
+                    when (keyEvent.keyCode) {
+                        android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                        android.view.KeyEvent.KEYCODE_HEADSETHOOK,
+                        -> {
+                            togglePlayback()
+                            return true
+                        }
+                    }
+                }
+                return super.onMediaButtonEvent(mediaButtonEvent)
+            }
         }
 
     fun startNarration(
@@ -289,6 +306,14 @@ class NarrationService : Service() {
         playCurrentParagraph()
     }
 
+    fun togglePlayback() {
+        if (isPlaying) {
+            pausePlayback()
+        } else {
+            resumePlayback()
+        }
+    }
+
     fun stopPlayback() {
         tts?.stop()
         isPlaying = false
@@ -400,6 +425,7 @@ class NarrationService : Service() {
                 .setActions(
                     PlaybackStateCompat.ACTION_PLAY or
                         PlaybackStateCompat.ACTION_PAUSE or
+                        PlaybackStateCompat.ACTION_PLAY_PAUSE or
                         PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                         PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
                         PlaybackStateCompat.ACTION_STOP,
@@ -432,6 +458,12 @@ class NarrationService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
+        // Handle media button events from Bluetooth headphones
+        if (intent?.action == Intent.ACTION_MEDIA_BUTTON) {
+            MediaButtonReceiver.handleIntent(mediaSession, intent)
+            return START_NOT_STICKY
+        }
+
         when (intent?.action) {
             ACTION_PLAY -> resumePlayback()
             ACTION_PAUSE -> pausePlayback()
