@@ -179,6 +179,8 @@ jobs:
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         timeout-minutes: 30
+        env:
+          ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL: 0
         with:
           api-level: 30
           target: google_apis
@@ -189,7 +191,9 @@ jobs:
           working-directory: android
           script: |
             ./gradlew connectedDebugAndroidTest
+            # Kill emulator process directly to avoid hanging during action cleanup
             adb emu kill || true
+            pkill -9 -f "qemu-system" || true
 
       - name: Upload instrumented test results
         uses: actions/upload-artifact@v4
