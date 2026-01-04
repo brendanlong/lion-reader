@@ -21,7 +21,7 @@
 
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRouter } from "next/navigation";
 
@@ -325,21 +325,16 @@ export function useKeyboardShortcuts(
   const isSelectedEntryValid = selectedEntryId === null || entryIds.includes(selectedEntryId);
   const effectiveSelectedEntryId = isSelectedEntryValid ? selectedEntryId : null;
 
-  // Scroll selected entry into view
-  useEffect(() => {
+  // Scroll selected entry into view using useLayoutEffect to ensure DOM is ready
+  useLayoutEffect(() => {
     if (effectiveSelectedEntryId) {
-      // Use a small delay to ensure the DOM has updated
-      const timeoutId = setTimeout(() => {
-        const element = document.querySelector(`[data-entry-id="${effectiveSelectedEntryId}"]`);
-        if (element) {
-          element.scrollIntoView({
-            behavior: "smooth",
-            block: "nearest",
-          });
-        }
-      }, 0);
-
-      return () => clearTimeout(timeoutId);
+      const element = document.querySelector(`[data-entry-id="${effectiveSelectedEntryId}"]`);
+      if (element) {
+        element.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }
     }
   }, [effectiveSelectedEntryId]);
 
