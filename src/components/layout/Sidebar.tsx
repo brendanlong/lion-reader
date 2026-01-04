@@ -41,13 +41,39 @@ export function Sidebar({ onClose }: SidebarProps) {
   const utils = trpc.useUtils();
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
-    onSuccess: () => {
+    onMutate: async (variables) => {
+      // Close dialog immediately for responsive feel
+      setUnsubscribeTarget(null);
+
+      // Cancel in-flight queries to prevent race conditions
+      await utils.subscriptions.list.cancel();
+
+      // Snapshot current state for rollback
+      const previousData = utils.subscriptions.list.getData();
+
+      // Optimistically remove the subscription from the list
+      utils.subscriptions.list.setData(undefined, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          items: oldData.items.filter((item) => item.subscription.id !== variables.id),
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (_error, _variables, context) => {
+      // Rollback on error
+      if (context?.previousData) {
+        utils.subscriptions.list.setData(undefined, context.previousData);
+      }
+      toast.error("Failed to unsubscribe from feed");
+    },
+    onSettled: () => {
+      // Invalidate related caches that need fresh server data
       utils.subscriptions.list.invalidate();
       utils.entries.list.invalidate();
-      setUnsubscribeTarget(null);
-    },
-    onError: () => {
-      toast.error("Failed to unsubscribe from feed");
+      utils.tags.list.invalidate();
     },
   });
 
