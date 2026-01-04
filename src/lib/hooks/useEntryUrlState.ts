@@ -53,6 +53,7 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
   const setOpenEntryId = useCallback(
     (entryId: string | null) => {
       const params = new URLSearchParams(searchParams.toString());
+      const currentEntryId = searchParams.get("entry");
 
       if (entryId) {
         params.set("entry", entryId);
@@ -63,9 +64,16 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
       const queryString = params.toString();
       const newUrl = queryString ? `${pathname}?${queryString}` : pathname;
 
-      // Use replace to avoid adding to browser history for every entry click
-      // Users can still use back button to go from entry view to list
-      router.replace(newUrl, { scroll: false });
+      // Use push when opening an entry from the list (null -> entryId)
+      // This adds the entry view to browser history, so back gesture returns to list
+      // Use replace when navigating between entries to avoid history bloat
+      if (entryId && !currentEntryId) {
+        // Opening an entry from list view - add to history
+        router.push(newUrl, { scroll: false });
+      } else {
+        // Navigating between entries or closing - replace to avoid history bloat
+        router.replace(newUrl, { scroll: false });
+      }
     },
     [searchParams, pathname, router]
   );
