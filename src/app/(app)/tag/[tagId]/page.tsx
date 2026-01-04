@@ -170,6 +170,7 @@ function TagEntriesContent() {
       <EntryContent
         key={openEntryId}
         entryId={openEntryId}
+        listFilters={{ tagId, unreadOnly: showUnreadOnly, sortOrder }}
         onBack={handleBack}
         onSwipeNext={goToNextEntry}
         onSwipePrevious={goToPreviousEntry}

@@ -115,6 +115,7 @@ function UncategorizedEntriesContent() {
       <EntryContent
         key={openEntryId}
         entryId={openEntryId}
+        listFilters={{ uncategorized: true, unreadOnly: showUnreadOnly, sortOrder }}
         onBack={handleBack}
         onSwipeNext={goToNextEntry}
         onSwipePrevious={goToPreviousEntry}

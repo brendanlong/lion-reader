@@ -109,6 +109,7 @@ function AllEntriesContent() {
       <EntryContent
         key={openEntryId}
         entryId={openEntryId}
+        listFilters={{ unreadOnly: showUnreadOnly, sortOrder }}
         onBack={handleBack}
         onSwipeNext={goToNextEntry}
         onSwipePrevious={goToPreviousEntry}
