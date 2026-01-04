@@ -191,9 +191,10 @@ jobs:
           working-directory: android
           script: |
             ./gradlew connectedDebugAndroidTest
-            # Kill emulator process directly to avoid hanging during action cleanup
+            pkill -SIGTERM -f crashpad_handler || true
+            sleep 2
+            pkill -SIGKILL -f crashpad_handler || true
             adb emu kill || true
-            pkill -9 -f "qemu-system" || true
 
       - name: Upload instrumented test results
         uses: actions/upload-artifact@v4
