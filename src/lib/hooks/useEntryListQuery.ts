@@ -26,13 +26,21 @@ export interface EntryListQueryFilters {
 }
 
 /**
- * Entry data needed for keyboard/swipe navigation.
+ * Entry data for list display and navigation.
+ * Includes all fields needed for rendering and keyboard/swipe navigation.
  */
-export interface EntryNavigationData {
+export interface EntryListData {
   id: string;
+  feedId: string;
   url: string | null;
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
   read: boolean;
   starred: boolean;
+  feedTitle: string | null;
 }
 
 /**
@@ -69,7 +77,7 @@ export interface UseEntryListQueryResult {
   /**
    * All entries loaded so far (flattened from all pages).
    */
-  entries: EntryNavigationData[];
+  entries: EntryListData[];
 
   /**
    * Whether the initial load is in progress.
@@ -176,14 +184,21 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
   );
 
   // Flatten all pages into a single array of entries
-  const entries: EntryNavigationData[] = useMemo(() => {
+  const entries: EntryListData[] = useMemo(() => {
     return (
       data?.pages.flatMap((page) =>
         page.items.map((entry) => ({
           id: entry.id,
+          feedId: entry.feedId,
           url: entry.url,
+          title: entry.title,
+          author: entry.author,
+          summary: entry.summary,
+          publishedAt: entry.publishedAt,
+          fetchedAt: entry.fetchedAt,
           read: entry.read,
           starred: entry.starred,
+          feedTitle: entry.feedTitle,
         }))
       ) ?? []
     );
