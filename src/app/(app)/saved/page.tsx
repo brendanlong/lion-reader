@@ -87,47 +87,48 @@ function SavedArticlesContent() {
     };
   }, [openArticleId, articles]);
 
-  // If an article is open, show the full content view
-  // Key forces remount when articleId changes, ensuring fresh refs and mutation state
-  if (openArticleId) {
-    return (
-      <SavedArticleContent
-        key={openArticleId}
-        articleId={openArticleId}
-        onBack={handleBack}
-        onSwipeNext={goToNextArticle}
-        onSwipePrevious={goToPreviousArticle}
-        nextArticleId={nextArticleId}
-        previousArticleId={previousArticleId}
-      />
-    );
-  }
-
-  // Otherwise, show the saved articles list
+  // Render both list and content, hiding the list when viewing an article.
+  // This preserves scroll position and enables seamless j/k navigation.
   return (
-    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      <div className="mb-4 flex items-center justify-between sm:mb-6">
-        <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Saved</h1>
-        <div className="flex gap-2">
-          <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
-          <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
-        </div>
-      </div>
+    <>
+      {/* Article content - only rendered when an article is open */}
+      {openArticleId && (
+        <SavedArticleContent
+          key={openArticleId}
+          articleId={openArticleId}
+          onBack={handleBack}
+          onSwipeNext={goToNextArticle}
+          onSwipePrevious={goToPreviousArticle}
+          nextArticleId={nextArticleId}
+          previousArticleId={previousArticleId}
+        />
+      )}
 
-      <SavedArticleList
-        filters={{ unreadOnly: showUnreadOnly, sortOrder }}
-        onArticleClick={handleArticleClick}
-        selectedArticleId={selectedArticleId}
-        onArticlesLoaded={handleArticlesLoaded}
-        onToggleRead={toggleRead}
-        onToggleStar={toggleStar}
-        emptyMessage={
-          showUnreadOnly
-            ? "No unread saved articles. Toggle to show all items."
-            : "No saved articles yet. Save articles to read them later."
-        }
-      />
-    </div>
+      {/* Article list - always mounted but hidden when viewing an article */}
+      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openArticleId ? "hidden" : ""}`}>
+        <div className="mb-4 flex items-center justify-between sm:mb-6">
+          <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Saved</h1>
+          <div className="flex gap-2">
+            <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
+            <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+          </div>
+        </div>
+
+        <SavedArticleList
+          filters={{ unreadOnly: showUnreadOnly, sortOrder }}
+          onArticleClick={handleArticleClick}
+          selectedArticleId={selectedArticleId}
+          onArticlesLoaded={handleArticlesLoaded}
+          onToggleRead={toggleRead}
+          onToggleStar={toggleStar}
+          emptyMessage={
+            showUnreadOnly
+              ? "No unread saved articles. Toggle to show all items."
+              : "No saved articles yet. Save articles to read them later."
+          }
+        />
+      </div>
+    </>
   );
 }
 

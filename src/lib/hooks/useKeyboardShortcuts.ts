@@ -378,8 +378,11 @@ export function useKeyboardShortcuts(
   const effectiveSelectedEntryId = isSelectedEntryValid ? selectedEntryId : null;
 
   // Scroll selected entry into view using useLayoutEffect to ensure DOM is ready
+  // Only scroll when list is visible (not hidden). This handles both:
+  // 1. Selection changes while viewing the list
+  // 2. Returning to list view after viewing an entry
   useLayoutEffect(() => {
-    if (effectiveSelectedEntryId) {
+    if (effectiveSelectedEntryId && !isEntryOpen) {
       const element = document.querySelector(`[data-entry-id="${effectiveSelectedEntryId}"]`);
       if (element) {
         element.scrollIntoView({
@@ -388,7 +391,7 @@ export function useKeyboardShortcuts(
         });
       }
     }
-  }, [effectiveSelectedEntryId]);
+  }, [effectiveSelectedEntryId, isEntryOpen]);
 
   // Keyboard shortcuts
   // j - next entry (select in list, or navigate to next when viewing)
