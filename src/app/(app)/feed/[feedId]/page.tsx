@@ -15,7 +15,7 @@ import {
   EntryContent,
   UnreadToggle,
   SortToggle,
-  type EntryListEntryData,
+  type ExternalQueryState,
 } from "@/components/entries";
 import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
@@ -24,7 +24,7 @@ import {
   useViewPreferences,
   useEntryMutations,
   useEntryUrlState,
-  type KeyboardEntryData,
+  useEntryListQuery,
 } from "@/lib/hooks";
 
 /**
@@ -89,7 +89,6 @@ function SingleFeedContent() {
   const feedId = params.feedId;
 
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
-  const [entries, setEntries] = useState<KeyboardEntryData[]>([]);
   const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
@@ -98,6 +97,12 @@ function SingleFeedContent() {
     feedId
   );
   const utils = trpc.useUtils();
+
+  // Use entry list query that stays mounted while viewing entries
+  const entryListQuery = useEntryListQuery({
+    filters: { feedId, unreadOnly: showUnreadOnly, sortOrder },
+    openEntryId,
+  });
 
   // Entry mutations with optimistic updates
   const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
@@ -112,7 +117,7 @@ function SingleFeedContent() {
   // Keyboard navigation and actions (also provides swipe navigation functions)
   const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
     useKeyboardShortcuts({
-      entries,
+      entries: entryListQuery.entries,
       onOpenEntry: setOpenEntryId,
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
@@ -143,22 +148,20 @@ function SingleFeedContent() {
     closeEntry();
   }, [closeEntry]);
 
-  const handleEntriesLoaded = useCallback((loadedEntries: EntryListEntryData[]) => {
-    setEntries(loadedEntries);
-  }, []);
-
-  // Calculate next and previous entry IDs for prefetching
-  const { nextEntryId, previousEntryId } = useMemo(() => {
-    if (!openEntryId) return { nextEntryId: undefined, previousEntryId: undefined };
-
-    const currentIndex = entries.findIndex((e) => e.id === openEntryId);
-    if (currentIndex === -1) return { nextEntryId: undefined, previousEntryId: undefined };
-
-    return {
-      nextEntryId: currentIndex < entries.length - 1 ? entries[currentIndex + 1].id : undefined,
-      previousEntryId: currentIndex > 0 ? entries[currentIndex - 1].id : undefined,
-    };
-  }, [openEntryId, entries]);
+  // Build external query state for EntryList
+  const externalQueryState: ExternalQueryState = useMemo(
+    () => ({
+      isLoading: entryListQuery.isLoading,
+      isError: entryListQuery.isError,
+      errorMessage: entryListQuery.errorMessage,
+      isFetchingNextPage: entryListQuery.isFetchingNextPage,
+      hasNextPage: entryListQuery.hasNextPage,
+      fetchNextPage: entryListQuery.fetchNextPage,
+      refetch: entryListQuery.refetch,
+      prefetchEntry: entryListQuery.prefetchEntry,
+    }),
+    [entryListQuery]
+  );
 
   // If an entry is open, show the full content view
   // Key forces remount when entryId changes, ensuring fresh refs and mutation state
@@ -170,8 +173,8 @@ function SingleFeedContent() {
         onBack={handleBack}
         onSwipeNext={goToNextEntry}
         onSwipePrevious={goToPreviousEntry}
-        nextEntryId={nextEntryId}
-        previousEntryId={previousEntryId}
+        nextEntryId={entryListQuery.nextEntryId}
+        previousEntryId={entryListQuery.previousEntryId}
       />
     );
   }
@@ -271,9 +274,10 @@ function SingleFeedContent() {
         filters={{ feedId, unreadOnly: showUnreadOnly, sortOrder }}
         onEntryClick={handleEntryClick}
         selectedEntryId={selectedEntryId}
-        onEntriesLoaded={handleEntriesLoaded}
         onToggleRead={toggleRead}
         onToggleStar={toggleStar}
+        externalEntries={entryListQuery.entries}
+        externalQueryState={externalQueryState}
         emptyMessage={
           showUnreadOnly
             ? "No unread entries in this feed. Toggle to show all items."

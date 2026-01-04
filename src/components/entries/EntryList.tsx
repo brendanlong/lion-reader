@@ -63,9 +63,56 @@ export interface EntryListEntryData {
   starred: boolean;
 }
 
+/**
+ * External query state that can be provided to avoid creating a duplicate query.
+ * Use with useEntryListQuery hook to keep the query mounted while viewing entries.
+ */
+export interface ExternalQueryState {
+  /**
+   * Whether the initial load is in progress.
+   */
+  isLoading: boolean;
+
+  /**
+   * Whether there was an error loading entries.
+   */
+  isError: boolean;
+
+  /**
+   * Error message if isError is true.
+   */
+  errorMessage?: string;
+
+  /**
+   * Whether more entries are being fetched.
+   */
+  isFetchingNextPage: boolean;
+
+  /**
+   * Whether there are more entries to load.
+   */
+  hasNextPage: boolean;
+
+  /**
+   * Fetch the next page of entries.
+   */
+  fetchNextPage: () => void;
+
+  /**
+   * Refetch all entries.
+   */
+  refetch: () => void;
+
+  /**
+   * Prefetch entry data on mousedown.
+   */
+  prefetchEntry: (entryId: string) => void;
+}
+
 interface EntryListProps {
   /**
    * Filter options for the list.
+   * Required when not providing externalEntries.
    */
   filters?: EntryListFilters;
 
@@ -93,6 +140,7 @@ interface EntryListProps {
   /**
    * Callback to receive entry data when entries are loaded.
    * Used by parent components for keyboard navigation and actions.
+   * Not needed when using externalEntries.
    */
   onEntriesLoaded?: (entries: EntryListEntryData[]) => void;
 
@@ -105,6 +153,17 @@ interface EntryListProps {
    * Callback when the star indicator is clicked.
    */
   onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
+
+  /**
+   * External entries provided by parent (e.g., from useEntryListQuery).
+   * When provided, the component won't create its own query.
+   */
+  externalEntries?: EntryListEntryData[];
+
+  /**
+   * External query state when using externalEntries.
+   */
+  externalQueryState?: ExternalQueryState;
 }
 
 /**
@@ -119,23 +178,18 @@ export function EntryList({
   onEntriesLoaded,
   onToggleRead,
   onToggleStar,
+  externalEntries,
+  externalQueryState,
 }: EntryListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const useExternalData = externalEntries !== undefined && externalQueryState !== undefined;
 
-  // Use infinite query for cursor-based pagination
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    refetch,
-  } = trpc.entries.list.useInfiniteQuery(
+  // Use infinite query for cursor-based pagination (only when not using external data)
+  const internalQuery = trpc.entries.list.useInfiniteQuery(
     {
       feedId: filters.feedId,
       tagId: filters.tagId,
+      uncategorized: filters.uncategorized,
       unreadOnly: filters.unreadOnly,
       starredOnly: filters.starredOnly,
       sortOrder: filters.sortOrder,
@@ -145,6 +199,8 @@ export function EntryList({
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       // Refetch when filters change
       refetchOnMount: true,
+      // Disable when using external data
+      enabled: !useExternalData,
     }
   );
 
@@ -155,18 +211,46 @@ export function EntryList({
   // This gives a 50-150ms head start with near-zero false positives
   const handlePrefetch = useCallback(
     (entryId: string) => {
-      utils.entries.get.fetch({ id: entryId });
+      if (useExternalData && externalQueryState?.prefetchEntry) {
+        externalQueryState.prefetchEntry(entryId);
+      } else {
+        utils.entries.get.fetch({ id: entryId });
+      }
     },
-    [utils]
+    [useExternalData, externalQueryState, utils]
   );
 
-  // Flatten all pages into a single array of entries
-  const allEntries = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
+  // Flatten all pages into a single array of entries (from internal query)
+  const internalEntries = useMemo(
+    () => internalQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [internalQuery.data?.pages]
+  );
+
+  // Use external entries if provided, otherwise use internal query results
+  const allEntries = useExternalData ? externalEntries : internalEntries;
+
+  // Query state - use external if provided, otherwise use internal
+  const isLoading = useExternalData ? externalQueryState.isLoading : internalQuery.isLoading;
+  const isError = useExternalData ? externalQueryState.isError : internalQuery.isError;
+  const errorMessage = useExternalData
+    ? externalQueryState.errorMessage
+    : internalQuery.error?.message;
+  const isFetchingNextPage = useExternalData
+    ? externalQueryState.isFetchingNextPage
+    : internalQuery.isFetchingNextPage;
+  const hasNextPage = useExternalData
+    ? externalQueryState.hasNextPage
+    : (internalQuery.hasNextPage ?? false);
+  const fetchNextPage = useExternalData
+    ? externalQueryState.fetchNextPage
+    : internalQuery.fetchNextPage;
+  const refetch = useExternalData ? externalQueryState.refetch : internalQuery.refetch;
 
   // Notify parent of entry data for keyboard navigation and actions
+  // Only when using internal query (external entries are already in parent)
   useEffect(() => {
-    if (onEntriesLoaded) {
-      const entries: EntryListEntryData[] = allEntries.map((entry) => ({
+    if (onEntriesLoaded && !useExternalData) {
+      const entries: EntryListEntryData[] = internalEntries.map((entry) => ({
         id: entry.id,
         url: entry.url,
         read: entry.read,
@@ -174,7 +258,7 @@ export function EntryList({
       }));
       onEntriesLoaded(entries);
     }
-  }, [allEntries, onEntriesLoaded]);
+  }, [internalEntries, onEntriesLoaded, useExternalData]);
 
   // Intersection Observer for infinite scroll
   const handleObserver = useCallback(
@@ -215,7 +299,7 @@ export function EntryList({
   if (isError) {
     return (
       <ArticleListError
-        message={error?.message ?? "Failed to load entries"}
+        message={errorMessage ?? "Failed to load entries"}
         onRetry={() => refetch()}
       />
     );
