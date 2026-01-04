@@ -7,6 +7,8 @@
  * @module narration/html-to-plain-text
  */
 
+import { decode } from "html-entities";
+
 /**
  * Converts HTML to plain text for narration.
  * Uses regex-based conversion that works in any JavaScript environment.
@@ -19,20 +21,17 @@
  * // Returns "Hello\n\nWorld"
  */
 export function htmlToPlainText(html: string): string {
+  const stripped = html
+    // Add paragraph breaks before block elements
+    .replace(/<(p|div|br|h[1-6]|li|tr|blockquote|pre)[^>]*>/gi, "\n\n")
+    // Remove all HTML tags
+    .replace(/<[^>]+>/g, "");
+
+  // Decode all HTML entities (numeric and named like &rsquo; &hellip;)
+  const decoded = decode(stripped);
+
   return (
-    html
-      // Add paragraph breaks before block elements
-      .replace(/<(p|div|br|h[1-6]|li|tr|blockquote|pre)[^>]*>/gi, "\n\n")
-      // Remove all HTML tags
-      .replace(/<[^>]+>/g, "")
-      // Decode common HTML entities
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&apos;/g, "'")
+    decoded
       // Normalize whitespace: collapse multiple spaces to single space
       .replace(/ +/g, " ")
       // Normalize paragraph breaks: collapse multiple newlines to double newline
