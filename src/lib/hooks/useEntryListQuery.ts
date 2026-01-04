@@ -157,6 +157,11 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
   // Track if we've triggered a fetch to avoid duplicate calls
   const fetchingRef = useRef(false);
 
+  // Track last known adjacent entries for when the current entry is filtered out
+  // This prevents navigation breaking when the open entry disappears from the list
+  const lastKnownNextRef = useRef<string | undefined>(undefined);
+  const lastKnownPrevRef = useRef<string | undefined>(undefined);
+
   // Use infinite query for cursor-based pagination
   const {
     data,
@@ -212,15 +217,34 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
 
     const idx = entries.findIndex((e) => e.id === openEntryId);
     if (idx === -1) {
-      return { nextEntryId: undefined, previousEntryId: undefined, currentIndex: -1 };
+      // Entry not found (likely filtered out) - return undefined for render
+      // getNextEntryId/getPreviousEntryId will use refs as fallback
+      return {
+        nextEntryId: undefined,
+        previousEntryId: undefined,
+        currentIndex: -1,
+      };
     }
 
+    // Entry found - calculate adjacent entries
+    const nextId = idx < entries.length - 1 ? entries[idx + 1].id : undefined;
+    const prevId = idx > 0 ? entries[idx - 1].id : undefined;
+
     return {
-      nextEntryId: idx < entries.length - 1 ? entries[idx + 1].id : undefined,
-      previousEntryId: idx > 0 ? entries[idx - 1].id : undefined,
+      nextEntryId: nextId,
+      previousEntryId: prevId,
       currentIndex: idx,
     };
   }, [openEntryId, entries]);
+
+  // Update refs when entry is found - runs after render to comply with React rules
+  // These refs are used as fallback in getNextEntryId/getPreviousEntryId when entry is filtered out
+  useEffect(() => {
+    if (nextEntryId !== undefined || previousEntryId !== undefined) {
+      lastKnownNextRef.current = nextEntryId;
+      lastKnownPrevRef.current = previousEntryId;
+    }
+  }, [nextEntryId, previousEntryId]);
 
   // Proactively load more entries when approaching the end of the list
   useEffect(() => {
@@ -246,14 +270,19 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     fetchNextPage,
   ]);
 
-  // Get next entry ID, triggering a fetch if near the end
+  // Get next entry ID, using remembered value if current entry is filtered out
+  // Refs are accessed only in this callback, not during render
   const getNextEntryId = useCallback((): string | undefined => {
     if (entries.length === 0) return undefined;
 
     const idx = openEntryId ? entries.findIndex((e) => e.id === openEntryId) : -1;
 
     if (idx === -1) {
-      // Nothing selected, return the first entry
+      // Entry not found - use remembered next entry if available
+      if (lastKnownNextRef.current) {
+        return lastKnownNextRef.current;
+      }
+      // Fall back to first entry if nothing remembered
       return entries[0]?.id;
     }
 
@@ -266,14 +295,19 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     return undefined;
   }, [entries, openEntryId]);
 
-  // Get previous entry ID
+  // Get previous entry ID, using remembered value if current entry is filtered out
+  // Refs are accessed only in this callback, not during render
   const getPreviousEntryId = useCallback((): string | undefined => {
     if (entries.length === 0) return undefined;
 
     const idx = openEntryId ? entries.findIndex((e) => e.id === openEntryId) : -1;
 
     if (idx === -1) {
-      // Nothing selected, return the last entry
+      // Entry not found - use remembered previous entry if available
+      if (lastKnownPrevRef.current) {
+        return lastKnownPrevRef.current;
+      }
+      // Fall back to last entry if nothing remembered
       return entries[entries.length - 1]?.id;
     }
 
