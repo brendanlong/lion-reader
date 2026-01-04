@@ -85,12 +85,6 @@ export function EntryContent({
 
   const entry = data?.entry;
 
-  // Scroll to top when component mounts (i.e., when navigating to a new entry)
-  // This is done here rather than in keyboard handlers because React renders async
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
-
   // Mark entry as read when component mounts and entry is loaded (only once)
   useEffect(() => {
     if (entry && !hasMarkedRead.current) {
@@ -119,48 +113,45 @@ export function EntryContent({
     markRead([entryId], !entry.read);
   };
 
-  // Loading state
+  // Determine content based on loading/error/success state
+  let content: React.ReactNode;
   if (isLoading) {
-    return <ArticleContentSkeleton />;
-  }
-
-  // Error state
-  if (isError) {
-    return (
+    content = <ArticleContentSkeleton />;
+  } else if (isError) {
+    content = (
       <ArticleContentError
         message={error?.message ?? "Failed to load entry"}
         onRetry={() => refetch()}
       />
     );
+  } else if (!entry) {
+    content = <ArticleContentError message="Entry not found" onRetry={() => refetch()} />;
+  } else {
+    content = (
+      <ArticleContentBody
+        articleId={entryId}
+        title={entry.title ?? "Untitled"}
+        source={entry.feedTitle ?? "Unknown Feed"}
+        author={entry.author}
+        url={entry.url}
+        date={entry.publishedAt ?? entry.fetchedAt}
+        contentOriginal={entry.contentOriginal}
+        contentCleaned={entry.contentCleaned}
+        fallbackContent={entry.summary}
+        read={entry.read}
+        starred={entry.starred}
+        onBack={onBack}
+        onToggleRead={handleReadToggle}
+        onToggleStar={handleStarToggle}
+        showOriginal={showOriginal}
+        setShowOriginal={setShowOriginal}
+        footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
+        onSwipeNext={onSwipeNext}
+        onSwipePrevious={onSwipePrevious}
+      />
+    );
   }
 
-  // Entry not found
-  if (!entry) {
-    return <ArticleContentError message="Entry not found" onRetry={() => refetch()} />;
-  }
-
-  // Render the entry content using shared component
-  return (
-    <ArticleContentBody
-      articleId={entryId}
-      title={entry.title ?? "Untitled"}
-      source={entry.feedTitle ?? "Unknown Feed"}
-      author={entry.author}
-      url={entry.url}
-      date={entry.publishedAt ?? entry.fetchedAt}
-      contentOriginal={entry.contentOriginal}
-      contentCleaned={entry.contentCleaned}
-      fallbackContent={entry.summary}
-      read={entry.read}
-      starred={entry.starred}
-      onBack={onBack}
-      onToggleRead={handleReadToggle}
-      onToggleStar={handleStarToggle}
-      showOriginal={showOriginal}
-      setShowOriginal={setShowOriginal}
-      footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
-      onSwipeNext={onSwipeNext}
-      onSwipePrevious={onSwipePrevious}
-    />
-  );
+  // Wrap in scroll container - each entry gets its own container that starts at scroll 0
+  return <div className="h-full overflow-y-auto">{content}</div>;
 }
