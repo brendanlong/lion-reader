@@ -68,3 +68,11 @@ export {
 } from "./useSwipeGestures";
 
 export { useExpandedTags, type UseExpandedTagsResult } from "./useExpandedTags";
+
+export {
+  useEntryListQuery,
+  type EntryListQueryFilters,
+  type EntryNavigationData,
+  type UseEntryListQueryOptions,
+  type UseEntryListQueryResult,
+} from "./useEntryListQuery";
