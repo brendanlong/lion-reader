@@ -119,6 +119,7 @@ class EntryDaoTest {
                     .getEntries(
                         feedId = null,
                         tagId = null,
+                        uncategorized = false,
                         unreadOnly = false,
                         starredOnly = false,
                         sortOrder = "newest",
@@ -157,6 +158,7 @@ class EntryDaoTest {
                     .getEntries(
                         feedId = "feed-1",
                         tagId = null,
+                        uncategorized = false,
                         unreadOnly = false,
                         starredOnly = false,
                         sortOrder = "newest",
@@ -200,6 +202,7 @@ class EntryDaoTest {
                     .getEntries(
                         feedId = null,
                         tagId = null,
+                        uncategorized = false,
                         unreadOnly = true,
                         starredOnly = false,
                         sortOrder = "newest",
@@ -244,6 +247,7 @@ class EntryDaoTest {
                     .getEntries(
                         feedId = null,
                         tagId = null,
+                        uncategorized = false,
                         unreadOnly = false,
                         starredOnly = true,
                         sortOrder = "newest",
@@ -275,6 +279,7 @@ class EntryDaoTest {
                     .getEntries(
                         feedId = null,
                         tagId = null,
+                        uncategorized = false,
                         unreadOnly = false,
                         starredOnly = false,
                         sortOrder = "newest",
@@ -306,6 +311,7 @@ class EntryDaoTest {
                     .getEntries(
                         feedId = null,
                         tagId = null,
+                        uncategorized = false,
                         unreadOnly = false,
                         starredOnly = false,
                         sortOrder = "oldest",
@@ -332,6 +338,7 @@ class EntryDaoTest {
                     .getEntries(
                         feedId = null,
                         tagId = null,
+                        uncategorized = false,
                         unreadOnly = false,
                         starredOnly = false,
                         sortOrder = "oldest",
@@ -350,6 +357,7 @@ class EntryDaoTest {
                     .getEntries(
                         feedId = null,
                         tagId = null,
+                        uncategorized = false,
                         unreadOnly = false,
                         starredOnly = false,
                         sortOrder = "oldest",
