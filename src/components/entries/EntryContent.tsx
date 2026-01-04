@@ -66,7 +66,7 @@ export function EntryContent({
   nextEntryId,
   previousEntryId,
 }: EntryContentProps) {
-  const hasMarkedRead = useRef(false);
+  const lastMarkedReadId = useRef<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the entry
@@ -85,14 +85,12 @@ export function EntryContent({
 
   const entry = data?.entry;
 
-  // Mark entry as read when component mounts and entry is loaded (only once)
+  // Mark entry as read when component mounts and entry is loaded
+  // Uses lastMarkedReadId to track which entry was marked, correctly handling navigation between entries
   useEffect(() => {
-    if (entry && !hasMarkedRead.current) {
-      hasMarkedRead.current = true;
-      // Only mark as read if it's currently unread
-      if (!entry.read) {
-        markRead([entryId], true);
-      }
+    if (entry && lastMarkedReadId.current !== entryId && !entry.read) {
+      lastMarkedReadId.current = entryId;
+      markRead([entryId], true);
     }
   }, [entry, entryId, markRead]);
 

@@ -7,79 +7,118 @@
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useSyncExternalStore, memo } from "react";
 
-/**
- * Get initial online status for SSR-safe initialization.
- */
-function getInitialOnlineStatus(): boolean {
-  // Return true for SSR, actual value on client
-  if (typeof window === "undefined") {
-    return true;
-  }
-  return navigator.onLine;
-}
+// --- External store for online status using useSyncExternalStore pattern ---
 
-/**
- * Custom hook to track online/offline status.
- * Returns online status and a flag for showing reconnected message.
- */
-function useOnlineStatus(): { isOnline: boolean; showReconnected: boolean } {
-  // Initialize with actual value if on client, true for SSR
-  const [isOnline, setIsOnline] = useState(getInitialOnlineStatus);
-  const [showReconnected, setShowReconnected] = useState(false);
+// Listeners for raw online status changes
+const onlineStatusListeners = new Set<() => void>();
 
-  // Track if we were offline to show reconnected message
-  const wasOfflineRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+// Listeners for reconnected state changes
+const reconnectedListeners = new Set<() => void>();
 
-  const handleOnline = useCallback(() => {
-    setIsOnline(true);
+// Global state for reconnected message
+let showReconnectedState = false;
+let wasOffline = false;
+let reconnectedTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // Show reconnected message if we were offline
-    if (wasOfflineRef.current) {
-      setShowReconnected(true);
-      wasOfflineRef.current = false;
+// Subscribe to online/offline events (lazy initialization)
+let isSubscribed = false;
+
+function ensureSubscribed(): void {
+  if (isSubscribed || typeof window === "undefined") return;
+  isSubscribed = true;
+
+  window.addEventListener("online", () => {
+    // Notify online status listeners
+    onlineStatusListeners.forEach((listener) => listener());
+
+    // Handle reconnected state
+    if (wasOffline) {
+      wasOffline = false;
+      showReconnectedState = true;
+      reconnectedListeners.forEach((listener) => listener());
 
       // Clear any existing timer
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
+      if (reconnectedTimer) {
+        clearTimeout(reconnectedTimer);
       }
 
       // Hide the reconnected message after 3 seconds
-      timerRef.current = setTimeout(() => {
-        setShowReconnected(false);
-        timerRef.current = null;
+      reconnectedTimer = setTimeout(() => {
+        showReconnectedState = false;
+        reconnectedTimer = null;
+        reconnectedListeners.forEach((listener) => listener());
       }, 3000);
     }
-  }, []);
+  });
 
-  const handleOffline = useCallback(() => {
-    setIsOnline(false);
-    wasOfflineRef.current = true;
-    setShowReconnected(false);
+  window.addEventListener("offline", () => {
+    // Notify online status listeners
+    onlineStatusListeners.forEach((listener) => listener());
 
-    // Clear any existing timer
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+    // Track that we were offline and hide any reconnected message
+    wasOffline = true;
+    if (showReconnectedState) {
+      showReconnectedState = false;
+      reconnectedListeners.forEach((listener) => listener());
     }
-  }, []);
+    if (reconnectedTimer) {
+      clearTimeout(reconnectedTimer);
+      reconnectedTimer = null;
+    }
+  });
+}
 
-  useEffect(() => {
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
+function subscribeToOnlineStatus(callback: () => void): () => void {
+  ensureSubscribed();
+  onlineStatusListeners.add(callback);
+  return () => {
+    onlineStatusListeners.delete(callback);
+  };
+}
 
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+function subscribeToReconnected(callback: () => void): () => void {
+  ensureSubscribed();
+  reconnectedListeners.add(callback);
+  return () => {
+    reconnectedListeners.delete(callback);
+  };
+}
 
-      // Clean up timer on unmount
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-  }, [handleOnline, handleOffline]);
+function getOnlineStatusSnapshot(): boolean {
+  return typeof window !== "undefined" ? navigator.onLine : true;
+}
+
+function getOnlineStatusServerSnapshot(): boolean {
+  return true; // Assume online during SSR
+}
+
+function getReconnectedSnapshot(): boolean {
+  return showReconnectedState;
+}
+
+function getReconnectedServerSnapshot(): boolean {
+  return false; // Never show reconnected during SSR
+}
+
+/**
+ * Custom hook to track online/offline status using useSyncExternalStore.
+ * Returns online status and a flag for showing reconnected message.
+ */
+function useOnlineStatus(): { isOnline: boolean; showReconnected: boolean } {
+  // Use useSyncExternalStore for both the online status and reconnected state
+  const isOnline = useSyncExternalStore(
+    subscribeToOnlineStatus,
+    getOnlineStatusSnapshot,
+    getOnlineStatusServerSnapshot
+  );
+
+  const showReconnected = useSyncExternalStore(
+    subscribeToReconnected,
+    getReconnectedSnapshot,
+    getReconnectedServerSnapshot
+  );
 
   return { isOnline, showReconnected };
 }

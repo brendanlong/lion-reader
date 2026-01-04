@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { ENHANCED_VOICES, type EnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { VoiceCache, STORAGE_LIMIT_BYTES } from "@/lib/narration/voice-cache";
@@ -522,23 +522,30 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     }
   }, [updateStorageStats]);
 
-  // Calculate if storage limit is exceeded
-  const isStorageLimitExceededValue = storageUsed > STORAGE_LIMIT_BYTES;
+  // Calculate if storage limit is exceeded (memoized)
+  const isStorageLimitExceededValue = useMemo(
+    () => storageUsed > STORAGE_LIMIT_BYTES,
+    [storageUsed]
+  );
 
-  // Build the voices array with current state
-  const voices: EnhancedVoiceState[] = ENHANCED_VOICES.map((voice) => {
-    const state = voiceStates.get(voice.id) ?? {
-      status: "not-downloaded" as const,
-      progress: 0,
-      errorInfo: undefined,
-    };
-    return {
-      voice,
-      status: state.status,
-      progress: state.progress,
-      errorInfo: state.errorInfo,
-    };
-  });
+  // Build the voices array with current state (memoized to avoid rebuilding on every render)
+  const voices: EnhancedVoiceState[] = useMemo(
+    () =>
+      ENHANCED_VOICES.map((voice) => {
+        const state = voiceStates.get(voice.id) ?? {
+          status: "not-downloaded" as const,
+          progress: 0,
+          errorInfo: undefined,
+        };
+        return {
+          voice,
+          status: state.status,
+          progress: state.progress,
+          errorInfo: state.errorInfo,
+        };
+      }),
+    [voiceStates]
+  );
 
   return {
     voices,

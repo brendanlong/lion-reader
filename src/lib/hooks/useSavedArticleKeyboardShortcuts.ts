@@ -21,7 +21,7 @@
 
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRouter } from "next/navigation";
 
@@ -296,21 +296,16 @@ export function useSavedArticleKeyboardShortcuts(
     selectedArticleId === null || articleIds.includes(selectedArticleId);
   const effectiveSelectedArticleId = isSelectedArticleValid ? selectedArticleId : null;
 
-  // Scroll selected article into view
-  useEffect(() => {
+  // Scroll selected article into view using useLayoutEffect to ensure DOM is ready
+  useLayoutEffect(() => {
     if (effectiveSelectedArticleId) {
-      // Use a small delay to ensure the DOM has updated
-      const timeoutId = setTimeout(() => {
-        const element = document.querySelector(`[data-entry-id="${effectiveSelectedArticleId}"]`);
-        if (element) {
-          element.scrollIntoView({
-            behavior: "smooth",
-            block: "nearest",
-          });
-        }
-      }, 0);
-
-      return () => clearTimeout(timeoutId);
+      const element = document.querySelector(`[data-entry-id="${effectiveSelectedArticleId}"]`);
+      if (element) {
+        element.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }
     }
   }, [effectiveSelectedArticleId]);
 

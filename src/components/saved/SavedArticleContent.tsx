@@ -66,7 +66,7 @@ export function SavedArticleContent({
   nextArticleId,
   previousArticleId,
 }: SavedArticleContentProps) {
-  const hasMarkedRead = useRef(false);
+  const lastMarkedReadId = useRef<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the saved article using unified entries endpoint
@@ -84,14 +84,12 @@ export function SavedArticleContent({
 
   const article = data?.entry;
 
-  // Mark article as read when component mounts and article is loaded (only once)
+  // Mark article as read when component mounts and article is loaded
+  // Uses lastMarkedReadId to track which article was marked, correctly handling navigation between articles
   useEffect(() => {
-    if (article && !hasMarkedRead.current) {
-      hasMarkedRead.current = true;
-      // Only mark as read if it's currently unread
-      if (!article.read) {
-        markRead([articleId], true);
-      }
+    if (article && lastMarkedReadId.current !== articleId && !article.read) {
+      lastMarkedReadId.current = articleId;
+      markRead([articleId], true);
     }
   }, [article, articleId, markRead]);
 
