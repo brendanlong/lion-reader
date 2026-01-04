@@ -188,7 +188,28 @@ export function useKeyboardShortcuts(
   } = options;
 
   const router = useRouter();
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [selectedEntryId, setSelectedEntryIdInternal] = useState<string | null>(null);
+
+  // Track last known adjacent entries for when the current entry is filtered out
+  // This prevents jumping to the wrong entry when the current entry disappears
+  const lastKnownNextRef = useRef<string | null>(null);
+  const lastKnownPrevRef = useRef<string | null>(null);
+
+  // Wrapper for setSelectedEntryId that also updates the adjacent entry refs
+  const setSelectedEntryId = useCallback(
+    (id: string | null) => {
+      setSelectedEntryIdInternal(id);
+      // When setting a new selected entry, calculate and store its adjacent entries
+      if (id) {
+        const idx = entries.findIndex((e) => e.id === id);
+        if (idx !== -1) {
+          lastKnownNextRef.current = idx < entries.length - 1 ? entries[idx + 1].id : null;
+          lastKnownPrevRef.current = idx > 0 ? entries[idx - 1].id : null;
+        }
+      }
+    },
+    [entries]
+  );
 
   // Track "g" prefix for navigation shortcuts (g+a, g+s)
   const gPrefixTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -230,6 +251,27 @@ export function useKeyboardShortcuts(
     return entryIds.indexOf(selectedEntryId);
   }, [selectedEntryId, entryIds]);
 
+  // Calculate current adjacent entries (either from list position or last known from refs)
+  // Refs are accessed only in this callback, not during render
+  const getAdjacentEntries = useCallback(() => {
+    if (!selectedEntryId) {
+      return { nextId: null, prevId: null, isInList: false };
+    }
+    const idx = entryIds.indexOf(selectedEntryId);
+    if (idx === -1) {
+      // Entry not in list - return last known values from refs
+      return {
+        nextId: lastKnownNextRef.current,
+        prevId: lastKnownPrevRef.current,
+        isInList: false,
+      };
+    }
+    // Entry is in list - calculate adjacent entries
+    const nextId = idx < entryIds.length - 1 ? entryIds[idx + 1] : null;
+    const prevId = idx > 0 ? entryIds[idx - 1] : null;
+    return { nextId, prevId, isInList: true };
+  }, [selectedEntryId, entryIds]);
+
   // Get the selected entry data
   const getSelectedEntry = useCallback((): KeyboardEntryData | null => {
     if (!selectedEntryId) return null;
@@ -250,7 +292,7 @@ export function useKeyboardShortcuts(
       setSelectedEntryId(entryIds[currentIndex + 1]);
     }
     // If already at the last entry, do nothing
-  }, [entryIds, getSelectedIndex]);
+  }, [entryIds, getSelectedIndex, setSelectedEntryId]);
 
   // Move selection to the previous entry
   const selectPrevious = useCallback(() => {
@@ -266,47 +308,57 @@ export function useKeyboardShortcuts(
       setSelectedEntryId(entryIds[currentIndex - 1]);
     }
     // If already at the first entry, do nothing
-  }, [entryIds, getSelectedIndex]);
+  }, [entryIds, getSelectedIndex, setSelectedEntryId]);
 
   // Navigate to and open the next entry (for use when viewing an entry)
   const goToNextEntry = useCallback(() => {
     if (entryIds.length === 0 || !onOpenEntry) return;
 
+    // Use getAdjacentEntries which handles the case where current entry is filtered out
+    const { nextId } = getAdjacentEntries();
+    if (nextId) {
+      // We have a next entry (either from current position or remembered before filtering)
+      setSelectedEntryId(nextId);
+      onOpenEntry(nextId);
+      return;
+    }
+
+    // No next entry known - fall back to index-based navigation
     const currentIndex = getSelectedIndex();
 
     if (currentIndex === -1) {
-      // Nothing selected, go to the first entry
-      const nextId = entryIds[0];
-      setSelectedEntryId(nextId);
-      onOpenEntry(nextId);
-    } else if (currentIndex < entryIds.length - 1) {
-      // Go to next entry
-      const nextId = entryIds[currentIndex + 1];
-      setSelectedEntryId(nextId);
-      onOpenEntry(nextId);
+      // Nothing selected and no remembered next, go to the first entry
+      const firstId = entryIds[0];
+      setSelectedEntryId(firstId);
+      onOpenEntry(firstId);
     }
-    // If already at the last entry, do nothing
-  }, [entryIds, getSelectedIndex, onOpenEntry]);
+    // If at the last entry (nextId is null), do nothing
+  }, [entryIds, getSelectedIndex, onOpenEntry, getAdjacentEntries, setSelectedEntryId]);
 
   // Navigate to and open the previous entry (for use when viewing an entry)
   const goToPreviousEntry = useCallback(() => {
     if (entryIds.length === 0 || !onOpenEntry) return;
 
+    // Use getAdjacentEntries which handles the case where current entry is filtered out
+    const { prevId } = getAdjacentEntries();
+    if (prevId) {
+      // We have a previous entry (either from current position or remembered before filtering)
+      setSelectedEntryId(prevId);
+      onOpenEntry(prevId);
+      return;
+    }
+
+    // No previous entry known - fall back to index-based navigation
     const currentIndex = getSelectedIndex();
 
     if (currentIndex === -1) {
-      // Nothing selected, go to the last entry
-      const prevId = entryIds[entryIds.length - 1];
-      setSelectedEntryId(prevId);
-      onOpenEntry(prevId);
-    } else if (currentIndex > 0) {
-      // Go to previous entry
-      const prevId = entryIds[currentIndex - 1];
-      setSelectedEntryId(prevId);
-      onOpenEntry(prevId);
+      // Nothing selected and no remembered previous, go to the last entry
+      const lastId = entryIds[entryIds.length - 1];
+      setSelectedEntryId(lastId);
+      onOpenEntry(lastId);
     }
-    // If already at the first entry, do nothing
-  }, [entryIds, getSelectedIndex, onOpenEntry]);
+    // If at the first entry (prevId is null), do nothing
+  }, [entryIds, getSelectedIndex, onOpenEntry, getAdjacentEntries, setSelectedEntryId]);
 
   // Open the currently selected entry
   const openSelected = useCallback(() => {
@@ -318,7 +370,7 @@ export function useKeyboardShortcuts(
   // Clear selection
   const clearSelection = useCallback(() => {
     setSelectedEntryId(null);
-  }, []);
+  }, [setSelectedEntryId]);
 
   // Compute whether the selected entry is still in the list
   // If not, we use null instead. This avoids setting state in an effect.
