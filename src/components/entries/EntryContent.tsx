@@ -85,6 +85,12 @@ export function EntryContent({
 
   const entry = data?.entry;
 
+  // Scroll to top when component mounts (i.e., when navigating to a new entry)
+  // This is done here rather than in keyboard handlers because React renders async
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   // Mark entry as read when component mounts and entry is loaded (only once)
   useEffect(() => {
     if (entry && !hasMarkedRead.current) {
