@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
+import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 
 // ============================================================================
 // Types
@@ -112,7 +113,30 @@ function getFeedDisplayName(feed: BrokenFeed): string {
 // ============================================================================
 
 export default function BrokenFeedsPage() {
+  const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+
+  const utils = trpc.useUtils();
   const brokenQuery = trpc.brokenFeeds.list.useQuery();
+
+  const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
+    onSuccess: () => {
+      utils.brokenFeeds.list.invalidate();
+      utils.subscriptions.list.invalidate();
+      utils.entries.list.invalidate();
+      setUnsubscribeTarget(null);
+      toast.success("Unsubscribed from feed");
+    },
+    onError: () => {
+      toast.error("Failed to unsubscribe from feed");
+    },
+  });
+
+  const handleUnsubscribe = (subscriptionId: string, title: string) => {
+    setUnsubscribeTarget({ id: subscriptionId, title });
+  };
 
   const feeds = brokenQuery.data?.items ?? [];
 
@@ -147,11 +171,24 @@ export default function BrokenFeedsPage() {
         ) : (
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {feeds.map((feed) => (
-              <BrokenFeedRow key={feed.feedId} feed={feed} />
+              <BrokenFeedRow key={feed.feedId} feed={feed} onUnsubscribe={handleUnsubscribe} />
             ))}
           </div>
         )}
       </div>
+
+      {/* Unsubscribe Confirmation Dialog */}
+      <UnsubscribeDialog
+        isOpen={unsubscribeTarget !== null}
+        feedTitle={unsubscribeTarget?.title ?? ""}
+        isLoading={unsubscribeMutation.isPending}
+        onConfirm={() => {
+          if (unsubscribeTarget) {
+            unsubscribeMutation.mutate({ id: unsubscribeTarget.id });
+          }
+        }}
+        onCancel={() => setUnsubscribeTarget(null)}
+      />
     </div>
   );
 }
@@ -189,9 +226,10 @@ function EmptyState() {
 
 interface BrokenFeedRowProps {
   feed: BrokenFeed;
+  onUnsubscribe: (subscriptionId: string, title: string) => void;
 }
 
-function BrokenFeedRow({ feed }: BrokenFeedRowProps) {
+function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
   const [isRetrying, setIsRetrying] = useState(false);
 
   const utils = trpc.useUtils();
@@ -264,10 +302,20 @@ function BrokenFeedRow({ feed }: BrokenFeedRowProps) {
           </div>
         </div>
 
-        {/* Retry Button */}
-        <Button variant="secondary" size="sm" onClick={handleRetry} loading={isRetrying}>
-          Retry Now
-        </Button>
+        {/* Action Buttons */}
+        <div className="flex shrink-0 gap-2">
+          <Button variant="secondary" size="sm" onClick={handleRetry} loading={isRetrying}>
+            Retry Now
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onUnsubscribe(feed.subscriptionId, displayName)}
+            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+          >
+            Unsubscribe
+          </Button>
+        </div>
       </div>
     </div>
   );
