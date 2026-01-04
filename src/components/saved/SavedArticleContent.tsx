@@ -84,6 +84,12 @@ export function SavedArticleContent({
 
   const article = data?.entry;
 
+  // Scroll to top when component mounts (i.e., when navigating to a new article)
+  // This is done here rather than in keyboard handlers because React renders async
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   // Mark article as read when component mounts and article is loaded (only once)
   useEffect(() => {
     if (article && !hasMarkedRead.current) {
