@@ -6,31 +6,28 @@ A modern, high-performance feed reader designed for scale.
 
 Lion Reader is a self-hosted feed reader that supports RSS and Atom feeds. It's designed for low hosting costs at small scale while being able to handle growth.
 
-## Current Status: MVP Complete ✅
+## Features
 
-The MVP is fully implemented with the following features:
+- **Feed support** - RSS, Atom, and JSON Feed formats with auto-detection from HTML pages
+- **Email subscriptions** - Subscribe to newsletters via custom ingest email addresses
+- **Real-time updates** - Server-Sent Events (SSE) and WebSub push support
+- **Smart polling** - Respects cache headers with exponential backoff for failed feeds
+- **Entry management** - Read/unread tracking, starring, folders/tags
+- **Saved articles** - Read-it-later functionality for any URL
+- **Audio narration** - Listen to articles with on-device text-to-speech
+- **Multi-user** - Per-user privacy (entries visible only after subscription)
+- **Authentication** - Email/password and OAuth (Google, Apple)
+- **OPML import/export** - Migrate from other readers
+- **Keyboard shortcuts** - Vim-style navigation for power users
+- **REST API** - Public API for third-party clients
+- **Android app** - Native Android client in `android/`
+- **Rate limiting** and **error tracking** with Sentry
 
-- **Email/password authentication** with session management
-- **RSS and Atom feed support** with auto-detection from HTML pages
-- **Real-time updates** via Server-Sent Events (SSE)
-- **Smart polling** that respects cache headers with exponential backoff
-- **Entry management** - read/unread tracking, starring
-- **Multi-user** with per-user privacy (entries visible only after subscription)
-- **Public REST API** for third-party clients
-- **Responsive design** with mobile-friendly UI
-- **Rate limiting** to prevent abuse
-- **Error tracking** with Sentry integration
+### Planned Features
 
-### Future Features (Post-MVP)
-
-- OAuth (Google, Facebook, Apple sign-in)
-- WebSub push support for instant updates
-- JSON Feed format support
-- Email-based subscriptions (Substack newsletters)
-- OPML import/export
-- Keyboard shortcuts
 - Full-text search
-- Folders/organization
+- iOS app
+- Offline/PWA support
 
 ## Tech Stack
 
@@ -43,10 +40,9 @@ The MVP is fully implemented with the following features:
 
 ## Documentation
 
-- [Design Document](docs/DESIGN.md) - Architecture, database schema, API design
-- [MVP Specification](docs/MVP.md) - MVP scope and implementation plan
-- [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment to Fly.io
-- [Operations Runbook](docs/RUNBOOK.md) - Troubleshooting and maintenance
+- [Design Document](docs/DESIGN.md) - Architecture and key design decisions
+- [Deployment Guide](docs/features/DEPLOYMENT.md) - Production deployment to Fly.io
+- Feature design docs in `docs/features/` (audio narration, email subscriptions, etc.)
 
 ## Development
 
