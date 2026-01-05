@@ -227,26 +227,75 @@ ingest.yourdomain.com.  MX  30  route3.mx.cloudflare.net.
 
 #### 3. Cloudflare Email Worker
 
-Create a Cloudflare Email Worker that forwards emails to your Lion Reader instance:
+Create a Cloudflare Email Worker that parses incoming emails and forwards them to your Lion Reader instance. You'll need the `postal-mime` package to parse raw emails.
+
+**wrangler.toml:**
+
+```toml
+name = "lion-reader-email"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+API_URL = "https://your-lion-reader-instance.com"
+
+# Set WEBHOOK_SECRET via: wrangler secret put WEBHOOK_SECRET
+```
+
+**package.json:**
+
+```json
+{
+  "dependencies": {
+    "postal-mime": "^2.0.0"
+  }
+}
+```
+
+**src/index.ts:**
 
 ```typescript
-export default {
-  async email(message: EmailMessage, env: Env): Promise<void> {
-    const email = await parseEmail(message);
+import PostalMime from "postal-mime";
 
+interface Env {
+  API_URL: string;
+  WEBHOOK_SECRET: string;
+}
+
+export default {
+  async email(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Read and parse the raw email
+    const rawEmail = await new Response(message.raw).arrayBuffer();
+    const parser = new PostalMime();
+    const parsed = await parser.parse(rawEmail);
+
+    // Build payload for Lion Reader webhook
+    const payload = {
+      from: message.from,
+      to: message.to,
+      subject: parsed.subject || "",
+      headers: Object.fromEntries(
+        parsed.headers.map((h) => [h.key, h.value])
+      ),
+      text: parsed.text,
+      html: parsed.html,
+      messageId: parsed.messageId,
+    };
+
+    // Forward to Lion Reader
     await fetch(`${env.API_URL}/api/webhooks/email/cloudflare`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Webhook-Secret": env.WEBHOOK_SECRET,
       },
-      body: JSON.stringify(email),
+      body: JSON.stringify(payload),
     });
   },
 };
 ```
 
-Set `API_URL` to your Lion Reader URL and `WEBHOOK_SECRET` to match `EMAIL_WEBHOOK_SECRET`.
+Set the `WEBHOOK_SECRET` using `wrangler secret put WEBHOOK_SECRET` and ensure it matches your `EMAIL_WEBHOOK_SECRET` environment variable in Lion Reader.
 
 ### Features
 
