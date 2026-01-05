@@ -189,6 +189,74 @@ curl -X POST https://your-app/api/trpc/admin.revokeInvite \
   -d '{"inviteId":"<uuid>"}'
 ```
 
+## Email Newsletter Subscriptions
+
+Lion Reader can receive email newsletters, allowing users to subscribe to newsletters using unique ingest email addresses (e.g., `abc123@ingest.yourdomain.com`).
+
+### How It Works
+
+1. Users create ingest addresses in Settings → Email Ingest (max 5 per user)
+2. Users subscribe to newsletters using their ingest address
+3. Incoming emails are forwarded via Cloudflare Email Workers to Lion Reader
+4. Newsletters appear as feeds alongside RSS subscriptions
+
+### Setup Requirements
+
+#### 1. Environment Variables
+
+| Variable               | Default                  | Description                                           |
+| ---------------------- | ------------------------ | ----------------------------------------------------- |
+| `INGEST_EMAIL_DOMAIN`  | `ingest.lionreader.com`  | Domain for ingest email addresses                     |
+| `EMAIL_WEBHOOK_SECRET` | -                        | Secret for authenticating webhook requests (required) |
+
+```bash
+# Fly.io
+fly secrets set INGEST_EMAIL_DOMAIN="ingest.yourdomain.com"
+fly secrets set EMAIL_WEBHOOK_SECRET="$(openssl rand -base64 32)"
+```
+
+#### 2. DNS Configuration
+
+Configure MX records for your ingest domain to point to Cloudflare Email Workers:
+
+```
+ingest.yourdomain.com.  MX  10  route1.mx.cloudflare.net.
+ingest.yourdomain.com.  MX  20  route2.mx.cloudflare.net.
+ingest.yourdomain.com.  MX  30  route3.mx.cloudflare.net.
+```
+
+#### 3. Cloudflare Email Worker
+
+Create a Cloudflare Email Worker that forwards emails to your Lion Reader instance:
+
+```typescript
+export default {
+  async email(message: EmailMessage, env: Env): Promise<void> {
+    const email = await parseEmail(message);
+
+    await fetch(`${env.API_URL}/api/webhooks/email/cloudflare`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Webhook-Secret": env.WEBHOOK_SECRET,
+      },
+      body: JSON.stringify(email),
+    });
+  },
+};
+```
+
+Set `API_URL` to your Lion Reader URL and `WEBHOOK_SECRET` to match `EMAIL_WEBHOOK_SECRET`.
+
+### Features
+
+- **Auto-feed creation**: Each sender becomes a separate feed
+- **Spam filtering**: Cloudflare's spam scores are stored; spam hidden by default
+- **List-Unsubscribe**: Supports RFC 2369/8058 unsubscribe headers
+- **Blocked senders**: Unsubscribing blocks future emails from that sender
+
+See [Email Subscriptions Design](docs/features/email-subscriptions-design.md) for full architecture details.
+
 ## Production Deployment
 
 Lion Reader is configured for deployment to [Fly.io](https://fly.io). See the [Deployment Guide](docs/DEPLOYMENT.md) for detailed instructions.
