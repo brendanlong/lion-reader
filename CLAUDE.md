@@ -1,5 +1,10 @@
 # Lion Reader Development Guidelines
 
+## Documentation
+
+- `docs/` - Design documents and feature specs (feature docs were written at design time and may be outdated)
+- `docs/references/` - Reference documentation for external tools we use. Always consult these before editing related config files to avoid hallucinating invalid options.
+
 ## Coding
 
 - When you're done with a task, always commit the changes. If more changes are needed, you can always
