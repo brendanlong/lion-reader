@@ -263,7 +263,7 @@ interface Env {
 }
 
 export default {
-  async email(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     // Read and parse the raw email
     const rawEmail = await new Response(message.raw).arrayBuffer();
     const parser = new PostalMime();
