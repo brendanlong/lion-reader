@@ -271,13 +271,29 @@ subscriptions.delete        DELETE /v1/subscriptions/:id
 
 ### Cloudflare Email Worker
 
-The Cloudflare Email Worker receives emails and forwards them to our webhook:
+The Cloudflare Email Worker receives emails, parses them using `postal-mime`, and forwards them to our webhook:
 
 ```typescript
-// cloudflare-worker/email-worker.ts
+// cloudflare-worker/src/index.ts
+import PostalMime from "postal-mime";
+
 export default {
-  async email(message: EmailMessage, env: Env): Promise<void> {
-    const email = await parseEmail(message);
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Parse the raw email
+    const rawEmail = await new Response(message.raw).arrayBuffer();
+    const parser = new PostalMime();
+    const parsed = await parser.parse(rawEmail);
+
+    // Build payload matching CloudflareEmailPayload interface
+    const payload = {
+      from: message.from,
+      to: message.to,
+      subject: parsed.subject || "",
+      headers: Object.fromEntries(parsed.headers.map((h) => [h.key, h.value])),
+      text: parsed.text,
+      html: parsed.html,
+      messageId: parsed.messageId,
+    };
 
     await fetch(`${env.API_URL}/api/webhooks/email/cloudflare`, {
       method: "POST",
@@ -285,11 +301,13 @@ export default {
         "Content-Type": "application/json",
         "X-Webhook-Secret": env.WEBHOOK_SECRET,
       },
-      body: JSON.stringify(email),
+      body: JSON.stringify(payload),
     });
   },
 };
 ```
+
+See the README for full setup instructions including `wrangler.toml` and dependencies.
 
 ### Webhook Endpoint
 
