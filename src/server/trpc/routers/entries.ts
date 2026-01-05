@@ -463,7 +463,7 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       // Get the entry with feed and user state
-      // Inner join with user_entries enforces visibility
+      // Permission check is in WHERE: must be starred OR have active subscription OR be from saved feed
       const result = await ctx.db
         .select({
           entry: entries,
@@ -473,7 +473,26 @@ export const entriesRouter = createTRPCRouter({
         .from(entries)
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(and(eq(entries.id, input.id), eq(userEntries.userId, userId)))
+        .leftJoin(
+          subscriptions,
+          and(
+            eq(subscriptions.feedId, entries.feedId),
+            eq(subscriptions.userId, userId),
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .where(
+          and(
+            eq(entries.id, input.id),
+            eq(userEntries.userId, userId),
+            // Permission: starred OR has active subscription OR is user's saved feed
+            or(
+              eq(userEntries.starred, true),
+              sql`${subscriptions.id} IS NOT NULL`,
+              and(eq(feeds.type, "saved"), eq(feeds.userId, userId))
+            )
+          )
+        )
         .limit(1);
 
       if (result.length === 0) {
@@ -481,33 +500,6 @@ export const entriesRouter = createTRPCRouter({
       }
 
       const { entry, feed, userState } = result[0];
-
-      // Entry must be starred OR from an active subscription OR from user's saved feed
-      if (!userState.starred) {
-        // Check for active subscription
-        const activeSubscription = await ctx.db
-          .select({ id: subscriptions.id })
-          .from(subscriptions)
-          .where(
-            and(
-              eq(subscriptions.userId, userId),
-              eq(subscriptions.feedId, entry.feedId),
-              isNull(subscriptions.unsubscribedAt)
-            )
-          )
-          .limit(1);
-
-        // Check if it's from user's saved feed
-        const savedFeed = await ctx.db
-          .select({ id: feeds.id })
-          .from(feeds)
-          .where(and(eq(feeds.id, entry.feedId), eq(feeds.type, "saved"), eq(feeds.userId, userId)))
-          .limit(1);
-
-        if (activeSubscription.length === 0 && savedFeed.length === 0) {
-          throw errors.entryNotFound();
-        }
-      }
 
       return {
         entry: {
