@@ -603,8 +603,9 @@ export const subscriptionsRouter = createTRPCRouter({
         .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)))
         .orderBy(feeds.title);
 
-      // Get all subscription IDs to fetch their tags
+      // Get all subscription IDs and feed IDs for batch queries
       const subscriptionIds = userSubscriptions.map(({ subscription }) => subscription.id);
+      const feedIds = userSubscriptions.map(({ feed }) => feed.id);
 
       // Fetch all tags for all subscriptions in one query
       const subscriptionTagsData =
@@ -633,44 +634,53 @@ export const subscriptionsRouter = createTRPCRouter({
         tagsMap.set(row.subscriptionId, existing);
       }
 
-      // Calculate unread counts for each subscription
-      // An entry is unread if it exists in user_entries with read=false
-      const items = await Promise.all(
-        userSubscriptions.map(async ({ subscription, feed }) => {
-          // Count unread entries visible to this user
-          // Visibility is determined by existence of row in user_entries
-          const unreadResult = await ctx.db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(entries)
-            .innerJoin(
-              userEntries,
-              and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-            )
-            .where(and(eq(entries.feedId, feed.id), eq(userEntries.read, false)));
+      // Fetch unread counts for all feeds in one query
+      const unreadCountsData =
+        feedIds.length > 0
+          ? await ctx.db
+              .select({
+                feedId: entries.feedId,
+                count: sql<number>`count(*)::int`,
+              })
+              .from(entries)
+              .innerJoin(
+                userEntries,
+                and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
+              )
+              .where(and(inArray(entries.feedId, feedIds), eq(userEntries.read, false)))
+              .groupBy(entries.feedId)
+          : [];
 
-          const unreadCount = unreadResult[0]?.count ?? 0;
-          const subscriptionTagsList = tagsMap.get(subscription.id) ?? [];
+      // Create a map of feedId -> unreadCount
+      const unreadCountsMap = new Map<string, number>();
+      for (const row of unreadCountsData) {
+        unreadCountsMap.set(row.feedId, row.count);
+      }
 
-          return {
-            subscription: {
-              id: subscription.id,
-              feedId: subscription.feedId,
-              customTitle: subscription.customTitle,
-              subscribedAt: subscription.subscribedAt,
-              unreadCount,
-              tags: subscriptionTagsList,
-            },
-            feed: {
-              id: feed.id,
-              type: feed.type,
-              url: feed.url,
-              title: feed.title,
-              description: feed.description,
-              siteUrl: feed.siteUrl,
-            },
-          };
-        })
-      );
+      // Build response using the pre-fetched data
+      const items = userSubscriptions.map(({ subscription, feed }) => {
+        const unreadCount = unreadCountsMap.get(feed.id) ?? 0;
+        const subscriptionTagsList = tagsMap.get(subscription.id) ?? [];
+
+        return {
+          subscription: {
+            id: subscription.id,
+            feedId: subscription.feedId,
+            customTitle: subscription.customTitle,
+            subscribedAt: subscription.subscribedAt,
+            unreadCount,
+            tags: subscriptionTagsList,
+          },
+          feed: {
+            id: feed.id,
+            type: feed.type,
+            url: feed.url,
+            title: feed.title,
+            description: feed.description,
+            siteUrl: feed.siteUrl,
+          },
+        };
+      });
 
       return { items };
     }),
