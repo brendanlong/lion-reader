@@ -1,5 +1,6 @@
 # Fly.io configuration for Lion Reader
-# See https://fly.io/docs/reference/configuration/ for all available options
+# IMPORTANT: Before editing, read docs/references/app-config-fly-toml.html for valid options
+# See also: https://fly.io/docs/reference/configuration/
 #
 # Before deploying:
 # 1. Run: fly launch --no-deploy (to create the app and set app name)
