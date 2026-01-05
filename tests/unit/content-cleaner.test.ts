@@ -477,6 +477,45 @@ describe("absolutizeUrls", () => {
       const result = absolutizeUrls(html, baseUrl);
       expect(result).toContain("https://cdn.example.com/small.jpg 1x");
     });
+
+    it("should handle URLs with commas (like Cloudinary URLs)", () => {
+      // Cloudinary uses commas in URL paths for transformations: f_auto,q_auto
+      const html =
+        '<img srcset="https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/foo/bar">';
+      const result = absolutizeUrls(html, baseUrl);
+      // The URL should NOT be split on the comma - it should remain intact
+      expect(result).toContain(
+        "https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/foo/bar"
+      );
+    });
+
+    it("should handle URLs with commas AND descriptors", () => {
+      // Cloudinary URL with a descriptor
+      const html =
+        '<img srcset="https://res.cloudinary.com/example/f_auto,q_auto/image.jpg 1x, https://res.cloudinary.com/example/f_auto,q_auto/image@2x.jpg 2x">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain("https://res.cloudinary.com/example/f_auto,q_auto/image.jpg 1x");
+      expect(result).toContain("https://res.cloudinary.com/example/f_auto,q_auto/image@2x.jpg 2x");
+    });
+
+    it("should handle mixed Cloudinary URLs with absolute paths", () => {
+      // Mix of Cloudinary URL (with commas) and absolute paths
+      const html =
+        '<img srcset="https://res.cloudinary.com/example/f_auto,q_auto/img.jpg 1x, /images/fallback.jpg 2x">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain("https://res.cloudinary.com/example/f_auto,q_auto/img.jpg 1x");
+      expect(result).toContain("https://example.com/images/fallback.jpg 2x");
+    });
+
+    it("should handle multiple commas in a single URL", () => {
+      // URL with multiple transformation parameters
+      const html =
+        '<img srcset="https://res.cloudinary.com/demo/image/upload/c_fill,g_auto,h_250,w_970/docs/shoes.jpg">';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain(
+        "https://res.cloudinary.com/demo/image/upload/c_fill,g_auto,h_250,w_970/docs/shoes.jpg"
+      );
+    });
   });
 
   describe("video poster attributes", () => {

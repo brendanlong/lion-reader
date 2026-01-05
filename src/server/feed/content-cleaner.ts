@@ -85,18 +85,77 @@ function resolveUrl(url: string, baseUrl: string): string | null {
 }
 
 /**
+ * Checks if a srcset entry ends with a descriptor (e.g., "1x", "2x", "480w").
+ */
+function hasDescriptor(entry: string): boolean {
+  return /\s+\d+(\.\d+)?[wx]\s*$/.test(entry);
+}
+
+/**
+ * Checks if a string looks like the start of a new srcset entry.
+ * New entries start with URL schemes, absolute paths, or domain-like patterns.
+ */
+function looksLikeNewSrcsetEntry(str: string): boolean {
+  return (
+    str.startsWith("http://") ||
+    str.startsWith("https://") ||
+    str.startsWith("data:") ||
+    str.startsWith("//") ||
+    str.startsWith("/")
+  );
+}
+
+/**
  * Absolutizes URLs in a srcset attribute value.
  *
  * srcset format: "url width, url width, ..." where width is optional
  * Example: "image.jpg 1x, image@2x.jpg 2x"
+ *
+ * This function handles URLs that contain commas (like Cloudinary URLs with
+ * transformation parameters: f_auto,q_auto) by being smarter about how it
+ * splits entries. It looks for descriptors (1x, 2x, 480w) to identify
+ * entry boundaries, rather than naively splitting on all commas.
  *
  * @param srcset - The srcset attribute value
  * @param baseUrl - The base URL for resolution
  * @returns The srcset with absolute URLs
  */
 function absolutizeSrcset(srcset: string, baseUrl: string): string {
-  return srcset
-    .split(",")
+  // Split on comma first
+  const rawParts = srcset.split(",");
+
+  // Rejoin parts that don't look like new srcset entries.
+  // A comma inside a URL (like Cloudinary's f_auto,q_auto) should not split entries.
+  // We identify entry boundaries by:
+  // 1. The previous part ending with a descriptor (1x, 2x, 480w, etc.)
+  // 2. The current part starting with a URL scheme or absolute path
+  const entries: string[] = [];
+
+  for (const raw of rawParts) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    // First entry is always accepted
+    if (entries.length === 0) {
+      entries.push(trimmed);
+      continue;
+    }
+
+    // Check if this should be a new entry or rejoined with previous
+    const previousEntry = entries[entries.length - 1];
+    const previousHasDescriptor = hasDescriptor(previousEntry);
+    const currentLooksLikeNewEntry = looksLikeNewSrcsetEntry(trimmed);
+
+    if (previousHasDescriptor || currentLooksLikeNewEntry) {
+      // This is a new srcset entry
+      entries.push(trimmed);
+    } else {
+      // This is a continuation of the previous entry (comma was inside URL)
+      entries[entries.length - 1] += "," + trimmed;
+    }
+  }
+
+  return entries
     .map((entry) => {
       const parts = entry.trim().split(/\s+/);
       if (parts.length === 0) return entry;
