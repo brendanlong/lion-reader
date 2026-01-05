@@ -17,12 +17,14 @@ Users can generate unique ingest email addresses to subscribe to newsletters. In
 ### User Flows
 
 **Subscribing to a newsletter:**
+
 1. User creates an ingest address in settings
 2. User subscribes to newsletter using that address
 3. First email from sender creates a new feed (named after sender's display name)
 4. Subsequent emails appear as entries in that feed
 
 **Unsubscribing:**
+
 1. User unsubscribes from feed in Lion Reader
 2. System sends List-Unsubscribe email if available
 3. Sender is added to blocked list
@@ -30,6 +32,7 @@ Users can generate unique ingest email addresses to subscribe to newsletters. In
 5. Subscription is soft-deleted (starred entries preserved)
 
 **Deleting an ingest address:**
+
 1. User deletes ingest address in settings
 2. Future emails to that address are rejected
 3. Existing feeds and entries are unaffected
@@ -78,21 +81,21 @@ The webhook endpoint is provider-specific (`/api/webhooks/email/cloudflare`), bu
 ```typescript
 // Provider-specific webhook parses into this format
 interface InboundEmail {
-  to: string;           // recipient address
+  to: string; // recipient address
   from: {
-    address: string;    // sender email
-    name?: string;      // sender display name
+    address: string; // sender email
+    name?: string; // sender display name
   };
   subject: string;
-  messageId: string;    // Message-ID header (used as entry guid)
+  messageId: string; // Message-ID header (used as entry guid)
   html?: string;
   text?: string;
   headers: {
-    listUnsubscribe?: string;      // List-Unsubscribe header
-    listUnsubscribePost?: string;  // List-Unsubscribe-Post header
+    listUnsubscribe?: string; // List-Unsubscribe header
+    listUnsubscribePost?: string; // List-Unsubscribe-Post header
   };
-  spamScore?: number;   // provider's spam score
-  isSpam?: boolean;     // provider's spam verdict
+  spamScore?: number; // provider's spam score
+  isSpam?: boolean; // provider's spam verdict
 }
 
 // Shared processing logic
@@ -200,10 +203,10 @@ Sender emails are normalized before storage and comparison:
 
 ```typescript
 function normalizeSenderEmail(email: string): string {
-  const [localPart, domain] = email.toLowerCase().split('@');
+  const [localPart, domain] = email.toLowerCase().split("@");
 
   // Strip plus codes (newsletter+tracking@example.com → newsletter@example.com)
-  const normalizedLocal = localPart.split('+')[0];
+  const normalizedLocal = localPart.split("+")[0];
 
   return `${normalizedLocal}@${domain}`;
 }
@@ -277,14 +280,14 @@ export default {
     const email = await parseEmail(message);
 
     await fetch(`${env.API_URL}/api/webhooks/email/cloudflare`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'X-Webhook-Secret': env.WEBHOOK_SECRET,
+        "Content-Type": "application/json",
+        "X-Webhook-Secret": env.WEBHOOK_SECRET,
       },
       body: JSON.stringify(email),
     });
-  }
+  },
 };
 ```
 
@@ -295,9 +298,9 @@ export default {
 
 export async function POST(req: Request) {
   // 1. Verify webhook secret
-  const secret = req.headers.get('X-Webhook-Secret');
+  const secret = req.headers.get("X-Webhook-Secret");
   if (secret !== process.env.EMAIL_WEBHOOK_SECRET) {
-    return new Response('Unauthorized', { status: 401 });
+    return new Response("Unauthorized", { status: 401 });
   }
 
   // 2. Parse Cloudflare-specific format into InboundEmail
@@ -307,7 +310,7 @@ export async function POST(req: Request) {
   // 3. Process with shared logic
   await processInboundEmail(email);
 
-  return new Response('OK', { status: 200 });
+  return new Response("OK", { status: 200 });
 }
 ```
 
@@ -318,13 +321,13 @@ export async function POST(req: Request) {
 
 async function processInboundEmail(email: InboundEmail): Promise<void> {
   // 1. Extract token from recipient (strip plus codes)
-  const token = extractToken(email.to);  // "abc123+ignored" → "abc123"
+  const token = extractToken(email.to); // "abc123+ignored" → "abc123"
 
   // 2. Find ingest address
   const ingestAddress = await db.ingestAddresses.findByToken(token);
   if (!ingestAddress || ingestAddress.deletedAt) {
-    logger.info('Email rejected: invalid or deleted ingest address', { token });
-    return;  // Silently drop
+    logger.info("Email rejected: invalid or deleted ingest address", { token });
+    return; // Silently drop
   }
 
   const userId = ingestAddress.userId;
@@ -335,8 +338,8 @@ async function processInboundEmail(email: InboundEmail): Promise<void> {
   // 4. Check if sender is blocked
   const blocked = await db.blockedSenders.find(userId, senderEmail);
   if (blocked) {
-    logger.info('Email rejected: sender blocked', { senderEmail, userId });
-    return;  // Silently drop
+    logger.info("Email rejected: sender blocked", { senderEmail, userId });
+    return; // Silently drop
   }
 
   // 5. Find or create feed for this sender
@@ -344,10 +347,10 @@ async function processInboundEmail(email: InboundEmail): Promise<void> {
 
   if (!feed) {
     feed = await db.feeds.create({
-      type: 'email',
+      type: "email",
       userId,
       emailSenderPattern: senderEmail,
-      title: email.from.name || senderEmail,  // Default to display name
+      title: email.from.name || senderEmail, // Default to display name
     });
 
     // Auto-create subscription
@@ -361,12 +364,12 @@ async function processInboundEmail(email: InboundEmail): Promise<void> {
   // 6. Check for duplicate (same Message-ID)
   const existingEntry = await db.entries.findByGuid(feed.id, email.messageId);
   if (existingEntry) {
-    logger.info('Email rejected: duplicate Message-ID', { messageId: email.messageId });
+    logger.info("Email rejected: duplicate Message-ID", { messageId: email.messageId });
     return;
   }
 
   // 7. Create entry
-  const content = email.html || email.text || '';
+  const content = email.html || email.text || "";
   const contentHash = hash(content + email.subject);
 
   await db.entries.create({
@@ -374,7 +377,7 @@ async function processInboundEmail(email: InboundEmail): Promise<void> {
     guid: email.messageId,
     title: email.subject,
     contentOriginal: content,
-    contentCleaned: content,  // TODO: sanitize HTML
+    contentCleaned: content, // TODO: sanitize HTML
     summary: truncate(stripHtml(content), 300),
     emailFrom: email.from.address,
     emailSubject: email.subject,
@@ -385,16 +388,19 @@ async function processInboundEmail(email: InboundEmail): Promise<void> {
     isSpam: email.isSpam ?? false,
     listUnsubscribeMailto: parseListUnsubscribeMailto(email.headers.listUnsubscribe),
     listUnsubscribeHttps: parseListUnsubscribeHttps(email.headers.listUnsubscribe),
-    listUnsubscribePost: email.headers.listUnsubscribePost?.includes('One-Click') ?? false,
+    listUnsubscribePost: email.headers.listUnsubscribePost?.includes("One-Click") ?? false,
   });
 
   // 8. Publish real-time event
-  await redis.publish(`feed:${feed.id}:events`, JSON.stringify({
-    type: 'new_entry',
-    feedId: feed.id,
-  }));
+  await redis.publish(
+    `feed:${feed.id}:events`,
+    JSON.stringify({
+      type: "new_entry",
+      feedId: feed.id,
+    })
+  );
 
-  logger.info('Email processed successfully', {
+  logger.info("Email processed successfully", {
     feedId: feed.id,
     senderEmail,
     messageId: email.messageId,
@@ -415,7 +421,7 @@ async function deleteSubscription(subscriptionId: string, userId: string) {
   const subscription = await db.subscriptions.findById(subscriptionId);
   const feed = await db.feeds.findById(subscription.feedId);
 
-  if (feed.type === 'email') {
+  if (feed.type === "email") {
     // 1. Try to send List-Unsubscribe email
     await attemptUnsubscribe(feed, userId);
 
@@ -451,7 +457,7 @@ async function attemptUnsubscribe(feed: Feed, userId: string) {
   }
 
   // No unsubscribe mechanism available - just block
-  logger.info('No List-Unsubscribe available', { feedId: feed.id });
+  logger.info("No List-Unsubscribe available", { feedId: feed.id });
 }
 
 async function sendUnsubscribeEmail(mailto: string) {
@@ -459,24 +465,24 @@ async function sendUnsubscribeEmail(mailto: string) {
   // Format: mailto:unsubscribe@example.com?subject=Unsubscribe
   const url = new URL(mailto);
   const to = url.pathname;
-  const subject = url.searchParams.get('subject') || 'Unsubscribe';
+  const subject = url.searchParams.get("subject") || "Unsubscribe";
 
   // Send via email provider
   await emailProvider.send({
     to,
     subject,
-    text: 'Please unsubscribe this address from your mailing list.',
+    text: "Please unsubscribe this address from your mailing list.",
   });
 }
 
 async function sendUnsubscribePost(url: string) {
   // RFC 8058 one-click unsubscribe
   await fetch(url, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: 'List-Unsubscribe=One-Click',
+    body: "List-Unsubscribe=One-Click",
   });
 }
 ```
@@ -495,7 +501,7 @@ Cloudflare Email Workers can be configured to reject obvious spam before it reac
 // Entries query respects user's spam preference
 const entries = await db.entries.list({
   feedId,
-  showSpam: user.showSpam,  // Defaults to false
+  showSpam: user.showSpam, // Defaults to false
 });
 
 // SQL: WHERE (NOT is_spam OR :showSpam)

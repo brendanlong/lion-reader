@@ -2183,47 +2183,47 @@ dependencies {
 
 ### Core
 
-| Component | Library | Rationale |
-|-----------|---------|-----------|
-| Language | Kotlin 1.9+ | Modern, concise, null-safe |
-| Min SDK | 26 (Android 8.0) | 95%+ device coverage |
-| Target SDK | 34 (Android 14) | Latest features |
-| UI | Jetpack Compose | Modern declarative UI |
-| Navigation | Compose Navigation | Type-safe, integrated |
+| Component  | Library            | Rationale                  |
+| ---------- | ------------------ | -------------------------- |
+| Language   | Kotlin 1.9+        | Modern, concise, null-safe |
+| Min SDK    | 26 (Android 8.0)   | 95%+ device coverage       |
+| Target SDK | 34 (Android 14)    | Latest features            |
+| UI         | Jetpack Compose    | Modern declarative UI      |
+| Navigation | Compose Navigation | Type-safe, integrated      |
 
 ### Architecture
 
-| Component | Library | Rationale |
-|-----------|---------|-----------|
-| DI | Hilt | Official, compile-time safe |
-| Async | Kotlin Coroutines + Flow | Native, structured concurrency |
-| State | StateFlow | Lifecycle-aware, composable |
+| Component | Library                  | Rationale                      |
+| --------- | ------------------------ | ------------------------------ |
+| DI        | Hilt                     | Official, compile-time safe    |
+| Async     | Kotlin Coroutines + Flow | Native, structured concurrency |
+| State     | StateFlow                | Lifecycle-aware, composable    |
 
 ### Data
 
-| Component | Library | Rationale |
-|-----------|---------|-----------|
-| Local DB | Room | Official, type-safe, Flow support |
-| HTTP | Ktor Client | Kotlin-native, multiplatform ready |
-| JSON | Kotlinx Serialization | Native, fast, no reflection |
-| Secure Storage | EncryptedSharedPreferences | Token security |
-| HTML Parsing | Jsoup | Reliable HTML to text conversion |
+| Component      | Library                    | Rationale                          |
+| -------------- | -------------------------- | ---------------------------------- |
+| Local DB       | Room                       | Official, type-safe, Flow support  |
+| HTTP           | Ktor Client                | Kotlin-native, multiplatform ready |
+| JSON           | Kotlinx Serialization      | Native, fast, no reflection        |
+| Secure Storage | EncryptedSharedPreferences | Token security                     |
+| HTML Parsing   | Jsoup                      | Reliable HTML to text conversion   |
 
 ### Background
 
-| Component | Library | Rationale |
-|-----------|---------|-----------|
-| Background Work | WorkManager | Battery-efficient, constraint-aware |
-| Media | MediaSessionCompat | System media controls integration |
-| TTS | Android TextToSpeech | Built-in, no API cost |
+| Component       | Library              | Rationale                           |
+| --------------- | -------------------- | ----------------------------------- |
+| Background Work | WorkManager          | Battery-efficient, constraint-aware |
+| Media           | MediaSessionCompat   | System media controls integration   |
+| TTS             | Android TextToSpeech | Built-in, no API cost               |
 
 ### Development
 
-| Component | Library | Rationale |
-|-----------|---------|-----------|
-| Build | Gradle (KTS) | Type-safe, IDE support |
-| Testing | JUnit5, Turbine, MockK | Modern testing stack |
-| Lint | Detekt, ktlint | Code quality |
+| Component | Library                | Rationale              |
+| --------- | ---------------------- | ---------------------- |
+| Build     | Gradle (KTS)           | Type-safe, IDE support |
+| Testing   | JUnit5, Turbine, MockK | Modern testing stack   |
+| Lint      | Detekt, ktlint         | Code quality           |
 
 ---
 

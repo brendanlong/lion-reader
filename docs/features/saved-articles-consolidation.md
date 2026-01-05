@@ -7,6 +7,7 @@ This document describes consolidating the `saved_articles` table into the existi
 ## Current State
 
 ### Saved Articles Table
+
 ```sql
 saved_articles (
   id UUID PRIMARY KEY,
@@ -41,10 +42,12 @@ saved_articles (
 ### Follow the Email Feed Pattern
 
 Email subscriptions established that feeds can be per-user:
+
 - `feeds.type = 'email'` → `feeds.user_id` is set
 - `feeds.type IN ('rss', 'atom', 'json')` → `feeds.user_id` is NULL (shared)
 
 Saved articles follow the same pattern:
+
 - `feeds.type = 'saved'` → `feeds.user_id` is set
 - One "saved" feed per user containing all their saved articles
 
@@ -72,6 +75,7 @@ CREATE UNIQUE INDEX uq_feeds_saved_user
 #### 3. Add type column to entries
 
 Denormalize the feed type onto entries. This enables:
+
 - Check constraints for type-specific columns
 - Faster queries without joining to feeds
 - Self-documenting schema
@@ -115,10 +119,12 @@ ALTER TABLE entries ADD CONSTRAINT entries_saved_metadata_only_saved
 ```
 
 Note: `guid` and `fetched_at` remain NOT NULL. For saved articles:
+
 - `guid` = the URL (serves as the unique deduplication key)
 - `fetched_at` = when the article was saved/fetched
 
 This keeps the schema simpler and maintains consistent semantics:
+
 - `guid`: "The unique key for deduplication within this feed"
 - `fetched_at`: "When we acquired this entry"
 
@@ -142,7 +148,9 @@ export const entries = pgTable(
   "entries",
   {
     id: uuid("id").primaryKey(),
-    feedId: uuid("feed_id").notNull().references(() => feeds.id, { onDelete: "cascade" }),
+    feedId: uuid("feed_id")
+      .notNull()
+      .references(() => feeds.id, { onDelete: "cascade" }),
     type: feedTypeEnum("type").notNull(), // Denormalized from feed
 
     // Identifier - always required, but meaning varies by type:
@@ -191,17 +199,17 @@ export const entries = pgTable(
 
 ### Column Usage by Entry Type
 
-| Column | rss/atom/json | email | saved |
-|--------|---------------|-------|-------|
-| `guid` | From feed | Message-ID | URL |
-| `url` | Optional | Optional | Same as guid |
-| `fetched_at` | When polled | When received | When saved |
-| `published_at` | From feed | Date header | When saved |
-| `site_name` | NULL | NULL | Optional |
-| `image_url` | NULL | NULL | Optional |
-| `spam_score` | NULL | Optional | NULL |
-| `is_spam` | false | true/false | false |
-| `list_unsubscribe_*` | NULL | Optional | NULL |
+| Column               | rss/atom/json | email         | saved        |
+| -------------------- | ------------- | ------------- | ------------ |
+| `guid`               | From feed     | Message-ID    | URL          |
+| `url`                | Optional      | Optional      | Same as guid |
+| `fetched_at`         | When polled   | When received | When saved   |
+| `published_at`       | From feed     | Date header   | When saved   |
+| `site_name`          | NULL          | NULL          | Optional     |
+| `image_url`          | NULL          | NULL          | Optional     |
+| `spam_score`         | NULL          | Optional      | NULL         |
+| `is_spam`            | false         | true/false    | false        |
+| `list_unsubscribe_*` | NULL          | Optional      | NULL         |
 
 ## Saved Feed Management
 
@@ -217,7 +225,7 @@ async function getOrCreateSavedFeed(db: DB, userId: string): Promise<string> {
   const existing = await db
     .select({ id: feeds.id })
     .from(feeds)
-    .where(and(eq(feeds.type, 'saved'), eq(feeds.userId, userId)))
+    .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)))
     .limit(1);
 
   if (existing.length > 0) {
@@ -228,9 +236,9 @@ async function getOrCreateSavedFeed(db: DB, userId: string): Promise<string> {
   const feedId = generateUuidv7();
   await db.insert(feeds).values({
     id: feedId,
-    type: 'saved',
+    type: "saved",
     userId,
-    title: 'Saved Articles',
+    title: "Saved Articles",
     createdAt: new Date(),
     updatedAt: new Date(),
   });
@@ -252,10 +260,7 @@ async function getOrCreateSavedFeed(db: DB, userId: string): Promise<string> {
 ```typescript
 // Entry must be from active subscription OR starred
 conditions.push(
-  or(
-    inArray(entries.feedId, activeSubscriptionFeedIds),
-    eq(userEntries.starred, true)
-  )
+  or(inArray(entries.feedId, activeSubscriptionFeedIds), eq(userEntries.starred, true))
 );
 ```
 
@@ -269,7 +274,7 @@ conditions.push(
 const savedFeedIds = db
   .select({ id: feeds.id })
   .from(feeds)
-  .where(and(eq(feeds.type, 'saved'), eq(feeds.userId, userId)));
+  .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
 
 conditions.push(
   or(
@@ -281,6 +286,7 @@ conditions.push(
 ```
 
 Alternatively, treat saved feed as implicitly subscribed (cleaner):
+
 - When creating saved feed, also create a subscription row
 - Then existing subscription logic handles visibility
 
@@ -289,6 +295,7 @@ Alternatively, treat saved feed as implicitly subscribed (cleaner):
 ### Option A: Keep Separate Routers (Recommended for now)
 
 Keep `saved.*` router but reimplement using entries table:
+
 - `saved.save` → Creates entry in saved feed
 - `saved.list` → Lists entries from saved feed
 - `saved.delete` → Deletes entry from saved feed
@@ -300,11 +307,12 @@ Cons: Some code duplication
 ### Option B: Unified Entries Router
 
 Add source filter to entries router:
+
 ```typescript
 entries.list({
-  source: 'all' | 'feeds' | 'saved',
+  source: "all" | "feeds" | "saved",
   // ... other filters
-})
+});
 ```
 
 Pros: Cleaner long-term
@@ -445,12 +453,12 @@ DROP TABLE saved_articles;
 
 ## Risks and Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Migration data loss | Run in transaction, test on staging first |
-| API breaking changes | Keep saved router as wrapper initially |
-| Performance regression | Add appropriate indexes before migration |
-| Saved feed deletion | `getOrCreateSavedFeed()` recreates on demand |
+| Risk                   | Mitigation                                   |
+| ---------------------- | -------------------------------------------- |
+| Migration data loss    | Run in transaction, test on staging first    |
+| API breaking changes   | Keep saved router as wrapper initially       |
+| Performance regression | Add appropriate indexes before migration     |
+| Saved feed deletion    | `getOrCreateSavedFeed()` recreates on demand |
 
 ## Future Considerations
 
