@@ -278,7 +278,7 @@ The Cloudflare Email Worker receives emails, parses them using `postal-mime`, an
 import PostalMime from "postal-mime";
 
 export default {
-  async email(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     // Parse the raw email
     const rawEmail = await new Response(message.raw).arrayBuffer();
     const parser = new PostalMime();
