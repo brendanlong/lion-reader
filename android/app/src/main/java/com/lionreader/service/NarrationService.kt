@@ -152,6 +152,12 @@ class NarrationService : MediaSessionService() {
                         handleParagraphChangedFromPlayer(newIndex)
                     }
                 },
+                onPlayingChanged = { playing ->
+                    // Update service state when MediaSession triggers play/pause
+                    serviceScope.launch(Dispatchers.Main) {
+                        handlePlayingChangedFromPlayer(playing)
+                    }
+                },
                 onError = { message ->
                     serviceScope.launch(Dispatchers.Main) {
                         _playbackState.value = NarrationState.Error(message)
@@ -380,6 +386,38 @@ class NarrationService : MediaSessionService() {
 
         currentParagraphIndex = newIndex
         if (isPlaying) {
+            _playbackState.value =
+                NarrationState.Playing(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+        } else {
+            _playbackState.value =
+                NarrationState.Paused(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+        }
+        updateNotification()
+    }
+
+    /**
+     * Called when the TtsPlayer changes playback state due to MediaSession commands
+     * (e.g., play/pause from notification or Bluetooth controls).
+     */
+    private fun handlePlayingChangedFromPlayer(playing: Boolean) {
+        if (playing == isPlaying) return
+
+        isPlaying = playing
+        if (playing) {
             _playbackState.value =
                 NarrationState.Playing(
                     entryId = currentEntryId ?: "",
