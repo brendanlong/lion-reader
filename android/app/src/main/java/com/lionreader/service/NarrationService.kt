@@ -1,23 +1,20 @@
 package com.lionreader.service
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Binder
 import android.os.IBinder
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
-import android.support.v4.media.session.MediaSessionCompat
-import android.support.v4.media.session.PlaybackStateCompat
+import android.os.Looper
 import androidx.core.app.NotificationCompat
-import androidx.media.session.MediaButtonReceiver
-import com.lionreader.R
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaStyleNotificationHelper
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
 import com.lionreader.data.api.models.ParagraphMapEntry
@@ -31,17 +28,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.Locale
 import javax.inject.Inject
 
+@UnstableApi
 @AndroidEntryPoint
-class NarrationService : Service() {
+class NarrationService : MediaSessionService() {
     @Inject
     lateinit var api: LionReaderApi
 
-    private var mediaSession: MediaSessionCompat? = null
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
+    private var mediaSession: MediaSession? = null
+    private var ttsPlayer: TtsPlayer? = null
 
     // Audio focus management - required for Bluetooth media button routing
     private lateinit var audioManager: AudioManager
@@ -105,19 +101,20 @@ class NarrationService : Service() {
         fun getService(): NarrationService = this@NarrationService
     }
 
-    override fun onBind(intent: Intent): IBinder = binder
+    override fun onBind(intent: Intent?): IBinder? {
+        // Allow both MediaSessionService binding and our custom binder
+        val superBinder = super.onBind(intent)
+        return if (intent?.action == SERVICE_INTERFACE) {
+            superBinder
+        } else {
+            binder
+        }
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onCreate() {
         super.onCreate()
-
-        // Initialize TTS
-        tts =
-            TextToSpeech(this) { status ->
-                if (status == TextToSpeech.SUCCESS) {
-                    tts?.language = Locale.US
-                    ttsReady = true
-                }
-            }
 
         // Initialize audio focus management
         audioManager = getSystemService(AudioManager::class.java)
@@ -135,40 +132,55 @@ class NarrationService : Service() {
                 .setWillPauseWhenDucked(true)
                 .build()
 
-        // Create media session
+        // Create notification channel
+        createNotificationChannel()
+
+        // Initialize TTS player
+        ttsPlayer =
+            TtsPlayer(
+                context = this,
+                looper = Looper.getMainLooper(),
+                onParagraphCompleted = {
+                    // Advance to next paragraph when current one finishes
+                    serviceScope.launch(Dispatchers.Main) {
+                        advanceToNextParagraph()
+                    }
+                },
+                onParagraphChanged = { newIndex ->
+                    // Update service state when MediaSession triggers paragraph change
+                    serviceScope.launch(Dispatchers.Main) {
+                        handleParagraphChangedFromPlayer(newIndex)
+                    }
+                },
+                onError = { message ->
+                    serviceScope.launch(Dispatchers.Main) {
+                        _playbackState.value = NarrationState.Error(message)
+                    }
+                },
+            )
+
+        // Create media session with Media3
         mediaSession =
-            MediaSessionCompat(this, "NarrationService").apply {
-                setCallback(mediaSessionCallback)
-                isActive = true
-            }
+            MediaSession
+                .Builder(this, ttsPlayer!!)
+                .setCallback(mediaSessionCallback)
+                .build()
     }
 
     private val mediaSessionCallback =
-        object : MediaSessionCompat.Callback() {
-            override fun onPlay() = resumePlayback()
-
-            override fun onPause() = pausePlayback()
-
-            override fun onStop() = stopPlayback()
-
-            override fun onSkipToNext() = skipToNextParagraph()
-
-            override fun onSkipToPrevious() = skipToPreviousParagraph()
-
-            // Handle play/pause toggle from Bluetooth headphone buttons
-            override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
-                val keyEvent = mediaButtonEvent?.getParcelableExtra<android.view.KeyEvent>(Intent.EXTRA_KEY_EVENT)
-                if (keyEvent?.action == android.view.KeyEvent.ACTION_DOWN) {
-                    when (keyEvent.keyCode) {
-                        android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                        android.view.KeyEvent.KEYCODE_HEADSETHOOK,
-                        -> {
-                            togglePlayback()
-                            return true
-                        }
-                    }
-                }
-                return super.onMediaButtonEvent(mediaButtonEvent)
+        object : MediaSession.Callback {
+            override fun onConnect(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+            ): MediaSession.ConnectionResult {
+                // Accept all connections
+                return MediaSession.ConnectionResult
+                    .AcceptedResultBuilder(session)
+                    .setAvailablePlayerCommands(
+                        MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS,
+                    ).setAvailableSessionCommands(
+                        MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS,
+                    ).build()
             }
         }
 
@@ -284,13 +296,22 @@ class NarrationService : Service() {
         currentParagraphIndex = 0
         currentSource = source
 
+        // Set up the TTS player with paragraphs
+        ttsPlayer?.setParagraphs(
+            paragraphs = paragraphs,
+            title = currentEntryTitle ?: "Untitled",
+            feedTitle = currentFeedTitle ?: "",
+        )
+
         // Update notification and start playback
         updateNotification()
         playCurrentParagraph()
     }
 
     private fun playCurrentParagraph() {
-        if (!ttsReady) {
+        val player = ttsPlayer ?: return
+
+        if (!player.isTtsReady()) {
             _playbackState.value = NarrationState.Error("TTS not ready")
             return
         }
@@ -311,7 +332,6 @@ class NarrationService : Service() {
             hasAudioFocus = true
         }
 
-        val paragraph = paragraphs[currentParagraphIndex]
         isPlaying = true
 
         _playbackState.value =
@@ -324,37 +344,67 @@ class NarrationService : Service() {
                 highlightedElementIndex = getElementIndex(currentParagraphIndex),
             )
 
-        tts?.setOnUtteranceProgressListener(
-            object : UtteranceProgressListener() {
-                override fun onDone(utteranceId: String?) {
-                    if (isPlaying) {
-                        currentParagraphIndex++
-                        playCurrentParagraph()
-                    }
-                }
+        // Start playback via the player
+        player.play()
+        updateNotification()
+    }
 
-                override fun onError(utteranceId: String?) {
-                    _playbackState.value = NarrationState.Error("TTS error")
-                }
+    private fun advanceToNextParagraph() {
+        if (currentParagraphIndex < paragraphs.size - 1) {
+            currentParagraphIndex++
+            // Skip to the new paragraph index, notifyChange=false since service initiated
+            ttsPlayer?.skipToParagraph(currentParagraphIndex, notifyChange = false)
 
-                override fun onStart(utteranceId: String?) {
-                    updateNotification()
-                }
-            },
-        )
+            _playbackState.value =
+                NarrationState.Playing(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+            updateNotification()
+        } else {
+            // Finished all paragraphs
+            stopPlayback()
+        }
+    }
 
-        tts?.speak(
-            paragraph,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "paragraph_$currentParagraphIndex",
-        )
+    /**
+     * Called when the TtsPlayer changes paragraph due to MediaSession commands
+     * (e.g., skip next/previous from notification or Bluetooth controls).
+     */
+    private fun handleParagraphChangedFromPlayer(newIndex: Int) {
+        if (newIndex == currentParagraphIndex) return
 
-        updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
+        currentParagraphIndex = newIndex
+        if (isPlaying) {
+            _playbackState.value =
+                NarrationState.Playing(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+        } else {
+            _playbackState.value =
+                NarrationState.Paused(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+        }
+        updateNotification()
     }
 
     fun pausePlayback() {
-        tts?.stop()
+        ttsPlayer?.pause()
         isPlaying = false
 
         _playbackState.value =
@@ -367,7 +417,6 @@ class NarrationService : Service() {
                 highlightedElementIndex = getElementIndex(currentParagraphIndex),
             )
 
-        updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
         updateNotification()
     }
 
@@ -384,7 +433,7 @@ class NarrationService : Service() {
     }
 
     fun stopPlayback() {
-        tts?.stop()
+        ttsPlayer?.stop()
         isPlaying = false
         currentEntryId = null
         currentEntryTitle = null
@@ -408,10 +457,18 @@ class NarrationService : Service() {
 
     fun skipToNextParagraph() {
         if (currentParagraphIndex < paragraphs.size - 1) {
-            tts?.stop()
             currentParagraphIndex++
+            ttsPlayer?.skipToParagraph(currentParagraphIndex, notifyChange = false)
             if (isPlaying) {
-                playCurrentParagraph()
+                _playbackState.value =
+                    NarrationState.Playing(
+                        entryId = currentEntryId ?: "",
+                        currentParagraph = currentParagraphIndex,
+                        totalParagraphs = paragraphs.size,
+                        entryTitle = currentEntryTitle ?: "Untitled",
+                        source = currentSource,
+                        highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                    )
             } else {
                 _playbackState.value =
                     NarrationState.Paused(
@@ -423,15 +480,24 @@ class NarrationService : Service() {
                         highlightedElementIndex = getElementIndex(currentParagraphIndex),
                     )
             }
+            updateNotification()
         }
     }
 
     fun skipToPreviousParagraph() {
         if (currentParagraphIndex > 0) {
-            tts?.stop()
             currentParagraphIndex--
+            ttsPlayer?.skipToParagraph(currentParagraphIndex, notifyChange = false)
             if (isPlaying) {
-                playCurrentParagraph()
+                _playbackState.value =
+                    NarrationState.Playing(
+                        entryId = currentEntryId ?: "",
+                        currentParagraph = currentParagraphIndex,
+                        totalParagraphs = paragraphs.size,
+                        entryTitle = currentEntryTitle ?: "Untitled",
+                        source = currentSource,
+                        highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                    )
             } else {
                 _playbackState.value =
                     NarrationState.Paused(
@@ -443,11 +509,12 @@ class NarrationService : Service() {
                         highlightedElementIndex = getElementIndex(currentParagraphIndex),
                     )
             }
+            updateNotification()
         }
     }
 
-    private fun createNotification(): Notification {
-        val channelId = createNotificationChannel()
+    private fun createNotification(): android.app.Notification {
+        val channelId = NOTIFICATION_CHANNEL_ID
 
         return NotificationCompat
             .Builder(this, channelId)
@@ -457,9 +524,8 @@ class NarrationService : Service() {
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .setStyle(
-                androidx.media.app.NotificationCompat
-                    .MediaStyle()
-                    .setMediaSession(mediaSession?.sessionToken)
+                MediaStyleNotificationHelper
+                    .MediaStyle(mediaSession!!)
                     .setShowActionsInCompactView(0, 1, 2),
             ).addAction(
                 android.R.drawable.ic_media_previous,
@@ -476,11 +542,10 @@ class NarrationService : Service() {
             ).build()
     }
 
-    private fun createNotificationChannel(): String {
-        val channelId = "narration"
+    private fun createNotificationChannel() {
         val channel =
             NotificationChannel(
-                channelId,
+                NOTIFICATION_CHANNEL_ID,
                 "Narration",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
@@ -490,25 +555,6 @@ class NarrationService : Service() {
 
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(channel)
-
-        return channelId
-    }
-
-    private fun updatePlaybackState(state: Int) {
-        val playbackState =
-            PlaybackStateCompat
-                .Builder()
-                .setActions(
-                    PlaybackStateCompat.ACTION_PLAY or
-                        PlaybackStateCompat.ACTION_PAUSE or
-                        PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                        PlaybackStateCompat.ACTION_STOP,
-                ).setState(state, currentParagraphIndex.toLong(), 1f)
-                .build()
-
-        mediaSession?.setPlaybackState(playbackState)
     }
 
     private fun updateNotification() {
@@ -523,7 +569,7 @@ class NarrationService : Service() {
             }
         return PendingIntent.getService(
             this,
-            0,
+            action.hashCode(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -534,12 +580,6 @@ class NarrationService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        // Handle media button events from Bluetooth headphones
-        if (intent?.action == Intent.ACTION_MEDIA_BUTTON) {
-            MediaButtonReceiver.handleIntent(mediaSession, intent)
-            return START_NOT_STICKY
-        }
-
         when (intent?.action) {
             ACTION_PLAY -> resumePlayback()
             ACTION_PAUSE -> pausePlayback()
@@ -547,7 +587,7 @@ class NarrationService : Service() {
             ACTION_PREVIOUS -> skipToPreviousParagraph()
             ACTION_STOP -> stopPlayback()
         }
-        return START_NOT_STICKY
+        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onDestroy() {
@@ -558,12 +598,15 @@ class NarrationService : Service() {
         }
         serviceScope.cancel()
         mediaSession?.release()
-        tts?.shutdown()
+        mediaSession = null
+        ttsPlayer?.shutdown()
+        ttsPlayer = null
         super.onDestroy()
     }
 
     companion object {
         const val NOTIFICATION_ID = 1
+        const val NOTIFICATION_CHANNEL_ID = "narration"
         const val ACTION_PLAY = "com.lionreader.PLAY"
         const val ACTION_PAUSE = "com.lionreader.PAUSE"
         const val ACTION_NEXT = "com.lionreader.NEXT"
