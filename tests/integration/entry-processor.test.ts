@@ -434,7 +434,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      const result = await processEntries(feed.id, parsedFeed);
+      const result = await processEntries(feed.id, feed.type, parsedFeed);
 
       expect(result.newCount).toBe(3);
       expect(result.updatedCount).toBe(0);
@@ -461,7 +461,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      await processEntries(feed.id, firstFeed);
+      await processEntries(feed.id, feed.type, firstFeed);
 
       // Second fetch: 1 unchanged, 1 updated, 1 new
       const secondFeed: ParsedFeed = {
@@ -473,7 +473,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      const result = await processEntries(feed.id, secondFeed);
+      const result = await processEntries(feed.id, feed.type, secondFeed);
 
       expect(result.newCount).toBe(1);
       expect(result.updatedCount).toBe(1);
@@ -489,7 +489,7 @@ describe("Entry Processor", () => {
         items: [{ guid: "timestamped-entry", title: "Entry", content: "Content" }],
       };
 
-      await processEntries(feed.id, parsedFeed, { fetchedAt: customFetchedAt });
+      await processEntries(feed.id, feed.type, parsedFeed, { fetchedAt: customFetchedAt });
 
       const entry = await findEntryByGuid(feed.id, "timestamped-entry");
       expect(entry?.fetchedAt.toISOString()).toBe(customFetchedAt.toISOString());
@@ -507,7 +507,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      const result = await processEntries(feed.id, parsedFeed);
+      const result = await processEntries(feed.id, feed.type, parsedFeed);
 
       // Should process the valid entries
       expect(result.newCount).toBe(2);
@@ -522,7 +522,7 @@ describe("Entry Processor", () => {
         items: [],
       };
 
-      const result = await processEntries(feed.id, parsedFeed);
+      const result = await processEntries(feed.id, feed.type, parsedFeed);
 
       expect(result.newCount).toBe(0);
       expect(result.updatedCount).toBe(0);
@@ -543,7 +543,7 @@ describe("Entry Processor", () => {
       };
 
       // First entry creates, second updates (since content differs)
-      const result = await processEntries(feed.id, parsedFeed);
+      const result = await processEntries(feed.id, feed.type, parsedFeed);
 
       expect(result.newCount).toBe(1);
       expect(result.updatedCount).toBe(1);

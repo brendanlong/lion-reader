@@ -23,6 +23,7 @@ import {
   calculateNextFetch,
   renewExpiringSubscriptions,
   type FetchFeedResult,
+  type ParsedCacheHeaders,
 } from "../feed";
 import { type JobPayloads, createOrEnableFeedJob, enableFeedJob } from "./queue";
 import { logger } from "@/lib/logger";
@@ -143,6 +144,103 @@ function getMetricsStatus(
 }
 
 /**
+ * Processes a successful feed fetch.
+ *
+ * This is separated from processFetchResult to allow the raw body and parsed feed
+ * to be garbage collected after entry processing completes, before the function returns.
+ * This reduces peak memory usage for feeds with large content.
+ *
+ * @param feed - The feed record from the database
+ * @param body - The raw feed body (XML/JSON string)
+ * @param cacheHeaders - Parsed cache headers from the response
+ * @param now - Current timestamp
+ * @returns Job handler result with next run time
+ */
+async function processSuccessfulFetch(
+  feed: Feed,
+  body: string,
+  cacheHeaders: ParsedCacheHeaders,
+  now: Date
+): Promise<JobHandlerResult> {
+  // Parse the feed content
+  let parsedFeed;
+  try {
+    parsedFeed = parseFeed(body);
+  } catch (error) {
+    // Parsing failed - treat as error
+    const errorMessage = error instanceof Error ? error.message : "Failed to parse feed";
+    const nextFetch = calculateNextFetch({
+      consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
+      now,
+    });
+    await updateFeedOnError(feed.id, errorMessage, now, nextFetch.nextFetchAt);
+    return {
+      success: false,
+      nextRunAt: nextFetch.nextFetchAt,
+      error: errorMessage,
+    };
+  }
+
+  // Extract metadata we need before processing entries
+  // This allows parsedFeed.items (the large part) to be GC'd after processEntries
+  const feedMetadata = {
+    title: parsedFeed.title,
+    description: parsedFeed.description,
+    siteUrl: parsedFeed.siteUrl,
+    hubUrl: parsedFeed.hubUrl,
+    selfUrl: parsedFeed.selfUrl,
+    ttlMinutes: parsedFeed.ttlMinutes,
+    syndication: parsedFeed.syndication,
+  };
+
+  // Process entries (create new, update changed)
+  // After this call, parsedFeed can be GC'd since we only use feedMetadata below
+  const processResult = await processEntries(feed.id, feed.type, parsedFeed, { fetchedAt: now });
+
+  // Calculate next fetch time based on cache headers and feed hints
+  const nextFetch = calculateNextFetch({
+    cacheControl: cacheHeaders.cacheControl,
+    feedHints: {
+      ttlMinutes: feedMetadata.ttlMinutes,
+      syndication: feedMetadata.syndication,
+    },
+    consecutiveFailures: 0, // Reset failures on success
+    now,
+  });
+
+  // Update feed metadata including WebSub hub discovery
+  await db
+    .update(feeds)
+    .set({
+      title: feedMetadata.title || feed.title,
+      description: feedMetadata.description || feed.description,
+      siteUrl: feedMetadata.siteUrl || feed.siteUrl,
+      etag: cacheHeaders.etag ?? feed.etag,
+      lastModifiedHeader: cacheHeaders.lastModified ?? feed.lastModifiedHeader,
+      lastFetchedAt: now,
+      nextFetchAt: nextFetch.nextFetchAt,
+      consecutiveFailures: 0,
+      lastError: null,
+      // Store WebSub hub and self URLs if discovered
+      hubUrl: feedMetadata.hubUrl ?? feed.hubUrl,
+      selfUrl: feedMetadata.selfUrl ?? feed.selfUrl,
+      updatedAt: now,
+    })
+    .where(eq(feeds.id, feed.id));
+
+  return {
+    success: true,
+    nextRunAt: nextFetch.nextFetchAt,
+    metadata: {
+      newEntries: processResult.newCount,
+      updatedEntries: processResult.updatedCount,
+      unchangedEntries: processResult.unchangedCount,
+      nextFetchReason: nextFetch.reason,
+    },
+  };
+}
+
+/**
  * Processes the fetch result and updates the feed accordingly.
  *
  * @param feed - The feed record from the database
@@ -154,69 +252,8 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 
   switch (result.status) {
     case "success": {
-      // Parse the feed content
-      let parsedFeed;
-      try {
-        parsedFeed = parseFeed(result.body);
-      } catch (error) {
-        // Parsing failed - treat as error
-        const errorMessage = error instanceof Error ? error.message : "Failed to parse feed";
-        const nextFetch = calculateNextFetch({
-          consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
-          now,
-        });
-        await updateFeedOnError(feed.id, errorMessage, now, nextFetch.nextFetchAt);
-        return {
-          success: false,
-          nextRunAt: nextFetch.nextFetchAt,
-          error: errorMessage,
-        };
-      }
-
-      // Process entries (create new, update changed)
-      const processResult = await processEntries(feed.id, parsedFeed, { fetchedAt: now });
-
-      // Calculate next fetch time based on cache headers and feed hints
-      const nextFetch = calculateNextFetch({
-        cacheControl: result.cacheHeaders.cacheControl,
-        feedHints: {
-          ttlMinutes: parsedFeed.ttlMinutes,
-          syndication: parsedFeed.syndication,
-        },
-        consecutiveFailures: 0, // Reset failures on success
-        now,
-      });
-
-      // Update feed metadata including WebSub hub discovery
-      await db
-        .update(feeds)
-        .set({
-          title: parsedFeed.title || feed.title,
-          description: parsedFeed.description || feed.description,
-          siteUrl: parsedFeed.siteUrl || feed.siteUrl,
-          etag: result.cacheHeaders.etag ?? feed.etag,
-          lastModifiedHeader: result.cacheHeaders.lastModified ?? feed.lastModifiedHeader,
-          lastFetchedAt: now,
-          nextFetchAt: nextFetch.nextFetchAt,
-          consecutiveFailures: 0,
-          lastError: null,
-          // Store WebSub hub and self URLs if discovered
-          hubUrl: parsedFeed.hubUrl ?? feed.hubUrl,
-          selfUrl: parsedFeed.selfUrl ?? feed.selfUrl,
-          updatedAt: now,
-        })
-        .where(eq(feeds.id, feed.id));
-
-      return {
-        success: true,
-        nextRunAt: nextFetch.nextFetchAt,
-        metadata: {
-          newEntries: processResult.newCount,
-          updatedEntries: processResult.updatedCount,
-          unchangedEntries: processResult.unchangedCount,
-          nextFetchReason: nextFetch.reason,
-        },
-      };
+      // Process in a separate scope so large objects can be GC'd earlier
+      return processSuccessfulFetch(feed, result.body, result.cacheHeaders, now);
     }
 
     case "not_modified": {
