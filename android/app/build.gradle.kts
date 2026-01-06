@@ -270,8 +270,9 @@ dependencies {
     // HTML parsing (for narration)
     implementation("org.jsoup:jsoup:1.18.3")
 
-    // Media session for playback controls
-    implementation("androidx.media:media:1.7.0")
+    // Media3 for playback controls and notifications
+    implementation(libs.media3.session)
+    implementation(libs.media3.common)
 
     // Security
     implementation(libs.security.crypto)

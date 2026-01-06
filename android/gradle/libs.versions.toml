@@ -33,6 +33,9 @@ datastore = "1.1.1"
 # Coil
 coil = "2.7.0"
 
+# Media3
+media3 = "1.5.1"
+
 # Security
 securityCrypto = "1.1.0-alpha06"
 
@@ -111,6 +114,10 @@ datastore-preferences = { group = "androidx.datastore", name = "datastore-prefer
 
 # Coil
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# Media3
+media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
+media3-common = { group = "androidx.media3", name = "media3-common", version.ref = "media3" }
 
 # Security
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
