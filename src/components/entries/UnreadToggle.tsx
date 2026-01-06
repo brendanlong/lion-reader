@@ -74,11 +74,11 @@ function EyeSlashIcon({ className }: { className?: string }) {
 /**
  * Toggle button for showing/hiding read entries.
  *
- * When `showUnreadOnly` is true (default), the eye-slash icon is shown
- * to indicate read items are hidden. Clicking shows all items.
+ * The button displays the current state (like sorting buttons):
+ * - When `showUnreadOnly` is true: shows "Unread only" with eye-slash icon
+ * - When `showUnreadOnly` is false: shows "Show all" with open eye icon
  *
- * When `showUnreadOnly` is false, the open eye icon is shown to indicate
- * all items are visible. Clicking hides read items.
+ * The aria-label describes the action (what clicking will do).
  */
 export function UnreadToggle({ showUnreadOnly, onToggle, className = "" }: UnreadToggleProps) {
   const handleClick = (e: MouseEvent) => {
@@ -100,7 +100,7 @@ export function UnreadToggle({ showUnreadOnly, onToggle, className = "" }: Unrea
     >
       <Icon className="h-5 w-5" />
       <span className="ml-1.5 hidden text-sm sm:inline">
-        {showUnreadOnly ? "Show all" : "Unread only"}
+        {showUnreadOnly ? "Unread only" : "Show all"}
       </span>
     </button>
   );
