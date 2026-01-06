@@ -8,11 +8,10 @@
 
 import { createHash } from "crypto";
 import { eq, and, isNull, inArray } from "drizzle-orm";
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 import { db } from "../db";
 import {
   entries,
-  feeds,
   subscriptions,
   userEntries,
   type Entry,
@@ -122,12 +121,11 @@ function truncate(text: string, maxLength: number): string {
 
 /**
  * Strips HTML tags from a string for use in summaries.
- * Uses JSDOM to properly parse HTML and extract text content,
+ * Uses linkedom for lightweight HTML parsing and text extraction,
  * which handles edge cases like nested tags and malformed HTML.
  */
 function stripHtml(html: string): string {
-  const dom = new JSDOM(html);
-  const document = dom.window.document;
+  const { document } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
 
   // Remove script and style elements before extracting text
   document.querySelectorAll("script, style").forEach((el) => el.remove());
@@ -382,6 +380,91 @@ export async function processEntry(
 }
 
 /**
+ * Cached entry info for avoiding N+1 queries.
+ */
+interface CachedEntryInfo {
+  id: string;
+  guid: string;
+  contentHash: string | null;
+}
+
+/**
+ * Processes a single entry using a pre-loaded cache of existing entries.
+ * This avoids N+1 queries by using a Map lookup instead of a database query.
+ *
+ * @param feedId - The feed's UUID
+ * @param feedType - The feed type
+ * @param parsedEntry - The parsed entry from the feed
+ * @param fetchedAt - Timestamp when the entry was fetched
+ * @param existingEntriesMap - Map of GUID to existing entry info
+ * @returns Processing result for this entry
+ */
+async function processEntryWithCache(
+  feedId: string,
+  feedType: "rss" | "atom" | "json" | "email" | "saved",
+  parsedEntry: ParsedEntry,
+  fetchedAt: Date,
+  existingEntriesMap: Map<string, CachedEntryInfo>
+): Promise<ProcessedEntry> {
+  const guid = deriveGuid(parsedEntry);
+  const contentHash = generateContentHash(parsedEntry);
+
+  // Use cached lookup instead of database query
+  const existing = existingEntriesMap.get(guid);
+
+  if (!existing) {
+    // New entry - create it
+    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt);
+
+    // Add to cache so duplicate GUIDs in same feed don't create duplicates
+    existingEntriesMap.set(guid, { id: entry.id, guid, contentHash });
+
+    // Publish new_entry event for real-time updates
+    // Fire and forget - we don't want publishing failures to affect entry processing
+    publishNewEntry(feedId, entry.id).catch((err) => {
+      console.error("Failed to publish new_entry event:", err);
+    });
+
+    return {
+      id: entry.id,
+      guid,
+      isNew: true,
+      isUpdated: false,
+    };
+  }
+
+  // Entry exists - check if content changed
+  if (existing.contentHash !== contentHash) {
+    // Content changed - update it
+    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash);
+
+    // Update cache with new hash
+    existingEntriesMap.set(guid, { ...existing, contentHash });
+
+    // Publish entry_updated event for real-time updates
+    // Fire and forget - we don't want publishing failures to affect entry processing
+    publishEntryUpdated(feedId, entry.id).catch((err) => {
+      console.error("Failed to publish entry_updated event:", err);
+    });
+
+    return {
+      id: entry.id,
+      guid,
+      isNew: false,
+      isUpdated: true,
+    };
+  }
+
+  // Content unchanged
+  return {
+    id: existing.id,
+    guid,
+    isNew: false,
+    isUpdated: false,
+  };
+}
+
+/**
  * Updates lastSeenAt for entries seen in the current fetch.
  * This is used to track which entries are currently in the feed,
  * enabling subscription without re-fetching.
@@ -462,31 +545,49 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
  * to make entries visible to all active subscribers.
  *
  * @param feedId - The feed's UUID
+ * @param feedType - The feed type (rss, atom, json, email, saved)
  * @param feed - The parsed feed containing entries
  * @param options - Processing options
  * @returns Processing result with counts and entry details
  *
  * @example
- * const result = await processEntries(feedId, parsedFeed);
+ * const result = await processEntries(feedId, 'rss', parsedFeed);
  * console.log(`New: ${result.newCount}, Updated: ${result.updatedCount}`);
  */
 export async function processEntries(
   feedId: string,
+  feedType: "rss" | "atom" | "json" | "email" | "saved",
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
 ): Promise<ProcessEntriesResult> {
   const { fetchedAt = new Date() } = options;
 
-  // Fetch feed type from database
-  const [feedRecord] = await db
-    .select({ type: feeds.type })
-    .from(feeds)
-    .where(eq(feeds.id, feedId))
-    .limit(1);
-
-  if (!feedRecord) {
-    throw new Error(`Feed ${feedId} not found`);
+  // Derive GUIDs from all items first, so we only query for entries we need
+  const guidsToCheck: string[] = [];
+  for (const item of feed.items) {
+    try {
+      guidsToCheck.push(deriveGuid(item));
+    } catch {
+      // Invalid entry without GUID - will be skipped during processing
+    }
   }
+
+  // Batch load only the entries we're looking for (by GUID) to avoid N+1 queries
+  // This is much more efficient than querying per-entry, and doesn't load
+  // thousands of historical entries we don't need
+  const existingEntries =
+    guidsToCheck.length > 0
+      ? await db
+          .select({
+            id: entries.id,
+            guid: entries.guid,
+            contentHash: entries.contentHash,
+          })
+          .from(entries)
+          .where(and(eq(entries.feedId, feedId), inArray(entries.guid, guidsToCheck)))
+      : [];
+
+  const existingEntriesMap = new Map(existingEntries.map((e) => [e.guid, e]));
 
   const results: ProcessedEntry[] = [];
   let newCount = 0;
@@ -495,7 +596,13 @@ export async function processEntries(
 
   for (const item of feed.items) {
     try {
-      const result = await processEntry(feedId, feedRecord.type, item, fetchedAt);
+      const result = await processEntryWithCache(
+        feedId,
+        feedType,
+        item,
+        fetchedAt,
+        existingEntriesMap
+      );
       results.push(result);
 
       if (result.isNew) {
@@ -516,8 +623,7 @@ export async function processEntries(
 
   // Update lastSeenAt for all entries in this fetch (rss/atom/json only)
   // This enables subscribing to existing feeds without re-fetching
-  const isFetchedType =
-    feedRecord.type === "rss" || feedRecord.type === "atom" || feedRecord.type === "json";
+  const isFetchedType = feedType === "rss" || feedType === "atom" || feedType === "json";
   if (isFetchedType) {
     await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
   }

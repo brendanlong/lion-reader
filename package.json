@@ -53,6 +53,7 @@
     "html-entities": "^2.6.0",
     "ioredis": "^5.8.2",
     "jsdom": "^27.4.0",
+    "linkedom": "^0.18.12",
     "next": "16.1.1",
     "onnxruntime-web": "1.18.0",
     "pg": "^8.16.3",
