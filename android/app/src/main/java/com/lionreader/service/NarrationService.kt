@@ -15,6 +15,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.MediaStyleNotificationHelper
+import com.lionreader.MainActivity
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
 import com.lionreader.data.api.models.ParagraphMapEntry
@@ -152,6 +153,12 @@ class NarrationService : MediaSessionService() {
                         handleParagraphChangedFromPlayer(newIndex)
                     }
                 },
+                onPlayingChanged = { playing ->
+                    // Update service state when MediaSession triggers play/pause
+                    serviceScope.launch(Dispatchers.Main) {
+                        handlePlayingChangedFromPlayer(playing)
+                    }
+                },
                 onError = { message ->
                     serviceScope.launch(Dispatchers.Main) {
                         _playbackState.value = NarrationState.Error(message)
@@ -159,10 +166,21 @@ class NarrationService : MediaSessionService() {
                 },
             )
 
+        // Create session activity PendingIntent - this is important for media button routing
+        val sessionActivityIntent = Intent(this, MainActivity::class.java)
+        val sessionActivityPendingIntent =
+            PendingIntent.getActivity(
+                this,
+                0,
+                sessionActivityIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+
         // Create media session with Media3
         mediaSession =
             MediaSession
                 .Builder(this, ttsPlayer!!)
+                .setSessionActivity(sessionActivityPendingIntent)
                 .setCallback(mediaSessionCallback)
                 .build()
     }
@@ -403,6 +421,38 @@ class NarrationService : MediaSessionService() {
         updateNotification()
     }
 
+    /**
+     * Called when the TtsPlayer changes playback state due to MediaSession commands
+     * (e.g., play/pause from notification or Bluetooth controls).
+     */
+    private fun handlePlayingChangedFromPlayer(playing: Boolean) {
+        if (playing == isPlaying) return
+
+        isPlaying = playing
+        if (playing) {
+            _playbackState.value =
+                NarrationState.Playing(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+        } else {
+            _playbackState.value =
+                NarrationState.Paused(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+        }
+        updateNotification()
+    }
+
     fun pausePlayback() {
         ttsPlayer?.pause()
         isPlaying = false
@@ -516,12 +566,22 @@ class NarrationService : MediaSessionService() {
     private fun createNotification(): android.app.Notification {
         val channelId = NOTIFICATION_CHANNEL_ID
 
+        // Create intent to open app when notification is tapped
+        val contentIntent =
+            PendingIntent.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+
         return NotificationCompat
             .Builder(this, channelId)
             .setContentTitle(currentEntryTitle ?: "Lion Reader")
             .setContentText("${currentParagraphIndex + 1} of ${paragraphs.size}")
             .setSubText(currentFeedTitle)
             .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentIntent(contentIntent)
             .setOngoing(true)
             .setStyle(
                 MediaStyleNotificationHelper

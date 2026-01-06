@@ -27,6 +27,7 @@ class TtsPlayer(
     looper: Looper,
     private val onParagraphCompleted: () -> Unit,
     private val onParagraphChanged: (Int) -> Unit,
+    private val onPlayingChanged: (Boolean) -> Unit,
     private val onError: (String) -> Unit,
 ) : SimpleBasePlayer(looper) {
     companion object {
@@ -217,11 +218,16 @@ class TtsPlayer(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        val wasPlaying = isPlaying
         isPlaying = playWhenReady
         if (playWhenReady) {
             speakCurrentParagraph()
         } else {
             tts?.stop()
+        }
+        // Notify service if state changed (e.g., from MediaSession/notification controls)
+        if (wasPlaying != playWhenReady) {
+            onPlayingChanged(playWhenReady)
         }
         return Futures.immediateVoidFuture()
     }
