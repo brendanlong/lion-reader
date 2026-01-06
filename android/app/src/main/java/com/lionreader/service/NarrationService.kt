@@ -3,6 +3,7 @@ package com.lionreader.service
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -15,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.MediaStyleNotificationHelper
+import com.lionreader.MainActivity
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
 import com.lionreader.data.api.models.ParagraphMapEntry
@@ -165,10 +167,20 @@ class NarrationService : MediaSessionService() {
                 },
             )
 
+        // Create session activity PendingIntent - this is important for media button routing
+        val sessionActivityIntent = Intent(this, MainActivity::class.java)
+        val sessionActivityPendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            sessionActivityIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         // Create media session with Media3
         mediaSession =
             MediaSession
                 .Builder(this, ttsPlayer!!)
+                .setSessionActivity(sessionActivityPendingIntent)
                 .setCallback(mediaSessionCallback)
                 .build()
     }
@@ -554,12 +566,21 @@ class NarrationService : MediaSessionService() {
     private fun createNotification(): android.app.Notification {
         val channelId = NOTIFICATION_CHANNEL_ID
 
+        // Create intent to open app when notification is tapped
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         return NotificationCompat
             .Builder(this, channelId)
             .setContentTitle(currentEntryTitle ?: "Lion Reader")
             .setContentText("${currentParagraphIndex + 1} of ${paragraphs.size}")
             .setSubText(currentFeedTitle)
             .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentIntent(contentIntent)
             .setOngoing(true)
             .setStyle(
                 MediaStyleNotificationHelper
