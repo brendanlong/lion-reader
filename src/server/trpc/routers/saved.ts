@@ -28,6 +28,11 @@ import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
+import {
+  isLessWrongUrl,
+  fetchLessWrongContentFromUrl,
+  type LessWrongContent,
+} from "@/server/feed/lesswrong";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated } from "@/server/redis/pubsub";
 
@@ -170,6 +175,18 @@ function generateContentHash(title: string | null, content: string | null): stri
   return createHash("sha256").update(hashInput, "utf8").digest("hex");
 }
 
+/**
+ * Escapes HTML special characters for safe embedding in HTML.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -256,12 +273,55 @@ export const savedRouter = createTRPCRouter({
 
       // Use provided HTML or fetch the page
       let html: string;
+      // For LessWrong URLs, we may get content directly from their GraphQL API
+      let lessWrongContent: LessWrongContent | null = null;
+
       if (input.html) {
         html = input.html;
         logger.debug("Using provided HTML for saved article", {
           url: input.url,
           htmlLength: html.length,
         });
+      } else if (isLessWrongUrl(input.url)) {
+        // Try LessWrong GraphQL API first (pages don't render without JavaScript)
+        logger.debug("Attempting LessWrong GraphQL fetch", { url: input.url });
+        lessWrongContent = await fetchLessWrongContentFromUrl(input.url);
+
+        if (lessWrongContent) {
+          // Build a title for the HTML - for comments, include post context
+          const htmlTitle =
+            lessWrongContent.type === "comment"
+              ? `Comment on "${lessWrongContent.postTitle ?? "LessWrong post"}"`
+              : (lessWrongContent.title ?? "");
+
+          // Wrap the content in a basic HTML structure for consistency
+          html = `<!DOCTYPE html><html><head><title>${escapeHtml(htmlTitle)}</title></head><body>${lessWrongContent.html}</body></html>`;
+          logger.debug("Successfully fetched LessWrong content via GraphQL", {
+            url: input.url,
+            type: lessWrongContent.type,
+            id:
+              lessWrongContent.type === "post"
+                ? lessWrongContent.postId
+                : lessWrongContent.commentId,
+          });
+        } else {
+          // Fall back to normal fetch
+          logger.debug("LessWrong GraphQL fetch failed, falling back to normal fetch", {
+            url: input.url,
+          });
+          try {
+            html = await fetchPage(input.url);
+          } catch (error) {
+            logger.warn("Failed to fetch LessWrong URL", {
+              url: input.url,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw errors.savedArticleFetchError(
+              input.url,
+              error instanceof Error ? error.message : "Unknown error"
+            );
+          }
+        }
       } else {
         try {
           html = await fetchPage(input.url);
@@ -277,10 +337,12 @@ export const savedRouter = createTRPCRouter({
         }
       }
 
-      // Extract metadata
+      // Extract metadata (for LessWrong, we already have better metadata from GraphQL)
       const metadata = extractMetadata(html, input.url);
 
       // Run Readability for clean content (also absolutizes URLs internally)
+      // For LessWrong, the GraphQL content is already clean, but Readability will still
+      // absolutize URLs and provide consistent output format
       const cleaned = cleanContent(html, { url: input.url });
 
       // Generate excerpt
@@ -292,9 +354,28 @@ export const savedRouter = createTRPCRouter({
         }
       }
 
-      // Use provided title, then metadata, then Readability as fallback
-      const finalTitle = input.title || metadata.title || cleaned?.title || null;
-      const finalAuthor = metadata.author || cleaned?.byline || null;
+      // Use provided title, then LessWrong API, then metadata, then Readability as fallback
+      // For LessWrong comments, create a descriptive title
+      let lessWrongTitle: string | null = null;
+      if (lessWrongContent) {
+        if (lessWrongContent.type === "comment") {
+          // For comments, create a title like "Comment by Author on Post Title"
+          const authorPart = lessWrongContent.author
+            ? `${lessWrongContent.author}'s comment`
+            : "Comment";
+          const postPart = lessWrongContent.postTitle ? ` on "${lessWrongContent.postTitle}"` : "";
+          lessWrongTitle = `${authorPart}${postPart}`;
+        } else {
+          lessWrongTitle = lessWrongContent.title;
+        }
+      }
+      const finalTitle = input.title || lessWrongTitle || metadata.title || cleaned?.title || null;
+      // For author, prefer LessWrong API data (has proper author info), then metadata
+      const finalAuthor = lessWrongContent?.author || metadata.author || cleaned?.byline || null;
+      // For siteName, use LessWrong when content came from their API
+      const finalSiteName = lessWrongContent ? "LessWrong" : metadata.siteName;
+      // For publishedAt, prefer LessWrong API's postedAt when available
+      const finalPublishedAt = lessWrongContent?.publishedAt ?? now;
 
       // Compute content hash for narration deduplication
       const contentHash = generateContentHash(finalTitle, cleaned?.content || html);
@@ -312,9 +393,9 @@ export const savedRouter = createTRPCRouter({
         contentOriginal: html,
         contentCleaned: cleaned?.content || null,
         summary: excerpt,
-        siteName: metadata.siteName,
+        siteName: finalSiteName,
         imageUrl: metadata.imageUrl,
-        publishedAt: now, // When saved
+        publishedAt: finalPublishedAt,
         fetchedAt: now, // When saved
         contentHash,
         // Email-specific fields are NULL for saved entries
@@ -345,7 +426,7 @@ export const savedRouter = createTRPCRouter({
           id: entryId,
           url: input.url,
           title: finalTitle,
-          siteName: metadata.siteName,
+          siteName: finalSiteName,
           author: finalAuthor,
           imageUrl: metadata.imageUrl,
           contentOriginal: html,
@@ -353,7 +434,7 @@ export const savedRouter = createTRPCRouter({
           excerpt,
           read: false,
           starred: false,
-          savedAt: now,
+          savedAt: finalPublishedAt,
           readAt: null,
           starredAt: null,
         },
