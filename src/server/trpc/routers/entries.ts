@@ -1098,24 +1098,19 @@ export const entriesRouter = createTRPCRouter({
         conditions.push(eq(entries.isSpam, false));
       }
 
-      // Get total count
-      const totalResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
+      // Get total and unread counts in a single query using conditional aggregation
+      const result = await ctx.db
+        .select({
+          total: sql<number>`count(*)::int`,
+          unread: sql<number>`count(*) FILTER (WHERE ${userEntries.read} = false)::int`,
+        })
         .from(entries)
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
         .where(and(...conditions));
 
-      // Get unread count (add read=false condition)
-      const unreadConditions = [...conditions, eq(userEntries.read, false)];
-      const unreadResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(and(...unreadConditions));
-
       return {
-        total: totalResult[0]?.count ?? 0,
-        unread: unreadResult[0]?.count ?? 0,
+        total: result[0]?.total ?? 0,
+        unread: result[0]?.unread ?? 0,
       };
     }),
 });
