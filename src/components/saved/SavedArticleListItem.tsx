@@ -19,7 +19,8 @@ export interface SavedArticleListItemData {
   id: string;
   url: string | null;
   title: string | null;
-  feedTitle: string | null; // Used as source name
+  feedTitle: string | null;
+  siteName: string | null; // Website name from og:site_name, used as source
   author: string | null;
   summary: string | null; // Excerpt
   read: boolean;
@@ -60,11 +61,13 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
   onToggleStar,
   onPrefetch,
 }: SavedArticleListItemProps) {
+  // For saved articles, prefer siteName (from og:site_name) over feedTitle (which is "Saved Articles")
+  const source = article.siteName ?? getDomain(article.url ?? "");
   return (
     <ArticleListItem
       id={article.id}
       title={article.title}
-      source={article.feedTitle ?? getDomain(article.url ?? "")}
+      source={source}
       date={article.fetchedAt}
       preview={article.summary}
       read={article.read}

@@ -124,11 +124,13 @@ export function SavedArticleContent({
   } else if (!article) {
     content = <ArticleContentError message="Article not found" onRetry={() => refetch()} />;
   } else {
+    // For saved articles, prefer siteName (from og:site_name) over feedTitle (which is "Saved Articles")
+    const source = article.siteName ?? getDomain(article.url ?? "");
     content = (
       <ArticleContentBody
         articleId={articleId}
         title={article.title ?? "Untitled"}
-        source={article.feedTitle ?? getDomain(article.url ?? "")}
+        source={source}
         author={article.author}
         url={article.url ?? ""}
         date={article.fetchedAt}
