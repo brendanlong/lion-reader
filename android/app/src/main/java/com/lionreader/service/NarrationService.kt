@@ -3,7 +3,6 @@ package com.lionreader.service
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.ComponentName
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -169,12 +168,13 @@ class NarrationService : MediaSessionService() {
 
         // Create session activity PendingIntent - this is important for media button routing
         val sessionActivityIntent = Intent(this, MainActivity::class.java)
-        val sessionActivityPendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            sessionActivityIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val sessionActivityPendingIntent =
+            PendingIntent.getActivity(
+                this,
+                0,
+                sessionActivityIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
         // Create media session with Media3
         mediaSession =
@@ -567,12 +567,13 @@ class NarrationService : MediaSessionService() {
         val channelId = NOTIFICATION_CHANNEL_ID
 
         // Create intent to open app when notification is tapped
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val contentIntent =
+            PendingIntent.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
         return NotificationCompat
             .Builder(this, channelId)
