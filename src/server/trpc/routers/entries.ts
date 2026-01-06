@@ -100,6 +100,7 @@ const entryListItemSchema = z.object({
   read: z.boolean(),
   starred: z.boolean(),
   feedTitle: z.string().nullable(),
+  siteName: z.string().nullable(),
 });
 
 /**
@@ -121,6 +122,7 @@ const entryFullSchema = z.object({
   starred: z.boolean(),
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
+  siteName: z.string().nullable(),
 });
 
 /**
@@ -422,6 +424,7 @@ export const entriesRouter = createTRPCRouter({
         read: userState.read,
         starred: userState.starred,
         feedTitle: feed.title,
+        siteName: entry.siteName,
       }));
 
       // Generate next cursor if there are more results
@@ -518,6 +521,7 @@ export const entriesRouter = createTRPCRouter({
           starred: userState.starred,
           feedTitle: feed.title,
           feedUrl: feed.url,
+          siteName: entry.siteName,
         },
       };
     }),
