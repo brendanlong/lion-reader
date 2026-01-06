@@ -297,8 +297,6 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     onSettled: () => {
       // Invalidate starred entries list so the Starred page shows the new item
       utils.entries.list.invalidate({ starredOnly: true });
-      // Invalidate subscriptions to update unread counts
-      utils.subscriptions.list.invalidate();
       // Invalidate starred count
       utils.entries.starredCount.invalidate();
     },
@@ -348,8 +346,6 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     onSettled: () => {
       // Invalidate starred entries list so the Starred page reflects the removal
       utils.entries.list.invalidate({ starredOnly: true });
-      // Invalidate subscriptions to update unread counts
-      utils.subscriptions.list.invalidate();
       // Invalidate starred count
       utils.entries.starredCount.invalidate();
     },
