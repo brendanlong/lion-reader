@@ -284,49 +284,49 @@ export const tagsRouter = createTRPCRouter({
         await ctx.db.update(tags).set(updateData).where(eq(tags.id, input.id));
       }
 
-      // Get the updated tag with feed count
-      const updatedTag = await ctx.db
-        .select({
-          id: tags.id,
-          name: tags.name,
-          color: tags.color,
-          createdAt: tags.createdAt,
-          feedCount: sql<number>`count(${subscriptionTags.subscriptionId})::int`,
-        })
-        .from(tags)
-        .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
-        .where(and(eq(tags.id, input.id), eq(tags.userId, userId)))
-        .groupBy(tags.id)
-        .limit(1);
+      // Get updated tag with feed count and unread count concurrently
+      const [updatedTag, unreadResult] = await Promise.all([
+        ctx.db
+          .select({
+            id: tags.id,
+            name: tags.name,
+            color: tags.color,
+            createdAt: tags.createdAt,
+            feedCount: sql<number>`count(${subscriptionTags.subscriptionId})::int`,
+          })
+          .from(tags)
+          .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
+          .where(and(eq(tags.id, input.id), eq(tags.userId, userId)))
+          .groupBy(tags.id)
+          .limit(1),
+        ctx.db
+          .select({
+            unreadCount: sql<number>`count(*)::int`,
+          })
+          .from(subscriptionTags)
+          .innerJoin(
+            subscriptions,
+            and(
+              eq(subscriptionTags.subscriptionId, subscriptions.id),
+              isNull(subscriptions.unsubscribedAt)
+            )
+          )
+          .innerJoin(entries, eq(entries.feedId, subscriptions.feedId))
+          .innerJoin(
+            userEntries,
+            and(
+              eq(userEntries.entryId, entries.id),
+              eq(userEntries.userId, userId),
+              eq(userEntries.read, false)
+            )
+          )
+          .where(eq(subscriptionTags.tagId, input.id)),
+      ]);
 
       // This should never happen since we verified the tag exists above
       if (updatedTag.length === 0) {
         throw errors.tagNotFound();
       }
-
-      // Get unread entry count for this tag
-      const unreadResult = await ctx.db
-        .select({
-          unreadCount: sql<number>`count(*)::int`,
-        })
-        .from(subscriptionTags)
-        .innerJoin(
-          subscriptions,
-          and(
-            eq(subscriptionTags.subscriptionId, subscriptions.id),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .innerJoin(entries, eq(entries.feedId, subscriptions.feedId))
-        .innerJoin(
-          userEntries,
-          and(
-            eq(userEntries.entryId, entries.id),
-            eq(userEntries.userId, userId),
-            eq(userEntries.read, false)
-          )
-        )
-        .where(eq(subscriptionTags.tagId, input.id));
 
       return {
         tag: {

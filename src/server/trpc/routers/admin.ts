@@ -112,7 +112,7 @@ export const adminRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const now = new Date();
 
-      // Get all invites with user email if used
+      // Get all invites with user email via LEFT JOIN
       const allInvites = await ctx.db
         .select({
           id: invites.id,
@@ -120,26 +120,11 @@ export const adminRouter = createTRPCRouter({
           expiresAt: invites.expiresAt,
           createdAt: invites.createdAt,
           usedAt: invites.usedAt,
-          usedByUserId: invites.usedByUserId,
+          usedByEmail: users.email,
         })
         .from(invites)
+        .leftJoin(users, eq(invites.usedByUserId, users.id))
         .orderBy(invites.createdAt);
-
-      // Get user emails for used invites
-      const usedInviteUserIds = allInvites
-        .filter((inv) => inv.usedByUserId)
-        .map((inv) => inv.usedByUserId as string);
-
-      const userEmails = new Map<string, string>();
-      if (usedInviteUserIds.length > 0) {
-        const usersResult = await ctx.db.select({ id: users.id, email: users.email }).from(users);
-
-        for (const user of usersResult) {
-          if (usedInviteUserIds.includes(user.id)) {
-            userEmails.set(user.id, user.email);
-          }
-        }
-      }
 
       return {
         invites: allInvites.map((inv) => {
@@ -159,7 +144,7 @@ export const adminRouter = createTRPCRouter({
             createdAt: inv.createdAt,
             status,
             usedAt: inv.usedAt,
-            usedByEmail: inv.usedByUserId ? (userEmails.get(inv.usedByUserId) ?? null) : null,
+            usedByEmail: inv.usedByEmail,
           };
         }),
       };
