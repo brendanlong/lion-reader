@@ -70,24 +70,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Narration service for TTS playback -->
+        <!-- Narration service for TTS playback using Media3 -->
         <service
             android:name=".service.NarrationService"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
-
-        <!-- Media button receiver for Bluetooth headphone controls -->
-        <receiver
-            android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
     </application>
 
 </manifest>
