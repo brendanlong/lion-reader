@@ -26,6 +26,7 @@ class TtsPlayer(
     context: Context,
     looper: Looper,
     private val onParagraphCompleted: () -> Unit,
+    private val onParagraphChanged: (Int) -> Unit,
     private val onError: (String) -> Unit,
 ) : SimpleBasePlayer(looper) {
     companion object {
@@ -132,15 +133,22 @@ class TtsPlayer(
 
     /**
      * Skips to a specific paragraph index.
+     *
+     * @param index The paragraph index to skip to
+     * @param notifyChange Whether to notify via onParagraphChanged callback (default true).
+     *                     Set to false when the service is already aware of the change.
      */
-    fun skipToParagraph(index: Int) {
-        if (index in paragraphs.indices) {
+    fun skipToParagraph(index: Int, notifyChange: Boolean = true) {
+        if (index in paragraphs.indices && index != currentParagraphIndex) {
             tts?.stop()
             currentParagraphIndex = index
             if (isPlaying) {
                 speakCurrentParagraph()
             }
             invalidateState()
+            if (notifyChange) {
+                onParagraphChanged(index)
+            }
         }
     }
 
@@ -232,6 +240,20 @@ class TtsPlayer(
         // Convert position to paragraph index
         val targetIndex = (positionMs / MS_PER_PARAGRAPH).toInt().coerceIn(0, paragraphs.size - 1)
         skipToParagraph(targetIndex)
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleSeekToNext(): ListenableFuture<*> {
+        if (currentParagraphIndex < paragraphs.size - 1) {
+            skipToParagraph(currentParagraphIndex + 1)
+        }
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleSeekToPrevious(): ListenableFuture<*> {
+        if (currentParagraphIndex > 0) {
+            skipToParagraph(currentParagraphIndex - 1)
+        }
         return Futures.immediateVoidFuture()
     }
 
