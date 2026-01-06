@@ -146,6 +146,12 @@ class NarrationService : MediaSessionService() {
                         advanceToNextParagraph()
                     }
                 },
+                onParagraphChanged = { newIndex ->
+                    // Update service state when MediaSession triggers paragraph change
+                    serviceScope.launch(Dispatchers.Main) {
+                        handleParagraphChangedFromPlayer(newIndex)
+                    }
+                },
                 onError = { message ->
                     serviceScope.launch(Dispatchers.Main) {
                         _playbackState.value = NarrationState.Error(message)
@@ -346,8 +352,8 @@ class NarrationService : MediaSessionService() {
     private fun advanceToNextParagraph() {
         if (currentParagraphIndex < paragraphs.size - 1) {
             currentParagraphIndex++
-            // Skip to the new paragraph index (service is source of truth for index)
-            ttsPlayer?.skipToParagraph(currentParagraphIndex)
+            // Skip to the new paragraph index, notifyChange=false since service initiated
+            ttsPlayer?.skipToParagraph(currentParagraphIndex, notifyChange = false)
 
             _playbackState.value =
                 NarrationState.Playing(
@@ -363,6 +369,38 @@ class NarrationService : MediaSessionService() {
             // Finished all paragraphs
             stopPlayback()
         }
+    }
+
+    /**
+     * Called when the TtsPlayer changes paragraph due to MediaSession commands
+     * (e.g., skip next/previous from notification or Bluetooth controls).
+     */
+    private fun handleParagraphChangedFromPlayer(newIndex: Int) {
+        if (newIndex == currentParagraphIndex) return
+
+        currentParagraphIndex = newIndex
+        if (isPlaying) {
+            _playbackState.value =
+                NarrationState.Playing(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+        } else {
+            _playbackState.value =
+                NarrationState.Paused(
+                    entryId = currentEntryId ?: "",
+                    currentParagraph = currentParagraphIndex,
+                    totalParagraphs = paragraphs.size,
+                    entryTitle = currentEntryTitle ?: "Untitled",
+                    source = currentSource,
+                    highlightedElementIndex = getElementIndex(currentParagraphIndex),
+                )
+        }
+        updateNotification()
     }
 
     fun pausePlayback() {
@@ -420,7 +458,7 @@ class NarrationService : MediaSessionService() {
     fun skipToNextParagraph() {
         if (currentParagraphIndex < paragraphs.size - 1) {
             currentParagraphIndex++
-            ttsPlayer?.skipToParagraph(currentParagraphIndex)
+            ttsPlayer?.skipToParagraph(currentParagraphIndex, notifyChange = false)
             if (isPlaying) {
                 _playbackState.value =
                     NarrationState.Playing(
@@ -449,7 +487,7 @@ class NarrationService : MediaSessionService() {
     fun skipToPreviousParagraph() {
         if (currentParagraphIndex > 0) {
             currentParagraphIndex--
-            ttsPlayer?.skipToParagraph(currentParagraphIndex)
+            ttsPlayer?.skipToParagraph(currentParagraphIndex, notifyChange = false)
             if (isPlaying) {
                 _playbackState.value =
                     NarrationState.Playing(
