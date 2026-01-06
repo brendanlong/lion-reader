@@ -712,32 +712,32 @@ export const subscriptionsRouter = createTRPCRouter({
 
       const { subscription, feed } = result[0];
 
-      // Fetch tags for this subscription
-      const subscriptionTagsData = await ctx.db
-        .select({
-          tagId: tags.id,
-          tagName: tags.name,
-          tagColor: tags.color,
-        })
-        .from(subscriptionTags)
-        .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
-        .where(eq(subscriptionTags.subscriptionId, subscription.id));
+      // Fetch tags and unread count concurrently
+      const [subscriptionTagsData, unreadResult] = await Promise.all([
+        ctx.db
+          .select({
+            tagId: tags.id,
+            tagName: tags.name,
+            tagColor: tags.color,
+          })
+          .from(subscriptionTags)
+          .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
+          .where(eq(subscriptionTags.subscriptionId, subscription.id)),
+        ctx.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(entries)
+          .innerJoin(
+            userEntries,
+            and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
+          )
+          .where(and(eq(entries.feedId, feed.id), eq(userEntries.read, false))),
+      ]);
 
       const subscriptionTagsList = subscriptionTagsData.map((row) => ({
         id: row.tagId,
         name: row.tagName,
         color: row.tagColor,
       }));
-
-      // Calculate unread count (visibility via user_entries)
-      const unreadResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(entries)
-        .innerJoin(
-          userEntries,
-          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-        )
-        .where(and(eq(entries.feedId, feed.id), eq(userEntries.read, false)));
 
       const unreadCount = unreadResult[0]?.count ?? 0;
 
@@ -790,28 +790,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Verify the subscription exists and belongs to the user
-      const existing = await ctx.db
-        .select()
-        .from(subscriptions)
-        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-        .where(
-          and(
-            eq(subscriptions.id, input.id),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .limit(1);
-
-      if (existing.length === 0) {
-        throw errors.subscriptionNotFound();
-      }
-
-      const subscription = existing[0].subscriptions;
-      const feed = existing[0].feeds;
-
-      // Update the subscription
+      // Update the subscription and return key fields (WHERE clause ensures ownership)
       const now = new Date();
       const updateData: { updatedAt: Date; customTitle?: string | null } = {
         updatedAt: now,
@@ -821,18 +800,49 @@ export const subscriptionsRouter = createTRPCRouter({
         updateData.customTitle = input.customTitle;
       }
 
-      await ctx.db.update(subscriptions).set(updateData).where(eq(subscriptions.id, input.id));
+      const updateResult = await ctx.db
+        .update(subscriptions)
+        .set(updateData)
+        .where(
+          and(
+            eq(subscriptions.id, input.id),
+            eq(subscriptions.userId, userId),
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .returning({
+          id: subscriptions.id,
+          feedId: subscriptions.feedId,
+          customTitle: subscriptions.customTitle,
+          subscribedAt: subscriptions.subscribedAt,
+        });
 
-      // Fetch tags for this subscription
-      const subscriptionTagsData = await ctx.db
-        .select({
-          tagId: tags.id,
-          tagName: tags.name,
-          tagColor: tags.color,
-        })
-        .from(subscriptionTags)
-        .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
-        .where(eq(subscriptionTags.subscriptionId, subscription.id));
+      if (updateResult.length === 0) {
+        throw errors.subscriptionNotFound();
+      }
+
+      const subscription = updateResult[0];
+
+      // Fetch tags and unread count concurrently
+      const [subscriptionTagsData, unreadResult] = await Promise.all([
+        ctx.db
+          .select({
+            tagId: tags.id,
+            tagName: tags.name,
+            tagColor: tags.color,
+          })
+          .from(subscriptionTags)
+          .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
+          .where(eq(subscriptionTags.subscriptionId, subscription.id)),
+        ctx.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(entries)
+          .innerJoin(
+            userEntries,
+            and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
+          )
+          .where(and(eq(entries.feedId, subscription.feedId), eq(userEntries.read, false))),
+      ]);
 
       const subscriptionTagsList = subscriptionTagsData.map((row) => ({
         id: row.tagId,
@@ -840,24 +850,13 @@ export const subscriptionsRouter = createTRPCRouter({
         color: row.tagColor,
       }));
 
-      // Calculate unread count (visibility via user_entries)
-      const unreadResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(entries)
-        .innerJoin(
-          userEntries,
-          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-        )
-        .where(and(eq(entries.feedId, feed.id), eq(userEntries.read, false)));
-
       const unreadCount = unreadResult[0]?.count ?? 0;
 
       return {
         subscription: {
           id: subscription.id,
           feedId: subscription.feedId,
-          customTitle:
-            input.customTitle !== undefined ? input.customTitle : subscription.customTitle,
+          customTitle: subscription.customTitle,
           subscribedAt: subscription.subscribedAt,
           unreadCount,
           tags: subscriptionTagsList,
