@@ -138,7 +138,10 @@ class TtsPlayer(
      * @param notifyChange Whether to notify via onParagraphChanged callback (default true).
      *                     Set to false when the service is already aware of the change.
      */
-    fun skipToParagraph(index: Int, notifyChange: Boolean = true) {
+    fun skipToParagraph(
+        index: Int,
+        notifyChange: Boolean = true,
+    ) {
         if (index in paragraphs.indices && index != currentParagraphIndex) {
             tts?.stop()
             currentParagraphIndex = index
@@ -237,22 +240,23 @@ class TtsPlayer(
         positionMs: Long,
         seekCommand: Int,
     ): ListenableFuture<*> {
-        // Convert position to paragraph index
-        val targetIndex = (positionMs / MS_PER_PARAGRAPH).toInt().coerceIn(0, paragraphs.size - 1)
-        skipToParagraph(targetIndex)
-        return Futures.immediateVoidFuture()
-    }
-
-    override fun handleSeekToNext(): ListenableFuture<*> {
-        if (currentParagraphIndex < paragraphs.size - 1) {
-            skipToParagraph(currentParagraphIndex + 1)
-        }
-        return Futures.immediateVoidFuture()
-    }
-
-    override fun handleSeekToPrevious(): ListenableFuture<*> {
-        if (currentParagraphIndex > 0) {
-            skipToParagraph(currentParagraphIndex - 1)
+        when (seekCommand) {
+            Player.COMMAND_SEEK_TO_NEXT -> {
+                if (currentParagraphIndex < paragraphs.size - 1) {
+                    skipToParagraph(currentParagraphIndex + 1)
+                }
+            }
+            Player.COMMAND_SEEK_TO_PREVIOUS -> {
+                if (currentParagraphIndex > 0) {
+                    skipToParagraph(currentParagraphIndex - 1)
+                }
+            }
+            else -> {
+                // Convert position to paragraph index for absolute seeks
+                val targetIndex =
+                    (positionMs / MS_PER_PARAGRAPH).toInt().coerceIn(0, paragraphs.size - 1)
+                skipToParagraph(targetIndex)
+            }
         }
         return Futures.immediateVoidFuture()
     }
