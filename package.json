@@ -54,6 +54,7 @@
     "fast-xml-parser": "^5.3.3",
     "groq-sdk": "^0.37.0",
     "html-entities": "^2.6.0",
+    "htmlparser2": "^10.0.0",
     "ioredis": "^5.8.2",
     "jsdom": "^27.4.0",
     "linkedom": "^0.18.12",
