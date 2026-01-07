@@ -154,6 +154,7 @@ export const feeds = pgTable(
     // Fetch state
     etag: text("etag"),
     lastModifiedHeader: text("last_modified_header"),
+    bodyHash: text("body_hash"), // SHA-256 hash of raw feed body for change detection
     lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
     nextFetchAt: timestamp("next_fetch_at", { withTimezone: true }),
 

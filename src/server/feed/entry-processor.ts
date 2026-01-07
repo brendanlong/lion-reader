@@ -10,13 +10,7 @@ import { createHash } from "crypto";
 import { eq, and, isNull, inArray } from "drizzle-orm";
 import { parseHTML } from "linkedom";
 import { db } from "../db";
-import {
-  entries,
-  subscriptions,
-  userEntries,
-  type Entry,
-  type NewEntry,
-} from "../db/schema";
+import { entries, subscriptions, userEntries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
@@ -620,17 +614,22 @@ export async function processEntries(
   }
 
   const allEntryIds = results.map((r) => r.id);
+  const newEntryIds = results.filter((r) => r.isNew).map((r) => r.id);
+  const hasChanges = newCount > 0 || updatedCount > 0;
 
   // Update lastSeenAt for all entries in this fetch (rss/atom/json only)
-  // This enables subscribing to existing feeds without re-fetching
+  // Only update if something changed - if all entries unchanged, lastSeenAt is still valid
   const isFetchedType = feedType === "rss" || feedType === "atom" || feedType === "json";
-  if (isFetchedType) {
+  if (isFetchedType && hasChanges) {
     await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
   }
 
-  // Create user_entries for all processed entries
-  // This makes entries visible to all currently-subscribed users
-  await createUserEntriesForFeed(feedId, allEntryIds);
+  // Create user_entries only for new entries
+  // Existing subscribers already have user_entries records for existing entries
+  // New subscribers get user_entries created at subscription time
+  if (newEntryIds.length > 0) {
+    await createUserEntriesForFeed(feedId, newEntryIds);
+  }
 
   return {
     newCount,
