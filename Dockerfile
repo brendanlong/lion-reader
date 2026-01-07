@@ -52,6 +52,9 @@ ENV REDIS_URL="redis://localhost:6379"
 # Build Next.js application
 RUN pnpm build
 
+# Build worker bundle (single optimized JS file)
+RUN pnpm build:worker
+
 # Prune dev dependencies after build
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm prune --prod --ignore-scripts
@@ -88,13 +91,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/drizzle ./drizzle
 
-# Copy source files needed by worker (tsx runs on raw TypeScript)
-# tsconfig.json is needed for path alias resolution (@/ -> src/)
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
-COPY --from=builder /app/src ./src
+# Copy bundled worker (no longer need tsx, tsconfig, or src/)
+COPY --from=builder /app/dist/worker.js ./dist/worker.js
 
-# Copy scripts (migrations, worker, startup)
-COPY --from=builder /app/scripts ./scripts
+# Copy startup script
+COPY --from=builder /app/scripts/start-all.sh ./scripts/start-all.sh
 RUN chmod +x scripts/start-all.sh
 
 # Switch to non-root user
