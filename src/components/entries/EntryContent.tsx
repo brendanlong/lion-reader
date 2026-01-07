@@ -7,9 +7,9 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { useEntryMutations, type EntryListFilters } from "@/lib/hooks";
+import { useEntryMutations, useShowOriginalPreference, type EntryListFilters } from "@/lib/hooks";
 import {
   ArticleContentBody,
   ArticleContentSkeleton,
@@ -74,10 +74,14 @@ export function EntryContent({
   previousEntryId,
 }: EntryContentProps) {
   const hasAutoMarkedRead = useRef(false);
-  const [showOriginal, setShowOriginal] = useState(false);
 
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
+
+  const entry = data?.entry;
+
+  // Show original preference is stored per-feed in localStorage
+  const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
 
   // Prefetch next and previous entries with active observers to keep them in cache
   // These queries run in parallel and don't block the main entry fetch
@@ -88,8 +92,6 @@ export function EntryContent({
   // Entry mutations with list filters for optimistic updates
   // When marking an entry as read, this ensures it gets filtered from the list immediately
   const { markRead, star, unstar } = useEntryMutations({ listFilters });
-
-  const entry = data?.entry;
 
   // Mark entry as read once when component mounts and entry data loads
   // The ref prevents re-marking if user later toggles read status
