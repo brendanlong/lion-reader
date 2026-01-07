@@ -36,7 +36,7 @@ const buildOptions = {
   bundle: true,
   platform: "node",
   target: "node20",
-  format: "esm",
+  format: "cjs",
   outfile: resolve(rootDir, "dist/worker.js"),
 
   // Resolve TypeScript path aliases
@@ -44,8 +44,9 @@ const buildOptions = {
 
   // External packages that can't/shouldn't be bundled:
   // - Native modules (argon2 uses node-gyp bindings)
+  // - jsdom has runtime file dependencies (stylesheets) that break when bundled
   // We bundle everything else for a smaller, faster deployment
-  external: ["argon2"],
+  external: ["argon2", "jsdom"],
 
   // Source maps for debugging production issues
   sourcemap: true,

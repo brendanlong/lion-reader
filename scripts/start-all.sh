@@ -20,4 +20,4 @@ trap cleanup SIGTERM SIGINT EXIT
 
 # Start API in foreground
 echo "Starting API server..."
-pnpm start
+node node_modules/next/dist/bin/next start

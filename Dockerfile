@@ -2,13 +2,12 @@
 # Multi-stage build for optimal image size
 
 # =============================================================================
-# Stage 1: Base image with pnpm
+# Stage 1: Base image with pnpm (for building)
 # =============================================================================
 FROM node:20-alpine AS base
 
-# Install bash for startup script and enable corepack for pnpm
-RUN apk add --no-cache bash && \
-    corepack enable && corepack prepare pnpm@latest --activate
+# Enable corepack and prepare the exact pnpm version from package.json
+RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
 # Set working directory
 WORKDIR /app
@@ -60,14 +59,15 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm prune --prod --ignore-scripts
 
 # =============================================================================
-# Stage 4: Production runner
+# Stage 4: Production runner (minimal image, no pnpm needed)
 # =============================================================================
-FROM base AS runner
+FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
+# Install bash for startup script and create non-root user
+RUN apk add --no-cache bash && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
 # Set production environment
@@ -79,7 +79,6 @@ ENV HOSTNAME="0.0.0.0"
 # Copy necessary files for running the app
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
 
 # Copy production node_modules (already pruned in builder)
 COPY --from=builder /app/node_modules ./node_modules
@@ -104,5 +103,5 @@ USER nextjs
 # Expose the port
 EXPOSE 3000
 
-# Start the application
-CMD ["pnpm", "start"]
+# Start both API server and background worker
+CMD ["./scripts/start-all.sh"]
