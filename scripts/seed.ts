@@ -164,7 +164,7 @@ async function seed() {
   await db.insert(schema.jobs).values({
     id: generateUuidv7(),
     type: "fetch_feed",
-    payload: JSON.stringify({ feedId: feeds[0].id }),
+    payload: { feedId: feeds[0].id },
     enabled: true,
     nextRunAt: now,
     createdAt: now,
