@@ -1,4 +1,3 @@
-#!/usr/bin/env tsx
 /**
  * Standalone background worker process.
  *
