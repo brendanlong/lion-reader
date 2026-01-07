@@ -54,6 +54,9 @@ RUN pnpm build
 # Build worker bundle (single optimized JS file)
 RUN pnpm build:worker
 
+# Build migration bundle (single optimized JS file)
+RUN pnpm build:migrate
+
 # Prune dev dependencies after build
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm prune --prod --ignore-scripts
@@ -86,12 +89,12 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy built Next.js app
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 
-# Copy drizzle config and migrations for release_command
-COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
-COPY --from=builder /app/drizzle ./drizzle
+# Copy drizzle migrations (SQL files needed at runtime)
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 
-# Copy bundled worker (no longer need tsx, tsconfig, or src/)
+# Copy bundled scripts (no longer need tsx, tsconfig, or src/)
 COPY --from=builder /app/dist/worker.js ./dist/worker.js
+COPY --from=builder /app/dist/migrate.js ./dist/migrate.js
 
 # Copy startup script
 COPY --from=builder /app/scripts/start-all.sh ./scripts/start-all.sh
