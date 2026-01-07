@@ -7,6 +7,7 @@
 
 import { Readability, isProbablyReaderable } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 import { logger } from "@/lib/logger";
 
 /**
@@ -20,14 +21,16 @@ const URL_ATTRIBUTES = ["src", "href", "poster", "srcset"] as const;
  * Converts relative URLs in src, href, poster, and srcset attributes
  * to absolute URLs using the provided base URL.
  *
+ * Uses linkedom for lightweight HTML parsing (much faster than JSDOM).
+ *
  * @param html - The HTML content to process
  * @param baseUrl - The base URL for resolving relative URLs
  * @returns HTML with all relative URLs converted to absolute
  */
 export function absolutizeUrls(html: string, baseUrl: string): string {
   try {
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
+    // Use linkedom for lightweight parsing - much faster than JSDOM
+    const { document } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
 
     // Find all elements with URL attributes
     for (const attr of URL_ATTRIBUTES) {
