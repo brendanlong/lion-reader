@@ -197,6 +197,9 @@ function resolveOptions(options?: MigrationOptions): ResolvedOptions {
   };
 }
 
+// Advisory lock ID for migrations (arbitrary but unique constant)
+const MIGRATION_LOCK_ID = 8675309;
+
 /**
  * Main migration runner.
  */
@@ -216,6 +219,10 @@ export async function runMigrations(
     const client = await pool.connect();
     try {
       await ensureMigrationsTable(client, opts.migrationsSchema, opts.migrationsTable);
+
+      // Acquire advisory lock to prevent concurrent migration runs
+      log("Acquiring migration lock...");
+      await client.query("SELECT pg_advisory_lock($1)", [MIGRATION_LOCK_ID]);
       const appliedMigrations = await getAppliedMigrations(
         client,
         opts.migrationsSchema,
@@ -282,6 +289,8 @@ export async function runMigrations(
         log(`  ✓ Applied ${entry.tag}`);
       }
     } finally {
+      // Release advisory lock (also released automatically on disconnect)
+      await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK_ID]);
       client.release();
     }
 
