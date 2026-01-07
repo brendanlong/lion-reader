@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
-import { GoogleSignInButton, AppleSignInButton } from "@/components/auth";
+import { GoogleSignInButton, AppleSignInButton, AuthFooter } from "@/components/auth";
 
 export default function LoginPage() {
   return (
@@ -190,28 +190,7 @@ function LoginForm() {
         </p>
       )}
 
-      <footer className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-        <p className="text-center text-xs text-zinc-500 dark:text-zinc-500">
-          Created by{" "}
-          <a
-            href="https://www.brendanlong.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
-          >
-            Brendan Long
-          </a>{" "}
-          and Claude •{" "}
-          <a
-            href="https://github.com/brendanlong/lion-reader"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
-          >
-            View on GitHub
-          </a>
-        </p>
-      </footer>
+      <AuthFooter />
     </div>
   );
 }
