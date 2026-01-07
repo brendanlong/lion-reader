@@ -4,6 +4,7 @@
  */
 
 export type { ParsedFeed, ParsedEntry, SyndicationHints } from "./types";
+export { getDomainFromUrl } from "./types";
 export { parseRssFeed, parseRssDate } from "./rss-parser";
 export { parseAtomFeed } from "./atom-parser";
 export {

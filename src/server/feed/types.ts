@@ -4,6 +4,22 @@
  */
 
 /**
+ * Extracts the domain from a URL for use as a fallback feed title.
+ * Returns just the hostname (e.g., "danluu.com" from "https://danluu.com/atom.xml").
+ *
+ * @param url - The feed URL
+ * @returns The domain name, or undefined if the URL is invalid
+ */
+export function getDomainFromUrl(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * A parsed entry from any feed format.
  */
 export interface ParsedEntry {
@@ -46,8 +62,8 @@ export interface SyndicationHints {
  * A parsed feed from any format (RSS, Atom, JSON Feed).
  */
 export interface ParsedFeed {
-  /** Feed title */
-  title: string;
+  /** Feed title (may be undefined if feed has no title) */
+  title?: string;
   /** Feed description */
   description?: string;
   /** URL to the feed's website */

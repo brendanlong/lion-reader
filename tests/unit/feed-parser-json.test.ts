@@ -175,23 +175,25 @@ describe("parseJsonFeed", () => {
       expect(feed.items[0].pubDate).toBeUndefined();
     });
 
-    it("throws error for feed without title", () => {
+    it("returns undefined title for feed without title", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         items: [],
       });
 
-      expect(() => parseJsonFeed(json)).toThrow("Invalid JSON Feed: missing title");
+      const feed = parseJsonFeed(json);
+      expect(feed.title).toBeUndefined();
     });
 
-    it("throws error for feed with empty title", () => {
+    it("returns undefined title for feed with empty title", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         title: "   ",
         items: [],
       });
 
-      expect(() => parseJsonFeed(json)).toThrow("Invalid JSON Feed: missing title");
+      const feed = parseJsonFeed(json);
+      expect(feed.title).toBeUndefined();
     });
 
     it("throws error for missing version", () => {

@@ -229,11 +229,6 @@ export function parseJsonFeed(json: string): ParsedFeed {
     throw new Error("Invalid JSON Feed: missing or invalid version");
   }
 
-  // Validate title
-  if (typeof feed.title !== "string" || !feed.title.trim()) {
-    throw new Error("Invalid JSON Feed: missing title");
-  }
-
   // Validate items array
   if (!Array.isArray(feed.items)) {
     throw new Error("Invalid JSON Feed: missing items array");
@@ -242,8 +237,11 @@ export function parseJsonFeed(json: string): ParsedFeed {
   // Prefer favicon over icon (favicon is smaller, like our iconUrl intent)
   const iconUrl = feed.favicon || feed.icon;
 
+  // Extract title (may be undefined if feed has no title)
+  const title = typeof feed.title === "string" ? feed.title.trim() || undefined : undefined;
+
   return {
-    title: feed.title.trim(),
+    title,
     description: feed.description?.trim(),
     siteUrl: feed.home_page_url,
     iconUrl,
