@@ -2,15 +2,17 @@
  * Background worker for processing jobs from the queue.
  *
  * Features:
- * - Polls for due jobs at configurable intervals
- * - Supports concurrent job processing
+ * - Event-driven job processing with Promise.race for efficient slot management
+ * - Immediately fills slots when jobs complete (no polling delay)
+ * - Falls back to polling when queue is empty
+ * - Supports concurrent job processing up to configurable limit
  * - Graceful shutdown on SIGTERM/SIGINT
  * - Stale job recovery (handled automatically in claim query)
  *
  * See docs/job-queue-design.md for the overall architecture.
  */
 
-import { claimJob, finishJob, getJobPayload, type JobType } from "./queue";
+import { claimJob as defaultClaimJob, finishJob, getJobPayload, type JobType } from "./queue";
 import {
   handleFetchFeed,
   handleRenewWebsub,
@@ -18,6 +20,16 @@ import {
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
+
+/**
+ * Function type for claiming a job from the queue.
+ */
+export type ClaimJobFn = (options?: { types?: JobType[] }) => Promise<Job | null>;
+
+/**
+ * Function type for processing a claimed job.
+ */
+export type ProcessJobFn = (job: Job) => Promise<void>;
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
 import { trackJobProcessed } from "../metrics/metrics";
@@ -34,6 +46,17 @@ export interface WorkerConfig {
   jobTypes?: JobType[];
   /** Logger function for worker events */
   logger?: WorkerLogger;
+  /**
+   * Override for claiming jobs (for testing).
+   * @internal
+   */
+  _claimJob?: ClaimJobFn;
+  /**
+   * Override for processing jobs (for testing).
+   * When provided, bypasses the default job handler dispatch.
+   * @internal
+   */
+  _processJob?: ProcessJobFn;
 }
 
 /**
@@ -62,14 +85,17 @@ interface WorkerState {
   running: boolean;
   /** Whether a shutdown has been requested */
   shuttingDown: boolean;
-  /** Number of jobs currently being processed */
-  activeJobs: number;
-  /** Polling interval timer */
-  pollTimer: ReturnType<typeof setTimeout> | null;
-  /** Promise that resolves when shutdown is complete */
-  shutdownPromise: Promise<void> | null;
-  /** Resolve function for shutdown promise */
-  shutdownResolve: (() => void) | null;
+  /** Currently executing job promises */
+  currentlyExecuting: Set<Promise<void>>;
+  /** Promise for the main run loop */
+  runLoopPromise: Promise<void> | null;
+}
+
+/**
+ * Sleep for a given number of milliseconds.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -118,16 +144,21 @@ export interface WorkerStats {
  * @returns Worker instance
  */
 export function createWorker(config: WorkerConfig = {}): Worker {
-  const { pollIntervalMs = 5000, concurrency = 5, jobTypes, logger = defaultLogger } = config;
+  const {
+    pollIntervalMs = 5000,
+    concurrency = 5,
+    jobTypes,
+    logger = defaultLogger,
+    _claimJob: claimJob = defaultClaimJob,
+    _processJob: processJobOverride,
+  } = config;
 
   // Worker state
   const state: WorkerState = {
     running: false,
     shuttingDown: false,
-    activeJobs: 0,
-    pollTimer: null,
-    shutdownPromise: null,
-    shutdownResolve: null,
+    currentlyExecuting: new Set(),
+    runLoopPromise: null,
   };
 
   // Stats
@@ -139,7 +170,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
    * Processes a single job.
    */
   async function processJob(job: Job): Promise<void> {
-    state.activeJobs++;
     const startTime = Date.now();
 
     try {
@@ -250,68 +280,49 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       });
     } finally {
       totalProcessed++;
-      state.activeJobs--;
-
-      // If shutting down and no more active jobs, resolve shutdown promise
-      if (state.shuttingDown && state.activeJobs === 0 && state.shutdownResolve) {
-        state.shutdownResolve();
-      }
     }
   }
 
+  // Use override if provided, otherwise use default processJob
+  const executeJob = processJobOverride ?? processJob;
+
   /**
-   * Polls for and processes available jobs.
+   * Main run loop - claims and processes jobs continuously.
    */
-  async function poll(): Promise<void> {
-    // Don't poll if shutting down
-    if (state.shuttingDown) {
-      return;
-    }
+  async function runLoop(): Promise<void> {
+    while (!state.shuttingDown) {
+      // Fill up to capacity
+      while (state.currentlyExecuting.size < concurrency && !state.shuttingDown) {
+        const job = await claimJob({ types: jobTypes });
+        if (job === null) break;
 
-    // Calculate how many jobs we can claim
-    const availableSlots = concurrency - state.activeJobs;
-
-    if (availableSlots <= 0) {
-      schedulePoll();
-      return;
-    }
-
-    // Claim and process jobs up to available slots
-    const claimPromises: Promise<void>[] = [];
-
-    for (let i = 0; i < availableSlots; i++) {
-      const job = await claimJob({ types: jobTypes });
-
-      if (!job) {
-        // No more jobs available
-        break;
+        const promise = executeJob(job).finally(() => {
+          state.currentlyExecuting.delete(promise);
+        });
+        state.currentlyExecuting.add(promise);
       }
 
-      // Process job asynchronously (don't await)
-      claimPromises.push(processJob(job));
+      if (state.shuttingDown) break;
+
+      if (state.currentlyExecuting.size >= concurrency) {
+        // At capacity — wait for a slot to free up
+        await Promise.race(state.currentlyExecuting);
+      } else if (state.currentlyExecuting.size > 0) {
+        // Have some jobs but queue is empty — wait for either:
+        // - A job to complete (might spawn follow-up work)
+        // - Poll timeout (new jobs might have arrived)
+        await Promise.race([Promise.race(state.currentlyExecuting), sleep(pollIntervalMs)]);
+      } else {
+        // No jobs at all — poll after delay
+        await sleep(pollIntervalMs);
+      }
     }
 
-    // Wait for claims to start (not complete)
-    if (claimPromises.length > 0) {
-      // Process all claimed jobs concurrently
-      void Promise.all(claimPromises);
+    // Graceful shutdown: wait for in-flight jobs
+    if (state.currentlyExecuting.size > 0) {
+      logger.info(`Waiting for ${state.currentlyExecuting.size} active jobs to complete...`);
+      await Promise.all(state.currentlyExecuting);
     }
-
-    // Schedule next poll
-    schedulePoll();
-  }
-
-  /**
-   * Schedules the next poll.
-   */
-  function schedulePoll(): void {
-    if (state.shuttingDown || !state.running) {
-      return;
-    }
-
-    state.pollTimer = setTimeout(() => {
-      void poll();
-    }, pollIntervalMs);
   }
 
   /**
@@ -332,8 +343,8 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       jobTypes: jobTypes ?? "all",
     });
 
-    // Start polling
-    void poll();
+    // Start the run loop (don't await - runs in background)
+    state.runLoopPromise = runLoop();
 
     logger.info("Worker started");
   }
@@ -351,21 +362,10 @@ export function createWorker(config: WorkerConfig = {}): Worker {
 
     state.shuttingDown = true;
 
-    // Clear poll timer
-    if (state.pollTimer) {
-      clearTimeout(state.pollTimer);
-      state.pollTimer = null;
-    }
-
-    // Wait for active jobs to complete
-    if (state.activeJobs > 0) {
-      logger.info(`Waiting for ${state.activeJobs} active jobs to complete...`);
-
-      state.shutdownPromise = new Promise<void>((resolve) => {
-        state.shutdownResolve = resolve;
-      });
-
-      await state.shutdownPromise;
+    // Wait for run loop to complete (it will drain in-flight jobs)
+    if (state.runLoopPromise) {
+      await state.runLoopPromise;
+      state.runLoopPromise = null;
     }
 
     state.running = false;
@@ -391,7 +391,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
   function getStats(): WorkerStats {
     return {
       running: state.running,
-      activeJobs: state.activeJobs,
+      activeJobs: state.currentlyExecuting.size,
       totalProcessed,
       totalSucceeded,
       totalFailed,
