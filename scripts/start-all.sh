@@ -4,9 +4,10 @@
 
 set -e
 
-# Start worker in background with lower CPU priority
+# Start bundled worker in background with lower CPU priority
+# Uses the pre-built bundle (no tsx or TypeScript compilation needed)
 echo "Starting background worker (nice 10)..."
-nice -n 10 pnpm worker &
+nice -n 10 node dist/worker.js &
 WORKER_PID=$!
 
 # Forward signals to worker for graceful shutdown
