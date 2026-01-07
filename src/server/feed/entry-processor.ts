@@ -14,7 +14,7 @@ import { entries, subscriptions, userEntries, type Entry, type NewEntry } from "
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
-import { absolutizeUrls } from "./content-cleaner";
+import { absolutizeUrls, isLessWrongFeed, cleanLessWrongContent } from "./content-cleaner";
 import { logger } from "@/lib/logger";
 
 /**
@@ -57,6 +57,8 @@ export interface ProcessEntriesOptions {
   fetchedAt?: Date;
   /** Previous lastEntriesUpdatedAt value, used to detect entries that disappeared from the feed */
   previousLastEntriesUpdatedAt?: Date | null;
+  /** The URL of the feed (for feed-specific content cleaning) */
+  feedUrl?: string;
 }
 
 /**
@@ -130,6 +132,19 @@ function stripHtml(html: string): string {
 }
 
 /**
+ * Generates a summary from raw HTML content.
+ *
+ * Strips HTML and truncates to 300 characters.
+ *
+ * @param html - The HTML content to summarize
+ * @returns Summary string
+ */
+function generateSummaryFromHtml(html: string): string {
+  const stripped = stripHtml(html);
+  return truncate(stripped, 300);
+}
+
+/**
  * Generates a summary from entry content.
  *
  * Prefers the feed-provided summary (from <description> or <summary> elements)
@@ -144,8 +159,7 @@ function stripHtml(html: string): string {
 export function generateSummary(entry: ParsedEntry): string {
   // Prefer explicit summary from feed, fall back to content
   const source = entry.summary ?? entry.content ?? "";
-  const stripped = stripHtml(source);
-  return truncate(stripped, 300);
+  return generateSummaryFromHtml(source);
 }
 
 /**
@@ -154,24 +168,41 @@ export function generateSummary(entry: ParsedEntry): string {
 interface EntryContentResult {
   /** The original content with absolutized URLs */
   contentOriginal: string | null;
-  /** Always null for feed entries (cleaning is only for saved articles) */
-  contentCleaned: null;
+  /** Cleaned content (feed-specific cleaning applied), null if no cleaning needed */
+  contentCleaned: string | null;
   /** The summary generated from original content */
   summary: string;
 }
 
 /**
- * Processes entry content: absolutizes URLs and generates a summary.
+ * Options for cleaning entry content.
+ */
+interface CleanEntryContentOptions {
+  /** The URL of the entry (used as base URL for absolutizing) */
+  entryUrl?: string;
+  /** The URL of the feed (used to detect feed-specific cleaners) */
+  feedUrl?: string;
+}
+
+/**
+ * Processes entry content: absolutizes URLs, applies feed-specific cleaning, and generates a summary.
  *
  * Note: We don't run Readability on feed entries because RSS/Atom/JSON feeds
  * already provide clean content. Readability is only used for saved articles
  * where we're extracting content from full web pages.
  *
+ * Feed-specific cleaners:
+ * - LessWrong/LesserWrong: Strips "Published on [date]<br/><br/>" prefix
+ *
  * @param parsedEntry - The parsed entry from the feed
- * @param entryUrl - The URL of the entry (used as base URL for absolutizing)
- * @returns Content result with original content and summary
+ * @param options - Cleaning options
+ * @returns Content result with original content, cleaned content (if applicable), and summary
  */
-export function cleanEntryContent(parsedEntry: ParsedEntry, entryUrl?: string): EntryContentResult {
+export function cleanEntryContent(
+  parsedEntry: ParsedEntry,
+  options: CleanEntryContentOptions = {}
+): EntryContentResult {
+  const { entryUrl, feedUrl } = options;
   const originalContent = parsedEntry.content ?? parsedEntry.summary ?? null;
 
   // If no content, return early
@@ -188,12 +219,25 @@ export function cleanEntryContent(parsedEntry: ParsedEntry, entryUrl?: string): 
     ? absolutizeUrls(originalContent, entryUrl)
     : originalContent;
 
-  // Generate summary by stripping HTML and truncating
-  const summary = generateSummary(parsedEntry);
+  // Apply feed-specific content cleaning
+  let contentCleaned: string | null = null;
+
+  if (isLessWrongFeed(feedUrl)) {
+    const cleaned = cleanLessWrongContent(absolutizedOriginal);
+    // Only set contentCleaned if cleaning actually changed something
+    if (cleaned !== absolutizedOriginal) {
+      contentCleaned = cleaned;
+    }
+  }
+
+  // Generate summary from cleaned content (if available) or original
+  // This ensures feed-specific prefixes like LessWrong's "Published on..." don't appear in summaries
+  const contentForSummary = contentCleaned ?? absolutizedOriginal;
+  const summary = generateSummaryFromHtml(contentForSummary);
 
   return {
     contentOriginal: absolutizedOriginal,
-    contentCleaned: null,
+    contentCleaned,
     summary,
   };
 }
@@ -219,9 +263,11 @@ export async function findEntryByGuid(feedId: string, guid: string): Promise<Ent
  * Creates a new entry in the database.
  *
  * @param feedId - The feed's UUID
+ * @param feedType - The feed type
  * @param parsedEntry - The parsed entry from the feed
  * @param contentHash - Pre-computed content hash
  * @param fetchedAt - Timestamp when the entry was fetched
+ * @param feedUrl - The URL of the feed (for feed-specific cleaning)
  * @returns The created entry
  */
 export async function createEntry(
@@ -229,12 +275,16 @@ export async function createEntry(
   feedType: "rss" | "atom" | "json" | "email" | "saved",
   parsedEntry: ParsedEntry,
   contentHash: string,
-  fetchedAt: Date
+  fetchedAt: Date,
+  feedUrl?: string
 ): Promise<Entry> {
   const guid = deriveGuid(parsedEntry);
 
-  // Clean the content using Readability
-  const cleaningResult = cleanEntryContent(parsedEntry, parsedEntry.link ?? undefined);
+  // Clean the content
+  const cleaningResult = cleanEntryContent(parsedEntry, {
+    entryUrl: parsedEntry.link ?? undefined,
+    feedUrl,
+  });
 
   // Only rss/atom/json entries track lastSeenAt (for visibility on subscription)
   const isFetchedType = feedType === "rss" || feedType === "atom" || feedType === "json";
@@ -267,15 +317,20 @@ export async function createEntry(
  * @param entryId - The entry's UUID
  * @param parsedEntry - The parsed entry from the feed
  * @param contentHash - New content hash
+ * @param feedUrl - The URL of the feed (for feed-specific cleaning)
  * @returns The updated entry
  */
 export async function updateEntryContent(
   entryId: string,
   parsedEntry: ParsedEntry,
-  contentHash: string
+  contentHash: string,
+  feedUrl?: string
 ): Promise<Entry> {
-  // Clean the content using Readability
-  const cleaningResult = cleanEntryContent(parsedEntry, parsedEntry.link ?? undefined);
+  // Clean the content
+  const cleaningResult = cleanEntryContent(parsedEntry, {
+    entryUrl: parsedEntry.link ?? undefined,
+    feedUrl,
+  });
 
   const [entry] = await db
     .update(entries)
@@ -299,15 +354,18 @@ export async function updateEntryContent(
  * Creates new entries or updates existing ones based on content hash.
  *
  * @param feedId - The feed's UUID
+ * @param feedType - The feed type
  * @param parsedEntry - The parsed entry from the feed
  * @param fetchedAt - Timestamp when the entry was fetched
+ * @param feedUrl - The URL of the feed (for feed-specific cleaning)
  * @returns Processing result for this entry
  */
 export async function processEntry(
   feedId: string,
   feedType: "rss" | "atom" | "json" | "email" | "saved",
   parsedEntry: ParsedEntry,
-  fetchedAt: Date
+  fetchedAt: Date,
+  feedUrl?: string
 ): Promise<ProcessedEntry> {
   const guid = deriveGuid(parsedEntry);
   const contentHash = generateContentHash(parsedEntry);
@@ -317,7 +375,7 @@ export async function processEntry(
 
   if (!existing) {
     // New entry - create it
-    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt);
+    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt, feedUrl);
 
     // Publish new_entry event for real-time updates
     // Fire and forget - we don't want publishing failures to affect entry processing
@@ -336,7 +394,7 @@ export async function processEntry(
   // Entry exists - check if content changed
   if (existing.contentHash !== contentHash) {
     // Content changed - update it
-    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash);
+    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash, feedUrl);
 
     // Publish entry_updated event for real-time updates
     // Fire and forget - we don't want publishing failures to affect entry processing
@@ -379,6 +437,7 @@ interface CachedEntryInfo {
  * @param parsedEntry - The parsed entry from the feed
  * @param fetchedAt - Timestamp when the entry was fetched
  * @param existingEntriesMap - Map of GUID to existing entry info
+ * @param feedUrl - The URL of the feed (for feed-specific cleaning)
  * @returns Processing result for this entry
  */
 async function processEntryWithCache(
@@ -386,7 +445,8 @@ async function processEntryWithCache(
   feedType: "rss" | "atom" | "json" | "email" | "saved",
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
-  existingEntriesMap: Map<string, CachedEntryInfo>
+  existingEntriesMap: Map<string, CachedEntryInfo>,
+  feedUrl?: string
 ): Promise<ProcessedEntry> {
   const guid = deriveGuid(parsedEntry);
   const contentHash = generateContentHash(parsedEntry);
@@ -396,7 +456,7 @@ async function processEntryWithCache(
 
   if (!existing) {
     // New entry - create it
-    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt);
+    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt, feedUrl);
 
     // Add to cache so duplicate GUIDs in same feed don't create duplicates
     existingEntriesMap.set(guid, { id: entry.id, guid, contentHash });
@@ -418,7 +478,7 @@ async function processEntryWithCache(
   // Entry exists - check if content changed
   if (existing.contentHash !== contentHash) {
     // Content changed - update it
-    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash);
+    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash, feedUrl);
 
     // Update cache with new hash
     existingEntriesMap.set(guid, { ...existing, contentHash });
@@ -545,7 +605,7 @@ export async function processEntries(
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
 ): Promise<ProcessEntriesResult> {
-  const { fetchedAt = new Date(), previousLastEntriesUpdatedAt } = options;
+  const { fetchedAt = new Date(), previousLastEntriesUpdatedAt, feedUrl } = options;
 
   // Derive GUIDs from all items first, so we only query for entries we need
   const guidsToCheck: string[] = [];
@@ -587,7 +647,8 @@ export async function processEntries(
         feedType,
         item,
         fetchedAt,
-        existingEntriesMap
+        existingEntriesMap,
+        feedUrl
       );
       results.push(result);
 

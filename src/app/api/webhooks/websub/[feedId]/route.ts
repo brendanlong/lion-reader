@@ -172,7 +172,10 @@ export async function POST(
   // Process entries from the pushed content
   const now = new Date();
   try {
-    const result = await processEntries(feedId, feed.type, parsedFeed, { fetchedAt: now });
+    const result = await processEntries(feedId, feed.type, parsedFeed, {
+      fetchedAt: now,
+      feedUrl: feed.url ?? undefined,
+    });
 
     // Update feed timestamps
     await db

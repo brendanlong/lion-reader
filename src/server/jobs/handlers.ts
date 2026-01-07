@@ -199,10 +199,12 @@ async function processSuccessfulFetch(
 
   // Process entries (create new, update changed, detect disappeared)
   // Pass previousLastEntriesUpdatedAt to detect entries that disappeared from the feed
+  // Pass feedUrl for feed-specific content cleaning (e.g., LessWrong)
   // After this call, parsedFeed can be GC'd since we only use feedMetadata below
   const processResult = await processEntries(feed.id, feed.type, parsedFeed, {
     fetchedAt: now,
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
+    feedUrl: feed.url ?? undefined,
   });
 
   // Calculate next fetch time based on cache headers and feed hints

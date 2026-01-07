@@ -7,6 +7,8 @@ import {
   cleanContent,
   generateCleanedSummary,
   absolutizeUrls,
+  isLessWrongFeed,
+  cleanLessWrongContent,
 } from "@/server/feed/content-cleaner";
 
 describe("cleanContent", () => {
@@ -581,6 +583,143 @@ describe("absolutizeUrls", () => {
       expect(result).not.toBeNull();
       expect(result!.content).toContain('src="https://example.com/images/test.jpg"');
       expect(result!.content).toContain('href="https://example.com/other-page"');
+    });
+  });
+});
+
+describe("isLessWrongFeed", () => {
+  describe("valid LessWrong URLs", () => {
+    it("should return true for www.lesswrong.com feed", () => {
+      expect(isLessWrongFeed("https://www.lesswrong.com/feed.xml")).toBe(true);
+    });
+
+    it("should return true for lesswrong.com feed without www", () => {
+      expect(isLessWrongFeed("https://lesswrong.com/feed.xml")).toBe(true);
+    });
+
+    it("should return true for www.lesserwrong.com feed", () => {
+      expect(isLessWrongFeed("https://www.lesserwrong.com/feed.xml")).toBe(true);
+    });
+
+    it("should return true for lesserwrong.com feed without www", () => {
+      expect(isLessWrongFeed("http://lesserwrong.com/feed.xml")).toBe(true);
+    });
+
+    it("should return true for feeds with query parameters", () => {
+      expect(isLessWrongFeed("https://www.lesswrong.com/feed.xml?view=rss&karmaThreshold=2")).toBe(
+        true
+      );
+    });
+  });
+
+  describe("non-LessWrong URLs", () => {
+    it("should return false for other domains", () => {
+      expect(isLessWrongFeed("https://example.com/feed.xml")).toBe(false);
+    });
+
+    it("should return false for domains containing lesswrong", () => {
+      expect(isLessWrongFeed("https://notlesswrong.com/feed.xml")).toBe(false);
+      expect(isLessWrongFeed("https://lesswrongfake.com/feed.xml")).toBe(false);
+    });
+
+    it("should return false for subdomains other than www", () => {
+      expect(isLessWrongFeed("https://blog.lesswrong.com/feed.xml")).toBe(false);
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should return false for null", () => {
+      expect(isLessWrongFeed(null)).toBe(false);
+    });
+
+    it("should return false for undefined", () => {
+      expect(isLessWrongFeed(undefined)).toBe(false);
+    });
+
+    it("should return false for empty string", () => {
+      expect(isLessWrongFeed("")).toBe(false);
+    });
+
+    it("should return false for invalid URL", () => {
+      expect(isLessWrongFeed("not-a-url")).toBe(false);
+    });
+  });
+});
+
+describe("cleanLessWrongContent", () => {
+  describe("removes published date prefix", () => {
+    it("should strip standard published on format with GMT", () => {
+      const content =
+        "Published on January 7, 2026 2:39 AM GMT<br/><br/><p>This is the article content.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe("<p>This is the article content.</p>");
+    });
+
+    it("should strip published on format with different timezone", () => {
+      const content = "Published on December 25, 2025 11:30 PM EST<br/><br/><p>Content here.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe("<p>Content here.</p>");
+    });
+
+    it("should handle <br> without self-closing slash", () => {
+      const content = "Published on January 1, 2026 12:00 PM PST<br><br><p>Article text.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe("<p>Article text.</p>");
+    });
+
+    it("should handle <br /> with space before slash", () => {
+      const content = "Published on March 15, 2026 3:45 AM UTC<br /><br /><p>More content.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe("<p>More content.</p>");
+    });
+
+    it("should handle mixed br tag formats", () => {
+      const content = "Published on June 30, 2025 6:00 PM GMT<br><br/><p>Mixed tags.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe("<p>Mixed tags.</p>");
+    });
+
+    it("should handle single digit day", () => {
+      const content = "Published on January 1, 2026 1:00 AM GMT<br/><br/><p>New Year article.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe("<p>New Year article.</p>");
+    });
+
+    it("should handle double digit hour without leading zero", () => {
+      const content = "Published on April 20, 2026 12:30 PM GMT<br/><br/><p>Noon article.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe("<p>Noon article.</p>");
+    });
+  });
+
+  describe("preserves content without published date prefix", () => {
+    it("should not modify content without the prefix", () => {
+      const content = "<p>This is normal article content without a date prefix.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe(content);
+    });
+
+    it("should not modify content with published date in the middle", () => {
+      const content =
+        "<p>Some intro.</p>Published on January 7, 2026 2:39 AM GMT<br/><br/><p>More content.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe(content);
+    });
+
+    it("should not modify content with partial match", () => {
+      const content = "Published on January 7, 2026<br/><br/><p>Missing time.</p>";
+      const result = cleanLessWrongContent(content);
+      expect(result).toBe(content);
+    });
+  });
+
+  describe("real-world examples", () => {
+    it("should clean actual LessWrong RSS content", () => {
+      const content = `Published on January 7, 2026 2:39 AM GMT<br/><br/><p>I am not an expert on dating. In fact, I am an extremely conservative male who is not polyamorous and who is not really interested in dating.</p><p>However, I have seen my friends approach dating in a way that seems irrational to me.</p>`;
+      const result = cleanLessWrongContent(content);
+      expect(result).not.toContain("Published on");
+      expect(result).toContain("I am not an expert on dating");
+      expect(result.startsWith("<p>")).toBe(true);
     });
   });
 });
