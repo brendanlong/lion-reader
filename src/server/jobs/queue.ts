@@ -22,7 +22,7 @@ import { generateUuidv7 } from "../../lib/uuidv7";
 type RawJobRow = {
   id: string;
   type: string;
-  payload: string;
+  payload: Record<string, unknown>;
   enabled: boolean;
   next_run_at: string | null;
   running_since: string | null;
@@ -114,7 +114,7 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
     .values({
       id,
       type,
-      payload: JSON.stringify(payload),
+      payload,
       enabled,
       nextRunAt,
       createdAt: now,
@@ -264,7 +264,7 @@ export async function getJob(jobId: string): Promise<Job | null> {
  * @returns The parsed payload
  */
 export function getJobPayload<T extends JobType>(job: Job): JobPayloads[T] {
-  return JSON.parse(job.payload) as JobPayloads[T];
+  return job.payload as JobPayloads[T];
 }
 
 /**
@@ -277,7 +277,7 @@ export async function getFeedJob(feedId: string): Promise<Job | null> {
   const result = await db.execute<RawJobRow>(sql`
     SELECT * FROM ${jobs}
     WHERE type = 'fetch_feed'
-      AND payload::json->>'feedId' = ${feedId}
+      AND payload->>'feedId' = ${feedId}
     LIMIT 1
   `);
 
@@ -308,7 +308,7 @@ export async function createOrEnableFeedJob(feedId: string, nextRunAt?: Date): P
       next_run_at = COALESCE(next_run_at, ${runAt}),
       updated_at = ${now}
     WHERE type = 'fetch_feed'
-      AND payload::json->>'feedId' = ${feedId}
+      AND payload->>'feedId' = ${feedId}
     RETURNING *
   `);
 
@@ -341,7 +341,7 @@ export async function enableFeedJob(feedId: string): Promise<Job | null> {
       enabled = true,
       updated_at = ${now}
     WHERE type = 'fetch_feed'
-      AND payload::json->>'feedId' = ${feedId}
+      AND payload->>'feedId' = ${feedId}
     RETURNING *
   `);
 
@@ -375,7 +375,7 @@ export async function syncFeedJobEnabled(
       ),
       updated_at = ${now}
     WHERE type = 'fetch_feed'
-      AND payload::json->>'feedId' = ${feedId}
+      AND payload->>'feedId' = ${feedId}
     RETURNING *
   `);
 
@@ -404,7 +404,7 @@ export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Pro
       next_run_at = ${nextRunAt},
       updated_at = ${now}
     WHERE type = 'fetch_feed'
-      AND payload::json->>'feedId' = ${feedId}
+      AND payload->>'feedId' = ${feedId}
     RETURNING *
   `);
 

@@ -400,7 +400,7 @@ export const jobs = pgTable(
   {
     id: uuid("id").primaryKey(),
     type: text("type").notNull(), // 'fetch_feed', 'renew_websub'
-    payload: text("payload").notNull().default("{}"), // JSON payload
+    payload: jsonb("payload").notNull().default({}).$type<Record<string, unknown>>(),
 
     // Scheduling state
     enabled: boolean("enabled").notNull().default(true),

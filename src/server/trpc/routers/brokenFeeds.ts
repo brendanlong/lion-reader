@@ -168,9 +168,7 @@ export const brokenFeedsRouter = createTRPCRouter({
           enabled: true,
           updatedAt: now,
         })
-        .where(
-          sql`${jobs.payload}::json->>'feedId' = ${input.feedId} AND ${jobs.type} = 'fetch_feed'`
-        );
+        .where(sql`${jobs.payload}->>'feedId' = ${input.feedId} AND ${jobs.type} = 'fetch_feed'`);
 
       return { success: true };
     }),
