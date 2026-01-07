@@ -69,9 +69,14 @@ export function Sidebar({ onClose }: SidebarProps) {
       }
       toast.error("Failed to unsubscribe from feed");
     },
-    onSettled: () => {
-      // Invalidate related caches that need fresh server data
-      utils.subscriptions.list.invalidate();
+    onSettled: (_data, error) => {
+      // Only invalidate on error since optimistic update handles the success case
+      // The SSE handler will also skip invalidation since the subscription is already removed
+      if (error) {
+        utils.subscriptions.list.invalidate();
+      }
+      // Invalidate entries and tags to update counts (entries from unsubscribed feed
+      // are filtered out by the query, tags need updated unread counts)
       utils.entries.list.invalidate();
       utils.tags.list.invalidate();
     },
