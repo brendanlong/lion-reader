@@ -16,7 +16,7 @@ primary_region = "lax"
 
 [deploy]
   # Run migrations before starting the new app version
-  release_command = "pnpm db:migrate"
+  release_command = "node dist/migrate.js"
   # Rolling deployment: update one machine at a time for zero-downtime deploys
   strategy = "rolling"
 
