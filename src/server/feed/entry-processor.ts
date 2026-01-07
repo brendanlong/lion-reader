@@ -46,6 +46,10 @@ export interface ProcessEntriesResult {
   updatedCount: number;
   /** Number of entries unchanged (content hash matched) */
   unchangedCount: number;
+  /** Number of entries that disappeared from the feed */
+  disappearedCount: number;
+  /** Whether any entries changed (new, updated, or disappeared) */
+  hasChanges: boolean;
   /** Details of each processed entry */
   entries: ProcessedEntry[];
 }
@@ -56,6 +60,8 @@ export interface ProcessEntriesResult {
 export interface ProcessEntriesOptions {
   /** Current timestamp to use for fetchedAt (defaults to now) */
   fetchedAt?: Date;
+  /** Previous lastEntriesUpdatedAt value, used to detect entries that disappeared from the feed */
+  previousLastEntriesUpdatedAt?: Date | null;
 }
 
 /**
@@ -538,6 +544,9 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
  * and tracks statistics. Also creates user_entries records
  * to make entries visible to all active subscribers.
  *
+ * Detects entries that disappeared from the feed (entries that had
+ * lastSeenAt = previousLastEntriesUpdatedAt but aren't in the current feed).
+ *
  * @param feedId - The feed's UUID
  * @param feedType - The feed type (rss, atom, json, email, saved)
  * @param feed - The parsed feed containing entries
@@ -554,7 +563,7 @@ export async function processEntries(
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
 ): Promise<ProcessEntriesResult> {
-  const { fetchedAt = new Date() } = options;
+  const { fetchedAt = new Date(), previousLastEntriesUpdatedAt } = options;
 
   // Derive GUIDs from all items first, so we only query for entries we need
   const guidsToCheck: string[] = [];
@@ -565,6 +574,7 @@ export async function processEntries(
       // Invalid entry without GUID - will be skipped during processing
     }
   }
+  const currentGuidsSet = new Set(guidsToCheck);
 
   // Batch load only the entries we're looking for (by GUID) to avoid N+1 queries
   // This is much more efficient than querying per-entry, and doesn't load
@@ -613,13 +623,33 @@ export async function processEntries(
     }
   }
 
+  // Detect entries that disappeared from the feed (rss/atom/json only)
+  // These are entries where lastSeenAt = previousLastEntriesUpdatedAt but guid not in current feed
+  let disappearedCount = 0;
+  const isFetchedType = feedType === "rss" || feedType === "atom" || feedType === "json";
+
+  if (isFetchedType && previousLastEntriesUpdatedAt) {
+    // Find entries that were previously "current" (lastSeenAt = previousLastEntriesUpdatedAt)
+    // but are no longer in the feed
+    const previouslyCurrentEntries = await db
+      .select({ guid: entries.guid })
+      .from(entries)
+      .where(and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, previousLastEntriesUpdatedAt)));
+
+    for (const entry of previouslyCurrentEntries) {
+      if (!currentGuidsSet.has(entry.guid)) {
+        disappearedCount++;
+      }
+    }
+  }
+
   const allEntryIds = results.map((r) => r.id);
   const newEntryIds = results.filter((r) => r.isNew).map((r) => r.id);
-  const hasChanges = newCount > 0 || updatedCount > 0;
+  const hasChanges = newCount > 0 || updatedCount > 0 || disappearedCount > 0;
 
   // Update lastSeenAt for all entries in this fetch (rss/atom/json only)
-  // Only update if something changed - if all entries unchanged, lastSeenAt is still valid
-  const isFetchedType = feedType === "rss" || feedType === "atom" || feedType === "json";
+  // This happens when there are changes (new, updated, or disappeared entries)
+  // The timestamp used here should match feeds.lastEntriesUpdatedAt
   if (isFetchedType && hasChanges) {
     await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
   }
@@ -635,6 +665,8 @@ export async function processEntries(
     newCount,
     updatedCount,
     unchangedCount,
+    disappearedCount,
+    hasChanges,
     entries: results,
   };
 }

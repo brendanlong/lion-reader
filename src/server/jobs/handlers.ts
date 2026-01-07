@@ -197,9 +197,13 @@ async function processSuccessfulFetch(
     syndication: parsedFeed.syndication,
   };
 
-  // Process entries (create new, update changed)
+  // Process entries (create new, update changed, detect disappeared)
+  // Pass previousLastEntriesUpdatedAt to detect entries that disappeared from the feed
   // After this call, parsedFeed can be GC'd since we only use feedMetadata below
-  const processResult = await processEntries(feed.id, feed.type, parsedFeed, { fetchedAt: now });
+  const processResult = await processEntries(feed.id, feed.type, parsedFeed, {
+    fetchedAt: now,
+    previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
+  });
 
   // Calculate next fetch time based on cache headers and feed hints
   const nextFetch = calculateNextFetch({
@@ -215,6 +219,11 @@ async function processSuccessfulFetch(
   // Update feed metadata including WebSub hub discovery
   // Fall back to domain name if no title is available
   const fallbackTitle = feed.url ? getDomainFromUrl(feed.url) : undefined;
+
+  // Only update lastEntriesUpdatedAt when entries actually changed (new, updated, or disappeared)
+  // This timestamp must match entries.lastSeenAt for entries currently in the feed
+  const lastEntriesUpdatedAt = processResult.hasChanges ? now : feed.lastEntriesUpdatedAt;
+
   await db
     .update(feeds)
     .set({
@@ -225,6 +234,7 @@ async function processSuccessfulFetch(
       lastModifiedHeader: cacheHeaders.lastModified ?? feed.lastModifiedHeader,
       bodyHash,
       lastFetchedAt: now,
+      lastEntriesUpdatedAt,
       nextFetchAt: nextFetch.nextFetchAt,
       consecutiveFailures: 0,
       lastError: null,
@@ -242,6 +252,7 @@ async function processSuccessfulFetch(
       newEntries: processResult.newCount,
       updatedEntries: processResult.updatedCount,
       unchangedEntries: processResult.unchangedCount,
+      disappearedEntries: processResult.disappearedCount,
       nextFetchReason: nextFetch.reason,
     },
   };

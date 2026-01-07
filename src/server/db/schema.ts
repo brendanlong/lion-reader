@@ -156,6 +156,9 @@ export const feeds = pgTable(
     lastModifiedHeader: text("last_modified_header"),
     bodyHash: text("body_hash"), // SHA-256 hash of raw feed body for change detection
     lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
+    // Timestamp when entries last changed (new, updated, or removed from feed)
+    // This matches entries.lastSeenAt for entries currently in the feed
+    lastEntriesUpdatedAt: timestamp("last_entries_updated_at", { withTimezone: true }),
     nextFetchAt: timestamp("next_fetch_at", { withTimezone: true }),
 
     // Error tracking
