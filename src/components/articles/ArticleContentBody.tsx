@@ -11,11 +11,13 @@ import { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
 
-// Configure DOMPurify to open all external links in new tabs
+// Configure DOMPurify to:
+// 1. Open all external links in new tabs
+// 2. Lazy load all images
 // This hook runs after each element is sanitized
 if (typeof window !== "undefined") {
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-    // Only process anchor elements with href attributes
+    // Add target="_blank" for external links
     if (node.tagName === "A" && node.hasAttribute("href")) {
       const href = node.getAttribute("href") ?? "";
       // Only add target="_blank" for http/https links (external links)
@@ -23,6 +25,11 @@ if (typeof window !== "undefined") {
         node.setAttribute("target", "_blank");
         node.setAttribute("rel", "noopener noreferrer");
       }
+    }
+
+    // Lazy load all images
+    if (node.tagName === "IMG") {
+      node.setAttribute("loading", "lazy");
     }
   });
 }
@@ -348,7 +355,7 @@ export function ArticleContentBody({
       // htmlToClientNarration, so we just need to sanitize it
       return DOMPurify.sanitize(narration.processedHtml, {
         ADD_TAGS: ["iframe"],
-        ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id"],
+        ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id", "loading"],
         FORBID_TAGS: ["style", "script"],
         FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
       });
@@ -357,7 +364,7 @@ export function ArticleContentBody({
     const sanitized = DOMPurify.sanitize(contentToDisplay, {
       // Allow safe tags and attributes, plus data-para-id for highlighting
       ADD_TAGS: ["iframe"],
-      ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id"],
+      ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id", "loading"],
       FORBID_TAGS: ["style", "script"],
       FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
     });
