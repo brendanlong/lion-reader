@@ -61,8 +61,20 @@ export default function SubscribePage() {
 
   // Subscribe mutation
   const subscribeMutation = trpc.subscriptions.create.useMutation({
-    onSuccess: () => {
-      utils.subscriptions.list.invalidate();
+    onSuccess: (data) => {
+      // Add the new subscription directly to the cache instead of invalidating
+      // This avoids an extra network request and duplicate SSE-triggered invalidations
+      utils.subscriptions.list.setData(undefined, (oldData) => {
+        if (!oldData) return oldData;
+        // Insert the new subscription and maintain alphabetical order by title
+        const newItems = [...oldData.items, data];
+        newItems.sort((a, b) => {
+          const titleA = (a.subscription.customTitle || a.feed.title || "").toLowerCase();
+          const titleB = (b.subscription.customTitle || b.feed.title || "").toLowerCase();
+          return titleA.localeCompare(titleB);
+        });
+        return { ...oldData, items: newItems };
+      });
       router.push("/all");
     },
     onError: () => {
