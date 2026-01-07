@@ -556,7 +556,6 @@ export const entriesRouter = createTRPCRouter({
     .output(markReadOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const now = new Date();
 
       // Update read status on user_entries rows that exist for this user
       // Visibility is enforced by the user_entries table - only rows that exist can be updated
@@ -564,7 +563,6 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           read: input.read,
-          readAt: input.read ? now : null,
         })
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
 
@@ -612,7 +610,6 @@ export const entriesRouter = createTRPCRouter({
     .output(z.object({ count: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const now = new Date();
 
       // Build conditions for the update
       const conditions = [eq(userEntries.userId, userId), eq(userEntries.read, false)];
@@ -782,7 +779,6 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           read: true,
-          readAt: now,
         })
         .where(and(...conditions));
 
@@ -814,7 +810,6 @@ export const entriesRouter = createTRPCRouter({
     .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const now = new Date();
 
       // Check if entry is visible to user (via user_entries)
       const userEntry = await ctx.db
@@ -832,7 +827,6 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           starred: true,
-          starredAt: now,
         })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
 
@@ -893,7 +887,6 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           starred: false,
-          starredAt: null,
         })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
 

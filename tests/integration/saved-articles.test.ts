@@ -141,9 +141,7 @@ async function createTestSavedArticle(
     userId,
     entryId: articleId,
     read: options.read ?? false,
-    readAt: options.read ? now : null,
     starred: options.starred ?? false,
-    starredAt: options.starred ? now : null,
   });
 
   return articleId;
@@ -445,7 +443,6 @@ describe("Saved Articles API", () => {
         .from(userEntries)
         .where(eq(userEntries.userId, userId));
       expect(userEntriesResults.every((a) => a.read === true)).toBe(true);
-      expect(userEntriesResults.every((a) => a.readAt !== null)).toBe(true);
     });
 
     it("marks articles as unread", async () => {
@@ -466,7 +463,6 @@ describe("Saved Articles API", () => {
         .from(userEntries)
         .where(eq(userEntries.userId, userId));
       expect(userEntriesResults.every((a) => a.read === false)).toBe(true);
-      expect(userEntriesResults.every((a) => a.readAt === null)).toBe(true);
     });
 
     it("ignores non-existent article IDs", async () => {
@@ -557,7 +553,6 @@ describe("Saved Articles API", () => {
         .where(eq(userEntries.entryId, articleId))
         .limit(1);
       expect(dbUserEntry[0].starred).toBe(true);
-      expect(dbUserEntry[0].starredAt).not.toBeNull();
     });
 
     it("throws error for non-existent article", async () => {
@@ -611,7 +606,6 @@ describe("Saved Articles API", () => {
         .where(eq(userEntries.entryId, articleId))
         .limit(1);
       expect(dbUserEntry[0].starred).toBe(false);
-      expect(dbUserEntry[0].starredAt).toBeNull();
     });
 
     it("throws error for non-existent article", async () => {

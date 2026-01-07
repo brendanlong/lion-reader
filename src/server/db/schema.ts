@@ -371,16 +371,12 @@ export const userEntries = pgTable(
 
     read: boolean("read").notNull().default(false),
     starred: boolean("starred").notNull().default(false),
-
-    readAt: timestamp("read_at", { withTimezone: true }),
-    starredAt: timestamp("starred_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId] }),
-    // For finding unread entries quickly
-    index("idx_user_entries_unread").on(table.userId, table.entryId),
-    // For starred entries view
-    index("idx_user_entries_starred").on(table.userId, table.starredAt),
+    // For joins from entries table
+    index("idx_user_entries_entry_id").on(table.entryId),
+    // Partial indexes defined in migration (can't express WHERE clause in drizzle)
   ]
 );
 
