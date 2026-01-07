@@ -16,7 +16,7 @@ function createMockJob(id: string, type: string = "fetch_feed"): Job {
   return {
     id,
     type,
-    payload: JSON.stringify({ feedId: `feed-${id}` }),
+    payload: { feedId: `feed-${id}` },
     enabled: true,
     consecutiveFailures: 0,
     nextRunAt: new Date(),
