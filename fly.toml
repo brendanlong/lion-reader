@@ -31,6 +31,7 @@ primary_region = "lax"
   PORT = "3000"
   # Disable embedded worker since we run a separate niced process
   DISABLE_EMBEDDED_WORKER = "true"
+  WORKER_CONCURRENCY = "1"
 
 [http_service]
   internal_port = 3000
