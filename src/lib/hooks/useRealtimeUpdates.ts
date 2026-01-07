@@ -349,21 +349,41 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         utils.entries.list.invalidate();
       } else if (data.type === "subscription_created") {
         // A new subscription was created (possibly from another tab/device)
-        // Invalidate subscriptions to show the new feed in the sidebar
-        utils.subscriptions.list.invalidate();
+        // Check if we already have this subscription in cache (meaning we created it in this tab)
+        const existingData = utils.subscriptions.list.getData();
+        const alreadyInCache = existingData?.items.some(
+          (item) => item.subscription.id === data.subscriptionId
+        );
 
-        // Also invalidate entries to fetch any entries that may have been
-        // created before the SSE connection subscribed to the new feed's channel.
-        // This handles the race condition where new_entry events arrive before
-        // the subscription_created event.
-        utils.entries.list.invalidate();
+        if (!alreadyInCache) {
+          // Only invalidate if this is from another tab/device
+          // Invalidate subscriptions to show the new feed in the sidebar
+          utils.subscriptions.list.invalidate();
+
+          // Also invalidate entries to fetch any entries that may have been
+          // created before the SSE connection subscribed to the new feed's channel.
+          // This handles the race condition where new_entry events arrive before
+          // the subscription_created event.
+          utils.entries.list.invalidate();
+        }
+        // If already in cache, the mutation handler already updated the cache
       } else if (data.type === "subscription_deleted") {
         // A subscription was deleted (possibly from another tab/device)
-        // Invalidate subscriptions to remove the feed from the sidebar
-        utils.subscriptions.list.invalidate();
+        // Check if the subscription is already removed from cache (meaning we deleted it in this tab)
+        const existingData = utils.subscriptions.list.getData();
+        const stillInCache = existingData?.items.some(
+          (item) => item.subscription.id === data.subscriptionId
+        );
 
-        // Also invalidate entries to remove entries from the deleted feed
-        utils.entries.list.invalidate();
+        if (stillInCache) {
+          // Only invalidate if this is from another tab/device
+          // Invalidate subscriptions to remove the feed from the sidebar
+          utils.subscriptions.list.invalidate();
+
+          // Also invalidate entries to remove entries from the deleted feed
+          utils.entries.list.invalidate();
+        }
+        // If already removed from cache, the mutation handler already updated it
       } else if (data.type === "saved_article_created") {
         // A saved article was created (from bookmarklet in another window)
         // Invalidate the saved articles list to show the new article
