@@ -280,7 +280,8 @@ describe("Entry Processor", () => {
       expect(entry.title).toBe("Article Title");
       expect(entry.author).toBe("John Doe");
       expect(entry.contentOriginal).toBe("<p>Article content here.</p>");
-      expect(entry.summary).toBe("Article content here.");
+      // Summary prefers feed-provided summary over generating from content
+      expect(entry.summary).toBe("Article summary.");
       expect(entry.publishedAt?.toISOString()).toBe(pubDate.toISOString());
       expect(entry.fetchedAt.toISOString()).toBe(fetchedAt.toISOString());
       expect(entry.contentHash).toBe(contentHash);
