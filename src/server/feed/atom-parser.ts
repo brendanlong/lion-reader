@@ -26,7 +26,6 @@ const parserOptions = {
   removeNSPrefix: false,
 };
 
-
 /**
  * Atom link element structure.
  */
@@ -440,11 +439,8 @@ export function parseAtomFeed(xml: string): ParsedFeed {
     throw new Error("Invalid Atom feed: missing feed element");
   }
 
-  // Extract feed title
+  // Extract feed title (may be undefined if feed has no title)
   const title = extractTextConstruct(feed.title);
-  if (!title) {
-    throw new Error("Invalid Atom feed: missing title");
-  }
 
   // Normalize entries to array
   let entries: AtomEntry[] = [];

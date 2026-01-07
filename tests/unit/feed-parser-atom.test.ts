@@ -127,7 +127,7 @@ describe("parseAtomFeed", () => {
       expect(feed.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
     });
 
-    it("throws error for feed without title", () => {
+    it("returns undefined title for feed without title", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <subtitle>No title here</subtitle>
@@ -135,7 +135,9 @@ describe("parseAtomFeed", () => {
           <updated>2024-01-01T12:00:00Z</updated>
         </feed>`;
 
-      expect(() => parseAtomFeed(xml)).toThrow("Invalid Atom feed: missing title");
+      const feed = parseAtomFeed(xml);
+      expect(feed.title).toBeUndefined();
+      expect(feed.description).toBe("No title here");
     });
 
     it("throws error for missing feed element", () => {

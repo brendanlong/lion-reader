@@ -22,7 +22,13 @@ import {
   type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { parseFeed, discoverFeeds, detectFeedType, deriveGuid } from "@/server/feed";
+import {
+  parseFeed,
+  discoverFeeds,
+  detectFeedType,
+  deriveGuid,
+  getDomainFromUrl,
+} from "@/server/feed";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import {
   createOrEnableFeedJob,
@@ -386,11 +392,14 @@ async function subscribeToNewOrUnfetchedFeed(
     const feedType = detectFeedType(feedContent) as FeedType;
     const now = new Date();
 
+    // Use domain as fallback if feed has no title
+    const fallbackTitle = getDomainFromUrl(feedUrl);
+
     const newFeed = {
       id: feedId,
       type: feedType === "unknown" ? "rss" : feedType,
       url: feedUrl,
-      title: parsedFeed.title || null,
+      title: parsedFeed.title || fallbackTitle || null,
       description: parsedFeed.description || null,
       siteUrl: parsedFeed.siteUrl || null,
       nextFetchAt: now,

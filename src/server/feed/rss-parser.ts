@@ -26,7 +26,6 @@ const parserOptions = {
   removeNSPrefix: false,
 };
 
-
 /**
  * Parsed RSS channel structure from fast-xml-parser.
  * This represents the raw parsed XML structure before normalization.
@@ -473,11 +472,8 @@ export function parseRssFeed(xml: string): ParsedFeed {
     items = Array.isArray(rawItems) ? rawItems : [rawItems];
   }
 
-  // Extract feed metadata
+  // Extract feed metadata (title may be undefined if feed has no title)
   const title = extractText(channel.title);
-  if (!title) {
-    throw new Error("Invalid RSS feed: missing title");
-  }
 
   return {
     title,
