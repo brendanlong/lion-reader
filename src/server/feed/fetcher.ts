@@ -157,6 +157,81 @@ const DEFAULT_TIMEOUT_MS = 30000;
 /** Default maximum redirects to follow */
 const DEFAULT_MAX_REDIRECTS = 5;
 
+/**
+ * Translates technical Node.js network error messages into user-friendly descriptions.
+ *
+ * @param error - The error object from a failed fetch
+ * @returns A user-friendly error message
+ */
+export function formatNetworkErrorMessage(error: Error): string {
+  const message = error.message;
+  const code = (error as NodeJS.ErrnoException).code;
+
+  // DNS resolution errors
+  if (code === "ENOTFOUND" || message.includes("ENOTFOUND")) {
+    // Extract domain from messages like "getaddrinfo ENOTFOUND example.com"
+    const domainMatch = message.match(/ENOTFOUND\s+(\S+)/);
+    const domain = domainMatch?.[1];
+    return domain ? `Domain not found: ${domain}` : "Domain not found (DNS lookup failed)";
+  }
+
+  // DNS temporary failure (e.g., DNS server not responding)
+  if (code === "EAI_AGAIN" || message.includes("EAI_AGAIN")) {
+    return "DNS lookup timed out (temporary DNS failure)";
+  }
+
+  // Connection refused (server not accepting connections)
+  if (code === "ECONNREFUSED" || message.includes("ECONNREFUSED")) {
+    return "Connection refused (server not accepting connections)";
+  }
+
+  // Connection timed out
+  if (code === "ETIMEDOUT" || message.includes("ETIMEDOUT")) {
+    return "Connection timed out";
+  }
+
+  // Connection reset
+  if (code === "ECONNRESET" || message.includes("ECONNRESET")) {
+    return "Connection reset by server";
+  }
+
+  // Host unreachable
+  if (code === "EHOSTUNREACH" || message.includes("EHOSTUNREACH")) {
+    return "Host unreachable";
+  }
+
+  // Network unreachable
+  if (code === "ENETUNREACH" || message.includes("ENETUNREACH")) {
+    return "Network unreachable";
+  }
+
+  // SSL/TLS certificate errors
+  if (code === "CERT_HAS_EXPIRED" || message.includes("certificate has expired")) {
+    return "SSL certificate has expired";
+  }
+  if (code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || message.includes("unable to verify")) {
+    return "SSL certificate verification failed";
+  }
+  if (
+    code === "DEPTH_ZERO_SELF_SIGNED_CERT" ||
+    message.includes("self-signed certificate") ||
+    message.includes("self signed certificate")
+  ) {
+    return "SSL certificate is self-signed";
+  }
+  if (message.includes("certificate") || message.includes("SSL") || message.includes("TLS")) {
+    return `SSL/TLS error: ${message}`;
+  }
+
+  // Socket hang up
+  if (message.includes("socket hang up")) {
+    return "Connection closed unexpectedly";
+  }
+
+  // Return original message for unrecognized errors
+  return message;
+}
+
 const GITHUB_URL = "https://github.com/brendanlong/lion-reader";
 
 /**
@@ -427,7 +502,8 @@ export async function fetchFeed(
       }
 
       // Handle other network errors
-      const message = error instanceof Error ? error.message : "Unknown network error";
+      const message =
+        error instanceof Error ? formatNetworkErrorMessage(error) : "Unknown network error";
 
       return {
         status: "network_error",
