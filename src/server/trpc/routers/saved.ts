@@ -79,8 +79,6 @@ const savedArticleFullSchema = z.object({
   read: z.boolean(),
   starred: z.boolean(),
   savedAt: z.date(),
-  readAt: z.date().nullable(),
-  starredAt: z.date().nullable(),
 });
 
 // ============================================================================
@@ -265,8 +263,6 @@ export const savedRouter = createTRPCRouter({
             read: userState.read,
             starred: userState.starred,
             savedAt: entry.fetchedAt,
-            readAt: userState.readAt,
-            starredAt: userState.starredAt,
           },
         };
       }
@@ -414,8 +410,6 @@ export const savedRouter = createTRPCRouter({
         entryId,
         read: false,
         starred: false,
-        readAt: null,
-        starredAt: null,
       });
 
       // Publish event to notify other browser windows/tabs
@@ -435,8 +429,6 @@ export const savedRouter = createTRPCRouter({
           read: false,
           starred: false,
           savedAt: finalPublishedAt,
-          readAt: null,
-          starredAt: null,
         },
       };
     }),
