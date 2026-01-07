@@ -263,13 +263,17 @@ async function subscribeToExistingFeed(
   }
 
   // Find entries currently in the feed using lastSeenAt
-  // Entries where lastSeenAt = lastFetchedAt are in the current feed
+  // Entries where lastSeenAt = lastEntriesUpdatedAt are in the current feed
+  // We use lastEntriesUpdatedAt (not lastFetchedAt) because it only updates when entries change,
+  // ensuring exact sync with entries.lastSeenAt
   let unreadCount = 0;
-  if (feedRecord.lastFetchedAt) {
+  if (feedRecord.lastEntriesUpdatedAt) {
     const matchingEntries = await db
       .select({ id: entries.id })
       .from(entries)
-      .where(and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, feedRecord.lastFetchedAt)));
+      .where(
+        and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, feedRecord.lastEntriesUpdatedAt))
+      );
 
     if (matchingEntries.length > 0) {
       const pairs = matchingEntries.map((entry) => ({
