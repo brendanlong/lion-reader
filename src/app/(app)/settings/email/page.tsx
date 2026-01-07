@@ -433,8 +433,11 @@ function SpamPreferenceSection() {
     onSuccess: () => {
       toast.success("Preference updated");
     },
-    onSettled: () => {
-      utils.users["me.preferences"].invalidate();
+    onSettled: (_data, error) => {
+      // Only invalidate on error since optimistic update handles the success case
+      if (error) {
+        utils.users["me.preferences"].invalidate();
+      }
     },
   });
 
