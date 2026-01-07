@@ -205,7 +205,16 @@ function SettingsContent() {
             >
               Brendan Long
             </a>{" "}
-            and Claude.
+            and{" "}
+            <a
+              href="https://www.brendanlong.com/claude-wrote-me-a-400-commit-rss-reader-app.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-900 hover:underline dark:text-zinc-50"
+            >
+              Claude
+            </a>
+            .
           </p>
           <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
             View the source code on{" "}
