@@ -116,7 +116,7 @@ describe("parseRssFeed", () => {
       expect(feed.items[0].pubDate).toBeUndefined();
     });
 
-    it("throws error for feed without title", () => {
+    it("returns undefined title for feed without title", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <rss version="2.0">
           <channel>
@@ -124,7 +124,9 @@ describe("parseRssFeed", () => {
           </channel>
         </rss>`;
 
-      expect(() => parseRssFeed(xml)).toThrow("Invalid RSS feed: missing title");
+      const feed = parseRssFeed(xml);
+      expect(feed.title).toBeUndefined();
+      expect(feed.description).toBe("No title here");
     });
 
     it("throws error for feed without channel", () => {

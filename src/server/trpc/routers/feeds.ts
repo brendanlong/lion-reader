@@ -15,6 +15,7 @@ import {
   discoverFeeds,
   detectFeedType,
   getCommonFeedUrls,
+  getDomainFromUrl,
   type ParsedEntry,
   type DiscoveredFeed,
 } from "@/server/feed";
@@ -372,10 +373,13 @@ export const feedsRouter = createTRPCRouter({
       // Step 4: Build and return the preview
       const sampleEntries = parsedFeed.items.slice(0, MAX_SAMPLE_ENTRIES).map(toSampleEntry);
 
+      // Use domain as fallback if feed has no title
+      const fallbackTitle = getDomainFromUrl(feedUrl) ?? "Untitled Feed";
+
       return {
         feed: {
           url: feedUrl,
-          title: parsedFeed.title,
+          title: parsedFeed.title ?? fallbackTitle,
           description: parsedFeed.description ?? null,
           siteUrl: parsedFeed.siteUrl ?? null,
           iconUrl: parsedFeed.iconUrl ?? null,

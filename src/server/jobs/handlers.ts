@@ -22,6 +22,7 @@ import {
   processEntries,
   calculateNextFetch,
   renewExpiringSubscriptions,
+  getDomainFromUrl,
   type FetchFeedResult,
 } from "../feed";
 import { type JobPayloads, createOrEnableFeedJob, enableFeedJob } from "./queue";
@@ -188,10 +189,12 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       });
 
       // Update feed metadata including WebSub hub discovery
+      // Fall back to domain name if no title is available
+      const fallbackTitle = feed.url ? getDomainFromUrl(feed.url) : undefined;
       await db
         .update(feeds)
         .set({
-          title: parsedFeed.title || feed.title,
+          title: parsedFeed.title || feed.title || fallbackTitle,
           description: parsedFeed.description || feed.description,
           siteUrl: parsedFeed.siteUrl || feed.siteUrl,
           etag: result.cacheHeaders.etag ?? feed.etag,
