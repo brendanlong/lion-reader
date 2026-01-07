@@ -201,7 +201,16 @@ function LoginForm() {
           >
             Brendan Long
           </a>{" "}
-          and Claude •{" "}
+          and{" "}
+          <a
+            href="https://www.brendanlong.com/claude-wrote-me-a-400-commit-rss-reader-app.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
+          >
+            Claude
+          </a>{" "}
+          •{" "}
           <a
             href="https://github.com/brendanlong/lion-reader"
             target="_blank"
