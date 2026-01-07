@@ -19,6 +19,7 @@ import {
   type ParsedEntry,
   type DiscoveredFeed,
 } from "@/server/feed";
+import { isLessWrongFeed, cleanLessWrongContent } from "@/server/feed/content-cleaner";
 
 // ============================================================================
 // Constants
@@ -184,16 +185,28 @@ function truncateText(text: string | undefined, maxLength: number): string | nul
 /**
  * Transforms a ParsedEntry to a sample entry for the preview response.
  *
+ * Applies feed-specific cleaning (e.g., stripping LessWrong's "Published on..." prefix)
+ * before generating the summary.
+ *
  * @param entry - The parsed entry
+ * @param feedUrl - The feed URL (for feed-specific cleaning)
  * @returns A sample entry object
  */
-function toSampleEntry(entry: ParsedEntry): z.infer<typeof sampleEntrySchema> {
+function toSampleEntry(entry: ParsedEntry, feedUrl: string): z.infer<typeof sampleEntrySchema> {
+  // Get the content to use for summary
+  let content = entry.summary ?? entry.content;
+
+  // Apply feed-specific cleaning
+  if (content && isLessWrongFeed(feedUrl)) {
+    content = cleanLessWrongContent(content);
+  }
+
   return {
     guid: entry.guid ?? null,
     link: entry.link ?? null,
     title: entry.title ?? null,
     author: entry.author ?? null,
-    summary: truncateText(entry.summary ?? entry.content, 300),
+    summary: truncateText(content, 300),
     pubDate: entry.pubDate ?? null,
   };
 }
@@ -371,7 +384,9 @@ export const feedsRouter = createTRPCRouter({
       }
 
       // Step 4: Build and return the preview
-      const sampleEntries = parsedFeed.items.slice(0, MAX_SAMPLE_ENTRIES).map(toSampleEntry);
+      const sampleEntries = parsedFeed.items
+        .slice(0, MAX_SAMPLE_ENTRIES)
+        .map((entry) => toSampleEntry(entry, feedUrl));
 
       // Use domain as fallback if feed has no title
       const fallbackTitle = getDomainFromUrl(feedUrl) ?? "Untitled Feed";
