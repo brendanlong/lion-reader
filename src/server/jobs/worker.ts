@@ -296,9 +296,26 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         const job = await claimJob({ types: jobTypes });
         if (job === null) break;
 
-        const promise = executeJob(job).finally(() => {
-          state.currentlyExecuting.delete(promise);
-        });
+        // Wrap executeJob with .catch() to ensure no unhandled rejections escape
+        // into Promise.race()/Promise.all(). The error is already logged and
+        // reported to Sentry inside processJob, so we just need to prevent
+        // the rejection from propagating.
+        const promise = executeJob(job)
+          .catch((error) => {
+            // This should rarely happen since processJob has its own try/catch,
+            // but handle it defensively
+            logger.error("Unexpected error in job execution", {
+              jobId: job.id,
+              error: error instanceof Error ? error.message : "Unknown error",
+            });
+            Sentry.captureException(error, {
+              tags: { jobType: job.type, context: "executeJob-unhandled" },
+              extra: { jobId: job.id },
+            });
+          })
+          .finally(() => {
+            state.currentlyExecuting.delete(promise);
+          });
         state.currentlyExecuting.add(promise);
       }
 
