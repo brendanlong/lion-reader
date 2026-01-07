@@ -320,10 +320,17 @@ export function cleanEntryContent(
     }
   }
 
-  // Generate summary from cleaned content (if available) or original
-  // This ensures feed-specific prefixes like LessWrong's "Published on..." don't appear in summaries
+  // Generate summary from content.
+  // Only use feed-provided summary when the feed provides BOTH content and summary
+  // AND they are different, meaning the summary is actually intended as an excerpt.
+  // When content === summary (like RSS feeds without content:encoded), the parser
+  // sets both to the same value, so we should use cleaned content for summary.
   const contentForSummary = contentCleaned ?? absolutizedOriginal;
-  const summary = generateSummaryFromHtml(contentForSummary);
+  const { content: entryContent, summary: entrySummary } = parsedEntry;
+  const hasSeparateSummary = entryContent && entrySummary && entryContent !== entrySummary;
+  const summary = hasSeparateSummary
+    ? generateSummaryFromHtml(entrySummary)
+    : generateSummaryFromHtml(contentForSummary);
 
   return {
     contentOriginal: absolutizedOriginal,
