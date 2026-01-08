@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 import { logger } from "@/lib/logger";
+import { USER_AGENT } from "@/server/http/user-agent";
 
 // ============================================================================
 // Constants
@@ -23,11 +24,6 @@ const LESSWRONG_GRAPHQL_ENDPOINT = "https://www.lesswrong.com/graphql";
  * Timeout for GraphQL requests in milliseconds.
  */
 const GRAPHQL_TIMEOUT_MS = 15000;
-
-/**
- * User-Agent for requests.
- */
-const USER_AGENT = "LionReader/1.0 (+https://lionreader.com)";
 
 // ============================================================================
 // URL Parsing

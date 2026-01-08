@@ -151,6 +151,22 @@ tests/
 - tRPC procedures: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
 - REST endpoints: `HTTP_METHOD /v1/noun` (e.g., `GET /v1/entries`, `POST /v1/entries/mark-read`)
 
+## Outgoing HTTP Requests
+
+When making outgoing HTTP requests (fetching feeds, calling external APIs, downloading images), always set the `User-Agent` header using the centralized module:
+
+```typescript
+import { USER_AGENT, buildUserAgent } from "@/server/http/user-agent";
+
+// For general requests
+headers: { "User-Agent": USER_AGENT }
+
+// For requests with context (e.g., feed fetching)
+headers: { "User-Agent": buildUserAgent({ context: `feed:${feedId}` }) }
+```
+
+The User-Agent includes app version, git commit SHA, website URL, GitHub repo, and contact email - making it easy for external services to identify and contact us if needed.
+
 ## Git Conventions
 
 - The main branch is named `master`

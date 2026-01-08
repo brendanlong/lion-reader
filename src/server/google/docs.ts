@@ -26,6 +26,7 @@ import { GoogleAuth } from "google-auth-library";
 import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
 import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
+import { USER_AGENT } from "@/server/http/user-agent";
 
 // ============================================================================
 // Constants
@@ -40,11 +41,6 @@ const GOOGLE_DOCS_API_ENDPOINT = "https://docs.googleapis.com/v1/documents";
  * Timeout for API requests in milliseconds.
  */
 const API_TIMEOUT_MS = 15000;
-
-/**
- * User-Agent for requests.
- */
-const USER_AGENT = "LionReader/1.0 (+https://lionreader.com)";
 
 /**
  * OAuth2 scope required for reading Google Docs.
