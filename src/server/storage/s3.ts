@@ -9,6 +9,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { logger } from "@/lib/logger";
 import { storageConfig } from "@/server/config/env";
 import { randomUUID } from "crypto";
+import { USER_AGENT } from "@/server/http/user-agent";
 
 // ============================================================================
 // Configuration
@@ -18,11 +19,7 @@ import { randomUUID } from "crypto";
  * Checks if object storage is configured and available.
  */
 export function isStorageAvailable(): boolean {
-  return !!(
-    storageConfig.bucket &&
-    storageConfig.accessKeyId &&
-    storageConfig.secretAccessKey
-  );
+  return !!(storageConfig.bucket && storageConfig.accessKeyId && storageConfig.secretAccessKey);
 }
 
 /**
@@ -103,10 +100,7 @@ export interface UploadResult {
 /**
  * Determines content type from image data or URL.
  */
-function detectContentType(
-  data: Buffer,
-  sourceUrl?: string
-): string {
+function detectContentType(data: Buffer, sourceUrl?: string): string {
   // Check magic bytes
   if (data[0] === 0xff && data[1] === 0xd8) {
     return "image/jpeg";
@@ -270,7 +264,7 @@ export async function fetchAndUploadImage(
 
   try {
     const headers: Record<string, string> = {
-      "User-Agent": "LionReader/1.0 (+https://lionreader.com)",
+      "User-Agent": USER_AGENT,
     };
 
     if (options.authorization) {
@@ -296,8 +290,7 @@ export async function fetchAndUploadImage(
 
     // Get content type from response or detect from data
     const contentType =
-      response.headers.get("content-type")?.split(";")[0] ||
-      detectContentType(data, imageUrl);
+      response.headers.get("content-type")?.split(";")[0] || detectContentType(data, imageUrl);
 
     return uploadImage(data, {
       documentId: options.documentId,

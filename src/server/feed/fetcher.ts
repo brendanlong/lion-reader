@@ -3,8 +3,8 @@
  * Handles conditional GET requests, redirects, and error handling.
  */
 
-import { fetcherConfig } from "../config/env";
 import { parseCacheHeaders, type ParsedCacheHeaders } from "./cache-headers";
+import { buildUserAgent } from "../http/user-agent";
 
 /**
  * Options for fetching a feed.
@@ -232,50 +232,6 @@ export function formatNetworkErrorMessage(error: Error): string {
   return message;
 }
 
-const GITHUB_URL = "https://github.com/brendanlong/lion-reader";
-
-/**
- * Build the User-Agent string with optional metadata.
- *
- * Format: LionReader/1.0-COMMIT feed:ID (+APP_URL; GITHUB_URL; EMAIL)
- * - COMMIT: Git commit SHA if available
- * - ID: Feed ID for debugging
- * - APP_URL: NEXT_PUBLIC_APP_URL with + prefix (primary contact)
- * - GITHUB_URL: Always included for reference
- * - EMAIL: Contact email if configured
- */
-function buildUserAgent(feedId?: string): string {
-  // Version with optional commit hash
-  let ua = "LionReader/1.0";
-  if (fetcherConfig.commitSha) {
-    ua += `-${fetcherConfig.commitSha}`;
-  }
-
-  // Feed ID for debugging
-  if (feedId) {
-    ua += ` feed:${feedId}`;
-  }
-
-  // Build comment section with URLs and contact info
-  const parts: string[] = [];
-
-  if (fetcherConfig.appUrl) {
-    // App URL gets the + prefix as primary contact point
-    parts.push(`+${fetcherConfig.appUrl}`);
-  }
-
-  // Always include GitHub URL
-  parts.push(GITHUB_URL);
-
-  if (fetcherConfig.contactEmail) {
-    parts.push(fetcherConfig.contactEmail);
-  }
-
-  ua += ` (${parts.join("; ")})`;
-
-  return ua;
-}
-
 /**
  * Parses the Retry-After header value.
  *
@@ -361,7 +317,7 @@ export async function fetchFeed(
 
   // Build request headers
   const headers: Record<string, string> = {
-    "User-Agent": userAgent ?? buildUserAgent(feedId),
+    "User-Agent": userAgent ?? buildUserAgent(feedId ? { context: `feed:${feedId}` } : undefined),
     Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
   };
 
