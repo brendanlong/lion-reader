@@ -30,6 +30,8 @@ primary_region = "lax"
   NODE_ENV = "production"
   PORT = "3000"
 
+  FETCHER_CONTACT_EMAIL = "self@brendanlong.com"
+
   # Disable embedded worker since we run a separate niced process
   DISABLE_EMBEDDED_WORKER = "true"
   WORKER_CONCURRENCY = "1"
