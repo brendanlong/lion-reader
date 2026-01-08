@@ -19,7 +19,7 @@ import { sql } from "drizzle-orm";
 // ENUMS
 // ============================================================================
 
-export const feedTypeEnum = pgEnum("feed_type", ["rss", "atom", "json", "email", "saved"]);
+export const feedTypeEnum = pgEnum("feed_type", ["web", "email", "saved"]);
 
 export const websubStateEnum = pgEnum("websub_state", ["pending", "active", "unsubscribed"]);
 
@@ -132,7 +132,7 @@ export const oauthAccounts = pgTable(
 /**
  * Feeds table - stores canonical feed data shared across users.
  * For email feeds (type='email'), the feed is user-specific and uses email_sender_pattern.
- * For URL-based feeds (rss/atom/json), feeds are shared across users.
+ * For URL-based feeds (type='web'), feeds are shared across users.
  */
 export const feeds = pgTable(
   "feeds",
@@ -202,7 +202,7 @@ export const entries = pgTable(
     type: feedTypeEnum("type").notNull(), // Denormalized from feed for type-specific constraints and queries
 
     // Identifier from source - meaning varies by type:
-    // - rss/atom/json: <guid> or <id> from feed
+    // - web: <guid> or <id> from feed
     // - email: Message-ID header
     // - saved: the URL being saved
     guid: text("guid").notNull(),
@@ -222,7 +222,7 @@ export const entries = pgTable(
     // Timestamps
     publishedAt: timestamp("published_at", { withTimezone: true }), // from feed (may be null/inaccurate)
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(), // when we first saw it
-    // Last time this entry was seen in a feed fetch (rss/atom/json only, NULL for email/saved)
+    // Last time this entry was seen in a feed fetch (web only, NULL for email/saved)
     // Used to determine visibility: entry.lastSeenAt = feed.lastFetchedAt means it's in the current feed
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 
@@ -256,7 +256,7 @@ export const entries = pgTable(
     // - entries_spam_only_email: spam fields only for email entries
     // - entries_unsubscribe_only_email: unsubscribe fields only for email entries
     // - entries_saved_metadata_only_saved: site_name/image_url only for saved entries
-    // - entries_last_seen_only_fetched: last_seen_at required for rss/atom/json, NULL for email/saved
+    // - entries_last_seen_only_fetched: last_seen_at required for web feeds, NULL for email/saved
   ]
 );
 

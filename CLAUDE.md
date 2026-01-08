@@ -125,6 +125,7 @@ tests/
 - **Register every migration in `drizzle/meta/_journal.json`** - Migrations won't be applied unless they're listed in the journal. Add an entry with a unique `idx`, incrementing `when` timestamp, and `tag` matching the filename (without `.sql`). Each migration file must have a unique numeric prefix.
 - Run migrations with `pnpm db:migrate`
 - Apply to test database with `pnpm db:migrate:test`
+- Use `pg_dump -s` to get schema context when writing migrations (env vars are loaded automatically)
 
 ## API Conventions
 

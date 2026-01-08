@@ -556,7 +556,7 @@ describe("Job Queue", () => {
       const feedId = generateUuidv7();
       await db.insert(feeds).values({
         id: feedId,
-        type: "rss",
+        type: "web",
         url: "https://example.com/feed.xml",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -591,7 +591,7 @@ describe("Job Queue", () => {
       const feedId = generateUuidv7();
       await db.insert(feeds).values({
         id: feedId,
-        type: "rss",
+        type: "web",
         url: "https://example.com/feed.xml",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -636,7 +636,7 @@ describe("Job Queue", () => {
       const feedId = generateUuidv7();
       await db.insert(feeds).values({
         id: feedId,
-        type: "rss",
+        type: "web",
         url: "https://example.com/feed.xml",
         createdAt: new Date(),
         updatedAt: new Date(),
