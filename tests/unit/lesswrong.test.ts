@@ -11,6 +11,11 @@ import {
   extractPostId,
   extractCommentId,
   isLessWrongCommentUrl,
+  isLessWrongUserUrl,
+  extractUserSlug,
+  isLessWrongUserFeedUrl,
+  extractUserIdFromFeedUrl,
+  buildLessWrongUserFeedUrl,
 } from "../../src/server/feed/lesswrong";
 
 describe("LessWrong URL detection", () => {
@@ -174,6 +179,163 @@ describe("LessWrong URL detection", () => {
 
     it("returns false for non-LessWrong URLs even with commentId", () => {
       expect(isLessWrongCommentUrl("https://example.com/posts/abc?commentId=123")).toBe(false);
+    });
+  });
+
+  describe("isLessWrongUserUrl", () => {
+    it("returns true for standard LessWrong user profile URLs", () => {
+      expect(isLessWrongUserUrl("https://www.lesswrong.com/users/brendan-long")).toBe(true);
+      expect(isLessWrongUserUrl("https://lesswrong.com/users/brendan-long")).toBe(true);
+    });
+
+    it("returns true for user URLs with trailing slash", () => {
+      expect(isLessWrongUserUrl("https://www.lesswrong.com/users/eliezer_yudkowsky/")).toBe(true);
+    });
+
+    it("returns true for user URLs with query params", () => {
+      expect(isLessWrongUserUrl("https://www.lesswrong.com/users/username?tab=posts")).toBe(true);
+    });
+
+    it("returns true for user URLs with hash fragments", () => {
+      expect(isLessWrongUserUrl("https://www.lesswrong.com/users/username#section")).toBe(true);
+    });
+
+    it("returns true for HTTP URLs (not just HTTPS)", () => {
+      expect(isLessWrongUserUrl("http://www.lesswrong.com/users/username")).toBe(true);
+    });
+
+    it("returns false for non-LessWrong URLs", () => {
+      expect(isLessWrongUserUrl("https://example.com/users/username")).toBe(false);
+      expect(isLessWrongUserUrl("https://greaterwrong.com/users/username")).toBe(false);
+    });
+
+    it("returns false for LessWrong non-user URLs", () => {
+      expect(isLessWrongUserUrl("https://www.lesswrong.com")).toBe(false);
+      expect(isLessWrongUserUrl("https://www.lesswrong.com/posts/abc/slug")).toBe(false);
+      expect(isLessWrongUserUrl("https://www.lesswrong.com/tags/rationality")).toBe(false);
+    });
+
+    it("returns false for invalid URLs", () => {
+      expect(isLessWrongUserUrl("not a url")).toBe(false);
+      expect(isLessWrongUserUrl("")).toBe(false);
+    });
+  });
+
+  describe("extractUserSlug", () => {
+    it("extracts user slug from standard LessWrong user URLs", () => {
+      expect(extractUserSlug("https://www.lesswrong.com/users/brendan-long")).toBe("brendan-long");
+      expect(extractUserSlug("https://lesswrong.com/users/eliezer_yudkowsky")).toBe(
+        "eliezer_yudkowsky"
+      );
+    });
+
+    it("extracts user slug from URLs with trailing slash", () => {
+      expect(extractUserSlug("https://www.lesswrong.com/users/username/")).toBe("username");
+    });
+
+    it("extracts user slug from URLs with query params", () => {
+      expect(extractUserSlug("https://www.lesswrong.com/users/username?tab=posts")).toBe(
+        "username"
+      );
+    });
+
+    it("extracts user slug from URLs with hash fragments", () => {
+      expect(extractUserSlug("https://www.lesswrong.com/users/username#section")).toBe("username");
+    });
+
+    it("returns null for non-LessWrong URLs", () => {
+      expect(extractUserSlug("https://example.com/users/username")).toBe(null);
+    });
+
+    it("returns null for LessWrong non-user URLs", () => {
+      expect(extractUserSlug("https://www.lesswrong.com")).toBe(null);
+      expect(extractUserSlug("https://www.lesswrong.com/posts/abc/slug")).toBe(null);
+    });
+
+    it("returns null for invalid URLs", () => {
+      expect(extractUserSlug("not a url")).toBe(null);
+      expect(extractUserSlug("")).toBe(null);
+    });
+  });
+
+  describe("isLessWrongUserFeedUrl", () => {
+    it("returns true for LessWrong user feed URLs", () => {
+      expect(
+        isLessWrongUserFeedUrl("https://www.lesswrong.com/feed.xml?userId=piR3ZKGHEp6vqTo87")
+      ).toBe(true);
+      expect(
+        isLessWrongUserFeedUrl("https://lesswrong.com/feed.xml?userId=piR3ZKGHEp6vqTo87")
+      ).toBe(true);
+    });
+
+    it("returns true for feed URLs with additional query params", () => {
+      expect(
+        isLessWrongUserFeedUrl(
+          "https://www.lesswrong.com/feed.xml?userId=piR3ZKGHEp6vqTo87&format=rss"
+        )
+      ).toBe(true);
+    });
+
+    it("returns false for LessWrong feed URLs without userId", () => {
+      expect(isLessWrongUserFeedUrl("https://www.lesswrong.com/feed.xml")).toBe(false);
+    });
+
+    it("returns false for non-LessWrong URLs", () => {
+      expect(isLessWrongUserFeedUrl("https://example.com/feed.xml?userId=abc")).toBe(false);
+    });
+
+    it("returns false for invalid URLs", () => {
+      expect(isLessWrongUserFeedUrl("not a url")).toBe(false);
+      expect(isLessWrongUserFeedUrl("")).toBe(false);
+    });
+  });
+
+  describe("extractUserIdFromFeedUrl", () => {
+    it("extracts userId from LessWrong user feed URLs", () => {
+      expect(
+        extractUserIdFromFeedUrl("https://www.lesswrong.com/feed.xml?userId=piR3ZKGHEp6vqTo87")
+      ).toBe("piR3ZKGHEp6vqTo87");
+    });
+
+    it("extracts userId when there are additional query params", () => {
+      expect(
+        extractUserIdFromFeedUrl(
+          "https://www.lesswrong.com/feed.xml?format=rss&userId=abc123&other=value"
+        )
+      ).toBe("abc123");
+    });
+
+    it("returns null for feed URLs without userId", () => {
+      expect(extractUserIdFromFeedUrl("https://www.lesswrong.com/feed.xml")).toBe(null);
+    });
+
+    it("returns null for non-LessWrong URLs", () => {
+      expect(extractUserIdFromFeedUrl("https://example.com/feed.xml?userId=abc")).toBe(null);
+    });
+
+    it("returns null for non-feed LessWrong URLs", () => {
+      expect(extractUserIdFromFeedUrl("https://www.lesswrong.com/users/username?userId=abc")).toBe(
+        null
+      );
+    });
+
+    it("returns null for invalid URLs", () => {
+      expect(extractUserIdFromFeedUrl("not a url")).toBe(null);
+      expect(extractUserIdFromFeedUrl("")).toBe(null);
+    });
+  });
+
+  describe("buildLessWrongUserFeedUrl", () => {
+    it("builds a user feed URL from a user ID", () => {
+      expect(buildLessWrongUserFeedUrl("piR3ZKGHEp6vqTo87")).toBe(
+        "https://www.lesswrong.com/feed.xml?userId=piR3ZKGHEp6vqTo87"
+      );
+    });
+
+    it("properly encodes special characters in user ID", () => {
+      expect(buildLessWrongUserFeedUrl("user+id&special=chars")).toBe(
+        "https://www.lesswrong.com/feed.xml?userId=user%2Bid%26special%3Dchars"
+      );
     });
   });
 });

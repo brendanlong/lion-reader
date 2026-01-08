@@ -8,6 +8,7 @@
 import { JSDOM } from "jsdom";
 import { z } from "zod";
 
+import { logger } from "@/lib/logger";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { errors } from "../errors";
 import { USER_AGENT } from "@/server/http/user-agent";
@@ -21,6 +22,13 @@ import {
   type DiscoveredFeed,
 } from "@/server/feed";
 import { isLessWrongFeed, cleanLessWrongContent } from "@/server/feed/content-cleaner";
+import {
+  isLessWrongUserUrl,
+  isLessWrongUserFeedUrl,
+  extractUserSlug,
+  fetchLessWrongUserBySlug,
+  buildLessWrongUserFeedUrl,
+} from "@/server/feed/lesswrong";
 
 // ============================================================================
 // Constants
@@ -349,6 +357,20 @@ export const feedsRouter = createTRPCRouter({
     .query(async ({ input }) => {
       let feedUrl = input.url;
 
+      // Special case: LessWrong user profile pages
+      // Look up the user via GraphQL API to get their feed URL
+      if (isLessWrongUserUrl(feedUrl)) {
+        const slug = extractUserSlug(feedUrl);
+        if (slug) {
+          logger.info("Preview: Detected LessWrong user URL", { feedUrl, slug });
+          const user = await fetchLessWrongUserBySlug(slug);
+          if (user) {
+            feedUrl = buildLessWrongUserFeedUrl(user.userId);
+            logger.info("Preview: Using LessWrong user feed", { feedUrl, user });
+          }
+        }
+      }
+
       // Step 1: Fetch the URL
       const { text: content, contentType } = await fetchUrl(feedUrl);
 
@@ -386,11 +408,20 @@ export const feedsRouter = createTRPCRouter({
 
       // Use domain as fallback if feed has no title
       const fallbackTitle = getDomainFromUrl(feedUrl) ?? "Untitled Feed";
+      let feedTitle = parsedFeed.title ?? fallbackTitle;
+
+      // For LessWrong user feeds, append the author name if not already in the title
+      if (isLessWrongUserFeedUrl(feedUrl)) {
+        const firstAuthor = parsedFeed.items.find((item) => item.author)?.author;
+        if (firstAuthor && !feedTitle.includes(firstAuthor)) {
+          feedTitle = `${feedTitle} - ${firstAuthor}`;
+        }
+      }
 
       return {
         feed: {
           url: feedUrl,
-          title: parsedFeed.title ?? fallbackTitle,
+          title: feedTitle,
           description: parsedFeed.description ?? null,
           siteUrl: parsedFeed.siteUrl ?? null,
           iconUrl: parsedFeed.iconUrl ?? null,
