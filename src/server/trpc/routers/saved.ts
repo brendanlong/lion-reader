@@ -21,6 +21,7 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { JSDOM } from "jsdom";
 import { createHash } from "crypto";
+import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -37,9 +38,13 @@ import {
 import {
   isGoogleDocsUrl,
   fetchGoogleDocsFromUrl,
+  fetchPrivateGoogleDoc,
+  extractDocId,
+  extractTabId,
   normalizeGoogleDocsUrl,
   type GoogleDocsContent,
 } from "@/server/google/docs";
+import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated } from "@/server/redis/pubsub";
 
@@ -301,7 +306,7 @@ export const savedRouter = createTRPCRouter({
         googleDocsContent = await fetchGoogleDocsFromUrl(normalizedUrl);
 
         if (googleDocsContent) {
-          // Wrap the content in a basic HTML structure for consistency
+          // Public fetch succeeded
           html = `<!DOCTYPE html><html><head><title>${escapeHtml(googleDocsContent.title)}</title></head><body>${googleDocsContent.html}</body></html>`;
           logger.debug("Successfully fetched Google Docs content via API", {
             url: normalizedUrl,
@@ -309,21 +314,113 @@ export const savedRouter = createTRPCRouter({
             title: googleDocsContent.title,
           });
         } else {
-          // Fall back to normal fetch (may work for public docs with export links)
-          logger.debug("Google Docs API fetch failed, falling back to normal fetch", {
-            url: normalizedUrl,
-          });
-          try {
-            html = await fetchPage(normalizedUrl);
-          } catch (error) {
-            logger.warn("Failed to fetch Google Docs URL", {
+          // Public fetch failed, try with user's OAuth token if available
+          const docId = extractDocId(normalizedUrl);
+          const tabId = extractTabId(normalizedUrl);
+
+          if (docId) {
+            // Check if user has Google OAuth linked
+            const googleOAuth = await getOAuthAccount(ctx.user.id, "google");
+
+            if (googleOAuth) {
+              // Check if user has granted Docs permission
+              const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
+              const hasDocsScope = await hasGoogleScope(ctx.user.id, GOOGLE_DOCS_SCOPE);
+
+              if (!hasDocsScope) {
+                // User has Google OAuth but hasn't granted Docs permission
+                logger.debug("User needs to grant Google Docs permission", {
+                  userId: ctx.user.id,
+                  url: normalizedUrl,
+                });
+                throw new TRPCError({
+                  code: "FORBIDDEN",
+                  message: "NEEDS_DOCS_PERMISSION",
+                  cause: {
+                    code: "NEEDS_DOCS_PERMISSION",
+                    details: {
+                      url: normalizedUrl,
+                      scope: GOOGLE_DOCS_SCOPE,
+                    },
+                  },
+                });
+              }
+
+              // User has the required scope, try fetching with their token
+              try {
+                logger.debug("Attempting private Google Docs fetch with user OAuth", {
+                  userId: ctx.user.id,
+                  docId,
+                });
+                const accessToken = await getValidGoogleToken(ctx.user.id);
+                googleDocsContent = await fetchPrivateGoogleDoc(docId, accessToken, tabId);
+
+                if (googleDocsContent) {
+                  html = `<!DOCTYPE html><html><head><title>${escapeHtml(googleDocsContent.title)}</title></head><body>${googleDocsContent.html}</body></html>`;
+                  logger.debug("Successfully fetched private Google Docs content", {
+                    userId: ctx.user.id,
+                    docId: googleDocsContent.docId,
+                    title: googleDocsContent.title,
+                  });
+                }
+              } catch (error) {
+                if (error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {
+                  throw new TRPCError({
+                    code: "UNAUTHORIZED",
+                    message: "Google authentication expired. Please reconnect your Google account.",
+                  });
+                } else if (
+                  error instanceof Error &&
+                  error.message === "GOOGLE_PERMISSION_DENIED"
+                ) {
+                  throw new TRPCError({
+                    code: "FORBIDDEN",
+                    message: "You don't have permission to access this Google Doc.",
+                  });
+                }
+                // Other errors - continue to fallback
+                logger.warn("Failed to fetch private Google Doc with OAuth", {
+                  userId: ctx.user.id,
+                  docId,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              }
+            } else {
+              // User doesn't have Google OAuth linked
+              logger.debug("User needs to sign in with Google for private docs", {
+                userId: ctx.user.id,
+                url: normalizedUrl,
+              });
+              throw new TRPCError({
+                code: "UNAUTHORIZED",
+                message: "NEEDS_GOOGLE_SIGNIN",
+                cause: {
+                  code: "NEEDS_GOOGLE_SIGNIN",
+                  details: {
+                    url: normalizedUrl,
+                  },
+                },
+              });
+            }
+          }
+
+          // If we still don't have content, fall back to normal HTML fetch
+          if (!googleDocsContent) {
+            logger.debug("Google Docs API fetch failed, falling back to normal fetch", {
               url: normalizedUrl,
-              error: error instanceof Error ? error.message : String(error),
             });
-            throw errors.savedArticleFetchError(
-              normalizedUrl,
-              error instanceof Error ? error.message : "Unknown error"
-            );
+            try {
+              html = await fetchPage(normalizedUrl);
+            } catch (error) {
+              logger.warn("Failed to fetch Google Docs URL", {
+                url: normalizedUrl,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              throw errors.savedArticleFetchError(
+                normalizedUrl,
+                error instanceof Error ? error.message : "Unknown error"
+              );
+            }
           }
         }
       } else if (isLessWrongUrl(input.url)) {

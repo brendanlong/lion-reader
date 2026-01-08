@@ -35,6 +35,11 @@ const PKCE_VERIFIER_PREFIX = "oauth:pkce:";
  */
 const GOOGLE_SCOPES = ["openid", "email", "profile"];
 
+/**
+ * Google Docs readonly scope (for incremental authorization)
+ */
+export const GOOGLE_DOCS_READONLY_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -81,6 +86,8 @@ export interface GoogleAuthResult {
     refreshToken?: string;
     expiresAt?: Date;
   };
+  /** OAuth scopes that were granted */
+  scopes: string[];
 }
 
 // ============================================================================
@@ -95,35 +102,54 @@ function getPkceKey(state: string): string {
 }
 
 /**
- * Stores a PKCE code verifier in Redis
+ * Data stored in Redis for PKCE verification
+ */
+interface PkceData {
+  verifier: string;
+  scopes: string[];
+}
+
+/**
+ * Stores a PKCE code verifier and scopes in Redis
  * The verifier is associated with the state parameter
  *
  * @param state - The OAuth state parameter
  * @param codeVerifier - The PKCE code verifier
+ * @param scopes - The OAuth scopes being requested
  */
-async function storePkceVerifier(state: string, codeVerifier: string): Promise<void> {
+async function storePkceVerifier(
+  state: string,
+  codeVerifier: string,
+  scopes: string[]
+): Promise<void> {
   const key = getPkceKey(state);
-  await redis.setex(key, PKCE_VERIFIER_TTL_SECONDS, codeVerifier);
+  const data: PkceData = { verifier: codeVerifier, scopes };
+  await redis.setex(key, PKCE_VERIFIER_TTL_SECONDS, JSON.stringify(data));
 }
 
 /**
- * Retrieves and deletes a PKCE code verifier from Redis
+ * Retrieves and deletes PKCE data from Redis
  * This ensures one-time use of the verifier
  *
  * @param state - The OAuth state parameter
- * @returns The code verifier, or null if not found/expired
+ * @returns The PKCE data (verifier + scopes), or null if not found/expired
  */
-async function consumePkceVerifier(state: string): Promise<string | null> {
+async function consumePkceVerifier(state: string): Promise<PkceData | null> {
   const key = getPkceKey(state);
 
   // Get and delete in a single transaction to ensure one-time use
-  const verifier = await redis.get(key);
+  const dataStr = await redis.get(key);
 
-  if (verifier) {
+  if (dataStr) {
     await redis.del(key);
+    try {
+      return JSON.parse(dataStr) as PkceData;
+    } catch {
+      return null;
+    }
   }
 
-  return verifier;
+  return null;
 }
 
 // ============================================================================
@@ -138,10 +164,13 @@ async function consumePkceVerifier(state: string): Promise<string | null> {
  * 2. A PKCE code verifier (stored in Redis)
  * 3. The authorization URL with all parameters
  *
+ * @param additionalScopes - Optional additional scopes to request (for incremental auth)
  * @returns The authorization URL and state
  * @throws Error if Google OAuth is not configured
  */
-export async function createGoogleAuthUrl(): Promise<GoogleAuthUrlResult> {
+export async function createGoogleAuthUrl(
+  additionalScopes?: string[]
+): Promise<GoogleAuthUrlResult> {
   const google = getGoogleProvider();
 
   if (!google) {
@@ -152,11 +181,16 @@ export async function createGoogleAuthUrl(): Promise<GoogleAuthUrlResult> {
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
 
-  // Store the code verifier for later use
-  await storePkceVerifier(state, codeVerifier);
+  // Combine base scopes with additional scopes (if any)
+  const scopes = additionalScopes
+    ? [...GOOGLE_SCOPES, ...additionalScopes.filter((s) => !GOOGLE_SCOPES.includes(s))]
+    : GOOGLE_SCOPES;
+
+  // Store the code verifier and scopes for later use
+  await storePkceVerifier(state, codeVerifier, scopes);
 
   // Create the authorization URL
-  const url = google.createAuthorizationURL(state, codeVerifier, GOOGLE_SCOPES);
+  const url = google.createAuthorizationURL(state, codeVerifier, scopes);
 
   return {
     url: url.toString(),
@@ -187,15 +221,15 @@ export async function validateGoogleCallback(
     throw new Error("Google OAuth is not configured");
   }
 
-  // Retrieve and consume the PKCE verifier
-  const codeVerifier = await consumePkceVerifier(state);
+  // Retrieve and consume the PKCE data (verifier + scopes)
+  const pkceData = await consumePkceVerifier(state);
 
-  if (!codeVerifier) {
+  if (!pkceData) {
     throw new Error("Invalid or expired OAuth state");
   }
 
   // Exchange the authorization code for tokens
-  const tokens = await google.validateAuthorizationCode(code, codeVerifier);
+  const tokens = await google.validateAuthorizationCode(code, pkceData.verifier);
 
   // Fetch user info from Google
   const userInfo = await fetchGoogleUserInfo(tokens.accessToken());
@@ -207,6 +241,7 @@ export async function validateGoogleCallback(
       refreshToken: tokens.hasRefreshToken() ? tokens.refreshToken() : undefined,
       expiresAt: tokens.accessTokenExpiresAt(),
     },
+    scopes: pkceData.scopes,
   };
 }
 

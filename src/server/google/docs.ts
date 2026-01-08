@@ -1419,6 +1419,128 @@ export async function fetchPublicGoogleDoc(
 }
 
 /**
+ * Fetches a private Google Doc using a user's OAuth access token.
+ *
+ * Used for Phase 2 of Google Docs integration to access documents that
+ * the user has permission to read but aren't publicly shared.
+ *
+ * Requires the user to have granted the 'documents.readonly' scope.
+ *
+ * @param docId - The Google Docs document ID
+ * @param accessToken - User's OAuth access token with documents.readonly scope
+ * @param tabId - Optional tab ID to fetch (from URL ?tab=t.{tabId})
+ * @returns Document content including HTML, or null if fetch fails
+ * @throws Error if token is invalid or user doesn't have permission
+ */
+export async function fetchPrivateGoogleDoc(
+  docId: string,
+  accessToken: string,
+  tabId: string | null = null
+): Promise<GoogleDocsContent | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    // Request with includeTabsContent=true to get full tab data
+    const url = `${GOOGLE_DOCS_API_ENDPOINT}/${docId}?includeTabsContent=true`;
+
+    logger.debug("Fetching private Google Doc with user OAuth token", { docId, tabId });
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": USER_AGENT,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      // Try to get error details from response body
+      let errorDetails: string | undefined;
+      try {
+        const errorJson = await response.json();
+        errorDetails = errorJson?.error?.message;
+      } catch {
+        // Ignore JSON parse errors
+      }
+
+      if (response.status === 401) {
+        logger.warn("Google Docs API authentication failed - token may be invalid or expired", {
+          docId,
+          status: response.status,
+          errorDetails,
+        });
+        throw new Error("GOOGLE_TOKEN_INVALID");
+      } else if (response.status === 403) {
+        logger.warn("User doesn't have permission to access this Google Doc", {
+          docId,
+          status: response.status,
+          errorDetails,
+        });
+        throw new Error("GOOGLE_PERMISSION_DENIED");
+      } else if (response.status === 404) {
+        logger.debug("Google Doc not found", { docId });
+        return null;
+      } else {
+        logger.warn("Google Docs API request failed", {
+          docId,
+          status: response.status,
+          statusText: response.statusText,
+          errorDetails,
+        });
+        return null;
+      }
+    }
+
+    const json = await response.json();
+    const parsed = googleDocsApiResponseSchema.safeParse(json);
+
+    if (!parsed.success) {
+      logger.warn("Google Docs API response validation failed", {
+        docId,
+        error: parsed.error.message,
+      });
+      return null;
+    }
+
+    const doc = parsed.data;
+
+    // Convert structured document to HTML (includes image upload if storage is configured)
+    const html = await convertDocsApiToHtml(doc, accessToken, tabId);
+
+    return {
+      docId: doc.documentId,
+      title: doc.title,
+      html,
+      author: null, // Could potentially get this from Drive API metadata
+      createdAt: null, // Could potentially get this from Drive API metadata
+      modifiedAt: null, // Could potentially get this from Drive API metadata
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      logger.warn("Google Docs API request timed out", { docId });
+      return null;
+    }
+    // Re-throw authentication/permission errors
+    if (
+      error instanceof Error &&
+      (error.message === "GOOGLE_TOKEN_INVALID" || error.message === "GOOGLE_PERMISSION_DENIED")
+    ) {
+      throw error;
+    }
+    logger.warn("Google Docs API request error", {
+      docId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
  * Fetches Google Docs content from a URL.
  *
  * This is a convenience function that extracts the document ID from the URL

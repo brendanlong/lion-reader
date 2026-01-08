@@ -115,6 +115,9 @@ export const oauthAccounts = pgTable(
     refreshToken: text("refresh_token"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
 
+    // OAuth scopes granted by user (for incremental authorization)
+    scopes: text("scopes").array(),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
