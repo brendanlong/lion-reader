@@ -29,6 +29,7 @@ function SaveContent() {
 
   const [articleTitle, setArticleTitle] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
 
   // Track if we've already initiated the save to prevent re-triggering
   const saveInitiatedRef = useRef(false);
@@ -38,6 +39,31 @@ function SaveContent() {
       setArticleTitle(data.article.title);
     },
   });
+
+  const requestGoogleDocsAccessMutation = trpc.auth.requestGoogleDocsAccess.useMutation({
+    onSuccess: (data) => {
+      // Store the URL we're trying to save so we can retry after OAuth
+      if (urlToSave) {
+        sessionStorage.setItem("pendingSaveUrl", urlToSave);
+      }
+      // Redirect to Google OAuth consent screen
+      window.location.href = data.url;
+    },
+    onError: () => {
+      setIsRequestingPermission(false);
+      // The error will be displayed in the UI
+    },
+  });
+
+  // Check if returning from OAuth flow
+  useEffect(() => {
+    const pendingUrl = sessionStorage.getItem("pendingSaveUrl");
+    if (pendingUrl && !urlToSave) {
+      // Clear the pending URL and redirect back to save with the original URL
+      sessionStorage.removeItem("pendingSaveUrl");
+      window.location.href = `/save?url=${encodeURIComponent(pendingUrl)}`;
+    }
+  }, [urlToSave]);
 
   // Start saving when URL is present (only once)
   useEffect(() => {
@@ -73,9 +99,21 @@ function SaveContent() {
   // Handle retry
   const handleRetry = () => {
     if (urlToSave) {
+      saveInitiatedRef.current = false;
       saveMutation.mutate({ url: urlToSave });
     }
   };
+
+  // Handle Google Docs permission request
+  const handleRequestPermission = () => {
+    setIsRequestingPermission(true);
+    requestGoogleDocsAccessMutation.mutate({});
+  };
+
+  // Check if error is a Google Docs permission error
+  const errorMessage = saveMutation.error?.message || "";
+  const needsDocsPermission = errorMessage === "NEEDS_DOCS_PERMISSION";
+  const needsGoogleSignin = errorMessage === "NEEDS_GOOGLE_SIGNIN";
 
   // No URL provided
   if (!urlToSave) {
@@ -170,29 +208,86 @@ function SaveContent() {
           {/* Error State */}
           {saveMutation.isError && (
             <div className="mt-6">
-              <div className="flex justify-center">
-                <svg
-                  className="h-8 w-8 text-red-600 dark:text-red-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </div>
-              <Alert variant="error" className="mt-4 text-left">
-                {saveMutation.error?.message || "Failed to save article"}
-              </Alert>
-              <p className="mt-2 truncate text-xs text-zinc-500 dark:text-zinc-500">{urlToSave}</p>
-              <div className="mt-4 flex gap-2">
-                <Button variant="secondary" className="flex-1" onClick={handleClose}>
-                  Close
-                </Button>
-                <Button variant="primary" className="flex-1" onClick={handleRetry}>
-                  Retry
-                </Button>
-              </div>
+              {/* Google Docs Permission Required */}
+              {needsDocsPermission || needsGoogleSignin ? (
+                <>
+                  <div className="flex justify-center">
+                    <svg
+                      className="h-8 w-8 text-blue-600 dark:text-blue-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                      />
+                    </svg>
+                  </div>
+                  <Alert variant="error" className="mt-4 text-left">
+                    {needsDocsPermission
+                      ? "This is a private Google Doc. You need to grant permission to access your Google Docs."
+                      : "This is a private Google Doc. You need to sign in with Google to save it."}
+                  </Alert>
+                  <p className="mt-2 truncate text-xs text-zinc-500 dark:text-zinc-500">
+                    {urlToSave}
+                  </p>
+                  <div className="mt-4 flex gap-2">
+                    <Button variant="secondary" className="flex-1" onClick={handleClose}>
+                      Close
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={handleRequestPermission}
+                      disabled={isRequestingPermission || requestGoogleDocsAccessMutation.isPending}
+                    >
+                      {isRequestingPermission || requestGoogleDocsAccessMutation.isPending
+                        ? "Redirecting..."
+                        : needsDocsPermission
+                          ? "Grant Permission"
+                          : "Sign in with Google"}
+                    </Button>
+                  </div>
+                  {requestGoogleDocsAccessMutation.isError && (
+                    <Alert variant="error" className="mt-2 text-left text-sm">
+                      {requestGoogleDocsAccessMutation.error?.message ||
+                        "Failed to request permission"}
+                    </Alert>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* General Error */}
+                  <div className="flex justify-center">
+                    <svg
+                      className="h-8 w-8 text-red-600 dark:text-red-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <Alert variant="error" className="mt-4 text-left">
+                    {saveMutation.error?.message || "Failed to save article"}
+                  </Alert>
+                  <p className="mt-2 truncate text-xs text-zinc-500 dark:text-zinc-500">
+                    {urlToSave}
+                  </p>
+                  <div className="mt-4 flex gap-2">
+                    <Button variant="secondary" className="flex-1" onClick={handleClose}>
+                      Close
+                    </Button>
+                    <Button variant="primary" className="flex-1" onClick={handleRetry}>
+                      Retry
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
