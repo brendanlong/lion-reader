@@ -287,7 +287,7 @@ export const savedRouter = createTRPCRouter({
       }
 
       // Use provided HTML or fetch the page
-      let html: string;
+      let html: string | undefined;
       // For LessWrong URLs, we may get content directly from their GraphQL API
       let lessWrongContent: LessWrongContent | null = null;
       // For Google Docs URLs, we may get content from the Google Docs API
@@ -369,10 +369,7 @@ export const savedRouter = createTRPCRouter({
                     code: "UNAUTHORIZED",
                     message: "Google authentication expired. Please reconnect your Google account.",
                   });
-                } else if (
-                  error instanceof Error &&
-                  error.message === "GOOGLE_PERMISSION_DENIED"
-                ) {
+                } else if (error instanceof Error && error.message === "GOOGLE_PERMISSION_DENIED") {
                   throw new TRPCError({
                     code: "FORBIDDEN",
                     message: "You don't have permission to access this Google Doc.",
@@ -405,7 +402,7 @@ export const savedRouter = createTRPCRouter({
           }
 
           // If we still don't have content, fall back to normal HTML fetch
-          if (!html && !googleDocsContent) {
+          if (!googleDocsContent) {
             logger.debug("Google Docs API fetch failed, falling back to normal fetch", {
               url: normalizedUrl,
             });
@@ -478,6 +475,11 @@ export const savedRouter = createTRPCRouter({
         }
       }
 
+      // Ensure we have HTML content at this point
+      if (!html) {
+        throw errors.savedArticleFetchError(input.url, "Failed to fetch content");
+      }
+
       // Extract metadata (for LessWrong, we already have better metadata from GraphQL)
       const metadata = extractMetadata(html, input.url);
 
@@ -491,7 +493,10 @@ export const savedRouter = createTRPCRouter({
       let excerpt: string | null = null;
       if (googleDocsContent) {
         // For Google Docs API content, extract text from the HTML for excerpt
-        const textMatch = googleDocsContent.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        const textMatch = googleDocsContent.html
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
         excerpt = textMatch.slice(0, 300).trim() || null;
         if (excerpt && excerpt.length > 297) {
           excerpt = excerpt.slice(0, 297) + "...";
