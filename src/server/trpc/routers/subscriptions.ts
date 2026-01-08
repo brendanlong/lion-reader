@@ -22,13 +22,7 @@ import {
   type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import {
-  parseFeed,
-  discoverFeeds,
-  detectFeedType,
-  deriveGuid,
-  getDomainFromUrl,
-} from "@/server/feed";
+import { parseFeed, discoverFeeds, deriveGuid, getDomainFromUrl } from "@/server/feed";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import {
   createOrEnableFeedJob,
@@ -39,7 +33,6 @@ import {
 import { publishSubscriptionCreated, publishSubscriptionDeleted } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
-import type { FeedType } from "@/server/feed";
 
 // ============================================================================
 // Constants
@@ -102,7 +95,7 @@ const tagOutputSchema = z.object({
  */
 const feedOutputSchema = z.object({
   id: z.string(),
-  type: z.enum(["rss", "atom", "json", "email", "saved"]),
+  type: z.enum(["web", "email", "saved"]),
   url: z.string().nullable(),
   title: z.string().nullable(),
   description: z.string().nullable(),
@@ -393,7 +386,6 @@ async function subscribeToNewOrUnfetchedFeed(
   } else {
     // Create new feed
     feedId = generateUuidv7();
-    const feedType = detectFeedType(feedContent) as FeedType;
     const now = new Date();
 
     // Use domain as fallback if feed has no title
@@ -401,7 +393,7 @@ async function subscribeToNewOrUnfetchedFeed(
 
     const newFeed = {
       id: feedId,
-      type: feedType === "unknown" ? "rss" : feedType,
+      type: "web" as const, // All URL-based feeds use "web" type
       url: feedUrl,
       title: parsedFeed.title || fallbackTitle || null,
       description: parsedFeed.description || null,

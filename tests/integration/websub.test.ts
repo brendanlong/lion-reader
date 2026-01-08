@@ -42,7 +42,7 @@ async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}
     .insert(feeds)
     .values({
       id: generateUuidv7(),
-      type: "rss",
+      type: "web",
       url: `https://example.com/feed-${generateUuidv7()}.xml`,
       title: "Test Feed",
       hubUrl: "https://hub.example.com/",

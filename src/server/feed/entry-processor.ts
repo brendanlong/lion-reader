@@ -369,7 +369,7 @@ export async function findEntryByGuid(feedId: string, guid: string): Promise<Ent
  */
 export async function createEntry(
   feedId: string,
-  feedType: "rss" | "atom" | "json" | "email" | "saved",
+  feedType: "web" | "email" | "saved",
   parsedEntry: ParsedEntry,
   contentHash: string,
   fetchedAt: Date,
@@ -383,8 +383,8 @@ export async function createEntry(
     feedUrl,
   });
 
-  // Only rss/atom/json entries track lastSeenAt (for visibility on subscription)
-  const isFetchedType = feedType === "rss" || feedType === "atom" || feedType === "json";
+  // Only web entries track lastSeenAt (for visibility on subscription)
+  const isFetchedType = feedType === "web";
 
   const newEntry: NewEntry = {
     id: generateUuidv7(),
@@ -459,7 +459,7 @@ export async function updateEntryContent(
  */
 export async function processEntry(
   feedId: string,
-  feedType: "rss" | "atom" | "json" | "email" | "saved",
+  feedType: "web" | "email" | "saved",
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
   feedUrl?: string
@@ -539,7 +539,7 @@ interface CachedEntryInfo {
  */
 async function processEntryWithCache(
   feedId: string,
-  feedType: "rss" | "atom" | "json" | "email" | "saved",
+  feedType: "web" | "email" | "saved",
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
   existingEntriesMap: Map<string, CachedEntryInfo>,
@@ -687,18 +687,18 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
  * lastSeenAt = previousLastEntriesUpdatedAt but aren't in the current feed).
  *
  * @param feedId - The feed's UUID
- * @param feedType - The feed type (rss, atom, json, email, saved)
+ * @param feedType - The feed type (web, email, saved)
  * @param feed - The parsed feed containing entries
  * @param options - Processing options
  * @returns Processing result with counts and entry details
  *
  * @example
- * const result = await processEntries(feedId, 'rss', parsedFeed);
+ * const result = await processEntries(feedId, 'web', parsedFeed);
  * console.log(`New: ${result.newCount}, Updated: ${result.updatedCount}`);
  */
 export async function processEntries(
   feedId: string,
-  feedType: "rss" | "atom" | "json" | "email" | "saved",
+  feedType: "web" | "email" | "saved",
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
 ): Promise<ProcessEntriesResult> {
@@ -763,10 +763,10 @@ export async function processEntries(
     }
   }
 
-  // Detect entries that disappeared from the feed (rss/atom/json only)
+  // Detect entries that disappeared from the feed (web feeds only)
   // These are entries where lastSeenAt = previousLastEntriesUpdatedAt but guid not in current feed
   let disappearedCount = 0;
-  const isFetchedType = feedType === "rss" || feedType === "atom" || feedType === "json";
+  const isFetchedType = feedType === "web";
 
   if (isFetchedType && previousLastEntriesUpdatedAt) {
     // Find entries that were previously "current" (lastSeenAt = previousLastEntriesUpdatedAt)
@@ -787,7 +787,7 @@ export async function processEntries(
   const newEntryIds = results.filter((r) => r.isNew).map((r) => r.id);
   const hasChanges = newCount > 0 || updatedCount > 0 || disappearedCount > 0;
 
-  // Update lastSeenAt for all entries in this fetch (rss/atom/json only)
+  // Update lastSeenAt for all entries in this fetch (web feeds only)
   // This happens when there are changes (new, updated, or disappeared entries)
   // The timestamp used here should match feeds.lastEntriesUpdatedAt
   if (isFetchedType && hasChanges) {
