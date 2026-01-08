@@ -30,13 +30,17 @@ export async function register() {
       });
 
       // Handle graceful shutdown
+      let shuttingDown = false;
       const shutdown = async () => {
+        if (shuttingDown) return; // Prevent duplicate shutdown attempts
+        shuttingDown = true;
         logger.info("Shutting down background worker...");
         await worker.stop();
+        process.exit(0);
       };
 
-      process.on("SIGTERM", shutdown);
-      process.on("SIGINT", shutdown);
+      process.on("SIGTERM", () => void shutdown());
+      process.on("SIGINT", () => void shutdown());
 
       logger.info("Background worker initialized");
     }
