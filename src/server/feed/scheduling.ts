@@ -8,9 +8,17 @@ import type { SyndicationHints } from "./types";
 
 /**
  * Default minimum interval between fetches: 60 minutes.
+ * This is used when no cache headers are provided (TTL, syndication, or no hints).
  * This can be overridden via the FEED_MIN_FETCH_INTERVAL_MINUTES environment variable.
  */
 export const DEFAULT_MIN_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
+
+/**
+ * Minimum interval when server explicitly provides cache headers: 10 minutes.
+ * We trust server-provided cache directives more than feed hints, so we allow
+ * faster polling when the server explicitly tells us to.
+ */
+export const MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS = 10 * 60; // 10 minutes
 
 /**
  * Gets the configured minimum fetch interval in seconds.
@@ -144,12 +152,17 @@ export type NextFetchReason =
 
 /**
  * Clamps a value to the configured bounds and returns the result with appropriate reason.
+ *
+ * @param intervalSeconds - The interval to clamp
+ * @param baseReason - The base reason for this interval source
+ * @param minIntervalOverride - Optional minimum interval override (defaults to configured minimum)
  */
 function clampInterval(
   intervalSeconds: number,
-  baseReason: "cache_control" | "ttl" | "syndication"
+  baseReason: "cache_control" | "ttl" | "syndication",
+  minIntervalOverride?: number
 ): { intervalSeconds: number; reason: NextFetchReason } {
-  const minInterval = getMinFetchIntervalSeconds();
+  const minInterval = minIntervalOverride ?? getMinFetchIntervalSeconds();
 
   if (intervalSeconds < minInterval) {
     return {
@@ -178,7 +191,8 @@ function clampInterval(
  * 4. If no hints available, use default interval (60 minutes)
  *
  * Bounds:
- * - Minimum: 60 minutes by default (configurable via FEED_MIN_FETCH_INTERVAL_MINUTES)
+ * - Minimum with cache headers: 10 minutes (server explicitly tells us to poll faster)
+ * - Minimum without cache headers: 60 minutes (configurable via FEED_MIN_FETCH_INTERVAL_MINUTES)
  * - Maximum: 7 days (always check eventually)
  * - Failures capped at 10 (then max backoff)
  *
@@ -236,11 +250,16 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
     reason = "failure_backoff";
   }
   // 2. Try to use Cache-Control max-age (HTTP headers take precedence)
+  // Server-provided cache hints get a lower minimum (10 min) since we trust them more
   else if (cacheControl) {
     const effectiveMaxAge = getEffectiveMaxAge(cacheControl);
 
     if (effectiveMaxAge !== undefined) {
-      const clamped = clampInterval(effectiveMaxAge, "cache_control");
+      const clamped = clampInterval(
+        effectiveMaxAge,
+        "cache_control",
+        MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS
+      );
       intervalSeconds = clamped.intervalSeconds;
       reason = clamped.reason;
     } else {
