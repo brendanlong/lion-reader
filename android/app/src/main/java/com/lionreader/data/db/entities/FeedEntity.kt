@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Entity representing an RSS/Atom/JSON feed source.
+ * Entity representing a feed source.
  *
  * Contains metadata about a feed including its URL, title, and type.
  * Each feed can have multiple subscriptions from different users.
@@ -13,7 +13,7 @@ import androidx.room.PrimaryKey
 data class FeedEntity(
     @PrimaryKey
     val id: String,
-    /** Feed type: "rss", "atom", or "json" */
+    /** Feed type: "web", "email", or "saved" */
     val type: String,
     val url: String?,
     val title: String?,

@@ -169,6 +169,27 @@
       "when": 1767310000000,
       "tag": "0023_normalize_saved_urls",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1767320000000,
+      "tag": "0024_add_web_feed_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1767330000000,
+      "tag": "0025_migrate_to_web_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1767340000000,
+      "tag": "0026_remove_old_feed_types",
+      "breakpoints": true
     }
   ]
 }

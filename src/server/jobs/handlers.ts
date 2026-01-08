@@ -744,7 +744,7 @@ export async function handleProcessOpmlImport(
 
           await db.insert(feeds).values({
             id: feedId,
-            type: "rss" as const, // Default to RSS, will be updated on first fetch
+            type: "web" as const, // All URL-based feeds use "web" type
             url: feedUrl,
             title: feedTitle,
             siteUrl: opmlFeed.htmlUrl ?? null,
