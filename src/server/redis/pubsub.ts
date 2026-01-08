@@ -590,3 +590,27 @@ export async function closePublisher(): Promise<void> {
     publisherClient = null;
   }
 }
+
+/**
+ * Checks if Redis is available and responding.
+ * Uses a PING command with a timeout to verify connectivity.
+ *
+ * @param timeoutMs - Maximum time to wait for response (default: 2000ms)
+ * @returns true if Redis is healthy, false otherwise
+ */
+export async function checkRedisHealth(timeoutMs = 2000): Promise<boolean> {
+  try {
+    const client = getPublisherClient();
+
+    // Race between ping and timeout
+    const pingPromise = client.ping();
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      setTimeout(() => reject(new Error("Redis health check timeout")), timeoutMs);
+    });
+
+    const result = await Promise.race([pingPromise, timeoutPromise]);
+    return result === "PONG";
+  } catch {
+    return false;
+  }
+}

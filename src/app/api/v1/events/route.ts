@@ -23,6 +23,7 @@ import {
   getUserEventsChannel,
   parseFeedEvent,
   parseUserEvent,
+  checkRedisHealth,
   type FeedEvent,
   type UserEvent,
 } from "@/server/redis/pubsub";
@@ -152,6 +153,27 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const userId = sessionData.user.id;
+
+  // Check Redis health before establishing SSE connection
+  const redisHealthy = await checkRedisHealth();
+  if (!redisHealthy) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          code: "SERVICE_UNAVAILABLE",
+          message: "Real-time updates temporarily unavailable. Use sync endpoint for updates.",
+        },
+      }),
+      {
+        status: 503,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "30",
+          "X-Fallback-Sync": "true",
+        },
+      }
+    );
+  }
 
   // Get user's subscribed feed IDs
   const feedIds = await getUserFeedIds(userId);
