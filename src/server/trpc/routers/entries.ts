@@ -563,6 +563,7 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           read: input.read,
+          updatedAt: new Date(),
         })
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
 
@@ -779,6 +780,7 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           read: true,
+          updatedAt: new Date(),
         })
         .where(and(...conditions));
 
@@ -827,6 +829,7 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           starred: true,
+          updatedAt: new Date(),
         })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
 
@@ -887,6 +890,7 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           starred: false,
+          updatedAt: new Date(),
         })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
 

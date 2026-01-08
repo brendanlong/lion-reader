@@ -375,6 +375,9 @@ export const userEntries = pgTable(
 
     read: boolean("read").notNull().default(false),
     starred: boolean("starred").notNull().default(false),
+
+    // Timestamp for tracking state changes (for sync endpoint)
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId] }),

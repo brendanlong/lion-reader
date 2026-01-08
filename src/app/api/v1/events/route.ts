@@ -23,6 +23,7 @@ import {
   getUserEventsChannel,
   parseFeedEvent,
   parseUserEvent,
+  checkRedisHealth,
   type FeedEvent,
   type UserEvent,
 } from "@/server/redis/pubsub";
@@ -153,6 +154,27 @@ export async function GET(req: Request): Promise<Response> {
 
   const userId = sessionData.user.id;
 
+  // Check Redis health before establishing SSE connection
+  const redisHealthy = await checkRedisHealth();
+  if (!redisHealthy) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          code: "SERVICE_UNAVAILABLE",
+          message: "Real-time updates temporarily unavailable. Use sync endpoint for updates.",
+        },
+      }),
+      {
+        status: 503,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "30",
+          "X-Fallback-Sync": "true",
+        },
+      }
+    );
+  }
+
   // Get user's subscribed feed IDs
   const feedIds = await getUserFeedIds(userId);
 
@@ -163,7 +185,7 @@ export async function GET(req: Request): Promise<Response> {
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
-      let subscriber: ReturnType<typeof createSubscriberClient> | null = null;
+      let subscriber: ReturnType<typeof createSubscriberClient> = null;
       let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
       let isCleanedUp = false;
 
@@ -253,6 +275,13 @@ export async function GET(req: Request): Promise<Response> {
       // Create Redis subscriber
       try {
         subscriber = createSubscriberClient();
+
+        // This should never happen since we checked Redis health above,
+        // but handle it gracefully just in case
+        if (!subscriber) {
+          controller.error(new Error("Redis subscriber unavailable"));
+          return;
+        }
 
         // Build list of channels to subscribe to:
         // - User-specific channel for subscription events
