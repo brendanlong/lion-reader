@@ -94,3 +94,4 @@ export {
   type VerificationResult,
   type RenewSubscriptionsResult,
 } from "./websub";
+export { isLessWrongFeedUrl, fetchLessWrongFeed } from "./lesswrong-feed";
