@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { errors } from "../errors";
+import { USER_AGENT } from "@/server/http/user-agent";
 import {
   parseFeed,
   discoverFeeds,
@@ -24,11 +25,6 @@ import { isLessWrongFeed, cleanLessWrongContent } from "@/server/feed/content-cl
 // ============================================================================
 // Constants
 // ============================================================================
-
-/**
- * User-Agent header sent when fetching feeds.
- */
-const USER_AGENT = "LionReader/1.0 (+https://lionreader.com/bot)";
 
 /**
  * Timeout for feed fetch requests (10 seconds).

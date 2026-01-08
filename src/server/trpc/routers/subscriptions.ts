@@ -10,6 +10,7 @@ import { eq, and, isNull, sql, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
+import { USER_AGENT } from "@/server/http/user-agent";
 import {
   feeds,
   subscriptions,
@@ -44,11 +45,6 @@ import type { FeedType } from "@/server/feed";
 // ============================================================================
 // Constants
 // ============================================================================
-
-/**
- * User-Agent header sent when fetching feeds.
- */
-const USER_AGENT = "LionReader/1.0 (+https://lionreader.com/bot)";
 
 /**
  * Timeout for feed fetch requests (10 seconds).
