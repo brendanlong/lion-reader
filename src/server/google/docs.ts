@@ -5,6 +5,15 @@
  * JavaScript dependence. This module provides access to document content via the
  * Google Docs API, converting structured document data to clean HTML.
  *
+ * Supported elements:
+ * - Paragraphs with text styling (bold, italic, underline, strikethrough, links)
+ * - Headings (H1-H6, Title, Subtitle)
+ * - Tables with nested content
+ * - Footnotes (rendered at the end of the document)
+ * - Inline and positioned images (uploaded to object storage if configured)
+ * - Horizontal rules
+ * - Lists (ordered and unordered with proper nesting)
+ *
  * Phase 1: Public documents only (requires service account credentials)
  * Phase 2: Private documents with user OAuth tokens (future)
  *
@@ -16,6 +25,7 @@ import { z } from "zod";
 import { GoogleAuth } from "google-auth-library";
 import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
+import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
 
 // ============================================================================
 // Constants
@@ -148,8 +158,17 @@ export function extractDocId(url: string): string | null {
 }
 
 // ============================================================================
-// Google Docs API Types
+// Google Docs API Types (Zod Schemas)
 // ============================================================================
+
+/**
+ * Link destination from Google Docs API.
+ */
+const linkSchema = z.object({
+  url: z.string().optional(),
+  bookmarkId: z.string().optional(),
+  headingId: z.string().optional(),
+});
 
 /**
  * Text style from Google Docs API.
@@ -159,11 +178,9 @@ const textStyleSchema = z.object({
   italic: z.boolean().optional(),
   underline: z.boolean().optional(),
   strikethrough: z.boolean().optional(),
-  link: z
-    .object({
-      url: z.string(),
-    })
-    .optional(),
+  smallCaps: z.boolean().optional(),
+  baselineOffset: z.enum(["BASELINE_OFFSET_UNSPECIFIED", "NONE", "SUPERSCRIPT", "SUBSCRIPT"]).optional(),
+  link: linkSchema.optional(),
 });
 
 /**
@@ -175,10 +192,76 @@ const textRunSchema = z.object({
 });
 
 /**
- * Paragraph element from Google Docs API.
+ * Footnote reference element from Google Docs API.
+ */
+const footnoteReferenceSchema = z.object({
+  footnoteId: z.string(),
+  footnoteNumber: z.string().optional(),
+  textStyle: textStyleSchema.optional(),
+});
+
+/**
+ * Inline object element from Google Docs API.
+ */
+const inlineObjectElementSchema = z.object({
+  inlineObjectId: z.string(),
+  textStyle: textStyleSchema.optional(),
+});
+
+/**
+ * Horizontal rule element from Google Docs API.
+ */
+const horizontalRuleSchema = z.object({
+  textStyle: textStyleSchema.optional(),
+});
+
+/**
+ * Rich link element (links to Google resources).
+ */
+const richLinkSchema = z.object({
+  richLinkId: z.string().optional(),
+  richLinkProperties: z.object({
+    title: z.string().optional(),
+    uri: z.string().optional(),
+    mimeType: z.string().optional(),
+  }).optional(),
+  textStyle: textStyleSchema.optional(),
+});
+
+/**
+ * Person mention element.
+ */
+const personSchema = z.object({
+  personId: z.string().optional(),
+  personProperties: z.object({
+    name: z.string().optional(),
+    email: z.string().optional(),
+  }).optional(),
+  textStyle: textStyleSchema.optional(),
+});
+
+/**
+ * Paragraph element from Google Docs API (union of possible element types).
  */
 const paragraphElementSchema = z.object({
+  startIndex: z.number().optional(),
+  endIndex: z.number().optional(),
   textRun: textRunSchema.optional(),
+  footnoteReference: footnoteReferenceSchema.optional(),
+  inlineObjectElement: inlineObjectElementSchema.optional(),
+  horizontalRule: horizontalRuleSchema.optional(),
+  richLink: richLinkSchema.optional(),
+  person: personSchema.optional(),
+  // pageBreak, columnBreak, autoText, equation are ignored for HTML conversion
+});
+
+/**
+ * Bullet (list item marker) from Google Docs API.
+ */
+const bulletSchema = z.object({
+  listId: z.string(),
+  nestingLevel: z.number().optional(),
+  textStyle: textStyleSchema.optional(),
 });
 
 /**
@@ -193,16 +276,98 @@ const paragraphStyleSchema = z.object({
  * Paragraph from Google Docs API.
  */
 const paragraphSchema = z.object({
-  elements: z.array(paragraphElementSchema),
+  elements: z.array(paragraphElementSchema).optional(),
   paragraphStyle: paragraphStyleSchema.optional(),
+  bullet: bulletSchema.optional(),
+  positionedObjectIds: z.array(z.string()).optional(),
+});
+
+/**
+ * Table cell style from Google Docs API.
+ */
+const tableCellStyleSchema = z.object({
+  rowSpan: z.number().optional(),
+  columnSpan: z.number().optional(),
+}).passthrough();
+
+/**
+ * Structural element schema (forward declaration for recursive types).
+ * We use z.lazy() for the recursive table cell content.
+ */
+type StructuralElement = {
+  startIndex?: number;
+  endIndex?: number;
+  paragraph?: z.infer<typeof paragraphSchema>;
+  table?: {
+    rows: number;
+    columns: number;
+    tableRows?: Array<{
+      startIndex?: number;
+      endIndex?: number;
+      tableCells?: Array<{
+        startIndex?: number;
+        endIndex?: number;
+        content?: StructuralElement[];
+        tableCellStyle?: z.infer<typeof tableCellStyleSchema>;
+      }>;
+    }>;
+  };
+  tableOfContents?: {
+    content?: StructuralElement[];
+  };
+  sectionBreak?: unknown;
+};
+
+/**
+ * Table cell from Google Docs API.
+ */
+const tableCellSchema: z.ZodType<{
+  startIndex?: number;
+  endIndex?: number;
+  content?: StructuralElement[];
+  tableCellStyle?: z.infer<typeof tableCellStyleSchema>;
+}> = z.object({
+  startIndex: z.number().optional(),
+  endIndex: z.number().optional(),
+  content: z.lazy(() => z.array(structuralElementSchema)).optional(),
+  tableCellStyle: tableCellStyleSchema.optional(),
+});
+
+/**
+ * Table row from Google Docs API.
+ */
+const tableRowSchema = z.object({
+  startIndex: z.number().optional(),
+  endIndex: z.number().optional(),
+  tableCells: z.array(tableCellSchema).optional(),
+});
+
+/**
+ * Table from Google Docs API.
+ */
+const tableSchema = z.object({
+  rows: z.number(),
+  columns: z.number(),
+  tableRows: z.array(tableRowSchema).optional(),
+});
+
+/**
+ * Table of contents from Google Docs API.
+ */
+const tableOfContentsSchema = z.object({
+  content: z.lazy(() => z.array(structuralElementSchema)).optional(),
 });
 
 /**
  * Structural element from Google Docs API.
  */
-const structuralElementSchema = z.object({
+const structuralElementSchema: z.ZodType<StructuralElement> = z.object({
+  startIndex: z.number().optional(),
+  endIndex: z.number().optional(),
   paragraph: paragraphSchema.optional(),
-  // Note: Tables, lists, and other elements will be added in future iterations
+  table: tableSchema.optional(),
+  tableOfContents: tableOfContentsSchema.optional(),
+  sectionBreak: z.unknown().optional(),
 });
 
 /**
@@ -213,14 +378,86 @@ const documentBodySchema = z.object({
 });
 
 /**
+ * Footnote content from Google Docs API.
+ */
+const footnoteSchema = z.object({
+  footnoteId: z.string(),
+  content: z.array(structuralElementSchema).optional(),
+});
+
+/**
+ * Image properties from Google Docs API.
+ */
+const imagePropertiesSchema = z.object({
+  contentUri: z.string().optional(),
+  sourceUri: z.string().optional(),
+});
+
+/**
+ * Embedded object (image) from Google Docs API.
+ */
+const embeddedObjectSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  imageProperties: imagePropertiesSchema.optional(),
+});
+
+/**
+ * Inline object from Google Docs API.
+ */
+const inlineObjectSchema = z.object({
+  objectId: z.string(),
+  inlineObjectProperties: z.object({
+    embeddedObject: embeddedObjectSchema.optional(),
+  }).optional(),
+});
+
+/**
+ * Positioned object from Google Docs API.
+ */
+const positionedObjectSchema = z.object({
+  objectId: z.string(),
+  positionedObjectProperties: z.object({
+    embeddedObject: embeddedObjectSchema.optional(),
+  }).optional(),
+});
+
+/**
+ * List nesting level properties.
+ */
+const nestingLevelSchema = z.object({
+  bulletAlignment: z.string().optional(),
+  glyphType: z.string().optional(),
+  glyphSymbol: z.string().optional(),
+  glyphFormat: z.string().optional(),
+  startNumber: z.number().optional(),
+});
+
+/**
+ * List properties from Google Docs API.
+ */
+const listPropertiesSchema = z.object({
+  nestingLevels: z.array(nestingLevelSchema).optional(),
+});
+
+/**
+ * List from Google Docs API.
+ */
+const listSchema = z.object({
+  listProperties: listPropertiesSchema.optional(),
+});
+
+/**
  * Full document from Google Docs API.
  */
 const googleDocsApiResponseSchema = z.object({
   documentId: z.string(),
   title: z.string(),
   body: documentBodySchema,
-  // Note: We may want to extract author/creation date in the future
-  // but these require authenticated requests
+  footnotes: z.record(z.string(), footnoteSchema).optional(),
+  inlineObjects: z.record(z.string(), inlineObjectSchema).optional(),
+  positionedObjects: z.record(z.string(), positionedObjectSchema).optional(),
+  lists: z.record(z.string(), listSchema).optional(),
 });
 
 /**
@@ -245,129 +482,546 @@ export interface GoogleDocsContent {
 // HTML Conversion
 // ============================================================================
 
+type ParsedDoc = z.infer<typeof googleDocsApiResponseSchema>;
+
+/**
+ * Context for HTML conversion, containing document-level data.
+ */
+interface ConversionContext {
+  doc: ParsedDoc;
+  /** Map of image object IDs to their uploaded URLs */
+  imageUrls: Map<string, string>;
+  /** Footnotes encountered during conversion (id -> number) */
+  footnoteNumbers: Map<string, number>;
+  /** Current footnote counter */
+  footnoteCounter: number;
+}
+
+/**
+ * Escapes HTML special characters.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * Gets the HTML tag for a paragraph based on its style.
+ */
+function getParagraphTag(namedStyle?: string): { open: string; close: string } {
+  switch (namedStyle) {
+    case "HEADING_1":
+    case "TITLE":
+      return { open: "<h1>", close: "</h1>" };
+    case "HEADING_2":
+    case "SUBTITLE":
+      return { open: "<h2>", close: "</h2>" };
+    case "HEADING_3":
+      return { open: "<h3>", close: "</h3>" };
+    case "HEADING_4":
+      return { open: "<h4>", close: "</h4>" };
+    case "HEADING_5":
+      return { open: "<h5>", close: "</h5>" };
+    case "HEADING_6":
+      return { open: "<h6>", close: "</h6>" };
+    default:
+      return { open: "<p>", close: "</p>" };
+  }
+}
+
+/**
+ * Determines if a list is ordered based on its glyph type.
+ */
+function isOrderedList(listId: string, nestingLevel: number, ctx: ConversionContext): boolean {
+  const list = ctx.doc.lists?.[listId];
+  const level = list?.listProperties?.nestingLevels?.[nestingLevel];
+  const glyphType = level?.glyphType;
+
+  // Ordered glyph types
+  const orderedTypes = ["DECIMAL", "ZERO_DECIMAL", "UPPER_ALPHA", "ALPHA", "UPPER_ROMAN", "ROMAN"];
+  return glyphType ? orderedTypes.includes(glyphType) : false;
+}
+
+/**
+ * Gets the image URL for an inline or positioned object.
+ */
+function getImageUrl(objectId: string, ctx: ConversionContext): string | null {
+  // Check if we have an uploaded URL
+  const uploadedUrl = ctx.imageUrls.get(objectId);
+  if (uploadedUrl) {
+    return uploadedUrl;
+  }
+
+  // Get the original URL from inline objects
+  const inlineObj = ctx.doc.inlineObjects?.[objectId];
+  if (inlineObj?.inlineObjectProperties?.embeddedObject?.imageProperties?.contentUri) {
+    return inlineObj.inlineObjectProperties.embeddedObject.imageProperties.contentUri;
+  }
+
+  // Get the original URL from positioned objects
+  const posObj = ctx.doc.positionedObjects?.[objectId];
+  if (posObj?.positionedObjectProperties?.embeddedObject?.imageProperties?.contentUri) {
+    return posObj.positionedObjectProperties.embeddedObject.imageProperties.contentUri;
+  }
+
+  return null;
+}
+
+/**
+ * Gets alt text for an image object.
+ */
+function getImageAlt(objectId: string, ctx: ConversionContext): string {
+  const inlineObj = ctx.doc.inlineObjects?.[objectId];
+  const posObj = ctx.doc.positionedObjects?.[objectId];
+  const obj = inlineObj?.inlineObjectProperties?.embeddedObject ||
+              posObj?.positionedObjectProperties?.embeddedObject;
+
+  if (obj?.title) return obj.title;
+  if (obj?.description) return obj.description;
+  return "Image";
+}
+
+/**
+ * Converts a text style to HTML tags.
+ */
+function applyTextStyle(text: string, style?: z.infer<typeof textStyleSchema>): string {
+  if (!style) return text;
+
+  let result = text;
+
+  // Apply link first (innermost)
+  if (style.link?.url) {
+    const escapedUrl = escapeHtml(style.link.url);
+    result = `<a href="${escapedUrl}">${result}</a>`;
+  }
+
+  // Apply text styles
+  if (style.bold) {
+    result = `<strong>${result}</strong>`;
+  }
+  if (style.italic) {
+    result = `<em>${result}</em>`;
+  }
+  if (style.underline && !style.link) {
+    // Don't underline links (they're already styled)
+    result = `<u>${result}</u>`;
+  }
+  if (style.strikethrough) {
+    result = `<s>${result}</s>`;
+  }
+  if (style.smallCaps) {
+    result = `<span style="font-variant: small-caps">${result}</span>`;
+  }
+  if (style.baselineOffset === "SUPERSCRIPT") {
+    result = `<sup>${result}</sup>`;
+  } else if (style.baselineOffset === "SUBSCRIPT") {
+    result = `<sub>${result}</sub>`;
+  }
+
+  return result;
+}
+
+/**
+ * Converts paragraph elements to HTML content.
+ */
+function convertParagraphElements(
+  elements: z.infer<typeof paragraphElementSchema>[] | undefined,
+  ctx: ConversionContext
+): string {
+  if (!elements) return "";
+
+  let content = "";
+
+  for (const elem of elements) {
+    // Text run
+    if (elem.textRun) {
+      const escapedText = escapeHtml(elem.textRun.content);
+      content += applyTextStyle(escapedText, elem.textRun.textStyle);
+    }
+
+    // Footnote reference
+    if (elem.footnoteReference) {
+      const footnoteId = elem.footnoteReference.footnoteId;
+      let footnoteNum = ctx.footnoteNumbers.get(footnoteId);
+      if (footnoteNum === undefined) {
+        ctx.footnoteCounter++;
+        footnoteNum = ctx.footnoteCounter;
+        ctx.footnoteNumbers.set(footnoteId, footnoteNum);
+      }
+      content += `<sup><a href="#footnote-${footnoteNum}" id="footnote-ref-${footnoteNum}">[${footnoteNum}]</a></sup>`;
+    }
+
+    // Inline object (image)
+    if (elem.inlineObjectElement) {
+      const objectId = elem.inlineObjectElement.inlineObjectId;
+      const imageUrl = getImageUrl(objectId, ctx);
+      if (imageUrl) {
+        const alt = escapeHtml(getImageAlt(objectId, ctx));
+        content += `<img src="${escapeHtml(imageUrl)}" alt="${alt}" loading="lazy">`;
+      }
+    }
+
+    // Horizontal rule
+    if (elem.horizontalRule) {
+      content += "<hr>";
+    }
+
+    // Rich link (Google resource link)
+    if (elem.richLink?.richLinkProperties?.uri) {
+      const uri = elem.richLink.richLinkProperties.uri;
+      const title = elem.richLink.richLinkProperties.title || uri;
+      const url = escapeHtml(uri);
+      content += `<a href="${url}">${escapeHtml(title)}</a>`;
+    }
+
+    // Person mention
+    if (elem.person?.personProperties) {
+      const props = elem.person.personProperties;
+      const displayName = props.name || props.email || "Unknown";
+      if (props.email) {
+        content += `<a href="mailto:${escapeHtml(props.email)}">${escapeHtml(displayName)}</a>`;
+      } else {
+        content += escapeHtml(displayName);
+      }
+    }
+  }
+
+  return content;
+}
+
+/**
+ * Converts a table to HTML.
+ */
+function convertTable(table: NonNullable<StructuralElement["table"]>, ctx: ConversionContext): string {
+  if (!table.tableRows) {
+    return "";
+  }
+
+  const rows: string[] = [];
+
+  for (const row of table.tableRows) {
+    if (!row.tableCells) continue;
+
+    const cells: string[] = [];
+    for (const cell of row.tableCells) {
+      // Convert cell content (may contain nested structural elements)
+      const cellContent = cell.content
+        ? convertStructuralElements(cell.content, ctx)
+        : "";
+
+      // Handle rowspan and colspan
+      const style = cell.tableCellStyle;
+      let attrs = "";
+      if (style?.rowSpan && style.rowSpan > 1) {
+        attrs += ` rowspan="${style.rowSpan}"`;
+      }
+      if (style?.columnSpan && style.columnSpan > 1) {
+        attrs += ` colspan="${style.columnSpan}"`;
+      }
+
+      cells.push(`<td${attrs}>${cellContent}</td>`);
+    }
+
+    rows.push(`<tr>${cells.join("")}</tr>`);
+  }
+
+  return `<table>\n${rows.join("\n")}\n</table>`;
+}
+
+/**
+ * Tracks list state for proper nesting.
+ */
+interface ListState {
+  listId: string;
+  nestingLevel: number;
+  isOrdered: boolean;
+}
+
+/**
+ * Converts structural elements to HTML, handling lists properly.
+ */
+function convertStructuralElements(
+  elements: StructuralElement[],
+  ctx: ConversionContext
+): string {
+  const htmlParts: string[] = [];
+  const listStack: ListState[] = [];
+
+  for (const element of elements) {
+    // Handle table
+    if (element.table) {
+      // Close any open lists
+      while (listStack.length > 0) {
+        const state = listStack.pop()!;
+        htmlParts.push(state.isOrdered ? "</ol>" : "</ul>");
+      }
+      htmlParts.push(convertTable(element.table, ctx));
+      continue;
+    }
+
+    // Handle table of contents (render as nested structure)
+    if (element.tableOfContents?.content) {
+      while (listStack.length > 0) {
+        const state = listStack.pop()!;
+        htmlParts.push(state.isOrdered ? "</ol>" : "</ul>");
+      }
+      htmlParts.push('<nav class="table-of-contents">');
+      htmlParts.push(convertStructuralElements(element.tableOfContents.content, ctx));
+      htmlParts.push("</nav>");
+      continue;
+    }
+
+    // Handle paragraph
+    if (element.paragraph) {
+      const paragraph = element.paragraph;
+      const bullet = paragraph.bullet;
+      const namedStyle = paragraph.paragraphStyle?.namedStyleType;
+
+      // Check for positioned objects attached to this paragraph
+      const positionedImages: string[] = [];
+      if (paragraph.positionedObjectIds) {
+        for (const objectId of paragraph.positionedObjectIds) {
+          const imageUrl = getImageUrl(objectId, ctx);
+          if (imageUrl) {
+            const alt = escapeHtml(getImageAlt(objectId, ctx));
+            positionedImages.push(
+              `<figure><img src="${escapeHtml(imageUrl)}" alt="${alt}" loading="lazy"></figure>`
+            );
+          }
+        }
+      }
+
+      // Convert paragraph content
+      const content = convertParagraphElements(paragraph.elements, ctx);
+
+      // Handle list items
+      if (bullet) {
+        const listId = bullet.listId;
+        const nestingLevel = bullet.nestingLevel ?? 0;
+        const isOrdered = isOrderedList(listId, nestingLevel, ctx);
+
+        // Close lists that are no longer active or at higher nesting levels
+        while (
+          listStack.length > 0 &&
+          (listStack[listStack.length - 1].listId !== listId ||
+           listStack[listStack.length - 1].nestingLevel > nestingLevel)
+        ) {
+          const state = listStack.pop()!;
+          htmlParts.push(state.isOrdered ? "</ol>" : "</ul>");
+        }
+
+        // Open new lists as needed
+        while (
+          listStack.length === 0 ||
+          listStack[listStack.length - 1].nestingLevel < nestingLevel
+        ) {
+          const currentLevel = listStack.length === 0 ? 0 : listStack[listStack.length - 1].nestingLevel + 1;
+          const newIsOrdered = isOrderedList(listId, currentLevel, ctx);
+          listStack.push({ listId, nestingLevel: currentLevel, isOrdered: newIsOrdered });
+          htmlParts.push(newIsOrdered ? "<ol>" : "<ul>");
+        }
+
+        // Add the list item
+        if (content.trim() || positionedImages.length > 0) {
+          htmlParts.push(`<li>${positionedImages.join("")}${content}</li>`);
+        }
+      } else {
+        // Close all open lists before non-list content
+        while (listStack.length > 0) {
+          const state = listStack.pop()!;
+          htmlParts.push(state.isOrdered ? "</ol>" : "</ul>");
+        }
+
+        // Add positioned images before the paragraph
+        htmlParts.push(...positionedImages);
+
+        // Add the paragraph if it has content
+        if (content.trim()) {
+          const { open, close } = getParagraphTag(namedStyle);
+          htmlParts.push(`${open}${content}${close}`);
+        }
+      }
+    }
+  }
+
+  // Close any remaining open lists
+  while (listStack.length > 0) {
+    const state = listStack.pop()!;
+    htmlParts.push(state.isOrdered ? "</ol>" : "</ul>");
+  }
+
+  return htmlParts.join("\n");
+}
+
+/**
+ * Converts footnotes to HTML.
+ */
+function convertFootnotes(ctx: ConversionContext): string {
+  if (ctx.footnoteNumbers.size === 0) {
+    return "";
+  }
+
+  const footnoteHtml: string[] = ['<section class="footnotes"><hr><ol>'];
+
+  // Sort footnotes by their number
+  const sortedFootnotes = Array.from(ctx.footnoteNumbers.entries())
+    .sort((a, b) => a[1] - b[1]);
+
+  for (const [footnoteId, footnoteNum] of sortedFootnotes) {
+    const footnote = ctx.doc.footnotes?.[footnoteId];
+    if (footnote?.content) {
+      const content = convertStructuralElements(footnote.content, ctx);
+      footnoteHtml.push(
+        `<li id="footnote-${footnoteNum}">${content} <a href="#footnote-ref-${footnoteNum}">↩</a></li>`
+      );
+    }
+  }
+
+  footnoteHtml.push("</ol></section>");
+  return footnoteHtml.join("\n");
+}
+
+/**
+ * Extracts and uploads images from the document.
+ *
+ * @param doc - The parsed Google Docs document
+ * @param docId - The document ID (used for organizing images)
+ * @param accessToken - The OAuth access token for fetching images
+ * @returns Map of object IDs to uploaded URLs
+ */
+async function uploadDocumentImages(
+  doc: ParsedDoc,
+  docId: string,
+  accessToken: string
+): Promise<Map<string, string>> {
+  const imageUrls = new Map<string, string>();
+
+  if (!isStorageAvailable()) {
+    logger.debug("Storage not configured, images will use original URLs");
+    return imageUrls;
+  }
+
+  // Collect all image objects
+  const imageObjects: Array<{ objectId: string; contentUri: string; alt: string }> = [];
+
+  // Inline objects
+  if (doc.inlineObjects) {
+    for (const [objectId, obj] of Object.entries(doc.inlineObjects)) {
+      const contentUri = obj.inlineObjectProperties?.embeddedObject?.imageProperties?.contentUri;
+      if (contentUri) {
+        const alt = obj.inlineObjectProperties?.embeddedObject?.title ||
+                   obj.inlineObjectProperties?.embeddedObject?.description || "Image";
+        imageObjects.push({ objectId, contentUri, alt });
+      }
+    }
+  }
+
+  // Positioned objects
+  if (doc.positionedObjects) {
+    for (const [objectId, obj] of Object.entries(doc.positionedObjects)) {
+      const contentUri = obj.positionedObjectProperties?.embeddedObject?.imageProperties?.contentUri;
+      if (contentUri) {
+        const alt = obj.positionedObjectProperties?.embeddedObject?.title ||
+                   obj.positionedObjectProperties?.embeddedObject?.description || "Image";
+        imageObjects.push({ objectId, contentUri, alt });
+      }
+    }
+  }
+
+  if (imageObjects.length === 0) {
+    return imageUrls;
+  }
+
+  logger.debug("Uploading document images", {
+    docId,
+    imageCount: imageObjects.length,
+  });
+
+  // Upload images in parallel (with concurrency limit)
+  const CONCURRENCY = 5;
+  for (let i = 0; i < imageObjects.length; i += CONCURRENCY) {
+    const batch = imageObjects.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async ({ objectId, contentUri }) => {
+        try {
+          const result = await fetchAndUploadImage(contentUri, {
+            documentId: docId,
+            prefix: "google-docs",
+            authorization: `Bearer ${accessToken}`,
+          });
+          if (result) {
+            return { objectId, url: result.url };
+          }
+        } catch (error) {
+          logger.warn("Failed to upload image", {
+            objectId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        return null;
+      })
+    );
+
+    for (const result of results) {
+      if (result) {
+        imageUrls.set(result.objectId, result.url);
+      }
+    }
+  }
+
+  logger.debug("Image upload complete", {
+    docId,
+    uploaded: imageUrls.size,
+    total: imageObjects.length,
+  });
+
+  return imageUrls;
+}
+
 /**
  * Converts Google Docs API structured content to HTML.
  *
- * This is a basic implementation that handles:
- * - Paragraphs
- * - Headings (H1-H6)
- * - Text styling (bold, italic, underline, strikethrough)
- * - Links
- *
- * Future enhancements may include:
- * - Lists (ordered/unordered)
- * - Tables
- * - Images
- * - More complex formatting
+ * Handles:
+ * - Paragraphs with text styling (bold, italic, underline, strikethrough)
+ * - Headings (H1-H6, Title, Subtitle)
+ * - Tables with nested content
+ * - Footnotes (rendered at the end)
+ * - Inline and positioned images
+ * - Horizontal rules
+ * - Ordered and unordered lists with proper nesting
+ * - Rich links and person mentions
+ * - Superscript and subscript text
  */
-function convertDocsApiToHtml(doc: z.infer<typeof googleDocsApiResponseSchema>): string {
-  const htmlParts: string[] = [];
-
+async function convertDocsApiToHtml(
+  doc: ParsedDoc,
+  accessToken: string
+): Promise<string> {
   if (!doc.body.content) {
     return "<p>Empty document</p>";
   }
 
-  for (const element of doc.body.content) {
-    if (!element.paragraph) {
-      continue;
-    }
+  // Upload images to storage (if configured)
+  const imageUrls = await uploadDocumentImages(doc, doc.documentId, accessToken);
 
-    const paragraph = element.paragraph;
-    const namedStyle = paragraph.paragraphStyle?.namedStyleType;
+  // Create conversion context
+  const ctx: ConversionContext = {
+    doc,
+    imageUrls,
+    footnoteNumbers: new Map(),
+    footnoteCounter: 0,
+  };
 
-    // Determine the HTML tag based on paragraph style
-    let openTag = "<p>";
-    let closeTag = "</p>";
+  // Convert body content
+  const bodyHtml = convertStructuralElements(doc.body.content, ctx);
 
-    if (namedStyle) {
-      switch (namedStyle) {
-        case "HEADING_1":
-          openTag = "<h1>";
-          closeTag = "</h1>";
-          break;
-        case "HEADING_2":
-          openTag = "<h2>";
-          closeTag = "</h2>";
-          break;
-        case "HEADING_3":
-          openTag = "<h3>";
-          closeTag = "</h3>";
-          break;
-        case "HEADING_4":
-          openTag = "<h4>";
-          closeTag = "</h4>";
-          break;
-        case "HEADING_5":
-          openTag = "<h5>";
-          closeTag = "</h5>";
-          break;
-        case "HEADING_6":
-          openTag = "<h6>";
-          closeTag = "</h6>";
-          break;
-        case "TITLE":
-          // Treat title as H1
-          openTag = "<h1>";
-          closeTag = "</h1>";
-          break;
-        case "SUBTITLE":
-          // Treat subtitle as H2
-          openTag = "<h2>";
-          closeTag = "</h2>";
-          break;
-      }
-    }
+  // Convert footnotes
+  const footnotesHtml = convertFootnotes(ctx);
 
-    // Build the paragraph content with inline styles
-    let paragraphContent = "";
-
-    for (const elem of paragraph.elements) {
-      if (!elem.textRun) {
-        continue;
-      }
-
-      const textRun = elem.textRun;
-      let text = textRun.content;
-
-      // HTML escape the text
-      text = text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-
-      const style = textRun.textStyle;
-
-      if (style) {
-        // Apply text styles in order: link -> bold -> italic -> underline -> strikethrough
-        if (style.link?.url) {
-          text = `<a href="${style.link.url}">${text}</a>`;
-        }
-        if (style.bold) {
-          text = `<strong>${text}</strong>`;
-        }
-        if (style.italic) {
-          text = `<em>${text}</em>`;
-        }
-        if (style.underline) {
-          text = `<u>${text}</u>`;
-        }
-        if (style.strikethrough) {
-          text = `<s>${text}</s>`;
-        }
-      }
-
-      paragraphContent += text;
-    }
-
-    // Only add the paragraph if it has content (not just whitespace)
-    if (paragraphContent.trim()) {
-      htmlParts.push(openTag + paragraphContent + closeTag);
-    }
-  }
-
-  return htmlParts.join("\n");
+  return bodyHtml + (footnotesHtml ? "\n" + footnotesHtml : "");
 }
 
 // ============================================================================
@@ -477,8 +1131,8 @@ export async function fetchPublicGoogleDoc(docId: string): Promise<GoogleDocsCon
 
     const doc = parsed.data;
 
-    // Convert structured document to HTML
-    const html = convertDocsApiToHtml(doc);
+    // Convert structured document to HTML (includes image upload if storage is configured)
+    const html = await convertDocsApiToHtml(doc, accessToken);
 
     return {
       docId: doc.documentId,
