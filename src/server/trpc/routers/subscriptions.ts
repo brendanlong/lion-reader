@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, inArray, notInArray } from "drizzle-orm";
+import { eq, and, isNull, sql, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -189,20 +189,6 @@ function isHtmlContent(contentType: string, content: string): boolean {
 // Subscription Helpers
 // ============================================================================
 
-interface SubscribeToExistingFeedOptions {
-  /**
-   * If provided, entries with GUIDs matching entries the user has already seen
-   * from this feed will be skipped when creating user_entries.
-   * This is used when migrating a subscription from a redirected feed.
-   */
-  previousFeedId?: string;
-  /**
-   * If true, silently succeed when user is already subscribed instead of throwing.
-   * Used when migrating subscriptions where user might already be subscribed to target.
-   */
-  allowAlreadySubscribed?: boolean;
-}
-
 /**
  * Subscribe to an existing feed that has already been fetched.
  * Uses lastSeenAt to determine which entries are currently in the feed,
@@ -211,10 +197,8 @@ interface SubscribeToExistingFeedOptions {
 async function subscribeToExistingFeed(
   db: typeof import("@/server/db").db,
   userId: string,
-  feedRecord: typeof feeds.$inferSelect,
-  options: SubscribeToExistingFeedOptions = {}
+  feedRecord: typeof feeds.$inferSelect
 ): Promise<z.infer<typeof subscriptionWithFeedOutputSchema>> {
-  const { previousFeedId, allowAlreadySubscribed = false } = options;
   const feedId = feedRecord.id;
 
   // Ensure job is enabled and sync next_fetch_at
@@ -235,34 +219,26 @@ async function subscribeToExistingFeed(
 
   let subscriptionId: string;
   let subscribedAt: Date;
-  let wasAlreadySubscribed = false;
 
   if (existingSubscription.length > 0) {
     const sub = existingSubscription[0];
 
     if (sub.unsubscribedAt === null) {
-      if (allowAlreadySubscribed) {
-        // Already subscribed - just return the existing subscription
-        wasAlreadySubscribed = true;
-        subscriptionId = sub.id;
-        subscribedAt = sub.subscribedAt;
-      } else {
-        throw errors.alreadySubscribed();
-      }
-    } else {
-      // Reactivate subscription
-      subscriptionId = sub.id;
-      subscribedAt = new Date();
-
-      await db
-        .update(subscriptions)
-        .set({
-          unsubscribedAt: null,
-          subscribedAt: subscribedAt,
-          updatedAt: subscribedAt,
-        })
-        .where(eq(subscriptions.id, subscriptionId));
+      throw errors.alreadySubscribed();
     }
+
+    // Reactivate subscription
+    subscriptionId = sub.id;
+    subscribedAt = new Date();
+
+    await db
+      .update(subscriptions)
+      .set({
+        unsubscribedAt: null,
+        subscribedAt: subscribedAt,
+        updatedAt: subscribedAt,
+      })
+      .where(eq(subscriptions.id, subscriptionId));
   } else {
     // Create new subscription
     subscriptionId = generateUuidv7();
@@ -283,30 +259,13 @@ async function subscribeToExistingFeed(
   // We use lastEntriesUpdatedAt (not lastFetchedAt) because it only updates when entries change,
   // ensuring exact sync with entries.lastSeenAt
   let unreadCount = 0;
-  if (feedRecord.lastEntriesUpdatedAt && !wasAlreadySubscribed) {
-    // Build the base condition for current entries
-    const conditions = [
-      eq(entries.feedId, feedId),
-      eq(entries.lastSeenAt, feedRecord.lastEntriesUpdatedAt),
-    ];
-
-    // If migrating from a previous feed, exclude entries with GUIDs the user has already seen
-    // This preserves read/saved state from the old feed
-    if (previousFeedId) {
-      // Subquery: GUIDs of entries from the previous feed that the user has user_entries for
-      const previousFeedGuidsSubquery = db
-        .select({ guid: entries.guid })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(and(eq(entries.feedId, previousFeedId), eq(userEntries.userId, userId)));
-
-      conditions.push(notInArray(entries.guid, previousFeedGuidsSubquery));
-    }
-
+  if (feedRecord.lastEntriesUpdatedAt) {
     const matchingEntries = await db
       .select({ id: entries.id })
       .from(entries)
-      .where(and(...conditions));
+      .where(
+        and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, feedRecord.lastEntriesUpdatedAt))
+      );
 
     if (matchingEntries.length > 0) {
       const pairs = matchingEntries.map((entry) => ({
@@ -321,16 +280,13 @@ async function subscribeToExistingFeed(
         userId,
         feedId,
         entryCount: matchingEntries.length,
-        previousFeedId,
       });
     }
   }
 
-  if (!wasAlreadySubscribed) {
-    publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
-      logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-    });
-  }
+  publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
+    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+  });
 
   return {
     subscription: {
@@ -1335,4 +1291,4 @@ export const subscriptionsRouter = createTRPCRouter({
 });
 
 // Export helper for use in background job handlers
-export { subscribeToExistingFeed, type SubscribeToExistingFeedOptions };
+export { subscribeToExistingFeed };
