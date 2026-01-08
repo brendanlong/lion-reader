@@ -24,6 +24,7 @@ import {
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, deriveGuid, getDomainFromUrl } from "@/server/feed";
+import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import {
   createOrEnableFeedJob,
@@ -387,11 +388,21 @@ async function subscribeToNewOrUnfetchedFeed(
     // Use domain as fallback if feed has no title
     const fallbackTitle = getDomainFromUrl(feedUrl);
 
+    // For LessWrong user feeds, try to enhance the title with the username
+    let feedTitle = parsedFeed.title || fallbackTitle || null;
+    const lessWrongUserId = extractUserIdFromFeedUrl(feedUrl);
+    if (lessWrongUserId && feedTitle) {
+      const lwUser = await fetchLessWrongUserById(lessWrongUserId);
+      if (lwUser?.displayName) {
+        feedTitle = `${feedTitle} - ${lwUser.displayName}`;
+      }
+    }
+
     const newFeed = {
       id: feedId,
       type: "web" as const, // All URL-based feeds use "web" type
       url: feedUrl,
-      title: parsedFeed.title || fallbackTitle || null,
+      title: feedTitle,
       description: parsedFeed.description || null,
       siteUrl: parsedFeed.siteUrl || null,
       nextFetchAt: now,
