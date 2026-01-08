@@ -212,9 +212,9 @@ resource "aws_ecs_service" "api" {
   health_check_grace_period_seconds = 60
 
   network_configuration {
-    subnets          = aws_subnet.private[*].id
+    subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.api.id]
-    assign_public_ip = false
+    assign_public_ip = true
   }
 
   load_balancer {
@@ -251,9 +251,9 @@ resource "aws_ecs_service" "worker" {
   }
 
   network_configuration {
-    subnets          = aws_subnet.private[*].id
+    subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.worker.id]
-    assign_public_ip = false
+    assign_public_ip = true
   }
 
   # Ignore changes to task definition (managed by CI/CD)

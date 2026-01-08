@@ -60,10 +60,10 @@ This Terraform configuration deploys Lion Reader to AWS using:
 | ECS Fargate (Redis) | ~$10-15 |
 | RDS PostgreSQL (db.t4g.micro) | ~$13 |
 | ALB | ~$16 + data |
-| NAT Gateway | ~$32 + data |
-| **Total** | **~$90-100/month** |
+| S3 (storage) | ~$1-5 |
+| **Total** | **~$60-70/month** |
 
-Note: NAT Gateway is the largest cost. You could reduce this by using a NAT instance or putting services in public subnets (less secure).
+Note: ECS tasks run in public subnets with public IPs to avoid NAT Gateway costs (~$32/month saved). Security groups still block all inbound traffic except from the ALB.
 
 ## Initial Setup
 
