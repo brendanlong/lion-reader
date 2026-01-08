@@ -14,6 +14,7 @@ import com.lionreader.data.repository.SyncRepository
 import com.lionreader.data.repository.TagRepository
 import com.lionreader.data.sync.ConnectivityMonitor
 import com.lionreader.data.sync.SyncErrorNotifier
+import com.lionreader.data.sync.SyncPreferences
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -91,6 +92,7 @@ object RepositoryModule {
         tagDao: TagDao,
         connectivityMonitor: ConnectivityMonitor,
         syncRepository: SyncRepository,
+        syncPreferences: SyncPreferences,
     ): EntryRepository =
         EntryRepository(
             api,
@@ -101,6 +103,7 @@ object RepositoryModule {
             tagDao,
             connectivityMonitor,
             syncRepository,
+            syncPreferences,
         )
 
     /**

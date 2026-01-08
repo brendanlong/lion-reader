@@ -16,6 +16,7 @@ import com.lionreader.data.api.models.SavedArticleResponse
 import com.lionreader.data.api.models.SortOrder
 import com.lionreader.data.api.models.StarredCountResponse
 import com.lionreader.data.api.models.SubscriptionsResponse
+import com.lionreader.data.api.models.SyncChangesResponse
 import com.lionreader.data.api.models.TagsResponse
 import com.lionreader.data.api.models.UserResponse
 import javax.inject.Inject
@@ -225,6 +226,22 @@ interface LionReaderApi {
      * @return NarrationAiAvailableResponse indicating availability
      */
     suspend fun isAiTextProcessingAvailable(): ApiResult<NarrationAiAvailableResponse>
+
+    // ============================================================================
+    // SYNC ENDPOINTS
+    // ============================================================================
+
+    /**
+     * Get changes since a given timestamp for incremental sync.
+     *
+     * Returns all entries, subscriptions, and tags that have changed since
+     * the provided timestamp. If no timestamp is provided, returns a limited
+     * set of recent data for initial sync.
+     *
+     * @param since ISO 8601 timestamp to get changes since (optional for initial sync)
+     * @return SyncChangesResponse with entries, subscriptions, tags, and next syncedAt
+     */
+    suspend fun syncChanges(since: String? = null): ApiResult<SyncChangesResponse>
 }
 
 /**
@@ -359,4 +376,13 @@ class LionReaderApiImpl
 
         override suspend fun isAiTextProcessingAvailable(): ApiResult<NarrationAiAvailableResponse> =
             apiClient.get(path = "narration/ai-available")
+
+        // ============================================================================
+        // SYNC ENDPOINTS
+        // ============================================================================
+
+        override suspend fun syncChanges(since: String?): ApiResult<SyncChangesResponse> =
+            apiClient.get(path = "sync") {
+                queryParam("since", since)
+            }
     }
