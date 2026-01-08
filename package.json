@@ -37,6 +37,8 @@
     ]
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.965.0",
+    "@aws-sdk/s3-request-presigner": "^3.965.0",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@mozilla/readability": "^0.6.0",
     "@normy/react-query": "^0.21.0",
