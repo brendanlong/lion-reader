@@ -8,13 +8,11 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   feeds,
   subscriptions,
-  entries,
-  userEntries,
   opmlImports,
   type Feed,
   type OpmlImportFeedResult,
@@ -35,7 +33,6 @@ import {
   enableFeedJob,
   syncFeedJobEnabled,
 } from "./queue";
-import { subscribeToExistingFeed } from "../trpc/routers/subscriptions";
 import { logger } from "@/lib/logger";
 import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from "../metrics/metrics";
 import {
@@ -542,9 +539,11 @@ async function updateFeedOnError(
  * Used when a permanent redirect is detected and the target URL already has a feed.
  *
  * For each subscriber:
- * 1. Creates subscription to new feed (skipping entries they've already seen from old feed)
- * 2. Migrates user_entries (read/starred state) from old feed entries to new feed entries
- * 3. Unsubscribes from old feed
+ * 1. Creates or updates subscription to new feed, adding old feed to previousFeedIds
+ * 2. Unsubscribes from old feed
+ *
+ * User entries stay linked to entries in the old feed. Entry queries use
+ * subscriptions.feed_ids (which includes previousFeedIds) to find all relevant entries.
  *
  * @param oldFeed - The feed that is being redirected
  * @param newFeed - The existing feed at the redirect URL
@@ -552,7 +551,10 @@ async function updateFeedOnError(
 async function migrateSubscriptionsToExistingFeed(oldFeed: Feed, newFeed: Feed): Promise<void> {
   // Find all active subscriptions to the old feed
   const activeSubscriptions = await db
-    .select({ userId: subscriptions.userId, id: subscriptions.id })
+    .select({
+      userId: subscriptions.userId,
+      id: subscriptions.id,
+    })
     .from(subscriptions)
     .where(and(eq(subscriptions.feedId, oldFeed.id), isNull(subscriptions.unsubscribedAt)));
 
@@ -571,17 +573,49 @@ async function migrateSubscriptionsToExistingFeed(oldFeed: Feed, newFeed: Feed):
 
   for (const sub of activeSubscriptions) {
     try {
-      // Subscribe to new feed, skipping entries they've already seen from old feed
-      await subscribeToExistingFeed(db, sub.userId, newFeed, {
-        previousFeedId: oldFeed.id,
-        allowAlreadySubscribed: true,
-      });
+      // Check if user already has subscription to new feed
+      const existingNewSub = await db
+        .select({
+          id: subscriptions.id,
+          previousFeedIds: subscriptions.previousFeedIds,
+          unsubscribedAt: subscriptions.unsubscribedAt,
+        })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, sub.userId), eq(subscriptions.feedId, newFeed.id)))
+        .limit(1);
 
-      // Migrate user_entries from old feed entries to new feed entries (matching by GUID)
-      // This preserves read/starred state. On conflict, merge states using OR.
-      await migrateUserEntries(sub.userId, oldFeed.id, newFeed.id, now);
+      if (existingNewSub.length > 0) {
+        const existing = existingNewSub[0];
+        // User has subscription to new feed - append old feed to previousFeedIds
+        const newPreviousFeedIds = [...existing.previousFeedIds, oldFeed.id];
 
-      // Unsubscribe from old feed
+        await db
+          .update(subscriptions)
+          .set({
+            previousFeedIds: newPreviousFeedIds,
+            // Reactivate if previously unsubscribed
+            unsubscribedAt: null,
+            subscribedAt: existing.unsubscribedAt ? now : undefined,
+            updatedAt: now,
+          })
+          .where(eq(subscriptions.id, existing.id));
+      } else {
+        // Create new subscription to new feed with old feed in previousFeedIds
+        await db.insert(subscriptions).values({
+          id: generateUuidv7(),
+          userId: sub.userId,
+          feedId: newFeed.id,
+          previousFeedIds: [oldFeed.id],
+          subscribedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        // Enable the job for the new feed
+        await enableFeedJob(newFeed.id);
+      }
+
+      // Unsubscribe from old feed (but keep the entries and user_entries)
       await db
         .update(subscriptions)
         .set({
@@ -608,48 +642,6 @@ async function migrateSubscriptionsToExistingFeed(oldFeed: Feed, newFeed: Feed):
 
   // Sync the old feed's job - it will be disabled since it has no subscribers now
   await syncFeedJobEnabled(oldFeed.id);
-}
-
-/**
- * Migrates user_entries from old feed entries to new feed entries, matching by GUID.
- * Preserves read/starred state. On conflict (user already has entry in new feed),
- * merges states using OR (if either is read/starred, result is read/starred).
- */
-async function migrateUserEntries(
-  userId: string,
-  oldFeedId: string,
-  newFeedId: string,
-  now: Date
-): Promise<void> {
-  // Use raw SQL for efficient upsert with join
-  // This finds all user_entries for the old feed's entries, matches them to new feed
-  // entries by GUID, and inserts/updates the user_entries for the new entries
-  const result = await db.execute(sql`
-    INSERT INTO ${userEntries} (user_id, entry_id, read, starred, updated_at)
-    SELECT
-      ${userId},
-      new_entries.id,
-      old_ue.read,
-      old_ue.starred,
-      ${now}
-    FROM ${userEntries} old_ue
-    JOIN ${entries} old_entries ON old_entries.id = old_ue.entry_id
-    JOIN ${entries} new_entries ON new_entries.guid = old_entries.guid
-      AND new_entries.feed_id = ${newFeedId}
-    WHERE old_entries.feed_id = ${oldFeedId}
-      AND old_ue.user_id = ${userId}
-    ON CONFLICT (user_id, entry_id) DO UPDATE SET
-      read = ${userEntries}.read OR EXCLUDED.read,
-      starred = ${userEntries}.starred OR EXCLUDED.starred,
-      updated_at = ${now}
-  `);
-
-  logger.debug("Migrated user entries", {
-    userId,
-    oldFeedId,
-    newFeedId,
-    rowCount: result.rowCount,
-  });
 }
 
 /**

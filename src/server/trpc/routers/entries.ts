@@ -259,11 +259,12 @@ export const entriesRouter = createTRPCRouter({
       const conditions = [eq(userEntries.userId, userId)];
 
       // Entry must be:
-      // 1. From active subscription, OR
+      // 1. From active subscription (current feed or previous feeds from redirects), OR
       // 2. Starred, OR
       // 3. From user's saved feed (type='saved' and feed.userId = userId)
+      // Note: feed_ids is a generated column that combines feedId with previousFeedIds
       const activeSubscriptionFeedIds = ctx.db
-        .select({ feedId: subscriptions.feedId })
+        .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
         .from(subscriptions)
         .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
@@ -299,10 +300,10 @@ export const entriesRouter = createTRPCRouter({
           return { items: [], nextCursor: undefined };
         }
 
-        // Get feed IDs for subscriptions with this tag
+        // Get feed IDs for subscriptions with this tag (including previous feeds from redirects)
         // Include starred entries even if no subscriptions have this tag
         const taggedFeedIds = ctx.db
-          .select({ feedId: subscriptions.feedId })
+          .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
           .from(subscriptionTags)
           .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
           .where(
@@ -318,9 +319,9 @@ export const entriesRouter = createTRPCRouter({
           .select({ subscriptionId: subscriptionTags.subscriptionId })
           .from(subscriptionTags);
 
-        // Get feed IDs for subscriptions with no tags
+        // Get feed IDs for subscriptions with no tags (including previous feeds from redirects)
         const uncategorizedFeedIds = ctx.db
-          .select({ feedId: subscriptions.feedId })
+          .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
           .from(subscriptions)
           .where(
             and(
@@ -479,7 +480,7 @@ export const entriesRouter = createTRPCRouter({
         .leftJoin(
           subscriptions,
           and(
-            eq(subscriptions.feedId, entries.feedId),
+            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
             eq(subscriptions.userId, userId),
             isNull(subscriptions.unsubscribedAt)
           )
@@ -649,9 +650,9 @@ export const entriesRouter = createTRPCRouter({
           return { count: 0 };
         }
 
-        // Get feed IDs for subscriptions with this tag
+        // Get feed IDs for subscriptions with this tag (including previous feeds from redirects)
         const taggedSubscriptions = await ctx.db
-          .select({ feedId: subscriptions.feedId })
+          .select({ feedIds: subscriptions.feedIds })
           .from(subscriptionTags)
           .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
           .where(
@@ -662,7 +663,7 @@ export const entriesRouter = createTRPCRouter({
           return { count: 0 };
         }
 
-        const taggedFeedIds = taggedSubscriptions.map((s) => s.feedId);
+        const taggedFeedIds = taggedSubscriptions.flatMap((s) => s.feedIds);
 
         // Get entry IDs for these feeds
         const taggedEntryIds = await ctx.db
@@ -689,20 +690,20 @@ export const entriesRouter = createTRPCRouter({
           .select({ subscriptionId: subscriptionTags.subscriptionId })
           .from(subscriptionTags);
 
-        // Get feed IDs for subscriptions with no tags
+        // Get feed IDs for subscriptions with no tags (including previous feeds from redirects)
         let uncategorizedFeedIds: string[];
         if (taggedSubscriptionIds.length === 0) {
           // No tagged subscriptions, all active subscriptions are uncategorized
           const allSubscriptions = await ctx.db
-            .select({ feedId: subscriptions.feedId })
+            .select({ feedIds: subscriptions.feedIds })
             .from(subscriptions)
             .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
-          uncategorizedFeedIds = allSubscriptions.map((s) => s.feedId);
+          uncategorizedFeedIds = allSubscriptions.flatMap((s) => s.feedIds);
         } else {
           // Get subscriptions that are not in the tagged list
           const uncategorizedSubscriptions = await ctx.db
-            .select({ feedId: subscriptions.feedId })
+            .select({ feedIds: subscriptions.feedIds })
             .from(subscriptions)
             .where(
               and(
@@ -715,7 +716,7 @@ export const entriesRouter = createTRPCRouter({
               )
             );
 
-          uncategorizedFeedIds = uncategorizedSubscriptions.map((s) => s.feedId);
+          uncategorizedFeedIds = uncategorizedSubscriptions.flatMap((s) => s.feedIds);
         }
 
         if (uncategorizedFeedIds.length === 0) {
@@ -1003,11 +1004,12 @@ export const entriesRouter = createTRPCRouter({
       const conditions = [eq(userEntries.userId, userId)];
 
       // Entry must be:
-      // 1. From active subscription, OR
+      // 1. From active subscription (current feed or previous feeds from redirects), OR
       // 2. Starred, OR
       // 3. From user's saved feed (type='saved' and feed.userId = userId)
+      // Note: feed_ids is a generated column that combines feedId with previousFeedIds
       const activeSubscriptionFeedIds = ctx.db
-        .select({ feedId: subscriptions.feedId })
+        .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
         .from(subscriptions)
         .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
@@ -1043,10 +1045,10 @@ export const entriesRouter = createTRPCRouter({
           return { total: 0, unread: 0 };
         }
 
-        // Get feed IDs for subscriptions with this tag
+        // Get feed IDs for subscriptions with this tag (including previous feeds from redirects)
         // Include starred entries even if no subscriptions have this tag
         const taggedFeedIds = ctx.db
-          .select({ feedId: subscriptions.feedId })
+          .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
           .from(subscriptionTags)
           .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
           .where(
@@ -1062,9 +1064,9 @@ export const entriesRouter = createTRPCRouter({
           .select({ subscriptionId: subscriptionTags.subscriptionId })
           .from(subscriptionTags);
 
-        // Get feed IDs for subscriptions with no tags
+        // Get feed IDs for subscriptions with no tags (including previous feeds from redirects)
         const uncategorizedFeedIds = ctx.db
-          .select({ feedId: subscriptions.feedId })
+          .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
           .from(subscriptions)
           .where(
             and(
