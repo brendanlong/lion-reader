@@ -160,17 +160,14 @@ export function extractDocId(url: string): string | null {
 /**
  * Extracts the tab ID from a Google Docs URL query string.
  * Tab IDs are in the format: ?tab=t.{tabId}
+ * Returns the full tab parameter value (e.g., "t.0") to match the API's tabId format.
  * Returns null if no tab is specified.
  */
 export function extractTabId(url: string): string | null {
   try {
     const urlObj = new URL(url);
-    const tabParam = urlObj.searchParams.get("tab");
-    // Tab param format is "t.{tabId}" - we want to return just the tabId part
-    if (tabParam?.startsWith("t.")) {
-      return tabParam.slice(2);
-    }
-    return tabParam;
+    // Return the full tab parameter value - the API's tabProperties.tabId uses the same format
+    return urlObj.searchParams.get("tab");
   } catch {
     return null;
   }
@@ -228,7 +225,9 @@ const textStyleSchema = z.object({
   underline: z.boolean().optional(),
   strikethrough: z.boolean().optional(),
   smallCaps: z.boolean().optional(),
-  baselineOffset: z.enum(["BASELINE_OFFSET_UNSPECIFIED", "NONE", "SUPERSCRIPT", "SUBSCRIPT"]).optional(),
+  baselineOffset: z
+    .enum(["BASELINE_OFFSET_UNSPECIFIED", "NONE", "SUPERSCRIPT", "SUBSCRIPT"])
+    .optional(),
   link: linkSchema.optional(),
 });
 
@@ -269,11 +268,13 @@ const horizontalRuleSchema = z.object({
  */
 const richLinkSchema = z.object({
   richLinkId: z.string().optional(),
-  richLinkProperties: z.object({
-    title: z.string().optional(),
-    uri: z.string().optional(),
-    mimeType: z.string().optional(),
-  }).optional(),
+  richLinkProperties: z
+    .object({
+      title: z.string().optional(),
+      uri: z.string().optional(),
+      mimeType: z.string().optional(),
+    })
+    .optional(),
   textStyle: textStyleSchema.optional(),
 });
 
@@ -282,10 +283,12 @@ const richLinkSchema = z.object({
  */
 const personSchema = z.object({
   personId: z.string().optional(),
-  personProperties: z.object({
-    name: z.string().optional(),
-    email: z.string().optional(),
-  }).optional(),
+  personProperties: z
+    .object({
+      name: z.string().optional(),
+      email: z.string().optional(),
+    })
+    .optional(),
   textStyle: textStyleSchema.optional(),
 });
 
@@ -334,10 +337,12 @@ const paragraphSchema = z.object({
 /**
  * Table cell style from Google Docs API.
  */
-const tableCellStyleSchema = z.object({
-  rowSpan: z.number().optional(),
-  columnSpan: z.number().optional(),
-}).passthrough();
+const tableCellStyleSchema = z
+  .object({
+    rowSpan: z.number().optional(),
+    columnSpan: z.number().optional(),
+  })
+  .passthrough();
 
 /**
  * Structural element schema (forward declaration for recursive types).
@@ -456,9 +461,11 @@ const embeddedObjectSchema = z.object({
  */
 const inlineObjectSchema = z.object({
   objectId: z.string(),
-  inlineObjectProperties: z.object({
-    embeddedObject: embeddedObjectSchema.optional(),
-  }).optional(),
+  inlineObjectProperties: z
+    .object({
+      embeddedObject: embeddedObjectSchema.optional(),
+    })
+    .optional(),
 });
 
 /**
@@ -466,9 +473,11 @@ const inlineObjectSchema = z.object({
  */
 const positionedObjectSchema = z.object({
   objectId: z.string(),
-  positionedObjectProperties: z.object({
-    embeddedObject: embeddedObjectSchema.optional(),
-  }).optional(),
+  positionedObjectProperties: z
+    .object({
+      embeddedObject: embeddedObjectSchema.optional(),
+    })
+    .optional(),
 });
 
 /**
@@ -537,12 +546,17 @@ const tabSchema: z.ZodType<Tab> = z.object({
 
 /**
  * Full document from Google Docs API.
+ *
+ * Note: When using includeTabsContent=true, the legacy fields (body, footnotes, etc.)
+ * are NOT populated at the root level - they only exist inside tabs[].documentTab.
+ * This is why body is optional here.
  */
 const googleDocsApiResponseSchema = z.object({
   documentId: z.string(),
   title: z.string(),
   // Legacy fields (used when includeTabsContent=false or for single-tab docs)
-  body: documentBodySchema,
+  // Note: These are NOT present when includeTabsContent=true
+  body: documentBodySchema.optional(),
   footnotes: z.record(z.string(), footnoteSchema).optional(),
   inlineObjects: z.record(z.string(), inlineObjectSchema).optional(),
   positionedObjects: z.record(z.string(), positionedObjectSchema).optional(),
@@ -619,10 +633,10 @@ interface TabContent {
  *
  * @param doc - The parsed document
  * @param tabId - Optional tab ID to select. If null, uses the first tab or legacy body.
- * @returns The tab content, or null if the specified tab was not found.
+ * @returns The tab content, or null if no content could be found.
  */
 function extractTabContent(doc: ParsedDoc, tabId: string | null): TabContent | null {
-  // If tabs are available and we have a tab ID, find the specific tab
+  // If tabs are available, get content from the appropriate tab
   if (doc.tabs && doc.tabs.length > 0) {
     let tab: Tab | null = null;
 
@@ -652,6 +666,12 @@ function extractTabContent(doc: ParsedDoc, tabId: string | null): TabContent | n
   }
 
   // Fall back to legacy body fields (for single-tab docs or when includeTabsContent=false)
+  // When includeTabsContent=true, doc.body is undefined - we should have found content in tabs above
+  if (!doc.body) {
+    logger.warn("No document body found in tabs or legacy fields");
+    return null;
+  }
+
   return {
     body: doc.body,
     footnotes: doc.footnotes,
@@ -759,8 +779,9 @@ function getImageUrl(objectId: string, ctx: ConversionContext): string | null {
 function getImageAlt(objectId: string, ctx: ConversionContext): string {
   const inlineObj = ctx.content.inlineObjects?.[objectId];
   const posObj = ctx.content.positionedObjects?.[objectId];
-  const obj = inlineObj?.inlineObjectProperties?.embeddedObject ||
-              posObj?.positionedObjectProperties?.embeddedObject;
+  const obj =
+    inlineObj?.inlineObjectProperties?.embeddedObject ||
+    posObj?.positionedObjectProperties?.embeddedObject;
 
   if (obj?.title) return obj.title;
   if (obj?.description) return obj.description;
@@ -878,7 +899,10 @@ function convertParagraphElements(
 /**
  * Converts a table to HTML.
  */
-function convertTable(table: NonNullable<StructuralElement["table"]>, ctx: ConversionContext): string {
+function convertTable(
+  table: NonNullable<StructuralElement["table"]>,
+  ctx: ConversionContext
+): string {
   if (!table.tableRows) {
     return "";
   }
@@ -891,9 +915,7 @@ function convertTable(table: NonNullable<StructuralElement["table"]>, ctx: Conve
     const cells: string[] = [];
     for (const cell of row.tableCells) {
       // Convert cell content (may contain nested structural elements)
-      const cellContent = cell.content
-        ? convertStructuralElements(cell.content, ctx)
-        : "";
+      const cellContent = cell.content ? convertStructuralElements(cell.content, ctx) : "";
 
       // Handle rowspan and colspan
       const style = cell.tableCellStyle;
@@ -926,10 +948,7 @@ interface ListState {
 /**
  * Converts structural elements to HTML, handling lists properly.
  */
-function convertStructuralElements(
-  elements: StructuralElement[],
-  ctx: ConversionContext
-): string {
+function convertStructuralElements(elements: StructuralElement[], ctx: ConversionContext): string {
   const htmlParts: string[] = [];
   const listStack: ListState[] = [];
 
@@ -989,7 +1008,7 @@ function convertStructuralElements(
         while (
           listStack.length > 0 &&
           (listStack[listStack.length - 1].listId !== listId ||
-           listStack[listStack.length - 1].nestingLevel > nestingLevel)
+            listStack[listStack.length - 1].nestingLevel > nestingLevel)
         ) {
           const state = listStack.pop()!;
           htmlParts.push(state.isOrdered ? "</ol>" : "</ul>");
@@ -1000,7 +1019,8 @@ function convertStructuralElements(
           listStack.length === 0 ||
           listStack[listStack.length - 1].nestingLevel < nestingLevel
         ) {
-          const currentLevel = listStack.length === 0 ? 0 : listStack[listStack.length - 1].nestingLevel + 1;
+          const currentLevel =
+            listStack.length === 0 ? 0 : listStack[listStack.length - 1].nestingLevel + 1;
           const newIsOrdered = isOrderedList(listId, currentLevel, ctx);
           listStack.push({ listId, nestingLevel: currentLevel, isOrdered: newIsOrdered });
           htmlParts.push(newIsOrdered ? "<ol>" : "<ul>");
@@ -1049,8 +1069,7 @@ function convertFootnotes(ctx: ConversionContext): string {
   const footnoteHtml: string[] = ['<section class="footnotes"><hr><ol>'];
 
   // Sort footnotes by their number
-  const sortedFootnotes = Array.from(ctx.footnoteNumbers.entries())
-    .sort((a, b) => a[1] - b[1]);
+  const sortedFootnotes = Array.from(ctx.footnoteNumbers.entries()).sort((a, b) => a[1] - b[1]);
 
   for (const [footnoteId, footnoteNum] of sortedFootnotes) {
     const footnote = ctx.content.footnotes?.[footnoteId];
@@ -1094,8 +1113,10 @@ async function uploadDocumentImages(
     for (const [objectId, obj] of Object.entries(content.inlineObjects)) {
       const contentUri = obj.inlineObjectProperties?.embeddedObject?.imageProperties?.contentUri;
       if (contentUri) {
-        const alt = obj.inlineObjectProperties?.embeddedObject?.title ||
-                   obj.inlineObjectProperties?.embeddedObject?.description || "Image";
+        const alt =
+          obj.inlineObjectProperties?.embeddedObject?.title ||
+          obj.inlineObjectProperties?.embeddedObject?.description ||
+          "Image";
         imageObjects.push({ objectId, contentUri, alt });
       }
     }
@@ -1104,10 +1125,13 @@ async function uploadDocumentImages(
   // Positioned objects
   if (content.positionedObjects) {
     for (const [objectId, obj] of Object.entries(content.positionedObjects)) {
-      const contentUri = obj.positionedObjectProperties?.embeddedObject?.imageProperties?.contentUri;
+      const contentUri =
+        obj.positionedObjectProperties?.embeddedObject?.imageProperties?.contentUri;
       if (contentUri) {
-        const alt = obj.positionedObjectProperties?.embeddedObject?.title ||
-                   obj.positionedObjectProperties?.embeddedObject?.description || "Image";
+        const alt =
+          obj.positionedObjectProperties?.embeddedObject?.title ||
+          obj.positionedObjectProperties?.embeddedObject?.description ||
+          "Image";
         imageObjects.push({ objectId, contentUri, alt });
       }
     }
