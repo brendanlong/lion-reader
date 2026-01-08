@@ -26,6 +26,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { normalizeUrl } from "@/lib/url";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import {
@@ -231,10 +232,14 @@ export const savedRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const now = new Date();
 
+      // Normalize URL by stripping fragment - two URLs differing only by
+      // fragment (e.g., #section-2) point to the same article
+      const normalizedUrl = normalizeUrl(input.url);
+
       // Get or create the user's saved feed
       const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
 
-      // Check if URL is already saved (guid = URL for saved articles)
+      // Check if URL is already saved (guid = normalized URL for saved articles)
       const existing = await ctx.db
         .select({
           entry: entries,
@@ -245,7 +250,7 @@ export const savedRouter = createTRPCRouter({
         .where(
           and(
             eq(entries.feedId, savedFeedId),
-            eq(entries.guid, input.url),
+            eq(entries.guid, normalizedUrl),
             eq(userEntries.userId, userId)
           )
         )
@@ -436,8 +441,8 @@ export const savedRouter = createTRPCRouter({
         id: entryId,
         feedId: savedFeedId,
         type: "saved",
-        guid: input.url, // For saved articles, guid = URL
-        url: input.url,
+        guid: normalizedUrl, // For saved articles, guid = normalized URL
+        url: normalizedUrl,
         title: finalTitle,
         author: finalAuthor,
         contentOriginal: html,
@@ -472,7 +477,7 @@ export const savedRouter = createTRPCRouter({
       return {
         article: {
           id: entryId,
-          url: input.url,
+          url: normalizedUrl,
           title: finalTitle,
           siteName: finalSiteName,
           author: finalAuthor,
