@@ -33,6 +33,11 @@ import {
   fetchLessWrongContentFromUrl,
   type LessWrongContent,
 } from "@/server/feed/lesswrong";
+import {
+  isGoogleDocsUrl,
+  fetchGoogleDocsFromUrl,
+  type GoogleDocsContent,
+} from "@/server/google/docs";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated } from "@/server/redis/pubsub";
 
@@ -271,6 +276,8 @@ export const savedRouter = createTRPCRouter({
       let html: string;
       // For LessWrong URLs, we may get content directly from their GraphQL API
       let lessWrongContent: LessWrongContent | null = null;
+      // For Google Docs URLs, we may get content from the Google Docs API
+      let googleDocsContent: GoogleDocsContent | null = null;
 
       if (input.html) {
         html = input.html;
@@ -278,6 +285,37 @@ export const savedRouter = createTRPCRouter({
           url: input.url,
           htmlLength: html.length,
         });
+      } else if (isGoogleDocsUrl(input.url)) {
+        // Try Google Docs API first (pages don't render well without JavaScript)
+        logger.debug("Attempting Google Docs API fetch", { url: input.url });
+        googleDocsContent = await fetchGoogleDocsFromUrl(input.url);
+
+        if (googleDocsContent) {
+          // Wrap the content in a basic HTML structure for consistency
+          html = `<!DOCTYPE html><html><head><title>${escapeHtml(googleDocsContent.title)}</title></head><body>${googleDocsContent.html}</body></html>`;
+          logger.debug("Successfully fetched Google Docs content via API", {
+            url: input.url,
+            docId: googleDocsContent.docId,
+            title: googleDocsContent.title,
+          });
+        } else {
+          // Fall back to normal fetch (may work for public docs with export links)
+          logger.debug("Google Docs API fetch failed, falling back to normal fetch", {
+            url: input.url,
+          });
+          try {
+            html = await fetchPage(input.url);
+          } catch (error) {
+            logger.warn("Failed to fetch Google Docs URL", {
+              url: input.url,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw errors.savedArticleFetchError(
+              input.url,
+              error instanceof Error ? error.message : "Unknown error"
+            );
+          }
+        }
       } else if (isLessWrongUrl(input.url)) {
         // Try LessWrong GraphQL API first (pages don't render without JavaScript)
         logger.debug("Attempting LessWrong GraphQL fetch", { url: input.url });
@@ -350,7 +388,7 @@ export const savedRouter = createTRPCRouter({
         }
       }
 
-      // Use provided title, then LessWrong API, then metadata, then Readability as fallback
+      // Use provided title, then API data (Google Docs/LessWrong), then metadata, then Readability as fallback
       // For LessWrong comments, create a descriptive title
       let lessWrongTitle: string | null = null;
       if (lessWrongContent) {
@@ -365,13 +403,29 @@ export const savedRouter = createTRPCRouter({
           lessWrongTitle = lessWrongContent.title;
         }
       }
-      const finalTitle = input.title || lessWrongTitle || metadata.title || cleaned?.title || null;
-      // For author, prefer LessWrong API data (has proper author info), then metadata
-      const finalAuthor = lessWrongContent?.author || metadata.author || cleaned?.byline || null;
-      // For siteName, use LessWrong when content came from their API
-      const finalSiteName = lessWrongContent ? "LessWrong" : metadata.siteName;
-      // For publishedAt, prefer LessWrong API's postedAt when available
-      const finalPublishedAt = lessWrongContent?.publishedAt ?? now;
+      const finalTitle =
+        input.title ||
+        googleDocsContent?.title ||
+        lessWrongTitle ||
+        metadata.title ||
+        cleaned?.title ||
+        null;
+      // For author, prefer API data (Google Docs/LessWrong), then metadata
+      const finalAuthor =
+        googleDocsContent?.author ||
+        lessWrongContent?.author ||
+        metadata.author ||
+        cleaned?.byline ||
+        null;
+      // For siteName, use appropriate source when content came from API
+      const finalSiteName = googleDocsContent
+        ? "Google Docs"
+        : lessWrongContent
+          ? "LessWrong"
+          : metadata.siteName;
+      // For publishedAt, prefer API data when available
+      const finalPublishedAt =
+        googleDocsContent?.modifiedAt || lessWrongContent?.publishedAt || now;
 
       // Compute content hash for narration deduplication
       const contentHash = generateContentHash(finalTitle, cleaned?.content || html);
