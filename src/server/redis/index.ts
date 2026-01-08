@@ -56,6 +56,7 @@ export {
   parseFeedEvent,
   parseUserEvent,
   closePublisher,
+  checkRedisHealth,
   getFeedEventsChannel,
   getUserEventsChannel,
   type FeedEvent,

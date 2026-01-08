@@ -17,3 +17,4 @@ export { ingestAddressesRouter } from "./ingestAddresses";
 export { blockedSendersRouter } from "./blockedSenders";
 export { brokenFeedsRouter } from "./brokenFeeds";
 export { importsRouter } from "./imports";
+export { syncRouter } from "./sync";

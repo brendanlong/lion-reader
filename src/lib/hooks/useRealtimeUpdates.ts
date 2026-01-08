@@ -1,14 +1,14 @@
 /**
  * useRealtimeUpdates Hook
  *
- * Manages a Server-Sent Events (SSE) connection to receive real-time feed updates.
- * Automatically invalidates React Query cache when new entries arrive or are updated.
+ * Manages real-time updates with SSE as primary and polling as fallback.
  *
  * Features:
- * - Automatic connection when user is authenticated
- * - Exponential backoff reconnection on errors
- * - React Query cache invalidation for entries and subscriptions
- * - Connection status tracking
+ * - Primary: Server-Sent Events (SSE) via Redis pub/sub
+ * - Fallback: Polling sync endpoint when SSE is unavailable (Redis down)
+ * - Automatic catch-up sync after SSE reconnection
+ * - Exponential backoff for reconnection attempts
+ * - React Query cache invalidation/updates
  */
 
 "use client";
@@ -17,9 +17,9 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 
 /**
- * Connection status for the SSE stream.
+ * Connection status for real-time updates.
  */
-export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
+export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "polling";
 
 /**
  * Return type for the useRealtimeUpdates hook.
@@ -27,19 +27,33 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "er
 export interface UseRealtimeUpdatesResult {
   /**
    * Current connection status.
+   * - "connected": SSE connection is active
+   * - "polling": Fallback polling mode (SSE unavailable)
+   * - "connecting": Attempting to connect
+   * - "disconnected": Not connected (not authenticated)
+   * - "error": Connection failed
    */
   status: ConnectionStatus;
 
   /**
-   * Whether the connection is currently active.
+   * Whether real-time updates are active (either SSE or polling).
    */
   isConnected: boolean;
+
+  /**
+   * Whether we're in fallback polling mode.
+   */
+  isPolling: boolean;
 
   /**
    * Manually trigger a reconnection attempt.
    */
   reconnect: () => void;
 }
+
+// ============================================================================
+// Constants
+// ============================================================================
 
 /**
  * Maximum reconnection delay in milliseconds (30 seconds).
@@ -57,8 +71,19 @@ const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const BACKOFF_MULTIPLIER = 2;
 
 /**
- * Event data structure from the SSE endpoint for feed events.
+ * Polling interval when in fallback mode (30 seconds).
  */
+const POLL_INTERVAL_MS = 30_000;
+
+/**
+ * How often to retry SSE while in polling mode (60 seconds).
+ */
+const SSE_RETRY_INTERVAL_MS = 60_000;
+
+// ============================================================================
+// Event Types
+// ============================================================================
+
 interface FeedEventData {
   type: "new_entry" | "entry_updated";
   feedId: string;
@@ -66,9 +91,6 @@ interface FeedEventData {
   timestamp: string;
 }
 
-/**
- * Event data structure from the SSE endpoint for subscription created events.
- */
 interface SubscriptionCreatedEventData {
   type: "subscription_created";
   userId: string;
@@ -77,9 +99,6 @@ interface SubscriptionCreatedEventData {
   timestamp: string;
 }
 
-/**
- * Event data structure from the SSE endpoint for subscription deleted events.
- */
 interface SubscriptionDeletedEventData {
   type: "subscription_deleted";
   userId: string;
@@ -88,9 +107,6 @@ interface SubscriptionDeletedEventData {
   timestamp: string;
 }
 
-/**
- * Event data structure from the SSE endpoint for saved article events.
- */
 interface SavedArticleCreatedEventData {
   type: "saved_article_created";
   userId: string;
@@ -98,9 +114,6 @@ interface SavedArticleCreatedEventData {
   timestamp: string;
 }
 
-/**
- * Event data structure from the SSE endpoint for import progress events.
- */
 interface ImportProgressEventData {
   type: "import_progress";
   userId: string;
@@ -114,9 +127,6 @@ interface ImportProgressEventData {
   timestamp: string;
 }
 
-/**
- * Event data structure from the SSE endpoint for import completed events.
- */
 interface ImportCompletedEventData {
   type: "import_completed";
   userId: string;
@@ -266,19 +276,21 @@ function parseEventData(data: string): SSEEventData | null {
   }
 }
 
+// ============================================================================
+// Hook
+// ============================================================================
+
 /**
- * Hook to manage real-time updates via Server-Sent Events.
- *
- * Connects to the /api/v1/events SSE endpoint and invalidates React Query
- * cache when feed events are received.
+ * Hook to manage real-time updates with SSE primary and polling fallback.
  *
  * @example
  * ```tsx
  * function AppLayout({ children }) {
- *   const { status, isConnected } = useRealtimeUpdates();
+ *   const { status, isConnected, isPolling } = useRealtimeUpdates();
  *
  *   return (
  *     <div>
+ *       {isPolling && <PollingModeBanner />}
  *       {!isConnected && <ReconnectingBanner />}
  *       {children}
  *     </div>
@@ -289,16 +301,19 @@ function parseEventData(data: string): SSEEventData | null {
 export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
   const utils = trpc.useUtils();
 
-  // Internal connection status (only set by EventSource callbacks)
+  // Connection status state
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
+  const [isPollingMode, setIsPollingMode] = useState(false);
 
   // Refs to persist across renders
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sseRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const isManuallyClosedRef = useRef(false);
   const shouldConnectRef = useRef(false);
-  const reconnectTriggerRef = useRef(0);
+  const lastSyncedAtRef = useRef<string | null>(null);
 
   // State to trigger reconnection
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
@@ -312,12 +327,22 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
   const isAuthenticated = userQuery.isSuccess && userQuery.data?.user;
 
   /**
-   * Cleans up the EventSource connection and any pending reconnection.
+   * Cleans up all connections and intervals.
    */
   const cleanup = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
+    if (sseRetryTimeoutRef.current) {
+      clearTimeout(sseRetryTimeoutRef.current);
+      sseRetryTimeoutRef.current = null;
     }
 
     if (eventSourceRef.current) {
@@ -335,77 +360,43 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Invalidate the entries list to show new entries
-        // This invalidates all entry queries (all feeds and specific feed)
         utils.entries.list.invalidate();
-
-        // Invalidate subscriptions to update unread counts
         utils.subscriptions.list.invalidate();
       } else if (data.type === "entry_updated") {
-        // Invalidate the specific entry if it's cached
         utils.entries.get.invalidate({ id: data.entryId });
-
-        // Also invalidate the list in case the update affects display
         utils.entries.list.invalidate();
       } else if (data.type === "subscription_created") {
-        // A new subscription was created (possibly from another tab/device)
-        // Check if we already have this subscription in cache (meaning we created it in this tab)
         const existingData = utils.subscriptions.list.getData();
         const alreadyInCache = existingData?.items.some(
           (item) => item.subscription.id === data.subscriptionId
         );
 
         if (!alreadyInCache) {
-          // Only invalidate if this is from another tab/device
-          // Invalidate subscriptions to show the new feed in the sidebar
           utils.subscriptions.list.invalidate();
-
-          // Also invalidate entries to fetch any entries that may have been
-          // created before the SSE connection subscribed to the new feed's channel.
-          // This handles the race condition where new_entry events arrive before
-          // the subscription_created event.
           utils.entries.list.invalidate();
         }
-        // If already in cache, the mutation handler already updated the cache
       } else if (data.type === "subscription_deleted") {
-        // A subscription was deleted (possibly from another tab/device)
-        // Check if the subscription is already removed from cache (meaning we deleted it in this tab)
         const existingData = utils.subscriptions.list.getData();
         const stillInCache = existingData?.items.some(
           (item) => item.subscription.id === data.subscriptionId
         );
 
         if (stillInCache) {
-          // Only invalidate if this is from another tab/device
-          // Invalidate subscriptions to remove the feed from the sidebar
           utils.subscriptions.list.invalidate();
-
-          // Also invalidate entries to remove entries from the deleted feed
           utils.entries.list.invalidate();
         }
-        // If already removed from cache, the mutation handler already updated it
       } else if (data.type === "saved_article_created") {
-        // A saved article was created (from bookmarklet in another window)
-        // Invalidate the saved articles list to show the new article
         utils.entries.list.invalidate({ type: "saved" });
-
-        // Also invalidate the count
         utils.entries.count.invalidate({ type: "saved" });
       } else if (data.type === "import_progress") {
-        // An OPML import made progress - invalidate the import query
         utils.imports.get.invalidate({ id: data.importId });
         utils.imports.list.invalidate();
-
-        // If a feed was imported, also invalidate subscriptions
         if (data.feedStatus === "imported") {
           utils.subscriptions.list.invalidate();
         }
       } else if (data.type === "import_completed") {
-        // An OPML import completed - invalidate import queries
         utils.imports.get.invalidate({ id: data.importId });
         utils.imports.list.invalidate();
-
-        // Also refresh subscriptions and entries since new feeds may have entries now
         utils.subscriptions.list.invalidate();
         utils.entries.list.invalidate();
       }
@@ -414,12 +405,92 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
   );
 
   /**
+   * Performs a sync and applies changes to the cache.
+   * Returns the new syncedAt timestamp.
+   */
+  const performSync = useCallback(async () => {
+    try {
+      const result = await utils.client.sync.changes.query({
+        since: lastSyncedAtRef.current ?? undefined,
+      });
+
+      // Update last synced timestamp
+      lastSyncedAtRef.current = result.syncedAt;
+
+      // If there are any changes, invalidate the relevant queries
+      // For simplicity, we invalidate rather than doing targeted cache updates
+      const hasEntryChanges =
+        result.entries.created.length > 0 ||
+        result.entries.updated.length > 0 ||
+        result.entries.removed.length > 0;
+
+      const hasSubscriptionChanges =
+        result.subscriptions.created.length > 0 || result.subscriptions.removed.length > 0;
+
+      const hasTagChanges = result.tags.created.length > 0 || result.tags.removed.length > 0;
+
+      if (hasEntryChanges) {
+        utils.entries.list.invalidate();
+        utils.entries.count.invalidate();
+      }
+
+      if (hasSubscriptionChanges) {
+        utils.subscriptions.list.invalidate();
+      }
+
+      if (hasTagChanges) {
+        utils.tags.list.invalidate();
+      }
+
+      return result.syncedAt;
+    } catch (error) {
+      console.error("Sync failed:", error);
+      return null;
+    }
+  }, [utils.client.sync.changes, utils.entries, utils.subscriptions, utils.tags]);
+
+  /**
+   * Starts polling mode when SSE is unavailable.
+   */
+  const startPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      return; // Already polling
+    }
+
+    setIsPollingMode(true);
+    setConnectionStatus("polling");
+
+    // Initialize lastSyncedAt to now if not set
+    if (!lastSyncedAtRef.current) {
+      lastSyncedAtRef.current = new Date().toISOString();
+    }
+
+    // Start polling interval
+    pollIntervalRef.current = setInterval(() => {
+      performSync();
+    }, POLL_INTERVAL_MS);
+
+    // Do an immediate sync
+    performSync();
+  }, [performSync]);
+
+  /**
+   * Stops polling mode.
+   */
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    setIsPollingMode(false);
+  }, []);
+
+  /**
    * Schedules a reconnection attempt with exponential backoff.
    */
   const scheduleReconnect = useCallback((connectFn: () => void) => {
     if (isManuallyClosedRef.current || !shouldConnectRef.current) return;
 
-    // Clear any existing reconnection timeout
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
@@ -427,12 +498,10 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
     const delay = reconnectDelayRef.current;
 
     reconnectTimeoutRef.current = setTimeout(() => {
-      // Increase delay for next attempt (exponential backoff)
       reconnectDelayRef.current = Math.min(
         reconnectDelayRef.current * BACKOFF_MULTIPLIER,
         MAX_RECONNECT_DELAY_MS
       );
-
       connectFn();
     }, delay);
   }, []);
@@ -445,23 +514,20 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
     isManuallyClosedRef.current = false;
     shouldConnectRef.current = true;
 
-    // Clean up existing connection
     cleanup();
+    stopPolling();
 
-    // Trigger effect to create new connection
-    reconnectTriggerRef.current += 1;
-    setReconnectTrigger(reconnectTriggerRef.current);
-  }, [cleanup]);
+    setReconnectTrigger((prev) => prev + 1);
+  }, [cleanup, stopPolling]);
 
   // Effect to manage SSE connection based on authentication
   useEffect(() => {
-    // Track whether we should be connected
     shouldConnectRef.current = !!isAuthenticated;
 
     if (!isAuthenticated) {
       isManuallyClosedRef.current = true;
       cleanup();
-      // Don't set status here - derive it from isAuthenticated instead
+      stopPolling();
       return;
     }
 
@@ -474,15 +540,50 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
     cleanup();
     isManuallyClosedRef.current = false;
 
-    const createConnection = () => {
+    const createConnection = async () => {
       if (!shouldConnectRef.current || isManuallyClosedRef.current) {
         return;
       }
 
-      // Set connecting status from within the async operation setup
       setConnectionStatus("connecting");
 
       try {
+        // First, try a fetch to check if SSE is available
+        // This handles the 503 case where Redis is down
+        const response = await fetch("/api/v1/events", {
+          method: "GET",
+          credentials: "include",
+          headers: {
+            Accept: "text/event-stream",
+          },
+        });
+
+        // If we get a 503, switch to polling mode
+        if (response.status === 503) {
+          console.log("SSE unavailable (503), switching to polling mode");
+          startPolling();
+
+          // Schedule periodic SSE retry
+          sseRetryTimeoutRef.current = setTimeout(() => {
+            if (shouldConnectRef.current && !isManuallyClosedRef.current) {
+              stopPolling();
+              createConnection();
+            }
+          }, SSE_RETRY_INTERVAL_MS);
+
+          return;
+        }
+
+        // If not OK, treat as error
+        if (!response.ok) {
+          throw new Error(`SSE request failed with status ${response.status}`);
+        }
+
+        // Close the fetch response since we'll use EventSource
+        // The fetch was just to check availability
+        response.body?.cancel();
+
+        // Create EventSource connection
         const eventSource = new EventSource("/api/v1/events", {
           withCredentials: true,
         });
@@ -491,8 +592,21 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
 
         eventSource.onopen = () => {
           setConnectionStatus("connected");
-          // Reset backoff delay on successful connection
           reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
+
+          // Stop polling if we were in polling mode
+          stopPolling();
+
+          // Clear SSE retry timeout
+          if (sseRetryTimeoutRef.current) {
+            clearTimeout(sseRetryTimeoutRef.current);
+            sseRetryTimeoutRef.current = null;
+          }
+
+          // Perform a catch-up sync if we have a lastSyncedAt
+          if (lastSyncedAtRef.current) {
+            performSync();
+          }
         };
 
         // Handle named events
@@ -505,21 +619,28 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         eventSource.addEventListener("import_completed", handleEvent);
 
         eventSource.onerror = () => {
-          // EventSource will automatically try to reconnect, but we'll handle
-          // it ourselves for better control over backoff
           if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
             setConnectionStatus("error");
             cleanup();
             scheduleReconnect(createConnection);
           } else {
-            // Connection is reconnecting automatically
             setConnectionStatus("connecting");
           }
         };
       } catch (error) {
-        console.error("Failed to create EventSource:", error);
+        console.error("Failed to create SSE connection:", error);
         setConnectionStatus("error");
-        scheduleReconnect(createConnection);
+
+        // On connection failure, try polling as fallback
+        startPolling();
+
+        // Schedule SSE retry
+        sseRetryTimeoutRef.current = setTimeout(() => {
+          if (shouldConnectRef.current && !isManuallyClosedRef.current) {
+            stopPolling();
+            createConnection();
+          }
+        }, SSE_RETRY_INTERVAL_MS);
       }
     };
 
@@ -528,8 +649,18 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
     return () => {
       isManuallyClosedRef.current = true;
       cleanup();
+      stopPolling();
     };
-  }, [isAuthenticated, reconnectTrigger, cleanup, handleEvent, scheduleReconnect]);
+  }, [
+    isAuthenticated,
+    reconnectTrigger,
+    cleanup,
+    handleEvent,
+    scheduleReconnect,
+    startPolling,
+    stopPolling,
+    performSync,
+  ]);
 
   // Handle visibility change - reconnect when tab becomes visible
   useEffect(() => {
@@ -539,7 +670,12 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         isAuthenticated &&
         eventSourceRef.current?.readyState !== EventSource.OPEN
       ) {
-        reconnect();
+        // If in polling mode, do an immediate sync
+        if (isPollingMode) {
+          performSync();
+        } else {
+          reconnect();
+        }
       }
     };
 
@@ -548,14 +684,15 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isAuthenticated, reconnect]);
+  }, [isAuthenticated, isPollingMode, performSync, reconnect]);
 
-  // Derive the effective status - if not authenticated, always disconnected
+  // Derive the effective status
   const effectiveStatus: ConnectionStatus = isAuthenticated ? connectionStatus : "disconnected";
 
   return {
     status: effectiveStatus,
-    isConnected: effectiveStatus === "connected",
+    isConnected: effectiveStatus === "connected" || effectiveStatus === "polling",
+    isPolling: isPollingMode,
     reconnect,
   };
 }
