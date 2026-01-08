@@ -65,3 +65,50 @@ export const googleConfig = {
    */
   serviceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
 };
+
+/**
+ * Object Storage Configuration (S3-compatible)
+ *
+ * Used for storing uploaded images from Google Docs and other sources.
+ * Compatible with AWS S3, Fly.io Tigris, and other S3-compatible services.
+ *
+ * For Fly.io Tigris:
+ * 1. Create a bucket: fly storage create
+ * 2. The bucket name will be set automatically
+ * 3. Set STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY from the output
+ * 4. Endpoint will default to Tigris: https://fly.storage.tigris.dev
+ *
+ * For AWS S3:
+ * 1. Create an S3 bucket
+ * 2. Create IAM credentials with S3 access
+ * 3. Set STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY
+ * 4. Set STORAGE_ENDPOINT to your S3 region endpoint (optional for AWS)
+ */
+export const storageConfig = {
+  /** S3 bucket name for storing images */
+  bucket: process.env.STORAGE_BUCKET,
+
+  /** AWS access key ID or Tigris access key */
+  accessKeyId: process.env.STORAGE_ACCESS_KEY_ID,
+
+  /** AWS secret access key or Tigris secret key */
+  secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY,
+
+  /**
+   * S3-compatible endpoint URL.
+   * For Tigris: https://fly.storage.tigris.dev
+   * For AWS S3: leave empty or use regional endpoint
+   */
+  endpoint: process.env.STORAGE_ENDPOINT,
+
+  /** AWS region (default: auto for Tigris) */
+  region: process.env.STORAGE_REGION || "auto",
+
+  /**
+   * Public URL base for accessing stored objects.
+   * For Tigris: https://{bucket}.fly.storage.tigris.dev
+   * For AWS S3: https://{bucket}.s3.{region}.amazonaws.com
+   * If not set, uses the default bucket URL pattern.
+   */
+  publicUrlBase: process.env.STORAGE_PUBLIC_URL_BASE,
+};
