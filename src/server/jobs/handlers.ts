@@ -24,6 +24,8 @@ import {
   calculateNextFetch,
   renewExpiringSubscriptions,
   getDomainFromUrl,
+  isLessWrongFeedUrl,
+  fetchLessWrongFeed,
   type FetchFeedResult,
   type ParsedCacheHeaders,
 } from "../feed";
@@ -94,6 +96,28 @@ export async function handleFetchFeed(
       nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       error: `Feed has no URL: ${feedId}`,
     };
+  }
+
+  // Check if this is a LessWrong feed - use GraphQL API for richer data
+  if (isLessWrongFeedUrl(feed.url)) {
+    const handlerResult = await handleLessWrongFeed(feed);
+    endFeedFetchTimer(handlerResult.success ? "success" : "error");
+
+    if (handlerResult.success) {
+      logger.info("LessWrong feed fetched via GraphQL", {
+        feedId,
+        url: feed.url,
+        ...handlerResult.metadata,
+      });
+    } else {
+      logger.warn("LessWrong feed fetch failed", {
+        feedId,
+        url: feed.url,
+        error: handlerResult.error,
+      });
+    }
+
+    return handlerResult;
   }
 
   // Fetch the feed with conditional GET headers
@@ -483,6 +507,105 @@ async function updateFeedOnError(
       updatedAt: now,
     })
     .where(eq(feeds.id, feedId));
+}
+
+/**
+ * Handles LessWrong feed fetching using the GraphQL API.
+ *
+ * LessWrong's RSS feed has limited data (uses content with "Published on..." prefix,
+ * no social preview text). This handler uses the GraphQL API to get richer data:
+ * - socialPreviewData.text for better summaries
+ * - Clean HTML without the date prefix
+ * - Coauthors included
+ *
+ * Falls back to standard RSS fetching if GraphQL fails.
+ *
+ * @param feed - The feed record from the database
+ * @returns Job handler result with next run time
+ */
+async function handleLessWrongFeed(feed: Feed): Promise<JobHandlerResult> {
+  const now = new Date();
+
+  // Fetch the feed via GraphQL
+  const parsedFeed = await fetchLessWrongFeed();
+
+  if (!parsedFeed) {
+    // GraphQL fetch failed - treat as a temporary error and apply backoff
+    logger.warn("LessWrong GraphQL fetch failed, will retry later", { feedId: feed.id });
+
+    const newFailureCount = (feed.consecutiveFailures ?? 0) + 1;
+    const nextFetch = calculateNextFetch({
+      consecutiveFailures: newFailureCount,
+      now,
+    });
+
+    await db
+      .update(feeds)
+      .set({
+        lastFetchedAt: now,
+        nextFetchAt: nextFetch.nextFetchAt,
+        consecutiveFailures: newFailureCount,
+        lastError: "LessWrong GraphQL API request failed",
+        updatedAt: now,
+      })
+      .where(eq(feeds.id, feed.id));
+
+    return {
+      success: false,
+      nextRunAt: nextFetch.nextFetchAt,
+      error: "LessWrong GraphQL API request failed",
+      metadata: {
+        consecutiveFailures: newFailureCount,
+        usedGraphQL: true,
+      },
+    };
+  }
+
+  // Process entries from the parsed feed
+  // Note: We don't pass feedUrl here because we already have clean content from GraphQL
+  // (no need for LessWrong-specific content cleaning)
+  const processResult = await processEntries(feed.id, feed.type, parsedFeed, {
+    fetchedAt: now,
+    previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
+  });
+
+  // Calculate next fetch time (default interval since no cache headers)
+  const nextFetch = calculateNextFetch({
+    consecutiveFailures: 0,
+    now,
+  });
+
+  // Only update lastEntriesUpdatedAt when entries actually changed
+  const lastEntriesUpdatedAt = processResult.hasChanges ? now : feed.lastEntriesUpdatedAt;
+
+  // Update feed metadata
+  await db
+    .update(feeds)
+    .set({
+      title: parsedFeed.title || feed.title || "LessWrong",
+      description: parsedFeed.description || feed.description,
+      siteUrl: parsedFeed.siteUrl || feed.siteUrl,
+      lastFetchedAt: now,
+      lastEntriesUpdatedAt,
+      nextFetchAt: nextFetch.nextFetchAt,
+      consecutiveFailures: 0,
+      lastError: null,
+      updatedAt: now,
+    })
+    .where(eq(feeds.id, feed.id));
+
+  return {
+    success: true,
+    nextRunAt: nextFetch.nextFetchAt,
+    metadata: {
+      newEntries: processResult.newCount,
+      updatedEntries: processResult.updatedCount,
+      unchangedEntries: processResult.unchangedCount,
+      disappearedEntries: processResult.disappearedCount,
+      nextFetchReason: nextFetch.reason,
+      usedGraphQL: true,
+    },
+  };
 }
 
 /**
