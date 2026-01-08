@@ -37,6 +37,7 @@ import {
 import {
   isGoogleDocsUrl,
   fetchGoogleDocsFromUrl,
+  normalizeGoogleDocsUrl,
   type GoogleDocsContent,
 } from "@/server/google/docs";
 import { logger } from "@/lib/logger";
@@ -232,9 +233,12 @@ export const savedRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const now = new Date();
 
-      // Normalize URL by stripping fragment - two URLs differing only by
-      // fragment (e.g., #section-2) point to the same article
-      const normalizedUrl = normalizeUrl(input.url);
+      // Normalize URL: strip fragments (two URLs differing only by #section point to same article)
+      // For Google Docs, also remove extraneous query params except 'tab'
+      let normalizedUrl = normalizeUrl(input.url);
+      if (isGoogleDocsUrl(normalizedUrl)) {
+        normalizedUrl = normalizeGoogleDocsUrl(normalizedUrl);
+      }
 
       // Get or create the user's saved feed
       const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
@@ -292,31 +296,32 @@ export const savedRouter = createTRPCRouter({
         });
       } else if (isGoogleDocsUrl(input.url)) {
         // Try Google Docs API first (pages don't render well without JavaScript)
-        logger.debug("Attempting Google Docs API fetch", { url: input.url });
-        googleDocsContent = await fetchGoogleDocsFromUrl(input.url);
+        // Use normalized URL for consistent fetching
+        logger.debug("Attempting Google Docs API fetch", { url: normalizedUrl });
+        googleDocsContent = await fetchGoogleDocsFromUrl(normalizedUrl);
 
         if (googleDocsContent) {
           // Wrap the content in a basic HTML structure for consistency
           html = `<!DOCTYPE html><html><head><title>${escapeHtml(googleDocsContent.title)}</title></head><body>${googleDocsContent.html}</body></html>`;
           logger.debug("Successfully fetched Google Docs content via API", {
-            url: input.url,
+            url: normalizedUrl,
             docId: googleDocsContent.docId,
             title: googleDocsContent.title,
           });
         } else {
           // Fall back to normal fetch (may work for public docs with export links)
           logger.debug("Google Docs API fetch failed, falling back to normal fetch", {
-            url: input.url,
+            url: normalizedUrl,
           });
           try {
-            html = await fetchPage(input.url);
+            html = await fetchPage(normalizedUrl);
           } catch (error) {
             logger.warn("Failed to fetch Google Docs URL", {
-              url: input.url,
+              url: normalizedUrl,
               error: error instanceof Error ? error.message : String(error),
             });
             throw errors.savedArticleFetchError(
-              input.url,
+              normalizedUrl,
               error instanceof Error ? error.message : "Unknown error"
             );
           }
@@ -380,13 +385,21 @@ export const savedRouter = createTRPCRouter({
       const metadata = extractMetadata(html, input.url);
 
       // Run Readability for clean content (also absolutizes URLs internally)
+      // Skip for Google Docs API content - it's already clean and structured
       // For LessWrong, the GraphQL content is already clean, but Readability will still
       // absolutize URLs and provide consistent output format
-      const cleaned = cleanContent(html, { url: input.url });
+      const cleaned = googleDocsContent ? null : cleanContent(html, { url: input.url });
 
       // Generate excerpt
       let excerpt: string | null = null;
-      if (cleaned) {
+      if (googleDocsContent) {
+        // For Google Docs API content, extract text from the HTML for excerpt
+        const textMatch = googleDocsContent.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        excerpt = textMatch.slice(0, 300).trim() || null;
+        if (excerpt && excerpt.length > 297) {
+          excerpt = excerpt.slice(0, 297) + "...";
+        }
+      } else if (cleaned) {
         excerpt = cleaned.excerpt || cleaned.textContent.slice(0, 300).trim() || null;
         if (excerpt && excerpt.length > 300) {
           excerpt = excerpt.slice(0, 297) + "...";
@@ -432,8 +445,11 @@ export const savedRouter = createTRPCRouter({
       const finalPublishedAt =
         googleDocsContent?.modifiedAt || lessWrongContent?.publishedAt || now;
 
+      // For Google Docs API content, use the HTML directly (already clean and structured)
+      const finalContentCleaned = googleDocsContent?.html || cleaned?.content || null;
+
       // Compute content hash for narration deduplication
-      const contentHash = generateContentHash(finalTitle, cleaned?.content || html);
+      const contentHash = generateContentHash(finalTitle, finalContentCleaned || html);
 
       // Create the saved article entry
       const entryId = generateUuidv7();
@@ -446,7 +462,7 @@ export const savedRouter = createTRPCRouter({
         title: finalTitle,
         author: finalAuthor,
         contentOriginal: html,
-        contentCleaned: cleaned?.content || null,
+        contentCleaned: finalContentCleaned,
         summary: excerpt,
         siteName: finalSiteName,
         imageUrl: metadata.imageUrl,
@@ -483,7 +499,7 @@ export const savedRouter = createTRPCRouter({
           author: finalAuthor,
           imageUrl: metadata.imageUrl,
           contentOriginal: html,
-          contentCleaned: cleaned?.content || null,
+          contentCleaned: finalContentCleaned,
           excerpt,
           read: false,
           starred: false,
