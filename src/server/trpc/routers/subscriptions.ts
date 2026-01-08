@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, inArray } from "drizzle-orm";
+import { eq, and, isNull, sql, inArray, notInArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -129,7 +129,9 @@ const subscriptionWithFeedOutputSchema = z.object({
  * @param url - The URL to fetch
  * @returns The response with text content
  */
-async function fetchUrl(url: string): Promise<{ text: string; contentType: string }> {
+async function fetchUrl(
+  url: string
+): Promise<{ text: string; contentType: string; finalUrl: string }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -150,7 +152,7 @@ async function fetchUrl(url: string): Promise<{ text: string; contentType: strin
     const text = await response.text();
     const contentType = response.headers.get("content-type") ?? "";
 
-    return { text, contentType };
+    return { text, contentType, finalUrl: response.url };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw errors.feedFetchError(url, "Request timed out");
@@ -187,6 +189,20 @@ function isHtmlContent(contentType: string, content: string): boolean {
 // Subscription Helpers
 // ============================================================================
 
+interface SubscribeToExistingFeedOptions {
+  /**
+   * If provided, entries with GUIDs matching entries the user has already seen
+   * from this feed will be skipped when creating user_entries.
+   * This is used when migrating a subscription from a redirected feed.
+   */
+  previousFeedId?: string;
+  /**
+   * If true, silently succeed when user is already subscribed instead of throwing.
+   * Used when migrating subscriptions where user might already be subscribed to target.
+   */
+  allowAlreadySubscribed?: boolean;
+}
+
 /**
  * Subscribe to an existing feed that has already been fetched.
  * Uses lastSeenAt to determine which entries are currently in the feed,
@@ -195,8 +211,10 @@ function isHtmlContent(contentType: string, content: string): boolean {
 async function subscribeToExistingFeed(
   db: typeof import("@/server/db").db,
   userId: string,
-  feedRecord: typeof feeds.$inferSelect
+  feedRecord: typeof feeds.$inferSelect,
+  options: SubscribeToExistingFeedOptions = {}
 ): Promise<z.infer<typeof subscriptionWithFeedOutputSchema>> {
+  const { previousFeedId, allowAlreadySubscribed = false } = options;
   const feedId = feedRecord.id;
 
   // Ensure job is enabled and sync next_fetch_at
@@ -217,26 +235,34 @@ async function subscribeToExistingFeed(
 
   let subscriptionId: string;
   let subscribedAt: Date;
+  let wasAlreadySubscribed = false;
 
   if (existingSubscription.length > 0) {
     const sub = existingSubscription[0];
 
     if (sub.unsubscribedAt === null) {
-      throw errors.alreadySubscribed();
+      if (allowAlreadySubscribed) {
+        // Already subscribed - just return the existing subscription
+        wasAlreadySubscribed = true;
+        subscriptionId = sub.id;
+        subscribedAt = sub.subscribedAt;
+      } else {
+        throw errors.alreadySubscribed();
+      }
+    } else {
+      // Reactivate subscription
+      subscriptionId = sub.id;
+      subscribedAt = new Date();
+
+      await db
+        .update(subscriptions)
+        .set({
+          unsubscribedAt: null,
+          subscribedAt: subscribedAt,
+          updatedAt: subscribedAt,
+        })
+        .where(eq(subscriptions.id, subscriptionId));
     }
-
-    // Reactivate subscription
-    subscriptionId = sub.id;
-    subscribedAt = new Date();
-
-    await db
-      .update(subscriptions)
-      .set({
-        unsubscribedAt: null,
-        subscribedAt: subscribedAt,
-        updatedAt: subscribedAt,
-      })
-      .where(eq(subscriptions.id, subscriptionId));
   } else {
     // Create new subscription
     subscriptionId = generateUuidv7();
@@ -257,13 +283,30 @@ async function subscribeToExistingFeed(
   // We use lastEntriesUpdatedAt (not lastFetchedAt) because it only updates when entries change,
   // ensuring exact sync with entries.lastSeenAt
   let unreadCount = 0;
-  if (feedRecord.lastEntriesUpdatedAt) {
+  if (feedRecord.lastEntriesUpdatedAt && !wasAlreadySubscribed) {
+    // Build the base condition for current entries
+    const conditions = [
+      eq(entries.feedId, feedId),
+      eq(entries.lastSeenAt, feedRecord.lastEntriesUpdatedAt),
+    ];
+
+    // If migrating from a previous feed, exclude entries with GUIDs the user has already seen
+    // This preserves read/saved state from the old feed
+    if (previousFeedId) {
+      // Subquery: GUIDs of entries from the previous feed that the user has user_entries for
+      const previousFeedGuidsSubquery = db
+        .select({ guid: entries.guid })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .where(and(eq(entries.feedId, previousFeedId), eq(userEntries.userId, userId)));
+
+      conditions.push(notInArray(entries.guid, previousFeedGuidsSubquery));
+    }
+
     const matchingEntries = await db
       .select({ id: entries.id })
       .from(entries)
-      .where(
-        and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, feedRecord.lastEntriesUpdatedAt))
-      );
+      .where(and(...conditions));
 
     if (matchingEntries.length > 0) {
       const pairs = matchingEntries.map((entry) => ({
@@ -278,13 +321,16 @@ async function subscribeToExistingFeed(
         userId,
         feedId,
         entryCount: matchingEntries.length,
+        previousFeedId,
       });
     }
   }
 
-  publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
-    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-  });
+  if (!wasAlreadySubscribed) {
+    publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
+      logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+    });
+  }
 
   return {
     subscription: {
@@ -318,12 +364,13 @@ async function subscribeToNewOrUnfetchedFeed(
   let feedUrl = inputUrl;
 
   // Fetch the URL
-  const { text: content, contentType } = await fetchUrl(feedUrl);
+  const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(feedUrl);
 
   // If HTML, try to discover feeds
   let feedContent: string;
+  let finalFeedUrl: string;
   if (isHtmlContent(contentType, content)) {
-    const discoveredFeeds = discoverFeeds(content, feedUrl);
+    const discoveredFeeds = discoverFeeds(content, initialFinalUrl);
 
     if (discoveredFeeds.length === 0) {
       throw errors.validation("No feeds found at this URL");
@@ -351,8 +398,33 @@ async function subscribeToNewOrUnfetchedFeed(
     // Fetch the actual feed
     const feedResult = await fetchUrl(feedUrl);
     feedContent = feedResult.text;
+    finalFeedUrl = feedResult.finalUrl;
   } else {
     feedContent = content;
+    finalFeedUrl = initialFinalUrl;
+  }
+
+  // Check if a feed exists at the final (redirected) URL
+  // This handles the case where the user enters http://example.com/feed
+  // which redirects to https://example.com/feed - we want to use the existing feed
+  if (finalFeedUrl !== feedUrl) {
+    const existingFeedAtFinalUrl = await db
+      .select()
+      .from(feeds)
+      .where(eq(feeds.url, finalFeedUrl))
+      .limit(1);
+
+    if (existingFeedAtFinalUrl.length > 0 && existingFeedAtFinalUrl[0].lastFetchedAt !== null) {
+      // Feed exists at the final URL - use it instead
+      return await subscribeToExistingFeed(
+        db,
+        userId,
+        existingFeedAtFinalUrl[0] as typeof feeds.$inferSelect
+      );
+    }
+
+    // Use the final URL for the new feed
+    feedUrl = finalFeedUrl;
   }
 
   // Parse the feed
@@ -1261,3 +1333,6 @@ export const subscriptionsRouter = createTRPCRouter({
       return {};
     }),
 });
+
+// Export helper for use in background job handlers
+export { subscribeToExistingFeed, type SubscribeToExistingFeedOptions };
