@@ -26,6 +26,7 @@ import {
   getDomainFromUrl,
   type FetchFeedResult,
   type ParsedCacheHeaders,
+  type ParsedFeed,
 } from "../feed";
 import { type JobPayloads, createOrEnableFeedJob, enableFeedJob } from "./queue";
 import { logger } from "@/lib/logger";
@@ -139,7 +140,10 @@ function getMetricsStatus(
   if (fetchResult.status === "not_modified") {
     return "not_modified";
   }
-  if (fetchResult.status === "success" && handlerResult.success) {
+  if (
+    (fetchResult.status === "success" || fetchResult.status === "parsed") &&
+    handlerResult.success
+  ) {
     return "success";
   }
   return "error";
@@ -268,6 +272,90 @@ function generateBodyHash(body: string): string {
 }
 
 /**
+ * Processes a feed that was already parsed by a custom backend (e.g., LessWrong GraphQL).
+ *
+ * This is similar to processSuccessfulFetch but without cache header handling since
+ * custom backends typically don't support conditional GET or cache headers.
+ *
+ * @param feed - The feed record from the database
+ * @param parsedFeed - The already-parsed feed data
+ * @param now - Current timestamp
+ * @returns Job handler result with next run time
+ */
+async function processAlreadyParsedFeed(
+  feed: Feed,
+  parsedFeed: ParsedFeed,
+  now: Date
+): Promise<JobHandlerResult> {
+  // Extract metadata we need before processing entries
+  const feedMetadata = {
+    title: parsedFeed.title,
+    description: parsedFeed.description,
+    siteUrl: parsedFeed.siteUrl,
+    hubUrl: parsedFeed.hubUrl,
+    selfUrl: parsedFeed.selfUrl,
+    ttlMinutes: parsedFeed.ttlMinutes,
+    syndication: parsedFeed.syndication,
+  };
+
+  // Process entries (create new, update changed, detect disappeared)
+  // Note: No feedUrl needed for content cleaning - GraphQL provides clean content
+  const processResult = await processEntries(feed.id, feed.type, parsedFeed, {
+    fetchedAt: now,
+    previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
+  });
+
+  // Calculate next fetch time based on feed hints (no cache headers available)
+  const nextFetch = calculateNextFetch({
+    feedHints: {
+      ttlMinutes: feedMetadata.ttlMinutes,
+      syndication: feedMetadata.syndication,
+    },
+    consecutiveFailures: 0, // Reset failures on success
+    now,
+  });
+
+  // Update feed metadata
+  // Fall back to domain name if no title is available
+  const fallbackTitle = feed.url ? getDomainFromUrl(feed.url) : undefined;
+
+  // Only update lastEntriesUpdatedAt when entries actually changed
+  const lastEntriesUpdatedAt = processResult.hasChanges ? now : feed.lastEntriesUpdatedAt;
+
+  await db
+    .update(feeds)
+    .set({
+      title: feedMetadata.title || feed.title || fallbackTitle,
+      description: feedMetadata.description || feed.description,
+      siteUrl: feedMetadata.siteUrl || feed.siteUrl,
+      // No ETag/Last-Modified - custom backend doesn't support conditional GET
+      lastFetchedAt: now,
+      lastEntriesUpdatedAt,
+      nextFetchAt: nextFetch.nextFetchAt,
+      consecutiveFailures: 0,
+      lastError: null,
+      // Store hub and self URLs if discovered
+      hubUrl: feedMetadata.hubUrl ?? feed.hubUrl,
+      selfUrl: feedMetadata.selfUrl ?? feed.selfUrl,
+      updatedAt: now,
+    })
+    .where(eq(feeds.id, feed.id));
+
+  return {
+    success: true,
+    nextRunAt: nextFetch.nextFetchAt,
+    metadata: {
+      newEntries: processResult.newCount,
+      updatedEntries: processResult.updatedCount,
+      unchangedEntries: processResult.unchangedCount,
+      disappearedEntries: processResult.disappearedCount,
+      nextFetchReason: nextFetch.reason,
+      customBackend: true,
+    },
+  };
+}
+
+/**
  * Processes the fetch result and updates the feed accordingly.
  *
  * @param feed - The feed record from the database
@@ -278,6 +366,12 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
   const now = new Date();
 
   switch (result.status) {
+    case "parsed": {
+      // Already have a parsed feed from a custom backend (e.g., LessWrong GraphQL)
+      // Process directly without cache headers since the custom backend doesn't support them
+      return processAlreadyParsedFeed(feed, result.parsedFeed, now);
+    }
+
     case "success": {
       // Check if body is unchanged by comparing hashes
       const bodyHash = generateBodyHash(result.body);

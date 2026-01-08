@@ -5,6 +5,9 @@
 
 import { fetcherConfig } from "../config/env";
 import { parseCacheHeaders, type ParsedCacheHeaders } from "./cache-headers";
+import { isLessWrongFeedUrl, fetchLessWrongFeed } from "./lesswrong-feed";
+import { logger } from "@/lib/logger";
+import type { ParsedFeed } from "./types";
 
 /**
  * Options for fetching a feed.
@@ -139,6 +142,17 @@ export interface FetchTooManyRedirectsResult {
 }
 
 /**
+ * Result when feed is already parsed from a custom backend (e.g., LessWrong GraphQL).
+ * This is returned when the fetcher uses an alternative API that returns structured data
+ * directly, bypassing the normal HTTP fetch + parse flow.
+ */
+export interface FetchParsedResult {
+  status: "parsed";
+  /** The already-parsed feed data */
+  parsedFeed: ParsedFeed;
+}
+
+/**
  * All possible fetch results.
  */
 export type FetchFeedResult =
@@ -149,7 +163,8 @@ export type FetchFeedResult =
   | FetchServerErrorResult
   | FetchRateLimitedResult
   | FetchNetworkErrorResult
-  | FetchTooManyRedirectsResult;
+  | FetchTooManyRedirectsResult
+  | FetchParsedResult;
 
 /** Default request timeout in milliseconds */
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -358,6 +373,21 @@ export async function fetchFeed(
     maxRedirects = DEFAULT_MAX_REDIRECTS,
     feedId,
   } = options;
+
+  // For LessWrong feeds, try GraphQL first for richer data
+  // Falls back to RSS if GraphQL fails
+  if (isLessWrongFeedUrl(url)) {
+    const graphqlResult = await fetchLessWrongFeed();
+    if (graphqlResult) {
+      logger.debug("LessWrong feed fetched via GraphQL", { url, feedId });
+      return {
+        status: "parsed",
+        parsedFeed: graphqlResult,
+      };
+    }
+    // GraphQL failed - fall through to normal RSS fetch
+    logger.info("LessWrong GraphQL failed, falling back to RSS", { url, feedId });
+  }
 
   // Build request headers
   const headers: Record<string, string> = {

@@ -41,6 +41,7 @@ export {
   type FetchRateLimitedResult,
   type FetchNetworkErrorResult,
   type FetchTooManyRedirectsResult,
+  type FetchParsedResult,
   type RedirectInfo,
 } from "./fetcher";
 export {
