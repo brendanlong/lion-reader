@@ -108,7 +108,9 @@ const feedPreviewSchema = z.object({
  * @param url - The URL to fetch
  * @returns The response with text content
  */
-async function fetchUrl(url: string): Promise<{ text: string; contentType: string }> {
+async function fetchUrl(
+  url: string
+): Promise<{ text: string; contentType: string; finalUrl: string }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -129,7 +131,7 @@ async function fetchUrl(url: string): Promise<{ text: string; contentType: strin
     const text = await response.text();
     const contentType = response.headers.get("content-type") ?? "";
 
-    return { text, contentType };
+    return { text, contentType, finalUrl: response.url };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw errors.feedFetchError(url, "Request timed out");
@@ -372,12 +374,13 @@ export const feedsRouter = createTRPCRouter({
       }
 
       // Step 1: Fetch the URL
-      const { text: content, contentType } = await fetchUrl(feedUrl);
+      const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(feedUrl);
 
       // Step 2: If HTML, try to discover feeds
       let feedContent: string;
+      let finalFeedUrl: string;
       if (isHtmlContent(contentType, content)) {
-        const discoveredFeeds = discoverFeeds(content, feedUrl);
+        const discoveredFeeds = discoverFeeds(content, initialFinalUrl);
 
         if (discoveredFeeds.length === 0) {
           throw errors.validation("No feeds found at this URL");
@@ -389,8 +392,10 @@ export const feedsRouter = createTRPCRouter({
         // Fetch the actual feed
         const feedResult = await fetchUrl(feedUrl);
         feedContent = feedResult.text;
+        finalFeedUrl = feedResult.finalUrl;
       } else {
         feedContent = content;
+        finalFeedUrl = initialFinalUrl;
       }
 
       // Step 3: Parse the feed
@@ -404,14 +409,14 @@ export const feedsRouter = createTRPCRouter({
       // Step 4: Build and return the preview
       const sampleEntries = parsedFeed.items
         .slice(0, MAX_SAMPLE_ENTRIES)
-        .map((entry) => toSampleEntry(entry, feedUrl));
+        .map((entry) => toSampleEntry(entry, finalFeedUrl));
 
       // Use domain as fallback if feed has no title
-      const fallbackTitle = getDomainFromUrl(feedUrl) ?? "Untitled Feed";
+      const fallbackTitle = getDomainFromUrl(finalFeedUrl) ?? "Untitled Feed";
       let feedTitle = parsedFeed.title ?? fallbackTitle;
 
       // For LessWrong user feeds, append the author name if not already in the title
-      if (isLessWrongUserFeedUrl(feedUrl)) {
+      if (isLessWrongUserFeedUrl(finalFeedUrl)) {
         const firstAuthor = parsedFeed.items.find((item) => item.author)?.author;
         if (firstAuthor && !feedTitle.includes(firstAuthor)) {
           feedTitle = `${feedTitle} - ${firstAuthor}`;
@@ -420,7 +425,7 @@ export const feedsRouter = createTRPCRouter({
 
       return {
         feed: {
-          url: feedUrl,
+          url: finalFeedUrl,
           title: feedTitle,
           description: parsedFeed.description ?? null,
           siteUrl: parsedFeed.siteUrl ?? null,
