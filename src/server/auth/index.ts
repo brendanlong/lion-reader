@@ -37,6 +37,7 @@ export {
   createGoogleAuthUrl,
   validateGoogleCallback,
   isGoogleOAuthEnabled,
+  GOOGLE_DOCS_READONLY_SCOPE,
   // Apple OAuth flow
   type AppleUserInfo,
   type AppleFirstAuthUserData,
