@@ -115,7 +115,7 @@ export const tagsRouter = createTRPCRouter({
             isNull(subscriptions.unsubscribedAt)
           )
         )
-        .innerJoin(entries, eq(entries.feedId, subscriptions.feedId))
+        .innerJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
         .innerJoin(
           userEntries,
           and(
@@ -311,7 +311,7 @@ export const tagsRouter = createTRPCRouter({
               isNull(subscriptions.unsubscribedAt)
             )
           )
-          .innerJoin(entries, eq(entries.feedId, subscriptions.feedId))
+          .innerJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
           .innerJoin(
             userEntries,
             and(
