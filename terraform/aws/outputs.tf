@@ -105,3 +105,14 @@ output "migrations_task_definition" {
   description = "ARN of the migrations task definition"
   value       = aws_ecs_task_definition.migrations.arn
 }
+
+# S3 Outputs
+output "storage_bucket_name" {
+  description = "Name of the S3 storage bucket"
+  value       = aws_s3_bucket.storage.id
+}
+
+output "storage_bucket_url" {
+  description = "Public URL for S3 storage bucket"
+  value       = "https://${aws_s3_bucket.storage.bucket_regional_domain_name}"
+}

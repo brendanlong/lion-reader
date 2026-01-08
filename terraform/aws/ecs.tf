@@ -54,6 +54,19 @@ locals {
     {
       name  = "FETCHER_CONTACT_EMAIL"
       value = var.fetcher_contact_email
+    },
+    # S3 storage configuration
+    {
+      name  = "STORAGE_BUCKET"
+      value = aws_s3_bucket.storage.id
+    },
+    {
+      name  = "STORAGE_REGION"
+      value = var.aws_region
+    },
+    {
+      name  = "STORAGE_PUBLIC_URL_BASE"
+      value = "https://${aws_s3_bucket.storage.bucket_regional_domain_name}"
     }
   ]
 
