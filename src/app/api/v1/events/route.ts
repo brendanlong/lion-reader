@@ -185,7 +185,7 @@ export async function GET(req: Request): Promise<Response> {
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
-      let subscriber: ReturnType<typeof createSubscriberClient> | null = null;
+      let subscriber: ReturnType<typeof createSubscriberClient> = null;
       let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
       let isCleanedUp = false;
 
@@ -275,6 +275,13 @@ export async function GET(req: Request): Promise<Response> {
       // Create Redis subscriber
       try {
         subscriber = createSubscriberClient();
+
+        // This should never happen since we checked Redis health above,
+        // but handle it gracefully just in case
+        if (!subscriber) {
+          controller.error(new Error("Redis subscriber unavailable"));
+          return;
+        }
 
         // Build list of channels to subscribe to:
         // - User-specific channel for subscription events

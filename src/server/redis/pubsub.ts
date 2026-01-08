@@ -167,21 +167,24 @@ export function getUserEventsChannel(userId: string): string {
  * This is a singleton that gets created lazily on first use.
  */
 let publisherClient: Redis | null = null;
+let publisherInitialized = false;
 
 /**
  * Gets or creates the Redis publisher client.
  * Uses lazy initialization to avoid connection issues during module load.
  *
- * @returns Redis client configured for publishing
+ * @returns Redis client configured for publishing, or null if Redis is not configured
  */
-function getPublisherClient(): Redis {
-  if (publisherClient) {
+function getPublisherClient(): Redis | null {
+  if (publisherInitialized) {
     return publisherClient;
   }
 
+  publisherInitialized = true;
   const redisUrl = process.env.REDIS_URL;
+
   if (!redisUrl) {
-    throw new Error("REDIS_URL environment variable is not set");
+    return null;
   }
 
   publisherClient = new Redis(redisUrl, {
@@ -212,10 +215,13 @@ function getPublisherClient(): Redis {
  * Publishes a feed event to the feed-specific Redis channel.
  *
  * @param event - The event to publish
- * @returns The number of subscribers that received the message
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishFeedEvent(event: FeedEvent): Promise<number> {
   const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
   const channel = getFeedEventsChannel(event.feedId);
   const message = JSON.stringify(event);
   return client.publish(channel, message);
@@ -264,7 +270,7 @@ export async function publishEntryUpdated(feedId: string, entryId: string): Prom
  * @param userId - The ID of the user who subscribed
  * @param feedId - The ID of the feed they subscribed to
  * @param subscriptionId - The ID of the new subscription
- * @returns The number of subscribers that received the message
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSubscriptionCreated(
   userId: string,
@@ -272,6 +278,9 @@ export async function publishSubscriptionCreated(
   subscriptionId: string
 ): Promise<number> {
   const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
   const event: SubscriptionCreatedEvent = {
     type: "subscription_created",
     userId,
@@ -292,7 +301,7 @@ export async function publishSubscriptionCreated(
  * @param userId - The ID of the user who unsubscribed
  * @param feedId - The ID of the feed they unsubscribed from
  * @param subscriptionId - The ID of the subscription that was deleted
- * @returns The number of subscribers that received the message
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSubscriptionDeleted(
   userId: string,
@@ -300,6 +309,9 @@ export async function publishSubscriptionDeleted(
   subscriptionId: string
 ): Promise<number> {
   const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
   const event: SubscriptionDeletedEvent = {
     type: "subscription_deleted",
     userId,
@@ -317,10 +329,13 @@ export async function publishSubscriptionDeleted(
  *
  * @param userId - The ID of the user who saved the article
  * @param entryId - The ID of the saved entry
- * @returns The number of subscribers that received the message
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSavedArticleCreated(userId: string, entryId: string): Promise<number> {
   const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
   const event: SavedArticleCreatedEvent = {
     type: "saved_article_created",
     userId,
@@ -334,6 +349,8 @@ export async function publishSavedArticleCreated(userId: string, entryId: string
 /**
  * Publishes an import_progress event when a feed in an OPML import is processed.
  * This notifies the user's SSE connections to update the import progress UI.
+ *
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishImportProgress(
   userId: string,
@@ -343,6 +360,9 @@ export async function publishImportProgress(
   counts: { imported: number; skipped: number; failed: number; total: number }
 ): Promise<number> {
   const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
   const event: ImportProgressEvent = {
     type: "import_progress",
     userId,
@@ -362,6 +382,8 @@ export async function publishImportProgress(
 /**
  * Publishes an import_completed event when an OPML import finishes.
  * This notifies the user's SSE connections that the import is done.
+ *
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishImportCompleted(
   userId: string,
@@ -369,6 +391,9 @@ export async function publishImportCompleted(
   counts: { imported: number; skipped: number; failed: number; total: number }
 ): Promise<number> {
   const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
   const event: ImportCompletedEvent = {
     type: "import_completed",
     userId,
@@ -388,12 +413,12 @@ export async function publishImportCompleted(
  * Each subscriber should use its own connection as Redis requires
  * dedicated connections for subscriptions.
  *
- * @returns A new Redis client configured for subscribing
+ * @returns A new Redis client configured for subscribing, or null if Redis is not configured
  */
-export function createSubscriberClient(): Redis {
+export function createSubscriberClient(): Redis | null {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
-    throw new Error("REDIS_URL environment variable is not set");
+    return null;
   }
 
   const client = new Redis(redisUrl, {
@@ -596,11 +621,16 @@ export async function closePublisher(): Promise<void> {
  * Uses a PING command with a timeout to verify connectivity.
  *
  * @param timeoutMs - Maximum time to wait for response (default: 2000ms)
- * @returns true if Redis is healthy, false otherwise
+ * @returns true if Redis is healthy, false otherwise (including if not configured)
  */
 export async function checkRedisHealth(timeoutMs = 2000): Promise<boolean> {
   try {
     const client = getPublisherClient();
+
+    // If Redis is not configured, return false
+    if (!client) {
+      return false;
+    }
 
     // Race between ping and timeout
     const pingPromise = client.ping();
