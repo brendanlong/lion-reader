@@ -157,6 +157,55 @@ export function extractDocId(url: string): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * Extracts the tab ID from a Google Docs URL query string.
+ * Tab IDs are in the format: ?tab=t.{tabId}
+ * Returns null if no tab is specified.
+ */
+export function extractTabId(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    const tabParam = urlObj.searchParams.get("tab");
+    // Tab param format is "t.{tabId}" - we want to return just the tabId part
+    if (tabParam?.startsWith("t.")) {
+      return tabParam.slice(2);
+    }
+    return tabParam;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Normalizes a Google Docs URL by removing all query parameters except 'tab'.
+ * This creates a canonical URL for the document, since other query parameters
+ * (like usp=sharing, pli, etc.) don't identify unique content.
+ *
+ * @param url - The Google Docs URL to normalize
+ * @returns The normalized URL with only essential query parameters
+ */
+export function normalizeGoogleDocsUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+
+    // Get the tab parameter before clearing
+    const tabParam = urlObj.searchParams.get("tab");
+
+    // Clear all query parameters
+    urlObj.search = "";
+
+    // Re-add only the tab parameter if it exists
+    if (tabParam) {
+      urlObj.searchParams.set("tab", tabParam);
+    }
+
+    return urlObj.href;
+  } catch {
+    // Return original URL if parsing fails
+    return url;
+  }
+}
+
 // ============================================================================
 // Google Docs API Types (Zod Schemas)
 // ============================================================================
@@ -448,16 +497,58 @@ const listSchema = z.object({
 });
 
 /**
+ * Tab properties from Google Docs API.
+ */
+const tabPropertiesSchema = z.object({
+  tabId: z.string(),
+  title: z.string().optional(),
+  parentTabId: z.string().optional(),
+  index: z.number().optional(),
+  nestingLevel: z.number().optional(),
+});
+
+/**
+ * Document tab content from Google Docs API.
+ * Contains the actual content when includeTabsContent=true.
+ */
+const documentTabSchema = z.object({
+  body: documentBodySchema.optional(),
+  footnotes: z.record(z.string(), footnoteSchema).optional(),
+  inlineObjects: z.record(z.string(), inlineObjectSchema).optional(),
+  positionedObjects: z.record(z.string(), positionedObjectSchema).optional(),
+  lists: z.record(z.string(), listSchema).optional(),
+});
+
+/**
+ * Tab from Google Docs API.
+ * Tabs can contain child tabs (nested tabs).
+ */
+type Tab = {
+  tabProperties?: z.infer<typeof tabPropertiesSchema>;
+  documentTab?: z.infer<typeof documentTabSchema>;
+  childTabs?: Tab[];
+};
+
+const tabSchema: z.ZodType<Tab> = z.object({
+  tabProperties: tabPropertiesSchema.optional(),
+  documentTab: documentTabSchema.optional(),
+  childTabs: z.lazy(() => z.array(tabSchema)).optional(),
+});
+
+/**
  * Full document from Google Docs API.
  */
 const googleDocsApiResponseSchema = z.object({
   documentId: z.string(),
   title: z.string(),
+  // Legacy fields (used when includeTabsContent=false or for single-tab docs)
   body: documentBodySchema,
   footnotes: z.record(z.string(), footnoteSchema).optional(),
   inlineObjects: z.record(z.string(), inlineObjectSchema).optional(),
   positionedObjects: z.record(z.string(), positionedObjectSchema).optional(),
   lists: z.record(z.string(), listSchema).optional(),
+  // Tabs (used when includeTabsContent=true)
+  tabs: z.array(tabSchema).optional(),
 });
 
 /**
@@ -479,16 +570,107 @@ export interface GoogleDocsContent {
 }
 
 // ============================================================================
-// HTML Conversion
+// Tab Helpers
 // ============================================================================
 
 type ParsedDoc = z.infer<typeof googleDocsApiResponseSchema>;
 
 /**
+ * Recursively finds a tab by its ID within a list of tabs (including child tabs).
+ */
+function findTabById(tabs: Tab[] | undefined, tabId: string): Tab | null {
+  if (!tabs) return null;
+
+  for (const tab of tabs) {
+    if (tab.tabProperties?.tabId === tabId) {
+      return tab;
+    }
+    // Search child tabs recursively
+    if (tab.childTabs) {
+      const found = findTabById(tab.childTabs, tabId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * Gets the first tab from a document (depth-first traversal).
+ */
+function getFirstTab(tabs: Tab[] | undefined): Tab | null {
+  if (!tabs || tabs.length === 0) return null;
+  return tabs[0];
+}
+
+/**
+ * Represents the content extracted from a specific tab or the document body.
+ */
+interface TabContent {
+  body: z.infer<typeof documentBodySchema>;
+  footnotes?: Record<string, z.infer<typeof footnoteSchema>>;
+  inlineObjects?: Record<string, z.infer<typeof inlineObjectSchema>>;
+  positionedObjects?: Record<string, z.infer<typeof positionedObjectSchema>>;
+  lists?: Record<string, z.infer<typeof listSchema>>;
+  tabTitle?: string;
+}
+
+/**
+ * Extracts content from a document, optionally selecting a specific tab.
+ *
+ * @param doc - The parsed document
+ * @param tabId - Optional tab ID to select. If null, uses the first tab or legacy body.
+ * @returns The tab content, or null if the specified tab was not found.
+ */
+function extractTabContent(doc: ParsedDoc, tabId: string | null): TabContent | null {
+  // If tabs are available and we have a tab ID, find the specific tab
+  if (doc.tabs && doc.tabs.length > 0) {
+    let tab: Tab | null = null;
+
+    if (tabId) {
+      tab = findTabById(doc.tabs, tabId);
+      if (!tab) {
+        logger.warn("Specified tab not found in document", { tabId });
+        // Fall through to use first tab
+      }
+    }
+
+    // Use the specified tab or fall back to first tab
+    if (!tab) {
+      tab = getFirstTab(doc.tabs);
+    }
+
+    if (tab?.documentTab?.body) {
+      return {
+        body: tab.documentTab.body,
+        footnotes: tab.documentTab.footnotes,
+        inlineObjects: tab.documentTab.inlineObjects,
+        positionedObjects: tab.documentTab.positionedObjects,
+        lists: tab.documentTab.lists,
+        tabTitle: tab.tabProperties?.title,
+      };
+    }
+  }
+
+  // Fall back to legacy body fields (for single-tab docs or when includeTabsContent=false)
+  return {
+    body: doc.body,
+    footnotes: doc.footnotes,
+    inlineObjects: doc.inlineObjects,
+    positionedObjects: doc.positionedObjects,
+    lists: doc.lists,
+  };
+}
+
+// ============================================================================
+// HTML Conversion
+// ============================================================================
+
+/**
  * Context for HTML conversion, containing document-level data.
  */
 interface ConversionContext {
-  doc: ParsedDoc;
+  /** The tab content being converted */
+  content: TabContent;
   /** Map of image object IDs to their uploaded URLs */
   imageUrls: Map<string, string>;
   /** Footnotes encountered during conversion (id -> number) */
@@ -537,7 +719,7 @@ function getParagraphTag(namedStyle?: string): { open: string; close: string } {
  * Determines if a list is ordered based on its glyph type.
  */
 function isOrderedList(listId: string, nestingLevel: number, ctx: ConversionContext): boolean {
-  const list = ctx.doc.lists?.[listId];
+  const list = ctx.content.lists?.[listId];
   const level = list?.listProperties?.nestingLevels?.[nestingLevel];
   const glyphType = level?.glyphType;
 
@@ -557,13 +739,13 @@ function getImageUrl(objectId: string, ctx: ConversionContext): string | null {
   }
 
   // Get the original URL from inline objects
-  const inlineObj = ctx.doc.inlineObjects?.[objectId];
+  const inlineObj = ctx.content.inlineObjects?.[objectId];
   if (inlineObj?.inlineObjectProperties?.embeddedObject?.imageProperties?.contentUri) {
     return inlineObj.inlineObjectProperties.embeddedObject.imageProperties.contentUri;
   }
 
   // Get the original URL from positioned objects
-  const posObj = ctx.doc.positionedObjects?.[objectId];
+  const posObj = ctx.content.positionedObjects?.[objectId];
   if (posObj?.positionedObjectProperties?.embeddedObject?.imageProperties?.contentUri) {
     return posObj.positionedObjectProperties.embeddedObject.imageProperties.contentUri;
   }
@@ -575,8 +757,8 @@ function getImageUrl(objectId: string, ctx: ConversionContext): string | null {
  * Gets alt text for an image object.
  */
 function getImageAlt(objectId: string, ctx: ConversionContext): string {
-  const inlineObj = ctx.doc.inlineObjects?.[objectId];
-  const posObj = ctx.doc.positionedObjects?.[objectId];
+  const inlineObj = ctx.content.inlineObjects?.[objectId];
+  const posObj = ctx.content.positionedObjects?.[objectId];
   const obj = inlineObj?.inlineObjectProperties?.embeddedObject ||
               posObj?.positionedObjectProperties?.embeddedObject;
 
@@ -802,7 +984,6 @@ function convertStructuralElements(
       if (bullet) {
         const listId = bullet.listId;
         const nestingLevel = bullet.nestingLevel ?? 0;
-        const isOrdered = isOrderedList(listId, nestingLevel, ctx);
 
         // Close lists that are no longer active or at higher nesting levels
         while (
@@ -872,7 +1053,7 @@ function convertFootnotes(ctx: ConversionContext): string {
     .sort((a, b) => a[1] - b[1]);
 
   for (const [footnoteId, footnoteNum] of sortedFootnotes) {
-    const footnote = ctx.doc.footnotes?.[footnoteId];
+    const footnote = ctx.content.footnotes?.[footnoteId];
     if (footnote?.content) {
       const content = convertStructuralElements(footnote.content, ctx);
       footnoteHtml.push(
@@ -886,15 +1067,15 @@ function convertFootnotes(ctx: ConversionContext): string {
 }
 
 /**
- * Extracts and uploads images from the document.
+ * Extracts and uploads images from the tab content.
  *
- * @param doc - The parsed Google Docs document
+ * @param content - The tab content containing image objects
  * @param docId - The document ID (used for organizing images)
  * @param accessToken - The OAuth access token for fetching images
  * @returns Map of object IDs to uploaded URLs
  */
 async function uploadDocumentImages(
-  doc: ParsedDoc,
+  content: TabContent,
   docId: string,
   accessToken: string
 ): Promise<Map<string, string>> {
@@ -909,8 +1090,8 @@ async function uploadDocumentImages(
   const imageObjects: Array<{ objectId: string; contentUri: string; alt: string }> = [];
 
   // Inline objects
-  if (doc.inlineObjects) {
-    for (const [objectId, obj] of Object.entries(doc.inlineObjects)) {
+  if (content.inlineObjects) {
+    for (const [objectId, obj] of Object.entries(content.inlineObjects)) {
       const contentUri = obj.inlineObjectProperties?.embeddedObject?.imageProperties?.contentUri;
       if (contentUri) {
         const alt = obj.inlineObjectProperties?.embeddedObject?.title ||
@@ -921,8 +1102,8 @@ async function uploadDocumentImages(
   }
 
   // Positioned objects
-  if (doc.positionedObjects) {
-    for (const [objectId, obj] of Object.entries(doc.positionedObjects)) {
+  if (content.positionedObjects) {
+    for (const [objectId, obj] of Object.entries(content.positionedObjects)) {
       const contentUri = obj.positionedObjectProperties?.embeddedObject?.imageProperties?.contentUri;
       if (contentUri) {
         const alt = obj.positionedObjectProperties?.embeddedObject?.title ||
@@ -983,6 +1164,48 @@ async function uploadDocumentImages(
 }
 
 /**
+ * Normalizes text for comparison by removing extra whitespace and trimming.
+ */
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * Strips the first header element if its text content matches the document title.
+ *
+ * Google Docs often includes the document title as the first heading in the body,
+ * but since we already have the title from document metadata, showing it twice
+ * is redundant. This function removes the first header if it matches the title.
+ *
+ * @param html - The HTML content
+ * @param title - The document title to compare against
+ * @returns HTML with the title header removed if it matched
+ */
+function stripTitleHeader(html: string, title: string): string {
+  // Match the first header element (h1-h6) at the start of the content
+  // Allows for leading whitespace/newlines
+  const headerRegex = /^(\s*)<(h[1-6])>([\s\S]*?)<\/\2>/i;
+  const match = html.match(headerRegex);
+
+  if (!match) {
+    return html;
+  }
+
+  const [fullMatch, , , headerContent] = match;
+
+  // Extract text content from the header (strip any nested HTML tags)
+  const headerText = headerContent.replace(/<[^>]+>/g, "");
+
+  // Compare normalized versions of the title and header text
+  if (normalizeText(headerText) === normalizeText(title)) {
+    // Remove the header and any immediately following newlines
+    return html.slice(fullMatch.length).replace(/^\n+/, "");
+  }
+
+  return html;
+}
+
+/**
  * Converts Google Docs API structured content to HTML.
  *
  * Handles:
@@ -995,28 +1218,41 @@ async function uploadDocumentImages(
  * - Ordered and unordered lists with proper nesting
  * - Rich links and person mentions
  * - Superscript and subscript text
+ * - Multi-tab documents (select specific tab via tabId)
+ *
+ * @param doc - The parsed Google Docs document
+ * @param accessToken - OAuth access token for fetching images
+ * @param tabId - Optional tab ID to select (from URL ?tab=t.{tabId})
  */
 async function convertDocsApiToHtml(
   doc: ParsedDoc,
-  accessToken: string
+  accessToken: string,
+  tabId: string | null = null
 ): Promise<string> {
-  if (!doc.body.content) {
+  // Extract content from the specified tab (or first tab / legacy body)
+  const content = extractTabContent(doc, tabId);
+  if (!content || !content.body.content) {
     return "<p>Empty document</p>";
   }
 
   // Upload images to storage (if configured)
-  const imageUrls = await uploadDocumentImages(doc, doc.documentId, accessToken);
+  const imageUrls = await uploadDocumentImages(content, doc.documentId, accessToken);
 
   // Create conversion context
   const ctx: ConversionContext = {
-    doc,
+    content,
     imageUrls,
     footnoteNumbers: new Map(),
     footnoteCounter: 0,
   };
 
   // Convert body content
-  const bodyHtml = convertStructuralElements(doc.body.content, ctx);
+  let bodyHtml = convertStructuralElements(content.body.content, ctx);
+
+  // Strip the first header if it matches the document title
+  // Google Docs often has the document title as the first heading, but we already
+  // have the title from the document metadata, so showing it twice is redundant
+  bodyHtml = stripTitleHeader(bodyHtml, doc.title);
 
   // Convert footnotes
   const footnotesHtml = convertFootnotes(ctx);
@@ -1045,9 +1281,13 @@ export function isGoogleDocsApiAvailable(): boolean {
  * access token (Phase 2).
  *
  * @param docId - The Google Docs document ID
+ * @param tabId - Optional tab ID to fetch (from URL ?tab=t.{tabId})
  * @returns Document content including HTML, or null if fetch fails or doc is private
  */
-export async function fetchPublicGoogleDoc(docId: string): Promise<GoogleDocsContent | null> {
+export async function fetchPublicGoogleDoc(
+  docId: string,
+  tabId: string | null = null
+): Promise<GoogleDocsContent | null> {
   // Check if service account is configured
   if (!googleConfig.serviceAccountJson) {
     logger.debug("Google service account not configured, skipping API fetch", { docId });
@@ -1065,9 +1305,10 @@ export async function fetchPublicGoogleDoc(docId: string): Promise<GoogleDocsCon
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    const url = `${GOOGLE_DOCS_API_ENDPOINT}/${docId}`;
+    // Request with includeTabsContent=true to get full tab data
+    const url = `${GOOGLE_DOCS_API_ENDPOINT}/${docId}?includeTabsContent=true`;
 
-    logger.debug("Fetching public Google Doc", { docId });
+    logger.debug("Fetching public Google Doc", { docId, tabId });
 
     const response = await fetch(url, {
       method: "GET",
@@ -1132,7 +1373,7 @@ export async function fetchPublicGoogleDoc(docId: string): Promise<GoogleDocsCon
     const doc = parsed.data;
 
     // Convert structured document to HTML (includes image upload if storage is configured)
-    const html = await convertDocsApiToHtml(doc, accessToken);
+    const html = await convertDocsApiToHtml(doc, accessToken, tabId);
 
     return {
       docId: doc.documentId,
@@ -1176,5 +1417,8 @@ export async function fetchGoogleDocsFromUrl(url: string): Promise<GoogleDocsCon
     return null;
   }
 
-  return fetchPublicGoogleDoc(docId);
+  // Extract tab ID if present in URL (e.g., ?tab=t.i957b74dlfgd)
+  const tabId = extractTabId(url);
+
+  return fetchPublicGoogleDoc(docId, tabId);
 }
