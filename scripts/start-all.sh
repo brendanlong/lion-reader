@@ -4,6 +4,9 @@
 
 set -e
 
+# Disable embedded worker since we're running a separate worker process
+export DISABLE_EMBEDDED_WORKER=true
+
 # Start bundled worker in background with lower CPU priority
 # Uses the pre-built bundle (no tsx or TypeScript compilation needed)
 echo "Starting background worker (nice 10)..."
