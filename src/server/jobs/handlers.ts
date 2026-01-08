@@ -36,6 +36,7 @@ import {
   publishSubscriptionCreated,
 } from "../redis/pubsub";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { isLessWrongUserFeedUrl } from "../feed/lesswrong";
 
 /**
  * Result of a job handler execution.
@@ -187,8 +188,20 @@ async function processSuccessfulFetch(
 
   // Extract metadata we need before processing entries
   // This allows parsedFeed.items (the large part) to be GC'd after processEntries
+  let feedTitle = parsedFeed.title;
+
+  // For LessWrong user feeds, append the author name to the feed title if not already present.
+  // This gives us "LessWrong - Brendan Long" instead of just "LessWrong",
+  // and automatically updates if the user changes their display name.
+  if (feed.url && isLessWrongUserFeedUrl(feed.url)) {
+    const firstAuthor = parsedFeed.items.find((item) => item.author)?.author;
+    if (firstAuthor && feedTitle && !feedTitle.includes(firstAuthor)) {
+      feedTitle = `${feedTitle} - ${firstAuthor}`;
+    }
+  }
+
   const feedMetadata = {
-    title: parsedFeed.title,
+    title: feedTitle,
     description: parsedFeed.description,
     siteUrl: parsedFeed.siteUrl,
     hubUrl: parsedFeed.hubUrl,
