@@ -83,7 +83,7 @@ async function createTestFeed(url: string): Promise<string> {
   const feedId = generateUuidv7();
   await db.insert(feeds).values({
     id: feedId,
-    type: "rss",
+    type: "web",
     url,
     title: `Test Feed ${feedId}`,
     createdAt: new Date(),
@@ -131,12 +131,12 @@ async function createTestEntry(
   await db.insert(entries).values({
     id: entryId,
     feedId,
-    type: "rss",
+    type: "web",
     guid: `guid-${entryId}`,
     title: options.title ?? `Entry ${entryId}`,
     contentHash: `hash-${entryId}`,
     fetchedAt: now,
-    lastSeenAt: now, // Required for rss/atom/json entries
+    lastSeenAt: now, // Required for web entries
     createdAt: now,
     updatedAt: now,
   });

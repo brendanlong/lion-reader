@@ -70,7 +70,7 @@ async function seed() {
   const feedsData = [
     {
       id: generateUuidv7(),
-      type: "rss" as const,
+      type: "web" as const,
       url: "https://blog.rust-lang.org/feed.xml",
       title: "Rust Blog",
       description: "Empowering everyone to build reliable and efficient software",
@@ -78,7 +78,7 @@ async function seed() {
     },
     {
       id: generateUuidv7(),
-      type: "atom" as const,
+      type: "web" as const,
       url: "https://github.blog/feed/",
       title: "The GitHub Blog",
       description:
@@ -87,7 +87,7 @@ async function seed() {
     },
     {
       id: generateUuidv7(),
-      type: "rss" as const,
+      type: "web" as const,
       url: "https://blog.cloudflare.com/rss/",
       title: "The Cloudflare Blog",
       description: "The latest news on Cloudflare products, technology, and infrastructure",

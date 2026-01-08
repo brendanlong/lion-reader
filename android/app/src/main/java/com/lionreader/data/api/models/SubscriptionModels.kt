@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class FeedDto(
     val id: String,
-    val type: String, // "rss", "atom", "json"
+    val type: String, // "web", "email", "saved"
     val url: String? = null,
     val title: String? = null,
     val description: String? = null,
