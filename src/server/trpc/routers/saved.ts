@@ -320,17 +320,17 @@ export const savedRouter = createTRPCRouter({
 
           if (docId) {
             // Check if user has Google OAuth linked
-            const googleOAuth = await getOAuthAccount(ctx.user.id, "google");
+            const googleOAuth = await getOAuthAccount(ctx.session.user.id, "google");
 
             if (googleOAuth) {
               // Check if user has granted Docs permission
               const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
-              const hasDocsScope = await hasGoogleScope(ctx.user.id, GOOGLE_DOCS_SCOPE);
+              const hasDocsScope = await hasGoogleScope(ctx.session.user.id, GOOGLE_DOCS_SCOPE);
 
               if (!hasDocsScope) {
                 // User has Google OAuth but hasn't granted Docs permission
                 logger.debug("User needs to grant Google Docs permission", {
-                  userId: ctx.user.id,
+                  userId: ctx.session.user.id,
                   url: normalizedUrl,
                 });
                 throw new TRPCError({
@@ -349,16 +349,16 @@ export const savedRouter = createTRPCRouter({
               // User has the required scope, try fetching with their token
               try {
                 logger.debug("Attempting private Google Docs fetch with user OAuth", {
-                  userId: ctx.user.id,
+                  userId: ctx.session.user.id,
                   docId,
                 });
-                const accessToken = await getValidGoogleToken(ctx.user.id);
+                const accessToken = await getValidGoogleToken(ctx.session.user.id);
                 googleDocsContent = await fetchPrivateGoogleDoc(docId, accessToken, tabId);
 
                 if (googleDocsContent) {
                   html = `<!DOCTYPE html><html><head><title>${escapeHtml(googleDocsContent.title)}</title></head><body>${googleDocsContent.html}</body></html>`;
                   logger.debug("Successfully fetched private Google Docs content", {
-                    userId: ctx.user.id,
+                    userId: ctx.session.user.id,
                     docId: googleDocsContent.docId,
                     title: googleDocsContent.title,
                   });
@@ -380,7 +380,7 @@ export const savedRouter = createTRPCRouter({
                 }
                 // Other errors - continue to fallback
                 logger.warn("Failed to fetch private Google Doc with OAuth", {
-                  userId: ctx.user.id,
+                  userId: ctx.session.user.id,
                   docId,
                   error: error instanceof Error ? error.message : String(error),
                 });
@@ -388,7 +388,7 @@ export const savedRouter = createTRPCRouter({
             } else {
               // User doesn't have Google OAuth linked
               logger.debug("User needs to sign in with Google for private docs", {
-                userId: ctx.user.id,
+                userId: ctx.session.user.id,
                 url: normalizedUrl,
               });
               throw new TRPCError({
@@ -405,7 +405,7 @@ export const savedRouter = createTRPCRouter({
           }
 
           // If we still don't have content, fall back to normal HTML fetch
-          if (!googleDocsContent) {
+          if (!html && !googleDocsContent) {
             logger.debug("Google Docs API fetch failed, falling back to normal fetch", {
               url: normalizedUrl,
             });

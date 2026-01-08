@@ -1298,7 +1298,9 @@ export const authRouter = createTRPCRouter({
       const existingLink = await ctx.db
         .select()
         .from(oauthAccounts)
-        .where(and(eq(oauthAccounts.userId, ctx.user.id), eq(oauthAccounts.provider, "google")))
+        .where(
+          and(eq(oauthAccounts.userId, ctx.session.user.id), eq(oauthAccounts.provider, "google"))
+        )
         .limit(1);
 
       if (existingLink.length === 0) {
