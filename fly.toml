@@ -29,9 +29,16 @@ primary_region = "lax"
   NEXT_PUBLIC_APP_URL = "https://lion-reader.fly.dev"
   NODE_ENV = "production"
   PORT = "3000"
+
   # Disable embedded worker since we run a separate niced process
   DISABLE_EMBEDDED_WORKER = "true"
   WORKER_CONCURRENCY = "1"
+
+  # Object storage
+  STORAGE_BUCKET = "lion-reader-prod"
+  STORAGE_ENDPOINT = "https://t3.storage.dev"
+  STORAGE_REGION = "auto"
+  STORAGE_PUBLIC_URL_BASE = "https://lion-reader-local-dev.t3.storage.dev/"
 
 [http_service]
   internal_port = 3000
