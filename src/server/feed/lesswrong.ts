@@ -42,6 +42,16 @@ const LESSWRONG_POST_URL_PATTERN =
   /^https?:\/\/(?:www\.)?lesswrong\.com\/posts\/([a-zA-Z0-9]{17})(?![a-zA-Z0-9])/;
 
 /**
+ * Pattern for matching LessWrong user profile URLs.
+ * Matches: https://www.lesswrong.com/users/{slug}
+ *          https://lesswrong.com/users/{slug}
+ *
+ * The slug is the user's URL-friendly username (alphanumeric, hyphens, underscores).
+ */
+const LESSWRONG_USER_URL_PATTERN =
+  /^https?:\/\/(?:www\.)?lesswrong\.com\/users\/([a-zA-Z0-9_-]+)(?:\/|$|\?|#)/;
+
+/**
  * Checks if a URL is a LessWrong post URL.
  */
 export function isLessWrongUrl(url: string): boolean {
@@ -76,6 +86,22 @@ export function extractCommentId(url: string): string | null {
  */
 export function isLessWrongCommentUrl(url: string): boolean {
   return isLessWrongUrl(url) && extractCommentId(url) !== null;
+}
+
+/**
+ * Checks if a URL is a LessWrong user profile URL.
+ */
+export function isLessWrongUserUrl(url: string): boolean {
+  return LESSWRONG_USER_URL_PATTERN.test(url);
+}
+
+/**
+ * Extracts the user slug from a LessWrong user profile URL.
+ * Returns null if the URL is not a valid LessWrong user profile URL.
+ */
+export function extractUserSlug(url: string): string | null {
+  const match = url.match(LESSWRONG_USER_URL_PATTERN);
+  return match ? match[1] : null;
 }
 
 // ============================================================================
@@ -535,4 +561,280 @@ export async function fetchLessWrongContentFromUrl(url: string): Promise<LessWro
   }
 
   return null;
+}
+
+// ============================================================================
+// User Lookup
+// ============================================================================
+
+/**
+ * Zod schema for the user GraphQL response.
+ */
+const userGraphqlResponseSchema = z.object({
+  data: z
+    .object({
+      user: z
+        .object({
+          result: z
+            .object({
+              _id: z.string(),
+              displayName: z.string().nullable(),
+              slug: z.string().nullable(),
+            })
+            .nullable(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+  errors: z
+    .array(
+      z.object({
+        message: z.string(),
+      })
+    )
+    .optional(),
+});
+
+/**
+ * Result from fetching a LessWrong user by slug.
+ */
+export interface LessWrongUser {
+  /** User ID (used for feed URL) */
+  userId: string;
+  /** User display name */
+  displayName: string | null;
+  /** User slug (URL-friendly username) */
+  slug: string | null;
+}
+
+/**
+ * GraphQL query to fetch user by slug.
+ */
+const USER_BY_SLUG_QUERY = `
+  query GetUserBySlug($slug: String!) {
+    user(input: { selector: { slug: $slug } }) {
+      result {
+        _id
+        displayName
+        slug
+      }
+    }
+  }
+`;
+
+/**
+ * Fetches a LessWrong user by their slug using the GraphQL API.
+ *
+ * @param slug - The user's URL slug (e.g., "brendan-long")
+ * @returns User info including ID, or null if not found
+ */
+export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongUser | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        query: USER_BY_SLUG_QUERY,
+        variables: { slug },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      logger.warn("LessWrong GraphQL user request failed", {
+        slug,
+        status: response.status,
+        statusText: response.statusText,
+      });
+      return null;
+    }
+
+    const json = await response.json();
+    const parsed = userGraphqlResponseSchema.safeParse(json);
+
+    if (!parsed.success) {
+      logger.warn("LessWrong GraphQL user response validation failed", {
+        slug,
+        error: parsed.error.message,
+      });
+      return null;
+    }
+
+    // Check for GraphQL errors
+    if (parsed.data.errors && parsed.data.errors.length > 0) {
+      logger.warn("LessWrong GraphQL user returned errors", {
+        slug,
+        errors: parsed.data.errors.map((e) => e.message),
+      });
+      return null;
+    }
+
+    const user = parsed.data.data?.user?.result;
+    if (!user) {
+      logger.debug("LessWrong user not found", { slug });
+      return null;
+    }
+
+    return {
+      userId: user._id,
+      displayName: user.displayName,
+      slug: user.slug,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      logger.warn("LessWrong GraphQL user request timed out", { slug });
+    } else {
+      logger.warn("LessWrong GraphQL user request error", {
+        slug,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Builds the RSS feed URL for a LessWrong user.
+ *
+ * @param userId - The user's internal ID
+ * @returns The feed URL
+ */
+export function buildLessWrongUserFeedUrl(userId: string): string {
+  return `https://www.lesswrong.com/feed.xml?userId=${encodeURIComponent(userId)}`;
+}
+
+/**
+ * Checks if a URL is a LessWrong user feed URL (feed.xml with userId param).
+ */
+export function isLessWrongUserFeedUrl(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    return (
+      /^(?:www\.)?lesswrong\.com$/i.test(urlObj.hostname) &&
+      urlObj.pathname === "/feed.xml" &&
+      urlObj.searchParams.has("userId")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extracts the userId from a LessWrong user feed URL.
+ * Returns null if the URL is not a valid LessWrong user feed URL.
+ */
+export function extractUserIdFromFeedUrl(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    if (/^(?:www\.)?lesswrong\.com$/i.test(urlObj.hostname) && urlObj.pathname === "/feed.xml") {
+      return urlObj.searchParams.get("userId");
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * GraphQL query to fetch user by ID.
+ */
+const USER_BY_ID_QUERY = `
+  query GetUserById($userId: String!) {
+    user(input: { selector: { _id: $userId } }) {
+      result {
+        _id
+        displayName
+        slug
+      }
+    }
+  }
+`;
+
+/**
+ * Fetches a LessWrong user by their ID using the GraphQL API.
+ *
+ * @param userId - The user's internal ID
+ * @returns User info, or null if not found
+ */
+export async function fetchLessWrongUserById(userId: string): Promise<LessWrongUser | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        query: USER_BY_ID_QUERY,
+        variables: { userId },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      logger.warn("LessWrong GraphQL user-by-id request failed", {
+        userId,
+        status: response.status,
+        statusText: response.statusText,
+      });
+      return null;
+    }
+
+    const json = await response.json();
+    const parsed = userGraphqlResponseSchema.safeParse(json);
+
+    if (!parsed.success) {
+      logger.warn("LessWrong GraphQL user-by-id response validation failed", {
+        userId,
+        error: parsed.error.message,
+      });
+      return null;
+    }
+
+    // Check for GraphQL errors
+    if (parsed.data.errors && parsed.data.errors.length > 0) {
+      logger.warn("LessWrong GraphQL user-by-id returned errors", {
+        userId,
+        errors: parsed.data.errors.map((e) => e.message),
+      });
+      return null;
+    }
+
+    const user = parsed.data.data?.user?.result;
+    if (!user) {
+      logger.debug("LessWrong user not found by id", { userId });
+      return null;
+    }
+
+    return {
+      userId: user._id,
+      displayName: user.displayName,
+      slug: user.slug,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      logger.warn("LessWrong GraphQL user-by-id request timed out", { userId });
+    } else {
+      logger.warn("LessWrong GraphQL user-by-id request error", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }

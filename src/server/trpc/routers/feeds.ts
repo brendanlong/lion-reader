@@ -21,6 +21,12 @@ import {
   type DiscoveredFeed,
 } from "@/server/feed";
 import { isLessWrongFeed, cleanLessWrongContent } from "@/server/feed/content-cleaner";
+import {
+  isLessWrongUserUrl,
+  extractUserSlug,
+  fetchLessWrongUserBySlug,
+  buildLessWrongUserFeedUrl,
+} from "@/server/feed/lesswrong";
 
 // ============================================================================
 // Constants
@@ -447,6 +453,27 @@ export const feedsRouter = createTRPCRouter({
           seenUrls.add(feed.url);
           allFeeds.push(feed);
         }
+      }
+
+      // Special case: LessWrong user profile pages
+      // Look up the user via GraphQL API to get their feed URL
+      if (isLessWrongUserUrl(inputUrl)) {
+        const slug = extractUserSlug(inputUrl);
+        if (slug) {
+          const user = await fetchLessWrongUserBySlug(slug);
+          if (user) {
+            const userFeedUrl = buildLessWrongUserFeedUrl(user.userId);
+            const feedTitle = user.displayName
+              ? `${user.displayName}'s Posts`
+              : `LessWrong User Feed`;
+            addFeed({
+              url: userFeedUrl,
+              type: "rss",
+              title: feedTitle,
+            });
+          }
+        }
+        // Continue with normal discovery to also find any other feeds
       }
 
       // Step 1: Try to fetch and parse the URL as a feed directly
