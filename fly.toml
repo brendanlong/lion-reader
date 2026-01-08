@@ -40,7 +40,7 @@ primary_region = "lax"
   STORAGE_BUCKET = "lion-reader-prod"
   STORAGE_ENDPOINT = "https://t3.storage.dev"
   STORAGE_REGION = "auto"
-  STORAGE_PUBLIC_URL_BASE = "https://lion-reader-local-dev.t3.storage.dev/"
+  STORAGE_PUBLIC_URL_BASE = "https://lion-reader-prod.t3.storage.dev/"
 
 [http_service]
   internal_port = 3000
