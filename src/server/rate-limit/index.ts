@@ -3,9 +3,13 @@
  *
  * Implements token bucket rate limiting using Redis for distributed storage.
  * Uses a Lua script for atomic token consumption.
+ *
+ * When Redis is unavailable, falls back to permissive mode (allow all requests).
+ * This is a trade-off: we prefer availability over strict rate limiting when
+ * the rate limiting infrastructure is down.
  */
 
-import { redis } from "@/server/redis";
+import { getRedisClient } from "@/server/redis";
 import {
   type RateLimitConfig,
   type RateLimitType,
@@ -115,28 +119,51 @@ export async function checkRateLimit(
   type: RateLimitType = "default",
   cost: number = 1
 ): Promise<ConsumeResult> {
+  const redis = getRedisClient();
   const config = RATE_LIMIT_CONFIGS[type];
+
+  // If Redis is not available, fall back to permissive mode
+  if (!redis) {
+    return {
+      allowed: true,
+      remaining: config.capacity,
+      resetMs: Date.now() + 60000, // Reset in 1 minute (arbitrary)
+      retryAfterSeconds: null,
+    };
+  }
+
   const key = getRateLimitKey(identifier, type);
   const nowMs = Date.now();
 
-  const result = (await redis.eval(
-    TOKEN_BUCKET_SCRIPT,
-    1,
-    key,
-    config.capacity,
-    config.refillRate,
-    nowMs,
-    cost
-  )) as [number, number, number, number];
+  try {
+    const result = (await redis.eval(
+      TOKEN_BUCKET_SCRIPT,
+      1,
+      key,
+      config.capacity,
+      config.refillRate,
+      nowMs,
+      cost
+    )) as [number, number, number, number];
 
-  const [allowed, remaining, resetMs, retryAfterSeconds] = result;
+    const [allowed, remaining, resetMs, retryAfterSeconds] = result;
 
-  return {
-    allowed: allowed === 1,
-    remaining,
-    resetMs,
-    retryAfterSeconds: allowed === 0 ? retryAfterSeconds : null,
-  };
+    return {
+      allowed: allowed === 1,
+      remaining,
+      resetMs,
+      retryAfterSeconds: allowed === 0 ? retryAfterSeconds : null,
+    };
+  } catch (err) {
+    // Redis error - fall back to permissive mode
+    console.error("Rate limit check failed:", err);
+    return {
+      allowed: true,
+      remaining: config.capacity,
+      resetMs: Date.now() + 60000,
+      retryAfterSeconds: null,
+    };
+  }
 }
 
 /**
@@ -144,34 +171,46 @@ export async function checkRateLimit(
  *
  * @param identifier - User ID or IP address
  * @param type - Type of rate limit to check
- * @returns Current bucket status or null if bucket doesn't exist
+ * @returns Current bucket status or null if bucket doesn't exist or Redis unavailable
  */
 export async function getRateLimitStatus(
   identifier: string,
   type: RateLimitType = "default"
 ): Promise<{ tokens: number; remaining: number } | null> {
+  const redis = getRedisClient();
+
+  // If Redis is not available, return null (no status available)
+  if (!redis) {
+    return null;
+  }
+
   const key = getRateLimitKey(identifier, type);
   const config = RATE_LIMIT_CONFIGS[type];
   const nowMs = Date.now();
 
-  const data = await redis.hmget(key, "tokens", "last_refill_ms");
+  try {
+    const data = await redis.hmget(key, "tokens", "last_refill_ms");
 
-  if (!data[0] || !data[1]) {
+    if (!data[0] || !data[1]) {
+      return null;
+    }
+
+    const tokens = parseFloat(data[0]);
+    const lastRefillMs = parseInt(data[1], 10);
+
+    // Calculate refilled tokens
+    const elapsedMs = nowMs - lastRefillMs;
+    const tokensToAdd = (elapsedMs / 1000) * config.refillRate;
+    const currentTokens = Math.min(tokens + tokensToAdd, config.capacity);
+
+    return {
+      tokens: currentTokens,
+      remaining: Math.floor(currentTokens),
+    };
+  } catch (err) {
+    console.error("Failed to get rate limit status:", err);
     return null;
   }
-
-  const tokens = parseFloat(data[0]);
-  const lastRefillMs = parseInt(data[1], 10);
-
-  // Calculate refilled tokens
-  const elapsedMs = nowMs - lastRefillMs;
-  const tokensToAdd = (elapsedMs / 1000) * config.refillRate;
-  const currentTokens = Math.min(tokens + tokensToAdd, config.capacity);
-
-  return {
-    tokens: currentTokens,
-    remaining: Math.floor(currentTokens),
-  };
 }
 
 /**
@@ -184,8 +223,19 @@ export async function resetRateLimit(
   identifier: string,
   type: RateLimitType = "default"
 ): Promise<void> {
+  const redis = getRedisClient();
+
+  // If Redis is not available, nothing to reset
+  if (!redis) {
+    return;
+  }
+
   const key = getRateLimitKey(identifier, type);
-  await redis.del(key);
+  try {
+    await redis.del(key);
+  } catch (err) {
+    console.error("Failed to reset rate limit:", err);
+  }
 }
 
 /**

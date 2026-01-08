@@ -13,7 +13,7 @@ import crypto from "crypto";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import { db } from "@/server/db";
 import { sessions, users, type User, type Session } from "@/server/db/schema";
-import { redis } from "@/server/redis";
+import { getRedisClient } from "@/server/redis";
 
 // ============================================================================
 // Constants
@@ -175,29 +175,32 @@ function deserializeFromCache(data: string): SessionData {
 export async function validateSession(token: string): Promise<SessionData | null> {
   const tokenHash = hashToken(token);
   const cacheKey = getCacheKey(tokenHash);
+  const redis = getRedisClient();
 
-  // Try Redis cache first
-  try {
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      const data = deserializeFromCache(cached);
+  // Try Redis cache first (if available)
+  if (redis) {
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        const data = deserializeFromCache(cached);
 
-      // Verify session is still valid (not expired, not revoked)
-      if (data.session.expiresAt > new Date() && data.session.revokedAt === null) {
-        // Update last_active_at asynchronously (fire and forget)
-        void updateLastActiveAt(data.session.id);
-        return data;
+        // Verify session is still valid (not expired, not revoked)
+        if (data.session.expiresAt > new Date() && data.session.revokedAt === null) {
+          // Update last_active_at asynchronously (fire and forget)
+          void updateLastActiveAt(data.session.id);
+          return data;
+        }
+
+        // Session expired or revoked - remove from cache
+        await redis.del(cacheKey);
       }
-
-      // Session expired or revoked - remove from cache
-      await redis.del(cacheKey);
+    } catch (err) {
+      // Redis error - fall through to database lookup
+      console.error("Redis cache error:", err);
     }
-  } catch (err) {
-    // Redis error - fall through to database lookup
-    console.error("Redis cache error:", err);
   }
 
-  // Cache miss or error - query database
+  // Cache miss, Redis unavailable, or error - query database
   const result = await db
     .select({
       session: sessions,
@@ -220,12 +223,14 @@ export async function validateSession(token: string): Promise<SessionData | null
 
   const sessionData = result[0];
 
-  // Cache the result in Redis
-  try {
-    await redis.setex(cacheKey, SESSION_CACHE_TTL_SECONDS, serializeForCache(sessionData));
-  } catch (err) {
-    // Redis error - continue without caching
-    console.error("Failed to cache session:", err);
+  // Cache the result in Redis (if available)
+  if (redis) {
+    try {
+      await redis.setex(cacheKey, SESSION_CACHE_TTL_SECONDS, serializeForCache(sessionData));
+    } catch (err) {
+      // Redis error - continue without caching
+      console.error("Failed to cache session:", err);
+    }
   }
 
   // Update last_active_at asynchronously (fire and forget)
@@ -274,11 +279,14 @@ export async function revokeSession(sessionId: string): Promise<boolean> {
   // Revoke in database
   await db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, sessionId));
 
-  // Invalidate Redis cache
-  try {
-    await redis.del(getCacheKey(tokenHash));
-  } catch (err) {
-    console.error("Failed to invalidate session cache:", err);
+  // Invalidate Redis cache (if available)
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      await redis.del(getCacheKey(tokenHash));
+    } catch (err) {
+      console.error("Failed to invalidate session cache:", err);
+    }
   }
 
   return true;
@@ -301,11 +309,14 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
     .set({ revokedAt: new Date() })
     .where(and(eq(sessions.tokenHash, tokenHash), isNull(sessions.revokedAt)));
 
-  // Invalidate Redis cache
-  try {
-    await redis.del(cacheKey);
-  } catch (err) {
-    console.error("Failed to invalidate session cache:", err);
+  // Invalidate Redis cache (if available)
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      await redis.del(cacheKey);
+    } catch (err) {
+      console.error("Failed to invalidate session cache:", err);
+    }
   }
 
   // Drizzle returns affected row count
@@ -332,15 +343,18 @@ export async function revokeAllUserSessions(userId: string): Promise<number> {
     .set({ revokedAt: new Date() })
     .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
 
-  // Invalidate all cache entries
-  try {
-    const pipeline = redis.pipeline();
-    for (const session of activeSessions) {
-      pipeline.del(getCacheKey(session.tokenHash));
+  // Invalidate all cache entries (if Redis available)
+  const redis = getRedisClient();
+  if (redis && activeSessions.length > 0) {
+    try {
+      const pipeline = redis.pipeline();
+      for (const session of activeSessions) {
+        pipeline.del(getCacheKey(session.tokenHash));
+      }
+      await pipeline.exec();
+    } catch (err) {
+      console.error("Failed to invalidate session caches:", err);
     }
-    await pipeline.exec();
-  } catch (err) {
-    console.error("Failed to invalidate session caches:", err);
   }
 
   return result.rowCount ?? 0;
@@ -353,6 +367,13 @@ export async function revokeAllUserSessions(userId: string): Promise<number> {
  * @param userId - The user ID whose session caches to invalidate
  */
 export async function invalidateUserSessionCaches(userId: string): Promise<void> {
+  const redis = getRedisClient();
+
+  // If Redis is not available, nothing to invalidate
+  if (!redis) {
+    return;
+  }
+
   // Get all active sessions for this user
   const activeSessions = await db
     .select({ tokenHash: sessions.tokenHash })
