@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as Sentry from "@sentry/nextjs";
 
+import { logger } from "@/lib/logger";
 import * as schema from "./schema";
 
 const connectionString = process.env.DATABASE_URL;
@@ -12,6 +13,19 @@ if (!connectionString) {
 
 const pool = new Pool({
   connectionString,
+});
+
+// Handle unexpected errors on idle clients in the pool.
+// Without this handler, connection failures cause uncaughtException and crash the process.
+// The pool automatically removes failed clients and creates new ones when needed.
+pool.on("error", (err) => {
+  logger.error("Unexpected error on idle database client", {
+    code: (err as { code?: string }).code,
+    message: err.message,
+  });
+  Sentry.captureException(err, {
+    tags: { source: "pg-pool" },
+  });
 });
 
 export const db = drizzle(pool, {
