@@ -11,6 +11,7 @@ import {
   syndicationToSeconds,
   getMinFetchIntervalSeconds,
   DEFAULT_MIN_FETCH_INTERVAL_SECONDS,
+  MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS,
   MAX_FETCH_INTERVAL_SECONDS,
   DEFAULT_FETCH_INTERVAL_SECONDS,
   MAX_CONSECUTIVE_FAILURES,
@@ -150,26 +151,37 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("cache_control");
     });
 
-    it("clamps max-age below minimum to minimum (60 minutes)", () => {
+    it("clamps max-age below minimum to minimum (10 minutes for cache headers)", () => {
       const result = calculateNextFetch({
         cacheControl: createCacheControl({ maxAge: 300 }), // 5 minutes
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T13:00:00Z")); // 60 min later
-      expect(result.intervalSeconds).toBe(60 * 60);
+      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T12:10:00Z")); // 10 min later
+      expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS);
       expect(result.reason).toBe("cache_control_clamped_min");
     });
 
-    it("clamps max-age at exactly minimum", () => {
+    it("clamps max-age at exactly minimum (10 minutes)", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 3600 }), // exactly 60 minutes
+        cacheControl: createCacheControl({ maxAge: 600 }), // exactly 10 minutes
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(3600);
+      expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS);
+      expect(result.reason).toBe("cache_control");
+    });
+
+    it("respects max-age between 10 and 60 minutes", () => {
+      const result = calculateNextFetch({
+        cacheControl: createCacheControl({ maxAge: 1800 }), // 30 minutes
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(1800);
       expect(result.reason).toBe("cache_control");
     });
 
@@ -208,14 +220,14 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("default");
     });
 
-    it("uses max-age=0 as minimum interval", () => {
+    it("uses max-age=0 as minimum interval (10 minutes)", () => {
       const result = calculateNextFetch({
         cacheControl: createCacheControl({ maxAge: 0 }),
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(getMinFetchIntervalSeconds());
+      expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS);
       expect(result.reason).toBe("cache_control_clamped_min");
     });
   });
@@ -615,6 +627,10 @@ describe("constants", () => {
     expect(DEFAULT_MIN_FETCH_INTERVAL_SECONDS).toBe(60 * 60);
   });
 
+  it("MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS is 10 minutes", () => {
+    expect(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS).toBe(10 * 60);
+  });
+
   it("MAX_FETCH_INTERVAL_SECONDS is 7 days", () => {
     expect(MAX_FETCH_INTERVAL_SECONDS).toBe(7 * 24 * 60 * 60);
   });
@@ -642,15 +658,37 @@ describe("real-world scenarios", () => {
     expect(result.reason).toBe("cache_control");
   });
 
-  it("high-frequency news feed with 5 minute cache gets clamped to 60 min", () => {
+  it("high-frequency news feed with 5 minute cache gets clamped to 10 min", () => {
     const result = calculateNextFetch({
       cacheControl: createCacheControl({ maxAge: 300, public: true }),
       now: fixedNow,
       randomSource: noJitter,
     });
 
-    expect(result.intervalSeconds).toBe(60 * 60); // Clamped to minimum
+    expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS); // Clamped to 10 min minimum
     expect(result.reason).toBe("cache_control_clamped_min");
+  });
+
+  it("cache headers allow 15-minute polling when server specifies it", () => {
+    const result = calculateNextFetch({
+      cacheControl: createCacheControl({ maxAge: 900, public: true }), // 15 minutes
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(900); // Allowed because server explicitly said so
+    expect(result.reason).toBe("cache_control");
+  });
+
+  it("TTL hint of 15 minutes still gets clamped to 60 min (less trusted)", () => {
+    const result = calculateNextFetch({
+      feedHints: { ttlMinutes: 15 }, // 15 minutes
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(getMinFetchIntervalSeconds()); // Clamped to 60 min
+    expect(result.reason).toBe("ttl_clamped_min");
   });
 
   it("infrequently updated feed with 1 day cache", () => {
