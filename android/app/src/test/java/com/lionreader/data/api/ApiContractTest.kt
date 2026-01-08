@@ -64,6 +64,8 @@ class ApiContractTest {
             // Narration endpoints
             PathWithMethod("POST", "narration/generate"),
             PathWithMethod("GET", "narration/ai-available"),
+            // Sync endpoints
+            PathWithMethod("GET", "sync"),
         )
 
     @BeforeAll

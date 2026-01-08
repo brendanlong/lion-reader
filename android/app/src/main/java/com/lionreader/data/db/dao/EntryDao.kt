@@ -178,4 +178,14 @@ interface EntryDao {
         starredOnly: Boolean,
         sortOrder: String,
     ): List<String>
+
+    /**
+     * Deletes entries by a list of IDs.
+     *
+     * Used during incremental sync to remove entries from unsubscribed feeds.
+     *
+     * @param ids The entry IDs to delete
+     */
+    @Query("DELETE FROM entries WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 }
