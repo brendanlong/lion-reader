@@ -5,12 +5,17 @@
  * JavaScript dependence. This module provides access to document content via the
  * Google Docs API, converting structured document data to clean HTML.
  *
- * Phase 1: Public documents only (no OAuth required)
+ * Phase 1: Public documents only (requires service account credentials)
  * Phase 2: Private documents with user OAuth tokens (future)
+ *
+ * Note: The Google Docs API requires OAuth2 tokens - API keys are not supported.
+ * For server-side access to public documents, we use a service account.
  */
 
 import { z } from "zod";
+import { GoogleAuth } from "google-auth-library";
 import { logger } from "@/lib/logger";
+import { googleConfig } from "@/server/config/env";
 
 // ============================================================================
 // Constants
@@ -30,6 +35,85 @@ const API_TIMEOUT_MS = 15000;
  * User-Agent for requests.
  */
 const USER_AGENT = "LionReader/1.0 (+https://lionreader.com)";
+
+/**
+ * OAuth2 scope required for reading Google Docs.
+ */
+const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
+
+// ============================================================================
+// Service Account Authentication
+// ============================================================================
+
+/**
+ * Cached GoogleAuth client instance.
+ * Initialized lazily on first use.
+ */
+let googleAuthClient: GoogleAuth | null = null;
+
+/**
+ * Parses the base64-encoded service account JSON from environment.
+ */
+function parseServiceAccountCredentials(): Record<string, unknown> | null {
+  if (!googleConfig.serviceAccountJson) {
+    return null;
+  }
+
+  try {
+    const decoded = Buffer.from(googleConfig.serviceAccountJson, "base64").toString("utf-8");
+    return JSON.parse(decoded) as Record<string, unknown>;
+  } catch (error) {
+    logger.error(
+      "Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON - ensure it is valid base64-encoded JSON",
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
+    return null;
+  }
+}
+
+/**
+ * Gets or creates the GoogleAuth client for service account authentication.
+ */
+function getGoogleAuthClient(): GoogleAuth | null {
+  if (googleAuthClient) {
+    return googleAuthClient;
+  }
+
+  const credentials = parseServiceAccountCredentials();
+  if (!credentials) {
+    return null;
+  }
+
+  googleAuthClient = new GoogleAuth({
+    credentials,
+    scopes: [GOOGLE_DOCS_SCOPE],
+  });
+
+  return googleAuthClient;
+}
+
+/**
+ * Gets an access token for the Google Docs API using service account credentials.
+ */
+async function getServiceAccountAccessToken(): Promise<string | null> {
+  const auth = getGoogleAuthClient();
+  if (!auth) {
+    return null;
+  }
+
+  try {
+    const client = await auth.getClient();
+    const tokenResponse = await client.getAccessToken();
+    return tokenResponse.token ?? null;
+  } catch (error) {
+    logger.error("Failed to get Google service account access token", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
 
 // ============================================================================
 // URL Parsing
@@ -291,43 +375,90 @@ function convertDocsApiToHtml(doc: z.infer<typeof googleDocsApiResponseSchema>):
 // ============================================================================
 
 /**
- * Fetches a public Google Doc using the unauthenticated API endpoint.
+ * Checks if the Google Docs API is available (service account configured).
+ */
+export function isGoogleDocsApiAvailable(): boolean {
+  return !!googleConfig.serviceAccountJson;
+}
+
+/**
+ * Fetches a public Google Doc using the Google Docs API with service account credentials.
  *
- * This works only for publicly shared documents. For private documents,
- * use fetchPrivateGoogleDoc with a user's OAuth access token (Phase 2).
+ * Requires GOOGLE_SERVICE_ACCOUNT_JSON to be configured. The service account
+ * authenticates the request and can access publicly shared documents.
+ *
+ * For private documents, use fetchPrivateGoogleDoc with a user's OAuth
+ * access token (Phase 2).
  *
  * @param docId - The Google Docs document ID
  * @returns Document content including HTML, or null if fetch fails or doc is private
  */
 export async function fetchPublicGoogleDoc(docId: string): Promise<GoogleDocsContent | null> {
+  // Check if service account is configured
+  if (!googleConfig.serviceAccountJson) {
+    logger.debug("Google service account not configured, skipping API fetch", { docId });
+    return null;
+  }
+
+  // Get access token from service account
+  const accessToken = await getServiceAccountAccessToken();
+  if (!accessToken) {
+    logger.warn("Failed to get service account access token, skipping API fetch", { docId });
+    return null;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
     const url = `${GOOGLE_DOCS_API_ENDPOINT}/${docId}`;
 
-    logger.debug("Fetching public Google Doc", { docId, url });
+    logger.debug("Fetching public Google Doc", { docId });
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
         Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
         "User-Agent": USER_AGENT,
       },
       signal: controller.signal,
     });
 
     if (!response.ok) {
-      if (response.status === 403 || response.status === 401) {
-        logger.debug("Google Doc is private or requires authentication", {
+      // Try to get error details from response body
+      let errorDetails: string | undefined;
+      try {
+        const errorJson = await response.json();
+        errorDetails = errorJson?.error?.message;
+      } catch {
+        // Ignore JSON parse errors
+      }
+
+      if (response.status === 401) {
+        // 401 means token issue
+        logger.warn(
+          "Google Docs API authentication failed - service account token may be invalid",
+          {
+            docId,
+            status: response.status,
+            errorDetails,
+          }
+        );
+      } else if (response.status === 403) {
+        logger.debug("Google Doc is private or not accessible to service account", {
           docId,
           status: response.status,
+          errorDetails,
         });
+      } else if (response.status === 404) {
+        logger.debug("Google Doc not found", { docId });
       } else {
         logger.warn("Google Docs API request failed", {
           docId,
           status: response.status,
           statusText: response.statusText,
+          errorDetails,
         });
       }
       return null;
@@ -353,9 +484,9 @@ export async function fetchPublicGoogleDoc(docId: string): Promise<GoogleDocsCon
       docId: doc.documentId,
       title: doc.title,
       html,
-      author: null, // Not available in public API
-      createdAt: null, // Not available in public API
-      modifiedAt: null, // Not available in public API
+      author: null, // Not available via service account
+      createdAt: null, // Not available via service account
+      modifiedAt: null, // Not available via service account
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {

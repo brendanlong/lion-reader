@@ -42,3 +42,26 @@ export const ingestConfig = {
   /** Shared secret for email webhook authentication. Must be set for webhooks to work. */
   webhookSecret: process.env.EMAIL_WEBHOOK_SECRET,
 };
+
+/**
+ * Google API configuration.
+ * Service account credentials are used for accessing Google APIs (like Docs API).
+ * This is separate from OAuth credentials which are used for user authentication.
+ */
+export const googleConfig = {
+  /**
+   * Google Service Account credentials for accessing public Google Docs.
+   * The Google Docs API requires OAuth2 tokens (not API keys), so we use a
+   * service account to get tokens for server-side access to public documents.
+   *
+   * Setup:
+   * 1. Create a service account at: https://console.cloud.google.com/iam-admin/serviceaccounts
+   * 2. Create a JSON key for the service account
+   * 3. Enable "Google Docs API" for the project
+   * 4. Base64 encode the JSON: cat service-account.json | base64 -w 0
+   * 5. Set as GOOGLE_SERVICE_ACCOUNT_JSON environment variable
+   *
+   * If not set, Google Docs URLs will fall back to HTML scraping.
+   */
+  serviceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
+};

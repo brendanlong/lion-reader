@@ -52,6 +52,7 @@
     "drizzle-kit": "^0.31.8",
     "drizzle-orm": "^0.45.1",
     "fast-xml-parser": "^5.3.3",
+    "google-auth-library": "^10.5.0",
     "groq-sdk": "^0.37.0",
     "html-entities": "^2.6.0",
     "htmlparser2": "^10.0.0",
