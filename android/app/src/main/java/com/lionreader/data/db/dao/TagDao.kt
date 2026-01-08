@@ -106,4 +106,14 @@ interface TagDao {
      */
     @Query("DELETE FROM subscription_tags WHERE subscriptionId = :subscriptionId")
     suspend fun deleteTagsForSubscription(subscriptionId: String)
+
+    /**
+     * Deletes tags by a list of IDs.
+     *
+     * Used during incremental sync to remove deleted tags.
+     *
+     * @param ids The tag IDs to delete
+     */
+    @Query("DELETE FROM tags WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 }

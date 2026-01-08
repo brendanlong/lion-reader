@@ -187,4 +187,14 @@ interface SubscriptionDao {
         """,
     )
     fun getUncategorizedWithFeeds(): Flow<List<SubscriptionWithFeed>>
+
+    /**
+     * Deletes subscriptions by a list of IDs.
+     *
+     * Used during incremental sync to remove unsubscribed feeds.
+     *
+     * @param ids The subscription IDs to delete
+     */
+    @Query("DELETE FROM subscriptions WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 }

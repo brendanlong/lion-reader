@@ -120,4 +120,38 @@ interface EntryStateDao {
      */
     @Query("SELECT COUNT(*) FROM entry_states WHERE pendingSync = 1")
     suspend fun getPendingSyncCount(): Int
+
+    /**
+     * Updates the read and starred status for an entry without setting pendingSync.
+     *
+     * Used when applying server-side state changes during sync.
+     *
+     * @param entryId The entry ID
+     * @param read The new read status
+     * @param starred The new starred status
+     * @param modifiedAt Timestamp of this modification
+     */
+    @Query(
+        """
+        UPDATE entry_states
+        SET read = :read, starred = :starred, lastModifiedAt = :modifiedAt
+        WHERE entryId = :entryId
+        """,
+    )
+    suspend fun updateReadStarred(
+        entryId: String,
+        read: Boolean,
+        starred: Boolean,
+        modifiedAt: Long,
+    )
+
+    /**
+     * Deletes states for a list of entry IDs.
+     *
+     * Used when removing entries during sync.
+     *
+     * @param entryIds The entry IDs to delete states for
+     */
+    @Query("DELETE FROM entry_states WHERE entryId IN (:entryIds)")
+    suspend fun deleteByEntryIds(entryIds: List<String>)
 }

@@ -7,6 +7,9 @@ import com.lionreader.data.api.models.EntryDto
 import com.lionreader.data.api.models.SortOrder
 import com.lionreader.data.api.models.StarredCountResponse
 import com.lionreader.data.api.models.SubscriptionWithFeedDto
+import com.lionreader.data.api.models.SyncChangesResponse
+import com.lionreader.data.api.models.SyncEntryDto
+import com.lionreader.data.api.models.SyncFeedType
 import com.lionreader.data.api.models.TagDto
 import com.lionreader.data.db.dao.EntryDao
 import com.lionreader.data.db.dao.EntryStateDao
@@ -22,6 +25,7 @@ import com.lionreader.data.db.entities.SubscriptionTagEntity
 import com.lionreader.data.db.entities.TagEntity
 import com.lionreader.data.db.relations.EntryWithState
 import com.lionreader.data.sync.ConnectivityMonitor
+import com.lionreader.data.sync.SyncPreferences
 import com.lionreader.ui.navigation.Screen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -91,6 +95,7 @@ class EntryRepository
         private val tagDao: TagDao,
         private val connectivityMonitor: ConnectivityMonitor,
         private val syncRepository: SyncRepository,
+        private val syncPreferences: SyncPreferences,
     ) {
         companion object {
             private const val TAG = "EntryRepository"
@@ -525,23 +530,25 @@ class EntryRepository
         private fun isOnline(): Boolean = connectivityMonitor.checkOnline()
 
         // ============================================================================
-        // FULL SYNC FROM SERVER (5.4)
+        // SYNC FROM SERVER
         // ============================================================================
 
         /**
-         * Performs a full sync from the server.
+         * Performs a sync from the server.
+         *
+         * Uses a hybrid approach:
+         * - Initial sync: Uses the full fetch approach to get all data
+         * - Subsequent syncs: Uses the incremental sync.changes API for efficiency
          *
          * This method:
          * 1. Pushes pending local changes to the server
-         * 2. Fetches and stores subscriptions (includes unread counts)
-         * 3. Fetches and stores tags
-         * 4. Fetches and stores entries with pagination
-         * 5. Updates local entry states from server (server wins for non-pending items)
+         * 2. For initial sync: Fetches subscriptions, tags, and all entries with pagination
+         * 3. For incremental sync: Fetches only changes since last sync
          *
          * @return SyncResult indicating success or the type of failure
          */
         suspend fun syncFromServer(): SyncResult {
-            Log.d(TAG, "Starting full sync from server")
+            Log.d(TAG, "Starting sync from server")
 
             // Step 1: Push pending local changes first
             Log.d(TAG, "Syncing pending actions...")
@@ -552,7 +559,25 @@ class EntryRepository
                     "${pendingResult.failedCount} failed",
             )
 
-            // Step 2: Fetch subscriptions (includes unread counts)
+            // Check if this is initial sync or incremental
+            val lastSyncedAt = syncPreferences.getLastSyncedAt()
+
+            return if (lastSyncedAt == null) {
+                Log.d(TAG, "No previous sync - performing full initial sync")
+                performFullSync()
+            } else {
+                Log.d(TAG, "Performing incremental sync since: $lastSyncedAt")
+                performIncrementalSync(lastSyncedAt)
+            }
+        }
+
+        /**
+         * Performs a full sync for initial setup.
+         *
+         * Fetches all subscriptions, tags, and entries using the paginated list endpoints.
+         */
+        private suspend fun performFullSync(): SyncResult {
+            // Fetch subscriptions
             Log.d(TAG, "Fetching subscriptions...")
             val subscriptionsResult = syncSubscriptions()
             if (subscriptionsResult !is SyncResult.Success) {
@@ -561,7 +586,7 @@ class EntryRepository
             }
             Log.d(TAG, "Subscriptions synced successfully")
 
-            // Step 3: Fetch tags
+            // Fetch tags
             Log.d(TAG, "Fetching tags...")
             val tagsResult = syncTags()
             if (tagsResult !is SyncResult.Success) {
@@ -570,7 +595,7 @@ class EntryRepository
             }
             Log.d(TAG, "Tags synced successfully")
 
-            // Step 4: Fetch entries with pagination
+            // Fetch entries with pagination
             Log.d(TAG, "Fetching entries...")
             val entriesResult = syncAllEntriesFromServer()
             if (entriesResult !is SyncResult.Success) {
@@ -579,8 +604,267 @@ class EntryRepository
             }
             Log.d(TAG, "Entries synced successfully")
 
+            // Set the sync timestamp to now for future incremental syncs
+            val now =
+                java.time.Instant
+                    .now()
+                    .toString()
+            syncPreferences.setLastSyncedAt(now)
+
             Log.d(TAG, "Full sync completed successfully")
             return SyncResult.Success
+        }
+
+        /**
+         * Performs an incremental sync using the sync.changes API.
+         *
+         * Uses the sync.changes endpoint which returns:
+         * - entries.created: New entries since last sync
+         * - entries.updated: Entries with read/starred changes
+         * - entries.removed: Entry IDs to remove (from unsubscribed feeds)
+         * - subscriptions.created: New subscriptions
+         * - subscriptions.removed: Unsubscribed subscription IDs
+         * - tags.created: New tags
+         * - tags.removed: Deleted tag IDs
+         */
+        private suspend fun performIncrementalSync(since: String): SyncResult {
+            var currentSince: String? = since
+            var totalEntriesCreated = 0
+            var totalEntriesUpdated = 0
+            var totalEntriesRemoved = 0
+
+            // Loop to handle hasMore (catching up after being offline)
+            do {
+                val result = api.syncChanges(since = currentSince)
+
+                when (result) {
+                    is ApiResult.Success -> {
+                        val changes = result.data
+
+                        // Apply subscription changes
+                        applySubscriptionChanges(changes)
+
+                        // Apply tag changes
+                        applyTagChanges(changes)
+
+                        // Apply entry changes
+                        applyEntryChanges(changes)
+
+                        totalEntriesCreated += changes.entries.created.size
+                        totalEntriesUpdated += changes.entries.updated.size
+                        totalEntriesRemoved += changes.entries.removed.size
+
+                        // Save the sync timestamp for next incremental sync
+                        syncPreferences.setLastSyncedAt(changes.syncedAt)
+                        currentSince = changes.syncedAt
+
+                        Log.d(
+                            TAG,
+                            "Sync batch complete: ${changes.entries.created.size} created, " +
+                                "${changes.entries.updated.size} updated, " +
+                                "${changes.entries.removed.size} removed, " +
+                                "hasMore=${changes.hasMore}",
+                        )
+
+                        if (!changes.hasMore) {
+                            break
+                        }
+                    }
+                    is ApiResult.Error -> {
+                        Log.e(TAG, "Sync failed: ${result.code} - ${result.message}")
+                        return SyncResult.Error(result.code, result.message)
+                    }
+                    is ApiResult.NetworkError -> {
+                        Log.e(TAG, "Network error during sync")
+                        return SyncResult.NetworkError
+                    }
+                    is ApiResult.Unauthorized -> {
+                        Log.e(TAG, "Unauthorized during sync")
+                        return SyncResult.Error("UNAUTHORIZED", "Session expired")
+                    }
+                    is ApiResult.RateLimited -> {
+                        Log.e(TAG, "Rate limited during sync")
+                        return SyncResult.Error("RATE_LIMITED", "Too many requests")
+                    }
+                }
+            } while (true)
+
+            Log.d(
+                TAG,
+                "Incremental sync completed: $totalEntriesCreated created, " +
+                    "$totalEntriesUpdated updated, $totalEntriesRemoved removed",
+            )
+            return SyncResult.Success
+        }
+
+        /**
+         * Applies subscription changes from sync response.
+         */
+        private suspend fun applySubscriptionChanges(changes: SyncChangesResponse) {
+            val now = System.currentTimeMillis()
+
+            // Handle created subscriptions
+            if (changes.subscriptions.created.isNotEmpty()) {
+                // Insert feeds first (due to foreign key constraint)
+                val feeds =
+                    changes.subscriptions.created.map { sub ->
+                        FeedEntity(
+                            id = sub.feedId,
+                            type = mapSyncFeedType(sub.feedType),
+                            url = sub.feedUrl,
+                            title = sub.feedTitle,
+                            description = null,
+                            siteUrl = null,
+                            lastSyncedAt = now,
+                        )
+                    }
+                subscriptionDao.insertFeeds(feeds)
+
+                // Insert subscriptions
+                val subscriptions =
+                    changes.subscriptions.created.map { sub ->
+                        SubscriptionEntity(
+                            id = sub.id,
+                            feedId = sub.feedId,
+                            customTitle = sub.customTitle,
+                            subscribedAt = parseIsoTimestamp(sub.subscribedAt),
+                            unreadCount = 0, // Will be calculated from entries
+                            lastSyncedAt = now,
+                        )
+                    }
+                subscriptionDao.insertAll(subscriptions)
+
+                Log.d(TAG, "Added ${changes.subscriptions.created.size} subscriptions")
+            }
+
+            // Handle removed subscriptions
+            if (changes.subscriptions.removed.isNotEmpty()) {
+                subscriptionDao.deleteByIds(changes.subscriptions.removed)
+                Log.d(TAG, "Removed ${changes.subscriptions.removed.size} subscriptions")
+            }
+        }
+
+        /**
+         * Applies tag changes from sync response.
+         */
+        private suspend fun applyTagChanges(changes: SyncChangesResponse) {
+            // Handle created tags
+            if (changes.tags.created.isNotEmpty()) {
+                val tags =
+                    changes.tags.created.map { tag ->
+                        TagEntity(
+                            id = tag.id,
+                            name = tag.name,
+                            color = tag.color,
+                            feedCount = 0,
+                            unreadCount = 0,
+                        )
+                    }
+                tagDao.insertAll(tags)
+                Log.d(TAG, "Added ${changes.tags.created.size} tags")
+            }
+
+            // Handle removed tags
+            if (changes.tags.removed.isNotEmpty()) {
+                tagDao.deleteByIds(changes.tags.removed)
+                Log.d(TAG, "Removed ${changes.tags.removed.size} tags")
+            }
+        }
+
+        /**
+         * Applies entry changes from sync response.
+         */
+        private suspend fun applyEntryChanges(changes: SyncChangesResponse) {
+            val now = System.currentTimeMillis()
+
+            // Get IDs of entries with pending sync (local changes not yet pushed)
+            val pendingEntryIds = entryStateDao.getPendingSyncEntryIds().toSet()
+
+            // Handle created entries
+            if (changes.entries.created.isNotEmpty()) {
+                val entries = changes.entries.created.map { mapSyncEntryToEntity(it) }
+                entryDao.insertEntries(entries)
+
+                // Create states for new entries (only if not pending)
+                val states =
+                    changes.entries.created
+                        .filter { it.id !in pendingEntryIds }
+                        .map { entry ->
+                            EntryStateEntity(
+                                entryId = entry.id,
+                                read = entry.read,
+                                starred = entry.starred,
+                                readAt = null,
+                                starredAt = null,
+                                pendingSync = false,
+                                lastModifiedAt = now,
+                            )
+                        }
+                entryStateDao.upsertStates(states)
+                Log.d(TAG, "Added ${changes.entries.created.size} entries")
+            }
+
+            // Handle updated entry states
+            if (changes.entries.updated.isNotEmpty()) {
+                changes.entries.updated
+                    .filter { it.id !in pendingEntryIds }
+                    .forEach { update ->
+                        entryStateDao.updateReadStarred(
+                            entryId = update.id,
+                            read = update.read,
+                            starred = update.starred,
+                            modifiedAt = now,
+                        )
+                    }
+                Log.d(TAG, "Updated ${changes.entries.updated.size} entry states")
+            }
+
+            // Handle removed entries
+            if (changes.entries.removed.isNotEmpty()) {
+                entryDao.deleteByIds(changes.entries.removed)
+                entryStateDao.deleteByEntryIds(changes.entries.removed)
+                Log.d(TAG, "Removed ${changes.entries.removed.size} entries")
+            }
+        }
+
+        /**
+         * Maps a SyncEntryDto to an EntryEntity.
+         */
+        private fun mapSyncEntryToEntity(dto: SyncEntryDto): EntryEntity =
+            EntryEntity(
+                id = dto.id,
+                feedId = dto.feedId,
+                url = dto.url,
+                title = dto.title,
+                author = dto.author,
+                summary = dto.summary,
+                contentOriginal = null, // Sync doesn't include content
+                contentCleaned = null,
+                publishedAt = dto.publishedAt?.let { parseIsoTimestamp(it) },
+                fetchedAt = parseIsoTimestamp(dto.fetchedAt),
+                feedTitle = dto.feedTitle,
+                lastSyncedAt = System.currentTimeMillis(),
+            )
+
+        /**
+         * Maps SyncFeedType to the feed type string used in FeedEntity.
+         */
+        private fun mapSyncFeedType(type: SyncFeedType): String =
+            when (type) {
+                SyncFeedType.WEB -> "web"
+                SyncFeedType.EMAIL -> "email"
+                SyncFeedType.SAVED -> "saved"
+            }
+
+        /**
+         * Forces a full sync by clearing the last sync timestamp.
+         *
+         * Use this when data may be stale (e.g., after a long offline period)
+         * or when the user explicitly requests a refresh.
+         */
+        suspend fun forceFullSync(): SyncResult {
+            syncPreferences.clearLastSyncedAt()
+            return syncFromServer()
         }
 
         /**
