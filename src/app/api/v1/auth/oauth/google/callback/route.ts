@@ -4,12 +4,19 @@
  * Google OAuth uses standard redirect with query parameters.
  * This route handles the browser redirect from Google after authentication.
  *
- * This route:
- * 1. Receives the GET redirect from Google with code and state params
- * 2. Validates the OAuth callback using our auth functions
- * 3. Creates or links user account
- * 4. Creates a session and sets the session cookie
- * 5. Redirects to the app
+ * This route handles three modes (stored in Redis with PKCE data):
+ * - "login": Normal OAuth login/signup flow
+ * - "link": Linking Google to existing account (from settings)
+ * - "save": Incremental authorization for Google Docs (from save page)
+ *
+ * For login mode:
+ * 1. Creates or links user account
+ * 2. Creates a session and sets the session cookie
+ * 3. Redirects to /all
+ *
+ * For link/save modes:
+ * 1. Updates the existing OAuth account with new tokens/scopes
+ * 2. Redirects to appropriate page (no new session needed - user already logged in)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -64,9 +71,52 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
     }
 
-    const { userInfo, tokens } = googleResult;
+    const { userInfo, tokens, scopes, mode } = googleResult;
     const now = new Date();
 
+    // Handle save/link modes - user is already logged in, just update OAuth account
+    if (mode === "save" || mode === "link") {
+      // Find existing OAuth account for this Google user
+      const existingOAuthAccount = await db
+        .select({ id: oauthAccounts.id, userId: oauthAccounts.userId })
+        .from(oauthAccounts)
+        .where(
+          and(
+            eq(oauthAccounts.provider, "google"),
+            eq(oauthAccounts.providerAccountId, userInfo.sub)
+          )
+        )
+        .limit(1);
+
+      if (existingOAuthAccount.length === 0) {
+        // This shouldn't happen for save mode (user must have Google linked)
+        // For link mode, this is also unexpected since we check before starting the flow
+        console.error("OAuth account not found for save/link mode");
+        const errorRedirect =
+          mode === "save" ? "/save?error=callback_failed" : "/settings?link_error=callback_failed";
+        return NextResponse.redirect(`${appUrl}${errorRedirect}`);
+      }
+
+      // Update OAuth account with new tokens and scopes
+      await db
+        .update(oauthAccounts)
+        .set({
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken ?? null,
+          expiresAt: tokens.expiresAt ?? null,
+          scopes,
+        })
+        .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
+
+      // Redirect based on mode (no session cookie needed - user already logged in)
+      if (mode === "save") {
+        return NextResponse.redirect(`${appUrl}/save`);
+      } else {
+        return NextResponse.redirect(`${appUrl}/settings?linked=google`);
+      }
+    }
+
+    // Login mode - normal OAuth login/signup flow
     // Check if OAuth account already exists
     const existingOAuthAccount = await db
       .select({
@@ -93,13 +143,14 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
       }
 
-      // Update OAuth tokens
+      // Update OAuth tokens and scopes
       await db
         .update(oauthAccounts)
         .set({
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken ?? null,
           expiresAt: tokens.expiresAt ?? null,
+          scopes,
         })
         .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
     } else {
@@ -121,6 +172,7 @@ export async function GET(request: NextRequest) {
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken ?? null,
           expiresAt: tokens.expiresAt ?? null,
+          scopes,
           createdAt: now,
         });
 
@@ -157,6 +209,7 @@ export async function GET(request: NextRequest) {
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken ?? null,
           expiresAt: tokens.expiresAt ?? null,
+          scopes,
           createdAt: now,
         });
       }
