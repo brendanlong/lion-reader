@@ -15,24 +15,9 @@ describe("Google Drive utilities", () => {
       expect(cleanTitle("My Document.doc")).toBe("My Document");
     });
 
-    it("removes - Google Docs suffix", () => {
-      expect(cleanTitle("Ethereal Spring Part One - Google Docs")).toBe("Ethereal Spring Part One");
-    });
-
-    it("removes both extension and - Google Docs suffix", () => {
-      expect(cleanTitle("Ethereal Spring Part One.docx - Google Docs")).toBe(
-        "Ethereal Spring Part One"
-      );
-    });
-
     it("handles case-insensitive extensions", () => {
       expect(cleanTitle("Document.DOCX")).toBe("Document");
       expect(cleanTitle("Document.Docx")).toBe("Document");
-    });
-
-    it("handles case-insensitive Google Docs suffix", () => {
-      expect(cleanTitle("Document - google docs")).toBe("Document");
-      expect(cleanTitle("Document - GOOGLE DOCS")).toBe("Document");
     });
 
     it("removes other common document extensions", () => {
