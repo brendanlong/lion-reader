@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "postinstall": "node scripts/copy-onnx-wasm.mjs",
-    "dev": "next dev --turbopack",
+    "dev": "concurrently --kill-others --names worker,next \"pnpm dev:worker\" \"pnpm dev:next\"",
+    "dev:next": "next dev --turbopack",
+    "dev:worker": "tsx --watch scripts/worker.ts",
     "build": "next build",
     "build:worker": "node scripts/build-worker.mjs",
     "build:migrate": "node scripts/build-migrate.mjs",
