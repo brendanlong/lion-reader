@@ -19,7 +19,7 @@
 
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 
@@ -142,8 +142,11 @@ interface PageMetadata {
 }
 
 function extractMetadata(html: string, url: string): PageMetadata {
-  const dom = new JSDOM(html, { url });
-  const document = dom.window.document;
+  // Wrap fragments in a full HTML document structure for proper parsing
+  const trimmedHtml = html.trim().toLowerCase();
+  const isFullDocument = trimmedHtml.startsWith("<!doctype") || trimmedHtml.startsWith("<html");
+  const htmlToParse = isFullDocument ? html : `<!DOCTYPE html><html><body>${html}</body></html>`;
+  const { document } = parseHTML(htmlToParse);
 
   // Extract title - prefer og:title, fall back to <title>
   const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content");

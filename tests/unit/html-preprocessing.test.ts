@@ -99,7 +99,7 @@ describe("preprocessHtmlForNarration", () => {
       // p, figure, img (inside figure), table, p = 5 elements
       expect(result.paragraphElements).toEqual(["para-0", "para-1", "para-2", "para-3", "para-4"]);
       expect(result.markedHtml).toContain("<figure data-para-id");
-      expect(result.markedHtml).toContain("<img src");
+      expect(result.markedHtml).toContain("<img data-para-id");
       expect(result.markedHtml).toContain("<table data-para-id");
     });
 

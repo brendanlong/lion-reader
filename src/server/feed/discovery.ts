@@ -3,7 +3,7 @@
  * Parses HTML to find <link rel="alternate"> tags pointing to RSS/Atom/JSON feeds.
  */
 
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 
 /**
  * A discovered feed from an HTML page.
@@ -51,6 +51,27 @@ export const COMMON_FEED_PATHS = [
   "/blog/atom.xml",
   "/.rss",
 ];
+
+/**
+ * Gets an attribute value case-insensitively.
+ * This is needed because linkedom preserves attribute case from the source HTML,
+ * so <LINK REL="..."> would have attribute "REL" not "rel".
+ *
+ * @param element - The element to get the attribute from
+ * @param name - The attribute name (lowercase)
+ * @returns The attribute value, or null if not found
+ */
+function getAttributeCI(element: Element, name: string): string | null {
+  // Try lowercase first (most common case)
+  const value = element.getAttribute(name);
+  if (value !== null) return value;
+
+  // Try uppercase
+  const upperValue = element.getAttribute(name.toUpperCase());
+  if (upperValue !== null) return upperValue;
+
+  return null;
+}
 
 /**
  * Checks if a rel attribute value indicates an alternate link.
@@ -125,29 +146,36 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
   const feeds: DiscoveredFeed[] = [];
   const seenUrls = new Set<string>();
 
-  // Parse HTML using JSDOM
-  const dom = new JSDOM(html);
-  const doc = dom.window.document;
+  // Parse HTML using linkedom (faster than JSDOM)
+  // Wrap fragments in a full HTML document structure for proper parsing
+  // For feed discovery, put fragments in <head> since <link> tags belong there
+  const trimmedHtml = html.trim().toLowerCase();
+  const isFullDocument = trimmedHtml.startsWith("<!doctype") || trimmedHtml.startsWith("<html");
+  const htmlToParse = isFullDocument
+    ? html
+    : `<!DOCTYPE html><html><head>${html}</head><body></body></html>`;
+  const { document: doc } = parseHTML(htmlToParse);
 
   // Find all link tags with rel="alternate"
   const linkElements = doc.querySelectorAll("link");
 
   for (const link of linkElements) {
     // Check if this is a rel="alternate" link
-    const rel = link.getAttribute("rel") ?? undefined;
+    // Use case-insensitive attribute access for uppercase HTML compatibility
+    const rel = getAttributeCI(link, "rel") ?? undefined;
     if (!isAlternateRel(rel)) {
       continue;
     }
 
     // Check if the type is a feed type
-    const type = link.getAttribute("type");
+    const type = getAttributeCI(link, "type");
     const feedType = getFeedTypeFromMime(type ?? undefined);
     if (feedType === null) {
       continue;
     }
 
     // Extract and resolve the href
-    const href = link.getAttribute("href");
+    const href = getAttributeCI(link, "href");
     const resolvedUrl = resolveUrl(href ?? undefined, baseUrl);
     if (!resolvedUrl) {
       continue;
@@ -160,7 +188,7 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
     seenUrls.add(resolvedUrl);
 
     // Extract title if present
-    const title = link.getAttribute("title");
+    const title = getAttributeCI(link, "title");
 
     feeds.push({
       url: resolvedUrl,

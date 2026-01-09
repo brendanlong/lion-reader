@@ -8,7 +8,7 @@
  * @module narration/html-to-narration-input
  */
 
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 
 /**
  * Block-level elements that get paragraph markers.
@@ -201,46 +201,34 @@ export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
     };
   }
 
-  // Parse HTML using JSDOM
-  const dom = new JSDOM(html);
-  const doc = dom.window.document;
-  const { Node } = dom.window;
+  // Parse HTML using linkedom (faster than JSDOM)
+  // Wrap in a full HTML document structure for proper parsing
+  const { document: doc } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
 
-  // Build selector for all block elements
-  const blockElementsExceptImg = Array.from(BLOCK_ELEMENTS).filter((el) => el !== "img");
-  const selector = blockElementsExceptImg.join(", ");
+  // Build selector for all block elements (including img)
+  const selector = Array.from(BLOCK_ELEMENTS).join(", ");
 
   // Find all block elements in document order
+  // querySelectorAll returns elements in document order, so no sorting needed
   const allElements = doc.querySelectorAll(selector);
 
-  // Find standalone images (not nested inside other block elements)
+  // Filter to skip non-standalone images (images inside other block elements like figure)
   // An image is standalone if none of its ancestors are block elements
-  const standaloneImages: Element[] = [];
-  doc.querySelectorAll("img").forEach((img) => {
-    let parent = img.parentElement;
-    let isStandalone = true;
+  const combinedElements = Array.from(allElements).filter((el) => {
+    if (el.tagName.toLowerCase() !== "img") {
+      return true; // Keep all non-img elements
+    }
 
+    // For img elements, check if they are standalone
+    let parent = el.parentElement;
     while (parent && parent !== doc.body) {
       const parentTag = parent.tagName.toLowerCase();
       if (BLOCK_ELEMENTS.has(parentTag)) {
-        isStandalone = false;
-        break;
+        return false; // Skip - img is inside another block element
       }
       parent = parent.parentElement;
     }
-
-    if (isStandalone) {
-      standaloneImages.push(img);
-    }
-  });
-
-  // Combine block elements and standalone images, then sort by document order
-  const allElementsArray = Array.from(allElements);
-  const combinedElements = [...allElementsArray, ...standaloneImages].sort((a, b) => {
-    const position = a.compareDocumentPosition(b);
-    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
-    return 0;
+    return true; // Standalone img
   });
 
   const paragraphs: NarrationInputParagraph[] = [];
@@ -291,7 +279,7 @@ const BLOCK_TAGS_FOR_PLAIN_TEXT = new Set([
 
 /**
  * Converts HTML to plain text for fallback mode.
- * Uses JSDOM for proper HTML parsing.
+ * Uses linkedom for proper HTML parsing.
  *
  * @param html - HTML content to convert
  * @returns Plain text with paragraph breaks
@@ -305,8 +293,8 @@ export function htmlToPlainText(html: string): string {
     return "";
   }
 
-  const dom = new JSDOM(html);
-  const doc = dom.window.document;
+  // Wrap in a full HTML document structure for proper parsing
+  const { document: doc } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
 
   // Process the document to build plain text
   const parts: string[] = [];

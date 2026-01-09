@@ -5,7 +5,7 @@
  * Provides endpoints for fetching and parsing feeds without saving them.
  */
 
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 import { z } from "zod";
 
 import { logger } from "@/lib/logger";
@@ -166,7 +166,7 @@ function isHtmlContent(contentType: string, content: string): boolean {
 
 /**
  * Truncates text to a maximum length, adding ellipsis if needed.
- * Uses JSDOM to strip HTML tags.
+ * Uses linkedom to strip HTML tags.
  *
  * @param text - The text to truncate (may contain HTML)
  * @param maxLength - Maximum length
@@ -177,9 +177,10 @@ function truncateText(text: string | undefined, maxLength: number): string | nul
     return null;
   }
 
-  // Strip HTML tags using JSDOM
-  const dom = new JSDOM(text);
-  const stripped = dom.window.document.body.textContent?.trim() || "";
+  // Strip HTML tags using linkedom
+  // Wrap in a full HTML document structure for proper parsing
+  const { document } = parseHTML(`<!DOCTYPE html><html><body>${text}</body></html>`);
+  const stripped = document.body.textContent?.trim() || "";
 
   if (stripped.length <= maxLength) {
     return stripped;

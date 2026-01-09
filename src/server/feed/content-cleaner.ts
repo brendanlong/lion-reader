@@ -6,7 +6,6 @@
  */
 
 import { Readability, isProbablyReaderable } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
 import { parseHTML } from "linkedom";
 import { logger } from "@/lib/logger";
 
@@ -245,13 +244,14 @@ export function cleanContent(
   }
 
   try {
-    // Parse HTML into a DOM
-    // Note: We explicitly don't fetch external resources to avoid blocking on slow/unresponsive servers
-    const dom = new JSDOM(html, {
-      url,
-    });
-
-    const document = dom.window.document;
+    // Parse HTML into a DOM using linkedom (faster than JSDOM)
+    // Note: linkedom doesn't support URL-based base resolution, but we handle that
+    // separately in absolutizeUrls() after Readability processes the content
+    // Wrap fragments in a full HTML document structure for proper parsing
+    const trimmedHtml = html.trim().toLowerCase();
+    const isFullDocument = trimmedHtml.startsWith("<!doctype") || trimmedHtml.startsWith("<html");
+    const htmlToParse = isFullDocument ? html : `<!DOCTYPE html><html><body>${html}</body></html>`;
+    const { document } = parseHTML(htmlToParse);
 
     // Check if the content is likely readable
     // This is a fast heuristic check before running the full algorithm

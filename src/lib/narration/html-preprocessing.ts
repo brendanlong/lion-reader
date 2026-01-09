@@ -7,7 +7,7 @@
  * @module narration/html-preprocessing
  */
 
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 
 /**
  * Block-level elements that can be highlighted during narration.
@@ -70,9 +70,9 @@ export function preprocessHtmlForNarration(html: string): PreprocessResult {
     };
   }
 
-  // Parse HTML using JSDOM
-  const dom = new JSDOM(html);
-  const doc = dom.window.document;
+  // Parse HTML using linkedom (faster than JSDOM)
+  // Wrap in a full HTML document structure for proper parsing
+  const { document: doc } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
 
   // Build selector for all block elements
   const selector = BLOCK_ELEMENTS.join(", ");
@@ -90,7 +90,7 @@ export function preprocessHtmlForNarration(html: string): PreprocessResult {
   });
 
   // Return the modified HTML
-  // Note: JSDOM wraps content in <html><head></head><body>...</body></html>
+  // Note: linkedom wraps content in a full HTML document structure
   // We extract just the body content
   const markedHtml = doc.body.innerHTML;
 
