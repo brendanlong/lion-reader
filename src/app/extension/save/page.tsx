@@ -96,6 +96,8 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
 
   // All auth is complete - save the article
   let saveResult: Awaited<ReturnType<ReturnType<typeof createCaller>["saved"]["save"]>>;
+  let needsGoogleReauth = false;
+
   try {
     const caller = createCaller({
       db,
@@ -110,7 +112,21 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
     saveResult = await caller.saved.save({ url, title: title || undefined });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Failed to save article";
-    return <ExtensionSaveClient status="error" error={errorMessage} url={url} canRetry={true} />;
+
+    // Check for Google reauth needed - handle outside try/catch since redirect throws
+    if (errorMessage === "NEEDS_GOOGLE_REAUTH") {
+      needsGoogleReauth = true;
+    } else {
+      return <ExtensionSaveClient status="error" error={errorMessage} url={url} canRetry={true} />;
+    }
+  }
+
+  // Handle Google reauth redirect outside try/catch (redirect throws)
+  if (needsGoogleReauth) {
+    const returnUrl = encodeURIComponent(
+      `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`
+    );
+    redirect(`/api/v1/auth/oauth/google?mode=link&scope=docs&redirect=${returnUrl}`);
   }
 
   // Create an API token for the extension
@@ -121,7 +137,8 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   );
 
   // Redirect to callback with success (must be outside try/catch as redirect throws)
-  const articleTitle = saveResult.article.title || title || url;
+  // saveResult is guaranteed to be assigned here - if NEEDS_GOOGLE_REAUTH, we redirected above
+  const articleTitle = saveResult!.article.title || title || url;
   redirect(
     `/extension/callback?status=success&token=${encodeURIComponent(token)}&title=${encodeURIComponent(articleTitle)}`
   );
