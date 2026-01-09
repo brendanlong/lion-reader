@@ -42,9 +42,11 @@ import {
   extractDocId,
   extractTabId,
   normalizeGoogleDocsUrl,
+  GOOGLE_DRIVE_SCOPE,
   type GoogleDocsContent,
 } from "@/server/google/docs";
 import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
+import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated } from "@/server/redis/pubsub";
 
@@ -323,15 +325,21 @@ export const savedRouter = createTRPCRouter({
             const googleOAuth = await getOAuthAccount(ctx.session.user.id, "google");
 
             if (googleOAuth) {
-              // Check if user has granted Docs permission
-              const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
-              const hasDocsScope = await hasGoogleScope(ctx.session.user.id, GOOGLE_DOCS_SCOPE);
+              // Check if user has granted both required scopes:
+              // - documents.readonly for native Google Docs via Docs API
+              // - drive.readonly for uploaded .docx files via Drive API
+              const [hasDocsApiScope, hasDriveScope] = await Promise.all([
+                hasGoogleScope(ctx.session.user.id, GOOGLE_DOCS_READONLY_SCOPE),
+                hasGoogleScope(ctx.session.user.id, GOOGLE_DRIVE_SCOPE),
+              ]);
 
-              if (!hasDocsScope) {
-                // User has Google OAuth but hasn't granted Docs permission
-                logger.debug("User needs to grant Google Docs permission", {
+              if (!hasDocsApiScope || !hasDriveScope) {
+                // User has Google OAuth but hasn't granted required permissions
+                logger.debug("User needs to grant Google Docs permissions", {
                   userId: ctx.session.user.id,
                   url: normalizedUrl,
+                  hasDocsApiScope,
+                  hasDriveScope,
                 });
                 throw new TRPCError({
                   code: "FORBIDDEN",
@@ -340,7 +348,7 @@ export const savedRouter = createTRPCRouter({
                     code: "NEEDS_DOCS_PERMISSION",
                     details: {
                       url: normalizedUrl,
-                      scope: GOOGLE_DOCS_SCOPE,
+                      scopes: [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
                     },
                   },
                 });
@@ -534,9 +542,10 @@ export const savedRouter = createTRPCRouter({
           lessWrongTitle = lessWrongContent.title;
         }
       }
+      // For Google Docs, prefer API title over browser-provided title (which includes " - Google Docs" suffix)
       const finalTitle =
-        input.title ||
         googleDocsContent?.title ||
+        input.title ||
         lessWrongTitle ||
         metadata.title ||
         cleaned?.title ||
