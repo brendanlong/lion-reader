@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Save to Lion Reader</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #fafafa;
+      --bg-card: #ffffff;
+      --border: #e4e4e7;
+      --text: #18181b;
+      --text-muted: #71717a;
+      --text-dim: #a1a1aa;
+      --success: #16a34a;
+      --success-light: #15803d;
+      --error: #dc2626;
+      --error-light: #b91c1c;
+      --primary: #18181b;
+      --primary-hover: #27272a;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #09090b;
+        --bg-card: #18181b;
+        --border: #27272a;
+        --text: #fafafa;
+        --text-muted: #a1a1aa;
+        --text-dim: #71717a;
+        --success: #22c55e;
+        --success-light: #4ade80;
+        --error: #ef4444;
+        --error-light: #f87171;
+        --primary: #fafafa;
+        --primary-hover: #e4e4e7;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--text);
+      width: 320px;
+      min-height: 120px;
+    }
+
+    .container {
+      padding: 16px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .status {
+      text-align: center;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      margin: 0 auto 12px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .icon {
+      width: 32px;
+      height: 32px;
+      margin: 0 auto 12px;
+    }
+
+    .icon.success { color: var(--success); }
+    .icon.error { color: var(--error); }
+
+    .message {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .message.success {
+      color: var(--success);
+      font-weight: 500;
+    }
+
+    .message.error {
+      color: var(--error);
+    }
+
+    .title {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .url {
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 12px;
+    }
+
+    .countdown {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: background-color 0.15s;
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: var(--bg);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .alert {
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      text-align: left;
+      margin-bottom: 12px;
+    }
+
+    .alert.error {
+      background: rgba(220, 38, 38, 0.1);
+      border: 1px solid rgba(220, 38, 38, 0.2);
+      color: var(--error);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .settings-link {
+      display: block;
+      text-align: center;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--text-dim);
+      text-decoration: none;
+    }
+
+    .settings-link:hover {
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Save to Lion Reader</h1>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading" class="status">
+      <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+        <path d="M4 12a8 8 0 018-8" stroke-opacity="0.75" stroke-linecap="round"/>
+      </svg>
+      <p class="message">Saving article...</p>
+      <p id="loading-url" class="url"></p>
+    </div>
+
+    <!-- Success State -->
+    <div id="success" class="status hidden">
+      <svg class="icon success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+      </svg>
+      <p class="message success">Saved successfully!</p>
+      <p id="success-title" class="title"></p>
+      <p id="countdown" class="countdown"></p>
+      <div class="buttons">
+        <button id="close-btn" class="btn btn-secondary">Close Now</button>
+      </div>
+    </div>
+
+    <!-- Error State -->
+    <div id="error" class="status hidden">
+      <svg class="icon error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+      <div id="error-alert" class="alert error"></div>
+      <p id="error-url" class="url"></p>
+      <div class="buttons">
+        <button id="error-close-btn" class="btn btn-secondary">Close</button>
+        <button id="retry-btn" class="btn btn-primary">Retry</button>
+      </div>
+    </div>
+
+    <!-- Not Configured State -->
+    <div id="not-configured" class="status hidden">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <p class="message">Please configure Lion Reader</p>
+      <p class="message" style="font-size: 12px;">Set your server URL and sign in to start saving articles.</p>
+      <div class="buttons" style="margin-top: 12px;">
+        <button id="open-options-btn" class="btn btn-primary">Open Settings</button>
+      </div>
+    </div>
+
+    <!-- Not Signed In State -->
+    <div id="not-signed-in" class="status hidden">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+      </svg>
+      <p class="message">Sign in required</p>
+      <p class="message" style="font-size: 12px;">Please sign in to Lion Reader in your browser first.</p>
+      <div class="buttons" style="margin-top: 12px;">
+        <button id="open-lionreader-btn" class="btn btn-primary">Open Lion Reader</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
