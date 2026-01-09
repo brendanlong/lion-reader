@@ -1,19 +1,13 @@
 /**
- * Google Drive content fetcher using the Google Drive API.
+ * Google Drive API utilities for fetching uploaded .docx files.
  *
- * This module provides access to Google Docs and uploaded Word documents via the
- * Drive API. It replaces the previous Docs API approach with a simpler implementation
- * that:
+ * This module handles uploaded Word documents (.docx) that are stored in Google Drive.
+ * Native Google Docs are handled by the Docs API in docs.ts for better formatting.
  *
- * 1. Uses files.get to determine the file type (native Google Doc vs uploaded .docx)
- * 2. For native Google Docs: uses files.export to get HTML directly from Google
- * 3. For uploaded .docx files: downloads the file and converts with mammoth
- *
- * Benefits over the Docs API approach:
- * - ~50 lines vs ~1000 lines of code
- * - Supports uploaded .docx files (Docs API fails with "operation not supported")
- * - Google handles HTML conversion for native docs (less maintenance)
- * - Same auth credentials work for both cases
+ * Features:
+ * - Fetches file metadata to determine file type
+ * - Downloads .docx files and converts them to HTML using mammoth
+ * - Supports both service account (public) and user OAuth (private) access
  */
 
 import * as mammoth from "mammoth";
@@ -43,10 +37,11 @@ const API_TIMEOUT_MS = 30000;
 export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 
 /**
- * MIME types we handle.
+ * MIME types for Google Drive files.
  */
-const MIME_TYPE_GOOGLE_DOC = "application/vnd.google-apps.document";
-const MIME_TYPE_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export const MIME_TYPE_GOOGLE_DOC = "application/vnd.google-apps.document";
+export const MIME_TYPE_DOCX =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // ============================================================================
 // Service Account Authentication
@@ -143,7 +138,7 @@ export interface GoogleDriveContent {
 /**
  * File metadata from Drive API.
  */
-interface DriveFileMetadata {
+export interface DriveFileMetadata {
   id: string;
   name: string;
   mimeType: string;
@@ -197,49 +192,6 @@ async function getFileMetadata(
       logger.warn("Drive API request timed out", { fileId });
     } else {
       logger.warn("Drive API request error", {
-        fileId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-/**
- * Exports a native Google Doc as HTML using the Drive API.
- */
-async function exportGoogleDocAsHtml(fileId: string, accessToken: string): Promise<string | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-  try {
-    const url = `${GOOGLE_DRIVE_API_ENDPOINT}/${fileId}/export?mimeType=text/html`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": USER_AGENT,
-      },
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      logger.warn("Failed to export Google Doc as HTML", {
-        fileId,
-        status: response.status,
-      });
-      return null;
-    }
-
-    return await response.text();
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      logger.warn("Export request timed out", { fileId });
-    } else {
-      logger.warn("Export request error", {
         fileId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -317,54 +269,6 @@ async function convertDocxToHtml(arrayBuffer: ArrayBuffer): Promise<string> {
   return result.value;
 }
 
-/**
- * Strips the title from exported Google Docs HTML if it matches the document title.
- *
- * Google's HTML export includes the title as a <p> with inline styles at the top.
- * Since we track the title separately, we remove it to avoid duplication.
- */
-function stripTitleFromExportedHtml(html: string, title: string): string {
-  // Google exports include the title as the first paragraph with specific styling
-  // We look for a paragraph that contains text matching the title at the start of the body
-  const normalizedTitle = title.toLowerCase().trim();
-
-  // Match HTML export format: starts with <html><head>...</head><body>
-  // The first element after <body...> is often the title
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*)/i);
-  if (!bodyMatch) {
-    return html;
-  }
-
-  const bodyContent = bodyMatch[1];
-
-  // Find the first paragraph or heading element
-  const firstElementMatch = bodyContent.match(/^\s*<(p|h[1-6])[^>]*>([\s\S]*?)<\/\1>/i);
-  if (!firstElementMatch) {
-    return html;
-  }
-
-  const [fullMatch, , elementContent] = firstElementMatch;
-
-  // Extract text content (strip HTML tags)
-  const textContent = elementContent
-    .replace(/<[^>]+>/g, "")
-    .trim()
-    .toLowerCase();
-
-  // If the text matches the title, remove this element
-  if (textContent === normalizedTitle) {
-    const bodyStart = html.indexOf(bodyMatch[0]);
-    const elementStart = bodyContent.indexOf(fullMatch);
-    const beforeBody = html.slice(0, bodyStart + "<body".length);
-    const bodyAttrs = bodyMatch[0].match(/<body([^>]*)>/i)?.[1] || "";
-    const afterElement = bodyContent.slice(elementStart + fullMatch.length);
-
-    return `${beforeBody}${bodyAttrs}>${afterElement}`;
-  }
-
-  return html;
-}
-
 // ============================================================================
 // Public API
 // ============================================================================
@@ -392,18 +296,38 @@ export function isGoogleDriveApiAvailable(): boolean {
 }
 
 /**
- * Fetches a public Google Drive file using service account credentials.
- *
- * Handles both native Google Docs and uploaded .docx files:
- * - Native Google Docs: exported as HTML via Drive API
- * - Uploaded .docx: downloaded and converted with mammoth
+ * Gets a service account access token for Google APIs.
+ * Exported for use by docs.ts to check file metadata.
+ */
+export async function getDriveServiceAccountToken(): Promise<string | null> {
+  return getServiceAccountAccessToken();
+}
+
+/**
+ * Fetches file metadata from Google Drive.
+ * Used to determine if a file is a native Google Doc or an uploaded .docx.
  *
  * @param fileId - The Google Drive file ID
- * @returns File content including HTML, or null if fetch fails
+ * @param accessToken - OAuth access token with drive.readonly scope
+ * @returns File metadata or null if fetch fails
  */
-export async function fetchPublicGoogleDriveFile(
-  fileId: string
-): Promise<GoogleDriveContent | null> {
+export async function fetchDriveFileMetadata(
+  fileId: string,
+  accessToken: string
+): Promise<DriveFileMetadata | null> {
+  return getFileMetadata(fileId, accessToken);
+}
+
+/**
+ * Fetches a public .docx file from Google Drive using service account credentials.
+ *
+ * Only handles uploaded .docx files. Native Google Docs should be fetched
+ * using the Docs API in docs.ts for better formatting.
+ *
+ * @param fileId - The Google Drive file ID
+ * @returns File content including HTML, or null if fetch fails or not a .docx
+ */
+export async function fetchPublicDocxFile(fileId: string): Promise<GoogleDriveContent | null> {
   if (!googleConfig.serviceAccountJson) {
     logger.debug("Google service account not configured", { fileId });
     return null;
@@ -415,33 +339,36 @@ export async function fetchPublicGoogleDriveFile(
     return null;
   }
 
-  return fetchGoogleDriveFileWithToken(fileId, accessToken);
+  return fetchDocxFileWithToken(fileId, accessToken);
 }
 
 /**
- * Fetches a Google Drive file using a user's OAuth access token.
+ * Fetches a private .docx file from Google Drive using a user's OAuth access token.
+ *
+ * Only handles uploaded .docx files. Native Google Docs should be fetched
+ * using the Docs API in docs.ts for better formatting.
  *
  * @param fileId - The Google Drive file ID
  * @param accessToken - User's OAuth access token with drive.readonly scope
- * @returns File content including HTML, or null if fetch fails
- * @throws Error with specific codes for auth/permission issues
+ * @returns File content including HTML, or null if fetch fails or not a .docx
  */
-export async function fetchPrivateGoogleDriveFile(
+export async function fetchPrivateDocxFile(
   fileId: string,
   accessToken: string
 ): Promise<GoogleDriveContent | null> {
-  return fetchGoogleDriveFileWithToken(fileId, accessToken);
+  return fetchDocxFileWithToken(fileId, accessToken);
 }
 
 /**
- * Internal function to fetch a file with an access token.
+ * Internal function to fetch a .docx file with an access token.
+ * Returns null for native Google Docs (use Docs API instead).
  */
-async function fetchGoogleDriveFileWithToken(
+async function fetchDocxFileWithToken(
   fileId: string,
   accessToken: string
 ): Promise<GoogleDriveContent | null> {
   // Step 1: Get file metadata to determine type
-  logger.debug("Fetching file metadata", { fileId });
+  logger.debug("Fetching file metadata for .docx check", { fileId });
   const metadata = await getFileMetadata(fileId, accessToken);
 
   if (!metadata) {
@@ -454,34 +381,24 @@ async function fetchGoogleDriveFileWithToken(
     mimeType: metadata.mimeType,
   });
 
-  // Step 2: Get content based on file type
-  let html: string | null = null;
-
-  if (metadata.mimeType === MIME_TYPE_GOOGLE_DOC) {
-    // Native Google Doc - export as HTML
-    logger.debug("Exporting native Google Doc as HTML", { fileId });
-    html = await exportGoogleDocAsHtml(fileId, accessToken);
-
-    if (html) {
-      // Strip the title if it appears at the start of the document
-      html = stripTitleFromExportedHtml(html, metadata.name);
-    }
-  } else if (metadata.mimeType === MIME_TYPE_DOCX) {
-    // Uploaded .docx file - download and convert
-    logger.debug("Downloading and converting .docx file", { fileId });
-    const buffer = await downloadFile(fileId, accessToken);
-
-    if (buffer) {
-      html = await convertDocxToHtml(buffer);
-    }
-  } else {
-    // Unsupported file type
-    logger.warn("Unsupported file type for content extraction", {
+  // Only handle .docx files - native Google Docs should use Docs API
+  if (metadata.mimeType !== MIME_TYPE_DOCX) {
+    logger.debug("Not a .docx file, skipping Drive API fetch", {
       fileId,
       mimeType: metadata.mimeType,
     });
     return null;
   }
+
+  // Download and convert .docx file
+  logger.debug("Downloading and converting .docx file", { fileId });
+  const buffer = await downloadFile(fileId, accessToken);
+
+  if (!buffer) {
+    return null;
+  }
+
+  const html = await convertDocxToHtml(buffer);
 
   if (!html) {
     return null;
