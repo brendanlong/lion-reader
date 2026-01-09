@@ -6,7 +6,7 @@
     "postinstall": "node scripts/copy-onnx-wasm.mjs",
     "dev": "concurrently --kill-others --names worker,next \"pnpm dev:worker\" \"pnpm dev:next\"",
     "dev:next": "next dev --turbopack",
-    "dev:worker": "tsx --watch scripts/worker.ts",
+    "dev:worker": "tsx watch --clear-screen=false scripts/worker.ts",
     "build": "next build",
     "build:worker": "node scripts/build-worker.mjs",
     "build:migrate": "node scripts/build-migrate.mjs",
