@@ -180,6 +180,15 @@ async function save() {
         await startWebAuthFlow(currentUrl, currentTitle);
         return;
       }
+      if (
+        err.message === "NEEDS_DOCS_PERMISSION" ||
+        err.message === "NEEDS_GOOGLE_SIGNIN" ||
+        err.message === "NEEDS_GOOGLE_REAUTH"
+      ) {
+        // Need Google permission - redirect to web flow to grant it
+        await startWebAuthFlow(currentUrl, currentTitle);
+        return;
+      }
       throw err;
     }
   } catch (err) {
