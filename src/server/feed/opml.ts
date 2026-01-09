@@ -40,8 +40,10 @@ export interface OpmlSubscription {
   xmlUrl: string;
   /** URL to the feed's website */
   htmlUrl?: string;
-  /** Category/folder name (optional) */
+  /** Category/folder name (optional, single folder) */
   folder?: string;
+  /** Tags/folders the feed belongs to (optional, multiple tags) */
+  tags?: string[];
 }
 
 /**
@@ -78,7 +80,7 @@ export function parseOpml(xml: string): OpmlFeed[] {
 }
 
 /**
- * Groups subscriptions by folder.
+ * Groups subscriptions by folder (legacy single-folder support).
  */
 function groupByFolder(
   subscriptions: OpmlSubscription[]
@@ -92,6 +94,29 @@ function groupByFolder(
       existing.push(sub);
     } else {
       groups.set(folder, [sub]);
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * Groups subscriptions by tags for multi-tag export.
+ * Returns a map where keys are tag names and values are subscriptions with that tag.
+ */
+function groupByTags(subscriptions: OpmlSubscription[]): Map<string, OpmlSubscription[]> {
+  const groups = new Map<string, OpmlSubscription[]>();
+
+  for (const sub of subscriptions) {
+    if (sub.tags && sub.tags.length > 0) {
+      for (const tag of sub.tags) {
+        const existing = groups.get(tag);
+        if (existing) {
+          existing.push(sub);
+        } else {
+          groups.set(tag, [sub]);
+        }
+      }
     }
   }
 
@@ -113,6 +138,14 @@ function escapeXml(text: string): string {
 /**
  * Generates OPML XML from a list of subscriptions.
  *
+ * When subscriptions have `tags`, the export format is:
+ * - All feeds listed at top level (no folder)
+ * - Feeds re-listed inside each tag folder they belong to
+ *
+ * When subscriptions use `folder` (legacy), the format is:
+ * - Feeds without folder at top level
+ * - Feeds with folder inside their respective folder
+ *
  * @param subscriptions - Array of subscriptions to export
  * @param metadata - Optional document metadata
  * @returns OPML XML string
@@ -120,7 +153,7 @@ function escapeXml(text: string): string {
  * @example
  * ```ts
  * const xml = generateOpml([
- *   { title: "Blog", xmlUrl: "https://blog.example.com/feed", folder: "Tech" },
+ *   { title: "Blog", xmlUrl: "https://blog.example.com/feed", tags: ["Tech", "Favorites"] },
  *   { title: "News", xmlUrl: "https://news.example.com/rss" }
  * ], { title: "My Subscriptions" });
  * ```
@@ -129,28 +162,53 @@ export function generateOpml(
   subscriptions: OpmlSubscription[],
   metadata: OpmlMetadata = {}
 ): string {
-  const grouped = groupByFolder(subscriptions);
   const dateCreated = new Date().toISOString();
+
+  // Check if any subscriptions use the new tags format
+  const hasTagsFormat = subscriptions.some((sub) => sub.tags !== undefined);
 
   // Build outline elements
   const outlines: string[] = [];
 
-  // First, add subscriptions without folders
-  const noFolder = grouped.get(undefined);
-  if (noFolder) {
-    for (const sub of noFolder) {
+  if (hasTagsFormat) {
+    // New format: all feeds at top level + re-listed in tag folders
+    // First, add ALL subscriptions at top level
+    for (const sub of subscriptions) {
       outlines.push(buildOutlineElement(sub));
     }
-  }
 
-  // Then, add folders with their subscriptions
-  for (const [folder, subs] of grouped) {
-    if (folder === undefined) continue;
-
-    const folderOutlines = subs.map((sub) => buildOutlineElement(sub)).join("\n        ");
-    outlines.push(`      <outline text="${escapeXml(folder)}">
+    // Then, add tag folders with their subscriptions
+    const tagGroups = groupByTags(subscriptions);
+    // Sort tag folders alphabetically for consistent output
+    const sortedTags = Array.from(tagGroups.keys()).sort();
+    for (const tag of sortedTags) {
+      const subs = tagGroups.get(tag)!;
+      const folderOutlines = subs.map((sub) => buildOutlineElement(sub)).join("\n        ");
+      outlines.push(`      <outline text="${escapeXml(tag)}">
         ${folderOutlines}
       </outline>`);
+    }
+  } else {
+    // Legacy format: group by single folder
+    const grouped = groupByFolder(subscriptions);
+
+    // First, add subscriptions without folders
+    const noFolder = grouped.get(undefined);
+    if (noFolder) {
+      for (const sub of noFolder) {
+        outlines.push(buildOutlineElement(sub));
+      }
+    }
+
+    // Then, add folders with their subscriptions
+    for (const [folder, subs] of grouped) {
+      if (folder === undefined) continue;
+
+      const folderOutlines = subs.map((sub) => buildOutlineElement(sub)).join("\n        ");
+      outlines.push(`      <outline text="${escapeXml(folder)}">
+        ${folderOutlines}
+      </outline>`);
+    }
   }
 
   const title = metadata.title || "Lion Reader Subscriptions";

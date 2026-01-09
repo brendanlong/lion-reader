@@ -1024,23 +1024,44 @@ export const subscriptionsRouter = createTRPCRouter({
         };
       }
 
-      // Step 2: Create import record
+      // Step 2: Deduplicate feeds by URL, merging categories
+      // This ensures a feed in 5 tags counts as 1 import, not 5
+      const feedsByUrl = new Map<string, OpmlImportFeedData>();
+      for (const feed of opmlFeeds) {
+        const existing = feedsByUrl.get(feed.xmlUrl);
+        if (existing) {
+          // Merge categories (use first level of category path as tag)
+          if (feed.category && feed.category.length > 0) {
+            const tagName = feed.category[0]; // Use first level as tag
+            if (!existing.category) {
+              existing.category = [tagName];
+            } else if (!existing.category.includes(tagName)) {
+              existing.category.push(tagName);
+            }
+          }
+          // Use title from first occurrence (don't overwrite)
+        } else {
+          feedsByUrl.set(feed.xmlUrl, {
+            xmlUrl: feed.xmlUrl,
+            title: feed.title,
+            htmlUrl: feed.htmlUrl,
+            // Use first level of category path as tag name
+            category: feed.category && feed.category.length > 0 ? [feed.category[0]] : undefined,
+          });
+        }
+      }
+
+      const feedsData = Array.from(feedsByUrl.values());
+
+      // Step 3: Create import record
       const importId = generateUuidv7();
       const now = new Date();
-
-      // Convert OpmlFeed[] to OpmlImportFeedData[]
-      const feedsData: OpmlImportFeedData[] = opmlFeeds.map((feed) => ({
-        xmlUrl: feed.xmlUrl,
-        title: feed.title,
-        htmlUrl: feed.htmlUrl,
-        category: feed.category,
-      }));
 
       await ctx.db.insert(opmlImports).values({
         id: importId,
         userId,
         status: "pending",
-        totalFeeds: opmlFeeds.length,
+        totalFeeds: feedsData.length, // Use deduplicated count
         importedCount: 0,
         skippedCount: 0,
         failedCount: 0,
@@ -1050,7 +1071,7 @@ export const subscriptionsRouter = createTRPCRouter({
         updatedAt: now,
       });
 
-      // Step 3: Queue background job to process the import
+      // Step 4: Queue background job to process the import
       await createJob({
         type: "process_opml_import",
         payload: { importId },
@@ -1060,12 +1081,13 @@ export const subscriptionsRouter = createTRPCRouter({
       logger.info("OPML import queued", {
         importId,
         userId,
-        totalFeeds: opmlFeeds.length,
+        totalFeeds: feedsData.length,
+        originalCount: opmlFeeds.length, // Log original for debugging
       });
 
       return {
         importId,
-        totalFeeds: opmlFeeds.length,
+        totalFeeds: feedsData.length, // Return deduplicated count
       };
     }),
 
@@ -1073,7 +1095,8 @@ export const subscriptionsRouter = createTRPCRouter({
    * Export subscriptions as OPML.
    *
    * Generates an OPML XML file containing all active subscriptions
-   * for the current user.
+   * for the current user. Feeds are listed at the top level and
+   * re-listed inside their tag folders.
    *
    * @returns OPML XML content
    */
@@ -1096,25 +1119,38 @@ export const subscriptionsRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
-      // Get all active subscriptions with feed info
+      // Get all active subscriptions with feed info and tags
       const userSubscriptions = await ctx.db
         .select({
-          subscription: subscriptions,
-          feed: feeds,
+          subscriptionId: subscriptions.id,
+          subscriptionCustomTitle: subscriptions.customTitle,
+          feedUrl: feeds.url,
+          feedTitle: feeds.title,
+          feedSiteUrl: feeds.siteUrl,
+          // Tags aggregated as JSON array
+          tagNames: sql<string[]>`
+            COALESCE(
+              array_agg(${tags.name}) FILTER (WHERE ${tags.id} IS NOT NULL),
+              '{}'::text[]
+            )
+          `,
         })
         .from(subscriptions)
         .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+        .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
+        .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
         .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)))
+        .groupBy(subscriptions.id, feeds.id)
         .orderBy(feeds.title);
 
       // Convert to OPML subscription format
       const opmlSubscriptions: OpmlSubscription[] = userSubscriptions
-        .filter(({ feed }) => feed.url !== null)
-        .map(({ subscription, feed }) => ({
-          title: subscription.customTitle || feed.title || feed.url || "Untitled Feed",
-          xmlUrl: feed.url!,
-          htmlUrl: feed.siteUrl ?? undefined,
-          // folder: undefined, // TODO: Add when tags are implemented
+        .filter((row) => row.feedUrl !== null)
+        .map((row) => ({
+          title: row.subscriptionCustomTitle || row.feedTitle || row.feedUrl || "Untitled Feed",
+          xmlUrl: row.feedUrl!,
+          htmlUrl: row.feedSiteUrl ?? undefined,
+          tags: row.tagNames.length > 0 ? row.tagNames : undefined,
         }));
 
       // Generate OPML
