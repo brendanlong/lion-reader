@@ -7,15 +7,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  subscriptions,
-  userEntries,
-} from "../../src/server/db/schema";
+import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -150,10 +144,7 @@ async function createTestEntry(
  * Gets user_entries count for a user.
  */
 async function getUserEntriesCount(userId: string): Promise<number> {
-  const result = await db
-    .select()
-    .from(userEntries)
-    .where(eq(userEntries.userId, userId));
+  const result = await db.select().from(userEntries).where(eq(userEntries.userId, userId));
   return result.length;
 }
 
@@ -224,10 +215,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       // Second fetch has entries 2, 3, and 4 (entry 1 disappeared, 3 and 4 are new)
       // Entry 2 is updated to current fetch time
-      await db
-        .update(entries)
-        .set({ lastSeenAt: fetch2Time })
-        .where(eq(entries.id, entry2Id));
+      await db.update(entries).set({ lastSeenAt: fetch2Time }).where(eq(entries.id, entry2Id));
 
       const entry3Id = await createTestEntry(feedId, {
         guid: "entry-3",
@@ -442,7 +430,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const userId = await createTestUser();
 
       const feedUrl = "https://example.com/empty-feed.xml";
-      const feedId = await createTestFeed({
+      await createTestFeed({
         url: feedUrl,
         lastFetchedAt: new Date("2024-01-01T10:00:00Z"),
         lastEntriesUpdatedAt: new Date("2024-01-01T10:00:00Z"),
@@ -474,14 +462,14 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         lastEntriesUpdatedAt: fetchTime,
       });
 
-      const entry1Id = await createTestEntry(feedId, {
+      await createTestEntry(feedId, {
         guid: "entry-1",
         title: "Entry 1",
         fetchedAt: fetchTime,
         lastSeenAt: fetchTime,
       });
 
-      const entry2Id = await createTestEntry(feedId, {
+      await createTestEntry(feedId, {
         guid: "entry-2",
         title: "Entry 2",
         fetchedAt: fetchTime,
@@ -536,7 +524,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const userId = await createTestUser();
 
       const feedUrl = "https://example.com/never-fetched.xml";
-      const feedId = await createTestFeed({
+      await createTestFeed({
         url: feedUrl,
         lastFetchedAt: null,
         lastEntriesUpdatedAt: null,
