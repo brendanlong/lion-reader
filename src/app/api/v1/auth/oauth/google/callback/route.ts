@@ -71,11 +71,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
     }
 
-    const { userInfo, tokens, scopes, mode } = googleResult;
+    const { userInfo, tokens, scopes, mode, returnUrl } = googleResult;
     const now = new Date();
 
-    // Handle save/link modes - user is already logged in, just update OAuth account
-    if (mode === "save" || mode === "link") {
+    // Handle save/link/extension-save modes - user is already logged in, just update OAuth account
+    if (mode === "save" || mode === "link" || mode === "extension-save") {
       // Find existing OAuth account for this Google user
       const existingOAuthAccount = await db
         .select({ id: oauthAccounts.id, userId: oauthAccounts.userId })
@@ -89,11 +89,20 @@ export async function GET(request: NextRequest) {
         .limit(1);
 
       if (existingOAuthAccount.length === 0) {
-        // This shouldn't happen for save mode (user must have Google linked)
+        // This shouldn't happen for save/extension-save mode (user must have Google linked)
         // For link mode, this is also unexpected since we check before starting the flow
-        console.error("OAuth account not found for save/link mode");
-        const errorRedirect =
-          mode === "save" ? "/save?error=callback_failed" : "/settings?link_error=callback_failed";
+        console.error("OAuth account not found for save/link/extension-save mode");
+        let errorRedirect: string;
+        if (mode === "extension-save" && returnUrl) {
+          // Add error to the return URL
+          const url = new URL(returnUrl, appUrl);
+          url.searchParams.set("error", "callback_failed");
+          errorRedirect = url.pathname + url.search;
+        } else if (mode === "save") {
+          errorRedirect = "/save?error=callback_failed";
+        } else {
+          errorRedirect = "/settings?link_error=callback_failed";
+        }
         return NextResponse.redirect(`${appUrl}${errorRedirect}`);
       }
 
@@ -109,7 +118,10 @@ export async function GET(request: NextRequest) {
         .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
 
       // Redirect based on mode (no session cookie needed - user already logged in)
-      if (mode === "save") {
+      if (mode === "extension-save" && returnUrl) {
+        // Redirect back to the extension save page with the original URL
+        return NextResponse.redirect(`${appUrl}${returnUrl}`);
+      } else if (mode === "save") {
         return NextResponse.redirect(`${appUrl}/save`);
       } else {
         return NextResponse.redirect(`${appUrl}/settings?linked=google`);
