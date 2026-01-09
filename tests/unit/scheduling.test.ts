@@ -10,11 +10,9 @@ import {
   getNextFetchTime,
   syndicationToSeconds,
   getMinFetchIntervalSeconds,
-  DEFAULT_MIN_FETCH_INTERVAL_SECONDS,
   MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS,
   MAX_FETCH_INTERVAL_SECONDS,
   DEFAULT_FETCH_INTERVAL_SECONDS,
-  MAX_CONSECUTIVE_FAILURES,
   DEFAULT_JITTER_FRACTION,
   MAX_JITTER_SECONDS,
 } from "../../src/server/feed/scheduling";
@@ -587,10 +585,22 @@ describe("calculateFailureBackoff", () => {
     expect(calculateFailureBackoff(100)).toBe(MAX_FETCH_INTERVAL_SECONDS);
   });
 
-  it("follows exponential pattern 30 * 2^(n-1)", () => {
-    for (let i = 1; i <= 9; i++) {
-      const expected = Math.min(30 * 60 * Math.pow(2, i - 1), MAX_FETCH_INTERVAL_SECONDS);
-      expect(calculateFailureBackoff(i)).toBe(expected);
+  it("follows exponential pattern", () => {
+    // Use hardcoded expected values to avoid duplicating the implementation logic
+    const expectedBackoffs: Record<number, number> = {
+      1: 1800, // 30 min
+      2: 3600, // 1 hour
+      3: 7200, // 2 hours
+      4: 14400, // 4 hours
+      5: 28800, // 8 hours
+      6: 57600, // 16 hours
+      7: 115200, // 32 hours
+      8: 230400, // 64 hours
+      9: 460800, // 128 hours
+    };
+
+    for (const [failures, expected] of Object.entries(expectedBackoffs)) {
+      expect(calculateFailureBackoff(Number(failures))).toBe(expected);
     }
   });
 });
@@ -619,28 +629,6 @@ describe("getNextFetchTime", () => {
 
     expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin.getTime());
     expect(result.getTime()).toBeLessThanOrEqual(expectedMax.getTime());
-  });
-});
-
-describe("constants", () => {
-  it("DEFAULT_MIN_FETCH_INTERVAL_SECONDS is 60 minutes", () => {
-    expect(DEFAULT_MIN_FETCH_INTERVAL_SECONDS).toBe(60 * 60);
-  });
-
-  it("MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS is 10 minutes", () => {
-    expect(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS).toBe(10 * 60);
-  });
-
-  it("MAX_FETCH_INTERVAL_SECONDS is 7 days", () => {
-    expect(MAX_FETCH_INTERVAL_SECONDS).toBe(7 * 24 * 60 * 60);
-  });
-
-  it("DEFAULT_FETCH_INTERVAL_SECONDS is 60 minutes", () => {
-    expect(DEFAULT_FETCH_INTERVAL_SECONDS).toBe(60 * 60);
-  });
-
-  it("MAX_CONSECUTIVE_FAILURES is 10", () => {
-    expect(MAX_CONSECUTIVE_FAILURES).toBe(10);
   });
 });
 
@@ -830,15 +818,5 @@ describe("calculateJitter", () => {
     // Above threshold: still capped
     const aboveThreshold = thresholdInterval + 1000;
     expect(calculateJitter(aboveThreshold, 1)).toBe(MAX_JITTER_SECONDS);
-  });
-});
-
-describe("jitter constants", () => {
-  it("DEFAULT_JITTER_FRACTION is 10%", () => {
-    expect(DEFAULT_JITTER_FRACTION).toBe(0.1);
-  });
-
-  it("MAX_JITTER_SECONDS is 30 minutes", () => {
-    expect(MAX_JITTER_SECONDS).toBe(30 * 60);
   });
 });

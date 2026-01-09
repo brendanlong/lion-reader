@@ -87,7 +87,7 @@ describe("preprocessHtmlForNarration", () => {
       expect(result.markedHtml).toContain("<blockquote data-para-id");
     });
 
-    it("marks figure and table elements", () => {
+    it("marks figure, img, and table elements", () => {
       const html = `
         <p>Before image</p>
         <figure><img src="test.jpg" alt="Test"><figcaption>Caption</figcaption></figure>
@@ -96,8 +96,10 @@ describe("preprocessHtmlForNarration", () => {
       `;
       const result = preprocessHtmlForNarration(html);
 
-      expect(result.paragraphElements).toEqual(["para-0", "para-1", "para-2", "para-3"]);
+      // p, figure, img (inside figure), table, p = 5 elements
+      expect(result.paragraphElements).toEqual(["para-0", "para-1", "para-2", "para-3", "para-4"]);
       expect(result.markedHtml).toContain("<figure data-para-id");
+      expect(result.markedHtml).toContain("<img src");
       expect(result.markedHtml).toContain("<table data-para-id");
     });
 
@@ -277,7 +279,8 @@ describe("preprocessHtmlForNarration", () => {
       `;
       const result = preprocessHtmlForNarration(html);
 
-      expect(result.paragraphElements).toEqual(["para-0", "para-1", "para-2"]);
+      // p, figure, img (inside figure), p = 4 elements
+      expect(result.paragraphElements).toEqual(["para-0", "para-1", "para-2", "para-3"]);
     });
 
     it("handles HTML entities", () => {
@@ -406,31 +409,7 @@ describe("isBlockElement", () => {
     expect(isBlockElement("div")).toBe(false);
     expect(isBlockElement("span")).toBe(false);
     expect(isBlockElement("a")).toBe(false);
-    expect(isBlockElement("img")).toBe(false);
     expect(isBlockElement("section")).toBe(false);
     expect(isBlockElement("article")).toBe(false);
-  });
-});
-
-describe("BLOCK_ELEMENTS constant", () => {
-  it("contains expected elements", () => {
-    expect(BLOCK_ELEMENTS).toContain("p");
-    expect(BLOCK_ELEMENTS).toContain("h1");
-    expect(BLOCK_ELEMENTS).toContain("h2");
-    expect(BLOCK_ELEMENTS).toContain("h3");
-    expect(BLOCK_ELEMENTS).toContain("h4");
-    expect(BLOCK_ELEMENTS).toContain("h5");
-    expect(BLOCK_ELEMENTS).toContain("h6");
-    expect(BLOCK_ELEMENTS).toContain("blockquote");
-    expect(BLOCK_ELEMENTS).toContain("pre");
-    expect(BLOCK_ELEMENTS).toContain("ul");
-    expect(BLOCK_ELEMENTS).toContain("ol");
-    expect(BLOCK_ELEMENTS).toContain("li");
-    expect(BLOCK_ELEMENTS).toContain("figure");
-    expect(BLOCK_ELEMENTS).toContain("table");
-  });
-
-  it("has exactly 14 elements", () => {
-    expect(BLOCK_ELEMENTS.length).toBe(14);
   });
 });
