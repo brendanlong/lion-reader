@@ -24,6 +24,8 @@ import {
   calculateNextFetch,
   renewExpiringSubscriptions,
   getDomainFromUrl,
+  getRecentEntryPublishDates,
+  ADAPTIVE_LOOKBACK_SECONDS,
   type FetchFeedResult,
   type ParsedCacheHeaders,
 } from "../feed";
@@ -225,13 +227,18 @@ async function processSuccessfulFetch(
     feedUrl: feed.url ?? undefined,
   });
 
-  // Calculate next fetch time based on cache headers and feed hints
+  // Get recent entry publish dates for adaptive interval calculation
+  // This prevents over-fetching slow feeds even if cache headers say to fetch frequently
+  const recentPublishDates = await getRecentEntryPublishDates(feed.id, ADAPTIVE_LOOKBACK_SECONDS);
+
+  // Calculate next fetch time based on cache headers, feed hints, and post frequency
   const nextFetch = calculateNextFetch({
     cacheControl: cacheHeaders.cacheControl,
     feedHints: {
       ttlMinutes: feedMetadata.ttlMinutes,
       syndication: feedMetadata.syndication,
     },
+    recentPublishDates,
     consecutiveFailures: 0, // Reset failures on success
     now,
   });
@@ -302,8 +309,14 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 
       if (feed.bodyHash === bodyHash) {
         // Feed body unchanged - skip parsing and entry processing
+        // Still apply adaptive interval to prevent over-fetching slow feeds
+        const recentPublishDates = await getRecentEntryPublishDates(
+          feed.id,
+          ADAPTIVE_LOOKBACK_SECONDS
+        );
         const nextFetch = calculateNextFetch({
           cacheControl: result.cacheHeaders.cacheControl,
+          recentPublishDates,
           consecutiveFailures: 0,
           now,
         });
@@ -338,8 +351,14 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 
     case "not_modified": {
       // Feed hasn't changed - just update timestamps
+      // Still apply adaptive interval to prevent over-fetching slow feeds
+      const recentPublishDates = await getRecentEntryPublishDates(
+        feed.id,
+        ADAPTIVE_LOOKBACK_SECONDS
+      );
       const nextFetch = calculateNextFetch({
         cacheControl: result.cacheHeaders.cacheControl,
+        recentPublishDates,
         consecutiveFailures: 0,
         now,
       });

@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, inArray, gte, isNotNull, desc } from "drizzle-orm";
 import { Parser } from "htmlparser2";
 import { db } from "../db";
 import { entries, subscriptions, userEntries, type Entry, type NewEntry } from "../db/schema";
@@ -354,6 +354,39 @@ export async function findEntryByGuid(feedId: string, guid: string): Promise<Ent
     .limit(1);
 
   return entry ?? null;
+}
+
+/**
+ * Gets recent entry publish dates for a feed within a lookback period.
+ *
+ * This is used for adaptive fetch interval calculation. We look at entries
+ * published within the lookback period to determine how frequently the feed
+ * updates, which informs how often we should fetch it.
+ *
+ * @param feedId - The feed's UUID
+ * @param lookbackSeconds - How far back to look (default: 24 hours)
+ * @returns Array of publish dates for entries within the lookback period
+ */
+export async function getRecentEntryPublishDates(
+  feedId: string,
+  lookbackSeconds: number = 24 * 60 * 60
+): Promise<Date[]> {
+  const cutoff = new Date(Date.now() - lookbackSeconds * 1000);
+
+  const results = await db
+    .select({ publishedAt: entries.publishedAt })
+    .from(entries)
+    .where(
+      and(
+        eq(entries.feedId, feedId),
+        isNotNull(entries.publishedAt),
+        gte(entries.publishedAt, cutoff)
+      )
+    )
+    .orderBy(desc(entries.publishedAt));
+
+  // Filter out null values (TypeScript doesn't know the isNotNull filter worked)
+  return results.map((r) => r.publishedAt).filter((d): d is Date => d !== null);
 }
 
 /**

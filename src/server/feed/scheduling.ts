@@ -38,6 +38,98 @@ export function getMinFetchIntervalSeconds(): number {
 /** Maximum interval between fetches: 7 days */
 export const MAX_FETCH_INTERVAL_SECONDS = 7 * 24 * 60 * 60; // 604800
 
+/** Adaptive interval lookback period: 24 hours */
+export const ADAPTIVE_LOOKBACK_SECONDS = 24 * 60 * 60; // 86400
+
+/** Maximum adaptive interval (when < 2 posts in lookback period): 24 hours */
+export const MAX_ADAPTIVE_INTERVAL_SECONDS = 24 * 60 * 60; // 86400
+
+/** Divisor for adaptive interval (fetch twice as often as the minimum post gap) */
+export const ADAPTIVE_INTERVAL_DIVISOR = 2;
+
+/**
+ * Calculates the minimum time gap between consecutive posts.
+ *
+ * Given an array of publication dates, this function finds the smallest
+ * time interval between any two consecutive posts. This is used to determine
+ * how frequently a feed updates, which informs the adaptive fetch interval.
+ *
+ * @param publishedDates - Array of publication dates (will be sorted internally)
+ * @returns Minimum gap in seconds between consecutive posts, or null if < 2 dates
+ *
+ * @example
+ * // Posts 1 hour apart
+ * calculateMinPostGap([
+ *   new Date("2024-01-15T10:00:00Z"),
+ *   new Date("2024-01-15T11:00:00Z"),
+ *   new Date("2024-01-15T13:00:00Z"),
+ * ])
+ * // => 3600 (1 hour between first two posts)
+ */
+export function calculateMinPostGap(publishedDates: Date[]): number | null {
+  if (publishedDates.length < 2) {
+    return null;
+  }
+
+  // Sort dates in ascending order
+  const sorted = [...publishedDates].sort((a, b) => a.getTime() - b.getTime());
+
+  let minGapMs = Infinity;
+
+  for (let i = 1; i < sorted.length; i++) {
+    const gapMs = sorted[i].getTime() - sorted[i - 1].getTime();
+    if (gapMs < minGapMs) {
+      minGapMs = gapMs;
+    }
+  }
+
+  // Convert to seconds and return
+  return Math.floor(minGapMs / 1000);
+}
+
+/**
+ * Calculates the adaptive fetch interval based on recent post frequency.
+ *
+ * This function determines how often to fetch a feed based on how frequently
+ * it posts. The interval is half the minimum gap between posts (so we fetch
+ * twice as often as posts appear), with bounds applied.
+ *
+ * @param publishedDates - Array of publication dates from recent entries
+ * @returns Adaptive interval in seconds (half the min gap, or max if < 2 posts)
+ *
+ * @example
+ * // Feed with posts 2 hours apart -> fetch every 1 hour
+ * calculateAdaptiveInterval([
+ *   new Date("2024-01-15T10:00:00Z"),
+ *   new Date("2024-01-15T12:00:00Z"),
+ * ])
+ * // => 3600 (1 hour = half of 2 hour gap)
+ *
+ * @example
+ * // Feed with only 1 post -> use max interval (24 hours)
+ * calculateAdaptiveInterval([new Date("2024-01-15T10:00:00Z")])
+ * // => 86400 (24 hours)
+ */
+export function calculateAdaptiveInterval(publishedDates: Date[]): number {
+  const minGap = calculateMinPostGap(publishedDates);
+
+  if (minGap === null) {
+    // Less than 2 posts - use max adaptive interval
+    return MAX_ADAPTIVE_INTERVAL_SECONDS;
+  }
+
+  // Fetch at twice the frequency of posts (half the gap)
+  const adaptiveInterval = Math.floor(minGap / ADAPTIVE_INTERVAL_DIVISOR);
+
+  // Clamp to reasonable bounds
+  // Lower bound: MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS (10 minutes)
+  // Upper bound: MAX_ADAPTIVE_INTERVAL_SECONDS (24 hours)
+  return Math.max(
+    MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS,
+    Math.min(adaptiveInterval, MAX_ADAPTIVE_INTERVAL_SECONDS)
+  );
+}
+
 /** Default interval when no hints available: 60 minutes */
 export const DEFAULT_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
 
@@ -113,6 +205,12 @@ export interface CalculateNextFetchOptions {
   feedHints?: FeedHints;
   /** Number of consecutive fetch failures */
   consecutiveFailures?: number;
+  /**
+   * Recent entry publish dates for adaptive interval calculation.
+   * If provided, the fetch interval will be at least half the minimum gap
+   * between posts (preventing over-fetching of slow feeds).
+   */
+  recentPublishDates?: Date[];
   /** The reference time to calculate from (defaults to now) */
   now?: Date;
   /**
@@ -148,7 +246,8 @@ export type NextFetchReason =
   | "syndication_clamped_min" // Syndication was below minimum, clamped up
   | "syndication_clamped_max" // Syndication was above maximum, clamped down
   | "default" // No hints available, using default
-  | "failure_backoff"; // Exponential backoff due to failures
+  | "failure_backoff" // Exponential backoff due to failures
+  | "adaptive"; // Adaptive interval based on recent post frequency
 
 /**
  * Clamps a value to the configured bounds and returns the result with appropriate reason.
@@ -189,12 +288,14 @@ function clampInterval(
  * 2. Use Cache-Control max-age from HTTP response (clamped to bounds)
  * 3. Use feed hints: RSS <ttl> element or syndication namespace (clamped to bounds)
  * 4. If no hints available, use default interval (60 minutes)
+ * 5. Apply adaptive floor based on recent post frequency (prevents over-fetching slow feeds)
  *
  * Bounds:
  * - Minimum with cache headers: 10 minutes (server explicitly tells us to poll faster)
  * - Minimum without cache headers: 60 minutes (configurable via FEED_MIN_FETCH_INTERVAL_MINUTES)
  * - Maximum: 7 days (always check eventually)
  * - Failures capped at 10 (then max backoff)
+ * - Adaptive: never faster than half the minimum gap between recent posts
  *
  * @param options - Calculation options
  * @returns The next fetch result with time and reason
@@ -231,12 +332,24 @@ function clampInterval(
  * // No hints (default)
  * calculateNextFetch({})
  * // => { nextFetchAt: Date, intervalSeconds: 3600, reason: "default" }
+ *
+ * @example
+ * // Adaptive floor: cache says 10 min but feed posts only once per day
+ * calculateNextFetch({
+ *   cacheControl: { maxAge: 600 },
+ *   recentPublishDates: [
+ *     new Date("2024-01-14T12:00:00Z"),
+ *     new Date("2024-01-15T12:00:00Z"), // 24 hours apart
+ *   ],
+ * })
+ * // => { intervalSeconds: 43200, reason: "adaptive" } // 12 hours (half of 24h gap)
  */
 export function calculateNextFetch(options: CalculateNextFetchOptions = {}): NextFetchResult {
   const {
     cacheControl,
     feedHints,
     consecutiveFailures = 0,
+    recentPublishDates,
     now = new Date(),
     randomSource = Math.random,
   } = options;
@@ -244,7 +357,7 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
   let intervalSeconds: number;
   let reason: NextFetchReason;
 
-  // 1. If there are failures, use exponential backoff
+  // 1. If there are failures, use exponential backoff (bypasses adaptive floor)
   if (consecutiveFailures > 0) {
     intervalSeconds = calculateFailureBackoff(consecutiveFailures);
     reason = "failure_backoff";
@@ -293,6 +406,16 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
   else {
     intervalSeconds = DEFAULT_FETCH_INTERVAL_SECONDS;
     reason = "default";
+  }
+
+  // 5. Apply adaptive floor based on recent post frequency (skipped for failure backoff)
+  // This prevents over-fetching slow feeds even if cache headers say to fetch frequently
+  if (recentPublishDates && consecutiveFailures === 0) {
+    const adaptiveFloor = calculateAdaptiveInterval(recentPublishDates);
+    if (intervalSeconds < adaptiveFloor) {
+      intervalSeconds = adaptiveFloor;
+      reason = "adaptive";
+    }
   }
 
   // Apply jitter to spread out fetches and prevent thundering herd

@@ -14,6 +14,7 @@ import {
   deriveGuid,
   generateSummary,
   findEntryByGuid,
+  getRecentEntryPublishDates,
   createEntry,
   updateEntryContent,
   processEntry,
@@ -551,6 +552,187 @@ describe("Entry Processor", () => {
 
       // Both should reference the same entry ID
       expect(result.entries[0].id).toBe(result.entries[1].id);
+    });
+  });
+
+  describe("getRecentEntryPublishDates", () => {
+    it("returns empty array when no entries", async () => {
+      const feed = await createTestFeed();
+
+      const dates = await getRecentEntryPublishDates(feed.id);
+
+      expect(dates).toEqual([]);
+    });
+
+    it("returns publish dates within lookback period", async () => {
+      const feed = await createTestFeed();
+      const now = new Date();
+      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+      const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+
+      // Create entries with different publish times
+      await db.insert(entries).values([
+        {
+          id: generateUuidv7(),
+          feedId: feed.id,
+          type: "web",
+          guid: "entry-1",
+          title: "Entry 1",
+          publishedAt: twoHoursAgo,
+          fetchedAt: now,
+        },
+        {
+          id: generateUuidv7(),
+          feedId: feed.id,
+          type: "web",
+          guid: "entry-2",
+          title: "Entry 2",
+          publishedAt: fourHoursAgo,
+          fetchedAt: now,
+        },
+      ]);
+
+      // Default lookback is 24 hours, so both should be returned
+      const dates = await getRecentEntryPublishDates(feed.id);
+
+      expect(dates).toHaveLength(2);
+      expect(dates[0].getTime()).toBeCloseTo(twoHoursAgo.getTime(), -3);
+      expect(dates[1].getTime()).toBeCloseTo(fourHoursAgo.getTime(), -3);
+    });
+
+    it("excludes entries outside lookback period", async () => {
+      const feed = await createTestFeed();
+      const now = new Date();
+      const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+      const thirtyHoursAgo = new Date(now.getTime() - 30 * 60 * 60 * 1000);
+
+      // Create entries: one recent, one old
+      await db.insert(entries).values([
+        {
+          id: generateUuidv7(),
+          feedId: feed.id,
+          type: "web",
+          guid: "recent-entry",
+          title: "Recent Entry",
+          publishedAt: sixHoursAgo,
+          fetchedAt: now,
+        },
+        {
+          id: generateUuidv7(),
+          feedId: feed.id,
+          type: "web",
+          guid: "old-entry",
+          title: "Old Entry",
+          publishedAt: thirtyHoursAgo,
+          fetchedAt: now,
+        },
+      ]);
+
+      // Only recent entry should be returned (within 24 hours)
+      const dates = await getRecentEntryPublishDates(feed.id);
+
+      expect(dates).toHaveLength(1);
+      expect(dates[0].getTime()).toBeCloseTo(sixHoursAgo.getTime(), -3);
+    });
+
+    it("uses custom lookback period", async () => {
+      const feed = await createTestFeed();
+      const now = new Date();
+      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+      const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+
+      await db.insert(entries).values([
+        {
+          id: generateUuidv7(),
+          feedId: feed.id,
+          type: "web",
+          guid: "entry-1",
+          title: "Entry 1",
+          publishedAt: twoHoursAgo,
+          fetchedAt: now,
+        },
+        {
+          id: generateUuidv7(),
+          feedId: feed.id,
+          type: "web",
+          guid: "entry-2",
+          title: "Entry 2",
+          publishedAt: fourHoursAgo,
+          fetchedAt: now,
+        },
+      ]);
+
+      // With 3 hour lookback, only the 2-hour-old entry should be returned
+      const dates = await getRecentEntryPublishDates(feed.id, 3 * 60 * 60);
+
+      expect(dates).toHaveLength(1);
+      expect(dates[0].getTime()).toBeCloseTo(twoHoursAgo.getTime(), -3);
+    });
+
+    it("excludes entries without publishedAt", async () => {
+      const feed = await createTestFeed();
+      const now = new Date();
+      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+
+      await db.insert(entries).values([
+        {
+          id: generateUuidv7(),
+          feedId: feed.id,
+          type: "web",
+          guid: "entry-with-date",
+          title: "Entry With Date",
+          publishedAt: twoHoursAgo,
+          fetchedAt: now,
+        },
+        {
+          id: generateUuidv7(),
+          feedId: feed.id,
+          type: "web",
+          guid: "entry-without-date",
+          title: "Entry Without Date",
+          publishedAt: null,
+          fetchedAt: now,
+        },
+      ]);
+
+      const dates = await getRecentEntryPublishDates(feed.id);
+
+      expect(dates).toHaveLength(1);
+      expect(dates[0].getTime()).toBeCloseTo(twoHoursAgo.getTime(), -3);
+    });
+
+    it("only returns entries for the specified feed", async () => {
+      const feed1 = await createTestFeed();
+      const feed2 = await createTestFeed();
+      const now = new Date();
+      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+
+      // Create entries for both feeds
+      await db.insert(entries).values([
+        {
+          id: generateUuidv7(),
+          feedId: feed1.id,
+          type: "web",
+          guid: "feed1-entry",
+          title: "Feed 1 Entry",
+          publishedAt: twoHoursAgo,
+          fetchedAt: now,
+        },
+        {
+          id: generateUuidv7(),
+          feedId: feed2.id,
+          type: "web",
+          guid: "feed2-entry",
+          title: "Feed 2 Entry",
+          publishedAt: twoHoursAgo,
+          fetchedAt: now,
+        },
+      ]);
+
+      // Should only return entries for feed1
+      const dates = await getRecentEntryPublishDates(feed1.id);
+
+      expect(dates).toHaveLength(1);
     });
   });
 });
