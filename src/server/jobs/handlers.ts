@@ -641,7 +641,7 @@ async function updateFeedOnError(
  * We require the redirect to be consistently seen for this duration to avoid
  * premature migrations due to temporary server misconfigurations.
  */
-const REDIRECT_WAIT_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+export const REDIRECT_WAIT_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
  * Finds the final URL from a permanent redirect chain.
@@ -652,7 +652,10 @@ const REDIRECT_WAIT_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
  * @param originalUrl - The original feed URL we started with
  * @returns The final permanent redirect URL, or null if none
  */
-function findPermanentRedirectUrl(redirects: RedirectInfo[], originalUrl: string): string | null {
+export function findPermanentRedirectUrl(
+  redirects: RedirectInfo[],
+  originalUrl: string
+): string | null {
   // Find all permanent redirects in the chain
   const permanentRedirects = redirects.filter((r) => r.type === "permanent");
 
@@ -679,7 +682,7 @@ function findPermanentRedirectUrl(redirects: RedirectInfo[], originalUrl: string
  * @param redirectUrl - The redirect destination URL
  * @returns True if this is just a protocol upgrade
  */
-function isHttpToHttpsUpgrade(originalUrl: string, redirectUrl: string): boolean {
+export function isHttpToHttpsUpgrade(originalUrl: string, redirectUrl: string): boolean {
   try {
     const original = new URL(originalUrl);
     const redirect = new URL(redirectUrl);
