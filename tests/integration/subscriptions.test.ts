@@ -63,6 +63,9 @@ function createAuthContext(userId: string): Context {
         updatedAt: now,
       },
     },
+    apiToken: null,
+    authType: "session",
+    scopes: [],
     sessionToken: "test-token",
     headers: new Headers(),
   };

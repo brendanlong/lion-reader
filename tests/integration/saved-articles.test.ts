@@ -70,7 +70,22 @@ function createAuthContext(userId: string): Context {
         updatedAt: now,
       },
     },
+    apiToken: null,
+    authType: "session",
+    scopes: [],
     sessionToken: "test-token",
+    headers: new Headers(),
+  };
+}
+
+function createUnauthContext(): Context {
+  return {
+    db,
+    session: null,
+    apiToken: null,
+    authType: null,
+    scopes: [],
+    sessionToken: null,
     headers: new Headers(),
   };
 }
@@ -641,24 +656,14 @@ describe("Saved Articles API", () => {
 
   describe("authentication", () => {
     it("requires authentication for list", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.entries.list({ type: "saved" })).rejects.toThrow("You must be logged in");
     });
 
     it("requires authentication for get", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.entries.get({ id: generateUuidv7() })).rejects.toThrow(
@@ -667,12 +672,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for delete", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.saved.delete({ id: generateUuidv7() })).rejects.toThrow(
@@ -681,12 +681,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for markRead", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(
@@ -695,12 +690,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for star", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.entries.star({ id: generateUuidv7() })).rejects.toThrow(
@@ -709,12 +699,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for unstar", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.entries.unstar({ id: generateUuidv7() })).rejects.toThrow(
@@ -723,12 +708,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for save", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.saved.save({ url: "https://example.com" })).rejects.toThrow(

@@ -90,6 +90,8 @@ export interface GoogleAuthResult {
   scopes: string[];
   /** OAuth flow mode */
   mode: OAuthMode;
+  /** Optional return URL for extension-save mode */
+  returnUrl?: string;
 }
 
 // ============================================================================
@@ -106,7 +108,7 @@ function getPkceKey(state: string): string {
 /**
  * OAuth flow mode - determines redirect behavior after callback
  */
-export type OAuthMode = "login" | "link" | "save";
+export type OAuthMode = "login" | "link" | "save" | "extension-save";
 
 /**
  * Data stored in Redis for PKCE verification
@@ -115,6 +117,8 @@ interface PkceData {
   verifier: string;
   scopes: string[];
   mode: OAuthMode;
+  /** Optional return URL for modes that need to redirect back to a specific page */
+  returnUrl?: string;
 }
 
 /**
@@ -124,16 +128,18 @@ interface PkceData {
  * @param state - The OAuth state parameter
  * @param codeVerifier - The PKCE code verifier
  * @param scopes - The OAuth scopes being requested
- * @param mode - The OAuth flow mode (login, link, or save)
+ * @param mode - The OAuth flow mode (login, link, save, or extension-save)
+ * @param returnUrl - Optional return URL for extension-save mode
  */
 async function storePkceVerifier(
   state: string,
   codeVerifier: string,
   scopes: string[],
-  mode: OAuthMode
+  mode: OAuthMode,
+  returnUrl?: string
 ): Promise<void> {
   const key = getPkceKey(state);
-  const data: PkceData = { verifier: codeVerifier, scopes, mode };
+  const data: PkceData = { verifier: codeVerifier, scopes, mode, returnUrl };
   await redis.setex(key, PKCE_VERIFIER_TTL_SECONDS, JSON.stringify(data));
 }
 
@@ -176,12 +182,14 @@ async function consumePkceVerifier(state: string): Promise<PkceData | null> {
  *
  * @param additionalScopes - Optional additional scopes to request (for incremental auth)
  * @param mode - The OAuth flow mode (defaults to "login")
+ * @param returnUrl - Optional return URL for extension-save mode
  * @returns The authorization URL and state
  * @throws Error if Google OAuth is not configured
  */
 export async function createGoogleAuthUrl(
   additionalScopes?: string[],
-  mode: OAuthMode = "login"
+  mode: OAuthMode = "login",
+  returnUrl?: string
 ): Promise<GoogleAuthUrlResult> {
   const google = getGoogleProvider();
 
@@ -198,8 +206,8 @@ export async function createGoogleAuthUrl(
     ? [...GOOGLE_SCOPES, ...additionalScopes.filter((s) => !GOOGLE_SCOPES.includes(s))]
     : GOOGLE_SCOPES;
 
-  // Store the code verifier, scopes, and mode for later use
-  await storePkceVerifier(state, codeVerifier, scopes, mode);
+  // Store the code verifier, scopes, mode, and return URL for later use
+  await storePkceVerifier(state, codeVerifier, scopes, mode, returnUrl);
 
   // Create the authorization URL
   const url = google.createAuthorizationURL(state, codeVerifier, scopes);
@@ -255,6 +263,7 @@ export async function validateGoogleCallback(
     },
     scopes: pkceData.scopes,
     mode: pkceData.mode,
+    returnUrl: pkceData.returnUrl,
   };
 }
 

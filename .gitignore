@@ -144,3 +144,6 @@ next-env.d.ts
 
 # ONNX WASM files (copied from node_modules on install)
 public/onnx/
+
+# Browser extension build output
+extension/*.zip

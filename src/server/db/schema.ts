@@ -92,6 +92,40 @@ export const sessions = pgTable(
   ]
 );
 
+/**
+ * API tokens table - for extension and third-party integrations.
+ * Tokens are scoped to specific permissions (e.g., 'saved:write' for saving articles).
+ * Token is stored as SHA-256 hash (never raw), similar to sessions.
+ */
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").unique().notNull(), // SHA-256 of API token
+
+    // Scopes define what this token can do (e.g., ['saved:write'])
+    scopes: text("scopes")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+
+    // Optional name for user to identify the token
+    name: text("name"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_api_tokens_user").on(table.userId),
+    index("idx_api_tokens_token").on(table.tokenHash),
+  ]
+);
+
 // ============================================================================
 // OAUTH ACCOUNTS
 // ============================================================================
@@ -653,6 +687,9 @@ export type NewUser = typeof users.$inferInsert;
 
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+
+export type ApiToken = typeof apiTokens.$inferSelect;
+export type NewApiToken = typeof apiTokens.$inferInsert;
 
 export type Feed = typeof feeds.$inferSelect;
 export type NewFeed = typeof feeds.$inferInsert;

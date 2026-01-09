@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Lion Reader",
+  "version": "1.0.0",
+  "description": "Save articles to Lion Reader for later reading",
+
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    },
+    "default_title": "Save to Lion Reader",
+    "default_popup": "src/popup.html"
+  },
+
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus", "webNavigation"],
+
+  "host_permissions": ["https://lion-reader.fly.dev/*", "http://localhost:3000/*"],
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "options_ui": {
+    "page": "src/options.html",
+    "open_in_tab": false
+  },
+
+  "commands": {
+    "save-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Save current page to Lion Reader"
+    }
+  }
+}
