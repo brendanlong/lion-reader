@@ -2,6 +2,8 @@
  * Background service worker for Lion Reader browser extension.
  *
  * Handles:
+ * - Detecting callback URL after web auth flow
+ * - Storing API tokens
  * - Context menu creation and clicks
  * - Keyboard shortcut commands
  * - Badge updates
@@ -18,48 +20,36 @@ async function getServerUrl() {
 }
 
 /**
- * Capture the current page's content using scripting API.
+ * Get the stored API token.
  */
-async function capturePageContent(tabId) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        return {
-          url: window.location.href,
-          title: document.title,
-          html: document.documentElement.outerHTML,
-        };
-      },
-    });
-
-    if (results && results[0] && results[0].result) {
-      return results[0].result;
-    }
-  } catch (err) {
-    console.error("Failed to capture page content:", err);
-  }
-
-  return null;
+async function getApiToken() {
+  const result = await chrome.storage.sync.get(["apiToken"]);
+  return result.apiToken || null;
 }
 
 /**
- * Save an article to Lion Reader.
+ * Store the API token.
  */
-async function saveArticle(url, html, title) {
+async function setApiToken(token) {
+  await chrome.storage.sync.set({ apiToken: token });
+}
+
+/**
+ * Save an article to Lion Reader using Bearer token auth.
+ */
+async function saveArticle(url, title, token) {
   const serverUrl = await getServerUrl();
   const apiUrl = `${serverUrl}/api/v1/saved`;
 
   const body = { url };
-  if (html) body.html = html;
   if (title) body.title = title;
 
   const response = await fetch(apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
     },
-    credentials: "include",
     body: JSON.stringify(body),
   });
 
@@ -67,7 +57,9 @@ async function saveArticle(url, html, title) {
     const data = await response.json().catch(() => ({}));
 
     if (response.status === 401) {
-      throw new Error("Please sign in to Lion Reader first");
+      // Token expired or revoked
+      await chrome.storage.sync.remove(["apiToken"]);
+      throw new Error("TOKEN_EXPIRED");
     }
 
     throw new Error(data.error?.message || `HTTP ${response.status}`);
@@ -77,11 +69,33 @@ async function saveArticle(url, html, title) {
 }
 
 /**
- * Save the current tab's page.
+ * Open the web auth flow to save an article and get a token.
+ */
+async function openWebAuthFlow(url, title) {
+  const serverUrl = await getServerUrl();
+  let authUrl = `${serverUrl}/extension/save?url=${encodeURIComponent(url)}`;
+  if (title) {
+    authUrl += `&title=${encodeURIComponent(title)}`;
+  }
+
+  await chrome.tabs.create({ url: authUrl });
+}
+
+/**
+ * Save the current tab's page using the stored token.
+ * Falls back to web auth flow if no token.
  */
 async function saveCurrentTab(tab) {
   if (!tab || !tab.url) {
     console.error("No tab URL available");
+    return;
+  }
+
+  const token = await getApiToken();
+
+  if (!token) {
+    // No token - open web auth flow
+    await openWebAuthFlow(tab.url, tab.title);
     return;
   }
 
@@ -90,27 +104,7 @@ async function saveCurrentTab(tab) {
   await chrome.action.setBadgeBackgroundColor({ color: "#71717a", tabId: tab.id });
 
   try {
-    // Check if we can access this page
-    const canCapture =
-      !tab.url.startsWith("chrome://") &&
-      !tab.url.startsWith("chrome-extension://") &&
-      !tab.url.startsWith("moz-extension://") &&
-      !tab.url.startsWith("about:") &&
-      !tab.url.startsWith("edge://");
-
-    let html = null;
-    let title = null;
-
-    if (canCapture) {
-      const content = await capturePageContent(tab.id);
-      if (content) {
-        html = content.html;
-        title = content.title;
-      }
-    }
-
-    // Save to Lion Reader
-    await saveArticle(tab.url, html, title);
+    await saveArticle(tab.url, tab.title, token);
 
     // Show success badge
     await chrome.action.setBadgeText({ text: "\u2713", tabId: tab.id });
@@ -122,6 +116,13 @@ async function saveCurrentTab(tab) {
     }, 2000);
   } catch (err) {
     console.error("Save failed:", err);
+
+    if (err.message === "TOKEN_EXPIRED") {
+      // Token expired - open web auth flow
+      await openWebAuthFlow(tab.url, tab.title);
+      await chrome.action.setBadgeText({ text: "", tabId: tab.id });
+      return;
+    }
 
     // Show error badge
     await chrome.action.setBadgeText({ text: "!", tabId: tab.id });
@@ -146,13 +147,20 @@ chrome.runtime.onInstalled.addListener(() => {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "save-to-lion-reader") {
+    const token = await getApiToken();
+
     if (info.linkUrl) {
-      // Saving a link - just send the URL without content
+      // Saving a link
+      if (!token) {
+        await openWebAuthFlow(info.linkUrl, null);
+        return;
+      }
+
       await chrome.action.setBadgeText({ text: "...", tabId: tab.id });
       await chrome.action.setBadgeBackgroundColor({ color: "#71717a", tabId: tab.id });
 
       try {
-        await saveArticle(info.linkUrl, null, null);
+        await saveArticle(info.linkUrl, null, token);
         await chrome.action.setBadgeText({ text: "\u2713", tabId: tab.id });
         await chrome.action.setBadgeBackgroundColor({ color: "#16a34a", tabId: tab.id });
         setTimeout(async () => {
@@ -160,6 +168,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         }, 2000);
       } catch (err) {
         console.error("Save link failed:", err);
+
+        if (err.message === "TOKEN_EXPIRED") {
+          await openWebAuthFlow(info.linkUrl, null);
+          await chrome.action.setBadgeText({ text: "", tabId: tab.id });
+          return;
+        }
+
         await chrome.action.setBadgeText({ text: "!", tabId: tab.id });
         await chrome.action.setBadgeBackgroundColor({ color: "#dc2626", tabId: tab.id });
         setTimeout(async () => {
@@ -182,3 +197,38 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
   }
 });
+
+// Listen for navigation to the callback URL to extract and store the token
+chrome.webNavigation.onCompleted.addListener(
+  async (details) => {
+    try {
+      const url = new URL(details.url);
+      const token = url.searchParams.get("token");
+      const status = url.searchParams.get("status");
+
+      if (status === "success" && token) {
+        // Store the token
+        await setApiToken(token);
+        console.log("API token stored successfully");
+
+        // Close the tab after a short delay to let the user see the success message
+        setTimeout(async () => {
+          try {
+            await chrome.tabs.remove(details.tabId);
+          } catch (err) {
+            // Tab might already be closed
+            console.log("Could not close tab:", err.message);
+          }
+        }, 1500);
+      }
+    } catch (err) {
+      console.error("Error processing callback:", err);
+    }
+  },
+  {
+    url: [
+      { hostEquals: "lion-reader.fly.dev", pathPrefix: "/extension/callback" },
+      { hostEquals: "localhost", pathPrefix: "/extension/callback" },
+    ],
+  }
+);
