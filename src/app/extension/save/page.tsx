@@ -95,6 +95,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   }
 
   // All auth is complete - save the article
+  let saveResult: Awaited<ReturnType<ReturnType<typeof createCaller>["saved"]["save"]>>;
   try {
     const caller = createCaller({
       db,
@@ -106,22 +107,22 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
       headers: new Headers(),
     });
 
-    const result = await caller.saved.save({ url, title: title || undefined });
-
-    // Create an API token for the extension
-    const token = await createApiToken(
-      session.user.id,
-      [API_TOKEN_SCOPES.SAVED_WRITE],
-      "Browser Extension"
-    );
-
-    // Redirect to callback with success
-    const articleTitle = result.article.title || title || url;
-    redirect(
-      `/extension/callback?status=success&token=${encodeURIComponent(token)}&title=${encodeURIComponent(articleTitle)}`
-    );
+    saveResult = await caller.saved.save({ url, title: title || undefined });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Failed to save article";
     return <ExtensionSaveClient status="error" error={errorMessage} url={url} canRetry={true} />;
   }
+
+  // Create an API token for the extension
+  const token = await createApiToken(
+    session.user.id,
+    [API_TOKEN_SCOPES.SAVED_WRITE],
+    "Browser Extension"
+  );
+
+  // Redirect to callback with success (must be outside try/catch as redirect throws)
+  const articleTitle = saveResult.article.title || title || url;
+  redirect(
+    `/extension/callback?status=success&token=${encodeURIComponent(token)}&title=${encodeURIComponent(articleTitle)}`
+  );
 }
