@@ -30,6 +30,9 @@ const createServerContext = cache(async (): Promise<Context> => {
   return {
     db,
     session,
+    apiToken: null,
+    authType: session ? "session" : null,
+    scopes: [],
     sessionToken: token,
     headers: new Headers(Object.fromEntries(headerStore.entries())),
   };

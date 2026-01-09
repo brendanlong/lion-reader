@@ -71,7 +71,22 @@ function createAuthContext(userId: string): Context {
         updatedAt: now,
       },
     },
+    apiToken: null,
+    authType: "session",
+    scopes: [],
     sessionToken: "test-token",
+    headers: new Headers(),
+  };
+}
+
+function createUnauthContext(): Context {
+  return {
+    db,
+    session: null,
+    apiToken: null,
+    authType: null,
+    scopes: [],
+    sessionToken: null,
     headers: new Headers(),
   };
 }
@@ -647,36 +662,21 @@ describe("Tags API", () => {
 
   describe("authentication", () => {
     it("requires authentication for list", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.tags.list()).rejects.toThrow("You must be logged in");
     });
 
     it("requires authentication for create", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.tags.create({ name: "Tech" })).rejects.toThrow("You must be logged in");
     });
 
     it("requires authentication for update", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.tags.update({ id: generateUuidv7(), name: "Tech" })).rejects.toThrow(
@@ -685,12 +685,7 @@ describe("Tags API", () => {
     });
 
     it("requires authentication for delete", async () => {
-      const ctx: Context = {
-        db,
-        session: null,
-        sessionToken: null,
-        headers: new Headers(),
-      };
+      const ctx = createUnauthContext();
       const caller = createCaller(ctx);
 
       await expect(caller.tags.delete({ id: generateUuidv7() })).rejects.toThrow(

@@ -13,6 +13,24 @@ import { appRouter, createContext } from "@/server/trpc";
 import { startHttpTimer } from "@/server/metrics";
 
 /**
+ * CORS headers for the /saved endpoint.
+ * Since we use Bearer token auth (not cookies), any origin can make requests.
+ * The token itself provides the security.
+ */
+const SAVED_CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+/**
+ * Check if this request is to the /saved endpoint and needs CORS headers.
+ */
+function needsCorsHeaders(url: URL): boolean {
+  return url.pathname.endsWith("/saved");
+}
+
+/**
  * Extracts rate limit headers from a tRPC error (if present).
  */
 function extractRateLimitHeaders(error: TRPCError): Record<string, string> {
@@ -37,6 +55,19 @@ function normalizeRestPath(url: URL): string {
   // Replace UUIDs with :id placeholder
   return pathname.replace(uuidPattern, ":id");
 }
+
+/**
+ * Handle OPTIONS preflight requests for CORS.
+ */
+const optionsHandler = async (req: Request) => {
+  const url = new URL(req.url);
+
+  if (needsCorsHeaders(url)) {
+    return new Response(null, { status: 204, headers: SAVED_CORS_HEADERS });
+  }
+
+  return new Response(null, { status: 204 });
+};
 
 /**
  * Handle REST API requests with rate limit header handling.
@@ -75,10 +106,16 @@ const handler = async (req: Request) => {
   // Record HTTP metrics
   endTimer(response.status);
 
-  // Add rate limit headers to the response
-  if (Object.keys(rateLimitHeaders).length > 0) {
+  // Build extra headers (rate limit + CORS if needed)
+  const extraHeaders: Record<string, string> = {
+    ...rateLimitHeaders,
+    ...(needsCorsHeaders(url) ? SAVED_CORS_HEADERS : {}),
+  };
+
+  // Add extra headers to the response if any
+  if (Object.keys(extraHeaders).length > 0) {
     const headers = new Headers(response.headers);
-    for (const [key, value] of Object.entries(rateLimitHeaders)) {
+    for (const [key, value] of Object.entries(extraHeaders)) {
       headers.set(key, value);
     }
     return new Response(response.body, {
@@ -91,4 +128,11 @@ const handler = async (req: Request) => {
   return response;
 };
 
-export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE };
+export {
+  optionsHandler as OPTIONS,
+  handler as GET,
+  handler as POST,
+  handler as PUT,
+  handler as PATCH,
+  handler as DELETE,
+};

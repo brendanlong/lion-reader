@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lion Reader Settings</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #fafafa;
+      --bg-card: #ffffff;
+      --border: #e4e4e7;
+      --text: #18181b;
+      --text-muted: #71717a;
+      --text-dim: #a1a1aa;
+      --success: #16a34a;
+      --primary: #18181b;
+      --primary-hover: #27272a;
+      --input-bg: #ffffff;
+      --input-border: #d4d4d8;
+      --focus-ring: #3b82f6;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #09090b;
+        --bg-card: #18181b;
+        --border: #27272a;
+        --text: #fafafa;
+        --text-muted: #a1a1aa;
+        --text-dim: #71717a;
+        --success: #22c55e;
+        --primary: #fafafa;
+        --primary-hover: #e4e4e7;
+        --input-bg: #27272a;
+        --input-border: #3f3f46;
+        --focus-ring: #60a5fa;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--text);
+      min-width: 400px;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 500px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .description {
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    .field {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    input[type="url"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      font-size: 14px;
+      background: var(--input-bg);
+      color: var(--text);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input[type="url"]:focus {
+      outline: none;
+      border-color: var(--focus-ring);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: background-color 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: var(--bg);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg);
+    }
+
+    .status {
+      font-size: 13px;
+      color: var(--success);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .status.visible {
+      opacity: 1;
+    }
+
+    .section {
+      border-top: 1px solid var(--border);
+      padding-top: 20px;
+      margin-top: 24px;
+    }
+
+    .section h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .shortcut {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .shortcut:last-child {
+      border-bottom: none;
+    }
+
+    .shortcut-name {
+      font-weight: 500;
+    }
+
+    .shortcut-key {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .link {
+      color: var(--focus-ring);
+      text-decoration: none;
+    }
+
+    .link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Lion Reader Settings</h1>
+    <p class="description">
+      Configure your Lion Reader extension. For self-hosted instances, enter your server URL below.
+    </p>
+
+    <div class="field">
+      <label for="server-url">Server URL</label>
+      <input type="url" id="server-url" placeholder="https://lion-reader.fly.dev">
+      <p class="hint">Leave empty to use the default (https://lion-reader.fly.dev)</p>
+    </div>
+
+    <div class="buttons">
+      <button id="save-btn" class="btn btn-primary">Save Settings</button>
+      <button id="reset-btn" class="btn btn-secondary">Reset to Default</button>
+      <span id="status" class="status">Saved!</span>
+    </div>
+
+    <div class="section">
+      <h2>Keyboard Shortcuts</h2>
+      <div class="shortcut">
+        <span class="shortcut-name">Save current page</span>
+        <span class="shortcut-key" id="shortcut-key">Ctrl+Shift+S</span>
+      </div>
+      <p class="hint" style="margin-top: 12px;">
+        You can customize shortcuts in your browser's extension settings.
+        <br>
+        <a href="#" id="shortcuts-link" class="link">Open extension shortcuts</a>
+      </p>
+    </div>
+
+    <div class="section">
+      <h2>About</h2>
+      <p style="color: var(--text-muted); line-height: 1.6;">
+        Lion Reader is an open-source RSS reader with read-it-later functionality.
+        <br><br>
+        <a href="https://github.com/brendanlong/lion-reader" target="_blank" class="link">View on GitHub</a>
+      </p>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
