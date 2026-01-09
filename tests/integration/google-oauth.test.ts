@@ -112,9 +112,12 @@ describe("Google OAuth", () => {
       expect(result.url).toContain("https://accounts.google.com");
       expect(result.state).toBe("mock-state");
 
-      // Verify PKCE verifier is stored in Redis
-      const storedVerifier = await redis.get("oauth:pkce:mock-state");
-      expect(storedVerifier).toBe("mock-code-verifier");
+      // Verify PKCE verifier is stored in Redis (as JSON with verifier and scopes)
+      const storedData = await redis.get("oauth:pkce:mock-state");
+      expect(storedData).not.toBeNull();
+      const parsedData = JSON.parse(storedData!);
+      expect(parsedData.verifier).toBe("mock-code-verifier");
+      expect(parsedData.scopes).toEqual(["openid", "email", "profile"]);
     });
   });
 
@@ -182,8 +185,12 @@ describe("Google OAuth", () => {
     }
 
     it("creates new user and OAuth account for new Google user", async () => {
-      // Store PKCE verifier manually
-      await redis.setex("oauth:pkce:new-user-state", 600, "mock-code-verifier");
+      // Store PKCE data manually (JSON format with verifier and scopes)
+      const pkceData = JSON.stringify({
+        verifier: "mock-code-verifier",
+        scopes: ["openid", "email", "profile"],
+      });
+      await redis.setex("oauth:pkce:new-user-state", 600, pkceData);
 
       // Reset mock to use a different state
       const { generateState } = await import("arctic");
