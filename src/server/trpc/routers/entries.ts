@@ -363,9 +363,13 @@ export const entriesRouter = createTRPCRouter({
         conditions.push(eq(entries.isSpam, false));
       }
 
-      // Sort by publishedAt, falling back to fetchedAt if null
+      // For saved articles, sort by fetchedAt (when saved) since that's what users care about
+      // For feed entries, sort by publishedAt (when published), falling back to fetchedAt if null
       // Use entry.id as tiebreaker for stable ordering
-      const sortColumn = sql`COALESCE(${entries.publishedAt}, ${entries.fetchedAt})`;
+      const sortColumn =
+        input.type === "saved"
+          ? entries.fetchedAt
+          : sql`COALESCE(${entries.publishedAt}, ${entries.fetchedAt})`;
 
       // Add cursor condition if present
       // Uses compound comparison: (sortColumn, id) for stable pagination
@@ -429,10 +433,14 @@ export const entriesRouter = createTRPCRouter({
       }));
 
       // Generate next cursor if there are more results
+      // Cursor timestamp must match the sort column used above
       let nextCursor: string | undefined;
       if (hasMore && resultEntries.length > 0) {
         const lastEntry = resultEntries[resultEntries.length - 1].entry;
-        const lastTs = lastEntry.publishedAt ?? lastEntry.fetchedAt;
+        const lastTs =
+          input.type === "saved"
+            ? lastEntry.fetchedAt
+            : (lastEntry.publishedAt ?? lastEntry.fetchedAt);
         nextCursor = encodeCursor(lastTs, lastEntry.id);
       }
 
