@@ -42,6 +42,7 @@ import {
   extractDocId,
   extractTabId,
   normalizeGoogleDocsUrl,
+  GOOGLE_DRIVE_SCOPE,
   type GoogleDocsContent,
 } from "@/server/google/docs";
 import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
@@ -323,13 +324,12 @@ export const savedRouter = createTRPCRouter({
             const googleOAuth = await getOAuthAccount(ctx.session.user.id, "google");
 
             if (googleOAuth) {
-              // Check if user has granted Docs permission
-              const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
-              const hasDocsScope = await hasGoogleScope(ctx.session.user.id, GOOGLE_DOCS_SCOPE);
+              // Check if user has granted Drive permission (required for reading Docs via Drive API)
+              const hasDocsScope = await hasGoogleScope(ctx.session.user.id, GOOGLE_DRIVE_SCOPE);
 
               if (!hasDocsScope) {
-                // User has Google OAuth but hasn't granted Docs permission
-                logger.debug("User needs to grant Google Docs permission", {
+                // User has Google OAuth but hasn't granted Drive permission
+                logger.debug("User needs to grant Google Drive permission", {
                   userId: ctx.session.user.id,
                   url: normalizedUrl,
                 });
@@ -340,7 +340,7 @@ export const savedRouter = createTRPCRouter({
                     code: "NEEDS_DOCS_PERMISSION",
                     details: {
                       url: normalizedUrl,
-                      scope: GOOGLE_DOCS_SCOPE,
+                      scope: GOOGLE_DRIVE_SCOPE,
                     },
                   },
                 });
