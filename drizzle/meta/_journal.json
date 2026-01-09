@@ -225,6 +225,13 @@
       "when": 1767390000000,
       "tag": "0031_feed_redirect_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1767400000000,
+      "tag": "0032_clear_saved_articles_published_at",
+      "breakpoints": true
     }
   ]
 }
