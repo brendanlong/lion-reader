@@ -34,6 +34,7 @@ export {
   type GoogleUserInfo,
   type GoogleAuthUrlResult,
   type GoogleAuthResult,
+  type OAuthMode,
   createGoogleAuthUrl,
   validateGoogleCallback,
   isGoogleOAuthEnabled,

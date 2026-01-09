@@ -1330,7 +1330,8 @@ export const authRouter = createTRPCRouter({
 
       // Create OAuth URL with existing + new scopes
       // We need to request all scopes again (not just the new one) per OAuth spec
-      const result = await createGoogleAuthUrl([GOOGLE_DOCS_READONLY_SCOPE]);
+      // Pass mode: "save" so the callback knows to redirect back to /save
+      const result = await createGoogleAuthUrl([GOOGLE_DOCS_READONLY_SCOPE], "save");
 
       // Return the URL with a note that this is for incremental auth
       // The state should be stored by the client to verify the callback

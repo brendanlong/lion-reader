@@ -88,6 +88,8 @@ export interface GoogleAuthResult {
   };
   /** OAuth scopes that were granted */
   scopes: string[];
+  /** OAuth flow mode */
+  mode: OAuthMode;
 }
 
 // ============================================================================
@@ -102,28 +104,36 @@ function getPkceKey(state: string): string {
 }
 
 /**
+ * OAuth flow mode - determines redirect behavior after callback
+ */
+export type OAuthMode = "login" | "link" | "save";
+
+/**
  * Data stored in Redis for PKCE verification
  */
 interface PkceData {
   verifier: string;
   scopes: string[];
+  mode: OAuthMode;
 }
 
 /**
- * Stores a PKCE code verifier and scopes in Redis
+ * Stores a PKCE code verifier, scopes, and mode in Redis
  * The verifier is associated with the state parameter
  *
  * @param state - The OAuth state parameter
  * @param codeVerifier - The PKCE code verifier
  * @param scopes - The OAuth scopes being requested
+ * @param mode - The OAuth flow mode (login, link, or save)
  */
 async function storePkceVerifier(
   state: string,
   codeVerifier: string,
-  scopes: string[]
+  scopes: string[],
+  mode: OAuthMode
 ): Promise<void> {
   const key = getPkceKey(state);
-  const data: PkceData = { verifier: codeVerifier, scopes };
+  const data: PkceData = { verifier: codeVerifier, scopes, mode };
   await redis.setex(key, PKCE_VERIFIER_TTL_SECONDS, JSON.stringify(data));
 }
 
@@ -165,11 +175,13 @@ async function consumePkceVerifier(state: string): Promise<PkceData | null> {
  * 3. The authorization URL with all parameters
  *
  * @param additionalScopes - Optional additional scopes to request (for incremental auth)
+ * @param mode - The OAuth flow mode (defaults to "login")
  * @returns The authorization URL and state
  * @throws Error if Google OAuth is not configured
  */
 export async function createGoogleAuthUrl(
-  additionalScopes?: string[]
+  additionalScopes?: string[],
+  mode: OAuthMode = "login"
 ): Promise<GoogleAuthUrlResult> {
   const google = getGoogleProvider();
 
@@ -186,8 +198,8 @@ export async function createGoogleAuthUrl(
     ? [...GOOGLE_SCOPES, ...additionalScopes.filter((s) => !GOOGLE_SCOPES.includes(s))]
     : GOOGLE_SCOPES;
 
-  // Store the code verifier and scopes for later use
-  await storePkceVerifier(state, codeVerifier, scopes);
+  // Store the code verifier, scopes, and mode for later use
+  await storePkceVerifier(state, codeVerifier, scopes, mode);
 
   // Create the authorization URL
   const url = google.createAuthorizationURL(state, codeVerifier, scopes);
@@ -242,6 +254,7 @@ export async function validateGoogleCallback(
       expiresAt: tokens.accessTokenExpiresAt(),
     },
     scopes: pkceData.scopes,
+    mode: pkceData.mode,
   };
 }
 
