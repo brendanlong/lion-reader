@@ -12,6 +12,7 @@ import {
   htmlToClientNarration,
   BLOCK_ELEMENTS,
 } from "../../src/lib/narration/client-paragraph-ids";
+import { BLOCK_ELEMENTS as SERVER_BLOCK_ELEMENTS } from "../../src/lib/narration/html-preprocessing";
 
 describe("addParagraphIdsToHtml", () => {
   describe("basic paragraphs", () => {
@@ -372,26 +373,8 @@ console.log(result);</code></pre>
   describe("consistency with server-side processing", () => {
     it("uses the same block elements as server-side", () => {
       // This test ensures client-side processing matches server-side
-      const expectedElements = [
-        "p",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "blockquote",
-        "pre",
-        "ul",
-        "ol",
-        "li",
-        "figure",
-        "table",
-        "img",
-      ];
-
-      expect(BLOCK_ELEMENTS).toEqual(expectedElements);
-      expect(BLOCK_ELEMENTS.length).toBe(15);
+      // by importing and comparing against the actual server definition
+      expect(BLOCK_ELEMENTS).toEqual(SERVER_BLOCK_ELEMENTS);
     });
 
     it("produces same ID format as server-side (para-N)", () => {
@@ -498,29 +481,6 @@ describe("createMemoizedAddParagraphIds", () => {
     // Both should still be cached
     expect(memoized(html1)).toBe(result1);
     expect(memoized(html2)).toBe(result2);
-  });
-});
-
-describe("BLOCK_ELEMENTS constant", () => {
-  it("contains expected elements", () => {
-    expect(BLOCK_ELEMENTS).toContain("p");
-    expect(BLOCK_ELEMENTS).toContain("h1");
-    expect(BLOCK_ELEMENTS).toContain("h2");
-    expect(BLOCK_ELEMENTS).toContain("h3");
-    expect(BLOCK_ELEMENTS).toContain("h4");
-    expect(BLOCK_ELEMENTS).toContain("h5");
-    expect(BLOCK_ELEMENTS).toContain("h6");
-    expect(BLOCK_ELEMENTS).toContain("blockquote");
-    expect(BLOCK_ELEMENTS).toContain("pre");
-    expect(BLOCK_ELEMENTS).toContain("ul");
-    expect(BLOCK_ELEMENTS).toContain("ol");
-    expect(BLOCK_ELEMENTS).toContain("li");
-    expect(BLOCK_ELEMENTS).toContain("figure");
-    expect(BLOCK_ELEMENTS).toContain("table");
-  });
-
-  it("has exactly 15 elements", () => {
-    expect(BLOCK_ELEMENTS.length).toBe(15);
   });
 });
 
