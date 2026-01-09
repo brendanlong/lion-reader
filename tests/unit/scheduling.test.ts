@@ -9,6 +9,8 @@ import {
   calculateJitter,
   getNextFetchTime,
   syndicationToSeconds,
+  calculateMinPostGap,
+  calculateAdaptiveInterval,
   getMinFetchIntervalSeconds,
   DEFAULT_MIN_FETCH_INTERVAL_SECONDS,
   MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS,
@@ -17,6 +19,8 @@ import {
   MAX_CONSECUTIVE_FAILURES,
   DEFAULT_JITTER_FRACTION,
   MAX_JITTER_SECONDS,
+  MAX_ADAPTIVE_INTERVAL_SECONDS,
+  ADAPTIVE_INTERVAL_DIVISOR,
 } from "../../src/server/feed/scheduling";
 import type { CacheControl } from "../../src/server/feed/cache-headers";
 
@@ -840,5 +844,260 @@ describe("jitter constants", () => {
 
   it("MAX_JITTER_SECONDS is 30 minutes", () => {
     expect(MAX_JITTER_SECONDS).toBe(30 * 60);
+  });
+});
+
+describe("calculateMinPostGap", () => {
+  it("returns null for empty array", () => {
+    expect(calculateMinPostGap([])).toBeNull();
+  });
+
+  it("returns null for single date", () => {
+    expect(calculateMinPostGap([new Date("2024-01-15T12:00:00Z")])).toBeNull();
+  });
+
+  it("calculates gap between two dates", () => {
+    const dates = [
+      new Date("2024-01-15T10:00:00Z"),
+      new Date("2024-01-15T12:00:00Z"), // 2 hours later
+    ];
+    expect(calculateMinPostGap(dates)).toBe(2 * 60 * 60); // 2 hours in seconds
+  });
+
+  it("finds minimum gap among multiple dates", () => {
+    const dates = [
+      new Date("2024-01-15T10:00:00Z"),
+      new Date("2024-01-15T11:00:00Z"), // 1 hour gap (minimum)
+      new Date("2024-01-15T14:00:00Z"), // 3 hour gap
+      new Date("2024-01-15T20:00:00Z"), // 6 hour gap
+    ];
+    expect(calculateMinPostGap(dates)).toBe(60 * 60); // 1 hour
+  });
+
+  it("sorts dates internally (handles unsorted input)", () => {
+    const dates = [
+      new Date("2024-01-15T14:00:00Z"),
+      new Date("2024-01-15T10:00:00Z"),
+      new Date("2024-01-15T11:00:00Z"), // 1 hour gap between 10:00 and 11:00
+    ];
+    expect(calculateMinPostGap(dates)).toBe(60 * 60); // 1 hour
+  });
+
+  it("handles dates with very small gaps", () => {
+    const dates = [
+      new Date("2024-01-15T10:00:00Z"),
+      new Date("2024-01-15T10:05:00Z"), // 5 minutes
+    ];
+    expect(calculateMinPostGap(dates)).toBe(5 * 60); // 5 minutes
+  });
+
+  it("handles dates spanning multiple days", () => {
+    const dates = [
+      new Date("2024-01-14T12:00:00Z"),
+      new Date("2024-01-15T12:00:00Z"), // 24 hours
+    ];
+    expect(calculateMinPostGap(dates)).toBe(24 * 60 * 60); // 24 hours
+  });
+
+  it("handles identical dates (zero gap)", () => {
+    const dates = [new Date("2024-01-15T12:00:00Z"), new Date("2024-01-15T12:00:00Z")];
+    expect(calculateMinPostGap(dates)).toBe(0);
+  });
+});
+
+describe("calculateAdaptiveInterval", () => {
+  it("returns max interval for empty array", () => {
+    expect(calculateAdaptiveInterval([])).toBe(MAX_ADAPTIVE_INTERVAL_SECONDS);
+  });
+
+  it("returns max interval for single date", () => {
+    expect(calculateAdaptiveInterval([new Date("2024-01-15T12:00:00Z")])).toBe(
+      MAX_ADAPTIVE_INTERVAL_SECONDS
+    );
+  });
+
+  it("returns half the minimum gap (posts 2 hours apart -> 1 hour interval)", () => {
+    const dates = [
+      new Date("2024-01-15T10:00:00Z"),
+      new Date("2024-01-15T12:00:00Z"), // 2 hours apart
+    ];
+    expect(calculateAdaptiveInterval(dates)).toBe(60 * 60); // 1 hour
+  });
+
+  it("clamps to minimum (10 minutes) for very frequent posts", () => {
+    const dates = [
+      new Date("2024-01-15T10:00:00Z"),
+      new Date("2024-01-15T10:05:00Z"), // 5 minutes apart -> would be 2.5 min
+    ];
+    expect(calculateAdaptiveInterval(dates)).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS);
+  });
+
+  it("clamps to maximum (24 hours) for very infrequent posts", () => {
+    const dates = [
+      new Date("2024-01-10T12:00:00Z"),
+      new Date("2024-01-15T12:00:00Z"), // 5 days apart -> would be 2.5 days
+    ];
+    expect(calculateAdaptiveInterval(dates)).toBe(MAX_ADAPTIVE_INTERVAL_SECONDS);
+  });
+
+  it("uses divisor of 2 (fetch twice as often as posts appear)", () => {
+    expect(ADAPTIVE_INTERVAL_DIVISOR).toBe(2);
+    const dates = [
+      new Date("2024-01-15T10:00:00Z"),
+      new Date("2024-01-15T14:00:00Z"), // 4 hours apart
+    ];
+    expect(calculateAdaptiveInterval(dates)).toBe(2 * 60 * 60); // 2 hours (half of 4)
+  });
+});
+
+describe("calculateNextFetch with adaptive interval", () => {
+  const fixedNow = new Date("2024-01-15T12:00:00Z");
+
+  it("applies adaptive floor when cache-control is faster than post frequency", () => {
+    // Cache says 10 minutes, but posts are 4 hours apart -> use 2 hours
+    const result = calculateNextFetch({
+      cacheControl: createCacheControl({ maxAge: 600 }), // 10 minutes
+      recentPublishDates: [
+        new Date("2024-01-15T08:00:00Z"),
+        new Date("2024-01-15T12:00:00Z"), // 4 hours apart
+      ],
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours (half of 4h gap)
+    expect(result.reason).toBe("adaptive");
+  });
+
+  it("uses cache-control when it is slower than adaptive floor", () => {
+    // Cache says 6 hours, posts are 2 hours apart (adaptive floor = 1 hour)
+    // 6 hours > 1 hour, so use cache-control
+    const result = calculateNextFetch({
+      cacheControl: createCacheControl({ maxAge: 6 * 60 * 60 }), // 6 hours
+      recentPublishDates: [
+        new Date("2024-01-15T10:00:00Z"),
+        new Date("2024-01-15T12:00:00Z"), // 2 hours apart -> adaptive = 1 hour
+      ],
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(6 * 60 * 60); // 6 hours
+    expect(result.reason).toBe("cache_control");
+  });
+
+  it("uses default when slower than adaptive floor", () => {
+    // No cache headers, default is 60 minutes
+    // Posts are 30 minutes apart -> adaptive floor = 15 minutes
+    // 60 minutes > 15 minutes, so use default
+    const result = calculateNextFetch({
+      recentPublishDates: [
+        new Date("2024-01-15T11:30:00Z"),
+        new Date("2024-01-15T12:00:00Z"), // 30 minutes apart
+      ],
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(DEFAULT_FETCH_INTERVAL_SECONDS); // 60 minutes
+    expect(result.reason).toBe("default");
+  });
+
+  it("applies adaptive floor to TTL hints", () => {
+    // TTL says 30 minutes, but posts are 4 hours apart -> use 2 hours
+    const result = calculateNextFetch({
+      feedHints: { ttlMinutes: 30 },
+      recentPublishDates: [
+        new Date("2024-01-15T08:00:00Z"),
+        new Date("2024-01-15T12:00:00Z"), // 4 hours apart
+      ],
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours
+    expect(result.reason).toBe("adaptive");
+  });
+
+  it("does not apply adaptive floor during failure backoff", () => {
+    // Even with slow post frequency, failure backoff takes precedence
+    const result = calculateNextFetch({
+      consecutiveFailures: 2, // 1 hour backoff
+      recentPublishDates: [
+        new Date("2024-01-14T12:00:00Z"),
+        new Date("2024-01-15T12:00:00Z"), // 24 hours apart -> adaptive = 12 hours
+      ],
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(60 * 60); // 1 hour backoff
+    expect(result.reason).toBe("failure_backoff");
+  });
+
+  it("uses max adaptive interval (24h) when only 1 recent post", () => {
+    // Cache says 10 minutes, but only 1 post -> adaptive = 24 hours
+    const result = calculateNextFetch({
+      cacheControl: createCacheControl({ maxAge: 600 }), // 10 minutes
+      recentPublishDates: [new Date("2024-01-15T10:00:00Z")], // Only 1 post
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(MAX_ADAPTIVE_INTERVAL_SECONDS); // 24 hours
+    expect(result.reason).toBe("adaptive");
+  });
+
+  it("uses max adaptive interval (24h) when no recent posts", () => {
+    const result = calculateNextFetch({
+      cacheControl: createCacheControl({ maxAge: 600 }), // 10 minutes
+      recentPublishDates: [], // No posts
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(MAX_ADAPTIVE_INTERVAL_SECONDS); // 24 hours
+    expect(result.reason).toBe("adaptive");
+  });
+
+  it("clamps adaptive floor to minimum (10 minutes) for very frequent posts", () => {
+    // Posts 5 minutes apart -> would be 2.5 min, clamped to 10 min
+    // Cache says 10 minutes, adaptive floor is also 10 minutes
+    // Since they're equal, cache-control reason is kept
+    const result = calculateNextFetch({
+      cacheControl: createCacheControl({ maxAge: 600 }), // 10 minutes
+      recentPublishDates: [
+        new Date("2024-01-15T11:55:00Z"),
+        new Date("2024-01-15T12:00:00Z"), // 5 minutes apart
+      ],
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS); // 10 minutes
+    // Reason stays cache_control because adaptive floor equals the interval
+    expect(result.reason).toBe("cache_control");
+  });
+
+  it("does not change behavior when recentPublishDates is undefined", () => {
+    const result = calculateNextFetch({
+      cacheControl: createCacheControl({ maxAge: 600 }), // 10 minutes
+      // No recentPublishDates
+      now: fixedNow,
+      randomSource: noJitter,
+    });
+
+    expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS);
+    expect(result.reason).toBe("cache_control");
+  });
+});
+
+describe("adaptive interval constants", () => {
+  it("MAX_ADAPTIVE_INTERVAL_SECONDS is 24 hours", () => {
+    expect(MAX_ADAPTIVE_INTERVAL_SECONDS).toBe(24 * 60 * 60);
+  });
+
+  it("ADAPTIVE_INTERVAL_DIVISOR is 2", () => {
+    expect(ADAPTIVE_INTERVAL_DIVISOR).toBe(2);
   });
 });
