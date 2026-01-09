@@ -115,7 +115,7 @@ export function getGoogleProvider(): Google | null {
   return new Google(
     googleConfig.clientId,
     googleConfig.clientSecret,
-    `${APP_URL}/api/v1/auth/oauth/google/callback`
+    `${APP_URL}/auth/oauth/callback`
   );
 }
 
