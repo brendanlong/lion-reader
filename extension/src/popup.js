@@ -1,8 +1,8 @@
 /**
  * Popup script for Lion Reader browser extension.
  *
- * Handles saving the current page to Lion Reader, including
- * capturing page content for authenticated pages.
+ * Handles saving the current page to Lion Reader using API tokens.
+ * If no token exists, opens the web auth flow to get one.
  */
 
 // DOM Elements
@@ -24,6 +24,7 @@ const openLionReaderBtn = document.getElementById("open-lionreader-btn");
 
 // State
 let currentUrl = null;
+let currentTitle = null;
 let countdownInterval = null;
 
 // Default server URL
@@ -35,6 +36,14 @@ const DEFAULT_SERVER_URL = "https://lion-reader.fly.dev";
 async function getServerUrl() {
   const result = await chrome.storage.sync.get(["serverUrl"]);
   return result.serverUrl || DEFAULT_SERVER_URL;
+}
+
+/**
+ * Get the stored API token.
+ */
+async function getApiToken() {
+  const result = await chrome.storage.sync.get(["apiToken"]);
+  return result.apiToken || null;
 }
 
 /**
@@ -72,63 +81,56 @@ function startCountdown(seconds = 3) {
 }
 
 /**
- * Capture the current page's content using scripting API.
+ * Save the article using the API with Bearer token auth.
  */
-async function capturePageContent(tabId) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        return {
-          url: window.location.href,
-          title: document.title,
-          html: document.documentElement.outerHTML,
-        };
-      },
-    });
-
-    if (results && results[0] && results[0].result) {
-      return results[0].result;
-    }
-  } catch (err) {
-    console.error("Failed to capture page content:", err);
-  }
-
-  return null;
-}
-
-/**
- * Save the article to Lion Reader.
- */
-async function saveArticle(url, html, title) {
+async function saveWithToken(url, title, token) {
   const serverUrl = await getServerUrl();
   const apiUrl = `${serverUrl}/api/v1/saved`;
 
   const body = { url };
-  if (html) body.html = html;
   if (title) body.title = title;
 
   const response = await fetch(apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
     },
-    credentials: "include",
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
 
-    // Check for authentication errors
+    // Token might be expired or revoked
     if (response.status === 401) {
-      throw new Error("NOT_SIGNED_IN");
+      // Clear the invalid token
+      await chrome.storage.sync.remove(["apiToken"]);
+      throw new Error("TOKEN_EXPIRED");
     }
 
     throw new Error(data.error?.message || `HTTP ${response.status}`);
   }
 
   return await response.json();
+}
+
+/**
+ * Open the web auth flow to get a new token.
+ * The background script will detect the callback and store the token.
+ */
+async function startWebAuthFlow(url, title) {
+  const serverUrl = await getServerUrl();
+  let authUrl = `${serverUrl}/extension/save?url=${encodeURIComponent(url)}`;
+  if (title) {
+    authUrl += `&title=${encodeURIComponent(title)}`;
+  }
+
+  // Open the auth page in a new tab
+  await chrome.tabs.create({ url: authUrl });
+
+  // Close the popup - the background script will handle the callback
+  window.close();
 }
 
 /**
@@ -146,51 +148,45 @@ async function save() {
     }
 
     currentUrl = tab.url;
+    currentTitle = tab.title || null;
     loadingUrlEl.textContent = currentUrl;
 
-    // Check if we can access this page
-    const canCapture =
-      !tab.url.startsWith("chrome://") &&
-      !tab.url.startsWith("chrome-extension://") &&
-      !tab.url.startsWith("moz-extension://") &&
-      !tab.url.startsWith("about:") &&
-      !tab.url.startsWith("edge://");
+    // Check if we have a token
+    const token = await getApiToken();
 
-    let html = null;
-    let title = null;
+    if (!token) {
+      // No token - start web auth flow
+      await startWebAuthFlow(currentUrl, currentTitle);
+      return;
+    }
 
-    if (canCapture) {
-      // Try to capture page content
-      const content = await capturePageContent(tab.id);
-      if (content) {
-        html = content.html;
-        title = content.title;
+    // Try to save with the token
+    try {
+      const result = await saveWithToken(currentUrl, currentTitle, token);
+
+      // Show success
+      showState("success");
+      if (result.article?.title) {
+        successTitleEl.textContent = result.article.title;
+        successTitleEl.classList.remove("hidden");
+      } else {
+        successTitleEl.classList.add("hidden");
       }
+
+      startCountdown(3);
+    } catch (err) {
+      if (err.message === "TOKEN_EXPIRED") {
+        // Token expired - start web auth flow to get a new one
+        await startWebAuthFlow(currentUrl, currentTitle);
+        return;
+      }
+      throw err;
     }
-
-    // Save to Lion Reader
-    const result = await saveArticle(currentUrl, html, title);
-
-    // Show success
-    showState("success");
-    if (result.article?.title) {
-      successTitleEl.textContent = result.article.title;
-      successTitleEl.classList.remove("hidden");
-    } else {
-      successTitleEl.classList.add("hidden");
-    }
-
-    startCountdown(3);
   } catch (err) {
     console.error("Save failed:", err);
-
-    if (err.message === "NOT_SIGNED_IN") {
-      showState("not-signed-in");
-    } else {
-      showState("error");
-      errorAlertEl.textContent = err.message || "Failed to save article";
-      errorUrlEl.textContent = currentUrl || "";
-    }
+    showState("error");
+    errorAlertEl.textContent = err.message || "Failed to save article";
+    errorUrlEl.textContent = currentUrl || "";
   }
 }
 

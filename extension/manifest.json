@@ -21,7 +21,7 @@
     "default_popup": "src/popup.html"
   },
 
-  "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus", "webNavigation"],
 
   "host_permissions": ["https://lion-reader.fly.dev/*", "http://localhost:3000/*"],
 
