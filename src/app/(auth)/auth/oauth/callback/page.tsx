@@ -76,6 +76,13 @@ function OAuthCallbackContent() {
     }
     return null;
   });
+  // Check if we're in save mode (incrementally adding permissions for Google Docs)
+  const [isSaveMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("pendingSaveUrl") !== null;
+    }
+    return false;
+  });
 
   // Validate callback parameters upfront (no effect needed for validation)
   const validation = useMemo((): CallbackValidation => {
@@ -151,13 +158,24 @@ function OAuthCallbackContent() {
   const linkGoogleMutation = trpc.auth.linkGoogle.useMutation({
     onSuccess: () => {
       cleanupOAuthState();
-      router.push("/settings?linked=google");
+      // If in save mode, redirect back to save page which will retry
+      if (isSaveMode) {
+        router.push("/save");
+      } else {
+        router.push("/settings?linked=google");
+      }
       router.refresh();
     },
     onError: (error) => {
       cleanupOAuthState();
       const errorCode = getErrorCode(error.message);
-      router.push(`/settings?link_error=${errorCode}`);
+      if (isSaveMode) {
+        // Clear pending save URL on error
+        sessionStorage.removeItem("pendingSaveUrl");
+        router.push(`/save?error=${errorCode}`);
+      } else {
+        router.push(`/settings?link_error=${errorCode}`);
+      }
     },
   });
 
@@ -195,7 +213,14 @@ function OAuthCallbackContent() {
     hasProcessed.current = true;
 
     // Determine which mutation to call
-    if (isLinkMode && linkProvider) {
+    if (isSaveMode) {
+      // Save mode: user is adding Google Docs permission (incremental authorization)
+      // Always use linkGoogle since user is already logged in
+      linkGoogleMutation.mutate({
+        code: validation.code,
+        state: validation.state,
+      });
+    } else if (isLinkMode && linkProvider) {
       // Link mode: link OAuth to existing account
       if (linkProvider === "google") {
         linkGoogleMutation.mutate({
@@ -220,6 +245,7 @@ function OAuthCallbackContent() {
   }, [
     validation,
     router,
+    isSaveMode,
     isLinkMode,
     linkProvider,
     googleCallbackMutation,
@@ -230,15 +256,21 @@ function OAuthCallbackContent() {
 
   // Determine what to display
   const errorMessage = !validation.valid ? validation.error : null;
-  const actionText = isLinkMode ? "linking account" : "sign-in";
+  const actionText = isSaveMode
+    ? "granting permissions"
+    : isLinkMode
+      ? "linking account"
+      : "sign-in";
 
   return (
     <div className="flex flex-col items-center justify-center">
       <h2 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
         {errorMessage
-          ? isLinkMode
-            ? "Link Error"
-            : "Sign-in Error"
+          ? isSaveMode
+            ? "Permission Error"
+            : isLinkMode
+              ? "Link Error"
+              : "Sign-in Error"
           : `Completing ${actionText}...`}
       </h2>
 
@@ -246,7 +278,7 @@ function OAuthCallbackContent() {
         <div className="text-center">
           <p className="mb-4 text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Redirecting to {isLinkMode ? "settings" : "login"} page...
+            Redirecting to {isSaveMode ? "save" : isLinkMode ? "settings" : "login"} page...
           </p>
         </div>
       ) : (
@@ -272,7 +304,13 @@ function OAuthCallbackContent() {
             />
           </svg>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Please wait while we complete {isLinkMode ? "linking your account" : "your sign-in"}...
+            Please wait while we complete{" "}
+            {isSaveMode
+              ? "granting permissions"
+              : isLinkMode
+                ? "linking your account"
+                : "your sign-in"}
+            ...
           </p>
         </div>
       )}

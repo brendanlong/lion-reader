@@ -28,6 +28,7 @@ import {
   createGoogleAuthUrl,
   validateGoogleCallback,
   isGoogleOAuthEnabled,
+  GOOGLE_DOCS_READONLY_SCOPE,
   createAppleAuthUrl,
   validateAppleCallback,
   isAppleOAuthEnabled,
@@ -448,7 +449,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthCallbackFailed("Unknown error");
       }
 
-      const { userInfo, tokens } = googleResult;
+      const { userInfo, tokens, scopes } = googleResult;
       const now = new Date();
 
       // Check if OAuth account already exists
@@ -486,13 +487,14 @@ export const authRouter = createTRPCRouter({
         userEmail = userResult[0].email;
         userCreatedAt = userResult[0].createdAt;
 
-        // Update OAuth tokens
+        // Update OAuth tokens and scopes
         await ctx.db
           .update(oauthAccounts)
           .set({
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken ?? null,
             expiresAt: tokens.expiresAt ?? null,
+            scopes,
           })
           .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
       } else {
@@ -518,6 +520,7 @@ export const authRouter = createTRPCRouter({
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken ?? null,
             expiresAt: tokens.expiresAt ?? null,
+            scopes,
             createdAt: now,
           });
 
@@ -557,6 +560,7 @@ export const authRouter = createTRPCRouter({
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken ?? null,
             expiresAt: tokens.expiresAt ?? null,
+            scopes,
             createdAt: now,
           });
         }
@@ -1015,18 +1019,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Google");
       }
 
-      // Check if user already has a Google account linked
-      const existingLink = await ctx.db
-        .select({ id: oauthAccounts.id })
-        .from(oauthAccounts)
-        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")))
-        .limit(1);
-
-      if (existingLink.length > 0) {
-        throw errors.oauthAlreadyLinked("Google");
-      }
-
-      // Validate the OAuth callback
+      // Validate the OAuth callback first (need userInfo to check account match)
       let googleResult;
       try {
         googleResult = await validateGoogleCallback(code, state);
@@ -1040,8 +1033,40 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthCallbackFailed("Unknown error");
       }
 
-      const { userInfo, tokens } = googleResult;
+      const { userInfo, tokens, scopes } = googleResult;
       const now = new Date();
+
+      // Check if user already has a Google account linked
+      const existingLink = await ctx.db
+        .select({
+          id: oauthAccounts.id,
+          providerAccountId: oauthAccounts.providerAccountId,
+        })
+        .from(oauthAccounts)
+        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")))
+        .limit(1);
+
+      if (existingLink.length > 0) {
+        // User already has Google linked - this might be incremental authorization
+        // (e.g., adding Google Docs scope to existing account)
+        if (existingLink[0].providerAccountId !== userInfo.sub) {
+          // User is trying to link a different Google account
+          throw errors.oauthAlreadyLinked("Google");
+        }
+
+        // Same Google account - update with new tokens and scopes (incremental auth)
+        await ctx.db
+          .update(oauthAccounts)
+          .set({
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken ?? null,
+            expiresAt: tokens.expiresAt ?? null,
+            scopes,
+          })
+          .where(eq(oauthAccounts.id, existingLink[0].id));
+
+        return { success: true };
+      }
 
       // Check if this Google account is already linked to another user
       const existingOAuthAccount = await ctx.db
@@ -1068,6 +1093,7 @@ export const authRouter = createTRPCRouter({
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken ?? null,
         expiresAt: tokens.expiresAt ?? null,
+        scopes,
         createdAt: now,
       });
 
@@ -1247,5 +1273,71 @@ export const authRouter = createTRPCRouter({
       await ctx.db.delete(oauthAccounts).where(eq(oauthAccounts.id, oauthAccount[0].id));
 
       return { success: true };
+    }),
+
+  /**
+   * Request Google Docs access (incremental authorization).
+   *
+   * Generates a new OAuth URL that includes the Google Docs readonly scope
+   * in addition to the existing profile scopes. This allows users to grant
+   * access to their Google Docs without re-authenticating.
+   *
+   * Flow:
+   * 1. User tries to save a private Google Doc
+   * 2. Backend detects they need Docs permission
+   * 3. Frontend calls this endpoint
+   * 4. Frontend redirects to the returned URL
+   * 5. User grants permission on Google's consent screen
+   * 6. OAuth callback updates the scopes in the database
+   * 7. User can now save private Google Docs
+   *
+   * @returns OAuth authorization URL with Google Docs scope
+   * @throws If user doesn't have Google OAuth account linked
+   */
+  requestGoogleDocsAccess: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/auth/request-google-docs-access",
+        protect: true,
+        summary: "Request Google Docs access",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        url: z.string(),
+        state: z.string(),
+      })
+    )
+    .mutation(async ({ ctx }) => {
+      if (!isGoogleOAuthEnabled()) {
+        throw errors.oauthProviderNotConfigured("Google");
+      }
+
+      // Check if user has Google OAuth account linked
+      const existingLink = await ctx.db
+        .select()
+        .from(oauthAccounts)
+        .where(
+          and(eq(oauthAccounts.userId, ctx.session.user.id), eq(oauthAccounts.provider, "google"))
+        )
+        .limit(1);
+
+      if (existingLink.length === 0) {
+        throw errors.validation("You must link your Google account before requesting Docs access");
+      }
+
+      // Create OAuth URL with existing + new scopes
+      // We need to request all scopes again (not just the new one) per OAuth spec
+      // Pass mode: "save" so the callback knows to redirect back to /save
+      const result = await createGoogleAuthUrl([GOOGLE_DOCS_READONLY_SCOPE], "save");
+
+      // Return the URL with a note that this is for incremental auth
+      // The state should be stored by the client to verify the callback
+      return {
+        url: result.url,
+        state: result.state,
+      };
     }),
 });

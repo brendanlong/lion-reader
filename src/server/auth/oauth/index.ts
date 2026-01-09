@@ -23,9 +23,11 @@ export {
   type GoogleUserInfo,
   type GoogleAuthUrlResult,
   type GoogleAuthResult,
+  type OAuthMode,
   createGoogleAuthUrl,
   validateGoogleCallback,
   isGoogleOAuthEnabled,
+  GOOGLE_DOCS_READONLY_SCOPE,
 } from "./google";
 
 // Apple OAuth flow exports
