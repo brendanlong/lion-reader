@@ -20,11 +20,17 @@ import {
   createGoogleAuthUrl,
   GOOGLE_DOCS_READONLY_SCOPE,
 } from "@/server/auth";
+import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createCaller } from "@/server/trpc";
 import { ExtensionSaveClient } from "./client";
+
+// Both scopes are needed for full Google Docs support:
+// - documents.readonly for native Google Docs via Docs API
+// - drive.readonly for uploaded .docx files via Drive API
+const GOOGLE_DOCS_SCOPES = [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE];
 
 interface PageProps {
   searchParams: Promise<{
@@ -67,26 +73,21 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   // Check if this is a Google Doc and we need OAuth
   const isGoogleDoc = url.includes("docs.google.com");
   if (isGoogleDoc) {
-    // Check if user has Google OAuth with docs scope
+    // Check if user has Google OAuth with both required scopes
     const googleAccount = await db
       .select()
       .from(oauthAccounts)
       .where(and(eq(oauthAccounts.userId, session.user.id), eq(oauthAccounts.provider, "google")))
       .limit(1);
 
-    const hasDocsScope = googleAccount[0]?.scopes?.includes(
-      "https://www.googleapis.com/auth/documents.readonly"
-    );
+    const userScopes = googleAccount[0]?.scopes ?? [];
+    const hasAllScopes = GOOGLE_DOCS_SCOPES.every((scope) => userScopes.includes(scope));
 
-    if (!hasDocsScope) {
-      // Need to request Google Docs scope
+    if (!hasAllScopes) {
+      // Need to request Google Docs scopes
       // Generate OAuth URL and redirect to Google with return to this page
       const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-      const authResult = await createGoogleAuthUrl(
-        [GOOGLE_DOCS_READONLY_SCOPE],
-        "extension-save",
-        returnUrl
-      );
+      const authResult = await createGoogleAuthUrl(GOOGLE_DOCS_SCOPES, "extension-save", returnUrl);
       redirect(authResult.url);
     }
   }
@@ -133,11 +134,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   // Handle Google reauth redirect outside try/catch (redirect throws)
   if (needsGoogleReauth) {
     const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-    const authResult = await createGoogleAuthUrl(
-      [GOOGLE_DOCS_READONLY_SCOPE],
-      "extension-save",
-      returnUrl
-    );
+    const authResult = await createGoogleAuthUrl(GOOGLE_DOCS_SCOPES, "extension-save", returnUrl);
     redirect(authResult.url);
   }
 

@@ -28,11 +28,12 @@ import {
   createGoogleAuthUrl,
   validateGoogleCallback,
   isGoogleOAuthEnabled,
-  GOOGLE_DOCS_READONLY_SCOPE,
   createAppleAuthUrl,
   validateAppleCallback,
   isAppleOAuthEnabled,
+  GOOGLE_DOCS_READONLY_SCOPE,
 } from "@/server/auth";
+import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import { oauthAccounts } from "@/server/db/schema";
 
 // ============================================================================
@@ -1328,10 +1329,14 @@ export const authRouter = createTRPCRouter({
         throw errors.validation("You must link your Google account before requesting Docs access");
       }
 
-      // Create OAuth URL with existing + new scopes
-      // We need to request all scopes again (not just the new one) per OAuth spec
+      // Create OAuth URL with both scopes needed for Google Docs access:
+      // - documents.readonly for native Google Docs via Docs API
+      // - drive.readonly for uploaded .docx files via Drive API
       // Pass mode: "save" so the callback knows to redirect back to /save
-      const result = await createGoogleAuthUrl([GOOGLE_DOCS_READONLY_SCOPE], "save");
+      const result = await createGoogleAuthUrl(
+        [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
+        "save"
+      );
 
       // Return the URL with a note that this is for incremental auth
       // The state should be stored by the client to verify the callback
