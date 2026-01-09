@@ -14,6 +14,8 @@ import {
   feeds,
   subscriptions,
   opmlImports,
+  tags,
+  subscriptionTags,
   type Feed,
   type OpmlImportFeedResult,
 } from "../db/schema";
@@ -1205,6 +1207,48 @@ export async function handleProcessOpmlImport(
 
     const existingUrls = new Set(existingSubscriptions.map((s) => s.feedUrl));
 
+    // Collect all unique tag names from categories in the import
+    const tagNames = new Set<string>();
+    for (const feed of importRecord.feedsData) {
+      if (feed.category) {
+        for (const categoryName of feed.category) {
+          tagNames.add(categoryName);
+        }
+      }
+    }
+
+    // Get or create tags for each unique category name
+    const tagNameToId = new Map<string, string>();
+    if (tagNames.size > 0) {
+      // Get existing tags for this user
+      const existingTags = await db
+        .select({ id: tags.id, name: tags.name })
+        .from(tags)
+        .where(eq(tags.userId, userId));
+
+      for (const existingTag of existingTags) {
+        if (tagNames.has(existingTag.name)) {
+          tagNameToId.set(existingTag.name, existingTag.id);
+        }
+      }
+
+      // Create tags that don't exist
+      const now = new Date();
+      for (const tagName of tagNames) {
+        if (!tagNameToId.has(tagName)) {
+          const tagId = generateUuidv7();
+          await db.insert(tags).values({
+            id: tagId,
+            userId,
+            name: tagName,
+            createdAt: now,
+          });
+          tagNameToId.set(tagName, tagId);
+          logger.debug("OPML import: created tag", { tagName, tagId, userId });
+        }
+      }
+    }
+
     // Process each feed
     const results: OpmlImportFeedResult[] = [];
     let imported = 0;
@@ -1326,6 +1370,36 @@ export async function handleProcessOpmlImport(
             createdAt: now,
             updatedAt: now,
           });
+        }
+
+        // Associate subscription with tags from categories
+        if (opmlFeed.category && opmlFeed.category.length > 0) {
+          const tagIds = opmlFeed.category
+            .map((categoryName) => tagNameToId.get(categoryName))
+            .filter((id): id is string => id !== undefined);
+
+          if (tagIds.length > 0) {
+            // Delete any existing subscription_tags (in case of reactivation)
+            await db
+              .delete(subscriptionTags)
+              .where(eq(subscriptionTags.subscriptionId, actualSubscriptionId));
+
+            // Insert new subscription_tags entries
+            const tagNow = new Date();
+            await db.insert(subscriptionTags).values(
+              tagIds.map((tagId) => ({
+                subscriptionId: actualSubscriptionId,
+                tagId,
+                createdAt: tagNow,
+              }))
+            );
+
+            logger.debug("OPML import: associated subscription with tags", {
+              subscriptionId: actualSubscriptionId,
+              tagIds,
+              feedUrl,
+            });
+          }
         }
 
         // Publish subscription_created event (fire and forget)

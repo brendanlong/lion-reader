@@ -389,6 +389,58 @@ describe("generateOpml", () => {
       expect(xml).toContain('htmlUrl="https://blog2.example.com"');
     });
 
+    it("generates OPML with tags format (feeds at top level + in tag folders)", () => {
+      const subscriptions: OpmlSubscription[] = [
+        {
+          title: "Tech Blog",
+          xmlUrl: "https://tech.example.com/feed",
+          tags: ["Tech", "Favorites"],
+        },
+        { title: "News Site", xmlUrl: "https://news.example.com/feed", tags: ["News"] },
+        { title: "Ungrouped", xmlUrl: "https://other.example.com/feed", tags: [] },
+      ];
+
+      const xml = generateOpml(subscriptions);
+
+      // All feeds should appear at top level
+      const topLevelMatches = xml.match(/<outline type="rss"/g);
+      // 3 at top level + 1 in Favorites + 1 in News + 1 in Tech = 6
+      expect(topLevelMatches).toHaveLength(6);
+
+      // Tag folders should exist
+      expect(xml).toContain('text="Favorites"');
+      expect(xml).toContain('text="News"');
+      expect(xml).toContain('text="Tech"');
+    });
+
+    it("generates OPML with feed in multiple tags appearing in each folder", () => {
+      const subscriptions: OpmlSubscription[] = [
+        {
+          title: "Multi-tag Feed",
+          xmlUrl: "https://multi.example.com/feed",
+          tags: ["Tag1", "Tag2", "Tag3"],
+        },
+      ];
+
+      const xml = generateOpml(subscriptions);
+      const parsed = parseOpml(xml);
+
+      // Feed appears 4 times: 1 at top level + 3 in tag folders
+      expect(parsed).toHaveLength(4);
+
+      // 1 at top level (no category)
+      const uncategorized = parsed.filter((f) => !f.category);
+      expect(uncategorized).toHaveLength(1);
+
+      // 3 in folders
+      const categorized = parsed.filter((f) => f.category);
+      expect(categorized).toHaveLength(3);
+
+      // Verify categories
+      const categories = categorized.map((f) => f.category![0]).sort();
+      expect(categories).toEqual(["Tag1", "Tag2", "Tag3"]);
+    });
+
     it("generates valid OPML with metadata", () => {
       const subscriptions: OpmlSubscription[] = [
         { title: "Blog", xmlUrl: "https://example.com/feed" },
