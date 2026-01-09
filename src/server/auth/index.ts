@@ -17,6 +17,20 @@ export {
   type SessionData,
 } from "./session";
 
+// API Token exports
+export {
+  generateApiToken,
+  hashApiToken,
+  createApiToken,
+  validateApiToken,
+  hasScope,
+  revokeApiToken,
+  revokeAllUserApiTokens,
+  API_TOKEN_SCOPES,
+  type ApiTokenScope,
+  type ApiTokenData,
+} from "./api-token";
+
 // OAuth exports
 export {
   type OAuthProviderName,
