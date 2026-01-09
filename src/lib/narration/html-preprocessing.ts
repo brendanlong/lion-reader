@@ -28,6 +28,7 @@ export const BLOCK_ELEMENTS = [
   "li",
   "figure",
   "table",
+  "img",
 ] as const;
 
 /**
@@ -44,7 +45,7 @@ export interface PreprocessResult {
  * Preprocesses HTML content for narration by assigning stable IDs to block-level elements.
  *
  * This function parses the HTML, finds all block-level elements (p, h1-h6, blockquote,
- * pre, ul, ol, li, figure, table), and assigns each a unique `data-para-id` attribute
+ * pre, ul, ol, li, figure, table, img), and assigns each a unique `data-para-id` attribute
  * in document order.
  *
  * @param html - The HTML content to preprocess
