@@ -534,9 +534,10 @@ export const savedRouter = createTRPCRouter({
           lessWrongTitle = lessWrongContent.title;
         }
       }
+      // For Google Docs, prefer API title over browser-provided title (which includes " - Google Docs" suffix)
       const finalTitle =
-        input.title ||
         googleDocsContent?.title ||
+        input.title ||
         lessWrongTitle ||
         metadata.title ||
         cleaned?.title ||
