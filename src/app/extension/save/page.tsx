@@ -13,7 +13,13 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { validateSession, createApiToken, API_TOKEN_SCOPES } from "@/server/auth";
+import {
+  validateSession,
+  createApiToken,
+  API_TOKEN_SCOPES,
+  createGoogleAuthUrl,
+  GOOGLE_DOCS_READONLY_SCOPE,
+} from "@/server/auth";
 import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -74,11 +80,14 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
 
     if (!hasDocsScope) {
       // Need to request Google Docs scope
-      // Redirect to Google OAuth with docs scope and return to this page
-      const returnUrl = encodeURIComponent(
-        `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`
+      // Generate OAuth URL and redirect to Google with return to this page
+      const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
+      const authResult = await createGoogleAuthUrl(
+        [GOOGLE_DOCS_READONLY_SCOPE],
+        "extension-save",
+        returnUrl
       );
-      redirect(`/api/v1/auth/oauth/google?mode=link&scope=docs&redirect=${returnUrl}`);
+      redirect(authResult.url);
     }
   }
 
@@ -123,10 +132,13 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
 
   // Handle Google reauth redirect outside try/catch (redirect throws)
   if (needsGoogleReauth) {
-    const returnUrl = encodeURIComponent(
-      `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`
+    const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
+    const authResult = await createGoogleAuthUrl(
+      [GOOGLE_DOCS_READONLY_SCOPE],
+      "extension-save",
+      returnUrl
     );
-    redirect(`/api/v1/auth/oauth/google?mode=link&scope=docs&redirect=${returnUrl}`);
+    redirect(authResult.url);
   }
 
   // Create an API token for the extension
