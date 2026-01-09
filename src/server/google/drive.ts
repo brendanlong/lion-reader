@@ -370,6 +370,25 @@ function stripTitleFromExportedHtml(html: string, title: string): string {
 // ============================================================================
 
 /**
+ * Cleans up a file name to use as a display title.
+ *
+ * Removes:
+ * - Common document extensions (.docx, .doc, .pdf, etc.)
+ * - " - Google Docs" suffix that appears in browser titles
+ */
+export function cleanTitle(name: string): string {
+  let title = name.trim();
+
+  // Remove " - Google Docs" suffix (appears when viewing in browser)
+  title = title.replace(/\s*-\s*Google Docs$/i, "");
+
+  // Remove common document extensions
+  title = title.replace(/\.(docx?|pdf|odt|rtf|txt)$/i, "");
+
+  return title;
+}
+
+/**
  * Checks if the Google Drive API is available (service account configured).
  */
 export function isGoogleDriveApiAvailable(): boolean {
@@ -474,7 +493,7 @@ async function fetchGoogleDriveFileWithToken(
 
   return {
     fileId: metadata.id,
-    title: metadata.name,
+    title: cleanTitle(metadata.name),
     html,
     mimeType: metadata.mimeType,
   };
