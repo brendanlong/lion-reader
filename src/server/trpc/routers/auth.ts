@@ -1019,18 +1019,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Google");
       }
 
-      // Check if user already has a Google account linked
-      const existingLink = await ctx.db
-        .select({ id: oauthAccounts.id })
-        .from(oauthAccounts)
-        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")))
-        .limit(1);
-
-      if (existingLink.length > 0) {
-        throw errors.oauthAlreadyLinked("Google");
-      }
-
-      // Validate the OAuth callback
+      // Validate the OAuth callback first (need userInfo to check account match)
       let googleResult;
       try {
         googleResult = await validateGoogleCallback(code, state);
@@ -1046,6 +1035,38 @@ export const authRouter = createTRPCRouter({
 
       const { userInfo, tokens, scopes } = googleResult;
       const now = new Date();
+
+      // Check if user already has a Google account linked
+      const existingLink = await ctx.db
+        .select({
+          id: oauthAccounts.id,
+          providerAccountId: oauthAccounts.providerAccountId,
+        })
+        .from(oauthAccounts)
+        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")))
+        .limit(1);
+
+      if (existingLink.length > 0) {
+        // User already has Google linked - this might be incremental authorization
+        // (e.g., adding Google Docs scope to existing account)
+        if (existingLink[0].providerAccountId !== userInfo.sub) {
+          // User is trying to link a different Google account
+          throw errors.oauthAlreadyLinked("Google");
+        }
+
+        // Same Google account - update with new tokens and scopes (incremental auth)
+        await ctx.db
+          .update(oauthAccounts)
+          .set({
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken ?? null,
+            expiresAt: tokens.expiresAt ?? null,
+            scopes,
+          })
+          .where(eq(oauthAccounts.id, existingLink[0].id));
+
+        return { success: true };
+      }
 
       // Check if this Google account is already linked to another user
       const existingOAuthAccount = await ctx.db

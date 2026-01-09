@@ -46,6 +46,11 @@ function SaveContent() {
       if (urlToSave) {
         sessionStorage.setItem("pendingSaveUrl", urlToSave);
       }
+      // Store state for verification on callback
+      localStorage.setItem("oauth_state", data.state);
+      // Mark this as a link operation (adding permissions to existing account)
+      localStorage.setItem("oauth_link_mode", "true");
+      localStorage.setItem("oauth_link_provider", "google");
       // Redirect to Google OAuth consent screen
       window.location.href = data.url;
     },
