@@ -23,14 +23,26 @@ This extension uses Manifest V3 (WebExtensions API) and works on:
 
 ### From Source (Development)
 
-1. Clone the repository
-2. Open your browser's extension management page:
-   - Chrome: `chrome://extensions`
-   - Firefox: `about:debugging#/runtime/this-firefox`
-   - Edge: `edge://extensions`
-3. Enable "Developer mode"
-4. Click "Load unpacked" (Chrome/Edge) or "Load Temporary Add-on" (Firefox)
-5. Select the `extension` directory
+**Chrome/Edge:**
+
+1. Open `chrome://extensions` (or `edge://extensions`)
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select the `extension` directory
+
+**Firefox:**
+Firefox requires a modified manifest due to Manifest V3 differences. Run the build script first:
+
+```bash
+cd extension
+./build.sh
+```
+
+Then:
+
+1. Open `about:debugging#/runtime/this-firefox`
+2. Click "Load Temporary Add-on"
+3. Select `lion-reader-firefox.zip` (or extract it and select the manifest.json inside)
 
 ### Building for Distribution
 
@@ -39,7 +51,10 @@ cd extension
 ./build.sh
 ```
 
-This creates `lion-reader-extension.zip` ready for submission to browser extension stores.
+This creates browser-specific packages:
+
+- `lion-reader-chrome.zip` - For Chrome, Edge, and Chromium-based browsers
+- `lion-reader-firefox.zip` - For Firefox (uses `scripts` instead of `service_worker`)
 
 ## Usage
 
