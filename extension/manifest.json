@@ -23,7 +23,7 @@
 
   "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
 
-  "host_permissions": ["https://lionreader.com/*", "http://localhost:3000/*"],
+  "host_permissions": ["https://lion-reader.fly.dev/*", "http://localhost:3000/*"],
 
   "background": {
     "service_worker": "src/background.js",
