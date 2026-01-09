@@ -563,9 +563,8 @@ export const savedRouter = createTRPCRouter({
         : lessWrongContent
           ? "LessWrong"
           : metadata.siteName;
-      // For publishedAt, prefer API data when available
-      const finalPublishedAt =
-        googleDocsContent?.modifiedAt || lessWrongContent?.publishedAt || now;
+      // Saved articles don't have a publishedAt - they use fetchedAt (when saved)
+      // This ensures consistent sorting by save time in all views
 
       // For Google Docs API content, use the HTML directly (already clean and structured)
       const finalContentCleaned = googleDocsContent?.html || cleaned?.content || null;
@@ -588,7 +587,7 @@ export const savedRouter = createTRPCRouter({
         summary: excerpt,
         siteName: finalSiteName,
         imageUrl: metadata.imageUrl,
-        publishedAt: finalPublishedAt,
+        publishedAt: null,
         fetchedAt: now, // When saved
         contentHash,
         // Email-specific fields are NULL for saved entries
@@ -625,7 +624,7 @@ export const savedRouter = createTRPCRouter({
           excerpt,
           read: false,
           starred: false,
-          savedAt: finalPublishedAt,
+          savedAt: now,
         },
       };
     }),
