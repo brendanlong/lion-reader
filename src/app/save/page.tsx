@@ -114,6 +114,7 @@ function SaveContent() {
   const errorMessage = saveMutation.error?.message || "";
   const needsDocsPermission = errorMessage === "NEEDS_DOCS_PERMISSION";
   const needsGoogleSignin = errorMessage === "NEEDS_GOOGLE_SIGNIN";
+  const needsGoogleReauth = errorMessage === "NEEDS_GOOGLE_REAUTH";
 
   // No URL provided
   if (!urlToSave) {
@@ -209,7 +210,7 @@ function SaveContent() {
           {saveMutation.isError && (
             <div className="mt-6">
               {/* Google Docs Permission Required */}
-              {needsDocsPermission || needsGoogleSignin ? (
+              {needsDocsPermission || needsGoogleSignin || needsGoogleReauth ? (
                 <>
                   <div className="flex justify-center">
                     <svg
@@ -229,7 +230,9 @@ function SaveContent() {
                   <Alert variant="error" className="mt-4 text-left">
                     {needsDocsPermission
                       ? "This is a private Google Doc. You need to grant permission to access your Google Docs."
-                      : "This is a private Google Doc. You need to sign in with Google to save it."}
+                      : needsGoogleReauth
+                        ? "Your Google account session has expired. Please reconnect to access private Google Docs."
+                        : "This is a private Google Doc. You need to sign in with Google to save it."}
                   </Alert>
                   <p className="mt-2 truncate text-xs text-zinc-500 dark:text-zinc-500">
                     {urlToSave}
@@ -248,7 +251,9 @@ function SaveContent() {
                         ? "Redirecting..."
                         : needsDocsPermission
                           ? "Grant Permission"
-                          : "Sign in with Google"}
+                          : needsGoogleReauth
+                            ? "Reconnect Google"
+                            : "Sign in with Google"}
                     </Button>
                   </div>
                   {requestGoogleDocsAccessMutation.isError && (

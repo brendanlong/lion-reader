@@ -38,9 +38,7 @@ export async function getValidGoogleToken(userId: string): Promise<string> {
   }
 
   // Check if token is expired or about to expire
-  const expiresIn = oauth.expiresAt
-    ? (oauth.expiresAt.getTime() - Date.now()) / 1000
-    : Infinity;
+  const expiresIn = oauth.expiresAt ? (oauth.expiresAt.getTime() - Date.now()) / 1000 : Infinity;
 
   if (expiresIn > TOKEN_REFRESH_BUFFER_SECONDS) {
     // Token is still valid
@@ -58,7 +56,7 @@ export async function getValidGoogleToken(userId: string): Promise<string> {
   });
 
   if (!oauth.refreshToken) {
-    throw new Error("No refresh token available - user must re-authenticate");
+    throw new Error("GOOGLE_NEEDS_REAUTH");
   }
 
   const newToken = await refreshGoogleToken(oauth.id, oauth.refreshToken);
@@ -106,7 +104,7 @@ async function refreshGoogleToken(oauthAccountId: string, refreshToken: string):
       oauthAccountId,
       error: error instanceof Error ? error.message : String(error),
     });
-    throw new Error("Failed to refresh Google access token - user must re-authenticate");
+    throw new Error("GOOGLE_NEEDS_REAUTH");
   }
 }
 

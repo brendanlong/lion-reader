@@ -374,6 +374,17 @@ export const savedRouter = createTRPCRouter({
                     code: "FORBIDDEN",
                     message: "You don't have permission to access this Google Doc.",
                   });
+                } else if (error instanceof Error && error.message === "GOOGLE_NEEDS_REAUTH") {
+                  throw new TRPCError({
+                    code: "UNAUTHORIZED",
+                    message: "NEEDS_GOOGLE_REAUTH",
+                    cause: {
+                      code: "NEEDS_GOOGLE_REAUTH",
+                      details: {
+                        url: normalizedUrl,
+                      },
+                    },
+                  });
                 }
                 // Other errors - continue to fallback
                 logger.warn("Failed to fetch private Google Doc with OAuth", {
