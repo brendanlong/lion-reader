@@ -5,9 +5,6 @@
 
 set -e
 
-# Disable embedded worker since we're running a separate worker process
-export DISABLE_EMBEDDED_WORKER=true
-
 # Use concurrently to manage both processes
 # --kill-others: kill all processes if one exits
 # --kill-others-on-fail: kill all processes if one exits with non-zero
