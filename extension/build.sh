@@ -32,8 +32,7 @@ echo "Built: $CHROME_OUTPUT ($(du -h "$CHROME_OUTPUT" | cut -f1))"
 
 # Build Firefox extension (uses scripts instead of service_worker)
 echo "Building Firefox extension..."
-# Firefox requires "scripts" array instead of "service_worker" for background
-# Also add browser_specific_settings for Firefox
+# Firefox requires "scripts" array instead of "service_worker" for backgroundx
 node -e '
 const fs = require("fs");
 const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
@@ -42,14 +41,6 @@ const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
 manifest.background = {
   scripts: [manifest.background.service_worker],
   type: manifest.background.type
-};
-
-// Add Firefox-specific settings
-manifest.browser_specific_settings = {
-  gecko: {
-    id: "lion-reader@lionreader.com",
-    strict_min_version: "109.0"
-  }
 };
 
 fs.writeFileSync("build/manifest.json", JSON.stringify(manifest, null, 2));
