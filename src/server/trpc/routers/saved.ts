@@ -51,7 +51,7 @@ import {
 import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
 import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth";
 import { logger } from "@/lib/logger";
-import { publishSavedArticleCreated } from "@/server/redis/pubsub";
+import { publishSavedArticleCreated, publishSavedArticleUpdated } from "@/server/redis/pubsub";
 
 // ============================================================================
 // Validation Schemas
@@ -671,6 +671,9 @@ export const savedRouter = createTRPCRouter({
           url: normalizedUrl,
           forced: input.force ?? false,
         });
+
+        // Publish event to notify other browser windows/tabs of the update
+        await publishSavedArticleUpdated(userId, oldEntry.id);
 
         return {
           article: {
