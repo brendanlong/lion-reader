@@ -19,6 +19,7 @@ import {
   ingestAddressesRouter,
   blockedSendersRouter,
   brokenFeedsRouter,
+  feedStatsRouter,
   importsRouter,
   syncRouter,
 } from "./routers";
@@ -40,6 +41,7 @@ export const appRouter = createTRPCRouter({
   ingestAddresses: ingestAddressesRouter,
   blockedSenders: blockedSendersRouter,
   brokenFeeds: brokenFeedsRouter,
+  feedStats: feedStatsRouter,
   imports: importsRouter,
   sync: syncRouter,
 });
