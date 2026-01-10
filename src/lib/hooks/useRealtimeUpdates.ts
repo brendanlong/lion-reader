@@ -506,23 +506,25 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
             return oldData;
           }
 
-          // Add new subscription to cache
-          return {
-            items: [
-              ...oldData.items,
-              {
-                subscription: {
-                  id: data.subscription.id,
-                  feedId: data.subscription.feedId,
-                  customTitle: data.subscription.customTitle,
-                  subscribedAt: new Date(data.subscription.subscribedAt),
-                  unreadCount: data.subscription.unreadCount,
-                  tags: data.subscription.tags,
-                },
-                feed: data.feed,
-              },
-            ],
+          // Add new subscription to cache and maintain alphabetical order
+          const newItem = {
+            subscription: {
+              id: data.subscription.id,
+              feedId: data.subscription.feedId,
+              customTitle: data.subscription.customTitle,
+              subscribedAt: new Date(data.subscription.subscribedAt),
+              unreadCount: data.subscription.unreadCount,
+              tags: data.subscription.tags,
+            },
+            feed: data.feed,
           };
+          const newItems = [...oldData.items, newItem];
+          newItems.sort((a, b) => {
+            const titleA = (a.subscription.customTitle || a.feed.title || "").toLowerCase();
+            const titleB = (b.subscription.customTitle || b.feed.title || "").toLowerCase();
+            return titleA.localeCompare(titleB);
+          });
+          return { items: newItems };
         });
 
         // Update tags cache with new/updated tag counts
