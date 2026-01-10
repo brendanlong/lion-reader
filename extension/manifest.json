@@ -25,7 +25,7 @@
 
   "host_permissions": [
     "https://lion-reader.fly.dev/*",
-    "https://lion-reader.com/*",
+    "https://lionreader.com/*",
     "http://localhost:3000/*"
   ],
 

@@ -2,7 +2,7 @@
  * Options page script for Lion Reader browser extension.
  */
 
-const DEFAULT_SERVER_URL = "https://lion-reader.com";
+const DEFAULT_SERVER_URL = "https://lionreader.com";
 
 // DOM Elements
 const serverUrlInput = document.getElementById("server-url");
