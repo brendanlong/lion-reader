@@ -25,6 +25,8 @@ import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
+import { fetchHtmlPage } from "@/server/http/fetch";
+import { escapeHtml } from "@/server/http/html";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
@@ -49,15 +51,6 @@ import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/g
 import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated } from "@/server/redis/pubsub";
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Timeout for fetching URLs in milliseconds.
- */
-const FETCH_TIMEOUT_MS = 30000;
 
 // ============================================================================
 // Validation Schemas
@@ -98,38 +91,6 @@ const savedArticleFullSchema = z.object({
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Fetches a URL and returns the HTML content.
- */
-async function fetchPage(url: string): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "LionReader/1.0 (+https://lionreader.com)",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      redirect: "follow",
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
-      throw new Error(`Invalid content type: ${contentType}`);
-    }
-
-    return await response.text();
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 /**
  * Extracts metadata from HTML using Open Graph and meta tags.
@@ -231,18 +192,6 @@ function generateContentHash(title: string | null, content: string | null): stri
   const contentStr = content ?? "";
   const hashInput = `${titleStr}\n${contentStr}`;
   return createHash("sha256").update(hashInput, "utf8").digest("hex");
-}
-
-/**
- * Escapes HTML special characters for safe embedding in HTML.
- */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }
 
 // ============================================================================
@@ -472,7 +421,7 @@ export const savedRouter = createTRPCRouter({
               url: normalizedUrl,
             });
             try {
-              html = await fetchPage(normalizedUrl);
+              html = await fetchHtmlPage(normalizedUrl);
             } catch (error) {
               logger.warn("Failed to fetch Google Docs URL", {
                 url: normalizedUrl,
@@ -513,7 +462,7 @@ export const savedRouter = createTRPCRouter({
             url: input.url,
           });
           try {
-            html = await fetchPage(input.url);
+            html = await fetchHtmlPage(input.url);
           } catch (error) {
             logger.warn("Failed to fetch LessWrong URL", {
               url: input.url,
@@ -527,7 +476,7 @@ export const savedRouter = createTRPCRouter({
         }
       } else {
         try {
-          html = await fetchPage(input.url);
+          html = await fetchHtmlPage(input.url);
         } catch (error) {
           logger.warn("Failed to fetch URL for saved article", {
             url: input.url,
