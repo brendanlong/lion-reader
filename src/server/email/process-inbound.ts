@@ -342,6 +342,106 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
         error: err instanceof Error ? err.message : String(err),
       });
     });
+  } else {
+    // 6b. Existing feed - ensure subscription is active
+    // This handles the case where user unsubscribed (and was blocked), then unblocked the sender
+    const [existingSubscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feed.id)))
+      .limit(1);
+
+    if (existingSubscription?.unsubscribedAt) {
+      // Reactivate the subscription by clearing unsubscribedAt
+      const now = new Date();
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: null, updatedAt: now })
+        .where(eq(subscriptions.id, existingSubscription.id));
+
+      logger.info("Reactivated subscription for email feed", {
+        subscriptionId: existingSubscription.id,
+        feedId: feed.id,
+        userId,
+      });
+
+      // Publish subscription_created event so client updates its state
+      publishSubscriptionCreated(
+        userId,
+        feed.id,
+        existingSubscription.id,
+        {
+          id: existingSubscription.id,
+          feedId: feed.id,
+          customTitle: existingSubscription.customTitle,
+          subscribedAt: existingSubscription.subscribedAt.toISOString(),
+          unreadCount: 1,
+          tags: [],
+        },
+        {
+          id: feed.id,
+          type: "email",
+          url: null,
+          title: feed.title,
+          description: null,
+          siteUrl: null,
+        }
+      ).catch((err) => {
+        logger.error("Failed to publish subscription_created event for reactivated email feed", {
+          feedId: feed.id,
+          subscriptionId: existingSubscription.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } else if (!existingSubscription) {
+      // No subscription exists at all - create one
+      const now = new Date();
+      const subscriptionId = generateUuidv7();
+      const newSubscription: NewSubscription = {
+        id: subscriptionId,
+        userId,
+        feedId: feed.id,
+        subscribedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await db.insert(subscriptions).values(newSubscription);
+
+      logger.info("Created subscription for existing email feed", {
+        subscriptionId,
+        feedId: feed.id,
+        userId,
+      });
+
+      publishSubscriptionCreated(
+        userId,
+        feed.id,
+        subscriptionId,
+        {
+          id: subscriptionId,
+          feedId: feed.id,
+          customTitle: null,
+          subscribedAt: now.toISOString(),
+          unreadCount: 1,
+          tags: [],
+        },
+        {
+          id: feed.id,
+          type: "email",
+          url: null,
+          title: feed.title,
+          description: null,
+          siteUrl: null,
+        }
+      ).catch((err) => {
+        logger.error("Failed to publish subscription_created event for email feed", {
+          feedId: feed.id,
+          subscriptionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
   }
 
   // 7. Check for duplicate Message-ID
