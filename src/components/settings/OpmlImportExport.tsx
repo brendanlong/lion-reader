@@ -179,7 +179,7 @@ function ImportSection() {
 
     try {
       const content = await file.text();
-      const feeds = parseOpml(content);
+      const feeds = await parseOpml(content);
 
       if (feeds.length === 0) {
         setError("No feeds found in the OPML file");

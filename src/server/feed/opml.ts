@@ -6,10 +6,16 @@
  * between feed readers. It supports nested folders/categories through nested
  * outline elements.
  *
+ * Internally uses streaming SAX parser for memory efficiency.
+ *
  * @see http://opml.org/spec2.opml
  */
 
-import { XMLParser } from "fast-xml-parser";
+import {
+  parseOpmlStream,
+  OpmlStreamParseError,
+  type OpmlFeed as StreamingOpmlFeed,
+} from "./streaming";
 
 /**
  * A feed parsed from OPML.
@@ -24,6 +30,9 @@ export interface OpmlFeed {
   /** Category path as array (e.g., ["Tech", "Programming"]) */
   category?: string[];
 }
+
+// Re-export error for backwards compatibility
+export { OpmlStreamParseError as OpmlParseError };
 
 /**
  * Input subscription for OPML generation.
@@ -52,136 +61,30 @@ export interface OpmlMetadata {
 }
 
 /**
- * Parsed outline element from OPML.
+ * Converts a string to a ReadableStream of Uint8Array.
  */
-interface ParsedOutline {
-  "@_text"?: string;
-  "@_title"?: string;
-  "@_type"?: string;
-  "@_xmlUrl"?: string;
-  "@_htmlUrl"?: string;
-  "@_category"?: string;
-  outline?: ParsedOutline | ParsedOutline[];
+function stringToStream(content: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const encoded = encoder.encode(content);
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoded);
+      controller.close();
+    },
+  });
 }
 
 /**
- * Parsed OPML body structure from fast-xml-parser.
- * Can be an empty string for empty <body></body> elements.
+ * Collects all feeds from the streaming OPML parser.
  */
-interface ParsedOpmlBody {
-  outline?: ParsedOutline | ParsedOutline[];
-}
-
-/**
- * Parsed OPML structure from fast-xml-parser.
- */
-interface ParsedOpml {
-  opml?: {
-    "@_version"?: string;
-    head?: {
-      title?: string;
-      ownerName?: string;
-      ownerEmail?: string;
-      dateCreated?: string;
-    };
-    // fast-xml-parser returns "" for empty elements like <body></body>
-    body?: ParsedOpmlBody | "";
-  };
-}
-
-/**
- * Options for configuring the XML parser for OPML.
- */
-const parserOptions = {
-  ignoreAttributes: false,
-  attributeNamePrefix: "@_",
-  // Handle CDATA sections
-  cdataPropName: "__cdata",
-  // Preserve text content
-  textNodeName: "#text",
-  // Parse tag value
-  parseTagValue: true,
-  // Trim whitespace
-  trimValues: true,
-  // Handle namespace prefixes
-  removeNSPrefix: false,
-};
-
-/**
- * Recursively processes outline elements to extract feeds.
- * Handles nested folders by tracking the category path.
- *
- * @param outline - The outline element(s) to process
- * @param categoryPath - Current category path (for nested folders)
- * @returns Array of parsed feeds
- */
-function processOutlines(
-  outline: ParsedOutline | ParsedOutline[] | undefined,
-  categoryPath: string[] = []
-): OpmlFeed[] {
-  if (!outline) {
-    return [];
-  }
-
-  const outlines = Array.isArray(outline) ? outline : [outline];
+async function collectFeeds(
+  generator: AsyncGenerator<StreamingOpmlFeed, void, undefined>
+): Promise<OpmlFeed[]> {
   const feeds: OpmlFeed[] = [];
-
-  for (const item of outlines) {
-    const xmlUrl = item["@_xmlUrl"];
-    const type = item["@_type"]?.toLowerCase();
-    const text = item["@_text"] || item["@_title"];
-
-    // Check if this is a feed (has xmlUrl) or if it's an RSS/Atom type
-    if (xmlUrl) {
-      // This is a feed
-      const feed: OpmlFeed = {
-        xmlUrl,
-        title: text,
-        htmlUrl: item["@_htmlUrl"],
-      };
-
-      // Set category from path or from category attribute
-      if (categoryPath.length > 0) {
-        feed.category = [...categoryPath];
-      } else if (item["@_category"]) {
-        // Handle comma-separated categories or slash-separated paths
-        const categoryAttr = item["@_category"];
-        if (categoryAttr.includes("/")) {
-          feed.category = categoryAttr.split("/").map((c) => c.trim());
-        } else if (categoryAttr.includes(",")) {
-          // Take first category if comma-separated
-          feed.category = [categoryAttr.split(",")[0].trim()];
-        } else {
-          feed.category = [categoryAttr.trim()];
-        }
-      }
-
-      feeds.push(feed);
-    } else if (item.outline && !type) {
-      // This is a folder (has nested outlines but no xmlUrl and no type like "rss")
-      // Add this folder to the category path and process children
-      const folderName = text;
-      const newPath = folderName ? [...categoryPath, folderName] : categoryPath;
-      const nestedFeeds = processOutlines(item.outline, newPath);
-      feeds.push(...nestedFeeds);
-    } else if (item.outline) {
-      // Has children but might be some other type - still process children
-      const nestedFeeds = processOutlines(item.outline, categoryPath);
-      feeds.push(...nestedFeeds);
-    }
+  for await (const feed of generator) {
+    feeds.push(feed);
   }
-
   return feeds;
-}
-
-/**
- * Error thrown when OPML parsing fails.
- */
-export class OpmlParseError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "OpmlParseError";
-  }
 }
 
 /**
@@ -193,43 +96,17 @@ export class OpmlParseError extends Error {
  *
  * @example
  * ```ts
- * const feeds = parseOpml(opmlXml);
+ * const feeds = await parseOpml(opmlXml);
  * // [
  * //   { title: "Blog Name", xmlUrl: "https://...", category: ["Tech"] },
  * //   { title: "News", xmlUrl: "https://...", category: ["News", "Daily"] }
  * // ]
  * ```
  */
-export function parseOpml(xml: string): OpmlFeed[] {
-  const parser = new XMLParser(parserOptions);
-
-  let parsed: ParsedOpml;
-  try {
-    parsed = parser.parse(xml) as ParsedOpml;
-  } catch (error) {
-    throw new OpmlParseError(
-      `Failed to parse XML: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
-  }
-
-  if (!parsed.opml) {
-    throw new OpmlParseError("Invalid OPML: missing opml element");
-  }
-
-  // Check if body element exists in the XML
-  // fast-xml-parser may return an empty string "" for empty elements like <body></body>
-  // or undefined if body is completely missing
-  const body = parsed.opml.body;
-  if (body === undefined) {
-    throw new OpmlParseError("Invalid OPML: missing body element");
-  }
-
-  // If body is empty (empty string or object without outline), return empty array
-  if (body === "" || typeof body !== "object") {
-    return [];
-  }
-
-  return processOutlines(body.outline);
+export async function parseOpml(xml: string): Promise<OpmlFeed[]> {
+  const stream = stringToStream(xml);
+  const result = await parseOpmlStream(stream);
+  return collectFeeds(result.feeds);
 }
 
 /**
@@ -352,9 +229,9 @@ function buildOutlineElement(sub: OpmlSubscription): string {
  * Validates that a string is valid OPML.
  * Returns true if valid, false otherwise.
  */
-export function isValidOpml(xml: string): boolean {
+export async function isValidOpml(xml: string): Promise<boolean> {
   try {
-    parseOpml(xml);
+    await parseOpml(xml);
     return true;
   } catch {
     return false;

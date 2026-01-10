@@ -1,12 +1,11 @@
 /**
  * Feed parsing module.
  * Exports types and parsers for RSS, Atom, and JSON Feed formats.
+ * Uses streaming SAX parsers internally for memory efficiency.
  */
 
 export type { ParsedFeed, ParsedEntry, SyndicationHints } from "./types";
 export { getDomainFromUrl } from "./types";
-export { parseRssFeed, parseRssDate } from "./rss-parser";
-export { parseAtomFeed } from "./atom-parser";
 export {
   parseFeed,
   parseFeedWithFormat,
@@ -14,6 +13,17 @@ export {
   UnknownFeedFormatError,
   type FeedType,
 } from "./parser";
+// Re-export streaming parsers for direct stream access
+export {
+  parseFeedStream,
+  parseFeedStreamWithFormat,
+  parseRssStream,
+  parseAtomStream,
+  parseJsonStream,
+  parseOpmlStream,
+  type StreamingFeedResult,
+  type StreamingOpmlResult,
+} from "./streaming";
 export {
   discoverFeeds,
   getCommonFeedUrls,
