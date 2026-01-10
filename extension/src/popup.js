@@ -5,6 +5,8 @@
  * If no token exists, opens the web auth flow to get one.
  */
 
+import { DEFAULT_SERVER_URL } from "./constants.js";
+
 // DOM Elements
 const loadingEl = document.getElementById("loading");
 const loadingUrlEl = document.getElementById("loading-url");
@@ -26,9 +28,6 @@ const openLionReaderBtn = document.getElementById("open-lionreader-btn");
 let currentUrl = null;
 let currentTitle = null;
 let countdownInterval = null;
-
-// Default server URL
-const DEFAULT_SERVER_URL = "https://lionreader.com";
 
 /**
  * Get the configured server URL from storage.

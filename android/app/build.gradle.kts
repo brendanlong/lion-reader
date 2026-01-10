@@ -92,8 +92,7 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
 
-            // Debug-specific configuration
-            buildConfigField("String", "API_BASE_URL", "\"https://lionreader.com\"")
+            // Debug-specific configuration (API_BASE_URL inherited from defaultConfig)
             buildConfigField("boolean", "LOGGING_ENABLED", "true")
 
             // Debug uses default debug signing
@@ -108,8 +107,7 @@ android {
                 "proguard-rules.pro",
             )
 
-            // Release-specific configuration
-            buildConfigField("String", "API_BASE_URL", "\"https://lionreader.com\"")
+            // Release-specific configuration (API_BASE_URL inherited from defaultConfig)
             buildConfigField("boolean", "LOGGING_ENABLED", "false")
 
             // Release signing - only applied if keystore is configured
