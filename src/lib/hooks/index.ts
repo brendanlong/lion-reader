@@ -61,12 +61,6 @@ export {
 
 export { useEntryUrlState, type UseEntryUrlStateResult } from "./useEntryUrlState";
 
-export {
-  useSwipeGestures,
-  type UseSwipeGesturesOptions,
-  type UseSwipeGesturesResult,
-} from "./useSwipeGestures";
-
 export { useExpandedTags, type UseExpandedTagsResult } from "./useExpandedTags";
 
 export {

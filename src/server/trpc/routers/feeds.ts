@@ -10,6 +10,8 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { errors } from "../errors";
+import { feedUrlSchema } from "../validation";
+import { fetchUrl, isHtmlContent, FEED_FETCH_TIMEOUT_MS } from "@/server/http/fetch";
 import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";
 import {
@@ -35,11 +37,6 @@ import {
 // ============================================================================
 
 /**
- * Timeout for feed fetch requests (10 seconds).
- */
-const FETCH_TIMEOUT_MS = 10000;
-
-/**
  * Maximum number of sample entries to return in preview.
  */
 const MAX_SAMPLE_ENTRIES = 5;
@@ -53,22 +50,6 @@ const DISCOVERY_PATH_TIMEOUT_MS = 5000;
  * Maximum number of common paths to check concurrently.
  */
 const MAX_CONCURRENT_PATH_CHECKS = 5;
-
-// ============================================================================
-// Validation Schemas
-// ============================================================================
-
-/**
- * URL validation schema for feed preview.
- */
-const urlSchema = z
-  .string()
-  .min(1, "URL is required")
-  .max(2048, "URL must be less than 2048 characters")
-  .url("Invalid URL format")
-  .refine((url) => url.startsWith("http://") || url.startsWith("https://"), {
-    message: "URL must use http or https protocol",
-  });
 
 // ============================================================================
 // Output Schemas
@@ -101,68 +82,6 @@ const feedPreviewSchema = z.object({
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Fetches content from a URL with proper error handling.
- *
- * @param url - The URL to fetch
- * @returns The response with text content
- */
-async function fetchUrl(
-  url: string
-): Promise<{ text: string; contentType: string; finalUrl: string }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
-      },
-      signal: controller.signal,
-      redirect: "follow",
-    });
-
-    if (!response.ok) {
-      throw errors.feedFetchError(url, `HTTP ${response.status}`);
-    }
-
-    const text = await response.text();
-    const contentType = response.headers.get("content-type") ?? "";
-
-    return { text, contentType, finalUrl: response.url };
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw errors.feedFetchError(url, "Request timed out");
-    }
-    if (error instanceof Error && "code" in error) {
-      // This is already a TRPCError
-      throw error;
-    }
-    throw errors.feedFetchError(url, error instanceof Error ? error.message : "Unknown error");
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/**
- * Determines if content is HTML (for feed discovery) or a feed.
- *
- * @param contentType - The content type header
- * @param content - The content body
- * @returns true if the content is HTML
- */
-function isHtmlContent(contentType: string, content: string): boolean {
-  // Check content type header
-  if (contentType.includes("text/html") || contentType.includes("application/xhtml+xml")) {
-    return true;
-  }
-
-  // Fallback: check content itself
-  const trimmed = content.trim().toLowerCase();
-  return trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html");
-}
 
 /**
  * Truncates text to a maximum length, adding ellipsis if needed.
@@ -346,7 +265,7 @@ export const feedsRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        url: urlSchema,
+        url: feedUrlSchema,
       })
     )
     .output(
@@ -460,7 +379,7 @@ export const feedsRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        url: urlSchema,
+        url: feedUrlSchema,
       })
     )
     .output(
@@ -484,7 +403,7 @@ export const feedsRouter = createTRPCRouter({
       }
 
       // Step 1: Try to fetch and parse the URL as a feed directly
-      const directFeed = await tryFetchAsFeed(inputUrl, FETCH_TIMEOUT_MS);
+      const directFeed = await tryFetchAsFeed(inputUrl, FEED_FETCH_TIMEOUT_MS);
       if (directFeed) {
         addFeed(directFeed);
         // If it's a valid feed, return it directly (no need to check other sources)
