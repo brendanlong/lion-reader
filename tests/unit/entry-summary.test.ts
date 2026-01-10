@@ -169,5 +169,10 @@ describe("stripHtml", () => {
       const html = '<p>Some <span class="highlight">highlighted</span> text.</p>';
       expect(stripHtml(html, 300)).toBe("Some highlighted text.");
     });
+
+    it("adds space between inline element and following block element", () => {
+      const html = "<a>X</a><p>Y</p>";
+      expect(stripHtml(html, 300)).toBe("X Y");
+    });
   });
 });

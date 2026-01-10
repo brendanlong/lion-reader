@@ -72,8 +72,8 @@ export function stripHtml(html: string, maxLength?: number): string {
         if (SKIP_TAGS.has(tag)) {
           skipDepth++;
         }
-        // br/hr are void elements - add space on open
-        if ((tag === "br" || tag === "hr") && !lastWasSpace) {
+        // Add space before block elements (includes br/hr which are void)
+        if (BLOCK_TAGS.has(tag) && !lastWasSpace && result.length > 0) {
           result += " ";
           lastWasSpace = true;
         }
