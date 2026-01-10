@@ -10,6 +10,7 @@
  * - subscription_created: User subscribed to a new feed
  * - subscription_deleted: User unsubscribed from a feed
  * - saved_article_created: User saved a new article via bookmarklet
+ * - saved_article_updated: A saved article's content was updated (e.g., refetched)
  *
  * Heartbeat: Sent every 30 seconds as a comment (: heartbeat)
  */
@@ -329,6 +330,10 @@ export async function GET(req: Request): Promise<Response> {
               send(formatSSEUserEvent(event));
               trackSSEEventSent(event.type);
             } else if (event.type === "saved_article_created") {
+              // Forward the event to the client
+              send(formatSSEUserEvent(event));
+              trackSSEEventSent(event.type);
+            } else if (event.type === "saved_article_updated") {
               // Forward the event to the client
               send(formatSSEUserEvent(event));
               trackSSEEventSent(event.type);

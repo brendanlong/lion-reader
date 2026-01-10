@@ -21,6 +21,7 @@ export type UserEventType =
   | "subscription_created"
   | "subscription_deleted"
   | "saved_article_created"
+  | "saved_article_updated"
   | "import_progress"
   | "import_completed";
 
@@ -94,6 +95,18 @@ export interface SavedArticleCreatedEvent {
 }
 
 /**
+ * Event published when a saved article's content is updated (e.g., refetched).
+ * This is sent to all of the user's active SSE connections so they can
+ * invalidate cached entry data.
+ */
+export interface SavedArticleUpdatedEvent {
+  type: "saved_article_updated";
+  userId: string;
+  entryId: string;
+  timestamp: string;
+}
+
+/**
  * Event published when an OPML import makes progress (a feed is processed).
  * Sent after each feed is processed so the UI can show real-time progress.
  */
@@ -135,6 +148,7 @@ export type UserEvent =
   | SubscriptionCreatedEvent
   | SubscriptionDeletedEvent
   | SavedArticleCreatedEvent
+  | SavedArticleUpdatedEvent
   | ImportProgressEvent
   | ImportCompletedEvent;
 
@@ -347,6 +361,29 @@ export async function publishSavedArticleCreated(userId: string, entryId: string
 }
 
 /**
+ * Publishes a saved_article_updated event when a saved article's content is updated.
+ * This notifies all of the user's SSE connections to invalidate cached entry data.
+ *
+ * @param userId - The ID of the user who owns the saved article
+ * @param entryId - The ID of the updated entry
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishSavedArticleUpdated(userId: string, entryId: string): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: SavedArticleUpdatedEvent = {
+    type: "saved_article_updated",
+    userId,
+    entryId,
+    timestamp: new Date().toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
  * Publishes an import_progress event when a feed in an OPML import is processed.
  * This notifies the user's SSE connections to update the import progress UI.
  *
@@ -542,6 +579,20 @@ export function parseUserEvent(message: string): UserEvent | null {
       ) {
         return {
           type: "saved_article_created",
+          userId: event.userId,
+          entryId: event.entryId,
+          timestamp: event.timestamp,
+        };
+      }
+
+      if (
+        event.type === "saved_article_updated" &&
+        typeof event.userId === "string" &&
+        typeof event.entryId === "string" &&
+        typeof event.timestamp === "string"
+      ) {
+        return {
+          type: "saved_article_updated",
           userId: event.userId,
           entryId: event.entryId,
           timestamp: event.timestamp,

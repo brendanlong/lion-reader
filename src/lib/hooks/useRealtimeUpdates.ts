@@ -114,6 +114,13 @@ interface SavedArticleCreatedEventData {
   timestamp: string;
 }
 
+interface SavedArticleUpdatedEventData {
+  type: "saved_article_updated";
+  userId: string;
+  entryId: string;
+  timestamp: string;
+}
+
 interface ImportProgressEventData {
   type: "import_progress";
   userId: string;
@@ -142,6 +149,7 @@ type UserEventData =
   | SubscriptionCreatedEventData
   | SubscriptionDeletedEventData
   | SavedArticleCreatedEventData
+  | SavedArticleUpdatedEventData
   | ImportProgressEventData
   | ImportCompletedEventData;
 
@@ -209,6 +217,20 @@ function parseEventData(data: string): SSEEventData | null {
     // Handle user events - saved_article_created
     if (
       event.type === "saved_article_created" &&
+      typeof event.userId === "string" &&
+      typeof event.entryId === "string"
+    ) {
+      return {
+        type: event.type,
+        userId: event.userId,
+        entryId: event.entryId,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+      };
+    }
+
+    // Handle user events - saved_article_updated
+    if (
+      event.type === "saved_article_updated" &&
       typeof event.userId === "string" &&
       typeof event.entryId === "string"
     ) {
@@ -406,6 +428,9 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       } else if (data.type === "saved_article_created") {
         utils.entries.list.invalidate({ type: "saved" });
         utils.entries.count.invalidate({ type: "saved" });
+      } else if (data.type === "saved_article_updated") {
+        utils.entries.get.invalidate({ id: data.entryId });
+        utils.entries.list.invalidate({ type: "saved" });
       } else if (data.type === "import_progress") {
         utils.imports.get.invalidate({ id: data.importId });
         utils.imports.list.invalidate();
@@ -681,6 +706,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         eventSource.addEventListener("subscription_created", handleEvent);
         eventSource.addEventListener("subscription_deleted", handleEvent);
         eventSource.addEventListener("saved_article_created", handleEvent);
+        eventSource.addEventListener("saved_article_updated", handleEvent);
         eventSource.addEventListener("import_progress", handleEvent);
         eventSource.addEventListener("import_completed", handleEvent);
 
