@@ -382,7 +382,14 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       if (!data) return;
 
       if (data.type === "new_entry") {
-        utils.entries.list.invalidate();
+        // Use targeted invalidation to avoid refetching entries for feeds the user isn't viewing.
+        // Invalidate "all entries" view (no feedId filter)
+        utils.entries.list.invalidate({ feedId: undefined });
+        // Invalidate the specific feed's view
+        utils.entries.list.invalidate({ feedId: data.feedId });
+        // Invalidate unread-only views since new entries are unread by default
+        utils.entries.list.invalidate({ unreadOnly: true });
+
         // Increment the unread count for the specific subscription instead of invalidating all
         utils.subscriptions.list.setData(undefined, (oldData) => {
           if (!oldData) return oldData;
