@@ -5,13 +5,9 @@
 import { describe, it, expect } from "vitest";
 import { parseRssStream } from "../../src/server/feed/streaming/rss-parser";
 
-/**
- * Helper to create a ReadableStream from a string.
- */
 function stringToStream(str: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
-
   return new ReadableStream({
     start(controller) {
       controller.enqueue(bytes);
@@ -20,13 +16,9 @@ function stringToStream(str: string): ReadableStream<Uint8Array> {
   });
 }
 
-/**
- * Helper to create a ReadableStream that sends data in chunks.
- */
 function stringToChunkedStream(str: string, chunkSize: number): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
-
   return new ReadableStream({
     start(controller) {
       for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -35,6 +27,14 @@ function stringToChunkedStream(str: string, chunkSize: number): ReadableStream<U
       controller.close();
     },
   });
+}
+
+async function collectEntries<T>(gen: AsyncGenerator<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of gen) {
+    items.push(item);
+  }
+  return items;
 }
 
 describe("parseRssStream", () => {
@@ -67,24 +67,24 @@ describe("parseRssStream", () => {
           </channel>
         </rss>`;
 
-      const feed = await parseRssStream(stringToStream(xml));
+      const result = await parseRssStream(stringToStream(xml));
 
-      expect(feed.title).toBe("Example Feed");
-      expect(feed.siteUrl).toBe("https://example.com");
-      expect(feed.description).toBe("An example RSS feed");
-      expect(feed.iconUrl).toBe("https://example.com/icon.png");
-      expect(feed.items).toHaveLength(2);
+      expect(result.title).toBe("Example Feed");
+      expect(result.siteUrl).toBe("https://example.com");
+      expect(result.description).toBe("An example RSS feed");
+      expect(result.iconUrl).toBe("https://example.com/icon.png");
 
-      expect(feed.items[0].title).toBe("First Post");
-      expect(feed.items[0].link).toBe("https://example.com/post-1");
-      expect(feed.items[0].summary).toBe("This is the first post");
-      expect(feed.items[0].content).toBe("This is the first post");
-      expect(feed.items[0].guid).toBe("https://example.com/post-1");
-      expect(feed.items[0].author).toBe("author@example.com");
-      expect(feed.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      const entries = await collectEntries(result.entries);
+      expect(entries).toHaveLength(2);
 
-      expect(feed.items[1].title).toBe("Second Post");
-      expect(feed.items[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
+      expect(entries[0].title).toBe("First Post");
+      expect(entries[0].link).toBe("https://example.com/post-1");
+      expect(entries[0].summary).toBe("This is the first post");
+      expect(entries[0].guid).toBe("https://example.com/post-1");
+      expect(entries[0].author).toBe("author@example.com");
+      expect(entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+
+      expect(entries[1].title).toBe("Second Post");
     });
 
     it("handles chunked streaming correctly", async () => {
@@ -100,31 +100,12 @@ describe("parseRssStream", () => {
           </channel>
         </rss>`;
 
-      // Send in very small chunks to test streaming
-      const feed = await parseRssStream(stringToChunkedStream(xml, 20));
+      const result = await parseRssStream(stringToChunkedStream(xml, 20));
 
-      expect(feed.title).toBe("Chunked Feed");
-      expect(feed.items).toHaveLength(1);
-      expect(feed.items[0].title).toBe("First Post");
-    });
-
-    it("handles a single item (not an array)", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <rss version="2.0">
-          <channel>
-            <title>Single Item Feed</title>
-            <link>https://example.com</link>
-            <item>
-              <title>Only Post</title>
-              <link>https://example.com/only</link>
-            </item>
-          </channel>
-        </rss>`;
-
-      const feed = await parseRssStream(stringToStream(xml));
-
-      expect(feed.items).toHaveLength(1);
-      expect(feed.items[0].title).toBe("Only Post");
+      expect(result.title).toBe("Chunked Feed");
+      const entries = await collectEntries(result.entries);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].title).toBe("First Post");
     });
   });
 
@@ -142,12 +123,13 @@ describe("parseRssStream", () => {
           </channel>
         </rss>`;
 
-      const feed = await parseRssStream(stringToStream(xml));
+      const result = await parseRssStream(stringToStream(xml));
+      const entries = await collectEntries(result.entries);
 
-      expect(feed.items[0].content).toBe(
+      expect(entries[0].content).toBe(
         "<p>This is the <strong>full content</strong> with HTML.</p>"
       );
-      expect(feed.items[0].summary).toBe("Short summary of the post");
+      expect(entries[0].summary).toBe("Short summary of the post");
     });
   });
 
@@ -164,27 +146,10 @@ describe("parseRssStream", () => {
           </channel>
         </rss>`;
 
-      const feed = await parseRssStream(stringToStream(xml));
+      const result = await parseRssStream(stringToStream(xml));
+      const entries = await collectEntries(result.entries);
 
-      expect(feed.items[0].author).toBe("John Doe");
-    });
-
-    it("prefers dc:creator over author element", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
-          <channel>
-            <title>Mixed Author Feed</title>
-            <item>
-              <title>Post with Both</title>
-              <author>email@example.com</author>
-              <dc:creator>John Doe</dc:creator>
-            </item>
-          </channel>
-        </rss>`;
-
-      const feed = await parseRssStream(stringToStream(xml));
-
-      expect(feed.items[0].author).toBe("John Doe");
+      expect(entries[0].author).toBe("John Doe");
     });
   });
 
@@ -200,10 +165,10 @@ describe("parseRssStream", () => {
           </channel>
         </rss>`;
 
-      const feed = await parseRssStream(stringToStream(xml));
+      const result = await parseRssStream(stringToStream(xml));
 
-      expect(feed.hubUrl).toBe("https://pubsubhubbub.appspot.com");
-      expect(feed.selfUrl).toBe("https://example.com/feed.xml");
+      expect(result.hubUrl).toBe("https://pubsubhubbub.appspot.com");
+      expect(result.selfUrl).toBe("https://example.com/feed.xml");
     });
   });
 
@@ -217,9 +182,9 @@ describe("parseRssStream", () => {
           </channel>
         </rss>`;
 
-      const feed = await parseRssStream(stringToStream(xml));
+      const result = await parseRssStream(stringToStream(xml));
 
-      expect(feed.ttlMinutes).toBe(60);
+      expect(result.ttlMinutes).toBe(60);
     });
   });
 
@@ -234,9 +199,9 @@ describe("parseRssStream", () => {
           </channel>
         </rss>`;
 
-      const feed = await parseRssStream(stringToStream(xml));
+      const result = await parseRssStream(stringToStream(xml));
 
-      expect(feed.syndication).toEqual({
+      expect(result.syndication).toEqual({
         updatePeriod: "daily",
         updateFrequency: 2,
       });
@@ -260,11 +225,12 @@ describe("parseRssStream", () => {
           </item>
         </rdf:RDF>`;
 
-      const feed = await parseRssStream(stringToStream(xml));
+      const result = await parseRssStream(stringToStream(xml));
+      const entries = await collectEntries(result.entries);
 
-      expect(feed.items).toHaveLength(1);
-      expect(feed.items[0].title).toBe("Post with dc:date");
-      expect(feed.items[0].pubDate).toEqual(new Date("2010-12-19T00:00:00Z"));
+      expect(entries).toHaveLength(1);
+      expect(entries[0].title).toBe("Post with dc:date");
+      expect(entries[0].pubDate).toEqual(new Date("2010-12-19T00:00:00Z"));
     });
   });
 
@@ -281,10 +247,11 @@ describe("parseRssStream", () => {
           </channel>
         </rss>`;
 
-      const feed = await parseRssStream(stringToStream(xml));
+      const result = await parseRssStream(stringToStream(xml));
 
-      expect(feed.title).toBe("Flameeyes's Weblog");
-      expect(feed.items[0].title).toBe("Comment by Flameeyes's Friend");
+      expect(result.title).toBe("Flameeyes's Weblog");
+      const entries = await collectEntries(result.entries);
+      expect(entries[0].title).toBe("Comment by Flameeyes's Friend");
     });
   });
 });

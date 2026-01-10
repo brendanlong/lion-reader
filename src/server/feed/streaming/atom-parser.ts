@@ -1,15 +1,13 @@
 /**
  * Streaming Atom 1.0 feed parser using SAX-style parsing.
- * Parses Atom feeds from a ReadableStream without loading the entire content into memory.
+ * Parses Atom feeds from a ReadableStream, yielding entries as they're parsed.
  */
 
 import { Parser } from "htmlparser2";
 import { decode } from "html-entities";
-import type { ParsedFeed, ParsedEntry, SyndicationHints } from "../types";
+import type { ParsedEntry, SyndicationHints } from "../types";
+import type { StreamingFeedResult } from "./types";
 
-/**
- * State machine states for Atom parsing.
- */
 type AtomParserState =
   | "initial"
   | "in_feed"
@@ -29,20 +27,16 @@ type AtomParserState =
   | "in_entry_author"
   | "in_entry_author_name";
 
-/**
- * Valid update period values from the Syndication namespace.
- */
 const VALID_UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
 type UpdatePeriod = (typeof VALID_UPDATE_PERIODS)[number];
 
 /**
  * Parses an Atom feed from a ReadableStream.
- *
- * @param stream - The readable stream containing Atom XML data
- * @returns A promise that resolves to a ParsedFeed
+ * Returns immediately with metadata once available; entries are yielded via async generator.
  */
-export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promise<ParsedFeed> {
-  // Feed metadata
+export async function parseAtomStream(
+  stream: ReadableStream<Uint8Array>
+): Promise<StreamingFeedResult> {
   let title: string | undefined;
   let description: string | undefined;
   let siteUrl: string | undefined;
@@ -53,40 +47,46 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
   let syUpdatePeriod: string | undefined;
   let syUpdateFrequency: number | undefined;
 
-  // Current entry being parsed
   let currentEntry: Partial<ParsedEntry> | null = null;
   let currentEntryContent: string | undefined;
 
-  // All parsed entries
-  const items: ParsedEntry[] = [];
-
-  // Parser state
   let state: AtomParserState = "initial";
   let textBuffer = "";
-  const elementStack: string[] = [];
   let inFeedLevel = false;
+
+  const entryQueue: ParsedEntry[] = [];
+  let entryResolve: () => void = () => {};
+  let parsingComplete = false;
+  let parseError: Error | null = null;
+
+  let metadataReady = false;
+  let resolveMetadata!: () => void;
+  const metadataPromise = new Promise<void>((resolve) => {
+    resolveMetadata = resolve;
+  });
 
   const parser = new Parser(
     {
       onopentag(name, attribs) {
         const tagName = name.toLowerCase();
-        elementStack.push(tagName);
 
-        // Feed element
         if (tagName === "feed") {
           state = "in_feed";
           inFeedLevel = true;
         }
 
-        // Entry element
         if (tagName === "entry") {
+          if (!metadataReady) {
+            metadataReady = true;
+            buildSyndication();
+            resolveMetadata();
+          }
           state = "in_entry";
           currentEntry = {};
           currentEntryContent = undefined;
           inFeedLevel = false;
         }
 
-        // Feed-level elements (only when not in an entry)
         if (inFeedLevel && state === "in_feed") {
           if (tagName === "title") state = "in_feed_title";
           else if (tagName === "subtitle") state = "in_feed_subtitle";
@@ -95,34 +95,26 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
           else if (tagName === "sy:updateperiod") state = "in_feed_sy_updatePeriod";
           else if (tagName === "sy:updatefrequency") state = "in_feed_sy_updateFrequency";
 
-          // Handle link elements
           if (tagName === "link") {
             const rel = attribs.rel;
             const href = attribs.href;
             if (href) {
-              if (rel === "alternate" || !rel) {
-                siteUrl = href;
-              } else if (rel === "hub") {
-                hubUrl = href;
-              } else if (rel === "self") {
-                selfUrl = href;
-              }
+              if (rel === "alternate" || !rel) siteUrl = href;
+              else if (rel === "hub") hubUrl = href;
+              else if (rel === "self") selfUrl = href;
             }
           }
         }
 
-        // Entry-level elements
         if (state === "in_entry" && currentEntry) {
           if (tagName === "id") state = "in_entry_id";
           else if (tagName === "title") state = "in_entry_title";
           else if (tagName === "summary") state = "in_entry_summary";
-          else if (tagName === "content") {
-            state = "in_entry_content";
-          } else if (tagName === "published") state = "in_entry_published";
+          else if (tagName === "content") state = "in_entry_content";
+          else if (tagName === "published") state = "in_entry_published";
           else if (tagName === "updated") state = "in_entry_updated";
           else if (tagName === "author") state = "in_entry_author";
 
-          // Handle link elements in entry
           if (tagName === "link") {
             const rel = attribs.rel;
             const href = attribs.href;
@@ -132,7 +124,6 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
           }
         }
 
-        // Author name
         if (state === "in_entry_author" && tagName === "name") {
           state = "in_entry_author_name";
         }
@@ -149,7 +140,6 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
         const trimmedText = textBuffer.trim();
         const decodedText = trimmedText ? decode(trimmedText) : undefined;
 
-        // Feed-level elements
         if (state === "in_feed_title") {
           title = decodedText;
           state = "in_feed";
@@ -160,10 +150,7 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
           iconUrl = decodedText;
           state = "in_feed";
         } else if (state === "in_feed_logo") {
-          // Use logo as icon fallback
-          if (!iconUrl) {
-            iconUrl = decodedText;
-          }
+          if (!iconUrl) iconUrl = decodedText;
           state = "in_feed";
         } else if (state === "in_feed_sy_updatePeriod") {
           if (decodedText) {
@@ -183,7 +170,6 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
           state = "in_feed";
         }
 
-        // Entry-level elements
         if (currentEntry) {
           if (state === "in_entry_id") {
             currentEntry.guid = decodedText;
@@ -193,10 +179,7 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
             state = "in_entry";
           } else if (state === "in_entry_summary") {
             currentEntry.summary = decodedText;
-            // Use as content if no content element
-            if (!currentEntryContent) {
-              currentEntry.content = decodedText;
-            }
+            if (!currentEntryContent) currentEntry.content = decodedText;
             state = "in_entry";
           } else if (state === "in_entry_content") {
             currentEntryContent = decodedText;
@@ -204,19 +187,14 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
             state = "in_entry";
           } else if (state === "in_entry_published") {
             if (decodedText) {
-              const date = parseAtomDate(decodedText);
-              if (date) {
-                currentEntry.pubDate = date;
-              }
+              const date = new Date(decodedText);
+              if (!isNaN(date.getTime())) currentEntry.pubDate = date;
             }
             state = "in_entry";
           } else if (state === "in_entry_updated") {
-            // Only use updated if published not set
             if (!currentEntry.pubDate && decodedText) {
-              const date = parseAtomDate(decodedText);
-              if (date) {
-                currentEntry.pubDate = date;
-              }
+              const date = new Date(decodedText);
+              if (!isNaN(date.getTime())) currentEntry.pubDate = date;
             }
             state = "in_entry";
           } else if (state === "in_entry_author_name") {
@@ -227,59 +205,87 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
           }
         }
 
-        // End of entry
         if (tagName === "entry" && currentEntry) {
-          items.push(currentEntry as ParsedEntry);
+          entryQueue.push(currentEntry as ParsedEntry);
+          entryResolve();
           currentEntry = null;
           state = "in_feed";
           inFeedLevel = true;
         }
 
-        // End of feed
         if (tagName === "feed") {
           state = "initial";
           inFeedLevel = false;
         }
 
-        elementStack.pop();
         textBuffer = "";
+      },
+
+      onerror(error) {
+        parseError = error;
+        entryResolve();
+        resolveMetadata();
       },
     },
     {
       xmlMode: true,
-      decodeEntities: false, // We decode manually with html-entities
+      decodeEntities: false,
       lowerCaseTags: true,
       lowerCaseAttributeNames: true,
     }
   );
 
-  // Process the stream
+  function buildSyndication() {
+    if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
+      syndication = {};
+      if (syUpdatePeriod) syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
+      if (syUpdateFrequency) syndication.updateFrequency = syUpdateFrequency;
+    }
+  }
+
   const reader = stream.getReader();
   const decoder = new TextDecoder();
 
-  try {
+  (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        parser.write(chunk);
+      }
+      parser.end();
+
+      if (!metadataReady) {
+        metadataReady = true;
+        buildSyndication();
+        resolveMetadata();
+      }
+    } catch (error) {
+      parseError = error instanceof Error ? error : new Error(String(error));
+    } finally {
+      parsingComplete = true;
+      entryResolve();
+      reader.releaseLock();
+    }
+  })();
+
+  await metadataPromise;
+
+  if (parseError) throw parseError;
+
+  async function* entriesGenerator(): AsyncGenerator<ParsedEntry, void, undefined> {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value, { stream: true });
-      parser.write(chunk);
-    }
-
-    // Flush any remaining data
-    parser.end();
-  } finally {
-    reader.releaseLock();
-  }
-
-  // Build syndication hints if present
-  if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
-    syndication = {};
-    if (syUpdatePeriod) {
-      syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
-    }
-    if (syUpdateFrequency) {
-      syndication.updateFrequency = syUpdateFrequency;
+      if (entryQueue.length > 0) {
+        yield entryQueue.shift()!;
+      } else if (parsingComplete) {
+        if (parseError) throw parseError;
+        return;
+      } else {
+        await new Promise<void>((resolve) => {
+          entryResolve = resolve;
+        });
+      }
     }
   }
 
@@ -288,29 +294,9 @@ export async function parseAtomStream(stream: ReadableStream<Uint8Array>): Promi
     description,
     siteUrl,
     iconUrl,
-    items,
     hubUrl,
     selfUrl,
     syndication,
+    entries: entriesGenerator(),
   };
-}
-
-/**
- * Parses various date formats commonly found in Atom feeds.
- * Atom uses RFC 3339 (a profile of ISO 8601).
- * Returns undefined if the date cannot be parsed.
- */
-function parseAtomDate(dateString: string): Date | undefined {
-  const trimmed = dateString.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  // Try native Date parsing (handles ISO 8601 / RFC 3339)
-  const nativeDate = new Date(trimmed);
-  if (!isNaN(nativeDate.getTime())) {
-    return nativeDate;
-  }
-
-  return undefined;
 }

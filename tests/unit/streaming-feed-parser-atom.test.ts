@@ -5,13 +5,9 @@
 import { describe, it, expect } from "vitest";
 import { parseAtomStream } from "../../src/server/feed/streaming/atom-parser";
 
-/**
- * Helper to create a ReadableStream from a string.
- */
 function stringToStream(str: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
-
   return new ReadableStream({
     start(controller) {
       controller.enqueue(bytes);
@@ -20,13 +16,9 @@ function stringToStream(str: string): ReadableStream<Uint8Array> {
   });
 }
 
-/**
- * Helper to create a ReadableStream that sends data in chunks.
- */
 function stringToChunkedStream(str: string, chunkSize: number): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
-
   return new ReadableStream({
     start(controller) {
       for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -35,6 +27,14 @@ function stringToChunkedStream(str: string, chunkSize: number): ReadableStream<U
       controller.close();
     },
   });
+}
+
+async function collectEntries<T>(gen: AsyncGenerator<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of gen) {
+    items.push(item);
+  }
+  return items;
 }
 
 describe("parseAtomStream", () => {
@@ -66,25 +66,27 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
 
-      expect(feed.title).toBe("Example Atom Feed");
-      expect(feed.description).toBe("An example Atom feed");
-      expect(feed.siteUrl).toBe("https://example.com");
-      expect(feed.selfUrl).toBe("https://example.com/feed.xml");
-      expect(feed.iconUrl).toBe("https://example.com/icon.png");
-      expect(feed.items).toHaveLength(2);
+      expect(result.title).toBe("Example Atom Feed");
+      expect(result.description).toBe("An example Atom feed");
+      expect(result.siteUrl).toBe("https://example.com");
+      expect(result.selfUrl).toBe("https://example.com/feed.xml");
+      expect(result.iconUrl).toBe("https://example.com/icon.png");
 
-      expect(feed.items[0].guid).toBe("urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a");
-      expect(feed.items[0].title).toBe("First Entry");
-      expect(feed.items[0].link).toBe("https://example.com/entry-1");
-      expect(feed.items[0].summary).toBe("This is the first entry");
-      expect(feed.items[0].content).toBe("This is the full content");
-      expect(feed.items[0].author).toBe("John Doe");
-      expect(feed.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      const entries = await collectEntries(result.entries);
+      expect(entries).toHaveLength(2);
 
-      expect(feed.items[1].title).toBe("Second Entry");
-      expect(feed.items[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
+      expect(entries[0].guid).toBe("urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a");
+      expect(entries[0].title).toBe("First Entry");
+      expect(entries[0].link).toBe("https://example.com/entry-1");
+      expect(entries[0].summary).toBe("This is the first entry");
+      expect(entries[0].content).toBe("This is the full content");
+      expect(entries[0].author).toBe("John Doe");
+      expect(entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+
+      expect(entries[1].title).toBe("Second Entry");
+      expect(entries[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
     });
 
     it("handles chunked streaming correctly", async () => {
@@ -98,12 +100,12 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      // Send in very small chunks to test streaming
-      const feed = await parseAtomStream(stringToChunkedStream(xml, 20));
+      const result = await parseAtomStream(stringToChunkedStream(xml, 20));
 
-      expect(feed.title).toBe("Chunked Feed");
-      expect(feed.items).toHaveLength(1);
-      expect(feed.items[0].title).toBe("First Entry");
+      expect(result.title).toBe("Chunked Feed");
+      const entries = await collectEntries(result.entries);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].title).toBe("First Entry");
     });
   });
 
@@ -115,9 +117,9 @@ describe("parseAtomStream", () => {
           <logo>https://example.com/logo.png</logo>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
 
-      expect(feed.iconUrl).toBe("https://example.com/logo.png");
+      expect(result.iconUrl).toBe("https://example.com/logo.png");
     });
 
     it("prefers icon over logo", async () => {
@@ -128,9 +130,9 @@ describe("parseAtomStream", () => {
           <logo>https://example.com/logo.png</logo>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
 
-      expect(feed.iconUrl).toBe("https://example.com/icon.png");
+      expect(result.iconUrl).toBe("https://example.com/icon.png");
     });
   });
 
@@ -147,9 +149,10 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
+      const entries = await collectEntries(result.entries);
 
-      expect(feed.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
     });
 
     it("falls back to updated when published is missing", async () => {
@@ -163,9 +166,10 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
+      const entries = await collectEntries(result.entries);
 
-      expect(feed.items[0].pubDate).toEqual(new Date("2024-06-15T12:00:00Z"));
+      expect(entries[0].pubDate).toEqual(new Date("2024-06-15T12:00:00Z"));
     });
   });
 
@@ -178,10 +182,10 @@ describe("parseAtomStream", () => {
           <link href="https://example.com/feed.xml" rel="self"/>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
 
-      expect(feed.hubUrl).toBe("https://pubsubhubbub.appspot.com");
-      expect(feed.selfUrl).toBe("https://example.com/feed.xml");
+      expect(result.hubUrl).toBe("https://pubsubhubbub.appspot.com");
+      expect(result.selfUrl).toBe("https://example.com/feed.xml");
     });
   });
 
@@ -195,9 +199,9 @@ describe("parseAtomStream", () => {
           <sy:updateFrequency>1</sy:updateFrequency>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
 
-      expect(feed.syndication).toEqual({
+      expect(result.syndication).toEqual({
         updatePeriod: "weekly",
         updateFrequency: 1,
       });
@@ -217,10 +221,11 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
+      const entries = await collectEntries(result.entries);
 
-      expect(feed.items[0].content).toBe("<p>Full content here</p>");
-      expect(feed.items[0].summary).toBe("Short summary");
+      expect(entries[0].content).toBe("<p>Full content here</p>");
+      expect(entries[0].summary).toBe("Short summary");
     });
 
     it("uses summary as content when content is missing", async () => {
@@ -234,10 +239,11 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
+      const entries = await collectEntries(result.entries);
 
-      expect(feed.items[0].content).toBe("This is both summary and content");
-      expect(feed.items[0].summary).toBe("This is both summary and content");
+      expect(entries[0].content).toBe("This is both summary and content");
+      expect(entries[0].summary).toBe("This is both summary and content");
     });
   });
 
@@ -254,10 +260,11 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const feed = await parseAtomStream(stringToStream(xml));
+      const result = await parseAtomStream(stringToStream(xml));
+      const entries = await collectEntries(result.entries);
 
-      expect(feed.siteUrl).toBe("https://example.com");
-      expect(feed.items[0].link).toBe("https://example.com/entry");
+      expect(result.siteUrl).toBe("https://example.com");
+      expect(entries[0].link).toBe("https://example.com/entry");
     });
   });
 });
