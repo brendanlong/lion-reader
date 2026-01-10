@@ -27,6 +27,7 @@ import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
 import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { escapeHtml } from "@/server/http/html";
 import {
   fetchPublicDocxFile,
   fetchPrivateDocxFile,
@@ -717,18 +718,6 @@ interface ConversionContext {
   footnoteNumbers: Map<string, number>;
   /** Current footnote counter */
   footnoteCounter: number;
-}
-
-/**
- * Escapes HTML special characters.
- */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }
 
 /**
