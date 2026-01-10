@@ -263,7 +263,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   const feedId = generateUuidv7();
   const feedTitle = email.from.name || senderEmail;
 
-  const [feed] = await db
+  let [feed] = await db
     .insert(feeds)
     .values({
       id: feedId,
@@ -274,15 +274,27 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
       createdAt: now,
       updatedAt: now,
     })
-    .onConflictDoUpdate({
+    .onConflictDoNothing({
       target: [feeds.userId, feeds.emailSenderPattern],
-      set: { updatedAt: now },
     })
     .returning();
 
-  const isNewFeed = feed.id === feedId;
+  const isNewFeed = feed != null;
   if (isNewFeed) {
     logger.info("Created email feed", { feedId, userId, senderEmail, title: feedTitle });
+  } else {
+    // Feed already exists, select since we can't return from `on conflict do nothing`
+    [feed] = await db
+      .select()
+      .from(feeds)
+      .where(
+        and(
+          eq(feeds.userId, userId),
+          eq(feeds.emailSenderPattern, senderEmail),
+          eq(feeds.type, "email")
+        )
+      )
+      .limit(1);
   }
 
   // 6. Upsert subscription: insert new, or reactivate if unsubscribed
