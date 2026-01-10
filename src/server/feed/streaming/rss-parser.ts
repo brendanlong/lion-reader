@@ -1,11 +1,12 @@
 /**
  * Streaming RSS 2.0 feed parser using SAX-style parsing.
- * Parses RSS feeds from a ReadableStream without loading the entire content into memory.
+ * Parses RSS feeds from a ReadableStream, yielding entries as they're parsed.
  */
 
 import { Parser } from "htmlparser2";
 import { decode } from "html-entities";
-import type { ParsedFeed, ParsedEntry, SyndicationHints } from "../types";
+import type { ParsedEntry, SyndicationHints } from "../types";
+import type { StreamingFeedResult } from "./types";
 
 /**
  * State machine states for RSS parsing.
@@ -32,19 +33,19 @@ type RssParserState =
   | "in_item_pubDate"
   | "in_item_dc_date";
 
-/**
- * Valid update period values from the Syndication namespace.
- */
 const VALID_UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
 type UpdatePeriod = (typeof VALID_UPDATE_PERIODS)[number];
 
 /**
  * Parses an RSS feed from a ReadableStream.
+ * Returns immediately with metadata once available; entries are yielded via async generator.
  *
  * @param stream - The readable stream containing RSS XML data
- * @returns A promise that resolves to a ParsedFeed
+ * @returns A promise that resolves to metadata + async generator of entries
  */
-export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promise<ParsedFeed> {
+export async function parseRssStream(
+  stream: ReadableStream<Uint8Array>
+): Promise<StreamingFeedResult> {
   // Feed metadata
   let title: string | undefined;
   let description: string | undefined;
@@ -61,32 +62,45 @@ export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promis
   let currentItem: Partial<ParsedEntry> | null = null;
   let currentItemContentEncoded: string | undefined;
 
-  // All parsed items
-  const items: ParsedEntry[] = [];
-
   // Parser state
   let state: RssParserState = "initial";
   let textBuffer = "";
-  let isRdf = false; // RSS 1.0 (RDF) format
+  let isRdf = false;
+
+  // Entry queue for async generator
+  const entryQueue: ParsedEntry[] = [];
+  let entryResolve: () => void = () => {};
+  let parsingComplete = false;
+  let parseError: Error | null = null;
+
+  // Metadata ready promise
+  let metadataReady = false;
+  let resolveMetadata!: () => void;
+  const metadataPromise = new Promise<void>((resolve) => {
+    resolveMetadata = resolve;
+  });
 
   const parser = new Parser(
     {
       onopentag(name, attribs) {
         const tagName = name.toLowerCase();
 
-        // Handle RSS 1.0 (RDF) format
         if (tagName === "rdf:rdf") {
           isRdf = true;
           state = "in_channel";
         }
 
-        // Channel element
         if (tagName === "channel") {
           state = "in_channel";
         }
 
-        // Item element (can be inside channel for RSS 2.0 or at rdf:RDF level for RSS 1.0)
         if (tagName === "item") {
+          // Metadata is ready when we see the first item
+          if (!metadataReady) {
+            metadataReady = true;
+            buildSyndication();
+            resolveMetadata();
+          }
           state = "in_item";
           currentItem = {};
           currentItemContentEncoded = undefined;
@@ -102,7 +116,6 @@ export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promis
           else if (tagName === "sy:updatefrequency") state = "in_channel_sy_updateFrequency";
           else if (tagName === "image") state = "in_image";
 
-          // atom:link for WebSub
           if (tagName === "atom:link") {
             const rel = attribs.rel;
             const href = attribs.href;
@@ -111,12 +124,10 @@ export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promis
           }
         }
 
-        // Image URL
         if (state === "in_image" && tagName === "url") {
           state = "in_image_url";
         }
 
-        // Item-level elements
         if (state === "in_item" && currentItem) {
           if (tagName === "title") state = "in_item_title";
           else if (tagName === "link") state = "in_item_link";
@@ -192,7 +203,6 @@ export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promis
             state = "in_item";
           } else if (state === "in_item_description") {
             currentItem.summary = decodedText;
-            // Use as content if no content:encoded
             if (!currentItemContentEncoded) {
               currentItem.content = decodedText;
             }
@@ -205,13 +215,11 @@ export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promis
             currentItem.guid = decodedText;
             state = "in_item";
           } else if (state === "in_item_author") {
-            // Only set if dc:creator not already set
             if (!currentItem.author) {
               currentItem.author = decodedText;
             }
             state = "in_item";
           } else if (state === "in_item_dc_creator") {
-            // dc:creator takes precedence
             currentItem.author = decodedText;
             state = "in_item";
           } else if (state === "in_item_pubDate") {
@@ -223,7 +231,6 @@ export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promis
             }
             state = "in_item";
           } else if (state === "in_item_dc_date") {
-            // Only set if pubDate not already set
             if (!currentItem.pubDate && decodedText) {
               const date = parseRssDate(decodedText);
               if (date) {
@@ -234,56 +241,99 @@ export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promis
           }
         }
 
-        // End of item
+        // End of item - push to queue
         if (tagName === "item" && currentItem) {
-          items.push(currentItem as ParsedEntry);
+          entryQueue.push(currentItem as ParsedEntry);
+          entryResolve();
           currentItem = null;
           state = isRdf ? "initial" : "in_channel";
         }
 
-        // End of channel
         if (tagName === "channel") {
           state = isRdf ? "initial" : "initial";
         }
 
         textBuffer = "";
       },
+
+      onerror(error) {
+        parseError = error;
+        entryResolve();
+        if (!metadataReady) {
+          metadataReady = true;
+          resolveMetadata();
+        }
+      },
     },
     {
       xmlMode: true,
-      decodeEntities: false, // We decode manually with html-entities
+      decodeEntities: false,
       lowerCaseTags: true,
       lowerCaseAttributeNames: true,
     }
   );
 
-  // Process the stream
+  function buildSyndication() {
+    if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
+      syndication = {};
+      if (syUpdatePeriod) {
+        syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
+      }
+      if (syUpdateFrequency) {
+        syndication.updateFrequency = syUpdateFrequency;
+      }
+    }
+  }
+
+  // Start reading the stream in the background
   const reader = stream.getReader();
   const decoder = new TextDecoder();
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+  (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        parser.write(chunk);
+      }
+      parser.end();
 
-      const chunk = decoder.decode(value, { stream: true });
-      parser.write(chunk);
+      // If no items were found, metadata is ready now
+      if (!metadataReady) {
+        metadataReady = true;
+        buildSyndication();
+        resolveMetadata();
+      }
+    } catch (error) {
+      parseError = error instanceof Error ? error : new Error(String(error));
+    } finally {
+      parsingComplete = true;
+      entryResolve();
+      reader.releaseLock();
     }
+  })();
 
-    // Flush any remaining data
-    parser.end();
-  } finally {
-    reader.releaseLock();
+  // Wait for metadata to be ready
+  await metadataPromise;
+
+  if (parseError) {
+    throw parseError;
   }
 
-  // Build syndication hints if present
-  if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
-    syndication = {};
-    if (syUpdatePeriod) {
-      syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
-    }
-    if (syUpdateFrequency) {
-      syndication.updateFrequency = syUpdateFrequency;
+  // Create async generator for entries
+  async function* entriesGenerator(): AsyncGenerator<ParsedEntry, void, undefined> {
+    while (true) {
+      if (entryQueue.length > 0) {
+        yield entryQueue.shift()!;
+      } else if (parsingComplete) {
+        if (parseError) throw parseError;
+        return;
+      } else {
+        await new Promise<void>((resolve) => {
+          entryResolve = resolve;
+        });
+      }
     }
   }
 
@@ -292,45 +342,30 @@ export async function parseRssStream(stream: ReadableStream<Uint8Array>): Promis
     description,
     siteUrl,
     iconUrl,
-    items,
     hubUrl,
     selfUrl,
     ttlMinutes,
     syndication,
+    entries: entriesGenerator(),
   };
 }
 
-/**
- * Parses various date formats commonly found in RSS feeds.
- * Returns undefined if the date cannot be parsed.
- */
 function parseRssDate(dateString: string): Date | undefined {
   const trimmed = dateString.trim();
-  if (!trimmed) {
-    return undefined;
-  }
+  if (!trimmed) return undefined;
 
-  // Try native Date parsing first (handles ISO 8601 and RFC 2822)
   const nativeDate = new Date(trimmed);
-  if (!isNaN(nativeDate.getTime())) {
-    return nativeDate;
-  }
+  if (!isNaN(nativeDate.getTime())) return nativeDate;
 
-  // Try some common non-standard formats
-
-  // Handle "DD Mon YYYY HH:MM:SS" format (missing timezone)
   const ddMonYyyy = /^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/;
   const match = trimmed.match(ddMonYyyy);
   if (match) {
     const parsed = new Date(
       `${match[2]} ${match[1]}, ${match[3]} ${match[4]}:${match[5]}:${match[6]} GMT`
     );
-    if (!isNaN(parsed.getTime())) {
-      return parsed;
-    }
+    if (!isNaN(parsed.getTime())) return parsed;
   }
 
-  // Handle dates with extra timezone info like "PST" or "EST"
   const timezoneMap: Record<string, string> = {
     PST: "-0800",
     PDT: "-0700",
@@ -348,9 +383,7 @@ function parseRssDate(dateString: string): Date | undefined {
     if (trimmed.includes(abbr)) {
       const normalized = trimmed.replace(abbr, offset);
       const parsed = new Date(normalized);
-      if (!isNaN(parsed.getTime())) {
-        return parsed;
-      }
+      if (!isNaN(parsed.getTime())) return parsed;
     }
   }
 

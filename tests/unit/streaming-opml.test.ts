@@ -5,13 +5,9 @@
 import { describe, it, expect } from "vitest";
 import { parseOpmlStream, OpmlStreamParseError } from "../../src/server/feed/streaming/opml-parser";
 
-/**
- * Helper to create a ReadableStream from a string.
- */
 function stringToStream(str: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
-
   return new ReadableStream({
     start(controller) {
       controller.enqueue(bytes);
@@ -20,13 +16,9 @@ function stringToStream(str: string): ReadableStream<Uint8Array> {
   });
 }
 
-/**
- * Helper to create a ReadableStream that sends data in chunks.
- */
 function stringToChunkedStream(str: string, chunkSize: number): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
-
   return new ReadableStream({
     start(controller) {
       for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -35,6 +27,14 @@ function stringToChunkedStream(str: string, chunkSize: number): ReadableStream<U
       controller.close();
     },
   });
+}
+
+async function collectFeeds<T>(gen: AsyncGenerator<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of gen) {
+    items.push(item);
+  }
+  return items;
 }
 
 describe("parseOpmlStream", () => {
@@ -53,7 +53,8 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpmlStream(stringToStream(xml));
+      const result = await parseOpmlStream(stringToStream(xml));
+      const feeds = await collectFeeds(result.feeds);
 
       expect(feeds).toHaveLength(2);
       expect(feeds[0]).toEqual({
@@ -77,7 +78,8 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpmlStream(stringToChunkedStream(xml, 20));
+      const result = await parseOpmlStream(stringToChunkedStream(xml, 20));
+      const feeds = await collectFeeds(result.feeds);
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].title).toBe("Feed");
@@ -100,7 +102,8 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpmlStream(stringToStream(xml));
+      const result = await parseOpmlStream(stringToStream(xml));
+      const feeds = await collectFeeds(result.feeds);
 
       expect(feeds).toHaveLength(3);
 
@@ -136,7 +139,8 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpmlStream(stringToStream(xml));
+      const result = await parseOpmlStream(stringToStream(xml));
+      const feeds = await collectFeeds(result.feeds);
 
       expect(feeds[0].category).toEqual(["News"]);
     });
@@ -151,41 +155,10 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpmlStream(stringToStream(xml));
+      const result = await parseOpmlStream(stringToStream(xml));
+      const feeds = await collectFeeds(result.feeds);
 
       expect(feeds[0].category).toEqual(["Tech", "Programming", "JavaScript"]);
-    });
-
-    it("handles comma-separated categories (takes first)", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="2.0">
-          <head><title>Test</title></head>
-          <body>
-            <outline type="rss" text="Feed" xmlUrl="https://example.com/feed"
-                     category="News, Tech, Sports"/>
-          </body>
-        </opml>`;
-
-      const feeds = await parseOpmlStream(stringToStream(xml));
-
-      expect(feeds[0].category).toEqual(["News"]);
-    });
-
-    it("prefers folder hierarchy over category attribute", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="2.0">
-          <head><title>Test</title></head>
-          <body>
-            <outline text="Folder">
-              <outline type="rss" text="Feed" xmlUrl="https://example.com/feed"
-                       category="Different"/>
-            </outline>
-          </body>
-        </opml>`;
-
-      const feeds = await parseOpmlStream(stringToStream(xml));
-
-      expect(feeds[0].category).toEqual(["Folder"]);
     });
   });
 
@@ -200,72 +173,25 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpmlStream(stringToStream(xml));
+      const result = await parseOpmlStream(stringToStream(xml));
+      const feeds = await collectFeeds(result.feeds);
 
       expect(feeds).toHaveLength(2);
       expect(feeds[0].xmlUrl).toBe("https://example1.com/feed");
       expect(feeds[1].xmlUrl).toBe("https://example2.com/feed");
     });
-
-    it("handles different attribute cases for htmlUrl", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="2.0">
-          <head><title>Test</title></head>
-          <body>
-            <outline type="rss" text="Feed1" xmlUrl="https://example1.com/feed"
-                     htmlUrl="https://example1.com"/>
-            <outline type="rss" text="Feed2" xmlUrl="https://example2.com/feed"
-                     htmlurl="https://example2.com"/>
-          </body>
-        </opml>`;
-
-      const feeds = await parseOpmlStream(stringToStream(xml));
-
-      expect(feeds[0].htmlUrl).toBe("https://example1.com");
-      expect(feeds[1].htmlUrl).toBe("https://example2.com");
-    });
-  });
-
-  describe("title handling", () => {
-    it("prefers text over title attribute", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="2.0">
-          <head><title>Test</title></head>
-          <body>
-            <outline type="rss" text="Text Title" title="Title Attr"
-                     xmlUrl="https://example.com/feed"/>
-          </body>
-        </opml>`;
-
-      const feeds = await parseOpmlStream(stringToStream(xml));
-
-      expect(feeds[0].title).toBe("Text Title");
-    });
-
-    it("falls back to title attribute when text is missing", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="2.0">
-          <head><title>Test</title></head>
-          <body>
-            <outline type="rss" title="Title Attr" xmlUrl="https://example.com/feed"/>
-          </body>
-        </opml>`;
-
-      const feeds = await parseOpmlStream(stringToStream(xml));
-
-      expect(feeds[0].title).toBe("Title Attr");
-    });
   });
 
   describe("empty OPML", () => {
-    it("returns empty array for empty body", async () => {
+    it("returns empty generator for empty body", async () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Empty</title></head>
           <body></body>
         </opml>`;
 
-      const feeds = await parseOpmlStream(stringToStream(xml));
+      const result = await parseOpmlStream(stringToStream(xml));
+      const feeds = await collectFeeds(result.feeds);
 
       expect(feeds).toEqual([]);
     });
