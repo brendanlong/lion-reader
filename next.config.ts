@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
     // Inject git commit SHA at build time
     GIT_COMMIT_SHA: getGitCommitSha(),
   },
+  // Packages that should be loaded from node_modules at runtime, not bundled
+  // html-rewriter-wasm contains a WASM file that can't be bundled by Next.js
+  serverExternalPackages: ["html-rewriter-wasm"],
   // Handle piper-tts-web which has conditional Node.js code (require('fs'))
   // that the bundler tries to resolve even though it only runs in Node.js
   webpack: (config, { isServer }) => {
@@ -32,6 +35,7 @@ const nextConfig: NextConfig = {
         path: false,
       };
     }
+    config.devtool = "source-map";
     return config;
   },
   // Turbopack equivalent configuration

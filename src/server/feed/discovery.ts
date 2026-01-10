@@ -1,9 +1,12 @@
 /**
  * Feed discovery from HTML pages.
  * Parses HTML to find <link rel="alternate"> tags pointing to RSS/Atom/JSON feeds.
+ *
+ * Uses htmlparser2 SAX parsing for efficiency - exits early after </head>
+ * since feed links are only in the head section.
  */
 
-import { parseHTML } from "linkedom";
+import { Parser } from "htmlparser2";
 
 /**
  * A discovered feed from an HTML page.
@@ -53,24 +56,21 @@ export const COMMON_FEED_PATHS = [
 ];
 
 /**
- * Gets an attribute value case-insensitively.
- * This is needed because linkedom preserves attribute case from the source HTML,
- * so <LINK REL="..."> would have attribute "REL" not "rel".
+ * Gets an attribute value case-insensitively from an attributes object.
  *
- * @param element - The element to get the attribute from
+ * @param attribs - The attributes object from htmlparser2
  * @param name - The attribute name (lowercase)
- * @returns The attribute value, or null if not found
+ * @returns The attribute value, or undefined if not found
  */
-function getAttributeCI(element: Element, name: string): string | null {
+function getAttributeCI(attribs: Record<string, string>, name: string): string | undefined {
   // Try lowercase first (most common case)
-  const value = element.getAttribute(name);
-  if (value !== null) return value;
+  if (name in attribs) return attribs[name];
 
   // Try uppercase
-  const upperValue = element.getAttribute(name.toUpperCase());
-  if (upperValue !== null) return upperValue;
+  const upperName = name.toUpperCase();
+  if (upperName in attribs) return attribs[upperName];
 
-  return null;
+  return undefined;
 }
 
 /**
@@ -132,6 +132,8 @@ function resolveUrl(href: string | undefined, baseUrl: string): string | null {
  * - rel="alternate" (or rel containing "alternate")
  * - type="application/rss+xml" or type="application/atom+xml"
  *
+ * Uses SAX parsing for efficiency and exits early after </head>.
+ *
  * @param html - The HTML content to parse
  * @param baseUrl - The base URL for resolving relative URLs
  * @returns An array of discovered feeds (may be empty)
@@ -146,56 +148,61 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
   const feeds: DiscoveredFeed[] = [];
   const seenUrls = new Set<string>();
 
-  // Parse HTML using linkedom (faster than JSDOM)
-  // Wrap fragments in a full HTML document structure for proper parsing
-  // For feed discovery, put fragments in <head> since <link> tags belong there
-  const trimmedHtml = html.trim().toLowerCase();
-  const isFullDocument = trimmedHtml.startsWith("<!doctype") || trimmedHtml.startsWith("<html");
-  const htmlToParse = isFullDocument
-    ? html
-    : `<!DOCTYPE html><html><head>${html}</head><body></body></html>`;
-  const { document: doc } = parseHTML(htmlToParse);
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        const tagName = name.toLowerCase();
 
-  // Find all link tags with rel="alternate"
-  const linkElements = doc.querySelectorAll("link");
+        // Check for link tags
+        if (tagName === "link") {
+          // Check if this is a rel="alternate" link
+          const rel = getAttributeCI(attribs, "rel");
+          if (!isAlternateRel(rel)) {
+            return;
+          }
 
-  for (const link of linkElements) {
-    // Check if this is a rel="alternate" link
-    // Use case-insensitive attribute access for uppercase HTML compatibility
-    const rel = getAttributeCI(link, "rel") ?? undefined;
-    if (!isAlternateRel(rel)) {
-      continue;
-    }
+          // Check if the type is a feed type
+          const type = getAttributeCI(attribs, "type");
+          const feedType = getFeedTypeFromMime(type);
+          if (feedType === null) {
+            return;
+          }
 
-    // Check if the type is a feed type
-    const type = getAttributeCI(link, "type");
-    const feedType = getFeedTypeFromMime(type ?? undefined);
-    if (feedType === null) {
-      continue;
-    }
+          // Extract and resolve the href
+          const href = getAttributeCI(attribs, "href");
+          const resolvedUrl = resolveUrl(href, baseUrl);
+          if (!resolvedUrl) {
+            return;
+          }
 
-    // Extract and resolve the href
-    const href = getAttributeCI(link, "href");
-    const resolvedUrl = resolveUrl(href ?? undefined, baseUrl);
-    if (!resolvedUrl) {
-      continue;
-    }
+          // Skip duplicates
+          if (seenUrls.has(resolvedUrl)) {
+            return;
+          }
+          seenUrls.add(resolvedUrl);
 
-    // Skip duplicates
-    if (seenUrls.has(resolvedUrl)) {
-      continue;
-    }
-    seenUrls.add(resolvedUrl);
+          // Extract title if present
+          const title = getAttributeCI(attribs, "title");
 
-    // Extract title if present
-    const title = getAttributeCI(link, "title");
+          feeds.push({
+            url: resolvedUrl,
+            type: feedType,
+            title: title || undefined,
+          });
+        }
+      },
+      onclosetag(name) {
+        // Exit early after </head> - no feed links in body
+        if (name.toLowerCase() === "head") {
+          parser.pause();
+        }
+      },
+    },
+    { decodeEntities: true, lowerCaseTags: false, lowerCaseAttributeNames: false }
+  );
 
-    feeds.push({
-      url: resolvedUrl,
-      type: feedType,
-      title: title || undefined,
-    });
-  }
+  parser.write(html);
+  parser.end();
 
   return feeds;
 }

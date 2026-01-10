@@ -71,6 +71,9 @@ importers:
       html-entities:
         specifier: ^2.6.0
         version: 2.6.0
+      html-rewriter-wasm:
+        specifier: ^0.4.1
+        version: 0.4.1
       htmlparser2:
         specifier: ^10.0.0
         version: 10.0.0
@@ -3499,6 +3502,9 @@ packages:
 
   html-escaper@3.0.3:
     resolution: {integrity: sha512-RuMffC89BOWQoY0WKGpIhn5gX3iI54O6nRA0yC124NYVtzjmFWBIiFd8M0x+ZdX0P9R4lADg1mgP8C7PxGOWuQ==}
+
+  html-rewriter-wasm@0.4.1:
+    resolution: {integrity: sha512-lNovG8CMCCmcVB1Q7xggMSf7tqPCijZXaH4gL6iE8BFghdQCbaY5Met9i1x2Ex8m/cZHDUtXK9H6/znKamRP8Q==}
 
   htmlparser2@10.0.0:
     resolution: {integrity: sha512-TwAZM+zE5Tq3lrEHvOlvwgj1XLWQCtaaibSN11Q+gGBAS7Y1uZSWwXXRe4iF6OXnaq1riyQAPFOBtYc77Mxq0g==}
@@ -8962,6 +8968,8 @@ snapshots:
   html-entities@2.6.0: {}
 
   html-escaper@3.0.3: {}
+
+  html-rewriter-wasm@0.4.1: {}
 
   htmlparser2@10.0.0:
     dependencies:
