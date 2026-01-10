@@ -1,32 +1,13 @@
 /**
- * Unit tests for streaming JSON Feed parser.
+ * Unit tests for JSON Feed parser.
  */
 
 import { describe, it, expect } from "vitest";
-import { parseJsonStream } from "../../src/server/feed/streaming/json-parser";
+import { parseJson } from "../../src/server/feed/streaming/json-parser";
 
-function stringToStream(str: string): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(str);
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-}
-
-async function collectEntries<T>(gen: AsyncGenerator<T>): Promise<T[]> {
-  const items: T[] = [];
-  for await (const item of gen) {
-    items.push(item);
-  }
-  return items;
-}
-
-describe("parseJsonStream", () => {
+describe("parseJson", () => {
   describe("standard JSON Feed 1.1", () => {
-    it("parses a standard JSON Feed with all elements", async () => {
+    it("parses a standard JSON Feed with all elements", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         title: "Example JSON Feed",
@@ -54,7 +35,7 @@ describe("parseJsonStream", () => {
         ],
       });
 
-      const result = await parseJsonStream(stringToStream(json));
+      const result = parseJson(json);
 
       expect(result.title).toBe("Example JSON Feed");
       expect(result.description).toBe("An example JSON feed");
@@ -62,24 +43,23 @@ describe("parseJsonStream", () => {
       expect(result.selfUrl).toBe("https://example.com/feed.json");
       expect(result.iconUrl).toBe("https://example.com/favicon.ico");
 
-      const entries = await collectEntries(result.entries);
-      expect(entries).toHaveLength(2);
+      expect(result.entries).toHaveLength(2);
 
-      expect(entries[0].guid).toBe("item-1");
-      expect(entries[0].link).toBe("https://example.com/item-1");
-      expect(entries[0].title).toBe("First Item");
-      expect(entries[0].summary).toBe("This is the summary");
-      expect(entries[0].content).toBe("<p>This is the full content</p>");
-      expect(entries[0].author).toBe("John Doe");
-      expect(entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.entries[0].guid).toBe("item-1");
+      expect(result.entries[0].link).toBe("https://example.com/item-1");
+      expect(result.entries[0].title).toBe("First Item");
+      expect(result.entries[0].summary).toBe("This is the summary");
+      expect(result.entries[0].content).toBe("<p>This is the full content</p>");
+      expect(result.entries[0].author).toBe("John Doe");
+      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
 
-      expect(entries[1].title).toBe("Second Item");
-      expect(entries[1].content).toBe("Plain text content");
+      expect(result.entries[1].title).toBe("Second Item");
+      expect(result.entries[1].content).toBe("Plain text content");
     });
   });
 
   describe("JSON Feed 1.0 compatibility", () => {
-    it("supports deprecated author field", async () => {
+    it("supports deprecated author field", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1",
         title: "Legacy Feed",
@@ -92,15 +72,14 @@ describe("parseJsonStream", () => {
         ],
       });
 
-      const result = await parseJsonStream(stringToStream(json));
-      const entries = await collectEntries(result.entries);
+      const result = parseJson(json);
 
-      expect(entries[0].author).toBe("Jane Doe");
+      expect(result.entries[0].author).toBe("Jane Doe");
     });
   });
 
   describe("content handling", () => {
-    it("prefers content_html over content_text", async () => {
+    it("prefers content_html over content_text", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         title: "Feed",
@@ -114,15 +93,14 @@ describe("parseJsonStream", () => {
         ],
       });
 
-      const result = await parseJsonStream(stringToStream(json));
-      const entries = await collectEntries(result.entries);
+      const result = parseJson(json);
 
-      expect(entries[0].content).toBe("<p>HTML content</p>");
+      expect(result.entries[0].content).toBe("<p>HTML content</p>");
     });
   });
 
   describe("date handling", () => {
-    it("prefers date_published over date_modified", async () => {
+    it("prefers date_published over date_modified", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         title: "Feed",
@@ -136,15 +114,14 @@ describe("parseJsonStream", () => {
         ],
       });
 
-      const result = await parseJsonStream(stringToStream(json));
-      const entries = await collectEntries(result.entries);
+      const result = parseJson(json);
 
-      expect(entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
     });
   });
 
   describe("icon handling", () => {
-    it("prefers favicon over icon", async () => {
+    it("prefers favicon over icon", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         title: "Feed",
@@ -153,14 +130,14 @@ describe("parseJsonStream", () => {
         items: [],
       });
 
-      const result = await parseJsonStream(stringToStream(json));
+      const result = parseJson(json);
 
       expect(result.iconUrl).toBe("https://example.com/favicon.ico");
     });
   });
 
   describe("WebSub hub support", () => {
-    it("extracts WebSub hub URL", async () => {
+    it("extracts WebSub hub URL", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         title: "Feed",
@@ -168,33 +145,33 @@ describe("parseJsonStream", () => {
         items: [],
       });
 
-      const result = await parseJsonStream(stringToStream(json));
+      const result = parseJson(json);
 
       expect(result.hubUrl).toBe("https://hub.example.com");
     });
   });
 
   describe("validation", () => {
-    it("throws for invalid JSON", async () => {
-      await expect(parseJsonStream(stringToStream("not json"))).rejects.toThrow();
+    it("throws for invalid JSON", () => {
+      expect(() => parseJson("not json")).toThrow();
     });
 
-    it("throws for missing version", async () => {
+    it("throws for missing version", () => {
       const json = JSON.stringify({
         title: "Feed",
         items: [],
       });
 
-      await expect(parseJsonStream(stringToStream(json))).rejects.toThrow("invalid version");
+      expect(() => parseJson(json)).toThrow("invalid version");
     });
 
-    it("throws for missing items array", async () => {
+    it("throws for missing items array", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         title: "Feed",
       });
 
-      await expect(parseJsonStream(stringToStream(json))).rejects.toThrow("missing items");
+      expect(() => parseJson(json)).toThrow("missing items");
     });
   });
 });

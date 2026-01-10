@@ -1,12 +1,12 @@
 /**
- * Streaming Atom 1.0 feed parser using SAX-style parsing.
- * Parses Atom feeds from a ReadableStream, yielding entries as they're parsed.
+ * Atom 1.0 feed parser using SAX-style parsing.
+ * Parses Atom feeds from a string, returning entries synchronously.
  */
 
 import { Parser } from "htmlparser2";
 import { decode } from "html-entities";
 import type { ParsedEntry, SyndicationHints } from "../types";
-import type { StreamingFeedResult } from "./types";
+import type { FeedParseResult } from "./types";
 
 type AtomParserState =
   | "initial"
@@ -31,12 +31,12 @@ const VALID_UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] 
 type UpdatePeriod = (typeof VALID_UPDATE_PERIODS)[number];
 
 /**
- * Parses an Atom feed from a ReadableStream.
- * Returns immediately with metadata once available; entries are yielded via async generator.
+ * Parses an Atom feed from a string.
+ *
+ * @param content - The Atom XML content as a string
+ * @returns Parsed feed metadata and entries
  */
-export async function parseAtomStream(
-  stream: ReadableStream<Uint8Array>
-): Promise<StreamingFeedResult> {
+export function parseAtom(content: string): FeedParseResult {
   let title: string | undefined;
   let description: string | undefined;
   let siteUrl: string | undefined;
@@ -54,16 +54,8 @@ export async function parseAtomStream(
   let textBuffer = "";
   let inFeedLevel = false;
 
-  const entryQueue: ParsedEntry[] = [];
-  let entryResolve: () => void = () => {};
-  let parsingComplete = false;
+  const entries: ParsedEntry[] = [];
   let parseError: Error | null = null;
-
-  let metadataReady = false;
-  let resolveMetadata!: () => void;
-  const metadataPromise = new Promise<void>((resolve) => {
-    resolveMetadata = resolve;
-  });
 
   const parser = new Parser(
     {
@@ -76,11 +68,6 @@ export async function parseAtomStream(
         }
 
         if (tagName === "entry") {
-          if (!metadataReady) {
-            metadataReady = true;
-            buildSyndication();
-            resolveMetadata();
-          }
           state = "in_entry";
           currentEntry = {};
           currentEntryContent = undefined;
@@ -206,8 +193,7 @@ export async function parseAtomStream(
         }
 
         if (tagName === "entry" && currentEntry) {
-          entryQueue.push(currentEntry as ParsedEntry);
-          entryResolve();
+          entries.push(currentEntry as ParsedEntry);
           currentEntry = null;
           state = "in_feed";
           inFeedLevel = true;
@@ -223,8 +209,6 @@ export async function parseAtomStream(
 
       onerror(error) {
         parseError = error;
-        entryResolve();
-        resolveMetadata();
       },
     },
     {
@@ -235,58 +219,19 @@ export async function parseAtomStream(
     }
   );
 
-  function buildSyndication() {
-    if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
-      syndication = {};
-      if (syUpdatePeriod) syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
-      if (syUpdateFrequency) syndication.updateFrequency = syUpdateFrequency;
-    }
+  // Parse the content
+  parser.write(content);
+  parser.end();
+
+  if (parseError) {
+    throw parseError;
   }
 
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-
-  (async () => {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        parser.write(chunk);
-      }
-      parser.end();
-
-      if (!metadataReady) {
-        metadataReady = true;
-        buildSyndication();
-        resolveMetadata();
-      }
-    } catch (error) {
-      parseError = error instanceof Error ? error : new Error(String(error));
-    } finally {
-      parsingComplete = true;
-      entryResolve();
-      reader.releaseLock();
-    }
-  })();
-
-  await metadataPromise;
-
-  if (parseError) throw parseError;
-
-  async function* entriesGenerator(): AsyncGenerator<ParsedEntry, void, undefined> {
-    while (true) {
-      if (entryQueue.length > 0) {
-        yield entryQueue.shift()!;
-      } else if (parsingComplete) {
-        if (parseError) throw parseError;
-        return;
-      } else {
-        await new Promise<void>((resolve) => {
-          entryResolve = resolve;
-        });
-      }
-    }
+  // Build syndication object if present
+  if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
+    syndication = {};
+    if (syUpdatePeriod) syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
+    if (syUpdateFrequency) syndication.updateFrequency = syUpdateFrequency;
   }
 
   return {
@@ -297,6 +242,6 @@ export async function parseAtomStream(
     hubUrl,
     selfUrl,
     syndication,
-    entries: entriesGenerator(),
+    entries,
   };
 }
