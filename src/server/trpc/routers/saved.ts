@@ -666,6 +666,12 @@ export const savedRouter = createTRPCRouter({
           })
           .where(eq(entries.id, oldEntry.id));
 
+        // Mark as unread since content was updated
+        await ctx.db
+          .update(userEntries)
+          .set({ read: false })
+          .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, oldEntry.id)));
+
         logger.info("Refetched saved article", {
           entryId: oldEntry.id,
           url: normalizedUrl,
@@ -686,7 +692,7 @@ export const savedRouter = createTRPCRouter({
             contentOriginal: html,
             contentCleaned: finalContentCleaned,
             excerpt,
-            read: userState.read,
+            read: false, // Marked unread since content was updated
             starred: userState.starred,
             savedAt: oldEntry.fetchedAt, // Keep original save time
           },
