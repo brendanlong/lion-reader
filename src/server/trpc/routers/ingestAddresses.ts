@@ -66,12 +66,13 @@ const ingestAddressOutputSchema = z.object({
 
 /**
  * Generates a secure random token for email addresses.
- * Uses base64url encoding (URL-safe, no padding).
+ * Uses base64url encoding (URL-safe, no padding), lowercased for
+ * case-insensitive matching with email addresses.
  *
- * @returns A random token string
+ * @returns A random token string (lowercase)
  */
 function generateToken(): string {
-  return randomBytes(TOKEN_BYTES).toString("base64url");
+  return randomBytes(TOKEN_BYTES).toString("base64url").toLowerCase();
 }
 
 /**
