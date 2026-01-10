@@ -11,6 +11,7 @@
  * @see http://opml.org/spec2.opml
  */
 
+import { XMLBuilder } from "fast-xml-parser";
 import { parseOpml as parseOpmlInternal, OpmlParseError } from "./streaming/opml-parser";
 
 /**
@@ -124,15 +125,52 @@ function groupByTags(subscriptions: OpmlSubscription[]): Map<string, OpmlSubscri
 }
 
 /**
- * Escapes special XML characters in text content.
+ * Builds an outline object for a subscription (used by XMLBuilder).
  */
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+function buildOutlineObject(sub: OpmlSubscription): OutlineElement {
+  const outline: OutlineElement = {
+    "@_type": "rss",
+    "@_text": sub.title,
+    "@_title": sub.title,
+    "@_xmlUrl": sub.xmlUrl,
+  };
+
+  if (sub.htmlUrl) {
+    outline["@_htmlUrl"] = sub.htmlUrl;
+  }
+
+  return outline;
+}
+
+/**
+ * Outline element type for XMLBuilder.
+ */
+interface OutlineElement {
+  "@_type"?: string;
+  "@_text": string;
+  "@_title"?: string;
+  "@_xmlUrl"?: string;
+  "@_htmlUrl"?: string;
+  outline?: OutlineElement[];
+}
+
+/**
+ * OPML document structure for XMLBuilder.
+ */
+interface OpmlDocument {
+  "?xml": { "@_version": string; "@_encoding": string };
+  opml: {
+    "@_version": string;
+    head: {
+      title: string;
+      dateCreated: string;
+      ownerName?: string;
+      ownerEmail?: string;
+    };
+    body: {
+      outline: OutlineElement[];
+    };
+  };
 }
 
 /**
@@ -168,13 +206,13 @@ export function generateOpml(
   const hasTagsFormat = subscriptions.some((sub) => sub.tags !== undefined);
 
   // Build outline elements
-  const outlines: string[] = [];
+  const outlines: OutlineElement[] = [];
 
   if (hasTagsFormat) {
     // New format: all feeds at top level + re-listed in tag folders
     // First, add ALL subscriptions at top level
     for (const sub of subscriptions) {
-      outlines.push(buildOutlineElement(sub));
+      outlines.push(buildOutlineObject(sub));
     }
 
     // Then, add tag folders with their subscriptions
@@ -183,10 +221,10 @@ export function generateOpml(
     const sortedTags = Array.from(tagGroups.keys()).sort();
     for (const tag of sortedTags) {
       const subs = tagGroups.get(tag)!;
-      const folderOutlines = subs.map((sub) => buildOutlineElement(sub)).join("\n        ");
-      outlines.push(`      <outline text="${escapeXml(tag)}">
-        ${folderOutlines}
-      </outline>`);
+      outlines.push({
+        "@_text": tag,
+        outline: subs.map((sub) => buildOutlineObject(sub)),
+      });
     }
   } else {
     // Legacy format: group by single folder
@@ -196,7 +234,7 @@ export function generateOpml(
     const noFolder = grouped.get(undefined);
     if (noFolder) {
       for (const sub of noFolder) {
-        outlines.push(buildOutlineElement(sub));
+        outlines.push(buildOutlineObject(sub));
       }
     }
 
@@ -204,51 +242,47 @@ export function generateOpml(
     for (const [folder, subs] of grouped) {
       if (folder === undefined) continue;
 
-      const folderOutlines = subs.map((sub) => buildOutlineElement(sub)).join("\n        ");
-      outlines.push(`      <outline text="${escapeXml(folder)}">
-        ${folderOutlines}
-      </outline>`);
+      outlines.push({
+        "@_text": folder,
+        outline: subs.map((sub) => buildOutlineObject(sub)),
+      });
     }
   }
 
   const title = metadata.title || "Lion Reader Subscriptions";
-  const ownerName = metadata.ownerName
-    ? `<ownerName>${escapeXml(metadata.ownerName)}</ownerName>`
-    : "";
-  const ownerEmail = metadata.ownerEmail
-    ? `<ownerEmail>${escapeXml(metadata.ownerEmail)}</ownerEmail>`
-    : "";
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<opml version="2.0">
-  <head>
-    <title>${escapeXml(title)}</title>
-    <dateCreated>${dateCreated}</dateCreated>
-    ${ownerName}
-    ${ownerEmail}
-  </head>
-  <body>
-${outlines.map((o) => (o.startsWith("      ") ? o : "      " + o)).join("\n")}
-  </body>
-</opml>`;
-}
+  // Build the OPML document structure
+  const doc: OpmlDocument = {
+    "?xml": { "@_version": "1.0", "@_encoding": "UTF-8" },
+    opml: {
+      "@_version": "2.0",
+      head: {
+        title,
+        dateCreated,
+      },
+      body: {
+        outline: outlines,
+      },
+    },
+  };
 
-/**
- * Builds a single outline element for a subscription.
- */
-function buildOutlineElement(sub: OpmlSubscription): string {
-  const attrs: string[] = [
-    `type="rss"`,
-    `text="${escapeXml(sub.title)}"`,
-    `title="${escapeXml(sub.title)}"`,
-    `xmlUrl="${escapeXml(sub.xmlUrl)}"`,
-  ];
-
-  if (sub.htmlUrl) {
-    attrs.push(`htmlUrl="${escapeXml(sub.htmlUrl)}"`);
+  // Add optional metadata
+  if (metadata.ownerName) {
+    doc.opml.head.ownerName = metadata.ownerName;
+  }
+  if (metadata.ownerEmail) {
+    doc.opml.head.ownerEmail = metadata.ownerEmail;
   }
 
-  return `<outline ${attrs.join(" ")} />`;
+  const builder = new XMLBuilder({
+    ignoreAttributes: false,
+    attributeNamePrefix: "@_",
+    format: true,
+    indentBy: "  ",
+    suppressEmptyNode: true,
+  });
+
+  return builder.build(doc) as string;
 }
 
 /**
