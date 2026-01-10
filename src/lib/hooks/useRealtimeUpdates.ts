@@ -337,6 +337,14 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
   const shouldConnectRef = useRef(false);
   const lastSyncedAtRef = useRef<string | null>(null);
 
+  // Track feeds with pending subscription data (waiting for invalidation to complete)
+  // This prevents losing unread count increments when new_entry events arrive
+  // before the subscription is in the React Query cache
+  const pendingSubscriptionFeedsRef = useRef(new Set<string>());
+
+  // Track pending unread count increments for feeds not yet in cache (feedId -> count)
+  const pendingUnreadIncrementsRef = useRef(new Map<string, number>());
+
   // State to trigger reconnection
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
 
@@ -371,7 +379,42 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
+
+    // Clear pending subscription tracking on disconnect
+    pendingSubscriptionFeedsRef.current.clear();
+    pendingUnreadIncrementsRef.current.clear();
   }, []);
+
+  /**
+   * Applies pending unread count increments to subscriptions that are now in cache.
+   * Called after subscription list invalidation completes.
+   */
+  const applyPendingIncrements = useCallback(() => {
+    const pending = pendingUnreadIncrementsRef.current;
+    if (pending.size === 0) return;
+
+    utils.subscriptions.list.setData(undefined, (oldData) => {
+      if (!oldData) return oldData;
+
+      return {
+        ...oldData,
+        items: oldData.items.map((item) => {
+          const increment = pending.get(item.feed.id);
+          if (increment !== undefined) {
+            pending.delete(item.feed.id);
+            return {
+              ...item,
+              subscription: {
+                ...item.subscription,
+                unreadCount: item.subscription.unreadCount + increment,
+              },
+            };
+          }
+          return item;
+        }),
+      };
+    });
+  }, [utils.subscriptions.list]);
 
   /**
    * Handles incoming SSE events by invalidating the appropriate queries.
@@ -383,25 +426,38 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
 
       if (data.type === "new_entry") {
         utils.entries.list.invalidate();
-        // Increment the unread count for the specific subscription instead of invalidating all
-        utils.subscriptions.list.setData(undefined, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            items: oldData.items.map((item) => {
-              if (item.feed.id === data.feedId) {
-                return {
-                  ...item,
-                  subscription: {
-                    ...item.subscription,
-                    unreadCount: item.subscription.unreadCount + 1,
-                  },
-                };
-              }
-              return item;
-            }),
-          };
-        });
+
+        // Check if subscription is in cache
+        const existingData = utils.subscriptions.list.getData();
+        const subscriptionExists = existingData?.items.some((item) => item.feed.id === data.feedId);
+
+        if (subscriptionExists) {
+          // Subscription is in cache, update unread count directly
+          utils.subscriptions.list.setData(undefined, (oldData) => {
+            if (!oldData) return oldData;
+            return {
+              ...oldData,
+              items: oldData.items.map((item) => {
+                if (item.feed.id === data.feedId) {
+                  return {
+                    ...item,
+                    subscription: {
+                      ...item.subscription,
+                      unreadCount: item.subscription.unreadCount + 1,
+                    },
+                  };
+                }
+                return item;
+              }),
+            };
+          });
+        } else if (pendingSubscriptionFeedsRef.current.has(data.feedId)) {
+          // Subscription is pending (waiting for invalidation to complete)
+          // Track the increment to apply later
+          const current = pendingUnreadIncrementsRef.current.get(data.feedId) ?? 0;
+          pendingUnreadIncrementsRef.current.set(data.feedId, current + 1);
+        }
+        // If neither in cache nor pending, the user isn't subscribed - ignore
       } else if (data.type === "entry_updated") {
         utils.entries.get.invalidate({ id: data.entryId });
         utils.entries.list.invalidate();
@@ -412,8 +468,19 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         );
 
         if (!alreadyInCache) {
-          utils.subscriptions.list.invalidate();
-          utils.entries.list.invalidate();
+          // Mark this feed as pending so we can queue new_entry events
+          pendingSubscriptionFeedsRef.current.add(data.feedId);
+
+          // Invalidate and wait for completion before applying pending increments
+          Promise.all([
+            utils.subscriptions.list.invalidate(),
+            utils.entries.list.invalidate(),
+          ]).then(() => {
+            // Apply any pending unread count increments that accumulated
+            applyPendingIncrements();
+            // Clean up pending set
+            pendingSubscriptionFeedsRef.current.delete(data.feedId);
+          });
         }
       } else if (data.type === "subscription_deleted") {
         const existingData = utils.subscriptions.list.getData();
@@ -443,7 +510,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         utils.entries.list.invalidate();
       }
     },
-    [utils.entries, utils.subscriptions, utils.imports]
+    [utils.entries, utils.subscriptions, utils.imports, applyPendingIncrements]
   );
 
   /**
