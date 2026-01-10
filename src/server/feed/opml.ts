@@ -6,16 +6,12 @@
  * between feed readers. It supports nested folders/categories through nested
  * outline elements.
  *
- * Internally uses streaming SAX parser for memory efficiency.
+ * Uses SAX-style parsing for memory efficiency.
  *
  * @see http://opml.org/spec2.opml
  */
 
-import {
-  parseOpmlStream,
-  OpmlStreamParseError,
-  type OpmlFeed as StreamingOpmlFeed,
-} from "./streaming";
+import { parseOpml as parseOpmlInternal, OpmlParseError } from "./streaming/opml-parser";
 
 /**
  * A feed parsed from OPML.
@@ -32,7 +28,7 @@ export interface OpmlFeed {
 }
 
 // Re-export error for backwards compatibility
-export { OpmlStreamParseError as OpmlParseError };
+export { OpmlParseError };
 
 /**
  * Input subscription for OPML generation.
@@ -61,33 +57,6 @@ export interface OpmlMetadata {
 }
 
 /**
- * Converts a string to a ReadableStream of Uint8Array.
- */
-function stringToStream(content: string): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(content);
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(encoded);
-      controller.close();
-    },
-  });
-}
-
-/**
- * Collects all feeds from the streaming OPML parser.
- */
-async function collectFeeds(
-  generator: AsyncGenerator<StreamingOpmlFeed, void, undefined>
-): Promise<OpmlFeed[]> {
-  const feeds: OpmlFeed[] = [];
-  for await (const feed of generator) {
-    feeds.push(feed);
-  }
-  return feeds;
-}
-
-/**
  * Parses an OPML XML string into an array of feeds.
  *
  * @param xml - The OPML XML content as a string
@@ -96,17 +65,16 @@ async function collectFeeds(
  *
  * @example
  * ```ts
- * const feeds = await parseOpml(opmlXml);
+ * const feeds = parseOpml(opmlXml);
  * // [
  * //   { title: "Blog Name", xmlUrl: "https://...", category: ["Tech"] },
  * //   { title: "News", xmlUrl: "https://...", category: ["News", "Daily"] }
  * // ]
  * ```
  */
-export async function parseOpml(xml: string): Promise<OpmlFeed[]> {
-  const stream = stringToStream(xml);
-  const result = await parseOpmlStream(stream);
-  return collectFeeds(result.feeds);
+export function parseOpml(xml: string): OpmlFeed[] {
+  const result = parseOpmlInternal(xml);
+  return result.feeds as OpmlFeed[];
 }
 
 /**
@@ -229,9 +197,9 @@ function buildOutlineElement(sub: OpmlSubscription): string {
  * Validates that a string is valid OPML.
  * Returns true if valid, false otherwise.
  */
-export async function isValidOpml(xml: string): Promise<boolean> {
+export function isValidOpml(xml: string): boolean {
   try {
-    await parseOpml(xml);
+    parseOpml(xml);
     return true;
   } catch {
     return false;

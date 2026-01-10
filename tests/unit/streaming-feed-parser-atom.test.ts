@@ -1,45 +1,13 @@
 /**
- * Unit tests for streaming Atom feed parser.
+ * Unit tests for Atom feed parser.
  */
 
 import { describe, it, expect } from "vitest";
-import { parseAtomStream } from "../../src/server/feed/streaming/atom-parser";
+import { parseAtom } from "../../src/server/feed/streaming/atom-parser";
 
-function stringToStream(str: string): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(str);
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-}
-
-function stringToChunkedStream(str: string, chunkSize: number): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(str);
-  return new ReadableStream({
-    start(controller) {
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        controller.enqueue(bytes.slice(i, i + chunkSize));
-      }
-      controller.close();
-    },
-  });
-}
-
-async function collectEntries<T>(gen: AsyncGenerator<T>): Promise<T[]> {
-  const items: T[] = [];
-  for await (const item of gen) {
-    items.push(item);
-  }
-  return items;
-}
-
-describe("parseAtomStream", () => {
+describe("parseAtom", () => {
   describe("standard Atom 1.0 feed", () => {
-    it("parses a standard Atom feed with all elements", async () => {
+    it("parses a standard Atom feed with all elements", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Example Atom Feed</title>
@@ -66,7 +34,7 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
+      const result = parseAtom(xml);
 
       expect(result.title).toBe("Example Atom Feed");
       expect(result.description).toBe("An example Atom feed");
@@ -74,55 +42,35 @@ describe("parseAtomStream", () => {
       expect(result.selfUrl).toBe("https://example.com/feed.xml");
       expect(result.iconUrl).toBe("https://example.com/icon.png");
 
-      const entries = await collectEntries(result.entries);
-      expect(entries).toHaveLength(2);
+      expect(result.entries).toHaveLength(2);
 
-      expect(entries[0].guid).toBe("urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a");
-      expect(entries[0].title).toBe("First Entry");
-      expect(entries[0].link).toBe("https://example.com/entry-1");
-      expect(entries[0].summary).toBe("This is the first entry");
-      expect(entries[0].content).toBe("This is the full content");
-      expect(entries[0].author).toBe("John Doe");
-      expect(entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.entries[0].guid).toBe("urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a");
+      expect(result.entries[0].title).toBe("First Entry");
+      expect(result.entries[0].link).toBe("https://example.com/entry-1");
+      expect(result.entries[0].summary).toBe("This is the first entry");
+      expect(result.entries[0].content).toBe("This is the full content");
+      expect(result.entries[0].author).toBe("John Doe");
+      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
 
-      expect(entries[1].title).toBe("Second Entry");
-      expect(entries[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
-    });
-
-    it("handles chunked streaming correctly", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <feed xmlns="http://www.w3.org/2005/Atom">
-          <title>Chunked Feed</title>
-          <entry>
-            <id>1</id>
-            <title>First Entry</title>
-            <link href="https://example.com/entry-1"/>
-          </entry>
-        </feed>`;
-
-      const result = await parseAtomStream(stringToChunkedStream(xml, 20));
-
-      expect(result.title).toBe("Chunked Feed");
-      const entries = await collectEntries(result.entries);
-      expect(entries).toHaveLength(1);
-      expect(entries[0].title).toBe("First Entry");
+      expect(result.entries[1].title).toBe("Second Entry");
+      expect(result.entries[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
     });
   });
 
   describe("feed-level elements", () => {
-    it("uses logo as icon fallback", async () => {
+    it("uses logo as icon fallback", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Feed with Logo</title>
           <logo>https://example.com/logo.png</logo>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
+      const result = parseAtom(xml);
 
       expect(result.iconUrl).toBe("https://example.com/logo.png");
     });
 
-    it("prefers icon over logo", async () => {
+    it("prefers icon over logo", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Feed with Both</title>
@@ -130,14 +78,14 @@ describe("parseAtomStream", () => {
           <logo>https://example.com/logo.png</logo>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
+      const result = parseAtom(xml);
 
       expect(result.iconUrl).toBe("https://example.com/icon.png");
     });
   });
 
   describe("entry dates", () => {
-    it("prefers published over updated", async () => {
+    it("prefers published over updated", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Date Test Feed</title>
@@ -149,13 +97,12 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
-      const entries = await collectEntries(result.entries);
+      const result = parseAtom(xml);
 
-      expect(entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
     });
 
-    it("falls back to updated when published is missing", async () => {
+    it("falls back to updated when published is missing", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Date Test Feed</title>
@@ -166,15 +113,14 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
-      const entries = await collectEntries(result.entries);
+      const result = parseAtom(xml);
 
-      expect(entries[0].pubDate).toEqual(new Date("2024-06-15T12:00:00Z"));
+      expect(result.entries[0].pubDate).toEqual(new Date("2024-06-15T12:00:00Z"));
     });
   });
 
   describe("WebSub discovery", () => {
-    it("extracts hub URL from link elements", async () => {
+    it("extracts hub URL from link elements", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>WebSub Feed</title>
@@ -182,7 +128,7 @@ describe("parseAtomStream", () => {
           <link href="https://example.com/feed.xml" rel="self"/>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
+      const result = parseAtom(xml);
 
       expect(result.hubUrl).toBe("https://pubsubhubbub.appspot.com");
       expect(result.selfUrl).toBe("https://example.com/feed.xml");
@@ -190,7 +136,7 @@ describe("parseAtomStream", () => {
   });
 
   describe("Syndication namespace", () => {
-    it("parses sy:updatePeriod and sy:updateFrequency", async () => {
+    it("parses sy:updatePeriod and sy:updateFrequency", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom"
               xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">
@@ -199,7 +145,7 @@ describe("parseAtomStream", () => {
           <sy:updateFrequency>1</sy:updateFrequency>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
+      const result = parseAtom(xml);
 
       expect(result.syndication).toEqual({
         updatePeriod: "weekly",
@@ -209,7 +155,7 @@ describe("parseAtomStream", () => {
   });
 
   describe("content handling", () => {
-    it("prefers content over summary", async () => {
+    it("prefers content over summary", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Content Feed</title>
@@ -221,14 +167,13 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
-      const entries = await collectEntries(result.entries);
+      const result = parseAtom(xml);
 
-      expect(entries[0].content).toBe("<p>Full content here</p>");
-      expect(entries[0].summary).toBe("Short summary");
+      expect(result.entries[0].content).toBe("<p>Full content here</p>");
+      expect(result.entries[0].summary).toBe("Short summary");
     });
 
-    it("uses summary as content when content is missing", async () => {
+    it("uses summary as content when content is missing", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Summary Only Feed</title>
@@ -239,16 +184,15 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
-      const entries = await collectEntries(result.entries);
+      const result = parseAtom(xml);
 
-      expect(entries[0].content).toBe("This is both summary and content");
-      expect(entries[0].summary).toBe("This is both summary and content");
+      expect(result.entries[0].content).toBe("This is both summary and content");
+      expect(result.entries[0].summary).toBe("This is both summary and content");
     });
   });
 
   describe("link handling", () => {
-    it("extracts link without rel attribute (defaults to alternate)", async () => {
+    it("extracts link without rel attribute (defaults to alternate)", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Link Test Feed</title>
@@ -260,11 +204,10 @@ describe("parseAtomStream", () => {
           </entry>
         </feed>`;
 
-      const result = await parseAtomStream(stringToStream(xml));
-      const entries = await collectEntries(result.entries);
+      const result = parseAtom(xml);
 
       expect(result.siteUrl).toBe("https://example.com");
-      expect(entries[0].link).toBe("https://example.com/entry");
+      expect(result.entries[0].link).toBe("https://example.com/entry");
     });
   });
 });

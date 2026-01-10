@@ -1,11 +1,11 @@
 /**
- * Unified streaming feed parser that auto-detects format (RSS, Atom, or JSON Feed).
+ * Unified feed parser that auto-detects format (RSS, Atom, or JSON Feed).
  */
 
-import type { StreamingFeedResult } from "./types";
-import { parseRssStream } from "./rss-parser";
-import { parseAtomStream } from "./atom-parser";
-import { parseJsonStream } from "./json-parser";
+import type { FeedParseResult } from "./types";
+import { parseRss } from "./rss-parser";
+import { parseAtom } from "./atom-parser";
+import { parseJson } from "./json-parser";
 
 export type FeedType = "rss" | "atom" | "json" | "unknown";
 
@@ -17,7 +17,7 @@ export class UnknownFeedFormatError extends Error {
 }
 
 /**
- * Detects the feed type from the initial bytes of content.
+ * Detects the feed type from the content.
  */
 export function detectFeedType(content: string): FeedType {
   const trimmed = content.trim().replace(/^\uFEFF/, "");
@@ -42,85 +42,36 @@ export function detectFeedType(content: string): FeedType {
 }
 
 /**
- * Peeks at stream to detect format, returns format and reconstructed stream.
+ * Parses a feed from a string, auto-detecting the format.
  */
-async function peekAndDetectFormat(
-  stream: ReadableStream<Uint8Array>
-): Promise<{ format: FeedType; stream: ReadableStream<Uint8Array> }> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  const chunks: Uint8Array[] = [];
-  let detectedFormat: FeedType = "unknown";
-  let accumulatedText = "";
-  const PEEK_SIZE = 2048;
-
-  try {
-    while (accumulatedText.length < PEEK_SIZE) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      chunks.push(value);
-      accumulatedText += decoder.decode(value, { stream: true });
-
-      detectedFormat = detectFeedType(accumulatedText);
-      if (detectedFormat !== "unknown") break;
-    }
-
-    // Read remaining content
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const newStream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(chunk);
-      }
-      controller.close();
-    },
-  });
-
-  return { format: detectedFormat, stream: newStream };
-}
-
-/**
- * Parses a feed from a ReadableStream, auto-detecting the format.
- */
-export async function parseFeedStream(
-  stream: ReadableStream<Uint8Array>
-): Promise<StreamingFeedResult> {
-  const { format, stream: newStream } = await peekAndDetectFormat(stream);
+export function parseFeed(content: string): FeedParseResult {
+  const format = detectFeedType(content);
 
   switch (format) {
     case "rss":
-      return parseRssStream(newStream);
+      return parseRss(content);
     case "atom":
-      return parseAtomStream(newStream);
+      return parseAtom(content);
     case "json":
-      return parseJsonStream(newStream);
+      return parseJson(content);
     case "unknown":
       throw new UnknownFeedFormatError();
   }
 }
 
 /**
- * Parses a feed from a ReadableStream with explicit format.
+ * Parses a feed from a string with explicit format.
  */
-export async function parseFeedStreamWithFormat(
-  stream: ReadableStream<Uint8Array>,
+export function parseFeedWithFormat(
+  content: string,
   format: "rss" | "atom" | "json"
-): Promise<StreamingFeedResult> {
+): FeedParseResult {
   switch (format) {
     case "rss":
-      return parseRssStream(stream);
+      return parseRss(content);
     case "atom":
-      return parseAtomStream(stream);
+      return parseAtom(content);
     case "json":
-      return parseJsonStream(stream);
+      return parseJson(content);
   }
 }

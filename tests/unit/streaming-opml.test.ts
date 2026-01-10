@@ -1,45 +1,13 @@
 /**
- * Unit tests for streaming OPML parser.
+ * Unit tests for OPML parser.
  */
 
 import { describe, it, expect } from "vitest";
-import { parseOpmlStream, OpmlStreamParseError } from "../../src/server/feed/streaming/opml-parser";
+import { parseOpml, OpmlParseError } from "../../src/server/feed/streaming/opml-parser";
 
-function stringToStream(str: string): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(str);
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-}
-
-function stringToChunkedStream(str: string, chunkSize: number): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(str);
-  return new ReadableStream({
-    start(controller) {
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        controller.enqueue(bytes.slice(i, i + chunkSize));
-      }
-      controller.close();
-    },
-  });
-}
-
-async function collectFeeds<T>(gen: AsyncGenerator<T>): Promise<T[]> {
-  const items: T[] = [];
-  for await (const item of gen) {
-    items.push(item);
-  }
-  return items;
-}
-
-describe("parseOpmlStream", () => {
+describe("parseOpml", () => {
   describe("standard OPML", () => {
-    it("parses a basic OPML file with feeds", async () => {
+    it("parses a basic OPML file with feeds", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head>
@@ -53,41 +21,24 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const result = await parseOpmlStream(stringToStream(xml));
-      const feeds = await collectFeeds(result.feeds);
+      const result = parseOpml(xml);
 
-      expect(feeds).toHaveLength(2);
-      expect(feeds[0]).toEqual({
+      expect(result.feeds).toHaveLength(2);
+      expect(result.feeds[0]).toEqual({
         title: "Example Blog",
         xmlUrl: "https://example.com/feed.xml",
         htmlUrl: "https://example.com",
       });
-      expect(feeds[1]).toEqual({
+      expect(result.feeds[1]).toEqual({
         title: "Another Blog",
         xmlUrl: "https://another.com/rss",
         htmlUrl: undefined,
       });
     });
-
-    it("handles chunked streaming correctly", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="2.0">
-          <head><title>Test</title></head>
-          <body>
-            <outline type="rss" text="Feed" xmlUrl="https://example.com/feed.xml"/>
-          </body>
-        </opml>`;
-
-      const result = await parseOpmlStream(stringToChunkedStream(xml, 20));
-      const feeds = await collectFeeds(result.feeds);
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].title).toBe("Feed");
-    });
   });
 
   describe("nested folders", () => {
-    it("parses nested folder structure with categories", async () => {
+    it("parses nested folder structure with categories", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>My Subscriptions</title></head>
@@ -102,26 +53,25 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const result = await parseOpmlStream(stringToStream(xml));
-      const feeds = await collectFeeds(result.feeds);
+      const result = parseOpml(xml);
 
-      expect(feeds).toHaveLength(3);
+      expect(result.feeds).toHaveLength(3);
 
-      expect(feeds[0]).toEqual({
+      expect(result.feeds[0]).toEqual({
         title: "Coding Blog",
         xmlUrl: "https://coding.com/feed",
         htmlUrl: undefined,
         category: ["Tech", "Programming"],
       });
 
-      expect(feeds[1]).toEqual({
+      expect(result.feeds[1]).toEqual({
         title: "Tech News",
         xmlUrl: "https://technews.com/rss",
         htmlUrl: undefined,
         category: ["Tech"],
       });
 
-      expect(feeds[2]).toEqual({
+      expect(result.feeds[2]).toEqual({
         title: "Uncategorized",
         xmlUrl: "https://uncategorized.com/feed",
         htmlUrl: undefined,
@@ -130,7 +80,7 @@ describe("parseOpmlStream", () => {
   });
 
   describe("category attribute", () => {
-    it("uses category attribute when present", async () => {
+    it("uses category attribute when present", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Test</title></head>
@@ -139,13 +89,12 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const result = await parseOpmlStream(stringToStream(xml));
-      const feeds = await collectFeeds(result.feeds);
+      const result = parseOpml(xml);
 
-      expect(feeds[0].category).toEqual(["News"]);
+      expect(result.feeds[0].category).toEqual(["News"]);
     });
 
-    it("handles slash-separated category paths", async () => {
+    it("handles slash-separated category paths", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Test</title></head>
@@ -155,15 +104,14 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const result = await parseOpmlStream(stringToStream(xml));
-      const feeds = await collectFeeds(result.feeds);
+      const result = parseOpml(xml);
 
-      expect(feeds[0].category).toEqual(["Tech", "Programming", "JavaScript"]);
+      expect(result.feeds[0].category).toEqual(["Tech", "Programming", "JavaScript"]);
     });
   });
 
   describe("attribute case handling", () => {
-    it("handles different attribute cases for xmlUrl", async () => {
+    it("handles different attribute cases for xmlUrl", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Test</title></head>
@@ -173,49 +121,47 @@ describe("parseOpmlStream", () => {
           </body>
         </opml>`;
 
-      const result = await parseOpmlStream(stringToStream(xml));
-      const feeds = await collectFeeds(result.feeds);
+      const result = parseOpml(xml);
 
-      expect(feeds).toHaveLength(2);
-      expect(feeds[0].xmlUrl).toBe("https://example1.com/feed");
-      expect(feeds[1].xmlUrl).toBe("https://example2.com/feed");
+      expect(result.feeds).toHaveLength(2);
+      expect(result.feeds[0].xmlUrl).toBe("https://example1.com/feed");
+      expect(result.feeds[1].xmlUrl).toBe("https://example2.com/feed");
     });
   });
 
   describe("empty OPML", () => {
-    it("returns empty generator for empty body", async () => {
+    it("returns empty feeds array for empty body", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Empty</title></head>
           <body></body>
         </opml>`;
 
-      const result = await parseOpmlStream(stringToStream(xml));
-      const feeds = await collectFeeds(result.feeds);
+      const result = parseOpml(xml);
 
-      expect(feeds).toEqual([]);
+      expect(result.feeds).toEqual([]);
     });
   });
 
   describe("validation", () => {
-    it("throws for missing opml element", async () => {
+    it("throws for missing opml element", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <something>
           <body></body>
         </something>`;
 
-      await expect(parseOpmlStream(stringToStream(xml))).rejects.toThrow(OpmlStreamParseError);
-      await expect(parseOpmlStream(stringToStream(xml))).rejects.toThrow("missing opml element");
+      expect(() => parseOpml(xml)).toThrow(OpmlParseError);
+      expect(() => parseOpml(xml)).toThrow("missing opml element");
     });
 
-    it("throws for missing body element", async () => {
+    it("throws for missing body element", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Test</title></head>
         </opml>`;
 
-      await expect(parseOpmlStream(stringToStream(xml))).rejects.toThrow(OpmlStreamParseError);
-      await expect(parseOpmlStream(stringToStream(xml))).rejects.toThrow("missing body element");
+      expect(() => parseOpml(xml)).toThrow(OpmlParseError);
+      expect(() => parseOpml(xml)).toThrow("missing body element");
     });
   });
 });

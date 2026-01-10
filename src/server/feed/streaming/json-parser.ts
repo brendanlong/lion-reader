@@ -1,10 +1,10 @@
 /**
- * Streaming JSON Feed 1.1 parser.
- * Parses JSON Feed from a ReadableStream, yielding entries via async generator.
+ * JSON Feed 1.1 parser.
+ * Parses JSON Feed from a string, returning entries synchronously.
  */
 
 import type { ParsedEntry } from "../types";
-import type { StreamingFeedResult } from "./types";
+import type { FeedParseResult } from "./types";
 
 interface JsonFeedAuthor {
   name?: string;
@@ -71,28 +71,13 @@ function extractHubUrl(hubs: JsonFeedHub[] | undefined): string | undefined {
 }
 
 /**
- * Parses a JSON Feed from a ReadableStream.
- * Returns immediately with metadata; entries are yielded via async generator.
+ * Parses a JSON Feed from a string.
+ *
+ * @param content - The JSON Feed content as a string
+ * @returns Parsed feed metadata and entries
  */
-export async function parseJsonStream(
-  stream: ReadableStream<Uint8Array>
-): Promise<StreamingFeedResult> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  const chunks: string[] = [];
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(decoder.decode(value, { stream: true }));
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const jsonString = chunks.join("");
-  const parsed = JSON.parse(jsonString) as Record<string, unknown>;
+export function parseJson(content: string): FeedParseResult {
+  const parsed = JSON.parse(content) as Record<string, unknown>;
 
   // Validate
   if (
@@ -107,13 +92,7 @@ export async function parseJsonStream(
   }
 
   const items = parsed.items as JsonFeedItem[];
-  let index = 0;
-
-  async function* entriesGenerator(): AsyncGenerator<ParsedEntry, void, undefined> {
-    while (index < items.length) {
-      yield parseJsonFeedItem(items[index++]);
-    }
-  }
+  const entries = items.map(parseJsonFeedItem);
 
   return {
     title: typeof parsed.title === "string" ? parsed.title.trim() || undefined : undefined,
@@ -128,6 +107,6 @@ export async function parseJsonStream(
           : undefined,
     hubUrl: extractHubUrl(parsed.hubs as JsonFeedHub[] | undefined),
     selfUrl: typeof parsed.feed_url === "string" ? parsed.feed_url : undefined,
-    entries: entriesGenerator(),
+    entries,
   };
 }

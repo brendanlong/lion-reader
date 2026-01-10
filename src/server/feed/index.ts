@@ -13,16 +13,16 @@ export {
   UnknownFeedFormatError,
   type FeedType,
 } from "./parser";
-// Re-export streaming parsers for direct stream access
+// Re-export SAX-based parsers for direct access
 export {
-  parseFeedStream,
-  parseFeedStreamWithFormat,
-  parseRssStream,
-  parseAtomStream,
-  parseJsonStream,
-  parseOpmlStream,
-  type StreamingFeedResult,
-  type StreamingOpmlResult,
+  parseFeed as parseFeedSax,
+  parseFeedWithFormat as parseFeedWithFormatSax,
+  parseRss,
+  parseAtom,
+  parseJson,
+  parseOpml as parseOpmlSax,
+  type FeedParseResult,
+  type OpmlParseResult,
 } from "./streaming";
 export {
   discoverFeeds,

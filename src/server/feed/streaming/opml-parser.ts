@@ -1,44 +1,36 @@
 /**
- * Streaming OPML parser using SAX-style parsing.
- * Parses OPML files from a ReadableStream, yielding feeds as they're parsed.
+ * OPML parser using SAX-style parsing.
+ * Parses OPML files from a string, returning feeds synchronously.
  */
 
 import { Parser } from "htmlparser2";
-import type { OpmlFeed, StreamingOpmlResult } from "./types";
+import type { OpmlFeed, OpmlParseResult } from "./types";
 
 /**
  * Error thrown when OPML parsing fails.
  */
-export class OpmlStreamParseError extends Error {
+export class OpmlParseError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "OpmlStreamParseError";
+    this.name = "OpmlParseError";
   }
 }
 
 /**
- * Parses an OPML file from a ReadableStream.
- * Returns immediately; feeds are yielded via async generator as they're parsed.
+ * Parses an OPML file from a string.
+ *
+ * @param content - The OPML XML content as a string
+ * @returns Parsed OPML feeds
  */
-export async function parseOpmlStream(
-  stream: ReadableStream<Uint8Array>
-): Promise<StreamingOpmlResult> {
+export function parseOpml(content: string): OpmlParseResult {
   const categoryStack: string[] = [];
   let hasOpml = false;
   let hasBody = false;
   let inBody = false;
   let outlineDepth = 0;
 
-  const feedQueue: OpmlFeed[] = [];
-  let feedResolve: () => void = () => {};
-  let parsingComplete = false;
+  const feeds: OpmlFeed[] = [];
   let parseError: Error | null = null;
-
-  // We need to start parsing before we can validate structure
-  let resolveBody!: () => void;
-  const bodyPromise = new Promise<void>((resolve) => {
-    resolveBody = resolve;
-  });
 
   const parser = new Parser(
     {
@@ -52,10 +44,6 @@ export async function parseOpmlStream(
         if (tagName === "body") {
           hasBody = true;
           inBody = true;
-          // Only resolve if we've seen <opml> - otherwise wait for validation at end
-          if (hasOpml) {
-            resolveBody();
-          }
         }
 
         if (tagName === "outline" && inBody) {
@@ -86,8 +74,7 @@ export async function parseOpmlStream(
               }
             }
 
-            feedQueue.push(feed);
-            feedResolve();
+            feeds.push(feed);
           } else if (text && !type) {
             categoryStack.push(text);
           }
@@ -111,8 +98,6 @@ export async function parseOpmlStream(
 
       onerror(error) {
         parseError = error;
-        feedResolve();
-        resolveBody();
       },
     },
     {
@@ -123,57 +108,21 @@ export async function parseOpmlStream(
     }
   );
 
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
+  // Parse the content
+  parser.write(content);
+  parser.end();
 
-  (async () => {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        parser.write(chunk);
-      }
-      parser.end();
-
-      // Validate after parsing
-      if (!hasOpml) {
-        parseError = new OpmlStreamParseError("Invalid OPML: missing opml element");
-        resolveBody(); // Unblock the awaiter so it can see the error
-      } else if (!hasBody) {
-        parseError = new OpmlStreamParseError("Invalid OPML: missing body element");
-        resolveBody(); // Unblock the awaiter so it can see the error
-      }
-    } catch (error) {
-      parseError = error instanceof Error ? error : new Error(String(error));
-    } finally {
-      parsingComplete = true;
-      feedResolve();
-      reader.releaseLock();
-    }
-  })();
-
-  // Wait for body to be found (or parsing to complete/fail)
-  await bodyPromise;
-
-  if (parseError) throw parseError;
-
-  async function* feedsGenerator(): AsyncGenerator<OpmlFeed, void, undefined> {
-    while (true) {
-      if (feedQueue.length > 0) {
-        yield feedQueue.shift()!;
-      } else if (parsingComplete) {
-        if (parseError) throw parseError;
-        return;
-      } else {
-        await new Promise<void>((resolve) => {
-          feedResolve = resolve;
-        });
-      }
-    }
+  if (parseError) {
+    throw parseError;
   }
 
-  return {
-    feeds: feedsGenerator(),
-  };
+  // Validate structure
+  if (!hasOpml) {
+    throw new OpmlParseError("Invalid OPML: missing opml element");
+  }
+  if (!hasBody) {
+    throw new OpmlParseError("Invalid OPML: missing body element");
+  }
+
+  return { feeds };
 }

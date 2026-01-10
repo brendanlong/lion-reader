@@ -1,14 +1,14 @@
 /**
- * Streaming feed parser result types.
+ * Feed parser result types.
  */
 
 import type { ParsedEntry, SyndicationHints } from "../types";
 
 /**
- * Result of streaming feed parsing.
- * Metadata is available immediately; entries are yielded as they're parsed.
+ * Result of feed parsing.
+ * Contains feed metadata and parsed entries.
  */
-export interface StreamingFeedResult {
+export interface FeedParseResult {
   title?: string;
   description?: string;
   siteUrl?: string;
@@ -17,15 +17,15 @@ export interface StreamingFeedResult {
   selfUrl?: string;
   ttlMinutes?: number;
   syndication?: SyndicationHints;
-  entries: AsyncGenerator<ParsedEntry, void, undefined>;
+  entries: ParsedEntry[];
 }
 
 /**
- * Result of streaming OPML parsing.
- * Feeds are yielded as they're parsed from the OPML file.
+ * Result of OPML parsing.
+ * Contains the list of feeds parsed from the OPML file.
  */
-export interface StreamingOpmlResult {
-  feeds: AsyncGenerator<OpmlFeed, void, undefined>;
+export interface OpmlParseResult {
+  feeds: OpmlFeed[];
 }
 
 /**
