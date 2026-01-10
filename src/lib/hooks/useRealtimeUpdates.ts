@@ -561,7 +561,16 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
           });
         }
 
-        // No invalidation needed - cache is already updated!
+        // For email feeds, also invalidate entries list since new email feeds
+        // always come with an entry. This handles the race condition where the
+        // new_entry event might arrive before we've subscribed to the feed channel.
+        if (data.feed.type === "email") {
+          // Invalidate All Items view (feedId undefined matches all unreadOnly variants)
+          utils.entries.list.invalidate({ feedId: undefined });
+          // Invalidate the specific feed's view (probably not cached yet, but for consistency)
+          utils.entries.list.invalidate({ feedId: data.feedId });
+        }
+        // For non-email feeds, no invalidation needed - cache is already updated!
       } else if (data.type === "subscription_deleted") {
         const existingData = utils.subscriptions.list.getData();
         const stillInCache = existingData?.items.some(

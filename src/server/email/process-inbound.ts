@@ -21,7 +21,7 @@ import {
   type NewSubscription,
 } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
-import { publishNewEntry } from "../redis/pubsub";
+import { publishNewEntry, publishSubscriptionCreated } from "../redis/pubsub";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -311,6 +311,37 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     await db.insert(subscriptions).values(newSubscription);
 
     logger.info("Created subscription for email feed", { subscriptionId, feedId, userId });
+
+    // Publish subscription_created event so SSE handlers subscribe to the feed channel
+    // This must happen BEFORE the new_entry event so the client receives the entry notification
+    // unreadCount is 1 since we're about to create one entry
+    publishSubscriptionCreated(
+      userId,
+      feed.id,
+      subscriptionId,
+      {
+        id: subscriptionId,
+        feedId: feed.id,
+        customTitle: null,
+        subscribedAt: now.toISOString(),
+        unreadCount: 1,
+        tags: [],
+      },
+      {
+        id: feed.id,
+        type: "email",
+        url: null,
+        title: feed.title,
+        description: null,
+        siteUrl: null,
+      }
+    ).catch((err) => {
+      logger.error("Failed to publish subscription_created event for email feed", {
+        feedId: feed.id,
+        subscriptionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 
   // 7. Check for duplicate Message-ID
