@@ -225,7 +225,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
 
       return { previousData };
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       // Update subscription unread counts using targeted cache updates
       // Uses absolute counts (not deltas) for robustness - self-correcting if counts drift
       if (data.feedUnreadCounts.length > 0) {
@@ -249,6 +249,21 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
           };
         });
       }
+
+      // Update starred count directly if starred entries were affected
+      // Only the unread count changes - total stays the same since starred status isn't changing
+      const starredEntries = data.entries.filter((e) => e.starred);
+      if (starredEntries.length > 0) {
+        utils.entries.starredCount.setData(undefined, (old) => {
+          if (!old) return old;
+          // When marking read, decrease unread count; when marking unread, increase it
+          const delta = variables.read ? -starredEntries.length : starredEntries.length;
+          return {
+            total: old.total,
+            unread: Math.max(0, old.unread + delta),
+          };
+        });
+      }
     },
     onError: (_error, _variables, context) => {
       // Rollback to previous state (normy propagates rollback to entries.get automatically)
@@ -260,8 +275,6 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     onSettled: () => {
       // Invalidate tag unread counts - tags have their own count computation
       utils.tags.list.invalidate();
-      // Invalidate starred count as it may have changed
-      utils.entries.starredCount.invalidate();
     },
   });
 
@@ -310,6 +323,16 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
 
       return { previousData };
     },
+    onSuccess: (data) => {
+      // Update starred count directly - total increases by 1, unread increases if entry is unread
+      utils.entries.starredCount.setData(undefined, (old) => {
+        if (!old) return old;
+        return {
+          total: old.total + 1,
+          unread: old.unread + (data.entry.read ? 0 : 1),
+        };
+      });
+    },
     onError: (_error, _variables, context) => {
       // Rollback list (normy propagates rollback to entries.get automatically)
       if (context?.previousData && listFilters) {
@@ -320,8 +343,6 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     onSettled: () => {
       // Invalidate starred entries list so the Starred page shows the new item
       utils.entries.list.invalidate({ starredOnly: true });
-      // Invalidate starred count
-      utils.entries.starredCount.invalidate();
     },
   });
 
@@ -359,6 +380,16 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
 
       return { previousData };
     },
+    onSuccess: (data) => {
+      // Update starred count directly - total decreases by 1, unread decreases if entry is unread
+      utils.entries.starredCount.setData(undefined, (old) => {
+        if (!old) return old;
+        return {
+          total: Math.max(0, old.total - 1),
+          unread: Math.max(0, old.unread - (data.entry.read ? 0 : 1)),
+        };
+      });
+    },
     onError: (_error, _variables, context) => {
       // Rollback list (normy propagates rollback to entries.get automatically)
       if (context?.previousData && listFilters) {
@@ -369,8 +400,6 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     onSettled: () => {
       // Invalidate starred entries list so the Starred page reflects the removal
       utils.entries.list.invalidate({ starredOnly: true });
-      // Invalidate starred count
-      utils.entries.starredCount.invalidate();
     },
   });
 
