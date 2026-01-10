@@ -196,4 +196,70 @@ describe("parseRss", () => {
       expect(result.entries[0].title).toBe("Comment by Flameeyes's Friend");
     });
   });
+
+  describe("malformed XML with unclosed tags", () => {
+    it("handles unclosed link tags followed by other elements", () => {
+      // This reproduces a real-world malformed feed where <link> tags
+      // are not properly closed (e.g., security.blogoverflow.com/feed/)
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Test Feed</title>
+            <link>https://example.com
+            <description>Test description</description>
+            <item>
+              <title>Post with unclosed link</title>
+              <link>https://example.com/post-1
+              <pubdate>Mon, 01 Jan 2024 12:00:00 GMT</pubdate>
+              <guid>post-1</guid>
+            </item>
+            <item>
+              <title>Post with comments after link</title>
+              <link>https://example.com/post-2
+              <comments>https://example.com/post-2#comments</comments>
+              <pubdate>Tue, 02 Jan 2024 12:00:00 GMT</pubdate>
+            </item>
+          </channel>
+        </rss>`;
+
+      const result = parseRss(xml);
+
+      // Channel info should be parsed correctly
+      expect(result.siteUrl).toBe("https://example.com");
+      expect(result.description).toBe("Test description");
+
+      expect(result.entries).toHaveLength(2);
+
+      // First entry: unclosed link followed directly by pubdate
+      expect(result.entries[0].title).toBe("Post with unclosed link");
+      expect(result.entries[0].link).toBe("https://example.com/post-1");
+      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+
+      // Second entry: unclosed link followed by comments then pubdate
+      expect(result.entries[1].title).toBe("Post with comments after link");
+      expect(result.entries[1].link).toBe("https://example.com/post-2");
+      expect(result.entries[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
+    });
+
+    it("handles unclosed title tags", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Test Feed
+            <link>https://example.com</link>
+            <item>
+              <title>Unclosed title
+              <link>https://example.com/post</link>
+              <pubDate>Mon, 01 Jan 2024 12:00:00 GMT</pubDate>
+            </item>
+          </channel>
+        </rss>`;
+
+      const result = parseRss(xml);
+
+      expect(result.title).toBe("Test Feed");
+      expect(result.entries[0].title).toBe("Unclosed title");
+      expect(result.entries[0].link).toBe("https://example.com/post");
+    });
+  });
 });

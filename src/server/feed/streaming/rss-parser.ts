@@ -75,6 +75,72 @@ export function parseRss(content: string): FeedParseResult {
       onopentag(name, attribs) {
         const tagName = name.toLowerCase();
 
+        // Before processing the new tag, capture any pending text content
+        // from the current state. This handles malformed XML where elements
+        // aren't properly closed (e.g., <link>http://example.com<pubdate>...)
+        const trimmedText = textBuffer.trim();
+        if (trimmedText) {
+          const decodedText = decode(trimmedText);
+
+          // Channel-level text capture for unclosed elements
+          if (state === "in_channel_link") {
+            siteUrl = decodedText;
+            state = "in_channel";
+          } else if (state === "in_channel_title") {
+            title = decodedText;
+            state = "in_channel";
+          } else if (state === "in_channel_description") {
+            description = decodedText;
+            state = "in_channel";
+          }
+
+          // Item-level text capture for unclosed elements
+          if (currentItem) {
+            if (state === "in_item_link") {
+              currentItem.link = decodedText;
+              state = "in_item";
+            } else if (state === "in_item_title") {
+              currentItem.title = decodedText;
+              state = "in_item";
+            } else if (state === "in_item_pubDate") {
+              const date = parseRssDate(decodedText);
+              if (date) {
+                currentItem.pubDate = date;
+              }
+              state = "in_item";
+            } else if (state === "in_item_dc_date") {
+              if (!currentItem.pubDate) {
+                const date = parseRssDate(decodedText);
+                if (date) {
+                  currentItem.pubDate = date;
+                }
+              }
+              state = "in_item";
+            } else if (state === "in_item_guid") {
+              currentItem.guid = decodedText;
+              state = "in_item";
+            } else if (state === "in_item_description") {
+              currentItem.summary = decodedText;
+              if (!currentItemContentEncoded) {
+                currentItem.content = decodedText;
+              }
+              state = "in_item";
+            } else if (state === "in_item_content_encoded") {
+              currentItemContentEncoded = decodedText;
+              currentItem.content = decodedText;
+              state = "in_item";
+            } else if (state === "in_item_author") {
+              if (!currentItem.author) {
+                currentItem.author = decodedText;
+              }
+              state = "in_item";
+            } else if (state === "in_item_dc_creator") {
+              currentItem.author = decodedText;
+              state = "in_item";
+            }
+          }
+        }
+
         if (tagName === "rdf:rdf") {
           isRdf = true;
           state = "in_channel";
