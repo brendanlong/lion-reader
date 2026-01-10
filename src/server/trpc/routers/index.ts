@@ -16,5 +16,6 @@ export { narrationRouter } from "./narration";
 export { ingestAddressesRouter } from "./ingestAddresses";
 export { blockedSendersRouter } from "./blockedSenders";
 export { brokenFeedsRouter } from "./brokenFeeds";
+export { feedStatsRouter } from "./feedStats";
 export { importsRouter } from "./imports";
 export { syncRouter } from "./sync";
