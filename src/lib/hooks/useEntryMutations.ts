@@ -227,20 +227,20 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
     onSuccess: (data) => {
       // Update subscription unread counts using targeted cache updates
-      // This avoids refetching the entire subscriptions list
-      if (data.unreadCountChanges.length > 0) {
+      // Uses absolute counts (not deltas) for robustness - self-correcting if counts drift
+      if (data.feedUnreadCounts.length > 0) {
         utils.subscriptions.list.setData(undefined, (oldData) => {
           if (!oldData) return oldData;
           return {
             ...oldData,
             items: oldData.items.map((item) => {
-              const change = data.unreadCountChanges.find((c) => c.feedId === item.feed.id);
-              if (change) {
+              const feedCount = data.feedUnreadCounts.find((f) => f.feedId === item.feed.id);
+              if (feedCount) {
                 return {
                   ...item,
                   subscription: {
                     ...item.subscription,
-                    unreadCount: Math.max(0, item.subscription.unreadCount + change.delta),
+                    unreadCount: feedCount.unreadCount,
                   },
                 };
               }

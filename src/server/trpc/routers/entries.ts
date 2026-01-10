@@ -144,21 +144,21 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
- * Schema for unread count change per feed.
- * Delta is negative when marking as read, positive when marking as unread.
+ * Schema for feed unread count.
+ * Returns the absolute count (not delta) for robustness - self-correcting if counts drift.
  */
-const unreadCountChangeSchema = z.object({
+const feedUnreadCountSchema = z.object({
   feedId: z.string(),
-  delta: z.number(),
+  unreadCount: z.number(),
 });
 
 /**
  * Output schema for markRead mutation.
- * Includes unread count changes per affected feed for targeted cache updates.
+ * Includes final unread counts for affected feeds to enable targeted cache updates.
  */
 const markReadOutputSchema = z.object({
   entries: z.array(entryMutationResultSchema),
-  unreadCountChanges: z.array(unreadCountChangeSchema),
+  feedUnreadCounts: z.array(feedUnreadCountSchema),
 });
 
 /**
@@ -569,37 +569,13 @@ export const entriesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // First, get the current state of entries that will actually change
-      // We need to know which entries are changing to calculate the unread count delta
-      const entriesChanging = await ctx.db
-        .select({
-          entryId: userEntries.entryId,
-          feedId: entries.feedId,
-        })
-        .from(userEntries)
-        .innerJoin(entries, eq(userEntries.entryId, entries.id))
-        .where(
-          and(
-            eq(userEntries.userId, userId),
-            inArray(userEntries.entryId, input.ids),
-            // Only count entries whose read status is actually changing
-            eq(userEntries.read, !input.read)
-          )
-        );
+      // Get the feed IDs for the entries being updated (to know which feeds need count updates)
+      const affectedFeeds = await ctx.db
+        .selectDistinct({ feedId: entries.feedId })
+        .from(entries)
+        .where(inArray(entries.id, input.ids));
 
-      // Calculate unread count changes per feed
-      // Delta is negative when marking as read, positive when marking as unread
-      const feedChangeCounts = new Map<string, number>();
-      for (const entry of entriesChanging) {
-        const current = feedChangeCounts.get(entry.feedId) ?? 0;
-        // Marking as read: delta is -1, marking as unread: delta is +1
-        feedChangeCounts.set(entry.feedId, current + (input.read ? -1 : 1));
-      }
-
-      const unreadCountChanges = Array.from(feedChangeCounts.entries()).map(([feedId, delta]) => ({
-        feedId,
-        delta,
-      }));
+      const affectedFeedIds = affectedFeeds.map((f) => f.feedId);
 
       // Update read status on user_entries rows that exist for this user
       // Visibility is enforced by the user_entries table - only rows that exist can be updated
@@ -622,7 +598,32 @@ export const entriesRouter = createTRPCRouter({
         .from(userEntries)
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
 
-      return { entries: updatedEntries, unreadCountChanges };
+      // Get final unread counts for affected feeds (absolute values, not deltas)
+      // This is self-correcting - even if counts drifted, they'll be accurate now
+      const feedUnreadCounts =
+        affectedFeedIds.length > 0
+          ? await ctx.db
+              .select({
+                feedId: entries.feedId,
+                unreadCount: sql<number>`count(*)::int`,
+              })
+              .from(entries)
+              .innerJoin(
+                userEntries,
+                and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
+              )
+              .where(and(inArray(entries.feedId, affectedFeedIds), eq(userEntries.read, false)))
+              .groupBy(entries.feedId)
+          : [];
+
+      // Include feeds with 0 unread (they won't appear in the GROUP BY result)
+      const feedCountMap = new Map(feedUnreadCounts.map((f) => [f.feedId, f.unreadCount]));
+      const allFeedUnreadCounts = affectedFeedIds.map((feedId) => ({
+        feedId,
+        unreadCount: feedCountMap.get(feedId) ?? 0,
+      }));
+
+      return { entries: updatedEntries, feedUnreadCounts: allFeedUnreadCounts };
     }),
 
   /**
