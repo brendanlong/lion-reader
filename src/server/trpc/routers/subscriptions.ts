@@ -10,7 +10,8 @@ import { eq, and, isNull, sql, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { USER_AGENT } from "@/server/http/user-agent";
+import { feedUrlSchema } from "../validation";
+import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import {
   feeds,
   subscriptions,
@@ -37,29 +38,8 @@ import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/u
 import { logger } from "@/lib/logger";
 
 // ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Timeout for feed fetch requests (10 seconds).
- */
-const FETCH_TIMEOUT_MS = 10000;
-
-// ============================================================================
 // Validation Schemas
 // ============================================================================
-
-/**
- * URL validation schema for feed subscription.
- */
-const urlSchema = z
-  .string()
-  .min(1, "URL is required")
-  .max(2048, "URL must be less than 2048 characters")
-  .url("Invalid URL format")
-  .refine((url) => url.startsWith("http://") || url.startsWith("https://"), {
-    message: "URL must use http or https protocol",
-  });
 
 /**
  * UUID validation schema for subscription IDs.
@@ -118,72 +98,6 @@ const subscriptionWithFeedOutputSchema = z.object({
   subscription: subscriptionOutputSchema,
   feed: feedOutputSchema,
 });
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Fetches content from a URL with proper error handling.
- *
- * @param url - The URL to fetch
- * @returns The response with text content
- */
-async function fetchUrl(
-  url: string
-): Promise<{ text: string; contentType: string; finalUrl: string }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
-      },
-      signal: controller.signal,
-      redirect: "follow",
-    });
-
-    if (!response.ok) {
-      throw errors.feedFetchError(url, `HTTP ${response.status}`);
-    }
-
-    const text = await response.text();
-    const contentType = response.headers.get("content-type") ?? "";
-
-    return { text, contentType, finalUrl: response.url };
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw errors.feedFetchError(url, "Request timed out");
-    }
-    if (error instanceof Error && "code" in error) {
-      // This is already a TRPCError
-      throw error;
-    }
-    throw errors.feedFetchError(url, error instanceof Error ? error.message : "Unknown error");
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/**
- * Determines if content is HTML (for feed discovery) or a feed.
- *
- * @param contentType - The content type header
- * @param content - The content body
- * @returns true if the content is HTML
- */
-function isHtmlContent(contentType: string, content: string): boolean {
-  // Check content type header
-  if (contentType.includes("text/html") || contentType.includes("application/xhtml+xml")) {
-    return true;
-  }
-
-  // Fallback: check content itself
-  const trimmed = content.trim().toLowerCase();
-  return trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html");
-}
 
 // ============================================================================
 // Subscription Helpers
@@ -576,7 +490,7 @@ export const subscriptionsRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        url: urlSchema,
+        url: feedUrlSchema,
       })
     )
     .output(subscriptionWithFeedOutputSchema)
