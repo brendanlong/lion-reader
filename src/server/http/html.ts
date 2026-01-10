@@ -4,6 +4,41 @@
  * Common HTML processing utilities used across the server.
  */
 
+import { parseHTML } from "linkedom";
+
+/**
+ * Extracts plain text from HTML content.
+ *
+ * Uses linkedom for proper parsing rather than regex, which correctly
+ * handles nested tags, script/style content, and entity decoding.
+ *
+ * @param html - The HTML content to extract text from
+ * @returns The plain text content
+ */
+export function extractTextFromHtml(html: string): string {
+  if (!html || !html.trim()) {
+    return "";
+  }
+
+  // Wrap fragments in a full HTML document structure for proper parsing
+  // linkedom requires a proper document structure
+  const trimmedHtml = html.trim().toLowerCase();
+  const isFullDocument = trimmedHtml.startsWith("<!doctype") || trimmedHtml.startsWith("<html");
+  const htmlToParse = isFullDocument ? html : `<!DOCTYPE html><html><body>${html}</body></html>`;
+
+  const { document } = parseHTML(htmlToParse);
+
+  // Remove script and style elements
+  for (const el of document.querySelectorAll("script, style")) {
+    el.remove();
+  }
+
+  // Get text content, collapse whitespace
+  return (document.body?.textContent || document.documentElement?.textContent || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * Escapes HTML special characters for safe embedding in HTML.
  *

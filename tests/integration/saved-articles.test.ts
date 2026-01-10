@@ -755,6 +755,214 @@ describe("Saved Articles API", () => {
     });
   });
 
+  describe("saved.save with refetch", () => {
+    it("updates content when refetch=true and URL is already saved", async () => {
+      const userId = await createTestUser();
+      const testUrl = "https://example.com/refetch-test";
+
+      // Create initial article
+      await createTestSavedArticle(userId, {
+        url: testUrl,
+        title: "Original Title",
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Refetch with new HTML
+      const newHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Updated Title</title>
+            <meta property="og:title" content="Updated OG Title" />
+          </head>
+          <body>
+            <article>
+              <p>This is the updated content with plenty of text to pass quality checks.</p>
+              <p>The content has been refreshed and updated with new information.</p>
+              <p>This is at least 500 characters to be sure it passes the quality check threshold.</p>
+            </article>
+          </body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: testUrl,
+        html: newHtml,
+        refetch: true,
+      });
+
+      // Should return updated content
+      expect(result.article.title).toBe("Updated OG Title");
+      expect(result.article.contentCleaned).toContain("updated content");
+    });
+
+    it("preserves read/starred state when refetching", async () => {
+      const userId = await createTestUser();
+      const testUrl = "https://example.com/refetch-preserve-state";
+
+      await createTestSavedArticle(userId, {
+        url: testUrl,
+        title: "Original Title",
+        read: true,
+        starred: true,
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const newHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>New Title</title></head>
+          <body>
+            <article>
+              <p>Sufficient content for quality check to pass with new information.</p>
+              <p>The content has been refreshed and updated with new information.</p>
+            </article>
+          </body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: testUrl,
+        html: newHtml,
+        refetch: true,
+      });
+
+      // Read/starred state should be preserved
+      expect(result.article.read).toBe(true);
+      expect(result.article.starred).toBe(true);
+    });
+
+    it("rejects refetch when new content is significantly shorter", async () => {
+      const userId = await createTestUser();
+      const testUrl = "https://example.com/refetch-reject-short";
+
+      // Create article with long content
+      const articleId = await createTestSavedArticle(userId, {
+        url: testUrl,
+        title: "Original Title",
+      });
+
+      // Update with substantial content
+      await db
+        .update(entries)
+        .set({
+          contentCleaned:
+            "<article>" + "<p>This is a long piece of content.</p>".repeat(50) + "</article>",
+        })
+        .where(eq(entries.id, articleId));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Try to refetch with very short content (simulating error page)
+      const shortHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>Error</title></head>
+          <body><p>Access denied.</p></body>
+        </html>
+      `;
+
+      await expect(
+        caller.saved.save({
+          url: testUrl,
+          html: shortHtml,
+          refetch: true,
+        })
+      ).rejects.toThrow("REFETCH_CONTENT_WORSE");
+    });
+
+    it("allows refetch with force=true even when content is shorter", async () => {
+      const userId = await createTestUser();
+      const testUrl = "https://example.com/refetch-force";
+
+      // Create article with long content
+      const articleId = await createTestSavedArticle(userId, {
+        url: testUrl,
+        title: "Original Title",
+      });
+
+      // Update with substantial content
+      await db
+        .update(entries)
+        .set({
+          contentCleaned:
+            "<article>" + "<p>This is a long piece of content.</p>".repeat(50) + "</article>",
+        })
+        .where(eq(entries.id, articleId));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Force refetch with short content
+      const shortHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>Short Article</title></head>
+          <body><article><p>Brief update.</p></article></body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: testUrl,
+        html: shortHtml,
+        refetch: true,
+        force: true,
+      });
+
+      // Should update despite shorter content
+      expect(result.article.title).toBe("Short Article");
+    });
+
+    it("does not reject when new content is only moderately shorter", async () => {
+      const userId = await createTestUser();
+      const testUrl = "https://example.com/refetch-moderate";
+
+      // Create article with content of about 1000 chars
+      const articleId = await createTestSavedArticle(userId, {
+        url: testUrl,
+        title: "Original Title",
+      });
+
+      await db
+        .update(entries)
+        .set({
+          contentCleaned:
+            "<article>" + "<p>This is a moderate piece of content.</p>".repeat(25) + "</article>",
+        })
+        .where(eq(entries.id, articleId));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Refetch with content that's 60% of original but >500 chars
+      // This should be allowed since absolute length is still reasonable
+      const newHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>Updated</title></head>
+          <body>
+            <article>
+              ${"<p>This is a shortened but still substantial article with plenty of content.</p>".repeat(10)}
+            </article>
+          </body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: testUrl,
+        html: newHtml,
+        refetch: true,
+      });
+
+      expect(result.article.title).toBe("Updated");
+    });
+  });
+
   describe("saved.save with provided HTML", () => {
     it("uses provided HTML instead of fetching the URL", async () => {
       const userId = await createTestUser();

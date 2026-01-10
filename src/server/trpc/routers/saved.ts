@@ -26,7 +26,7 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { fetchHtmlPage } from "@/server/http/fetch";
-import { escapeHtml } from "@/server/http/html";
+import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
@@ -229,6 +229,10 @@ export const savedRouter = createTRPCRouter({
         url: urlSchema,
         html: z.string().optional(),
         title: z.string().optional(),
+        /** When true, re-fetch and update if URL is already saved */
+        refetch: z.boolean().optional(),
+        /** When true with refetch, update even if new content appears lower quality */
+        force: z.boolean().optional(),
       })
     )
     .output(z.object({ article: savedArticleFullSchema }))
@@ -263,25 +267,32 @@ export const savedRouter = createTRPCRouter({
         )
         .limit(1);
 
+      // Track existing entry for refetch comparison
+      let existingEntry: (typeof existing)[0] | null = null;
+
       if (existing.length > 0) {
-        // Return existing article instead of error
-        const { entry, userState } = existing[0];
-        return {
-          article: {
-            id: entry.id,
-            url: entry.url!,
-            title: entry.title,
-            siteName: entry.siteName,
-            author: entry.author,
-            imageUrl: entry.imageUrl,
-            contentOriginal: entry.contentOriginal,
-            contentCleaned: entry.contentCleaned,
-            excerpt: entry.summary,
-            read: userState.read,
-            starred: userState.starred,
-            savedAt: entry.fetchedAt,
-          },
-        };
+        if (!input.refetch) {
+          // Return existing article instead of error
+          const { entry, userState } = existing[0];
+          return {
+            article: {
+              id: entry.id,
+              url: entry.url!,
+              title: entry.title,
+              siteName: entry.siteName,
+              author: entry.author,
+              imageUrl: entry.imageUrl,
+              contentOriginal: entry.contentOriginal,
+              contentCleaned: entry.contentCleaned,
+              excerpt: entry.summary,
+              read: userState.read,
+              starred: userState.starred,
+              savedAt: entry.fetchedAt,
+            },
+          };
+        }
+        // refetch=true: continue to fetch new content and compare
+        existingEntry = existing[0];
       }
 
       // Use provided HTML or fetch the page
@@ -594,7 +605,92 @@ export const savedRouter = createTRPCRouter({
       // Compute content hash for narration deduplication
       const contentHash = generateContentHash(finalTitle, finalContentCleaned || html);
 
-      // Create the saved article entry
+      // Handle refetch case: update existing entry if quality is acceptable
+      if (existingEntry) {
+        const { entry: oldEntry, userState } = existingEntry;
+
+        // Compare content quality to avoid overwriting good content with bad
+        // (e.g., private Google Doc fetched with auth, refetched without)
+        if (!input.force) {
+          const oldTextLength = oldEntry.contentCleaned
+            ? extractTextFromHtml(oldEntry.contentCleaned).length
+            : 0;
+
+          // Get new text length from cleaned content or fall back to HTML
+          const newTextLength = googleDocsContent
+            ? extractTextFromHtml(googleDocsContent.html).length
+            : cleaned
+              ? cleaned.textContent.length
+              : extractTextFromHtml(html).length;
+
+          // Reject if new content is significantly shorter AND short in absolute terms
+          // This catches error pages and access-denied pages while allowing legitimate edits
+          const isSignificantlyWorse = newTextLength < oldTextLength * 0.5 && newTextLength < 500;
+
+          if (isSignificantlyWorse) {
+            logger.warn("Refetch rejected: new content appears worse", {
+              url: normalizedUrl,
+              oldTextLength,
+              newTextLength,
+              ratio: oldTextLength > 0 ? newTextLength / oldTextLength : 0,
+            });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "REFETCH_CONTENT_WORSE",
+              cause: {
+                code: "REFETCH_CONTENT_WORSE",
+                details: {
+                  url: normalizedUrl,
+                  oldLength: oldTextLength,
+                  newLength: newTextLength,
+                  hint: "The refetched content appears significantly shorter than the original. This often happens when a private document is refetched without authentication. Use force=true to override.",
+                },
+              },
+            });
+          }
+        }
+
+        // Update the existing entry with new content
+        await ctx.db
+          .update(entries)
+          .set({
+            title: finalTitle,
+            author: finalAuthor,
+            contentOriginal: html,
+            contentCleaned: finalContentCleaned,
+            summary: excerpt,
+            siteName: finalSiteName,
+            imageUrl: metadata.imageUrl,
+            contentHash,
+            updatedAt: now,
+          })
+          .where(eq(entries.id, oldEntry.id));
+
+        logger.info("Refetched saved article", {
+          entryId: oldEntry.id,
+          url: normalizedUrl,
+          forced: input.force ?? false,
+        });
+
+        return {
+          article: {
+            id: oldEntry.id,
+            url: normalizedUrl,
+            title: finalTitle,
+            siteName: finalSiteName,
+            author: finalAuthor,
+            imageUrl: metadata.imageUrl,
+            contentOriginal: html,
+            contentCleaned: finalContentCleaned,
+            excerpt,
+            read: userState.read,
+            starred: userState.starred,
+            savedAt: oldEntry.fetchedAt, // Keep original save time
+          },
+        };
+      }
+
+      // Create new saved article entry
       const entryId = generateUuidv7();
       await ctx.db.insert(entries).values({
         id: entryId,
