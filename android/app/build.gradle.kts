@@ -41,7 +41,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // API configuration - can be overridden per build type
-        buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.com\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://lionreader.com\"")
         buildConfigField("String", "API_BASE_PATH", "\"/api/v1\"")
         buildConfigField("boolean", "LOGGING_ENABLED", "false")
 
@@ -93,7 +93,7 @@ android {
             versionNameSuffix = "-debug"
 
             // Debug-specific configuration
-            buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.com\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://lionreader.com\"")
             buildConfigField("boolean", "LOGGING_ENABLED", "true")
 
             // Debug uses default debug signing
@@ -109,7 +109,7 @@ android {
             )
 
             // Release-specific configuration
-            buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.com\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://lionreader.com\"")
             buildConfigField("boolean", "LOGGING_ENABLED", "false")
 
             // Release signing - only applied if keystore is configured

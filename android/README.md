@@ -190,7 +190,7 @@ buildTypes {
         buildConfigField("boolean", "LOGGING_ENABLED", "true")
     }
     release {
-        buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.com\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://lionreader.com\"")
         buildConfigField("boolean", "LOGGING_ENABLED", "false")
     }
 }

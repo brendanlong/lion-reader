@@ -171,7 +171,7 @@ class ApiContractTest {
     )
 
     companion object {
-        private const val OPENAPI_URL = "https://lion-reader.com/api/openapi"
+        private const val OPENAPI_URL = "https://lionreader.com/api/openapi"
 
         private val json =
             Json {

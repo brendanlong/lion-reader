@@ -6,7 +6,7 @@ ALWAYS read @docs/android-app-design.md before starting.
 
 ## Configuration
 
-- **Production API URL**: `https://lion-reader.com`
+- **Production API URL**: `https://lionreader.com`
 - **API Base Path**: `/api/v1`
 
 ---
