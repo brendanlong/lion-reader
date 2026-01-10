@@ -198,27 +198,40 @@ async function subscribeToExistingFeed(
     }
   }
 
-  publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
+  const subscriptionData = {
+    id: subscriptionId,
+    feedId,
+    customTitle: null,
+    subscribedAt,
+    unreadCount,
+    tags: [] as Array<{ id: string; name: string; color: string | null }>,
+  };
+
+  const feedData = {
+    id: feedRecord.id,
+    type: feedRecord.type,
+    url: feedRecord.url,
+    title: feedRecord.title,
+    description: feedRecord.description,
+    siteUrl: feedRecord.siteUrl,
+  };
+
+  publishSubscriptionCreated(
+    userId,
+    feedId,
+    subscriptionId,
+    {
+      ...subscriptionData,
+      subscribedAt: subscribedAt.toISOString(),
+    },
+    feedData
+  ).catch((err) => {
     logger.error("Failed to publish subscription_created event", { err, userId, feedId });
   });
 
   return {
-    subscription: {
-      id: subscriptionId,
-      feedId,
-      customTitle: null,
-      subscribedAt,
-      unreadCount,
-      tags: [],
-    },
-    feed: {
-      id: feedRecord.id,
-      type: feedRecord.type,
-      url: feedRecord.url,
-      title: feedRecord.title,
-      description: feedRecord.description,
-      siteUrl: feedRecord.siteUrl,
-    },
+    subscription: subscriptionData,
+    feed: feedData,
   };
 }
 
@@ -434,27 +447,40 @@ async function subscribeToNewOrUnfetchedFeed(
     }
   }
 
-  publishSubscriptionCreated(userId, feedId, subscriptionId).catch((err) => {
+  const subscriptionData = {
+    id: subscriptionId,
+    feedId,
+    customTitle: null,
+    subscribedAt,
+    unreadCount,
+    tags: [] as Array<{ id: string; name: string; color: string | null }>,
+  };
+
+  const feedData = {
+    id: feedRecord.id,
+    type: feedRecord.type,
+    url: feedRecord.url,
+    title: feedRecord.title,
+    description: feedRecord.description,
+    siteUrl: feedRecord.siteUrl,
+  };
+
+  publishSubscriptionCreated(
+    userId,
+    feedId,
+    subscriptionId,
+    {
+      ...subscriptionData,
+      subscribedAt: subscribedAt.toISOString(),
+    },
+    feedData
+  ).catch((err) => {
     logger.error("Failed to publish subscription_created event", { err, userId, feedId });
   });
 
   return {
-    subscription: {
-      id: subscriptionId,
-      feedId,
-      customTitle: null,
-      subscribedAt,
-      unreadCount,
-      tags: [],
-    },
-    feed: {
-      id: feedRecord.id,
-      type: feedRecord.type,
-      url: feedRecord.url,
-      title: feedRecord.title,
-      description: feedRecord.description,
-      siteUrl: feedRecord.siteUrl,
-    },
+    subscription: subscriptionData,
+    feed: feedData,
   };
 }
 

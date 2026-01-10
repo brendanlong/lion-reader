@@ -55,10 +55,39 @@ export interface EntryUpdatedEvent extends BaseFeedEvent {
 export type FeedEvent = NewEntryEvent | EntryUpdatedEvent;
 
 /**
+ * Subscription data included in subscription_created events.
+ * Mirrors the subscription output schema to enable optimistic cache updates.
+ */
+export interface SubscriptionCreatedEventSubscription {
+  id: string;
+  feedId: string;
+  customTitle: string | null;
+  subscribedAt: string; // ISO string for serialization
+  unreadCount: number;
+  tags: Array<{ id: string; name: string; color: string | null }>;
+}
+
+/**
+ * Feed data included in subscription_created events.
+ * Mirrors the feed output schema to enable optimistic cache updates.
+ */
+export interface SubscriptionCreatedEventFeed {
+  id: string;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  description: string | null;
+  siteUrl: string | null;
+}
+
+/**
  * Event published when a user subscribes to a new feed.
  * This is sent to all of the user's active SSE connections so they can:
  * 1. Add the new feedId to their filter set
- * 2. Refresh the subscriptions list
+ * 2. Update the subscriptions cache directly (optimistic update)
+ *
+ * Includes full subscription and feed data to enable cache updates without
+ * requiring a full refetch of the subscriptions list.
  */
 export interface SubscriptionCreatedEvent {
   type: "subscription_created";
@@ -66,6 +95,10 @@ export interface SubscriptionCreatedEvent {
   feedId: string;
   subscriptionId: string;
   timestamp: string;
+  /** Full subscription data for optimistic cache update */
+  subscription: SubscriptionCreatedEventSubscription;
+  /** Full feed data for optimistic cache update */
+  feed: SubscriptionCreatedEventFeed;
 }
 
 /**
@@ -279,17 +312,21 @@ export async function publishEntryUpdated(feedId: string, entryId: string): Prom
  * Publishes a subscription_created event when a user subscribes to a feed.
  * This notifies all of the user's SSE connections to:
  * 1. Add the new feedId to their filter set (so they receive new_entry events for it)
- * 2. Refresh the subscriptions list in the UI
+ * 2. Update the subscriptions cache directly with the provided data
  *
  * @param userId - The ID of the user who subscribed
  * @param feedId - The ID of the feed they subscribed to
  * @param subscriptionId - The ID of the new subscription
+ * @param subscription - Full subscription data for optimistic cache update
+ * @param feed - Full feed data for optimistic cache update
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSubscriptionCreated(
   userId: string,
   feedId: string,
-  subscriptionId: string
+  subscriptionId: string,
+  subscription: SubscriptionCreatedEventSubscription,
+  feed: SubscriptionCreatedEventFeed
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -301,6 +338,8 @@ export async function publishSubscriptionCreated(
     feedId,
     subscriptionId,
     timestamp: new Date().toISOString(),
+    subscription,
+    feed,
   };
   const channel = getUserEventsChannel(userId);
   return client.publish(channel, JSON.stringify(event));
@@ -544,14 +583,61 @@ export function parseUserEvent(message: string): UserEvent | null {
         typeof event.userId === "string" &&
         typeof event.feedId === "string" &&
         typeof event.subscriptionId === "string" &&
-        typeof event.timestamp === "string"
+        typeof event.timestamp === "string" &&
+        typeof event.subscription === "object" &&
+        event.subscription !== null &&
+        typeof event.feed === "object" &&
+        event.feed !== null
       ) {
+        const sub = event.subscription as Record<string, unknown>;
+        const feed = event.feed as Record<string, unknown>;
+
+        // Validate subscription structure
+        if (
+          typeof sub.id !== "string" ||
+          typeof sub.feedId !== "string" ||
+          (sub.customTitle !== null && typeof sub.customTitle !== "string") ||
+          typeof sub.subscribedAt !== "string" ||
+          typeof sub.unreadCount !== "number" ||
+          !Array.isArray(sub.tags)
+        ) {
+          return null;
+        }
+
+        // Validate feed structure
+        if (
+          typeof feed.id !== "string" ||
+          (feed.type !== "web" && feed.type !== "email" && feed.type !== "saved") ||
+          (feed.url !== null && typeof feed.url !== "string") ||
+          (feed.title !== null && typeof feed.title !== "string") ||
+          (feed.description !== null && typeof feed.description !== "string") ||
+          (feed.siteUrl !== null && typeof feed.siteUrl !== "string")
+        ) {
+          return null;
+        }
+
         return {
           type: "subscription_created",
           userId: event.userId,
           feedId: event.feedId,
           subscriptionId: event.subscriptionId,
           timestamp: event.timestamp,
+          subscription: {
+            id: sub.id,
+            feedId: sub.feedId,
+            customTitle: sub.customTitle as string | null,
+            subscribedAt: sub.subscribedAt,
+            unreadCount: sub.unreadCount,
+            tags: sub.tags as Array<{ id: string; name: string; color: string | null }>,
+          },
+          feed: {
+            id: feed.id,
+            type: feed.type,
+            url: feed.url as string | null,
+            title: feed.title as string | null,
+            description: feed.description as string | null,
+            siteUrl: feed.siteUrl as string | null,
+          },
         };
       }
 
