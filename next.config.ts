@@ -21,6 +21,21 @@ const nextConfig: NextConfig = {
     // Inject git commit SHA at build time
     GIT_COMMIT_SHA: getGitCommitSha(),
   },
+  // Cache static assets for 1 day to reduce unnecessary requests
+  async headers() {
+    return [
+      {
+        // Match common static assets in public/
+        source: "/:path*.(ico|png|svg|jpg|jpeg|gif|webp|woff|woff2|ttf|otf|eot)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, stale-while-revalidate=604800",
+          },
+        ],
+      },
+    ];
+  },
   // Packages that should be loaded from node_modules at runtime, not bundled
   // html-rewriter-wasm contains a WASM file that can't be bundled by Next.js
   serverExternalPackages: ["html-rewriter-wasm"],
