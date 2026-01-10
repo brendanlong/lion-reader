@@ -17,8 +17,6 @@ import {
   ingestAddresses,
   blockedSenders,
   type NewEntry,
-  type NewFeed,
-  type NewSubscription,
 } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishSubscriptionCreated } from "../redis/pubsub";
@@ -259,30 +257,15 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     return { success: false, error: "Sender blocked" };
   }
 
-  // 5. Find or create email feed for (user_id, sender_email)
-  let [feed] = await db
-    .select()
-    .from(feeds)
-    .where(
-      and(
-        eq(feeds.userId, userId),
-        eq(feeds.emailSenderPattern, senderEmail),
-        eq(feeds.type, "email")
-      )
-    )
-    .limit(1);
+  // 5. Upsert email feed for (user_id, sender_email)
+  // ON CONFLICT updates updatedAt to ensure RETURNING always gives us the feed
+  const now = new Date();
+  const feedId = generateUuidv7();
+  const feedTitle = email.from.name || senderEmail;
 
-  const isNewFeed = !feed;
-
-  if (!feed) {
-    // Create new email feed
-    const feedId = generateUuidv7();
-    const now = new Date();
-
-    // Use sender's display name if available, otherwise use email
-    const feedTitle = email.from.name || senderEmail;
-
-    const newFeed: NewFeed = {
+  const [feed] = await db
+    .insert(feeds)
+    .values({
       id: feedId,
       type: "email",
       userId,
@@ -290,40 +273,58 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
       title: feedTitle,
       createdAt: now,
       updatedAt: now,
-    };
+    })
+    .onConflictDoUpdate({
+      target: [feeds.userId, feeds.emailSenderPattern],
+      set: { updatedAt: now },
+    })
+    .returning();
 
-    const [createdFeed] = await db.insert(feeds).values(newFeed).returning();
-    feed = createdFeed;
-
+  const isNewFeed = feed.id === feedId;
+  if (isNewFeed) {
     logger.info("Created email feed", { feedId, userId, senderEmail, title: feedTitle });
+  }
 
-    // 6. Auto-create subscription for new feed
-    const subscriptionId = generateUuidv7();
-    const newSubscription: NewSubscription = {
+  // 6. Upsert subscription: insert new, or reactivate if unsubscribed
+  // RETURNING only returns a row if inserted OR updated (not if already active)
+  const subscriptionId = generateUuidv7();
+
+  const [upsertedSubscription] = await db
+    .insert(subscriptions)
+    .values({
       id: subscriptionId,
       userId,
       feedId: feed.id,
       subscribedAt: now,
       createdAt: now,
       updatedAt: now,
-    };
+    })
+    .onConflictDoUpdate({
+      target: [subscriptions.userId, subscriptions.feedId],
+      set: { unsubscribedAt: null, updatedAt: now },
+      where: isNotNull(subscriptions.unsubscribedAt),
+    })
+    .returning();
 
-    await db.insert(subscriptions).values(newSubscription);
-
-    logger.info("Created subscription for email feed", { subscriptionId, feedId, userId });
+  if (upsertedSubscription) {
+    const isNewSubscription = upsertedSubscription.id === subscriptionId;
+    logger.info(isNewSubscription ? "Created subscription" : "Reactivated subscription", {
+      subscriptionId: upsertedSubscription.id,
+      feedId: feed.id,
+      userId,
+    });
 
     // Publish subscription_created event so SSE handlers subscribe to the feed channel
     // This must happen BEFORE the new_entry event so the client receives the entry notification
-    // unreadCount is 1 since we're about to create one entry
     publishSubscriptionCreated(
       userId,
       feed.id,
-      subscriptionId,
+      upsertedSubscription.id,
       {
-        id: subscriptionId,
+        id: upsertedSubscription.id,
         feedId: feed.id,
-        customTitle: null,
-        subscribedAt: now.toISOString(),
+        customTitle: upsertedSubscription.customTitle,
+        subscribedAt: upsertedSubscription.subscribedAt.toISOString(),
         unreadCount: 1,
         tags: [],
       },
@@ -338,71 +339,10 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     ).catch((err) => {
       logger.error("Failed to publish subscription_created event for email feed", {
         feedId: feed.id,
-        subscriptionId,
+        subscriptionId: upsertedSubscription.id,
         error: err instanceof Error ? err.message : String(err),
       });
     });
-  } else {
-    // 6b. Existing feed - ensure subscription is active
-    // Uses upsert pattern: insert new subscription, or reactivate if unsubscribed
-    // RETURNING only returns a row if inserted OR updated (not if already active)
-    const now = new Date();
-    const subscriptionId = generateUuidv7();
-
-    const [upsertedSubscription] = await db
-      .insert(subscriptions)
-      .values({
-        id: subscriptionId,
-        userId,
-        feedId: feed.id,
-        subscribedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [subscriptions.userId, subscriptions.feedId],
-        set: { unsubscribedAt: null, updatedAt: now },
-        where: isNotNull(subscriptions.unsubscribedAt),
-      })
-      .returning();
-
-    if (upsertedSubscription) {
-      logger.info("Ensured subscription for email feed", {
-        subscriptionId: upsertedSubscription.id,
-        feedId: feed.id,
-        userId,
-        wasReactivated: upsertedSubscription.id !== subscriptionId,
-      });
-
-      // Publish subscription_created event so client updates its state
-      publishSubscriptionCreated(
-        userId,
-        feed.id,
-        upsertedSubscription.id,
-        {
-          id: upsertedSubscription.id,
-          feedId: feed.id,
-          customTitle: upsertedSubscription.customTitle,
-          subscribedAt: upsertedSubscription.subscribedAt.toISOString(),
-          unreadCount: 1,
-          tags: [],
-        },
-        {
-          id: feed.id,
-          type: "email",
-          url: null,
-          title: feed.title,
-          description: null,
-          siteUrl: null,
-        }
-      ).catch((err) => {
-        logger.error("Failed to publish subscription_created event for email feed", {
-          feedId: feed.id,
-          subscriptionId: upsertedSubscription.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-    }
   }
 
   // 7. Check for duplicate Message-ID
@@ -432,7 +372,6 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     email.headers.listUnsubscribePost?.toLowerCase().includes("one-click") ?? false;
 
   const entryId = generateUuidv7();
-  const now = new Date();
 
   const newEntry: NewEntry = {
     id: entryId,
