@@ -569,14 +569,6 @@ export const entriesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Get the feed IDs for the entries being updated (to know which feeds need count updates)
-      const affectedFeeds = await ctx.db
-        .selectDistinct({ feedId: entries.feedId })
-        .from(entries)
-        .where(inArray(entries.id, input.ids));
-
-      const affectedFeedIds = affectedFeeds.map((f) => f.feedId);
-
       // Update read status on user_entries rows that exist for this user
       // Visibility is enforced by the user_entries table - only rows that exist can be updated
       await ctx.db
@@ -587,16 +579,28 @@ export const entriesRouter = createTRPCRouter({
         })
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
 
-      // Fetch the updated entries to return their current state
-      // This enables normy to automatically update cached queries
-      const updatedEntries = await ctx.db
+      // Fetch updated entries with their feed IDs in one query
+      // This gives us both the entry state for normy and the affected feeds for count updates
+      const updatedEntriesWithFeeds = await ctx.db
         .select({
           id: userEntries.entryId,
           read: userEntries.read,
           starred: userEntries.starred,
+          feedId: entries.feedId,
         })
         .from(userEntries)
+        .innerJoin(entries, eq(entries.id, userEntries.entryId))
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
+
+      // Extract unique feed IDs from the updated entries
+      const affectedFeedIds = [...new Set(updatedEntriesWithFeeds.map((e) => e.feedId))];
+
+      // Build entries response (without feedId) for normy cache normalization
+      const updatedEntries = updatedEntriesWithFeeds.map((e) => ({
+        id: e.id,
+        read: e.read,
+        starred: e.starred,
+      }));
 
       // Get final unread counts for affected feeds (absolute values, not deltas)
       // This is self-correcting - even if counts drifted, they'll be accurate now
