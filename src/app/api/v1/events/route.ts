@@ -309,7 +309,7 @@ export async function GET(req: Request): Promise<Response> {
 
         // Handle incoming messages
         subscriber.on("message", (channel: string, message: string) => {
-          // Handle user events (subscription_created, subscription_deleted, saved_article_created)
+          // Handle user events (subscription_created, subscription_deleted, saved_article_created, import_progress, import_completed)
           if (channel === userEventsChannel) {
             const event = parseUserEvent(message);
             if (!event) return;
@@ -330,6 +330,10 @@ export async function GET(req: Request): Promise<Response> {
               trackSSEEventSent(event.type);
             } else if (event.type === "saved_article_created") {
               // Forward the event to the client
+              send(formatSSEUserEvent(event));
+              trackSSEEventSent(event.type);
+            } else if (event.type === "import_progress" || event.type === "import_completed") {
+              // Forward import events to the client
               send(formatSSEUserEvent(event));
               trackSSEEventSent(event.type);
             }
