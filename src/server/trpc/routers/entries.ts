@@ -934,27 +934,18 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
-      // Get total starred count
-      const totalResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
+      // Get total and unread starred counts in a single query using conditional aggregation
+      const result = await ctx.db
+        .select({
+          total: sql<number>`count(*)::int`,
+          unread: sql<number>`count(*) FILTER (WHERE ${userEntries.read} = false)::int`,
+        })
         .from(userEntries)
         .where(and(eq(userEntries.userId, userId), eq(userEntries.starred, true)));
 
-      // Get unread starred count
-      const unreadResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(userEntries)
-        .where(
-          and(
-            eq(userEntries.userId, userId),
-            eq(userEntries.starred, true),
-            eq(userEntries.read, false)
-          )
-        );
-
       return {
-        total: totalResult[0]?.count ?? 0,
-        unread: unreadResult[0]?.count ?? 0,
+        total: result[0]?.total ?? 0,
+        unread: result[0]?.unread ?? 0,
       };
     }),
 
