@@ -232,6 +232,13 @@
       "when": 1767400000000,
       "tag": "0032_clear_saved_articles_published_at",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1767410000000,
+      "tag": "0033_ingest_address_token_citext",
+      "breakpoints": true
     }
   ]
 }
