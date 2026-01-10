@@ -41,7 +41,7 @@ primary_region = "lax"
   STORAGE_PUBLIC_URL_BASE = "https://lion-reader-prod.t3.storage.dev/"
 
   # Newsletters
-  INGEST_EMAIL_DOMAIN=inbox.lionreader.com
+  INGEST_EMAIL_DOMAIN=in.app.lionreader.com
 
 [http_service]
   internal_port = 3000
