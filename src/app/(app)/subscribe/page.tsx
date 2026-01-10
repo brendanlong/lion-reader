@@ -66,6 +66,10 @@ export default function SubscribePage() {
       // This avoids an extra network request and duplicate SSE-triggered invalidations
       utils.subscriptions.list.setData(undefined, (oldData) => {
         if (!oldData) return oldData;
+        // Check for duplicates - SSE might have already added this subscription
+        if (oldData.items.some((item) => item.subscription.id === data.subscription.id)) {
+          return oldData;
+        }
         // Insert the new subscription and maintain alphabetical order by title
         const newItems = [...oldData.items, data];
         newItems.sort((a, b) => {

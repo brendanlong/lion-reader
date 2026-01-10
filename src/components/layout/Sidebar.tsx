@@ -37,7 +37,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const tagsQuery = trpc.tags.list.useQuery();
   // Use unified entries.count with type='saved' filter
   const savedCountQuery = trpc.entries.count.useQuery({ type: "saved" });
-  const starredCountQuery = trpc.entries.starredCount.useQuery({});
+  const starredCountQuery = trpc.entries.starredCount.useQuery();
   const utils = trpc.useUtils();
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
