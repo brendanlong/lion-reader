@@ -210,3 +210,22 @@ For mutations that update UI state (mark read, star, etc.), use optimistic updat
 ## Android App
 
 The Android app lives in `android/`. When adding new API endpoints to `LionReaderApiImpl`, also add them to `clientPaths` in `ApiContractTest` to ensure they're validated against the server's OpenAPI spec.
+
+### Gradle Proxy Issues
+
+If `./gradlew` fails with "401 Unauthorized" errors when fetching dependencies, this is likely because Java's HTTP client doesn't support proxy authentication for HTTPS tunneling (even when `https_proxy` is set correctly and works with curl).
+
+Run the bootstrap script to download dependencies via curl:
+
+```bash
+./android/scripts/gradle-proxy-bootstrap.sh
+```
+
+This script:
+
+1. Downloads the Gradle distribution via curl
+2. Iteratively discovers missing Maven dependencies
+3. Downloads them via curl (which handles proxy auth correctly)
+4. Sets up a local Maven repository for Gradle to use
+
+After running, normal `./gradlew` commands should work.
