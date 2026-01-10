@@ -207,10 +207,12 @@ export function Sidebar({ onClose }: SidebarProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscriptionsQuery.data]);
 
-  // Sort tags alphabetically
+  // Sort tags alphabetically and filter out empty ones (tags with no subscriptions)
   const sortedTags = useMemo(() => {
-    return [...(tagsQuery.data?.items ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-  }, [tagsQuery.data?.items]);
+    return [...(tagsQuery.data?.items ?? [])]
+      .filter((tag) => subscriptionsByTag.byTag.has(tag.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [tagsQuery.data?.items, subscriptionsByTag.byTag]);
 
   // Compute uncategorized stats
   const uncategorizedUnreadCount = useMemo(() => {
