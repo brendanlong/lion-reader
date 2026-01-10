@@ -718,7 +718,7 @@ describe("Saved Articles API", () => {
   });
 
   describe("saved.save with existing URL", () => {
-    it("returns existing article if URL is already saved", async () => {
+    it("returns existing article without refetching when refetch=false", async () => {
       const userId = await createTestUser();
       const existingUrl = "https://example.com/already-saved";
       const articleId = await createTestSavedArticle(userId, {
@@ -729,8 +729,8 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      // This won't fetch since the URL already exists
-      const result = await caller.saved.save({ url: existingUrl });
+      // With refetch=false, returns existing without attempting to fetch
+      const result = await caller.saved.save({ url: existingUrl, refetch: false });
 
       expect(result.article.id).toBe(articleId);
       expect(result.article.title).toBe("Already Saved Article");

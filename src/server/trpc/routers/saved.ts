@@ -229,8 +229,8 @@ export const savedRouter = createTRPCRouter({
         url: urlSchema,
         html: z.string().optional(),
         title: z.string().optional(),
-        /** When true, re-fetch and update if URL is already saved */
-        refetch: z.boolean().optional(),
+        /** When true (default), re-fetch and update if URL is already saved */
+        refetch: z.boolean().default(true),
         /** When true with refetch, update even if new content appears lower quality */
         force: z.boolean().optional(),
       })
