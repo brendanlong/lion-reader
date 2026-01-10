@@ -798,7 +798,7 @@ describe("Saved Articles API", () => {
       expect(result.article.contentCleaned).toContain("updated content");
     });
 
-    it("preserves read/starred state when refetching", async () => {
+    it("marks as unread but preserves starred state when refetching", async () => {
       const userId = await createTestUser();
       const testUrl = "https://example.com/refetch-preserve-state";
 
@@ -831,8 +831,9 @@ describe("Saved Articles API", () => {
         refetch: true,
       });
 
-      // Read/starred state should be preserved
-      expect(result.article.read).toBe(true);
+      // Article should be marked unread so user sees updated content
+      expect(result.article.read).toBe(false);
+      // Starred state should be preserved
       expect(result.article.starred).toBe(true);
     });
 
