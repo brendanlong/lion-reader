@@ -91,12 +91,32 @@ interface FeedEventData {
   timestamp: string;
 }
 
+interface SubscriptionCreatedEventSubscription {
+  id: string;
+  feedId: string;
+  customTitle: string | null;
+  subscribedAt: string;
+  unreadCount: number;
+  tags: Array<{ id: string; name: string; color: string | null }>;
+}
+
+interface SubscriptionCreatedEventFeed {
+  id: string;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  description: string | null;
+  siteUrl: string | null;
+}
+
 interface SubscriptionCreatedEventData {
   type: "subscription_created";
   userId: string;
   feedId: string;
   subscriptionId: string;
   timestamp: string;
+  subscription: SubscriptionCreatedEventSubscription;
+  feed: SubscriptionCreatedEventFeed;
 }
 
 interface SubscriptionDeletedEventData {
@@ -187,14 +207,61 @@ function parseEventData(data: string): SSEEventData | null {
       event.type === "subscription_created" &&
       typeof event.userId === "string" &&
       typeof event.feedId === "string" &&
-      typeof event.subscriptionId === "string"
+      typeof event.subscriptionId === "string" &&
+      typeof event.subscription === "object" &&
+      event.subscription !== null &&
+      typeof event.feed === "object" &&
+      event.feed !== null
     ) {
+      const sub = event.subscription as Record<string, unknown>;
+      const feed = event.feed as Record<string, unknown>;
+
+      // Validate subscription structure
+      if (
+        typeof sub.id !== "string" ||
+        typeof sub.feedId !== "string" ||
+        (sub.customTitle !== null && typeof sub.customTitle !== "string") ||
+        typeof sub.subscribedAt !== "string" ||
+        typeof sub.unreadCount !== "number" ||
+        !Array.isArray(sub.tags)
+      ) {
+        return null;
+      }
+
+      // Validate feed structure
+      if (
+        typeof feed.id !== "string" ||
+        (feed.type !== "web" && feed.type !== "email" && feed.type !== "saved") ||
+        (feed.url !== null && typeof feed.url !== "string") ||
+        (feed.title !== null && typeof feed.title !== "string") ||
+        (feed.description !== null && typeof feed.description !== "string") ||
+        (feed.siteUrl !== null && typeof feed.siteUrl !== "string")
+      ) {
+        return null;
+      }
+
       return {
         type: event.type,
         userId: event.userId,
         feedId: event.feedId,
         subscriptionId: event.subscriptionId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        subscription: {
+          id: sub.id,
+          feedId: sub.feedId,
+          customTitle: sub.customTitle as string | null,
+          subscribedAt: sub.subscribedAt,
+          unreadCount: sub.unreadCount,
+          tags: sub.tags as Array<{ id: string; name: string; color: string | null }>,
+        },
+        feed: {
+          id: feed.id,
+          type: feed.type,
+          url: feed.url as string | null,
+          title: feed.title as string | null,
+          description: feed.description as string | null,
+          siteUrl: feed.siteUrl as string | null,
+        },
       };
     }
 
@@ -406,15 +473,86 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         utils.entries.get.invalidate({ id: data.entryId });
         utils.entries.list.invalidate();
       } else if (data.type === "subscription_created") {
-        const existingData = utils.subscriptions.list.getData();
-        const alreadyInCache = existingData?.items.some(
-          (item) => item.subscription.id === data.subscriptionId
-        );
+        // Optimistic cache update - insert subscription directly into cache
+        utils.subscriptions.list.setData(undefined, (oldData) => {
+          if (!oldData) {
+            // If no data yet, create with the new subscription
+            return {
+              items: [
+                {
+                  subscription: {
+                    id: data.subscription.id,
+                    feedId: data.subscription.feedId,
+                    customTitle: data.subscription.customTitle,
+                    subscribedAt: new Date(data.subscription.subscribedAt),
+                    unreadCount: data.subscription.unreadCount,
+                    tags: data.subscription.tags,
+                  },
+                  feed: data.feed,
+                },
+              ],
+            };
+          }
 
-        if (!alreadyInCache) {
-          utils.subscriptions.list.invalidate();
-          utils.entries.list.invalidate();
+          // Check for duplicates
+          if (oldData.items.some((item) => item.subscription.id === data.subscription.id)) {
+            return oldData;
+          }
+
+          // Add new subscription to cache
+          return {
+            items: [
+              ...oldData.items,
+              {
+                subscription: {
+                  id: data.subscription.id,
+                  feedId: data.subscription.feedId,
+                  customTitle: data.subscription.customTitle,
+                  subscribedAt: new Date(data.subscription.subscribedAt),
+                  unreadCount: data.subscription.unreadCount,
+                  tags: data.subscription.tags,
+                },
+                feed: data.feed,
+              },
+            ],
+          };
+        });
+
+        // Update tags cache with new/updated tag counts
+        if (data.subscription.tags.length > 0) {
+          utils.tags.list.setData(undefined, (oldData) => {
+            if (!oldData) return oldData;
+
+            const updatedTags = [...oldData.items];
+            for (const eventTag of data.subscription.tags) {
+              const existingIndex = updatedTags.findIndex((t) => t.id === eventTag.id);
+
+              if (existingIndex >= 0) {
+                // Increment feedCount and unreadCount for existing tag
+                updatedTags[existingIndex] = {
+                  ...updatedTags[existingIndex],
+                  feedCount: updatedTags[existingIndex].feedCount + 1,
+                  unreadCount:
+                    updatedTags[existingIndex].unreadCount + data.subscription.unreadCount,
+                };
+              } else {
+                // Add new tag (in case it was just created)
+                updatedTags.push({
+                  id: eventTag.id,
+                  name: eventTag.name,
+                  color: eventTag.color,
+                  feedCount: 1,
+                  unreadCount: data.subscription.unreadCount,
+                  createdAt: new Date(),
+                });
+              }
+            }
+
+            return { items: updatedTags };
+          });
         }
+
+        // No invalidation needed - cache is already updated!
       } else if (data.type === "subscription_deleted") {
         const existingData = utils.subscriptions.list.getData();
         const stillInCache = existingData?.items.some(
@@ -439,11 +577,12 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       } else if (data.type === "import_completed") {
         utils.imports.get.invalidate({ id: data.importId });
         utils.imports.list.invalidate();
-        utils.subscriptions.list.invalidate();
+        // Subscriptions and tags are already updated via individual subscription_created events
+        // Only invalidate entries since we may have new entries from newly imported feeds
         utils.entries.list.invalidate();
       }
     },
-    [utils.entries, utils.subscriptions, utils.imports]
+    [utils.entries, utils.subscriptions, utils.imports, utils.tags]
   );
 
   /**
