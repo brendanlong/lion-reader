@@ -643,14 +643,53 @@ export const subscriptionsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Get the subscription with feed info
-      const result = await ctx.db
+      // Subquery to get unread count for this subscription's feed
+      const unreadCountsSubquery = ctx.db
         .select({
-          subscription: subscriptions,
-          feed: feeds,
+          feedId: entries.feedId,
+          unreadCount: sql<number>`count(*)::int`.as("unread_count"),
+        })
+        .from(entries)
+        .innerJoin(
+          userEntries,
+          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
+        )
+        .where(eq(userEntries.read, false))
+        .groupBy(entries.feedId)
+        .as("unread_counts");
+
+      // Single query: subscription + feed + unread count + tags (via json_agg)
+      const results = await ctx.db
+        .select({
+          // Subscription fields
+          subscriptionId: subscriptions.id,
+          subscriptionFeedId: subscriptions.feedId,
+          subscriptionCustomTitle: subscriptions.customTitle,
+          subscriptionSubscribedAt: subscriptions.subscribedAt,
+          // Feed fields
+          feedId: feeds.id,
+          feedType: feeds.type,
+          feedUrl: feeds.url,
+          feedTitle: feeds.title,
+          feedDescription: feeds.description,
+          feedSiteUrl: feeds.siteUrl,
+          // Unread count from subquery
+          unreadCount: sql<number>`COALESCE(${unreadCountsSubquery.unreadCount}, 0)`,
+          // Tags aggregated as JSON array
+          tags: sql<Array<{ id: string; name: string; color: string | null }>>`
+            COALESCE(
+              json_agg(
+                json_build_object('id', ${tags.id}, 'name', ${tags.name}, 'color', ${tags.color})
+              ) FILTER (WHERE ${tags.id} IS NOT NULL),
+              '[]'::json
+            )
+          `,
         })
         .from(subscriptions)
         .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+        .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.feedId, feeds.id))
+        .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
+        .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
         .where(
           and(
             eq(subscriptions.id, input.id),
@@ -658,59 +697,31 @@ export const subscriptionsRouter = createTRPCRouter({
             isNull(subscriptions.unsubscribedAt)
           )
         )
+        .groupBy(subscriptions.id, feeds.id, unreadCountsSubquery.unreadCount)
         .limit(1);
 
-      if (result.length === 0) {
+      if (results.length === 0) {
         throw errors.subscriptionNotFound();
       }
 
-      const { subscription, feed } = result[0];
-
-      // Fetch tags and unread count concurrently
-      const [subscriptionTagsData, unreadResult] = await Promise.all([
-        ctx.db
-          .select({
-            tagId: tags.id,
-            tagName: tags.name,
-            tagColor: tags.color,
-          })
-          .from(subscriptionTags)
-          .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
-          .where(eq(subscriptionTags.subscriptionId, subscription.id)),
-        ctx.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(entries)
-          .innerJoin(
-            userEntries,
-            and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-          )
-          .where(and(eq(entries.feedId, feed.id), eq(userEntries.read, false))),
-      ]);
-
-      const subscriptionTagsList = subscriptionTagsData.map((row) => ({
-        id: row.tagId,
-        name: row.tagName,
-        color: row.tagColor,
-      }));
-
-      const unreadCount = unreadResult[0]?.count ?? 0;
+      const row = results[0];
 
       return {
         subscription: {
-          id: subscription.id,
-          feedId: subscription.feedId,
-          customTitle: subscription.customTitle,
-          subscribedAt: subscription.subscribedAt,
-          unreadCount,
-          tags: subscriptionTagsList,
+          id: row.subscriptionId,
+          feedId: row.subscriptionFeedId,
+          customTitle: row.subscriptionCustomTitle,
+          subscribedAt: row.subscriptionSubscribedAt,
+          unreadCount: row.unreadCount,
+          tags: row.tags,
         },
         feed: {
-          id: feed.id,
-          type: feed.type,
-          url: feed.url,
-          title: feed.title,
-          description: feed.description,
-          siteUrl: feed.siteUrl,
+          id: row.feedId,
+          type: row.feedType,
+          url: row.feedUrl,
+          title: row.feedTitle,
+          description: row.feedDescription,
+          siteUrl: row.feedSiteUrl,
         },
       };
     }),
