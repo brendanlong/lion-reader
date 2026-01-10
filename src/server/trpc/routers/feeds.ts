@@ -173,7 +173,7 @@ async function tryFetchAsFeed(
 
     // Try to parse to get the title
     try {
-      const parsed = parseFeed(text);
+      const parsed = await parseFeed(text);
       return {
         url,
         type: feedType,
@@ -318,7 +318,7 @@ export const feedsRouter = createTRPCRouter({
       // Step 3: Parse the feed
       let parsedFeed;
       try {
-        parsedFeed = parseFeed(feedContent);
+        parsedFeed = await parseFeed(feedContent);
       } catch (error) {
         throw errors.parseError(error instanceof Error ? error.message : "Invalid feed format");
       }
