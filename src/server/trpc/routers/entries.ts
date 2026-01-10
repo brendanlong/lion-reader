@@ -312,7 +312,6 @@ export const entriesRouter = createTRPCRouter({
         }
 
         // Get feed IDs for subscriptions with this tag (including previous feeds from redirects)
-        // Include starred entries even if no subscriptions have this tag
         const taggedFeedIds = ctx.db
           .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
           .from(subscriptionTags)
@@ -320,7 +319,7 @@ export const entriesRouter = createTRPCRouter({
           .where(
             and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
           );
-        conditions.push(or(inArray(entries.feedId, taggedFeedIds), eq(userEntries.starred, true))!);
+        conditions.push(inArray(entries.feedId, taggedFeedIds));
       }
 
       // Filter by uncategorized if specified
@@ -342,9 +341,7 @@ export const entriesRouter = createTRPCRouter({
             )
           );
 
-        conditions.push(
-          or(inArray(entries.feedId, uncategorizedFeedIds), eq(userEntries.starred, true))!
-        );
+        conditions.push(inArray(entries.feedId, uncategorizedFeedIds));
       }
 
       // Apply unreadOnly filter
@@ -1062,7 +1059,6 @@ export const entriesRouter = createTRPCRouter({
         }
 
         // Get feed IDs for subscriptions with this tag (including previous feeds from redirects)
-        // Include starred entries even if no subscriptions have this tag
         const taggedFeedIds = ctx.db
           .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
           .from(subscriptionTags)
@@ -1070,7 +1066,7 @@ export const entriesRouter = createTRPCRouter({
           .where(
             and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
           );
-        conditions.push(or(inArray(entries.feedId, taggedFeedIds), eq(userEntries.starred, true))!);
+        conditions.push(inArray(entries.feedId, taggedFeedIds));
       }
 
       // Filter by uncategorized if specified
@@ -1092,9 +1088,7 @@ export const entriesRouter = createTRPCRouter({
             )
           );
 
-        conditions.push(
-          or(inArray(entries.feedId, uncategorizedFeedIds), eq(userEntries.starred, true))!
-        );
+        conditions.push(inArray(entries.feedId, uncategorizedFeedIds));
       }
 
       // Apply type filter if specified
