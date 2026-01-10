@@ -144,10 +144,21 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
+ * Schema for unread count change per feed.
+ * Delta is negative when marking as read, positive when marking as unread.
+ */
+const unreadCountChangeSchema = z.object({
+  feedId: z.string(),
+  delta: z.number(),
+});
+
+/**
  * Output schema for markRead mutation.
+ * Includes unread count changes per affected feed for targeted cache updates.
  */
 const markReadOutputSchema = z.object({
   entries: z.array(entryMutationResultSchema),
+  unreadCountChanges: z.array(unreadCountChangeSchema),
 });
 
 /**
@@ -558,6 +569,38 @@ export const entriesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
+      // First, get the current state of entries that will actually change
+      // We need to know which entries are changing to calculate the unread count delta
+      const entriesChanging = await ctx.db
+        .select({
+          entryId: userEntries.entryId,
+          feedId: entries.feedId,
+        })
+        .from(userEntries)
+        .innerJoin(entries, eq(userEntries.entryId, entries.id))
+        .where(
+          and(
+            eq(userEntries.userId, userId),
+            inArray(userEntries.entryId, input.ids),
+            // Only count entries whose read status is actually changing
+            eq(userEntries.read, !input.read)
+          )
+        );
+
+      // Calculate unread count changes per feed
+      // Delta is negative when marking as read, positive when marking as unread
+      const feedChangeCounts = new Map<string, number>();
+      for (const entry of entriesChanging) {
+        const current = feedChangeCounts.get(entry.feedId) ?? 0;
+        // Marking as read: delta is -1, marking as unread: delta is +1
+        feedChangeCounts.set(entry.feedId, current + (input.read ? -1 : 1));
+      }
+
+      const unreadCountChanges = Array.from(feedChangeCounts.entries()).map(([feedId, delta]) => ({
+        feedId,
+        delta,
+      }));
+
       // Update read status on user_entries rows that exist for this user
       // Visibility is enforced by the user_entries table - only rows that exist can be updated
       await ctx.db
@@ -579,7 +622,7 @@ export const entriesRouter = createTRPCRouter({
         .from(userEntries)
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
 
-      return { entries: updatedEntries };
+      return { entries: updatedEntries, unreadCountChanges };
     }),
 
   /**

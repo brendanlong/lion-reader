@@ -225,6 +225,31 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
 
       return { previousData };
     },
+    onSuccess: (data) => {
+      // Update subscription unread counts using targeted cache updates
+      // This avoids refetching the entire subscriptions list
+      if (data.unreadCountChanges.length > 0) {
+        utils.subscriptions.list.setData(undefined, (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            items: oldData.items.map((item) => {
+              const change = data.unreadCountChanges.find((c) => c.feedId === item.feed.id);
+              if (change) {
+                return {
+                  ...item,
+                  subscription: {
+                    ...item.subscription,
+                    unreadCount: Math.max(0, item.subscription.unreadCount + change.delta),
+                  },
+                };
+              }
+              return item;
+            }),
+          };
+        });
+      }
+    },
     onError: (_error, _variables, context) => {
       // Rollback to previous state (normy propagates rollback to entries.get automatically)
       if (context?.previousData && listFilters) {
@@ -233,9 +258,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       toast.error("Failed to update read status");
     },
     onSettled: () => {
-      // Invalidate subscription counts as they need server data
-      utils.subscriptions.list.invalidate();
-      // Invalidate tag unread counts
+      // Invalidate tag unread counts - tags have their own count computation
       utils.tags.list.invalidate();
       // Invalidate starred count as it may have changed
       utils.entries.starredCount.invalidate();
