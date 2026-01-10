@@ -190,7 +190,7 @@ buildTypes {
         buildConfigField("boolean", "LOGGING_ENABLED", "true")
     }
     release {
-        buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.fly.dev\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://lion-reader.com\"")
         buildConfigField("boolean", "LOGGING_ENABLED", "false")
     }
 }
@@ -342,12 +342,12 @@ Sentry is **disabled by default** and only activates when a valid DSN is provide
 
 #### Required Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `SENTRY_DSN` | Sentry project DSN (e.g., `https://xxx@yyy.ingest.sentry.io/zzz`) |
-| `SENTRY_AUTH_TOKEN` | Auth token for uploading source maps and ProGuard mappings |
-| `SENTRY_ORG` | Sentry organization slug |
-| `SENTRY_PROJECT` | Sentry project slug |
+| Variable            | Description                                                       |
+| ------------------- | ----------------------------------------------------------------- |
+| `SENTRY_DSN`        | Sentry project DSN (e.g., `https://xxx@yyy.ingest.sentry.io/zzz`) |
+| `SENTRY_AUTH_TOKEN` | Auth token for uploading source maps and ProGuard mappings        |
+| `SENTRY_ORG`        | Sentry organization slug                                          |
+| `SENTRY_PROJECT`    | Sentry project slug                                               |
 
 #### Getting Sentry Credentials
 

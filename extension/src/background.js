@@ -9,7 +9,7 @@
  * - Badge updates
  */
 
-const DEFAULT_SERVER_URL = "https://lion-reader.fly.dev";
+const DEFAULT_SERVER_URL = "https://lion-reader.com";
 
 /**
  * Get the configured server URL from storage.
@@ -228,6 +228,7 @@ chrome.webNavigation.onCompleted.addListener(
   {
     url: [
       { hostEquals: "lion-reader.fly.dev", pathPrefix: "/extension/callback" },
+      { hostEquals: "lion-reader.com", pathPrefix: "/extension/callback" },
       { hostEquals: "localhost", pathPrefix: "/extension/callback" },
     ],
   }
