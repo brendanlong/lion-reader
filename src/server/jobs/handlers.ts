@@ -19,7 +19,9 @@ import {
 } from "../db/schema";
 import {
   fetchFeed,
-  parseFeed,
+  parseFeedStream,
+  streamToChunks,
+  chunksToStream,
   processEntries,
   calculateNextFetch,
   renewExpiringSubscriptions,
@@ -27,6 +29,9 @@ import {
   type FetchFeedResult,
   type ParsedCacheHeaders,
   type RedirectInfo,
+  type StreamingFeedResult,
+  type ParsedEntry,
+  type ParsedFeed,
 } from "../feed";
 import {
   type JobPayloads,
@@ -153,6 +158,37 @@ function getMetricsStatus(
 }
 
 /**
+ * Collects all entries from an async generator into an array.
+ */
+async function collectEntries(
+  generator: AsyncGenerator<ParsedEntry, void, undefined>
+): Promise<ParsedEntry[]> {
+  const entries: ParsedEntry[] = [];
+  for await (const entry of generator) {
+    entries.push(entry);
+  }
+  return entries;
+}
+
+/**
+ * Converts a StreamingFeedResult to a ParsedFeed by collecting all entries.
+ */
+async function streamingResultToParsedFeed(result: StreamingFeedResult): Promise<ParsedFeed> {
+  const items = await collectEntries(result.entries);
+  return {
+    title: result.title,
+    description: result.description,
+    siteUrl: result.siteUrl,
+    iconUrl: result.iconUrl,
+    hubUrl: result.hubUrl,
+    selfUrl: result.selfUrl,
+    ttlMinutes: result.ttlMinutes,
+    syndication: result.syndication,
+    items,
+  };
+}
+
+/**
  * Processes a successful feed fetch.
  *
  * This is separated from processFetchResult to allow the raw body and parsed feed
@@ -160,7 +196,7 @@ function getMetricsStatus(
  * This reduces peak memory usage for feeds with large content.
  *
  * @param feed - The feed record from the database
- * @param body - The raw feed body (XML/JSON string)
+ * @param chunks - The raw feed body as stream chunks
  * @param cacheHeaders - Parsed cache headers from the response
  * @param bodyHash - Pre-computed SHA-256 hash of the body
  * @param redirects - The redirect chain from the fetch
@@ -169,16 +205,18 @@ function getMetricsStatus(
  */
 async function processSuccessfulFetch(
   feed: Feed,
-  body: string,
+  chunks: Uint8Array[],
   cacheHeaders: ParsedCacheHeaders,
   bodyHash: string,
   redirects: RedirectInfo[],
   now: Date
 ): Promise<JobHandlerResult> {
-  // Parse the feed content
+  // Parse the feed content using the streaming parser
   let parsedFeed;
   try {
-    parsedFeed = await parseFeed(body);
+    const stream = chunksToStream(chunks);
+    const streamResult = await parseFeedStream(stream);
+    parsedFeed = await streamingResultToParsedFeed(streamResult);
   } catch (error) {
     // Parsing failed - treat as error
     // Also clear any redirect tracking since the destination doesn't have a valid feed
@@ -307,10 +345,14 @@ async function processSuccessfulFetch(
 }
 
 /**
- * Generates a SHA-256 hash of the feed body for change detection.
+ * Generates a SHA-256 hash of the feed body chunks for change detection.
  */
-function generateBodyHash(body: string): string {
-  return createHash("sha256").update(body, "utf8").digest("hex");
+function generateBodyHash(chunks: Uint8Array[]): string {
+  const hash = createHash("sha256");
+  for (const chunk of chunks) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
 }
 
 /**
@@ -325,8 +367,11 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 
   switch (result.status) {
     case "success": {
+      // Collect the stream into chunks for hashing and parsing
+      const chunks = await streamToChunks(result.body);
+
       // Check if body is unchanged by comparing hashes
-      const bodyHash = generateBodyHash(result.body);
+      const bodyHash = generateBodyHash(chunks);
 
       if (feed.bodyHash === bodyHash) {
         // Feed body unchanged - skip parsing and entry processing
@@ -382,7 +427,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       // Process in a separate scope so large objects can be GC'd earlier
       return processSuccessfulFetch(
         feed,
-        result.body,
+        chunks,
         result.cacheHeaders,
         bodyHash,
         result.redirects,

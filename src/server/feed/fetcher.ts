@@ -41,8 +41,11 @@ export interface FetchSuccessResult {
   status: "success";
   /** HTTP status code (200) */
   statusCode: 200;
-  /** Response body content */
-  body: string;
+  /**
+   * Response body as a stream. Can only be consumed once.
+   * Use streamToBuffer() to read if you need to process multiple times.
+   */
+  body: ReadableStream<Uint8Array>;
   /** Content-Type header value */
   contentType: string;
   /** Final URL after redirects */
@@ -392,13 +395,30 @@ export async function fetchFeed(
 
       // Handle success (200)
       if (response.status === 200) {
-        const body = await response.text();
         const contentType = response.headers.get("content-type") ?? "application/xml";
+
+        // Return the body stream directly - caller must consume it
+        if (!response.body) {
+          // Edge case: empty response body
+          return {
+            status: "success",
+            statusCode: 200,
+            body: new ReadableStream({
+              start(controller) {
+                controller.close();
+              },
+            }),
+            contentType,
+            finalUrl: currentUrl,
+            cacheHeaders: parseCacheHeaders(response.headers),
+            redirects,
+          };
+        }
 
         return {
           status: "success",
           statusCode: 200,
-          body,
+          body: response.body,
           contentType,
           finalUrl: currentUrl,
           cacheHeaders: parseCacheHeaders(response.headers),
@@ -510,4 +530,46 @@ export function getRetryDelay(result: FetchFeedResult, attempt: number): number 
   const baseDelay = 30;
   const maxDelay = 480;
   return Math.min(maxDelay, baseDelay * Math.pow(2, attempt));
+}
+
+/**
+ * Reads a stream into an array of chunks.
+ * Useful when you need to process the stream multiple times (e.g., hash then parse).
+ *
+ * @param stream - The readable stream to consume
+ * @returns Array of Uint8Array chunks from the stream
+ */
+export async function streamToChunks(stream: ReadableStream<Uint8Array>): Promise<Uint8Array[]> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return chunks;
+}
+
+/**
+ * Creates a ReadableStream from an array of chunks.
+ * Useful for re-streaming previously consumed content.
+ *
+ * @param chunks - Array of Uint8Array chunks
+ * @returns A new ReadableStream that yields the chunks
+ */
+export function chunksToStream(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    },
+  });
 }

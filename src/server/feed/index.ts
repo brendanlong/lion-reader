@@ -41,6 +41,8 @@ export {
   fetchFeed,
   shouldRetry,
   getRetryDelay,
+  streamToChunks,
+  chunksToStream,
   type FetchFeedOptions,
   type FetchFeedResult,
   type FetchSuccessResult,
