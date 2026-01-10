@@ -145,6 +145,22 @@ export function useSavedArticleMutations(
 
       return { previousData };
     },
+    onSuccess: (data, variables) => {
+      // Update starred count directly if starred entries were affected
+      // Only the unread count changes - total stays the same since starred status isn't changing
+      const starredEntries = data.entries.filter((e) => e.starred);
+      if (starredEntries.length > 0) {
+        utils.entries.starredCount.setData(undefined, (old) => {
+          if (!old) return old;
+          // When marking read, decrease unread count; when marking unread, increase it
+          const delta = variables.read ? -starredEntries.length : starredEntries.length;
+          return {
+            total: old.total,
+            unread: Math.max(0, old.unread + delta),
+          };
+        });
+      }
+    },
     onError: (_error, _variables, context) => {
       // Rollback to previous state
       if (context?.previousData && listFilters) {
@@ -155,8 +171,6 @@ export function useSavedArticleMutations(
     onSettled: () => {
       // Invalidate saved articles count
       utils.entries.count.invalidate({ type: "saved" });
-      // Invalidate entries-related queries for consistency
-      utils.entries.starredCount.invalidate();
     },
   });
 
@@ -189,16 +203,22 @@ export function useSavedArticleMutations(
 
       return { previousData };
     },
+    onSuccess: (data) => {
+      // Update starred count directly - total increases by 1, unread increases if entry is unread
+      utils.entries.starredCount.setData(undefined, (old) => {
+        if (!old) return old;
+        return {
+          total: old.total + 1,
+          unread: old.unread + (data.entry.read ? 0 : 1),
+        };
+      });
+    },
     onError: (_error, _variables, context) => {
       // Rollback list
       if (context?.previousData && listFilters) {
         utils.entries.list.setInfiniteData(queryFilters, context.previousData);
       }
       toast.error("Failed to star article");
-    },
-    onSettled: () => {
-      // Invalidate starred count
-      utils.entries.starredCount.invalidate();
     },
   });
 
@@ -231,16 +251,22 @@ export function useSavedArticleMutations(
 
       return { previousData };
     },
+    onSuccess: (data) => {
+      // Update starred count directly - total decreases by 1, unread decreases if entry is unread
+      utils.entries.starredCount.setData(undefined, (old) => {
+        if (!old) return old;
+        return {
+          total: Math.max(0, old.total - 1),
+          unread: Math.max(0, old.unread - (data.entry.read ? 0 : 1)),
+        };
+      });
+    },
     onError: (_error, _variables, context) => {
       // Rollback list
       if (context?.previousData && listFilters) {
         utils.entries.list.setInfiniteData(queryFilters, context.previousData);
       }
       toast.error("Failed to unstar article");
-    },
-    onSettled: () => {
-      // Invalidate starred count
-      utils.entries.starredCount.invalidate();
     },
   });
 
