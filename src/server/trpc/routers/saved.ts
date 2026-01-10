@@ -37,6 +37,7 @@ import {
   fetchLessWrongContentFromUrl,
   type LessWrongContent,
 } from "@/server/feed/lesswrong";
+import { isArxivTransformableUrl, getArxivFetchUrl } from "@/server/feed/arxiv";
 import {
   isGoogleDocsUrl,
   fetchGoogleDocsFromUrl,
@@ -473,6 +474,32 @@ export const savedRouter = createTRPCRouter({
               error instanceof Error ? error.message : "Unknown error"
             );
           }
+        }
+      } else if (isArxivTransformableUrl(input.url)) {
+        // For ArXiv abs/pdf URLs, try to fetch the HTML version if available
+        logger.debug("Attempting ArXiv HTML version fetch", { url: input.url });
+        const arxivFetchUrl = await getArxivFetchUrl(input.url);
+
+        // arxivFetchUrl is either the HTML version (if it exists) or the abs page
+        const urlToFetch = arxivFetchUrl ?? input.url;
+        logger.debug("ArXiv fetch URL determined", {
+          originalUrl: input.url,
+          fetchUrl: urlToFetch,
+          isHtmlVersion: arxivFetchUrl?.includes("/html/") ?? false,
+        });
+
+        try {
+          html = await fetchHtmlPage(urlToFetch);
+        } catch (error) {
+          logger.warn("Failed to fetch ArXiv URL", {
+            url: urlToFetch,
+            originalUrl: input.url,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw errors.savedArticleFetchError(
+            input.url,
+            error instanceof Error ? error.message : "Unknown error"
+          );
         }
       } else {
         try {
