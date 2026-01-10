@@ -422,6 +422,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                             <li key={subscription.id} className="group relative">
                               <Link
                                 href={feedHref}
+                                prefetch={false}
                                 onClick={handleClose}
                                 onMouseDown={() => handleFeedMouseDown(feed.id)}
                                 className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
@@ -589,6 +590,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                           <li key={subscription.id} className="group relative">
                             <Link
                               href={feedHref}
+                              prefetch={false}
                               onClick={handleClose}
                               onMouseDown={() => handleFeedMouseDown(feed.id)}
                               className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
