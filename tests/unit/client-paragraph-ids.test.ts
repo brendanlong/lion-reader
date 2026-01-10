@@ -12,7 +12,8 @@ import {
   htmlToClientNarration,
   BLOCK_ELEMENTS,
 } from "../../src/lib/narration/client-paragraph-ids";
-import { BLOCK_ELEMENTS as SERVER_BLOCK_ELEMENTS } from "../../src/lib/narration/html-preprocessing";
+// html-to-narration-input.ts uses the same BLOCK_ELEMENTS for server-side processing
+import { BLOCK_ELEMENTS as SERVER_BLOCK_ELEMENTS } from "../../src/lib/narration/html-to-narration-input";
 
 describe("addParagraphIdsToHtml", () => {
   describe("basic paragraphs", () => {

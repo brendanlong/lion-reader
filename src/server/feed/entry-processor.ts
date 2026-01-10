@@ -8,13 +8,13 @@
 
 import { createHash } from "crypto";
 import { eq, and, isNull, inArray } from "drizzle-orm";
-import { Parser } from "htmlparser2";
 import { db } from "../db";
 import { entries, subscriptions, userEntries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
 import { absolutizeUrls, isLessWrongFeed, cleanLessWrongContent } from "./content-cleaner";
+import { generateSummary } from "../html/strip-html";
 import { logger } from "@/lib/logger";
 
 /**
@@ -107,134 +107,6 @@ export function deriveGuid(entry: ParsedEntry): string {
 }
 
 /**
- * Block-level HTML elements that should have spacing after them.
- * When extracting text from HTML, we add a space after these elements
- * to prevent text from running together (e.g., "Title" + "Content" -> "Title Content").
- */
-const BLOCK_ELEMENTS = new Set([
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "p",
-  "div",
-  "article",
-  "section",
-  "header",
-  "footer",
-  "main",
-  "aside",
-  "nav",
-  "li",
-  "ul",
-  "ol",
-  "blockquote",
-  "pre",
-  "table",
-  "tr",
-  "th",
-  "td",
-  "hr",
-  "br",
-  "figure",
-  "figcaption",
-]);
-
-/**
- * Extracts text from HTML with proper spacing between block elements.
- *
- * Uses htmlparser2 for streaming SAX-style parsing, which is fast and handles
- * malformed HTML well. Adds spaces after block-level elements to prevent
- * headings and paragraphs from running together.
- *
- * @param html - The HTML content to extract text from
- * @param maxLength - Maximum characters to extract
- * @returns Plain text with proper spacing, truncated at word boundary with ellipsis if needed
- */
-export function extractTextFromHtml(html: string, maxLength: number): string {
-  let result = "";
-  let lastWasSpace = true; // Start true to avoid leading spaces
-  let skipDepth = 0; // Track depth inside script/style tags
-
-  const parser = new Parser(
-    {
-      onopentagname(name) {
-        if (name === "script" || name === "style") {
-          skipDepth++;
-        }
-        // br/hr are void elements - add space on open
-        if ((name === "br" || name === "hr") && !lastWasSpace) {
-          result += " ";
-          lastWasSpace = true;
-        }
-      },
-      ontext(text) {
-        if (skipDepth > 0) return;
-        // Normalize whitespace and append character by character with deduplication
-        const normalized = text.replace(/\s+/g, " ");
-        for (const char of normalized) {
-          if (char === " ") {
-            if (!lastWasSpace && result.length > 0) {
-              result += " ";
-              lastWasSpace = true;
-            }
-          } else {
-            result += char;
-            lastWasSpace = false;
-          }
-        }
-      },
-      onclosetag(name) {
-        if (name === "script" || name === "style") {
-          skipDepth--;
-        }
-        if (BLOCK_ELEMENTS.has(name) && !lastWasSpace) {
-          result += " ";
-          lastWasSpace = true;
-        }
-      },
-    },
-    { decodeEntities: true }
-  );
-
-  parser.write(html);
-  parser.end();
-
-  const trimmed = result.trim();
-
-  // If within limit, return as-is
-  if (trimmed.length <= maxLength) {
-    return trimmed;
-  }
-
-  // Truncate at word boundary: find last space before maxLength, drop partial word
-  const truncateAt = maxLength - 3; // Reserve space for "..."
-  const lastSpace = trimmed.lastIndexOf(" ", truncateAt);
-
-  if (lastSpace > 0) {
-    return trimmed.slice(0, lastSpace) + "...";
-  }
-
-  // No space found - single long word, just hard truncate
-  return trimmed.slice(0, truncateAt) + "...";
-}
-
-/**
- * Generates a summary from raw HTML content.
- *
- * Extracts text with proper spacing between block elements and truncates
- * to 300 characters at a word boundary.
- *
- * @param html - The HTML content to summarize
- * @returns Summary string
- */
-function generateSummaryFromHtml(html: string): string {
-  return extractTextFromHtml(html, 300);
-}
-
-/**
  * Generates a summary from entry content.
  *
  * Prefers the feed-provided summary (from <description> or <summary> elements)
@@ -246,10 +118,10 @@ function generateSummaryFromHtml(html: string): string {
  * @param entry - The parsed entry
  * @returns Summary string
  */
-export function generateSummary(entry: ParsedEntry): string {
+export function generateEntrySummary(entry: ParsedEntry): string {
   // Prefer explicit summary from feed, fall back to content
   const source = entry.summary ?? entry.content ?? "";
-  return generateSummaryFromHtml(source);
+  return generateSummary(source);
 }
 
 /**
@@ -329,8 +201,8 @@ export function cleanEntryContent(
   const { content: entryContent, summary: entrySummary } = parsedEntry;
   const hasSeparateSummary = entryContent && entrySummary && entryContent !== entrySummary;
   const summary = hasSeparateSummary
-    ? generateSummaryFromHtml(entrySummary)
-    : generateSummaryFromHtml(contentForSummary);
+    ? generateSummary(entrySummary)
+    : generateSummary(contentForSummary);
 
   return {
     contentOriginal: absolutizedOriginal,

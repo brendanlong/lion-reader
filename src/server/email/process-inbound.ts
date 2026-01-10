@@ -7,8 +7,8 @@
 
 import { createHash } from "crypto";
 import { eq, and } from "drizzle-orm";
-import { JSDOM } from "jsdom";
 import { db } from "../db";
+import { generateSummary } from "../html/strip-html";
 import {
   feeds,
   entries,
@@ -190,46 +190,6 @@ export function parseListUnsubscribeHttps(header: string | undefined): string | 
 export function generateEmailContentHash(subject: string, content: string): string {
   const hashInput = `${subject}\n${content}`;
   return createHash("sha256").update(hashInput, "utf8").digest("hex");
-}
-
-/**
- * Strips HTML tags from a string using JSDOM.
- *
- * @param html - HTML string to strip
- * @returns Plain text string
- */
-function stripHtml(html: string): string {
-  if (!html) {
-    return "";
-  }
-  const dom = new JSDOM(html);
-  return dom.window.document.body.textContent?.trim() || "";
-}
-
-/**
- * Truncates a string to a maximum length, adding ellipsis if needed.
- *
- * @param text - Text to truncate
- * @param maxLength - Maximum length
- * @returns Truncated string
- */
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) {
-    return text;
-  }
-  return text.slice(0, maxLength - 3) + "...";
-}
-
-/**
- * Generates a summary from email content.
- * Strips HTML and truncates to 300 characters.
- *
- * @param content - HTML or text content
- * @returns Summary string
- */
-function generateSummary(content: string): string {
-  const stripped = stripHtml(content);
-  return truncate(stripped, 300);
 }
 
 // ============================================================================

@@ -12,7 +12,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   generateContentHash,
   deriveGuid,
-  generateSummary,
+  generateEntrySummary,
   findEntryByGuid,
   createEntry,
   updateEntryContent,
@@ -151,13 +151,13 @@ describe("Entry Processor", () => {
     });
   });
 
-  describe("generateSummary", () => {
+  describe("generateEntrySummary", () => {
     it("strips HTML tags", () => {
       const entry: ParsedEntry = {
         content: "<p>This is <strong>bold</strong> text.</p>",
       };
 
-      expect(generateSummary(entry)).toBe("This is bold text.");
+      expect(generateEntrySummary(entry)).toBe("This is bold text.");
     });
 
     it("removes style tags and their content", () => {
@@ -165,7 +165,7 @@ describe("Entry Processor", () => {
         content: "<style>#content img { max-width: 100% }</style><p>Actual content here.</p>",
       };
 
-      expect(generateSummary(entry)).toBe("Actual content here.");
+      expect(generateEntrySummary(entry)).toBe("Actual content here.");
     });
 
     it("removes script tags and their content", () => {
@@ -174,7 +174,7 @@ describe("Entry Processor", () => {
           '<script>alert("bad")</script><p>Visible text.</p><script type="text/javascript">more code</script>',
       };
 
-      expect(generateSummary(entry)).toBe("Visible text.");
+      expect(generateEntrySummary(entry)).toBe("Visible text.");
     });
 
     it("truncates long content to 300 characters", () => {
@@ -183,7 +183,7 @@ describe("Entry Processor", () => {
         content: longContent,
       };
 
-      const summary = generateSummary(entry);
+      const summary = generateEntrySummary(entry);
       expect(summary).toHaveLength(300);
       expect(summary.endsWith("...")).toBe(true);
     });
@@ -193,7 +193,7 @@ describe("Entry Processor", () => {
         summary: "This is the summary.",
       };
 
-      expect(generateSummary(entry)).toBe("This is the summary.");
+      expect(generateEntrySummary(entry)).toBe("This is the summary.");
     });
   });
 

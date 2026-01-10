@@ -61,7 +61,7 @@ export {
 export {
   generateContentHash,
   deriveGuid,
-  generateSummary,
+  generateEntrySummary,
   cleanEntryContent,
   findEntryByGuid,
   createEntry,
