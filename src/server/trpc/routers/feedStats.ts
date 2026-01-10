@@ -25,7 +25,6 @@ const feedStatsOutputSchema = z.object({
   customTitle: z.string().nullable(),
   url: z.string().nullable(),
   siteUrl: z.string().nullable(),
-  type: z.enum(["web", "email", "saved"]),
   lastFetchedAt: z.date().nullable(),
   lastEntriesUpdatedAt: z.date().nullable(),
   nextFetchAt: z.date().nullable(),
@@ -66,7 +65,7 @@ export const feedStatsRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
-      // Get all feeds the user is subscribed to with their stats
+      // Get all web feeds the user is subscribed to with their stats
       const feedStats = await ctx.db
         .select({
           feedId: feeds.id,
@@ -75,7 +74,6 @@ export const feedStatsRouter = createTRPCRouter({
           customTitle: subscriptions.customTitle,
           url: feeds.url,
           siteUrl: feeds.siteUrl,
-          type: feeds.type,
           lastFetchedAt: feeds.lastFetchedAt,
           lastEntriesUpdatedAt: feeds.lastEntriesUpdatedAt,
           nextFetchAt: feeds.nextFetchAt,
@@ -86,7 +84,13 @@ export const feedStatsRouter = createTRPCRouter({
         })
         .from(feeds)
         .innerJoin(subscriptions, eq(subscriptions.feedId, feeds.id))
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)))
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            isNull(subscriptions.unsubscribedAt),
+            eq(feeds.type, "web")
+          )
+        )
         .orderBy(sql`COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) ASC`);
 
       return {
@@ -97,7 +101,6 @@ export const feedStatsRouter = createTRPCRouter({
           customTitle: feed.customTitle,
           url: feed.url,
           siteUrl: feed.siteUrl,
-          type: feed.type,
           lastFetchedAt: feed.lastFetchedAt,
           lastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
           nextFetchAt: feed.nextFetchAt,
