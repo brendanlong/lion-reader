@@ -109,21 +109,15 @@ export const blockedSendersRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Verify the blocked sender exists and belongs to the user
-      const existingSender = await ctx.db
-        .select()
-        .from(blockedSenders)
+      // Delete directly - RETURNING verifies it existed and belonged to user
+      const deleted = await ctx.db
+        .delete(blockedSenders)
         .where(and(eq(blockedSenders.id, input.id), eq(blockedSenders.userId, userId)))
-        .limit(1);
+        .returning({ id: blockedSenders.id });
 
-      if (existingSender.length === 0) {
+      if (deleted.length === 0) {
         throw errors.blockedSenderNotFound();
       }
-
-      // Delete the blocked sender record
-      await ctx.db
-        .delete(blockedSenders)
-        .where(and(eq(blockedSenders.id, input.id), eq(blockedSenders.userId, userId)));
 
       return { success: true };
     }),

@@ -116,6 +116,36 @@ tests/
 - Use `deleted_at` or `unsubscribed_at` patterns, not hard deletes
 - Always filter these out in queries: `WHERE deleted_at IS NULL`
 
+### Upsert Pattern ("Just Do It")
+
+Default to attempting operations directly rather than checking state first:
+
+```typescript
+// GOOD: Just attempt the insert, handle conflict
+await db.insert(tags).values({ ... }).onConflictDoNothing();
+
+// GOOD: Delete with RETURNING to check if row existed
+const deleted = await db.delete(tags).where(...).returning({ id: tags.id });
+if (deleted.length === 0) throw errors.tagNotFound();
+
+// BAD: Check-then-act (race conditions, extra round trip)
+const existing = await db.select().from(tags).where(...);
+if (existing.length > 0) throw errors.alreadyExists();
+await db.insert(tags).values({ ... });
+```
+
+**Use this pattern when:**
+
+- Creating records (INSERT ON CONFLICT DO NOTHING/UPDATE)
+- Deleting records (DELETE ... RETURNING to verify existence)
+- Updating records (UPDATE ... RETURNING to verify existence)
+
+**Skip this pattern when:**
+
+- Business logic requires inspecting the current state (e.g., soft-delete reactivation where you need to check `unsubscribedAt` value)
+- The upsert would make the query significantly more complex
+- You need to return different errors based on the current state
+
 ### Migrations
 
 - **Write SQL migrations manually** in `drizzle/` folder - we don't use `drizzle-kit generate`

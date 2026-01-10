@@ -177,37 +177,40 @@ export const tagsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Check if a tag with this name already exists for this user
-      const existingTag = await ctx.db
-        .select()
-        .from(tags)
-        .where(and(eq(tags.userId, userId), eq(tags.name, input.name)))
-        .limit(1);
-
-      if (existingTag.length > 0) {
-        throw errors.validation("A tag with this name already exists");
-      }
-
-      // Create the tag
+      // Attempt to create the tag - ON CONFLICT handles duplicates
       const tagId = generateUuidv7();
       const now = new Date();
 
-      await ctx.db.insert(tags).values({
-        id: tagId,
-        userId,
-        name: input.name,
-        color: input.color ?? null,
-        createdAt: now,
-      });
+      const result = await ctx.db
+        .insert(tags)
+        .values({
+          id: tagId,
+          userId,
+          name: input.name,
+          color: input.color ?? null,
+          createdAt: now,
+        })
+        .onConflictDoNothing()
+        .returning({
+          id: tags.id,
+          name: tags.name,
+          color: tags.color,
+          createdAt: tags.createdAt,
+        });
+
+      // If no row returned, tag with this name already exists
+      if (result.length === 0) {
+        throw errors.validation("A tag with this name already exists");
+      }
 
       return {
         tag: {
-          id: tagId,
-          name: input.name,
-          color: input.color ?? null,
+          id: result[0].id,
+          name: result[0].name,
+          color: result[0].color,
           feedCount: 0,
           unreadCount: 0,
-          createdAt: now,
+          createdAt: result[0].createdAt,
         },
       };
     }),
@@ -367,19 +370,16 @@ export const tagsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Verify the tag exists and belongs to the user
-      const existingTag = await ctx.db
-        .select()
-        .from(tags)
+      // Delete the tag directly - RETURNING verifies it existed and belonged to user
+      // (subscription_tags will cascade)
+      const deleted = await ctx.db
+        .delete(tags)
         .where(and(eq(tags.id, input.id), eq(tags.userId, userId)))
-        .limit(1);
+        .returning({ id: tags.id });
 
-      if (existingTag.length === 0) {
+      if (deleted.length === 0) {
         throw errors.tagNotFound();
       }
-
-      // Delete the tag (subscription_tags will cascade)
-      await ctx.db.delete(tags).where(eq(tags.id, input.id));
 
       return { success: true };
     }),
