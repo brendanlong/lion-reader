@@ -7,9 +7,9 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
-import { entries, subscriptions, userEntries, type Entry, type NewEntry } from "../db/schema";
+import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
@@ -515,37 +515,43 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
     return;
   }
 
-  // Get all active subscriptions for this feed with their user IDs
-  const activeSubscriptions = await db
-    .select({ userId: subscriptions.userId })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.feedId, feedId), isNull(subscriptions.unsubscribedAt)));
+  // Format entry IDs as PostgreSQL array literal because node-postgres
+  // doesn't auto-convert JS arrays to pg arrays in raw SQL.
+  const entryIdsArray = `{${entryIds.join(",")}}`;
 
-  if (activeSubscriptions.length === 0) {
-    return;
-  }
-
-  // Build all (user_id, entry_id) pairs
-  const pairs: { userId: string; entryId: string }[] = [];
-  for (const sub of activeSubscriptions) {
-    for (const entryId of entryIds) {
-      pairs.push({ userId: sub.userId, entryId });
-    }
-  }
-
-  // Bulk insert with ON CONFLICT DO NOTHING
-  // Process in batches to avoid hitting query limits
-  const BATCH_SIZE = 1000;
-  for (let i = 0; i < pairs.length; i += BATCH_SIZE) {
-    const batch = pairs.slice(i, i + BATCH_SIZE);
-    await db.insert(userEntries).values(batch).onConflictDoNothing();
-  }
+  // Single INSERT...SELECT query that:
+  // 1. Joins subscriptions with entries for the given feed to get all (user, entry) pairs
+  // 2. Excludes pairs where the user already has a user_entry for an entry
+  //    with the same GUID from one of their previous feeds (redirect deduplication)
+  // 3. Uses ON CONFLICT DO NOTHING for idempotency
+  // We use db.execute() with raw SQL because Drizzle's INSERT...SELECT always
+  // generates column lists for all table columns. Since we only want to insert
+  // (user_id, entry_id) and let other columns use defaults, we need raw SQL
+  // to specify just those columns.
+  // https://github.com/drizzle-team/drizzle-orm/issues/3608
+  const result = await db.execute(sql`
+      INSERT INTO user_entries (user_id, entry_id)
+      SELECT s.user_id, e.id
+      FROM subscriptions s
+      INNER JOIN entries e ON e.feed_id = s.feed_id
+      WHERE s.feed_id = ${feedId}::uuid
+        AND s.unsubscribed_at IS NULL
+        AND e.id = ANY(${entryIdsArray}::uuid[])
+        AND NOT EXISTS (
+          SELECT 1
+          FROM user_entries ue_existing
+          JOIN entries e_prev ON ue_existing.entry_id = e_prev.id
+          WHERE ue_existing.user_id = s.user_id
+            AND e_prev.feed_id = ANY(s.previous_feed_ids)
+            AND e_prev.guid = e.guid
+        )
+      ON CONFLICT DO NOTHING
+    `);
 
   logger.debug("Created user entries for feed", {
     feedId,
     entryCount: entryIds.length,
-    userCount: activeSubscriptions.length,
-    totalPairs: pairs.length,
+    rowsInserted: result.rowCount,
   });
 }
 
