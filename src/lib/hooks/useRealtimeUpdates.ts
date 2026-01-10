@@ -567,8 +567,29 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         );
 
         if (stillInCache) {
-          utils.subscriptions.list.invalidate();
+          // Optimistically remove the subscription from the list
+          utils.subscriptions.list.setData(undefined, (oldData) => {
+            if (!oldData) return oldData;
+            return {
+              ...oldData,
+              items: oldData.items.filter((item) => item.subscription.id !== data.subscriptionId),
+            };
+          });
+
+          // Optimistically clear entries for this feed to prevent refetch errors
+          // when viewing the deleted feed's entries
+          utils.entries.list.setInfiniteData({ feedId: data.feedId }, (oldData) => {
+            if (!oldData) return oldData;
+            return {
+              ...oldData,
+              pages: [{ items: [], nextCursor: undefined }],
+              pageParams: oldData.pageParams.slice(0, 1),
+            };
+          });
+
+          // Invalidate to update other views (all entries, tags, etc.)
           utils.entries.list.invalidate();
+          utils.tags.list.invalidate();
         }
       } else if (data.type === "saved_article_created") {
         utils.entries.list.invalidate({ type: "saved" });

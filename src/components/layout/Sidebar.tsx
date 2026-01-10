@@ -47,9 +47,21 @@ export function Sidebar({ onClose }: SidebarProps) {
 
       // Cancel in-flight queries to prevent race conditions
       await utils.subscriptions.list.cancel();
+      await utils.entries.list.cancel();
 
       // Snapshot current state for rollback
-      const previousData = utils.subscriptions.list.getData();
+      const previousSubscriptionsData = utils.subscriptions.list.getData();
+
+      // Find the feedId for this subscription before removing it
+      const subscription = previousSubscriptionsData?.items.find(
+        (item) => item.subscription.id === variables.id
+      );
+      const feedId = subscription?.feed.id;
+
+      // Snapshot entries data for the specific feedId for rollback
+      const previousEntriesData = feedId
+        ? utils.entries.list.getInfiniteData({ feedId })
+        : undefined;
 
       // Optimistically remove the subscription from the list
       utils.subscriptions.list.setData(undefined, (oldData) => {
@@ -60,23 +72,40 @@ export function Sidebar({ onClose }: SidebarProps) {
         };
       });
 
-      return { previousData };
+      // Optimistically clear entries for this feed
+      // This prevents errors when viewing the deleted feed's entries
+      if (feedId) {
+        utils.entries.list.setInfiniteData({ feedId }, (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            pages: [{ items: [], nextCursor: undefined }],
+            pageParams: oldData.pageParams.slice(0, 1),
+          };
+        });
+      }
+
+      return { previousSubscriptionsData, previousEntriesData, feedId };
     },
     onError: (_error, _variables, context) => {
       // Rollback on error
-      if (context?.previousData) {
-        utils.subscriptions.list.setData(undefined, context.previousData);
+      if (context?.previousSubscriptionsData) {
+        utils.subscriptions.list.setData(undefined, context.previousSubscriptionsData);
+      }
+      if (context?.previousEntriesData && context?.feedId) {
+        utils.entries.list.setInfiniteData({ feedId: context.feedId }, context.previousEntriesData);
       }
       toast.error("Failed to unsubscribe from feed");
     },
     onSettled: (_data, error) => {
-      // Only invalidate on error since optimistic update handles the success case
+      // Only invalidate subscriptions on error since optimistic update handles the success case
       // The SSE handler will also skip invalidation since the subscription is already removed
       if (error) {
         utils.subscriptions.list.invalidate();
       }
-      // Invalidate entries and tags to update counts (entries from unsubscribed feed
-      // are filtered out by the query, tags need updated unread counts)
+      // Invalidate entries and tags to update counts
+      // The deleted feed's entries were already cleared in onMutate, so even though this
+      // invalidation triggers a refetch, the optimistic empty state prevents errors
       utils.entries.list.invalidate();
       utils.tags.list.invalidate();
     },
