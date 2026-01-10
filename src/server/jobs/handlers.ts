@@ -47,6 +47,20 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { isLessWrongUserFeedUrl } from "../feed/lesswrong";
 
 /**
+ * Current version of the feed fetching and parsing logic.
+ * When this version is higher than a feed's stored fetch_version, we skip
+ * etag/body hash caching and refetch/reparse the feed from scratch.
+ *
+ * Increment this when making improvements to the RSS parser or content cleaning
+ * pipeline that require re-processing existing feeds.
+ *
+ * History:
+ * - v1: Initial version (all existing feeds start here)
+ * - v2: Force refetch to apply improved parser/cleaning
+ */
+export const CURRENT_FETCH_VERSION = 2;
+
+/**
  * Result of a job handler execution.
  */
 export interface JobHandlerResult {
@@ -105,15 +119,19 @@ export async function handleFetchFeed(
     };
   }
 
+  // Check if we need to bypass caching due to fetch version upgrade
+  const needsVersionUpgrade = feed.fetchVersion < CURRENT_FETCH_VERSION;
+
   // Fetch the feed with conditional GET headers
+  // Skip etag/lastModified if fetch version is outdated to force a full refetch
   const fetchResult = await fetchFeed(feed.url, {
-    etag: feed.etag ?? undefined,
-    lastModified: feed.lastModifiedHeader ?? undefined,
+    etag: needsVersionUpgrade ? undefined : (feed.etag ?? undefined),
+    lastModified: needsVersionUpgrade ? undefined : (feed.lastModifiedHeader ?? undefined),
     feedId,
   });
 
   // Process the result based on status
-  const handlerResult = await processFetchResult(feed, fetchResult);
+  const handlerResult = await processFetchResult(feed, fetchResult, { needsVersionUpgrade });
 
   // Map handler result to metrics status
   const metricsStatus: FeedFetchStatus = getMetricsStatus(fetchResult, handlerResult);
@@ -286,6 +304,7 @@ async function processSuccessfulFetch(
       etag: cacheHeaders.etag ?? feed.etag,
       lastModifiedHeader: cacheHeaders.lastModified ?? feed.lastModifiedHeader,
       bodyHash,
+      fetchVersion: CURRENT_FETCH_VERSION,
       lastFetchedAt: now,
       lastEntriesUpdatedAt,
       nextFetchAt: nextFetch.nextFetchAt,
@@ -320,24 +339,36 @@ function generateBodyHash(body: Buffer): string {
 }
 
 /**
+ * Options for processing a fetch result.
+ */
+interface ProcessFetchResultOptions {
+  /** Whether the feed needs a version upgrade (skip body hash check) */
+  needsVersionUpgrade?: boolean;
+}
+
+/**
  * Processes the fetch result and updates the feed accordingly.
  *
  * @param feed - The feed record from the database
  * @param result - The fetch result
+ * @param options - Processing options
  * @returns Job handler result with next run time
  */
 export async function processFetchResult(
   feed: Feed,
-  result: FetchFeedResult
+  result: FetchFeedResult,
+  options: ProcessFetchResultOptions = {}
 ): Promise<JobHandlerResult> {
   const now = new Date();
+  const { needsVersionUpgrade = false } = options;
 
   switch (result.status) {
     case "success": {
       // Check if body is unchanged by comparing hashes
+      // Skip this optimization if we need a version upgrade (force reparse)
       const bodyHash = generateBodyHash(result.body);
 
-      if (feed.bodyHash === bodyHash) {
+      if (!needsVersionUpgrade && feed.bodyHash === bodyHash) {
         // Feed body unchanged - skip parsing and entry processing
         // But still check for permanent redirects (we know the content was valid before)
         const permanentRedirectUrl = feed.url

@@ -212,6 +212,33 @@ The User-Agent includes app version, git commit SHA, website URL, GitHub repo, a
 - Set reasonable `max_attempts` (usually 3)
 - Use exponential backoff for retries
 
+## Feed Fetch Versioning
+
+When making improvements to the RSS parser or content cleaning pipeline that affect how entries are processed, you need to force all feeds to be refetched and reparsed. This is done via the `CURRENT_FETCH_VERSION` constant in `src/server/jobs/handlers.ts`.
+
+### How it works
+
+1. Each feed has a `fetch_version` column tracking which version of the parser processed it
+2. When `feed.fetchVersion < CURRENT_FETCH_VERSION`, the feed job:
+   - Skips sending ETag/Last-Modified headers (forces full HTTP fetch)
+   - Skips the body hash comparison (forces reparse even if content unchanged)
+3. After successful processing, the feed's `fetch_version` is updated to `CURRENT_FETCH_VERSION`
+
+### When to increment
+
+Increment `CURRENT_FETCH_VERSION` when you:
+
+- Fix bugs in the RSS/Atom parser that affect content extraction
+- Improve the content cleaning/readability pipeline
+- Change how entries are processed or stored
+- Fix issues with date parsing, author extraction, etc.
+
+### How to increment
+
+1. Update the `CURRENT_FETCH_VERSION` constant in `src/server/jobs/handlers.ts`
+2. Add a comment to the version history documenting what changed
+3. The next scheduled fetch for each feed will automatically refetch without cache
+
 ## Performance Guidelines
 
 - Avoid N+1 queries - use joins or batch fetching

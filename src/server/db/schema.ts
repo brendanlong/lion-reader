@@ -192,6 +192,7 @@ export const feeds = pgTable(
     etag: text("etag"),
     lastModifiedHeader: text("last_modified_header"),
     bodyHash: text("body_hash"), // SHA-256 hash of raw feed body for change detection
+    fetchVersion: integer("fetch_version").notNull().default(1), // Version of fetch/parse logic; bump to refetch all feeds
     lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
     // Timestamp when entries last changed (new, updated, or removed from feed)
     // This matches entries.lastSeenAt for entries currently in the feed
