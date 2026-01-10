@@ -189,7 +189,7 @@ describe("detectFeedType", () => {
 
 describe("parseFeed", () => {
   describe("auto-detection and parsing", () => {
-    it("parses RSS 2.0 feed automatically", async () => {
+    it("parses RSS 2.0 feed automatically", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <rss version="2.0">
           <channel>
@@ -203,7 +203,7 @@ describe("parseFeed", () => {
           </channel>
         </rss>`;
 
-      const feed = await parseFeed(xml);
+      const feed = parseFeed(xml);
 
       expect(feed.title).toBe("RSS Feed");
       expect(feed.siteUrl).toBe("https://example.com");
@@ -212,7 +212,7 @@ describe("parseFeed", () => {
       expect(feed.items[0].title).toBe("RSS Post");
     });
 
-    it("parses Atom 1.0 feed automatically", async () => {
+    it("parses Atom 1.0 feed automatically", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <title>Atom Feed</title>
@@ -228,7 +228,7 @@ describe("parseFeed", () => {
           </entry>
         </feed>`;
 
-      const feed = await parseFeed(xml);
+      const feed = parseFeed(xml);
 
       expect(feed.title).toBe("Atom Feed");
       expect(feed.siteUrl).toBe("https://example.com");
@@ -237,7 +237,7 @@ describe("parseFeed", () => {
       expect(feed.items[0].title).toBe("Atom Post");
     });
 
-    it("parses JSON Feed 1.1 automatically", async () => {
+    it("parses JSON Feed 1.1 automatically", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
         title: "JSON Feed",
@@ -252,7 +252,7 @@ describe("parseFeed", () => {
         ],
       });
 
-      const feed = await parseFeed(json);
+      const feed = parseFeed(json);
 
       expect(feed.title).toBe("JSON Feed");
       expect(feed.siteUrl).toBe("https://example.com");
@@ -261,20 +261,20 @@ describe("parseFeed", () => {
       expect(feed.items[0].title).toBe("JSON Post");
     });
 
-    it("throws UnknownFeedFormatError for unknown format", async () => {
+    it("throws UnknownFeedFormatError for unknown format", () => {
       const html = `<!DOCTYPE html>
         <html>
           <head><title>Not a feed</title></head>
           <body></body>
         </html>`;
 
-      await expect(parseFeed(html)).rejects.toThrow(UnknownFeedFormatError);
-      await expect(parseFeed(html)).rejects.toThrow("Unknown feed format");
+      expect(() => parseFeed(html)).toThrow(UnknownFeedFormatError);
+      expect(() => parseFeed(html)).toThrow("Unknown feed format");
     });
   });
 
   describe("unified output format", () => {
-    it("produces consistent output for RSS, Atom, and JSON feeds", async () => {
+    it("produces consistent output for RSS, Atom, and JSON feeds", () => {
       const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
         <rss version="2.0">
           <channel>
@@ -321,9 +321,9 @@ describe("parseFeed", () => {
         ],
       });
 
-      const rssFeed = await parseFeed(rssXml);
-      const atomFeed = await parseFeed(atomXml);
-      const jsonParsed = await parseFeed(jsonFeed);
+      const rssFeed = parseFeed(rssXml);
+      const atomFeed = parseFeed(atomXml);
+      const jsonParsed = parseFeed(jsonFeed);
 
       // All should have same structure
       expect(rssFeed.title).toBe(atomFeed.title);
@@ -347,7 +347,7 @@ describe("parseFeed", () => {
 });
 
 describe("parseFeedWithFormat", () => {
-  it("parses RSS feed with explicit format", async () => {
+  it("parses RSS feed with explicit format", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
       <rss version="2.0">
         <channel>
@@ -355,12 +355,12 @@ describe("parseFeedWithFormat", () => {
         </channel>
       </rss>`;
 
-    const feed = await parseFeedWithFormat(xml, "rss");
+    const feed = parseFeedWithFormat(xml, "rss");
 
     expect(feed.title).toBe("RSS Feed");
   });
 
-  it("parses Atom feed with explicit format", async () => {
+  it("parses Atom feed with explicit format", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
       <feed xmlns="http://www.w3.org/2005/Atom">
         <title>Atom Feed</title>
@@ -368,35 +368,35 @@ describe("parseFeedWithFormat", () => {
         <updated>2024-01-01T00:00:00Z</updated>
       </feed>`;
 
-    const feed = await parseFeedWithFormat(xml, "atom");
+    const feed = parseFeedWithFormat(xml, "atom");
 
     expect(feed.title).toBe("Atom Feed");
   });
 
-  it("parses JSON Feed with explicit format", async () => {
+  it("parses JSON Feed with explicit format", () => {
     const json = JSON.stringify({
       version: "https://jsonfeed.org/version/1.1",
       title: "JSON Feed",
       items: [],
     });
 
-    const feed = await parseFeedWithFormat(json, "json");
+    const feed = parseFeedWithFormat(json, "json");
 
     expect(feed.title).toBe("JSON Feed");
   });
 
-  it("returns empty result when parsing Atom as RSS", async () => {
+  it("returns empty result when parsing Atom as RSS", () => {
     const atomXml = `<?xml version="1.0" encoding="UTF-8"?>
       <feed xmlns="http://www.w3.org/2005/Atom">
         <title>Atom Feed</title>
       </feed>`;
 
     // Streaming parser is lenient and returns empty result for mismatched format
-    const feed = await parseFeedWithFormat(atomXml, "rss");
+    const feed = parseFeedWithFormat(atomXml, "rss");
     expect(feed.items).toHaveLength(0);
   });
 
-  it("returns empty result when parsing RSS as Atom", async () => {
+  it("returns empty result when parsing RSS as Atom", () => {
     const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
       <rss version="2.0">
         <channel>
@@ -405,11 +405,11 @@ describe("parseFeedWithFormat", () => {
       </rss>`;
 
     // Streaming parser is lenient and returns empty result for mismatched format
-    const feed = await parseFeedWithFormat(rssXml, "atom");
+    const feed = parseFeedWithFormat(rssXml, "atom");
     expect(feed.items).toHaveLength(0);
   });
 
-  it("throws when format doesn't match content (JSON)", async () => {
+  it("throws when format doesn't match content (JSON)", () => {
     const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
       <rss version="2.0">
         <channel>
@@ -418,7 +418,7 @@ describe("parseFeedWithFormat", () => {
       </rss>`;
 
     // Trying to parse RSS as JSON should fail
-    await expect(parseFeedWithFormat(rssXml, "json")).rejects.toThrow();
+    expect(() => parseFeedWithFormat(rssXml, "json")).toThrow();
   });
 });
 

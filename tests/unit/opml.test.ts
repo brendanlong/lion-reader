@@ -13,7 +13,7 @@ import {
 
 describe("parseOpml", () => {
   describe("basic OPML parsing", () => {
-    it("parses a simple OPML with flat feeds", async () => {
+    it("parses a simple OPML with flat feeds", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head>
@@ -25,7 +25,7 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(2);
       expect(feeds[0]).toEqual({
@@ -39,7 +39,7 @@ describe("parseOpml", () => {
       });
     });
 
-    it("parses OPML with title attribute instead of text", async () => {
+    it("parses OPML with title attribute instead of text", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="1.0">
           <head><title>Feeds</title></head>
@@ -48,13 +48,13 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].title).toBe("Blog Title");
     });
 
-    it("prefers text attribute over title when both present", async () => {
+    it("prefers text attribute over title when both present", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Feeds</title></head>
@@ -63,12 +63,12 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds[0].title).toBe("Text Value");
     });
 
-    it("handles feeds without type attribute", async () => {
+    it("handles feeds without type attribute", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Feeds</title></head>
@@ -77,7 +77,7 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].xmlUrl).toBe("https://example.com/feed");
@@ -85,7 +85,7 @@ describe("parseOpml", () => {
   });
 
   describe("nested folders/categories", () => {
-    it("parses single-level nested folders", async () => {
+    it("parses single-level nested folders", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Feeds</title></head>
@@ -98,7 +98,7 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(3);
       expect(feeds[0]).toEqual({
@@ -117,7 +117,7 @@ describe("parseOpml", () => {
       });
     });
 
-    it("parses deeply nested folders", async () => {
+    it("parses deeply nested folders", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Feeds</title></head>
@@ -132,13 +132,13 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].category).toEqual(["Technology", "Programming", "JavaScript"]);
     });
 
-    it("handles multiple folders at the same level", async () => {
+    it("handles multiple folders at the same level", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Feeds</title></head>
@@ -152,14 +152,14 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(2);
       expect(feeds[0].category).toEqual(["News"]);
       expect(feeds[1].category).toEqual(["Sports"]);
     });
 
-    it("handles category attribute on feed outline", async () => {
+    it("handles category attribute on feed outline", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Feeds</title></head>
@@ -168,12 +168,12 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds[0].category).toEqual(["Tech"]);
     });
 
-    it("handles slash-separated category paths in attribute", async () => {
+    it("handles slash-separated category paths in attribute", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Feeds</title></head>
@@ -182,12 +182,12 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds[0].category).toEqual(["Tech", "Programming"]);
     });
 
-    it("prefers folder nesting over category attribute", async () => {
+    it("prefers folder nesting over category attribute", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Feeds</title></head>
@@ -198,26 +198,26 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds[0].category).toEqual(["Folder"]);
     });
   });
 
   describe("edge cases", () => {
-    it("returns empty array for OPML with no feeds", async () => {
+    it("returns empty array for OPML with no feeds", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Empty</title></head>
           <body></body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(0);
     });
 
-    it("returns empty array for OPML with only empty folders", async () => {
+    it("returns empty array for OPML with only empty folders", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Empty Folders</title></head>
@@ -226,12 +226,12 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(0);
     });
 
-    it("handles OPML with single outline (not array)", async () => {
+    it("handles OPML with single outline (not array)", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Single</title></head>
@@ -240,12 +240,12 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(1);
     });
 
-    it("ignores outlines without xmlUrl that are not folders", async () => {
+    it("ignores outlines without xmlUrl that are not folders", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>Mixed</title></head>
@@ -256,13 +256,13 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].title).toBe("Valid Feed");
     });
 
-    it("handles feeds with missing title", async () => {
+    it("handles feeds with missing title", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>No Title</title></head>
@@ -271,14 +271,14 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].title).toBeUndefined();
       expect(feeds[0].xmlUrl).toBe("https://example.com/feed");
     });
 
-    it("handles CDATA in text content", async () => {
+    it("handles CDATA in text content", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title><![CDATA[My Feeds]]></title></head>
@@ -287,40 +287,40 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds[0].title).toBe("Blog & News");
     });
   });
 
   describe("error handling", () => {
-    it("throws OpmlParseError for invalid XML", async () => {
+    it("throws OpmlParseError for invalid XML", () => {
       const xml = "not valid xml at all <>";
 
-      await expect(parseOpml(xml)).rejects.toThrow(OpmlParseError);
+      expect(() => parseOpml(xml)).toThrow(OpmlParseError);
     });
 
-    it("throws OpmlParseError for missing opml element", async () => {
+    it("throws OpmlParseError for missing opml element", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <rss version="2.0">
           <channel><title>Not OPML</title></channel>
         </rss>`;
 
-      await expect(parseOpml(xml)).rejects.toThrow("Invalid OPML: missing opml element");
+      expect(() => parseOpml(xml)).toThrow("Invalid OPML: missing opml element");
     });
 
-    it("throws OpmlParseError for missing body element", async () => {
+    it("throws OpmlParseError for missing body element", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
           <head><title>No Body</title></head>
         </opml>`;
 
-      await expect(parseOpml(xml)).rejects.toThrow("Invalid OPML: missing body element");
+      expect(() => parseOpml(xml)).toThrow("Invalid OPML: missing body element");
     });
   });
 
   describe("real-world OPML examples", () => {
-    it("parses Feedly-style OPML export", async () => {
+    it("parses Feedly-style OPML export", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="1.0">
           <head>
@@ -335,7 +335,7 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(3);
       expect(feeds[0].category).toEqual(["tech"]);
@@ -343,7 +343,7 @@ describe("parseOpml", () => {
       expect(feeds[2].category).toBeUndefined();
     });
 
-    it("parses Inoreader-style OPML export", async () => {
+    it("parses Inoreader-style OPML export", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="1.0">
           <head>
@@ -359,7 +359,7 @@ describe("parseOpml", () => {
           </body>
         </opml>`;
 
-      const feeds = await parseOpml(xml);
+      const feeds = parseOpml(xml);
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].category).toEqual(["Blogs", "Personal"]);
@@ -483,7 +483,7 @@ describe("generateOpml", () => {
   });
 
   describe("round-trip", () => {
-    it("generated OPML can be parsed back", async () => {
+    it("generated OPML can be parsed back", () => {
       const subscriptions: OpmlSubscription[] = [
         {
           title: "Blog One",
@@ -494,7 +494,7 @@ describe("generateOpml", () => {
       ];
 
       const xml = generateOpml(subscriptions, { title: "Test Export" });
-      const parsed = await parseOpml(xml);
+      const parsed = parseOpml(xml);
 
       expect(parsed).toHaveLength(2);
       expect(parsed[0].title).toBe("Blog One");
@@ -504,7 +504,7 @@ describe("generateOpml", () => {
       expect(parsed[1].category).toEqual(["Tech"]);
     });
 
-    it("preserves folder structure in round-trip", async () => {
+    it("preserves folder structure in round-trip", () => {
       const subscriptions: OpmlSubscription[] = [
         { title: "Blog 1", xmlUrl: "https://blog1.example.com/feed", folder: "Category A" },
         { title: "Blog 2", xmlUrl: "https://blog2.example.com/feed", folder: "Category A" },
@@ -513,7 +513,7 @@ describe("generateOpml", () => {
       ];
 
       const xml = generateOpml(subscriptions);
-      const parsed = await parseOpml(xml);
+      const parsed = parseOpml(xml);
 
       expect(parsed).toHaveLength(4);
 
@@ -530,27 +530,27 @@ describe("generateOpml", () => {
 });
 
 describe("isValidOpml", () => {
-  it("returns true for valid OPML", async () => {
+  it("returns true for valid OPML", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
       <opml version="2.0">
         <head><title>Valid</title></head>
         <body></body>
       </opml>`;
 
-    expect(await isValidOpml(xml)).toBe(true);
+    expect(isValidOpml(xml)).toBe(true);
   });
 
-  it("returns false for invalid XML", async () => {
-    expect(await isValidOpml("not xml")).toBe(false);
+  it("returns false for invalid XML", () => {
+    expect(isValidOpml("not xml")).toBe(false);
   });
 
-  it("returns false for non-OPML XML", async () => {
+  it("returns false for non-OPML XML", () => {
     const xml = `<?xml version="1.0"?><rss><channel></channel></rss>`;
-    expect(await isValidOpml(xml)).toBe(false);
+    expect(isValidOpml(xml)).toBe(false);
   });
 
-  it("returns false for OPML without body", async () => {
+  it("returns false for OPML without body", () => {
     const xml = `<?xml version="1.0"?><opml version="2.0"><head></head></opml>`;
-    expect(await isValidOpml(xml)).toBe(false);
+    expect(isValidOpml(xml)).toBe(false);
   });
 });

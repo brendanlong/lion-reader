@@ -2,15 +2,15 @@
  * Unified feed parser that auto-detects format (RSS, Atom, or JSON Feed).
  * Provides a single entry point for parsing any supported feed format.
  *
- * Internally uses streaming SAX parsers for memory efficiency.
+ * Uses SAX-style parsing for memory efficiency.
  */
 
-import type { ParsedFeed, ParsedEntry } from "./types";
-import type { StreamingFeedResult } from "./streaming/types";
+import type { ParsedFeed } from "./types";
+import type { FeedParseResult } from "./streaming/types";
 import {
-  parseFeedStream,
-  parseFeedStreamWithFormat,
-  detectFeedType as detectFeedTypeFromStream,
+  parseFeed as parseFeedInternal,
+  parseFeedWithFormat as parseFeedWithFormatInternal,
+  detectFeedType as detectFeedTypeInternal,
   UnknownFeedFormatError,
 } from "./streaming/parser";
 
@@ -19,37 +19,10 @@ export { UnknownFeedFormatError };
 export type { FeedType } from "./streaming/parser";
 
 /**
- * Converts a string to a ReadableStream of Uint8Array.
+ * Converts a FeedParseResult to a ParsedFeed.
+ * The only difference is the field name: entries -> items.
  */
-function stringToStream(content: string): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(content);
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(encoded);
-      controller.close();
-    },
-  });
-}
-
-/**
- * Collects all entries from an async generator into an array.
- */
-async function collectEntries(
-  generator: AsyncGenerator<ParsedEntry, void, undefined>
-): Promise<ParsedEntry[]> {
-  const entries: ParsedEntry[] = [];
-  for await (const entry of generator) {
-    entries.push(entry);
-  }
-  return entries;
-}
-
-/**
- * Converts a StreamingFeedResult to a ParsedFeed by collecting all entries.
- */
-async function streamingResultToParsedFeed(result: StreamingFeedResult): Promise<ParsedFeed> {
-  const items = await collectEntries(result.entries);
+function resultToParsedFeed(result: FeedParseResult): ParsedFeed {
   return {
     title: result.title,
     description: result.description,
@@ -59,7 +32,7 @@ async function streamingResultToParsedFeed(result: StreamingFeedResult): Promise
     selfUrl: result.selfUrl,
     ttlMinutes: result.ttlMinutes,
     syndication: result.syndication,
-    items,
+    items: result.entries,
   };
 }
 
@@ -71,7 +44,7 @@ async function streamingResultToParsedFeed(result: StreamingFeedResult): Promise
  * @returns The detected feed type
  */
 export function detectFeedType(content: string): "rss" | "atom" | "json" | "unknown" {
-  return detectFeedTypeFromStream(content);
+  return detectFeedTypeInternal(content);
 }
 
 /**
@@ -82,10 +55,9 @@ export function detectFeedType(content: string): "rss" | "atom" | "json" | "unkn
  * @throws UnknownFeedFormatError if the feed format cannot be detected
  * @throws Error if the feed is invalid (missing required elements)
  */
-export async function parseFeed(content: string): Promise<ParsedFeed> {
-  const stream = stringToStream(content);
-  const result = await parseFeedStream(stream);
-  return streamingResultToParsedFeed(result);
+export function parseFeed(content: string): ParsedFeed {
+  const result = parseFeedInternal(content);
+  return resultToParsedFeed(result);
 }
 
 /**
@@ -97,11 +69,7 @@ export async function parseFeed(content: string): Promise<ParsedFeed> {
  * @returns A ParsedFeed object with normalized feed data
  * @throws Error if the feed is invalid
  */
-export async function parseFeedWithFormat(
-  content: string,
-  format: "rss" | "atom" | "json"
-): Promise<ParsedFeed> {
-  const stream = stringToStream(content);
-  const result = await parseFeedStreamWithFormat(stream, format);
-  return streamingResultToParsedFeed(result);
+export function parseFeedWithFormat(content: string, format: "rss" | "atom" | "json"): ParsedFeed {
+  const result = parseFeedWithFormatInternal(content, format);
+  return resultToParsedFeed(result);
 }

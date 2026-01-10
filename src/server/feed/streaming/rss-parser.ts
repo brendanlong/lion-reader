@@ -1,12 +1,12 @@
 /**
- * Streaming RSS 2.0 feed parser using SAX-style parsing.
- * Parses RSS feeds from a ReadableStream, yielding entries as they're parsed.
+ * RSS 2.0 feed parser using SAX-style parsing.
+ * Parses RSS feeds from a string, returning entries synchronously.
  */
 
 import { Parser } from "htmlparser2";
 import { decode } from "html-entities";
 import type { ParsedEntry, SyndicationHints } from "../types";
-import type { StreamingFeedResult } from "./types";
+import type { FeedParseResult } from "./types";
 
 /**
  * State machine states for RSS parsing.
@@ -37,15 +37,12 @@ const VALID_UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] 
 type UpdatePeriod = (typeof VALID_UPDATE_PERIODS)[number];
 
 /**
- * Parses an RSS feed from a ReadableStream.
- * Returns immediately with metadata once available; entries are yielded via async generator.
+ * Parses an RSS feed from a string.
  *
- * @param stream - The readable stream containing RSS XML data
- * @returns A promise that resolves to metadata + async generator of entries
+ * @param content - The RSS XML content as a string
+ * @returns Parsed feed metadata and entries
  */
-export async function parseRssStream(
-  stream: ReadableStream<Uint8Array>
-): Promise<StreamingFeedResult> {
+export function parseRss(content: string): FeedParseResult {
   // Feed metadata
   let title: string | undefined;
   let description: string | undefined;
@@ -67,18 +64,11 @@ export async function parseRssStream(
   let textBuffer = "";
   let isRdf = false;
 
-  // Entry queue for async generator
-  const entryQueue: ParsedEntry[] = [];
-  let entryResolve: () => void = () => {};
-  let parsingComplete = false;
-  let parseError: Error | null = null;
+  // Collected entries
+  const entries: ParsedEntry[] = [];
 
-  // Metadata ready promise
-  let metadataReady = false;
-  let resolveMetadata!: () => void;
-  const metadataPromise = new Promise<void>((resolve) => {
-    resolveMetadata = resolve;
-  });
+  // Parse error
+  let parseError: Error | null = null;
 
   const parser = new Parser(
     {
@@ -95,12 +85,6 @@ export async function parseRssStream(
         }
 
         if (tagName === "item") {
-          // Metadata is ready when we see the first item
-          if (!metadataReady) {
-            metadataReady = true;
-            buildSyndication();
-            resolveMetadata();
-          }
           state = "in_item";
           currentItem = {};
           currentItemContentEncoded = undefined;
@@ -241,10 +225,9 @@ export async function parseRssStream(
           }
         }
 
-        // End of item - push to queue
+        // End of item - add to entries
         if (tagName === "item" && currentItem) {
-          entryQueue.push(currentItem as ParsedEntry);
-          entryResolve();
+          entries.push(currentItem as ParsedEntry);
           currentItem = null;
           state = isRdf ? "initial" : "in_channel";
         }
@@ -258,11 +241,6 @@ export async function parseRssStream(
 
       onerror(error) {
         parseError = error;
-        entryResolve();
-        if (!metadataReady) {
-          metadataReady = true;
-          resolveMetadata();
-        }
       },
     },
     {
@@ -273,67 +251,22 @@ export async function parseRssStream(
     }
   );
 
-  function buildSyndication() {
-    if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
-      syndication = {};
-      if (syUpdatePeriod) {
-        syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
-      }
-      if (syUpdateFrequency) {
-        syndication.updateFrequency = syUpdateFrequency;
-      }
-    }
-  }
-
-  // Start reading the stream in the background
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-
-  (async () => {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        parser.write(chunk);
-      }
-      parser.end();
-
-      // If no items were found, metadata is ready now
-      if (!metadataReady) {
-        metadataReady = true;
-        buildSyndication();
-        resolveMetadata();
-      }
-    } catch (error) {
-      parseError = error instanceof Error ? error : new Error(String(error));
-    } finally {
-      parsingComplete = true;
-      entryResolve();
-      reader.releaseLock();
-    }
-  })();
-
-  // Wait for metadata to be ready
-  await metadataPromise;
+  // Parse the content
+  parser.write(content);
+  parser.end();
 
   if (parseError) {
     throw parseError;
   }
 
-  // Create async generator for entries
-  async function* entriesGenerator(): AsyncGenerator<ParsedEntry, void, undefined> {
-    while (true) {
-      if (entryQueue.length > 0) {
-        yield entryQueue.shift()!;
-      } else if (parsingComplete) {
-        if (parseError) throw parseError;
-        return;
-      } else {
-        await new Promise<void>((resolve) => {
-          entryResolve = resolve;
-        });
-      }
+  // Build syndication object if present
+  if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
+    syndication = {};
+    if (syUpdatePeriod) {
+      syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
+    }
+    if (syUpdateFrequency) {
+      syndication.updateFrequency = syUpdateFrequency;
     }
   }
 
@@ -346,7 +279,7 @@ export async function parseRssStream(
     selfUrl,
     ttlMinutes,
     syndication,
-    entries: entriesGenerator(),
+    entries,
   };
 }
 
