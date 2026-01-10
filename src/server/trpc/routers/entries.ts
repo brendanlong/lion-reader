@@ -144,10 +144,21 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
+ * Schema for feed unread count.
+ * Returns the absolute count (not delta) for robustness - self-correcting if counts drift.
+ */
+const feedUnreadCountSchema = z.object({
+  feedId: z.string(),
+  unreadCount: z.number(),
+});
+
+/**
  * Output schema for markRead mutation.
+ * Includes final unread counts for affected feeds to enable targeted cache updates.
  */
 const markReadOutputSchema = z.object({
   entries: z.array(entryMutationResultSchema),
+  feedUnreadCounts: z.array(feedUnreadCountSchema),
 });
 
 /**
@@ -558,28 +569,42 @@ export const entriesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Update read status on user_entries rows that exist for this user
-      // Visibility is enforced by the user_entries table - only rows that exist can be updated
-      await ctx.db
+      // Update with RETURNING to get entry state in a single query
+      const updatedEntries = await ctx.db
         .update(userEntries)
         .set({
           read: input.read,
           updatedAt: new Date(),
         })
-        .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
-
-      // Fetch the updated entries to return their current state
-      // This enables normy to automatically update cached queries
-      const updatedEntries = await ctx.db
-        .select({
+        .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)))
+        .returning({
           id: userEntries.entryId,
           read: userEntries.read,
           starred: userEntries.starred,
-        })
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)));
+        });
 
-      return { entries: updatedEntries };
+      // Get feed IDs and their unread counts in a single query
+      // Uses subquery for affected feeds + LEFT JOIN to include feeds with 0 unread
+      const affectedFeedsSubquery = ctx.db
+        .selectDistinct({ feedId: entries.feedId })
+        .from(entries)
+        .where(inArray(entries.id, input.ids))
+        .as("affected_feeds");
+
+      const feedUnreadCounts = await ctx.db
+        .select({
+          feedId: affectedFeedsSubquery.feedId,
+          unreadCount: sql<number>`COALESCE(COUNT(${userEntries.entryId}) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
+        })
+        .from(affectedFeedsSubquery)
+        .leftJoin(entries, eq(entries.feedId, affectedFeedsSubquery.feedId))
+        .leftJoin(
+          userEntries,
+          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
+        )
+        .groupBy(affectedFeedsSubquery.feedId);
+
+      return { entries: updatedEntries, feedUnreadCounts };
     }),
 
   /**

@@ -361,7 +361,25 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
 
       if (data.type === "new_entry") {
         utils.entries.list.invalidate();
-        utils.subscriptions.list.invalidate();
+        // Increment the unread count for the specific subscription instead of invalidating all
+        utils.subscriptions.list.setData(undefined, (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            items: oldData.items.map((item) => {
+              if (item.feed.id === data.feedId) {
+                return {
+                  ...item,
+                  subscription: {
+                    ...item.subscription,
+                    unreadCount: item.subscription.unreadCount + 1,
+                  },
+                };
+              }
+              return item;
+            }),
+          };
+        });
       } else if (data.type === "entry_updated") {
         utils.entries.get.invalidate({ id: data.entryId });
         utils.entries.list.invalidate();
@@ -391,9 +409,8 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       } else if (data.type === "import_progress") {
         utils.imports.get.invalidate({ id: data.importId });
         utils.imports.list.invalidate();
-        if (data.feedStatus === "imported") {
-          utils.subscriptions.list.invalidate();
-        }
+        // Don't invalidate subscriptions on each import_progress - import_completed handles it
+        // This avoids N refetches for N imported feeds
       } else if (data.type === "import_completed") {
         utils.imports.get.invalidate({ id: data.importId });
         utils.imports.list.invalidate();
@@ -406,6 +423,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
 
   /**
    * Performs a sync and applies changes to the cache.
+   * Uses targeted cache updates to avoid full refetches where possible.
    * Returns the new syncedAt timestamp.
    */
   const performSync = useCallback(async () => {
@@ -417,8 +435,6 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       // Update last synced timestamp
       lastSyncedAtRef.current = result.syncedAt;
 
-      // If there are any changes, invalidate the relevant queries
-      // For simplicity, we invalidate rather than doing targeted cache updates
       const hasEntryChanges =
         result.entries.created.length > 0 ||
         result.entries.updated.length > 0 ||
@@ -429,13 +445,63 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
 
       const hasTagChanges = result.tags.created.length > 0 || result.tags.removed.length > 0;
 
+      // Handle entry changes
       if (hasEntryChanges) {
         utils.entries.list.invalidate();
         utils.entries.count.invalidate();
+
+        // Calculate unread count changes from new entries (they are unread by default)
+        // Group by feedId and count how many new entries per feed
+        const unreadCountChanges = new Map<string, number>();
+        for (const entry of result.entries.created) {
+          if (!entry.read) {
+            unreadCountChanges.set(entry.feedId, (unreadCountChanges.get(entry.feedId) ?? 0) + 1);
+          }
+        }
+
+        // Apply unread count changes to subscriptions if we have any
+        if (unreadCountChanges.size > 0) {
+          utils.subscriptions.list.setData(undefined, (oldData) => {
+            if (!oldData) return oldData;
+            return {
+              ...oldData,
+              items: oldData.items.map((item) => {
+                const delta = unreadCountChanges.get(item.feed.id);
+                if (delta) {
+                  return {
+                    ...item,
+                    subscription: {
+                      ...item.subscription,
+                      unreadCount: item.subscription.unreadCount + delta,
+                    },
+                  };
+                }
+                return item;
+              }),
+            };
+          });
+        }
       }
 
+      // Handle subscription changes
       if (hasSubscriptionChanges) {
-        utils.subscriptions.list.invalidate();
+        // For removed subscriptions, remove them from cache
+        if (result.subscriptions.removed.length > 0) {
+          const removedIds = new Set(result.subscriptions.removed);
+          utils.subscriptions.list.setData(undefined, (oldData) => {
+            if (!oldData) return oldData;
+            return {
+              ...oldData,
+              items: oldData.items.filter((item) => !removedIds.has(item.subscription.id)),
+            };
+          });
+        }
+
+        // For new subscriptions, we need to invalidate since sync doesn't include
+        // all the data we need (unread counts, tags, feed details)
+        if (result.subscriptions.created.length > 0) {
+          utils.subscriptions.list.invalidate();
+        }
       }
 
       if (hasTagChanges) {
