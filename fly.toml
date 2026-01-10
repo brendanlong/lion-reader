@@ -26,7 +26,7 @@ primary_region = "lax"
 
 [env]
   ALLOW_ALL_SIGNUPS = "false"
-  NEXT_PUBLIC_APP_URL = "https://lion-reader.fly.dev"
+  NEXT_PUBLIC_APP_URL = "https://lion-reader.com"
   NODE_ENV = "production"
   PORT = "3000"
 

@@ -28,7 +28,7 @@ let currentTitle = null;
 let countdownInterval = null;
 
 // Default server URL
-const DEFAULT_SERVER_URL = "https://lion-reader.fly.dev";
+const DEFAULT_SERVER_URL = "https://lion-reader.com";
 
 /**
  * Get the configured server URL from storage.

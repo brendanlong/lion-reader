@@ -200,7 +200,7 @@ Lion Reader requires several secrets for production.
 ### 1. Set Application URL (Optional but Recommended)
 
 ```bash
-flyctl secrets set NEXT_PUBLIC_APP_URL="https://lion-reader.fly.dev"
+flyctl secrets set NEXT_PUBLIC_APP_URL="https://lion-reader.com"
 ```
 
 Replace with your custom domain if you have one.
@@ -308,7 +308,7 @@ flyctl status
 flyctl open
 
 # Or check the health endpoint
-curl https://lion-reader.fly.dev/api/health
+curl https://lion-reader.com/api/health
 ```
 
 Expected response:
@@ -329,12 +329,12 @@ After deployment, verify the application works end-to-end:
 ### 1. Health Check
 
 ```bash
-curl https://your-app.fly.dev/api/health
+curl https://your-app.com/api/health
 ```
 
 ### 2. Create a Test Account
 
-1. Open `https://your-app.fly.dev`
+1. Open `https://your-app.com`
 2. Click "Register" or navigate to `/register`
 3. Create an account with a test email and password
 4. Verify you're redirected to the main app
