@@ -19,7 +19,7 @@
 
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
-import { parseHTML } from "linkedom";
+import { Parser } from "htmlparser2";
 import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 
@@ -133,6 +133,7 @@ async function fetchPage(url: string): Promise<string> {
 
 /**
  * Extracts metadata from HTML using Open Graph and meta tags.
+ * Uses SAX parsing for efficiency and exits early after </head>.
  */
 interface PageMetadata {
   title: string | null;
@@ -142,41 +143,83 @@ interface PageMetadata {
 }
 
 function extractMetadata(html: string, url: string): PageMetadata {
-  // Wrap fragments in a full HTML document structure for proper parsing
-  const trimmedHtml = html.trim().toLowerCase();
-  const isFullDocument = trimmedHtml.startsWith("<!doctype") || trimmedHtml.startsWith("<html");
-  const htmlToParse = isFullDocument ? html : `<!DOCTYPE html><html><body>${html}</body></html>`;
-  const { document } = parseHTML(htmlToParse);
+  // Use an object to collect results - avoids TypeScript control flow issues with callbacks
+  const result: PageMetadata = {
+    title: null,
+    siteName: null,
+    author: null,
+    imageUrl: null,
+  };
 
-  // Extract title - prefer og:title, fall back to <title>
-  const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content");
-  const titleElement = document.querySelector("title")?.textContent;
-  const title = ogTitle || titleElement || null;
+  let ogTitle: string | null = null;
+  let titleText: string | null = null;
+  let inTitle = false;
+  let titleContent = "";
 
-  // Extract site name from og:site_name
-  const siteName =
-    document.querySelector('meta[property="og:site_name"]')?.getAttribute("content") || null;
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        const tagName = name.toLowerCase();
 
-  // Extract author from various meta tags
-  const author =
-    document.querySelector('meta[name="author"]')?.getAttribute("content") ||
-    document.querySelector('meta[property="article:author"]')?.getAttribute("content") ||
-    null;
+        if (tagName === "title") {
+          inTitle = true;
+          titleContent = "";
+        } else if (tagName === "meta") {
+          const property = attribs.property?.toLowerCase();
+          const metaName = attribs.name?.toLowerCase();
+          const content = attribs.content;
 
-  // Extract image from og:image
-  let imageUrl =
-    document.querySelector('meta[property="og:image"]')?.getAttribute("content") || null;
+          if (property === "og:title" && content && !ogTitle) {
+            ogTitle = content;
+          } else if (property === "og:site_name" && content && !result.siteName) {
+            result.siteName = content;
+          } else if (property === "og:image" && content && !result.imageUrl) {
+            result.imageUrl = content;
+          } else if (property === "article:author" && content && !result.author) {
+            result.author = content;
+          } else if (metaName === "author" && content && !result.author) {
+            result.author = content;
+          }
+        }
+      },
+      ontext(text) {
+        if (inTitle) {
+          titleContent += text;
+        }
+      },
+      onclosetag(name) {
+        const tagName = name.toLowerCase();
+
+        if (tagName === "title") {
+          inTitle = false;
+          if (titleContent.trim() && !titleText) {
+            titleText = titleContent.trim();
+          }
+        } else if (tagName === "head") {
+          // Exit early after </head> - metadata is only in head
+          parser.pause();
+        }
+      },
+    },
+    { decodeEntities: true }
+  );
+
+  parser.write(html);
+  parser.end();
+
+  // Prefer og:title, fall back to <title>
+  result.title = ogTitle || titleText;
 
   // Make image URL absolute if it's relative
-  if (imageUrl && !imageUrl.startsWith("http")) {
+  if (result.imageUrl && !result.imageUrl.startsWith("http")) {
     try {
-      imageUrl = new URL(imageUrl, url).href;
+      result.imageUrl = new URL(result.imageUrl, url).href;
     } catch {
-      imageUrl = null;
+      result.imageUrl = null;
     }
   }
 
-  return { title, siteName, author, imageUrl };
+  return result;
 }
 
 /**

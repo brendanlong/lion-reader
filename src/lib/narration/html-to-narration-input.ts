@@ -14,7 +14,7 @@ import { parseHTML } from "linkedom";
  * Block-level elements that get paragraph markers.
  * Must match the client-side BLOCK_ELEMENTS in client-paragraph-ids.ts
  */
-const BLOCK_ELEMENTS = new Set([
+export const BLOCK_ELEMENTS = [
   "p",
   "h1",
   "h2",
@@ -30,7 +30,12 @@ const BLOCK_ELEMENTS = new Set([
   "figure",
   "table",
   "img",
-]);
+] as const;
+
+/**
+ * Set version of BLOCK_ELEMENTS for efficient lookup.
+ */
+const BLOCK_ELEMENTS_SET = new Set<string>(BLOCK_ELEMENTS);
 
 /**
  * A paragraph in the narration input, ready to be sent to LLM as JSON.
@@ -223,7 +228,7 @@ export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
     let parent = el.parentElement;
     while (parent && parent !== doc.body) {
       const parentTag = parent.tagName.toLowerCase();
-      if (BLOCK_ELEMENTS.has(parentTag)) {
+      if (BLOCK_ELEMENTS_SET.has(parentTag)) {
         return false; // Skip - img is inside another block element
       }
       parent = parent.parentElement;

@@ -6,13 +6,12 @@
  */
 
 import { Readability, isProbablyReaderable } from "@mozilla/readability";
+import { HTMLRewriter } from "html-rewriter-wasm";
 import { parseHTML } from "linkedom";
 import { logger } from "@/lib/logger";
 
-/**
- * Attributes that may contain URLs that should be absolutized.
- */
-const URL_ATTRIBUTES = ["src", "href", "poster", "srcset"] as const;
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 /**
  * Absolutizes all relative URLs in HTML content.
@@ -20,7 +19,7 @@ const URL_ATTRIBUTES = ["src", "href", "poster", "srcset"] as const;
  * Converts relative URLs in src, href, poster, and srcset attributes
  * to absolute URLs using the provided base URL.
  *
- * Uses linkedom for lightweight HTML parsing (much faster than JSDOM).
+ * Uses html-rewriter-wasm for streaming transformation (much faster than DOM parsing).
  *
  * @param html - The HTML content to process
  * @param baseUrl - The base URL for resolving relative URLs
@@ -28,33 +27,65 @@ const URL_ATTRIBUTES = ["src", "href", "poster", "srcset"] as const;
  */
 export function absolutizeUrls(html: string, baseUrl: string): string {
   try {
-    // Use linkedom for lightweight parsing - much faster than JSDOM
-    const { document } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
+    let output = "";
+    const rewriter = new HTMLRewriter((chunk) => {
+      output += decoder.decode(chunk);
+    });
 
-    // Find all elements with URL attributes
-    for (const attr of URL_ATTRIBUTES) {
-      const elements = document.querySelectorAll(`[${attr}]`);
-
-      for (const element of elements) {
-        const value = element.getAttribute(attr);
-        if (!value) continue;
-
-        if (attr === "srcset") {
-          // srcset has a special format: "url width, url width, ..."
-          const absolutizedSrcset = absolutizeSrcset(value, baseUrl);
-          element.setAttribute(attr, absolutizedSrcset);
-        } else {
-          // Regular URL attribute
-          const absoluteUrl = resolveUrl(value, baseUrl);
-          if (absoluteUrl && absoluteUrl !== value) {
-            element.setAttribute(attr, absoluteUrl);
+    // Handle elements with URL attributes
+    rewriter.on("[src]", {
+      element(el) {
+        const value = el.getAttribute("src");
+        if (value) {
+          const absolute = resolveUrl(value, baseUrl);
+          if (absolute && absolute !== value) {
+            el.setAttribute("src", absolute);
           }
         }
-      }
+      },
+    });
+
+    rewriter.on("[href]", {
+      element(el) {
+        const value = el.getAttribute("href");
+        if (value) {
+          const absolute = resolveUrl(value, baseUrl);
+          if (absolute && absolute !== value) {
+            el.setAttribute("href", absolute);
+          }
+        }
+      },
+    });
+
+    rewriter.on("[poster]", {
+      element(el) {
+        const value = el.getAttribute("poster");
+        if (value) {
+          const absolute = resolveUrl(value, baseUrl);
+          if (absolute && absolute !== value) {
+            el.setAttribute("poster", absolute);
+          }
+        }
+      },
+    });
+
+    rewriter.on("[srcset]", {
+      element(el) {
+        const value = el.getAttribute("srcset");
+        if (value) {
+          el.setAttribute("srcset", absolutizeSrcset(value, baseUrl));
+        }
+      },
+    });
+
+    try {
+      rewriter.write(encoder.encode(html));
+      rewriter.end();
+    } finally {
+      rewriter.free();
     }
 
-    // Return the body's innerHTML (we only care about the content, not the wrapper)
-    return document.body.innerHTML;
+    return output;
   } catch (error) {
     logger.warn("Failed to absolutize URLs in content", {
       baseUrl,
