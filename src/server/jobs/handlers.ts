@@ -326,7 +326,10 @@ function generateBodyHash(body: Buffer): string {
  * @param result - The fetch result
  * @returns Job handler result with next run time
  */
-async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<JobHandlerResult> {
+export async function processFetchResult(
+  feed: Feed,
+  result: FetchFeedResult
+): Promise<JobHandlerResult> {
   const now = new Date();
 
   switch (result.status) {
@@ -928,7 +931,10 @@ async function applyRedirectMigration(
  * @param oldFeed - The feed that is being redirected
  * @param newFeed - The existing feed at the redirect URL
  */
-async function migrateSubscriptionsToExistingFeed(oldFeed: Feed, newFeed: Feed): Promise<void> {
+export async function migrateSubscriptionsToExistingFeed(
+  oldFeed: Feed,
+  newFeed: Feed
+): Promise<void> {
   // Find all active subscriptions to the old feed
   const activeSubscriptions = await db
     .select({
