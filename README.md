@@ -135,6 +135,27 @@ pnpm typecheck
 pnpm lint
 ```
 
+### Profiling
+
+To profile performance, first create a production build:
+
+```bash
+# Build everything (or just build / build:worker for specific targets)
+NODE_ENV=production pnpm build:all
+```
+
+Then run with the flame profiler:
+
+```bash
+# Profile the worker
+NODE_ENV=production npx @platformatic/flame run --sourcemap-dirs=dist/ dist/worker.js
+
+# Profile the Next.js server
+NODE_ENV=production npx @platformatic/flame run --sourcemap-dirs=.next/ node_modules/next/dist/bin/next start
+```
+
+This generates a flamegraph showing where time is spent. The `--sourcemap-dirs` flag enables source map support for readable stack traces.
+
 ### Background Worker
 
 The background worker fetches feeds on a schedule. It starts automatically when you run `pnpm dev` or `pnpm start`. The worker:
@@ -204,10 +225,10 @@ Lion Reader can receive email newsletters, allowing users to subscribe to newsle
 
 #### 1. Environment Variables
 
-| Variable               | Default                  | Description                                           |
-| ---------------------- | ------------------------ | ----------------------------------------------------- |
-| `INGEST_EMAIL_DOMAIN`  | `ingest.lionreader.com`  | Domain for ingest email addresses                     |
-| `EMAIL_WEBHOOK_SECRET` | -                        | Secret for authenticating webhook requests (required) |
+| Variable               | Default                 | Description                                           |
+| ---------------------- | ----------------------- | ----------------------------------------------------- |
+| `INGEST_EMAIL_DOMAIN`  | `ingest.lionreader.com` | Domain for ingest email addresses                     |
+| `EMAIL_WEBHOOK_SECRET` | -                       | Secret for authenticating webhook requests (required) |
 
 ```bash
 # Fly.io
@@ -274,9 +295,7 @@ export default {
       from: message.from,
       to: message.to,
       subject: parsed.subject || "",
-      headers: Object.fromEntries(
-        parsed.headers.map((h) => [h.key, h.value])
-      ),
+      headers: Object.fromEntries(parsed.headers.map((h) => [h.key, h.value])),
       text: parsed.text,
       html: parsed.html,
       messageId: parsed.messageId,
