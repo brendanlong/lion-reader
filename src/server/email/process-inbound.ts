@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import { generateSummary } from "../html/strip-html";
 import {
@@ -344,85 +344,46 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     });
   } else {
     // 6b. Existing feed - ensure subscription is active
-    // This handles the case where user unsubscribed (and was blocked), then unblocked the sender
-    const [existingSubscription] = await db
-      .select()
-      .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feed.id)))
-      .limit(1);
+    // Uses upsert pattern: insert new subscription, or reactivate if unsubscribed
+    // RETURNING only returns a row if inserted OR updated (not if already active)
+    const now = new Date();
+    const subscriptionId = generateUuidv7();
 
-    if (existingSubscription?.unsubscribedAt) {
-      // Reactivate the subscription by clearing unsubscribedAt
-      const now = new Date();
-      await db
-        .update(subscriptions)
-        .set({ unsubscribedAt: null, updatedAt: now })
-        .where(eq(subscriptions.id, existingSubscription.id));
-
-      logger.info("Reactivated subscription for email feed", {
-        subscriptionId: existingSubscription.id,
-        feedId: feed.id,
-        userId,
-      });
-
-      // Publish subscription_created event so client updates its state
-      publishSubscriptionCreated(
-        userId,
-        feed.id,
-        existingSubscription.id,
-        {
-          id: existingSubscription.id,
-          feedId: feed.id,
-          customTitle: existingSubscription.customTitle,
-          subscribedAt: existingSubscription.subscribedAt.toISOString(),
-          unreadCount: 1,
-          tags: [],
-        },
-        {
-          id: feed.id,
-          type: "email",
-          url: null,
-          title: feed.title,
-          description: null,
-          siteUrl: null,
-        }
-      ).catch((err) => {
-        logger.error("Failed to publish subscription_created event for reactivated email feed", {
-          feedId: feed.id,
-          subscriptionId: existingSubscription.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-    } else if (!existingSubscription) {
-      // No subscription exists at all - create one
-      const now = new Date();
-      const subscriptionId = generateUuidv7();
-      const newSubscription: NewSubscription = {
+    const [upsertedSubscription] = await db
+      .insert(subscriptions)
+      .values({
         id: subscriptionId,
         userId,
         feedId: feed.id,
         subscribedAt: now,
         createdAt: now,
         updatedAt: now,
-      };
+      })
+      .onConflictDoUpdate({
+        target: [subscriptions.userId, subscriptions.feedId],
+        set: { unsubscribedAt: null, updatedAt: now },
+        where: isNotNull(subscriptions.unsubscribedAt),
+      })
+      .returning();
 
-      await db.insert(subscriptions).values(newSubscription);
-
-      logger.info("Created subscription for existing email feed", {
-        subscriptionId,
+    if (upsertedSubscription) {
+      logger.info("Ensured subscription for email feed", {
+        subscriptionId: upsertedSubscription.id,
         feedId: feed.id,
         userId,
+        wasReactivated: upsertedSubscription.id !== subscriptionId,
       });
 
+      // Publish subscription_created event so client updates its state
       publishSubscriptionCreated(
         userId,
         feed.id,
-        subscriptionId,
+        upsertedSubscription.id,
         {
-          id: subscriptionId,
+          id: upsertedSubscription.id,
           feedId: feed.id,
-          customTitle: null,
-          subscribedAt: now.toISOString(),
+          customTitle: upsertedSubscription.customTitle,
+          subscribedAt: upsertedSubscription.subscribedAt.toISOString(),
           unreadCount: 1,
           tags: [],
         },
@@ -437,7 +398,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
       ).catch((err) => {
         logger.error("Failed to publish subscription_created event for email feed", {
           feedId: feed.id,
-          subscriptionId,
+          subscriptionId: upsertedSubscription.id,
           error: err instanceof Error ? err.message : String(err),
         });
       });

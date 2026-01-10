@@ -44,7 +44,6 @@ async function createTestIngestAddress(userId: string): Promise<{ id: string; to
     userId,
     token,
     createdAt: new Date(),
-    updatedAt: new Date(),
   });
   return { id, token };
 }
