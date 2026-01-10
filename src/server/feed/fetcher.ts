@@ -41,8 +41,8 @@ export interface FetchSuccessResult {
   status: "success";
   /** HTTP status code (200) */
   statusCode: 200;
-  /** Response body content */
-  body: string;
+  /** Response body as raw bytes - allows hashing before expensive text decoding */
+  body: Buffer;
   /** Content-Type header value */
   contentType: string;
   /** Final URL after redirects */
@@ -392,7 +392,9 @@ export async function fetchFeed(
 
       // Handle success (200)
       if (response.status === 200) {
-        const body = await response.text();
+        // Get raw bytes - allows caller to hash before expensive text decoding
+        const arrayBuffer = await response.arrayBuffer();
+        const body = Buffer.from(arrayBuffer);
         const contentType = response.headers.get("content-type") ?? "application/xml";
 
         return {

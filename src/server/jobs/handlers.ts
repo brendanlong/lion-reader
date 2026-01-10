@@ -160,7 +160,7 @@ function getMetricsStatus(
  * This reduces peak memory usage for feeds with large content.
  *
  * @param feed - The feed record from the database
- * @param body - The raw feed body (XML/JSON string)
+ * @param body - The raw feed body bytes (avoids text decoding until needed)
  * @param cacheHeaders - Parsed cache headers from the response
  * @param bodyHash - Pre-computed SHA-256 hash of the body
  * @param redirects - The redirect chain from the fetch
@@ -169,16 +169,19 @@ function getMetricsStatus(
  */
 async function processSuccessfulFetch(
   feed: Feed,
-  body: string,
+  body: Buffer,
   cacheHeaders: ParsedCacheHeaders,
   bodyHash: string,
   redirects: RedirectInfo[],
   now: Date
 ): Promise<JobHandlerResult> {
+  // Decode to string for parsing (we only get here when hash differs, so content changed)
+  const bodyText = body.toString("utf-8");
+
   // Parse the feed content
   let parsedFeed;
   try {
-    parsedFeed = await parseFeed(body);
+    parsedFeed = parseFeed(bodyText);
   } catch (error) {
     // Parsing failed - treat as error
     // Also clear any redirect tracking since the destination doesn't have a valid feed
@@ -308,9 +311,10 @@ async function processSuccessfulFetch(
 
 /**
  * Generates a SHA-256 hash of the feed body for change detection.
+ * Accepts raw bytes to avoid text decoding until we know content has changed.
  */
-function generateBodyHash(body: string): string {
-  return createHash("sha256").update(body, "utf8").digest("hex");
+function generateBodyHash(body: Buffer): string {
+  return createHash("sha256").update(body).digest("hex");
 }
 
 /**
