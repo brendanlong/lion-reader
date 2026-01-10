@@ -45,8 +45,9 @@ const buildOptions = {
   // External packages that can't/shouldn't be bundled:
   // - Native modules (argon2 uses node-gyp bindings)
   // - jsdom has runtime file dependencies (stylesheets) that break when bundled
+  // - html-rewriter-wasm has WASM files and internal requires that break when bundled
   // We bundle everything else for a smaller, faster deployment
-  external: ["argon2", "jsdom"],
+  external: ["argon2", "jsdom", "html-rewriter-wasm"],
 
   // Source maps for debugging production issues
   sourcemap: true,

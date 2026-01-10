@@ -5,12 +5,12 @@
  * Provides endpoints for fetching and parsing feeds without saving them.
  */
 
-import { JSDOM } from "jsdom";
 import { z } from "zod";
 
 import { logger } from "@/lib/logger";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { errors } from "../errors";
+import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";
 import {
   parseFeed,
@@ -166,7 +166,7 @@ function isHtmlContent(contentType: string, content: string): boolean {
 
 /**
  * Truncates text to a maximum length, adding ellipsis if needed.
- * Uses JSDOM to strip HTML tags.
+ * Uses SAX parsing to strip HTML tags.
  *
  * @param text - The text to truncate (may contain HTML)
  * @param maxLength - Maximum length
@@ -177,9 +177,7 @@ function truncateText(text: string | undefined, maxLength: number): string | nul
     return null;
   }
 
-  // Strip HTML tags using JSDOM
-  const dom = new JSDOM(text);
-  const stripped = dom.window.document.body.textContent?.trim() || "";
+  const stripped = stripHtml(text, maxLength);
 
   if (stripped.length <= maxLength) {
     return stripped;

@@ -60,9 +60,9 @@
     "google-auth-library": "^10.5.0",
     "groq-sdk": "^0.37.0",
     "html-entities": "^2.6.0",
+    "html-rewriter-wasm": "^0.4.1",
     "htmlparser2": "^10.0.0",
     "ioredis": "^5.8.2",
-    "jsdom": "^27.4.0",
     "linkedom": "^0.18.12",
     "mammoth": "^1.11.0",
     "next": "16.1.1",
@@ -82,7 +82,6 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@tailwindcss/typography": "^0.5.19",
-    "@types/jsdom": "^27.0.0",
     "@types/node": "^20",
     "@types/pg": "^8.16.0",
     "@types/react": "^19",
