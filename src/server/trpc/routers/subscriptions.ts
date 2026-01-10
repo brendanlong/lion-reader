@@ -943,6 +943,9 @@ export const subscriptionsRouter = createTRPCRouter({
         });
       }
 
+      // Remove all tag associations so resubscribing starts fresh
+      await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+
       // Soft delete by setting unsubscribedAt
       await ctx.db
         .update(subscriptions)
