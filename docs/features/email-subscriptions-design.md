@@ -50,16 +50,16 @@ Users can generate unique ingest email addresses to subscribe to newsletters. In
            │ email
            ▼
 ┌─────────────────────┐
-│  Cloudflare Email   │
-│  Workers            │
-│  - Spam filtering   │
+│  Mailgun            │
+│  - Receive email    │
 │  - Parse email      │
-│  - POST to webhook  │
+│  - forward() action │
 └──────────┬──────────┘
-           │ POST /api/webhooks/email/cloudflare
+           │ POST /api/webhooks/email/mailgun
            ▼
 ┌─────────────────────┐
 │  Webhook Handler    │
+│  - Verify signature │
 │  - Validate token   │
 │  - Normalize sender │
 │  - Check blocked    │
@@ -76,7 +76,7 @@ Users can generate unique ingest email addresses to subscribe to newsletters. In
 
 ### Provider Abstraction
 
-The webhook endpoint is provider-specific (`/api/webhooks/email/cloudflare`), but it normalizes the email into a common format and calls shared processing logic:
+The webhook endpoint is provider-specific (`/api/webhooks/email/mailgun`), but it normalizes the email into a common format and calls shared processing logic:
 
 ```typescript
 // Provider-specific webhook parses into this format
@@ -102,7 +102,7 @@ interface InboundEmail {
 async function processInboundEmail(email: InboundEmail): Promise<void>;
 ```
 
-This allows adding new providers (Postmark, Mailgun, etc.) by implementing only the webhook parsing.
+This allows adding new providers by implementing only the webhook parsing.
 
 ---
 
@@ -269,61 +269,37 @@ subscriptions.delete        DELETE /v1/subscriptions/:id
 
 ## Webhook Processing
 
-### Cloudflare Email Worker
+### Mailgun Route Setup
 
-The Cloudflare Email Worker receives emails, parses them using `postal-mime`, and forwards them to our webhook:
+Mailgun Routes receive emails and forward them to our webhook using the `forward()` action:
 
-```typescript
-// cloudflare-worker/src/index.ts
-import PostalMime from "postal-mime";
-
-export default {
-  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
-    // Parse the raw email
-    const rawEmail = await new Response(message.raw).arrayBuffer();
-    const parser = new PostalMime();
-    const parsed = await parser.parse(rawEmail);
-
-    // Build payload matching CloudflareEmailPayload interface
-    const payload = {
-      from: message.from,
-      to: message.to,
-      subject: parsed.subject || "",
-      headers: Object.fromEntries(parsed.headers.map((h) => [h.key, h.value])),
-      text: parsed.text,
-      html: parsed.html,
-      messageId: parsed.messageId,
-    };
-
-    await fetch(`${env.API_URL}/api/webhooks/email/cloudflare`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": env.WEBHOOK_SECRET,
-      },
-      body: JSON.stringify(payload),
-    });
-  },
-};
-```
-
-See the README for full setup instructions including `wrangler.toml` and dependencies.
+1. In Mailgun Dashboard, go to **Receiving -> Create Route**
+2. Configure the route:
+   - **Expression Type**: Match Recipient
+   - **Recipient**: `.*@ingest.yourdomain.com` (catch-all for your ingest domain)
+   - **Actions**: Forward to `https://your-app.com/api/webhooks/email/mailgun`
+3. Mailgun will POST parsed email data with HMAC signature verification
 
 ### Webhook Endpoint
 
 ```typescript
-// app/api/webhooks/email/cloudflare/route.ts
+// app/api/webhooks/email/mailgun/route.ts
 
 export async function POST(req: Request) {
-  // 1. Verify webhook secret
-  const secret = req.headers.get("X-Webhook-Secret");
-  if (secret !== process.env.EMAIL_WEBHOOK_SECRET) {
-    return new Response("Unauthorized", { status: 401 });
+  // 1. Verify HMAC signature
+  const formData = await req.formData();
+  const timestamp = formData.get("timestamp") as string;
+  const token = formData.get("token") as string;
+  const signature = formData.get("signature") as string;
+
+  const expectedSignature = hmacSha256(timestamp + token, process.env.MAILGUN_WEBHOOK_SIGNING_KEY);
+
+  if (signature !== expectedSignature) {
+    return new Response("Unauthorized", { status: 406 });
   }
 
-  // 2. Parse Cloudflare-specific format into InboundEmail
-  const cfEmail = await req.json();
-  const email = parseCloudflareEmail(cfEmail);
+  // 2. Parse Mailgun format into InboundEmail
+  const email = parseMailgunEmail(formData);
 
   // 3. Process with shared logic
   await processInboundEmail(email);
@@ -511,7 +487,7 @@ async function sendUnsubscribePost(url: string) {
 
 ### Provider-Level Filtering
 
-Cloudflare Email Workers can be configured to reject obvious spam before it reaches our webhook. Emails that pass initial filtering but have elevated spam scores are stored with `is_spam = true`.
+Mailgun filters obvious spam before it reaches our webhook. Emails that pass initial filtering can be marked as spam in the application if needed.
 
 ### Query Filtering
 
@@ -540,8 +516,9 @@ users.updatePreferences   PATCH  /v1/users/me/preferences
 
 ### Webhook Authentication
 
-- Cloudflare webhook includes a shared secret in headers
-- Secret stored in environment variable, verified on every request
+- Mailgun signs webhooks with HMAC-SHA256 using the webhook signing key
+- Signature is verified using timing-safe comparison on every request
+- Signing key stored in `MAILGUN_WEBHOOK_SIGNING_KEY` environment variable
 
 ### Email Content Sanitization
 
