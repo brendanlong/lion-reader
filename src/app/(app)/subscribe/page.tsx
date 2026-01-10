@@ -65,7 +65,10 @@ export default function SubscribePage() {
       // Add the new subscription directly to the cache instead of invalidating
       // This avoids an extra network request and duplicate SSE-triggered invalidations
       utils.subscriptions.list.setData(undefined, (oldData) => {
-        if (!oldData) return oldData;
+        // Handle case where query hasn't completed yet (race condition)
+        if (!oldData) {
+          return { items: [data] };
+        }
         // Check for duplicates - SSE might have already added this subscription
         if (oldData.items.some((item) => item.subscription.id === data.subscription.id)) {
           return oldData;
