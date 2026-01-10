@@ -1,17 +1,67 @@
 /**
  * Unified feed parser that auto-detects format (RSS, Atom, or JSON Feed).
  * Provides a single entry point for parsing any supported feed format.
+ *
+ * Internally uses streaming SAX parsers for memory efficiency.
  */
 
-import type { ParsedFeed } from "./types";
-import { parseRssFeed } from "./rss-parser";
-import { parseAtomFeed } from "./atom-parser";
-import { parseJsonFeed, isJsonFeed } from "./json-parser";
+import type { ParsedFeed, ParsedEntry } from "./types";
+import type { StreamingFeedResult } from "./streaming/types";
+import {
+  parseFeedStream,
+  parseFeedStreamWithFormat,
+  detectFeedType as detectFeedTypeFromStream,
+  UnknownFeedFormatError,
+} from "./streaming/parser";
+
+// Re-export for backwards compatibility
+export { UnknownFeedFormatError };
+export type { FeedType } from "./streaming/parser";
 
 /**
- * Detected feed type.
+ * Converts a string to a ReadableStream of Uint8Array.
  */
-export type FeedType = "rss" | "atom" | "json" | "unknown";
+function stringToStream(content: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const encoded = encoder.encode(content);
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoded);
+      controller.close();
+    },
+  });
+}
+
+/**
+ * Collects all entries from an async generator into an array.
+ */
+async function collectEntries(
+  generator: AsyncGenerator<ParsedEntry, void, undefined>
+): Promise<ParsedEntry[]> {
+  const entries: ParsedEntry[] = [];
+  for await (const entry of generator) {
+    entries.push(entry);
+  }
+  return entries;
+}
+
+/**
+ * Converts a StreamingFeedResult to a ParsedFeed by collecting all entries.
+ */
+async function streamingResultToParsedFeed(result: StreamingFeedResult): Promise<ParsedFeed> {
+  const items = await collectEntries(result.entries);
+  return {
+    title: result.title,
+    description: result.description,
+    siteUrl: result.siteUrl,
+    iconUrl: result.iconUrl,
+    hubUrl: result.hubUrl,
+    selfUrl: result.selfUrl,
+    ttlMinutes: result.ttlMinutes,
+    syndication: result.syndication,
+    items,
+  };
+}
 
 /**
  * Detects the feed type from content.
@@ -20,54 +70,8 @@ export type FeedType = "rss" | "atom" | "json" | "unknown";
  * @param content - The feed content as a string
  * @returns The detected feed type
  */
-export function detectFeedType(content: string): FeedType {
-  // Remove leading whitespace for detection
-  const trimmed = content.trim();
-
-  // Check for JSON Feed first (starts with { and has version field)
-  if (trimmed.startsWith("{")) {
-    if (isJsonFeed(trimmed)) {
-      return "json";
-    }
-    // Could be JSON but not a JSON Feed
-    return "unknown";
-  }
-
-  // Look for Atom feed element
-  // Atom feeds have <feed xmlns="http://www.w3.org/2005/Atom"> or <feed>
-  if (/<feed[\s>]/i.test(trimmed) && !/<rss[\s>]/i.test(trimmed)) {
-    return "atom";
-  }
-
-  // Look for RSS feed element
-  // RSS 2.0 has <rss version="2.0">
-  if (/<rss[\s>]/i.test(trimmed)) {
-    return "rss";
-  }
-
-  // Look for RSS 1.0 (RDF-based)
-  // RSS 1.0 has <rdf:RDF xmlns="http://purl.org/rss/1.0/">
-  if (/<rdf:RDF[\s>]/i.test(trimmed)) {
-    return "rss";
-  }
-
-  // Look for channel element (common in RSS)
-  // If there's a <channel> without <feed>, it's likely RSS
-  if (/<channel[\s>]/i.test(trimmed) && !/<feed[\s>]/i.test(trimmed)) {
-    return "rss";
-  }
-
-  return "unknown";
-}
-
-/**
- * Error thrown when feed format cannot be detected.
- */
-export class UnknownFeedFormatError extends Error {
-  constructor(message = "Unknown feed format: unable to detect RSS, Atom, or JSON Feed") {
-    super(message);
-    this.name = "UnknownFeedFormatError";
-  }
+export function detectFeedType(content: string): "rss" | "atom" | "json" | "unknown" {
+  return detectFeedTypeFromStream(content);
 }
 
 /**
@@ -78,19 +82,10 @@ export class UnknownFeedFormatError extends Error {
  * @throws UnknownFeedFormatError if the feed format cannot be detected
  * @throws Error if the feed is invalid (missing required elements)
  */
-export function parseFeed(content: string): ParsedFeed {
-  const feedType = detectFeedType(content);
-
-  switch (feedType) {
-    case "rss":
-      return parseRssFeed(content);
-    case "atom":
-      return parseAtomFeed(content);
-    case "json":
-      return parseJsonFeed(content);
-    case "unknown":
-      throw new UnknownFeedFormatError();
-  }
+export async function parseFeed(content: string): Promise<ParsedFeed> {
+  const stream = stringToStream(content);
+  const result = await parseFeedStream(stream);
+  return streamingResultToParsedFeed(result);
 }
 
 /**
@@ -102,13 +97,11 @@ export function parseFeed(content: string): ParsedFeed {
  * @returns A ParsedFeed object with normalized feed data
  * @throws Error if the feed is invalid
  */
-export function parseFeedWithFormat(content: string, format: "rss" | "atom" | "json"): ParsedFeed {
-  switch (format) {
-    case "rss":
-      return parseRssFeed(content);
-    case "atom":
-      return parseAtomFeed(content);
-    case "json":
-      return parseJsonFeed(content);
-  }
+export async function parseFeedWithFormat(
+  content: string,
+  format: "rss" | "atom" | "json"
+): Promise<ParsedFeed> {
+  const stream = stringToStream(content);
+  const result = await parseFeedStreamWithFormat(stream, format);
+  return streamingResultToParsedFeed(result);
 }

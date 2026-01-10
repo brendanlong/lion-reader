@@ -159,7 +159,7 @@ export async function POST(
   // Parse the pushed feed content
   let parsedFeed;
   try {
-    parsedFeed = parseFeed(bodyText);
+    parsedFeed = await parseFeed(bodyText);
   } catch (error) {
     logger.warn("WebSub notification with invalid feed content", {
       feedId,
