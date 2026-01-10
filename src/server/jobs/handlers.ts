@@ -178,7 +178,7 @@ async function processSuccessfulFetch(
   // Parse the feed content
   let parsedFeed;
   try {
-    parsedFeed = parseFeed(body);
+    parsedFeed = await parseFeed(body);
   } catch (error) {
     // Parsing failed - treat as error
     // Also clear any redirect tracking since the destination doesn't have a valid feed

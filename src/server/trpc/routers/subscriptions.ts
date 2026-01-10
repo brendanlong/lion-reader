@@ -300,7 +300,7 @@ async function subscribeToNewOrUnfetchedFeed(
   // Parse the feed
   let parsedFeed;
   try {
-    parsedFeed = parseFeed(feedContent);
+    parsedFeed = await parseFeed(feedContent);
   } catch (error) {
     throw errors.parseError(error instanceof Error ? error.message : "Invalid feed format");
   }
@@ -980,7 +980,7 @@ export const subscriptionsRouter = createTRPCRouter({
       // Step 1: Parse the OPML content
       let opmlFeeds: OpmlFeed[];
       try {
-        opmlFeeds = parseOpml(input.opml);
+        opmlFeeds = await parseOpml(input.opml);
       } catch (error) {
         throw errors.validation(
           `Failed to parse OPML: ${error instanceof Error ? error.message : "Invalid OPML format"}`
