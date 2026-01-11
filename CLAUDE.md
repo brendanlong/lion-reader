@@ -209,6 +209,28 @@ The User-Agent includes app version, git commit SHA, website URL, GitHub repo, a
 - Use Redis for caching hot data (sessions, rate limits)
 - Keep API responses small - use pagination, select specific fields
 
+## Parsing Guidelines
+
+### Avoid Reparsing
+
+- **Never parse the same data multiple times** - parse once and pass the parsed structure through your code
+- Cache parsed results when the same data will be accessed by multiple operations
+- If you need to extract different information, do it all in a single parse pass
+
+### Parser Selection
+
+**Use SAX-style (streaming) parsers when possible:**
+
+- `fast-xml-parser` for RSS/Atom feeds - parses to JSON without building a full DOM
+- `htmlparser2` for HTML when you need to extract specific data (streaming parser)
+- Streaming parsers use less memory and are faster for large documents
+
+**Use linkedom when an algorithm requires a DOM:**
+
+- Mozilla Readability requires a DOM API (DOMParser, Element, Document, etc.)
+- Article extraction algorithms that need tree traversal and DOM manipulation
+- When porting browser-based code that assumes `window.document`
+
 ## React Query / tRPC Patterns
 
 ### Optimistic Updates
