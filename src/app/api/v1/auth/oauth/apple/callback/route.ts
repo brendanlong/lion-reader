@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   try {
     // Check if Apple OAuth is enabled
     if (!isAppleOAuthEnabled()) {
-      return NextResponse.redirect(`${appUrl}/login?error=provider_not_configured`);
+      return NextResponse.redirect(`${appUrl}/login?error=provider_not_configured`, { status: 303 });
     }
 
     // Parse the form data
@@ -48,11 +48,11 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!code) {
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, { status: 303 });
     }
 
     if (!state) {
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, { status: 303 });
     }
 
     // Parse user data if provided (only on first auth)
@@ -72,11 +72,11 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       if (error instanceof Error) {
         if (error.message.includes("Invalid or expired OAuth state")) {
-          return NextResponse.redirect(`${appUrl}/login?error=invalid_state`);
+          return NextResponse.redirect(`${appUrl}/login?error=invalid_state`, { status: 303 });
         }
       }
       console.error("Apple OAuth callback validation failed:", error);
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, { status: 303 });
     }
 
     const { userInfo, firstAuthData, tokens } = appleResult;
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
 
       if (userResult.length === 0) {
         console.error("Orphaned OAuth account found");
-        return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+        return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, { status: 303 });
       }
 
       userEmail = userResult[0].email;
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
       // OAuth account doesn't exist
       // Apple only sends email on first auth - it MUST be present for new accounts
       if (!email) {
-        return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+        return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, { status: 303 });
       }
 
       // Normalize email
@@ -215,20 +215,45 @@ export async function POST(request: NextRequest) {
       lastActiveAt: now,
     });
 
-    // Redirect to app with session cookie
-    const response = NextResponse.redirect(`${appUrl}/all`);
+    // Return an HTML page that sets the cookie via JavaScript then redirects.
+    // This avoids a race condition where the browser follows the redirect before
+    // fully processing the Set-Cookie header, causing the destination page to
+    // not see the cookie on initial load.
+    const isProduction = process.env.NODE_ENV === "production";
+    const securePart = isProduction ? "; secure" : "";
+    const maxAge = 30 * 24 * 60 * 60;
+    const redirectUrl = `${appUrl}/all`;
 
-    // Set session cookie (30 days)
-    response.cookies.set("session", token, {
-      path: "/",
-      maxAge: 30 * 24 * 60 * 60,
-      sameSite: "lax",
-      httpOnly: false, // Allow JS access for client-side session management
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Signing in...</title>
+</head>
+<body>
+  <p>Signing in...</p>
+  <script>
+    document.cookie = "session=${token}; path=/; max-age=${maxAge}; samesite=lax${securePart}";
+    window.location.replace("${redirectUrl}");
+  </script>
+  <noscript>
+    <meta http-equiv="refresh" content="0; url=${redirectUrl}">
+    <p>JavaScript is disabled. <a href="${redirectUrl}">Click here to continue</a>.</p>
+  </noscript>
+</body>
+</html>`;
+
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        // Prevent caching of this page
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache",
+      },
     });
-
-    return response;
   } catch (error) {
     console.error("Apple OAuth callback error:", error);
-    return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+    return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, { status: 303 });
   }
 }
