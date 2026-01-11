@@ -3,83 +3,96 @@
  *
  * Handles route protection and authentication redirects.
  *
- * - Unauthenticated users accessing protected routes are redirected to /login
- * - Authenticated users accessing auth pages are redirected to /all
+ * This proxy checks for the presence of a session cookie on protected routes.
+ * It performs a lightweight check (cookie existence only) - full validation happens
+ * in tRPC/API routes.
+ *
+ * Unauthenticated users are redirected to the login page with the original path
+ * preserved in a redirect parameter.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Routes that require authentication
+ * Paths that don't require authentication.
+ * These paths either handle their own auth or are public.
  */
-const PROTECTED_ROUTES = [
-  "/all",
-  "/starred",
-  "/feed",
-  "/entry",
-  "/settings",
-  "/subscribe",
-  "/save",
-  "/saved",
+const PUBLIC_PATHS = [
+  "/", // Landing page
+  "/login",
+  "/register",
+  "/auth/oauth/callback",
+  "/auth/oauth/complete",
+  "/api/", // All API routes handle their own auth
+  "/_next/", // Next.js static files
+  "/extension/", // Extension pages handle their own auth
+  "/favicon.ico",
+  "/robots.txt",
+  "/onnx/", // ONNX WASM files for TTS
+  "/manifest.json", // PWA manifest
+  "/sw.js", // Service worker
+  "/privacy", // Privacy policy page
+  "/monitoring", // Sentry tunnel route
 ];
 
 /**
- * Routes that should redirect authenticated users away
+ * Check if the given pathname is a public path that doesn't require auth.
  */
-const AUTH_ROUTES = ["/login", "/register"];
-
-/**
- * Check if a path starts with any of the given prefixes
- */
-function matchesRoute(path: string, routes: string[]): boolean {
-  return routes.some((route) => path === route || path.startsWith(`${route}/`));
-}
-
-/**
- * Extract session token from cookies
- */
-function getSessionToken(request: NextRequest): string | null {
-  return request.cookies.get("session")?.value ?? null;
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((publicPath) => {
+    // Exact match for specific files/routes
+    if (publicPath === pathname) {
+      return true;
+    }
+    // Prefix match for directories (paths ending with /)
+    if (publicPath.endsWith("/") && pathname.startsWith(publicPath)) {
+      return true;
+    }
+    return false;
+  });
 }
 
 export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const sessionToken = getSessionToken(request);
-  const isAuthenticated = sessionToken !== null;
+  const { pathname, search } = request.nextUrl;
 
-  // Skip middleware for API routes and static files
-  if (pathname.startsWith("/api") || pathname.startsWith("/_next") || pathname.includes(".")) {
+  // Allow public paths without auth check
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  // Redirect authenticated users away from auth pages
-  if (isAuthenticated && matchesRoute(pathname, AUTH_ROUTES)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/all";
-    return NextResponse.redirect(url);
+  // Check for session cookie
+  const sessionCookie = request.cookies.get("session");
+
+  if (!sessionCookie?.value) {
+    // Build the redirect URL with the original path preserved
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    // Preserve the full pathname + search params in the redirect param
+    const redirectPath = search ? `${pathname}${search}` : pathname;
+    loginUrl.searchParams.set("redirect", redirectPath);
+    loginUrl.search = loginUrl.searchParams.toString();
+
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect unauthenticated users to login for protected routes
-  if (!isAuthenticated && matchesRoute(pathname, PROTECTED_ROUTES)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    // Preserve the original destination for redirect after login
-    url.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(url);
-  }
-
+  // Session cookie exists, allow the request to proceed
+  // Full session validation happens in tRPC/API routes
   return NextResponse.next();
 }
 
+/**
+ * Matcher configuration to exclude static assets.
+ * This improves performance by not running the proxy on files that
+ * don't need auth checks.
+ */
 export const config = {
   matcher: [
     /*
      * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public files (images, etc)
+     * - Static files with common extensions
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|.*\\.(?:ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|otf|eot|css|js|map)$).*)",
   ],
 };
