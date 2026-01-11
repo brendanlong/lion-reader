@@ -22,10 +22,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { validateGoogleCallback, isGoogleOAuthEnabled } from "@/server/auth/oauth/google";
-import { generateSessionToken, getSessionExpiry } from "@/server/auth/session";
+import { generateSessionToken, getSessionExpiry, processOAuthCallback } from "@/server/auth";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { db } from "@/server/db";
-import { users, sessions, oauthAccounts } from "@/server/db/schema";
+import { sessions, oauthAccounts } from "@/server/db/schema";
 
 /**
  * Handle Google OAuth redirect callback
@@ -129,103 +129,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Login mode - normal OAuth login/signup flow
-    // Check if OAuth account already exists
-    const existingOAuthAccount = await db
-      .select({
-        id: oauthAccounts.id,
-        userId: oauthAccounts.userId,
-      })
-      .from(oauthAccounts)
-      .where(
-        and(eq(oauthAccounts.provider, "google"), eq(oauthAccounts.providerAccountId, userInfo.sub))
-      )
-      .limit(1);
-
-    let userId: string;
-
-    if (existingOAuthAccount.length > 0) {
-      // OAuth account exists - log in as that user
-      userId = existingOAuthAccount[0].userId;
-
-      // Get user details to verify account exists
-      const userResult = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-
-      if (userResult.length === 0) {
-        console.error("Orphaned OAuth account found");
-        return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
-      }
-
-      // Update OAuth tokens and scopes
-      await db
-        .update(oauthAccounts)
-        .set({
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken ?? null,
-          expiresAt: tokens.expiresAt ?? null,
-          scopes,
-        })
-        .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
-    } else {
-      // OAuth account doesn't exist - check if email matches existing user
-      const email = userInfo.email.toLowerCase();
-
-      const existingUser = await db.select().from(users).where(eq(users.email, email)).limit(1);
-
-      if (existingUser.length > 0) {
-        // Link OAuth to existing user account
-        userId = existingUser[0].id;
-
-        // Create OAuth account link
-        await db.insert(oauthAccounts).values({
-          id: generateUuidv7(),
-          userId,
-          provider: "google",
-          providerAccountId: userInfo.sub,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken ?? null,
-          expiresAt: tokens.expiresAt ?? null,
-          scopes,
-          createdAt: now,
-        });
-
-        // Mark email as verified if not already (Google verified it)
-        if (!existingUser[0].emailVerifiedAt) {
-          await db
-            .update(users)
-            .set({
-              emailVerifiedAt: now,
-              updatedAt: now,
-            })
-            .where(eq(users.id, userId));
-        }
-      } else {
-        // Create new user and OAuth account
-        userId = generateUuidv7();
-
-        // Create user
-        await db.insert(users).values({
-          id: userId,
-          email,
-          emailVerifiedAt: now,
-          passwordHash: null,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        // Create OAuth account
-        await db.insert(oauthAccounts).values({
-          id: generateUuidv7(),
-          userId,
-          provider: "google",
-          providerAccountId: userInfo.sub,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken ?? null,
-          expiresAt: tokens.expiresAt ?? null,
-          scopes,
-          createdAt: now,
-        });
-      }
-    }
+    // Process OAuth callback - handles existing accounts, linking, and new user creation
+    // Note: inviteToken is passed through from Redis PKCE data
+    const oauthResult = await processOAuthCallback({
+      provider: "google",
+      providerAccountId: userInfo.sub,
+      email: userInfo.email,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+      scopes,
+      inviteToken: googleResult.inviteToken,
+    });
 
     // Create session
     const sessionId = generateUuidv7();
@@ -241,7 +156,7 @@ export async function GET(request: NextRequest) {
 
     await db.insert(sessions).values({
       id: sessionId,
-      userId,
+      userId: oauthResult.userId,
       tokenHash,
       userAgent,
       ipAddress,
@@ -264,6 +179,25 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (error) {
     console.error("Google OAuth callback error:", error);
+
+    // Check for invite-related errors and provide specific error codes
+    const cause =
+      error instanceof Error && "cause" in error ? (error.cause as { code?: string }) : null;
+    const errorCode = cause?.code;
+
+    if (errorCode === "INVITE_REQUIRED") {
+      return NextResponse.redirect(`${appUrl}/login?error=invite_required`);
+    }
+    if (errorCode === "INVITE_INVALID") {
+      return NextResponse.redirect(`${appUrl}/login?error=invite_invalid`);
+    }
+    if (errorCode === "INVITE_EXPIRED") {
+      return NextResponse.redirect(`${appUrl}/login?error=invite_expired`);
+    }
+    if (errorCode === "INVITE_ALREADY_USED") {
+      return NextResponse.redirect(`${appUrl}/login?error=invite_already_used`);
+    }
+
     return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
   }
 }
