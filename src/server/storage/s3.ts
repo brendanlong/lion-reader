@@ -63,7 +63,7 @@ function getS3Client(): S3Client | null {
  * @param key - The object key (path within bucket)
  * @returns The public URL for the object
  */
-export function getPublicUrl(key: string): string {
+function getPublicUrl(key: string): string {
   if (storageConfig.publicUrlBase) {
     // Use configured public URL base
     const base = storageConfig.publicUrlBase.replace(/\/$/, "");
@@ -168,7 +168,7 @@ function getExtension(contentType: string): string {
  * @param options - Upload options
  * @returns Upload result with URL, or null if storage is not available
  */
-export async function uploadImage(
+async function uploadImage(
   data: Buffer,
   options: {
     /** Source document ID (for organizing in storage) */

@@ -1298,13 +1298,6 @@ async function convertDocsApiToHtml(
 // ============================================================================
 
 /**
- * Checks if the Google Docs API is available (service account configured).
- */
-export function isGoogleDocsApiAvailable(): boolean {
-  return !!googleConfig.serviceAccountJson;
-}
-
-/**
  * Fetches a public Google Doc using the Google Docs API with service account credentials.
  *
  * Requires GOOGLE_SERVICE_ACCOUNT_JSON to be configured. The service account
@@ -1319,7 +1312,7 @@ export function isGoogleDocsApiAvailable(): boolean {
  * @param tabId - Optional tab ID to fetch (from URL ?tab=t.{tabId})
  * @returns Document content including HTML, or null if fetch fails or doc is private
  */
-export async function fetchPublicGoogleDoc(
+async function fetchPublicGoogleDoc(
   docId: string,
   tabId: string | null = null
 ): Promise<GoogleDocsContent | null> {

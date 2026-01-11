@@ -133,32 +133,3 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return children;
   }
 }
-
-/**
- * Hook-friendly wrapper for using ErrorBoundary in functional components.
- * Provides a reset key pattern for controlled resets.
- */
-interface ErrorBoundaryWithResetProps extends Omit<ErrorBoundaryProps, "onRetry"> {
-  /**
-   * Key that triggers a reset when changed.
-   * Useful for resetting after navigation or state changes.
-   */
-  resetKey?: string | number;
-}
-
-/**
- * ErrorBoundaryWithReset component.
- * Automatically resets when the resetKey changes.
- */
-export function ErrorBoundaryWithReset({
-  children,
-  resetKey,
-  ...props
-}: ErrorBoundaryWithResetProps): ReactNode {
-  // Using key prop to force remount and reset error state
-  return (
-    <ErrorBoundary key={resetKey} {...props}>
-      {children}
-    </ErrorBoundary>
-  );
-}

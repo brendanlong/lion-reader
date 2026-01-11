@@ -16,7 +16,7 @@ import { trpc } from "@/lib/trpc/client";
 /**
  * Filter options for the entry list query.
  */
-export interface EntryListQueryFilters {
+interface EntryListQueryFilters {
   feedId?: string;
   tagId?: string;
   uncategorized?: boolean;

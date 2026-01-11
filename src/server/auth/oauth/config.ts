@@ -24,7 +24,7 @@ export type OAuthProviderName = "google" | "apple";
 /**
  * Configuration for a single OAuth provider
  */
-export interface OAuthProviderConfig {
+interface OAuthProviderConfig {
   enabled: boolean;
   clientId?: string;
   clientSecret?: string;
@@ -34,7 +34,7 @@ export interface OAuthProviderConfig {
  * Extended configuration for Apple OAuth
  * Apple requires additional keys for JWT signing
  */
-export interface AppleOAuthConfig extends OAuthProviderConfig {
+interface AppleOAuthConfig extends OAuthProviderConfig {
   teamId?: string;
   keyId?: string;
   privateKey?: string;
@@ -72,7 +72,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
  * Google OAuth provider configuration
  * Enabled only if both client ID and client secret are set
  */
-export const googleConfig: OAuthProviderConfig = {
+const googleConfig: OAuthProviderConfig = {
   enabled: !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
   clientId: GOOGLE_CLIENT_ID,
   clientSecret: GOOGLE_CLIENT_SECRET,
@@ -83,7 +83,7 @@ export const googleConfig: OAuthProviderConfig = {
  * Enabled only if client ID and private key are set
  * (Apple requires JWT signing with private key)
  */
-export const appleConfig: AppleOAuthConfig = {
+const appleConfig: AppleOAuthConfig = {
   enabled: !!(APPLE_CLIENT_ID && APPLE_PRIVATE_KEY),
   clientId: APPLE_CLIENT_ID,
   teamId: APPLE_TEAM_ID,
@@ -94,7 +94,7 @@ export const appleConfig: AppleOAuthConfig = {
 /**
  * Map of all OAuth provider configurations
  */
-export const oauthProviders: Record<OAuthProviderName, OAuthProviderConfig | AppleOAuthConfig> = {
+const oauthProviders: Record<OAuthProviderName, OAuthProviderConfig | AppleOAuthConfig> = {
   google: googleConfig,
   apple: appleConfig,
 };
@@ -180,13 +180,4 @@ export function getEnabledProviders(): OAuthProviderName[] {
  */
 export function isProviderEnabled(provider: OAuthProviderName): boolean {
   return oauthProviders[provider]?.enabled ?? false;
-}
-
-/**
- * Check if any OAuth provider is enabled
- *
- * @returns Whether at least one OAuth provider is enabled
- */
-export function hasAnyOAuthProvider(): boolean {
-  return getEnabledProviders().length > 0;
 }

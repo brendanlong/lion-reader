@@ -87,7 +87,7 @@ export interface ProcessEmailResult {
  * @param email - The sender email to normalize
  * @returns Normalized email address
  */
-export function normalizeSenderEmail(email: string): string {
+function normalizeSenderEmail(email: string): string {
   const lowered = email.toLowerCase();
   const atIndex = lowered.lastIndexOf("@");
 
@@ -113,7 +113,7 @@ export function normalizeSenderEmail(email: string): string {
  * @param toAddress - The recipient email address
  * @returns The extracted token
  */
-export function extractToken(toAddress: string): string {
+function extractToken(toAddress: string): string {
   const lowered = toAddress.toLowerCase();
   const atIndex = lowered.lastIndexOf("@");
 
@@ -133,7 +133,7 @@ export function extractToken(toAddress: string): string {
  * @param header - The List-Unsubscribe header value
  * @returns The mailto: URL or null if not found
  */
-export function parseListUnsubscribeMailto(header: string | undefined): string | null {
+function parseListUnsubscribeMailto(header: string | undefined): string | null {
   if (!header) {
     return null;
   }
@@ -159,7 +159,7 @@ export function parseListUnsubscribeMailto(header: string | undefined): string |
  * @param header - The List-Unsubscribe header value
  * @returns The https: URL or null if not found
  */
-export function parseListUnsubscribeHttps(header: string | undefined): string | null {
+function parseListUnsubscribeHttps(header: string | undefined): string | null {
   if (!header) {
     return null;
   }
@@ -185,7 +185,7 @@ export function parseListUnsubscribeHttps(header: string | undefined): string | 
  * @param content - Email content (HTML or text)
  * @returns Hexadecimal SHA-256 hash string
  */
-export function generateEmailContentHash(subject: string, content: string): string {
+function generateEmailContentHash(subject: string, content: string): string {
   const hashInput = `${subject}\n${content}`;
   return createHash("sha256").update(hashInput, "utf8").digest("hex");
 }

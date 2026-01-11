@@ -49,7 +49,7 @@ export interface ApiTokenData {
  * Generates a secure API token.
  * Returns both the raw token (for client) and its hash (for storage).
  */
-export function generateApiToken(): { token: string; tokenHash: string } {
+function generateApiToken(): { token: string; tokenHash: string } {
   // Generate 32 random bytes, encode as base64url
   const token = crypto.randomBytes(32).toString("base64url");
 
@@ -63,7 +63,7 @@ export function generateApiToken(): { token: string; tokenHash: string } {
  * Hashes an API token using SHA-256.
  * Used for both storage and lookup.
  */
-export function hashApiToken(token: string): string {
+function hashApiToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
@@ -150,49 +150,4 @@ async function updateLastUsedAt(tokenId: string): Promise<void> {
   } catch (err) {
     console.error("Failed to update API token last_used_at:", err);
   }
-}
-
-// ============================================================================
-// Scope Checking
-// ============================================================================
-
-/**
- * Checks if an API token has a specific scope.
- */
-export function hasScope(tokenData: ApiTokenData, scope: ApiTokenScope): boolean {
-  return tokenData.token.scopes?.includes(scope) ?? false;
-}
-
-// ============================================================================
-// Token Revocation
-// ============================================================================
-
-/**
- * Revokes an API token by its ID.
- *
- * @param tokenId - The token ID to revoke
- * @returns true if the token was revoked, false if not found
- */
-export async function revokeApiToken(tokenId: string): Promise<boolean> {
-  const result = await db
-    .update(apiTokens)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(apiTokens.id, tokenId), isNull(apiTokens.revokedAt)));
-
-  return result.rowCount !== null && result.rowCount > 0;
-}
-
-/**
- * Revokes all API tokens for a user.
- *
- * @param userId - The user ID whose tokens to revoke
- * @returns The number of tokens revoked
- */
-export async function revokeAllUserApiTokens(userId: string): Promise<number> {
-  const result = await db
-    .update(apiTokens)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)));
-
-  return result.rowCount ?? 0;
 }

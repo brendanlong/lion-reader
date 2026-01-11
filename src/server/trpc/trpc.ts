@@ -221,15 +221,6 @@ function createAuthenticatedRateLimitMiddleware(type: RateLimitType) {
 }
 
 /**
- * Public procedure with rate limiting.
- * Available to all clients, rate limited by IP address.
- * Uses default rate limits (100 burst, 10/sec refill).
- */
-export const rateLimitedPublicProcedure = t.procedure
-  .use(timingMiddleware)
-  .use(createPublicRateLimitMiddleware("default"));
-
-/**
  * Public procedure with stricter rate limiting for expensive operations.
  * Used for login, register, and other expensive public operations.
  * Uses expensive rate limits (10 burst, 1/sec refill).
@@ -237,16 +228,6 @@ export const rateLimitedPublicProcedure = t.procedure
 export const expensivePublicProcedure = t.procedure
   .use(timingMiddleware)
   .use(createPublicRateLimitMiddleware("expensive"));
-
-/**
- * Protected procedure with rate limiting.
- * Requires authentication and applies rate limiting by user ID.
- * Uses default rate limits (100 burst, 10/sec refill).
- */
-export const rateLimitedProtectedProcedure = t.procedure
-  .use(timingMiddleware)
-  .use(authMiddleware)
-  .use(createAuthenticatedRateLimitMiddleware("default"));
 
 /**
  * Protected procedure with stricter rate limiting.
@@ -257,11 +238,6 @@ export const expensiveProtectedProcedure = t.procedure
   .use(timingMiddleware)
   .use(authMiddleware)
   .use(createAuthenticatedRateLimitMiddleware("expensive"));
-
-/**
- * Merge routers together
- */
-export const mergeRouters = t.mergeRouters;
 
 // ============================================================================
 // Admin Procedures (protected by ALLOWLIST_SECRET)

@@ -18,12 +18,12 @@ import * as Sentry from "@sentry/nextjs";
 /**
  * Log levels in order of severity.
  */
-export type LogLevel = "debug" | "info" | "warn" | "error";
+type LogLevel = "debug" | "info" | "warn" | "error";
 
 /**
  * Context data that can be attached to log entries.
  */
-export type LogContext = Record<string, unknown>;
+type LogContext = Record<string, unknown>;
 
 /**
  * A structured log entry.
@@ -184,24 +184,3 @@ function createLogger(config: LoggerConfig = {}) {
  * Default logger instance.
  */
 export const logger = createLogger();
-
-/**
- * Creates a request-scoped logger with request context.
- */
-export function createRequestLogger(context: {
-  requestId?: string;
-  userId?: string;
-  path?: string;
-  method?: string;
-}) {
-  return logger.child(context);
-}
-
-/**
- * Creates a job-scoped logger with job context.
- */
-export function createJobLogger(context: { jobId: string; jobType: string; attempt?: number }) {
-  return logger.child(context);
-}
-
-export { createLogger };

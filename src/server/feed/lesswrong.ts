@@ -160,7 +160,7 @@ const graphqlResponseSchema = z.object({
 /**
  * Result from fetching LessWrong post content.
  */
-export interface LessWrongPostContent {
+interface LessWrongPostContent {
   /** Post ID */
   postId: string;
   /** Post title */
@@ -223,7 +223,7 @@ const commentGraphqlResponseSchema = z.object({
 /**
  * Result from fetching LessWrong comment content.
  */
-export interface LessWrongCommentContent {
+interface LessWrongCommentContent {
   /** Comment ID */
   commentId: string;
   /** Parent post title (for context) */
@@ -277,7 +277,7 @@ const POST_QUERY = `
  * @param postId - The LessWrong post ID (17-character alphanumeric)
  * @returns Post content including HTML, or null if fetch fails
  */
-export async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent | null> {
+async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
 
@@ -378,25 +378,6 @@ export async function fetchLessWrongPost(postId: string): Promise<LessWrongPostC
 }
 
 /**
- * Fetches LessWrong post content from a URL.
- *
- * This is a convenience function that extracts the post ID from the URL
- * and fetches the content.
- *
- * @param url - The LessWrong post URL
- * @returns Post content including HTML, or null if URL is invalid or fetch fails
- */
-export async function fetchLessWrongPostFromUrl(url: string): Promise<LessWrongPostContent | null> {
-  const postId = extractPostId(url);
-  if (!postId) {
-    logger.debug("Not a valid LessWrong post URL", { url });
-    return null;
-  }
-
-  return fetchLessWrongPost(postId);
-}
-
-/**
  * GraphQL query to fetch comment content.
  * We request the full HTML content via contents.html.
  */
@@ -429,9 +410,7 @@ const COMMENT_QUERY = `
  * @param commentId - The LessWrong comment ID
  * @returns Comment content including HTML, or null if fetch fails
  */
-export async function fetchLessWrongComment(
-  commentId: string
-): Promise<LessWrongCommentContent | null> {
+async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommentContent | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
 

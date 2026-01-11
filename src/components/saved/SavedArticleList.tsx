@@ -22,7 +22,7 @@ import {
 /**
  * Filter options for the saved article list.
  */
-export interface SavedArticleListFilters {
+interface SavedArticleListFilters {
   /**
    * Show only unread articles.
    */

@@ -326,10 +326,7 @@ function generateBodyHash(body: Buffer): string {
  * @param result - The fetch result
  * @returns Job handler result with next run time
  */
-export async function processFetchResult(
-  feed: Feed,
-  result: FetchFeedResult
-): Promise<JobHandlerResult> {
+async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<JobHandlerResult> {
   const now = new Date();
 
   switch (result.status) {

@@ -23,7 +23,7 @@ import { useKeyboardShortcutsContext } from "@/components/keyboard";
 /**
  * Narration state for determining shortcut behavior.
  */
-export interface NarrationShortcutState {
+interface NarrationShortcutState {
   /** Current playback status */
   status: "idle" | "loading" | "playing" | "paused";
   /** Current paragraph index (0-based) */
@@ -35,7 +35,7 @@ export interface NarrationShortcutState {
 /**
  * Narration control functions.
  */
-export interface NarrationShortcutControls {
+interface NarrationShortcutControls {
   /** Start or resume playback */
   play: () => void;
   /** Pause playback */

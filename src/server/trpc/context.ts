@@ -16,8 +16,6 @@ import {
 } from "@/server/auth";
 
 // Re-export types for use in other modules
-export type { SessionData, ApiTokenData, ApiTokenScope };
-
 /**
  * Authentication type - either a user session or an API token
  */
@@ -175,5 +173,3 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
     headers: req.headers,
   };
 }
-
-export type { Context as TRPCContext };

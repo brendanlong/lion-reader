@@ -1241,4 +1241,3 @@ export const subscriptionsRouter = createTRPCRouter({
 });
 
 // Export helper for use in background job handlers
-export { subscribeToExistingFeed };

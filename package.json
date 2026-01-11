@@ -14,7 +14,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
-    "knip": "knip --include files,dependencies,devDependencies",
+    "knip": "knip --include files,dependencies,devDependencies,exports",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

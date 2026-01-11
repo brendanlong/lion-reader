@@ -5,19 +5,14 @@
  * for text-to-speech. Falls back to simple HTML stripping when Groq is unavailable.
  */
 
-import { createHash } from "crypto";
 import Groq from "groq-sdk";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import {
-  htmlToNarrationInput,
-  htmlToPlainText,
-  type HtmlToNarrationInputResult,
-} from "@/lib/narration/html-to-narration-input";
+import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { trackNarrationHighlightFallback } from "@/server/metrics";
 
 // Re-export pure functions for backward compatibility
-export { htmlToNarrationInput, htmlToPlainText, type HtmlToNarrationInputResult };
+export { htmlToNarrationInput };
 
 /**
  * Schema for a single paragraph from the LLM.
@@ -45,7 +40,7 @@ type LLMOutput = z.infer<typeof llmOutputSchema>;
 /**
  * System prompt for the Groq LLM to convert article content to narration-ready text.
  */
-export const NARRATION_SYSTEM_PROMPT = `Convert article paragraphs to narration-ready text for text-to-speech.
+const NARRATION_SYSTEM_PROMPT = `Convert article paragraphs to narration-ready text for text-to-speech.
 
 Transform each paragraph to be TTS-friendly. Return the same structure with matching IDs in the same order.
 
@@ -109,21 +104,6 @@ function getGroqClient(): Groq | null {
   }
 
   return groqClient;
-}
-
-/**
- * Computes a SHA-256 hash of the content.
- * Used for deduplication of narration content.
- *
- * @param content - The content to hash
- * @returns Hexadecimal SHA-256 hash string
- *
- * @example
- * const hash = computeContentHash('<p>Hello, world!</p>');
- * // Returns something like "a591a6d40bf..."
- */
-export function computeContentHash(content: string): string {
-  return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
 /**

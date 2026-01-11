@@ -48,17 +48,6 @@ export function generateUuidv7(): string {
 }
 
 /**
- * Extracts the timestamp from a UUIDv7.
- * Returns the date when the UUID was generated.
- */
-export function extractTimestampFromUuidv7(uuid: string): Date {
-  // Remove hyphens and get first 12 hex characters (48 bits = 6 bytes)
-  const hex = uuid.replace(/-/g, "").slice(0, 12);
-  const timestamp = parseInt(hex, 16);
-  return new Date(timestamp);
-}
-
-/**
  * Validates that a string is a valid UUID format.
  */
 export function isValidUuid(uuid: string): boolean {

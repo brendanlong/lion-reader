@@ -13,7 +13,7 @@ import { formatRelativeTime } from "@/lib/format";
 /**
  * Props for the ArticleListItem component.
  */
-export interface ArticleListItemProps {
+interface ArticleListItemProps {
   /** Unique identifier for the article */
   id: string;
   /** Article title */

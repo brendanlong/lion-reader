@@ -11,7 +11,7 @@ import { TRPCError } from "@trpc/server";
  * Error codes used across the API.
  * These are mapped to appropriate HTTP status codes.
  */
-export const ErrorCodes = {
+const ErrorCodes = {
   // Authentication errors (401)
   UNAUTHORIZED: "UNAUTHORIZED",
   INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
@@ -62,7 +62,7 @@ export const ErrorCodes = {
   SAVED_ARTICLE_FETCH_ERROR: "SAVED_ARTICLE_FETCH_ERROR",
 } as const;
 
-export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
+type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
 
 /**
  * Maps our error codes to tRPC error codes
@@ -121,7 +121,7 @@ const errorCodeToTRPCCode: Record<
  * @param message - Human-readable error message
  * @param details - Optional additional context
  */
-export function createError(
+function createError(
   code: ErrorCode,
   message: string,
   details?: Record<string, unknown>

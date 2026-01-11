@@ -12,18 +12,7 @@ import Redis from "ioredis";
 /**
  * Event types that can be published.
  */
-export type FeedEventType = "new_entry" | "entry_updated";
-
-/**
- * User event types that can be published.
- */
-export type UserEventType =
-  | "subscription_created"
-  | "subscription_deleted"
-  | "saved_article_created"
-  | "saved_article_updated"
-  | "import_progress"
-  | "import_completed";
+type FeedEventType = "new_entry" | "entry_updated";
 
 /**
  * Base event payload interface for feed events.
@@ -264,7 +253,7 @@ function getPublisherClient(): Redis | null {
  * @param event - The event to publish
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
-export async function publishFeedEvent(event: FeedEvent): Promise<number> {
+async function publishFeedEvent(event: FeedEvent): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
     return 0;
@@ -739,17 +728,6 @@ export function parseUserEvent(message: string): UserEvent | null {
     return null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Closes the publisher client connection.
- * Should be called during graceful shutdown.
- */
-export async function closePublisher(): Promise<void> {
-  if (publisherClient) {
-    await publisherClient.quit();
-    publisherClient = null;
   }
 }
 

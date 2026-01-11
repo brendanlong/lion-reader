@@ -86,7 +86,7 @@ function isPrivateHostname(hostname: string): boolean {
  *   await scheduleNextFetch(feed);
  * }
  */
-export function canUseWebSub(): boolean {
+function canUseWebSub(): boolean {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
 
   // WebSub requires a configured base URL
@@ -121,7 +121,7 @@ export function canUseWebSub(): boolean {
  *
  * @returns The base URL string or null
  */
-export function getWebsubCallbackBaseUrl(): string | null {
+function getWebsubCallbackBaseUrl(): string | null {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (!baseUrl || !canUseWebSub()) {
     return null;
@@ -136,7 +136,7 @@ export function getWebsubCallbackBaseUrl(): string | null {
  * @param feedId - The feed ID
  * @returns The callback URL or null if WebSub is not available
  */
-export function generateCallbackUrl(feedId: string): string | null {
+function generateCallbackUrl(feedId: string): string | null {
   const baseUrl = getWebsubCallbackBaseUrl();
   if (!baseUrl) {
     return null;
@@ -156,7 +156,7 @@ export function generateCallbackSecret(): string {
 /**
  * Result of a subscription request to a hub.
  */
-export interface SubscribeToHubResult {
+interface SubscribeToHubResult {
   /** Whether the subscription request was accepted by the hub */
   success: boolean;
   /** The subscription record ID if successful */
@@ -183,7 +183,7 @@ export interface SubscribeToHubResult {
  *   }
  * }
  */
-export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> {
+async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> {
   if (!feed.hubUrl) {
     return { success: false, error: "Feed has no hub URL" };
   }
@@ -515,22 +515,6 @@ export async function verifyHmacSignature(
 }
 
 /**
- * Gets an active WebSub subscription for a feed.
- *
- * @param feedId - The feed ID
- * @returns The subscription or null if not found/active
- */
-export async function getActiveSubscription(feedId: string) {
-  const [subscription] = await db
-    .select()
-    .from(websubSubscriptions)
-    .where(and(eq(websubSubscriptions.feedId, feedId), eq(websubSubscriptions.state, "active")))
-    .limit(1);
-
-  return subscription ?? null;
-}
-
-/**
  * Result of renewing expiring WebSub subscriptions.
  */
 export interface RenewSubscriptionsResult {
@@ -683,71 +667,4 @@ async function markSubscriptionFailed(
     feedId,
     error,
   });
-}
-
-/**
- * Unsubscribes from a WebSub hub for a feed.
- *
- * Sends an unsubscribe request to the hub and updates the local subscription state.
- *
- * @param feedId - The feed ID to unsubscribe
- * @returns true if unsubscribe was successful, false otherwise
- */
-export async function unsubscribeFromHub(feedId: string): Promise<boolean> {
-  const subscription = await getActiveSubscription(feedId);
-  if (!subscription) {
-    return false;
-  }
-
-  const callbackUrl = generateCallbackUrl(feedId);
-  if (!callbackUrl) {
-    return false;
-  }
-
-  try {
-    const response = await fetch(subscription.hubUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        "hub.mode": "unsubscribe",
-        "hub.topic": subscription.topicUrl,
-        "hub.callback": callbackUrl,
-      }).toString(),
-    });
-
-    if (response.status === 202 || response.status === 204) {
-      // Mark subscription as unsubscribed
-      await db
-        .update(websubSubscriptions)
-        .set({
-          state: "unsubscribed",
-          updatedAt: new Date(),
-        })
-        .where(eq(websubSubscriptions.id, subscription.id));
-
-      // Update feed WebSub status
-      await db
-        .update(feeds)
-        .set({ websubActive: false, updatedAt: new Date() })
-        .where(eq(feeds.id, feedId));
-
-      logger.info("WebSub unsubscribe successful", { feedId, hubUrl: subscription.hubUrl });
-      return true;
-    }
-
-    logger.warn("WebSub unsubscribe rejected", {
-      feedId,
-      hubUrl: subscription.hubUrl,
-      status: response.status,
-    });
-    return false;
-  } catch (error) {
-    logger.warn("WebSub unsubscribe failed", {
-      feedId,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-    return false;
-  }
 }
