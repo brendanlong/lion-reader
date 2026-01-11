@@ -104,6 +104,169 @@ const subscriptionWithFeedOutputSchema = z.object({
 // ============================================================================
 
 /**
+ * Parameters for creating or reactivating a subscription.
+ */
+interface CreateSubscriptionParams {
+  /** User ID */
+  userId: string;
+  /** Feed ID to subscribe to */
+  feedId: string;
+  /**
+   * How to find entries to populate user_entries:
+   * - "lastSeenAt": Use feed's lastEntriesUpdatedAt to find current entries (for existing feeds)
+   * - "guids": Use provided GUIDs to find entries (for freshly parsed feeds)
+   * - "none": Don't populate entries (feed hasn't been fetched yet)
+   */
+  entrySource:
+    | { type: "lastSeenAt"; lastEntriesUpdatedAt: Date | null }
+    | { type: "guids"; guids: string[] }
+    | { type: "none" };
+}
+
+/**
+ * Result of creating or reactivating a subscription.
+ */
+interface CreateSubscriptionResult {
+  /** Subscription ID */
+  subscriptionId: string;
+  /** When the subscription was created/reactivated */
+  subscribedAt: Date;
+  /** Whether this was a reactivation of a soft-deleted subscription */
+  isReactivated: boolean;
+  /** Number of unread entries populated */
+  unreadCount: number;
+}
+
+/**
+ * Creates a new subscription or reactivates a soft-deleted one.
+ *
+ * This centralizes subscription creation logic that was previously duplicated
+ * in subscribeToExistingFeed, subscribeToNewOrUnfetchedFeed, and OPML import.
+ *
+ * Handles:
+ * - Checking for existing subscription (throws if already active)
+ * - Reactivating soft-deleted subscriptions
+ * - Creating new subscriptions
+ * - Populating user_entries for initial unread entries
+ *
+ * @param db - Database instance
+ * @param params - Subscription parameters
+ * @returns Subscription info including unread count
+ * @throws alreadySubscribed if user already has an active subscription to this feed
+ */
+export async function createOrReactivateSubscription(
+  db: typeof import("@/server/db").db,
+  params: CreateSubscriptionParams
+): Promise<CreateSubscriptionResult> {
+  const { userId, feedId, entrySource } = params;
+
+  // Check for existing subscription
+  const existingSubscription = await db
+    .select()
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+    .limit(1);
+
+  let subscriptionId: string;
+  let subscribedAt: Date;
+  let isReactivated = false;
+
+  if (existingSubscription.length > 0) {
+    const sub = existingSubscription[0];
+
+    if (sub.unsubscribedAt === null) {
+      throw errors.alreadySubscribed();
+    }
+
+    // Reactivate soft-deleted subscription
+    subscriptionId = sub.id;
+    subscribedAt = new Date();
+    isReactivated = true;
+
+    await db
+      .update(subscriptions)
+      .set({
+        unsubscribedAt: null,
+        subscribedAt,
+        updatedAt: subscribedAt,
+      })
+      .where(eq(subscriptions.id, subscriptionId));
+  } else {
+    // Create new subscription
+    subscriptionId = generateUuidv7();
+    subscribedAt = new Date();
+
+    await db.insert(subscriptions).values({
+      id: subscriptionId,
+      userId,
+      feedId,
+      subscribedAt,
+      createdAt: subscribedAt,
+      updatedAt: subscribedAt,
+    });
+  }
+
+  // Populate user_entries for initial unread entries
+  let unreadCount = 0;
+
+  if (entrySource.type === "lastSeenAt" && entrySource.lastEntriesUpdatedAt) {
+    // Find entries currently in the feed using lastSeenAt timestamp matching
+    const matchingEntries = await db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(
+        and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, entrySource.lastEntriesUpdatedAt))
+      );
+
+    if (matchingEntries.length > 0) {
+      const pairs = matchingEntries.map((entry) => ({
+        userId,
+        entryId: entry.id,
+      }));
+
+      await db.insert(userEntries).values(pairs).onConflictDoNothing();
+      unreadCount = matchingEntries.length;
+
+      logger.debug("Populated initial user entries via lastSeenAt", {
+        userId,
+        feedId,
+        entryCount: matchingEntries.length,
+      });
+    }
+  } else if (entrySource.type === "guids" && entrySource.guids.length > 0) {
+    // Find entries by GUID matching (for freshly parsed feeds)
+    const matchingEntries = await db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(and(eq(entries.feedId, feedId), inArray(entries.guid, entrySource.guids)));
+
+    if (matchingEntries.length > 0) {
+      const pairs = matchingEntries.map((entry) => ({
+        userId,
+        entryId: entry.id,
+      }));
+
+      await db.insert(userEntries).values(pairs).onConflictDoNothing();
+      unreadCount = matchingEntries.length;
+
+      logger.debug("Populated initial user entries via GUIDs", {
+        userId,
+        feedId,
+        entryCount: matchingEntries.length,
+      });
+    }
+  }
+  // type === "none": Don't populate entries (feed hasn't been fetched yet)
+
+  return {
+    subscriptionId,
+    subscribedAt,
+    isReactivated,
+    unreadCount,
+  };
+}
+
+/**
  * Subscribe to an existing feed that has already been fetched.
  * Uses lastSeenAt to determine which entries are currently in the feed,
  * avoiding an unnecessary network request.
@@ -124,86 +287,22 @@ async function subscribeToExistingFeed(
       .where(eq(feeds.id, feedId));
   }
 
-  // Check for existing subscription
-  const existingSubscription = await db
-    .select()
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-    .limit(1);
-
-  let subscriptionId: string;
-  let subscribedAt: Date;
-
-  if (existingSubscription.length > 0) {
-    const sub = existingSubscription[0];
-
-    if (sub.unsubscribedAt === null) {
-      throw errors.alreadySubscribed();
-    }
-
-    // Reactivate subscription
-    subscriptionId = sub.id;
-    subscribedAt = new Date();
-
-    await db
-      .update(subscriptions)
-      .set({
-        unsubscribedAt: null,
-        subscribedAt: subscribedAt,
-        updatedAt: subscribedAt,
-      })
-      .where(eq(subscriptions.id, subscriptionId));
-  } else {
-    // Create new subscription
-    subscriptionId = generateUuidv7();
-    subscribedAt = new Date();
-
-    await db.insert(subscriptions).values({
-      id: subscriptionId,
-      userId,
-      feedId,
-      subscribedAt,
-      createdAt: subscribedAt,
-      updatedAt: subscribedAt,
-    });
-  }
-
-  // Find entries currently in the feed using lastSeenAt
-  // Entries where lastSeenAt = lastEntriesUpdatedAt are in the current feed
-  // We use lastEntriesUpdatedAt (not lastFetchedAt) because it only updates when entries change,
-  // ensuring exact sync with entries.lastSeenAt
-  let unreadCount = 0;
-  if (feedRecord.lastEntriesUpdatedAt) {
-    const matchingEntries = await db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(
-        and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, feedRecord.lastEntriesUpdatedAt))
-      );
-
-    if (matchingEntries.length > 0) {
-      const pairs = matchingEntries.map((entry) => ({
-        userId,
-        entryId: entry.id,
-      }));
-
-      await db.insert(userEntries).values(pairs).onConflictDoNothing();
-      unreadCount = matchingEntries.length;
-
-      logger.debug("Populated initial user entries via lastSeenAt", {
-        userId,
-        feedId,
-        entryCount: matchingEntries.length,
-      });
-    }
-  }
+  // Create or reactivate subscription with entry population via lastSeenAt
+  const result = await createOrReactivateSubscription(db, {
+    userId,
+    feedId,
+    entrySource: {
+      type: "lastSeenAt",
+      lastEntriesUpdatedAt: feedRecord.lastEntriesUpdatedAt,
+    },
+  });
 
   const subscriptionData = {
-    id: subscriptionId,
+    id: result.subscriptionId,
     feedId,
     customTitle: null,
-    subscribedAt,
-    unreadCount,
+    subscribedAt: result.subscribedAt,
+    unreadCount: result.unreadCount,
     tags: [] as Array<{ id: string; name: string; color: string | null }>,
   };
 
@@ -219,10 +318,10 @@ async function subscribeToExistingFeed(
   publishSubscriptionCreated(
     userId,
     feedId,
-    subscriptionId,
+    result.subscriptionId,
     {
       ...subscriptionData,
-      subscribedAt: subscribedAt.toISOString(),
+      subscribedAt: result.subscribedAt.toISOString(),
     },
     feedData
   ).catch((err) => {
@@ -278,47 +377,27 @@ async function subscribeToNewOrUnfetchedFeed(
       );
     }
 
-    // Fetch the actual feed
-    const feedResult = await fetchUrl(feedUrl);
-    feedContent = feedResult.text;
-    finalFeedUrl = feedResult.finalUrl;
+    // Fetch the discovered feed URL
+    const discoveredFetch = await fetchUrl(feedUrl);
+    feedContent = discoveredFetch.text;
+    finalFeedUrl = discoveredFetch.finalUrl;
   } else {
     feedContent = content;
     finalFeedUrl = initialFinalUrl;
   }
 
-  // Check if a feed exists at the final (redirected) URL
-  // This handles the case where the user enters http://example.com/feed
-  // which redirects to https://example.com/feed - we want to use the existing feed
-  if (finalFeedUrl !== feedUrl) {
-    const existingFeedAtFinalUrl = await db
-      .select()
-      .from(feeds)
-      .where(eq(feeds.url, finalFeedUrl))
-      .limit(1);
-
-    if (existingFeedAtFinalUrl.length > 0 && existingFeedAtFinalUrl[0].lastFetchedAt !== null) {
-      // Feed exists at the final URL - use it instead
-      return await subscribeToExistingFeed(
-        db,
-        userId,
-        existingFeedAtFinalUrl[0] as typeof feeds.$inferSelect
-      );
-    }
-
-    // Use the final URL for the new feed
-    feedUrl = finalFeedUrl;
-  }
-
   // Parse the feed
   let parsedFeed;
   try {
-    parsedFeed = await parseFeed(feedContent);
-  } catch (error) {
-    throw errors.parseError(error instanceof Error ? error.message : "Invalid feed format");
+    parsedFeed = parseFeed(feedContent);
+  } catch {
+    throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
   }
 
-  // Check if feed already exists (may have been created but not yet fetched)
+  // Use final URL after redirects
+  feedUrl = finalFeedUrl;
+
+  // Check if feed already exists (by final URL)
   const existingFeed = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
 
   let feedId: string;
@@ -328,6 +407,7 @@ async function subscribeToNewOrUnfetchedFeed(
     feedId = existingFeed[0].id;
     feedRecord = existingFeed[0];
 
+    // Ensure job is enabled
     const job = await enableFeedJob(feedId);
     if (job?.nextRunAt) {
       await db
@@ -340,13 +420,11 @@ async function subscribeToNewOrUnfetchedFeed(
     feedId = generateUuidv7();
     const now = new Date();
 
-    // Use domain as fallback if feed has no title
-    const fallbackTitle = getDomainFromUrl(feedUrl);
-
-    // For LessWrong user feeds, try to enhance the title with the username
-    let feedTitle = parsedFeed.title || fallbackTitle || null;
+    // Use domain as title fallback, but also check for LessWrong user feeds
+    let feedTitle = parsedFeed.title || getDomainFromUrl(feedUrl);
     const lessWrongUserId = extractUserIdFromFeedUrl(feedUrl);
     if (lessWrongUserId && feedTitle) {
+      // Fetch LessWrong user info and append display name to title
       const lwUser = await fetchLessWrongUserById(lessWrongUserId);
       if (lwUser?.displayName) {
         feedTitle = `${feedTitle} - ${lwUser.displayName}`;
@@ -371,49 +449,7 @@ async function subscribeToNewOrUnfetchedFeed(
     await createOrEnableFeedJob(feedId);
   }
 
-  // Check for existing subscription
-  const existingSubscription = await db
-    .select()
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-    .limit(1);
-
-  let subscriptionId: string;
-  let subscribedAt: Date;
-
-  if (existingSubscription.length > 0) {
-    const sub = existingSubscription[0];
-
-    if (sub.unsubscribedAt === null) {
-      throw errors.alreadySubscribed();
-    }
-
-    subscriptionId = sub.id;
-    subscribedAt = new Date();
-
-    await db
-      .update(subscriptions)
-      .set({
-        unsubscribedAt: null,
-        subscribedAt: subscribedAt,
-        updatedAt: subscribedAt,
-      })
-      .where(eq(subscriptions.id, subscriptionId));
-  } else {
-    subscriptionId = generateUuidv7();
-    subscribedAt = new Date();
-
-    await db.insert(subscriptions).values({
-      id: subscriptionId,
-      userId,
-      feedId,
-      subscribedAt,
-      createdAt: subscribedAt,
-      updatedAt: subscribedAt,
-    });
-  }
-
-  // Populate user_entries for entries currently in the feed (using GUIDs from parsed feed)
+  // Extract GUIDs from parsed feed for entry matching
   const feedGuids: string[] = [];
   for (const item of parsedFeed.items) {
     try {
@@ -423,36 +459,22 @@ async function subscribeToNewOrUnfetchedFeed(
     }
   }
 
-  let unreadCount = 0;
-  if (feedGuids.length > 0) {
-    const matchingEntries = await db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(and(eq(entries.feedId, feedId), inArray(entries.guid, feedGuids)));
-
-    if (matchingEntries.length > 0) {
-      const pairs = matchingEntries.map((entry) => ({
-        userId,
-        entryId: entry.id,
-      }));
-
-      await db.insert(userEntries).values(pairs).onConflictDoNothing();
-      unreadCount = matchingEntries.length;
-
-      logger.debug("Populated initial user entries", {
-        userId,
-        feedId,
-        entryCount: matchingEntries.length,
-      });
-    }
-  }
+  // Create or reactivate subscription with entry population via GUIDs
+  const result = await createOrReactivateSubscription(db, {
+    userId,
+    feedId,
+    entrySource: {
+      type: "guids",
+      guids: feedGuids,
+    },
+  });
 
   const subscriptionData = {
-    id: subscriptionId,
+    id: result.subscriptionId,
     feedId,
     customTitle: null,
-    subscribedAt,
-    unreadCount,
+    subscribedAt: result.subscribedAt,
+    unreadCount: result.unreadCount,
     tags: [] as Array<{ id: string; name: string; color: string | null }>,
   };
 
@@ -468,10 +490,10 @@ async function subscribeToNewOrUnfetchedFeed(
   publishSubscriptionCreated(
     userId,
     feedId,
-    subscriptionId,
+    result.subscriptionId,
     {
       ...subscriptionData,
-      subscribedAt: subscribedAt.toISOString(),
+      subscribedAt: result.subscribedAt.toISOString(),
     },
     feedData
   ).catch((err) => {
