@@ -98,6 +98,7 @@ function SingleFeedContent() {
   const utils = trpc.useUtils();
 
   // Use entry list query that stays mounted while viewing entries
+  // Note: feedId param is actually a subscription ID (route rename pending)
   const entryListQuery = useEntryListQuery({
     filters: { feedId, unreadOnly: showUnreadOnly, sortOrder },
     openEntryId,
@@ -132,8 +133,8 @@ function SingleFeedContent() {
   // Fetch subscription info to get feed title and validate access
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
-  // Find the subscription for this feed
-  const subscription = subscriptionsQuery.data?.items.find((item) => item.feed.id === feedId);
+  // Find the subscription by ID (feedId param is actually a subscription ID)
+  const subscription = subscriptionsQuery.data?.items.find((item) => item.id === feedId);
 
   const handleEntryClick = useCallback(
     (entryId: string) => {
@@ -176,9 +177,8 @@ function SingleFeedContent() {
     return <FeedNotFound />;
   }
 
-  const feedTitle =
-    subscription.subscription.customTitle ?? subscription.feed.title ?? "Untitled Feed";
-  const unreadCount = subscription.subscription.unreadCount;
+  const feedTitle = subscription.title ?? subscription.originalTitle ?? "Untitled Feed";
+  const unreadCount = subscription.unreadCount;
 
   // Render both list and content, hiding the list when viewing an entry.
   // This preserves scroll position and enables seamless j/k navigation.
@@ -259,14 +259,14 @@ function SingleFeedContent() {
           </div>
 
           {/* Feed URL if available */}
-          {subscription.feed.siteUrl && (
+          {subscription.siteUrl && (
             <a
-              href={subscription.feed.siteUrl}
+              href={subscription.siteUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-1 inline-block text-sm text-zinc-500 hover:underline dark:text-zinc-400"
             >
-              {new URL(subscription.feed.siteUrl).hostname}
+              {new URL(subscription.siteUrl).hostname}
             </a>
           )}
         </div>

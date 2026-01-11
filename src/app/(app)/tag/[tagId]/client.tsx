@@ -133,14 +133,12 @@ function UncategorizedContent() {
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
   const uncategorizedFeeds = useMemo(() => {
-    return (
-      subscriptionsQuery.data?.items.filter((item) => item.subscription.tags.length === 0) ?? []
-    );
+    return subscriptionsQuery.data?.items.filter((item) => item.tags.length === 0) ?? [];
   }, [subscriptionsQuery.data?.items]);
 
   const feedCount = uncategorizedFeeds.length;
   const unreadCount = useMemo(() => {
-    return uncategorizedFeeds.reduce((sum, item) => sum + item.subscription.unreadCount, 0);
+    return uncategorizedFeeds.reduce((sum, item) => sum + item.unreadCount, 0);
   }, [uncategorizedFeeds]);
 
   const handleEntryClick = useCallback(
