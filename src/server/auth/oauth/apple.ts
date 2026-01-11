@@ -98,6 +98,8 @@ export interface AppleAuthResult {
     idToken: string;
     expiresAt?: Date;
   };
+  /** Optional invite token for new user registration */
+  inviteToken?: string;
 }
 
 /**
@@ -128,14 +130,24 @@ function getStateKey(state: string): string {
 }
 
 /**
+ * Data stored in Redis for state verification
+ */
+interface AppleStateData {
+  /** Optional invite token for new user registration */
+  inviteToken?: string;
+}
+
+/**
  * Stores the OAuth state in Redis
  * The state is used for CSRF protection
  *
  * @param state - The OAuth state parameter
+ * @param inviteToken - Optional invite token for new user registration
  */
-async function storeState(state: string): Promise<void> {
+async function storeState(state: string, inviteToken?: string): Promise<void> {
   const key = getStateKey(state);
-  await redis.setex(key, STATE_TTL_SECONDS, "valid");
+  const data: AppleStateData = { inviteToken };
+  await redis.setex(key, STATE_TTL_SECONDS, JSON.stringify(data));
 }
 
 /**
@@ -143,9 +155,9 @@ async function storeState(state: string): Promise<void> {
  * This ensures one-time use of the state
  *
  * @param state - The OAuth state parameter
- * @returns Whether the state was valid
+ * @returns The state data if valid, null otherwise
  */
-async function consumeState(state: string): Promise<boolean> {
+async function consumeState(state: string): Promise<AppleStateData | null> {
   const key = getStateKey(state);
 
   // Get and delete in a single check
@@ -153,10 +165,15 @@ async function consumeState(state: string): Promise<boolean> {
 
   if (value) {
     await redis.del(key);
-    return true;
+    try {
+      return JSON.parse(value) as AppleStateData;
+    } catch {
+      // Legacy format was just "valid" string - treat as valid but no invite token
+      return {};
+    }
   }
 
-  return false;
+  return null;
 }
 
 // ============================================================================
@@ -225,10 +242,11 @@ function extractUserInfoFromToken(idToken: string): AppleUserInfo {
  *
  * Note: Apple doesn't use PKCE like Google does
  *
+ * @param inviteToken - Optional invite token for new user registration
  * @returns The authorization URL and state
  * @throws Error if Apple OAuth is not configured
  */
-export async function createAppleAuthUrl(): Promise<AppleAuthUrlResult> {
+export async function createAppleAuthUrl(inviteToken?: string): Promise<AppleAuthUrlResult> {
   const apple = getAppleProvider();
 
   if (!apple) {
@@ -238,8 +256,8 @@ export async function createAppleAuthUrl(): Promise<AppleAuthUrlResult> {
   // Generate state parameter for CSRF protection
   const state = generateState();
 
-  // Store the state for later verification
-  await storeState(state);
+  // Store the state and invite token for later verification
+  await storeState(state, inviteToken);
 
   // Create the authorization URL
   const url = apple.createAuthorizationURL(state, APPLE_SCOPES);
@@ -276,10 +294,10 @@ export async function validateAppleCallback(
     throw new Error("Apple OAuth is not configured");
   }
 
-  // Validate the state
-  const isValidState = await consumeState(state);
+  // Validate the state and retrieve stored data
+  const stateData = await consumeState(state);
 
-  if (!isValidState) {
+  if (!stateData) {
     throw new Error("Invalid or expired OAuth state");
   }
 
@@ -316,6 +334,7 @@ export async function validateAppleCallback(
       idToken,
       expiresAt: tokens.accessTokenExpiresAt(),
     },
+    inviteToken: stateData.inviteToken,
   };
 }
 
