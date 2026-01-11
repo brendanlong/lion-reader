@@ -22,3 +22,16 @@ export {
   getLatestUnsubscribeMailto,
   type UnsubscribeResult,
 } from "./unsubscribe";
+
+export {
+  hasForwardPrefix,
+  stripForwardPrefix,
+  hasForwardedBlock,
+  extractOriginalSenderFromBody,
+  extractOriginalSubjectFromBody,
+  parseForwardedEmail,
+  generateForwardedByBlock,
+  prependForwardedByBlock,
+  type ExtractedOriginalSender,
+  type ForwardedEmailParseResult,
+} from "./forwarded-email";

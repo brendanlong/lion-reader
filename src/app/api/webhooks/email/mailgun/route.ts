@@ -14,8 +14,13 @@
 
 import { createHmac, timingSafeEqual } from "crypto";
 import { processInboundEmail, type InboundEmail } from "@/server/email";
+import { parseForwardedEmail, prependForwardedByBlock } from "@/server/email/forwarded-email";
 import { ingestConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
+import { parseFromAddress, stripEmailNameQuotes } from "@/server/email/parse-from-address";
+
+// Re-export for backwards compatibility with existing tests
+export { parseFromAddress, stripEmailNameQuotes };
 
 /**
  * Route segment config for Next.js
@@ -49,63 +54,6 @@ function verifySignature(
     // Buffers of different lengths will throw
     return false;
   }
-}
-
-/**
- * Strips surrounding double quotes and unescapes an email display name.
- * RFC 2822 uses quotes for names containing special characters like & or commas,
- * and backslash escaping for literal quotes and backslashes within the name.
- *
- * @param name - The raw display name from an email header
- * @returns The name with surrounding quotes removed and escape sequences resolved
- */
-export function stripEmailNameQuotes(name: string): string {
-  // RFC 2822 quoted-string: names with special chars are wrapped in double quotes
-  if (name.startsWith('"') && name.endsWith('"') && name.length >= 2) {
-    const unquoted = name.slice(1, -1);
-    // Unescape RFC 2822 quoted-pair: \" -> " and \\ -> \
-    return unquoted.replace(/\\(.)/g, "$1");
-  }
-  return name;
-}
-
-/**
- * Parses a "From" address string into email and name components.
- * Handles formats:
- * - "Name <email@example.com>"
- * - '"Quoted Name" <email@example.com>' (RFC 2822 quoted names)
- * - "<email@example.com>"
- * - "email@example.com"
- *
- * @param from - The from string to parse
- * @returns Object with address and optional name
- */
-export function parseFromAddress(from: string): { address: string; name?: string } {
-  // Try to match "Name <email>" format
-  const matchWithName = from.match(/^(.+?)\s*<([^>]+)>$/);
-  if (matchWithName) {
-    const rawName = matchWithName[1].trim();
-    const address = matchWithName[2].trim();
-    // Strip surrounding quotes from the name (RFC 2822 quoted-string)
-    const name = stripEmailNameQuotes(rawName);
-    return {
-      address,
-      name: name || undefined,
-    };
-  }
-
-  // Try to match "<email>" format
-  const matchAngleBrackets = from.match(/^<([^>]+)>$/);
-  if (matchAngleBrackets) {
-    return {
-      address: matchAngleBrackets[1].trim(),
-    };
-  }
-
-  // Assume it's just an email address
-  return {
-    address: from.trim(),
-  };
 }
 
 /**
@@ -186,6 +134,72 @@ function parseMailgunEmail(formData: FormData): InboundEmail {
 }
 
 /**
+ * Processes a forwarded email by extracting the original sender and modifying the content.
+ *
+ * When an email is forwarded:
+ * 1. Extract the original sender from the forwarded content body
+ * 2. Use the original sender as the "from" address (for feed grouping)
+ * 3. Strip "Fwd:" prefix from the subject
+ * 4. Prepend a "Forwarded by: [forwarder]" attribution block to the content
+ *
+ * @param email - The parsed inbound email
+ * @returns Modified email with original sender and attribution, or unchanged email if not forwarded
+ */
+function processForwardedEmail(email: InboundEmail): {
+  email: InboundEmail;
+  isForwarded: boolean;
+  forwardedBy?: { address: string; name?: string };
+} {
+  // Try to detect forwarding from both HTML and text content
+  const content = email.html || email.text || "";
+  const parseResult = parseForwardedEmail(email.subject, content);
+
+  if (!parseResult.isForwarded) {
+    return { email, isForwarded: false };
+  }
+
+  // Store the original forwarder info
+  const forwarder = {
+    address: email.from.address,
+    name: email.from.name,
+  };
+
+  // If we found the original sender, use it as the "from" address
+  const newFrom = parseResult.originalSender
+    ? {
+        address: parseResult.originalSender.address,
+        name: parseResult.originalSender.name,
+      }
+    : email.from;
+
+  // Strip "Fwd:" prefix from subject
+  const newSubject = parseResult.cleanedSubject ?? email.subject;
+
+  // Prepend "Forwarded by" attribution to content
+  let newHtml = email.html;
+  let newText = email.text;
+
+  if (email.html) {
+    newHtml = prependForwardedByBlock(email.html, forwarder.address, forwarder.name, true);
+  }
+  if (email.text) {
+    newText = prependForwardedByBlock(email.text, forwarder.address, forwarder.name, false);
+  }
+
+  return {
+    email: {
+      ...email,
+      from: newFrom,
+      subject: newSubject,
+      html: newHtml,
+      text: newText,
+    },
+    isForwarded: true,
+    forwardedBy: forwarder,
+  };
+}
+
+/**
  * POST /api/webhooks/email/mailgun
  *
  * Handles incoming email webhooks from Mailgun's forward() action.
@@ -248,7 +262,10 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // 5. Parse Mailgun format into normalized format
-  const email = parseMailgunEmail(formData);
+  const rawEmail = parseMailgunEmail(formData);
+
+  // 6. Handle forwarded emails - extract original sender and add attribution
+  const { email, isForwarded, forwardedBy } = processForwardedEmail(rawEmail);
 
   logger.debug("Processing inbound email from Mailgun", {
     to: email.to,
@@ -257,9 +274,12 @@ export async function POST(request: Request): Promise<Response> {
     messageId: email.messageId,
     hasHtml: !!email.html,
     hasText: !!email.text,
+    isForwarded,
+    forwardedBy: forwardedBy?.address,
+    originalSender: isForwarded ? email.from.address : undefined,
   });
 
-  // 6. Process the email
+  // 7. Process the email
   try {
     const result = await processInboundEmail(email);
 
@@ -268,6 +288,8 @@ export async function POST(request: Request): Promise<Response> {
         feedId: result.feedId,
         entryId: result.entryId,
         from: email.from.address,
+        isForwarded,
+        forwardedBy: forwardedBy?.address,
       });
     } else {
       // Not an error - just rejected (invalid token, blocked sender, etc.)
