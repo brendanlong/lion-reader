@@ -157,8 +157,8 @@ function SettingsContent() {
       {/* Tags Section */}
       <TagManagement />
 
-      {/* Change Password Section */}
-      <ChangePasswordForm />
+      {/* Password Section */}
+      <PasswordSection />
 
       {/* OPML Import/Export Section */}
       <OpmlImportExport />
@@ -198,7 +198,30 @@ function SettingsContent() {
   );
 }
 
-function ChangePasswordForm() {
+function PasswordSection() {
+  const linkedAccountsQuery = trpc.users["me.linkedAccounts"].useQuery();
+  const hasPassword = linkedAccountsQuery.data?.hasPassword ?? true;
+
+  if (linkedAccountsQuery.isLoading) {
+    return (
+      <section>
+        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Password</h2>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="h-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <PasswordForm
+      mode={hasPassword ? "change" : "set"}
+      onSuccess={() => linkedAccountsQuery.refetch()}
+    />
+  );
+}
+
+function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: () => void }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -209,6 +232,23 @@ function ChangePasswordForm() {
     form?: string;
   }>({});
   const [successMessage, setSuccessMessage] = useState("");
+
+  const isSetMode = mode === "set";
+
+  const setPasswordMutation = trpc.users["me.setPassword"].useMutation({
+    onSuccess: () => {
+      setSuccessMessage("Password set successfully");
+      setNewPassword("");
+      setConfirmPassword("");
+      setErrors({});
+      onSuccess();
+    },
+    onError: (error) => {
+      setErrors({ form: error.message || "Failed to set password" });
+      setSuccessMessage("");
+      toast.error("Failed to set password");
+    },
+  });
 
   const changePasswordMutation = trpc.users["me.changePassword"].useMutation({
     onSuccess: () => {
@@ -229,21 +269,23 @@ function ChangePasswordForm() {
     },
   });
 
+  const mutation = isSetMode ? setPasswordMutation : changePasswordMutation;
+
   const validateForm = (): boolean => {
     const newErrors: typeof errors = {};
 
-    if (!currentPassword) {
+    if (!isSetMode && !currentPassword) {
       newErrors.currentPassword = "Current password is required";
     }
 
     if (!newPassword) {
-      newErrors.newPassword = "New password is required";
+      newErrors.newPassword = `${isSetMode ? "Password" : "New password"} is required`;
     } else if (newPassword.length < 8) {
-      newErrors.newPassword = "New password must be at least 8 characters";
+      newErrors.newPassword = `${isSetMode ? "Password" : "New password"} must be at least 8 characters`;
     }
 
     if (!confirmPassword) {
-      newErrors.confirmPassword = "Please confirm your new password";
+      newErrors.confirmPassword = `Please confirm your ${isSetMode ? "" : "new "}password`;
     } else if (newPassword !== confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match";
     }
@@ -260,15 +302,26 @@ function ChangePasswordForm() {
       return;
     }
 
-    changePasswordMutation.mutate({ currentPassword, newPassword });
+    if (isSetMode) {
+      setPasswordMutation.mutate({ newPassword });
+    } else {
+      changePasswordMutation.mutate({ currentPassword, newPassword });
+    }
   };
 
   return (
     <section>
       <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-        Change Password
+        {isSetMode ? "Set Password" : "Change Password"}
       </h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        {isSetMode && (
+          <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+            Your account was created with OAuth. Set a password to also log in with your email and
+            password.
+          </p>
+        )}
+
         {successMessage && (
           <Alert variant="success" className="mb-4">
             {successMessage}
@@ -282,45 +335,47 @@ function ChangePasswordForm() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            id="current-password"
-            type="password"
-            label="Current password"
-            placeholder="Enter your current password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            error={errors.currentPassword}
-            autoComplete="current-password"
-            disabled={changePasswordMutation.isPending}
-          />
+          {!isSetMode && (
+            <Input
+              id="current-password"
+              type="password"
+              label="Current password"
+              placeholder="Enter your current password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              error={errors.currentPassword}
+              autoComplete="current-password"
+              disabled={mutation.isPending}
+            />
+          )}
 
           <Input
             id="new-password"
             type="password"
-            label="New password"
-            placeholder="Enter your new password"
+            label={isSetMode ? "Password" : "New password"}
+            placeholder={isSetMode ? "Enter a password" : "Enter your new password"}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             error={errors.newPassword}
             autoComplete="new-password"
-            disabled={changePasswordMutation.isPending}
+            disabled={mutation.isPending}
           />
 
           <Input
             id="confirm-password"
             type="password"
-            label="Confirm new password"
-            placeholder="Confirm your new password"
+            label={isSetMode ? "Confirm password" : "Confirm new password"}
+            placeholder={isSetMode ? "Confirm your password" : "Confirm your new password"}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             error={errors.confirmPassword}
             autoComplete="new-password"
-            disabled={changePasswordMutation.isPending}
+            disabled={mutation.isPending}
           />
 
           <div className="pt-2">
-            <Button type="submit" loading={changePasswordMutation.isPending}>
-              Change password
+            <Button type="submit" loading={mutation.isPending}>
+              {isSetMode ? "Set password" : "Change password"}
             </Button>
           </div>
         </form>

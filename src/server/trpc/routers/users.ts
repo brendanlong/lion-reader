@@ -139,6 +139,54 @@ export const usersRouter = createTRPCRouter({
     }),
 
   /**
+   * Set password for an OAuth-only account.
+   *
+   * Only works if the user doesn't already have a password set.
+   * This allows OAuth users to add password-based login to their account.
+   */
+  "me.setPassword": protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/users/me/set-password",
+        tags: ["Users"],
+        summary: "Set password for OAuth account",
+      },
+    })
+    .input(
+      z.object({
+        newPassword: z
+          .string()
+          .min(8, "Password must be at least 8 characters")
+          .max(128, "Password must be less than 128 characters"),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const { newPassword } = input;
+
+      // Hash the new password
+      const passwordHash = await argon2.hash(newPassword);
+
+      // Attempt to set password only if user doesn't already have one
+      const updated = await ctx.db
+        .update(users)
+        .set({
+          passwordHash,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(users.id, userId), isNull(users.passwordHash)))
+        .returning({ id: users.id });
+
+      if (updated.length === 0) {
+        throw errors.validation("Account already has a password. Use change password instead.");
+      }
+
+      return { success: true };
+    }),
+
+  /**
    * Change password for the current user.
    *
    * Requires the current password for verification before setting a new one.
