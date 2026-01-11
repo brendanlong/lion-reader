@@ -223,6 +223,62 @@ type DbContext = {
   db: typeof import("@/server/db").db;
 };
 
+// ============================================================================
+// Base Query Helpers
+// ============================================================================
+
+/**
+ * Creates a subquery for active subscription feed IDs.
+ * Returns feed IDs (including previous feed IDs from redirects) for all active subscriptions.
+ *
+ * @param db - Database instance
+ * @param userId - User ID to filter subscriptions
+ * @returns Subquery that can be used with inArray()
+ */
+function activeSubscriptionFeedIdsSubquery(db: typeof import("@/server/db").db, userId: string) {
+  return db
+    .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+}
+
+/**
+ * Creates a subquery for saved feed IDs.
+ * Returns feed IDs for feeds with type='saved' owned by the user.
+ *
+ * @param db - Database instance
+ * @param userId - User ID to filter saved feeds
+ * @returns Subquery that can be used with inArray()
+ */
+function savedFeedIdsSubquery(db: typeof import("@/server/db").db, userId: string) {
+  return db
+    .select({ id: feeds.id })
+    .from(feeds)
+    .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
+}
+
+/**
+ * Builds the visibility condition for entries.
+ * An entry is visible if it:
+ * 1. Is from an active subscription (current feed or previous feeds from redirects), OR
+ * 2. Is starred, OR
+ * 3. Is from the user's saved feed
+ *
+ * @param db - Database instance
+ * @param userId - User ID for visibility check
+ * @returns SQL condition for entry visibility
+ */
+function buildEntryVisibilityCondition(db: typeof import("@/server/db").db, userId: string) {
+  const activeSubFeedIds = activeSubscriptionFeedIdsSubquery(db, userId);
+  const savedFeedIds = savedFeedIdsSubquery(db, userId);
+
+  return or(
+    inArray(entries.feedId, activeSubFeedIds),
+    eq(userEntries.starred, true),
+    inArray(entries.feedId, savedFeedIds)
+  )!;
+}
+
 /**
  * Updates the starred status of an entry for a user.
  * Uses UPDATE with RETURNING for efficiency (single query instead of SELECT-UPDATE-SELECT).
@@ -313,28 +369,8 @@ export const entriesRouter = createTRPCRouter({
       // Visibility is enforced by inner join with user_entries
       const conditions = [eq(userEntries.userId, userId)];
 
-      // Entry must be:
-      // 1. From active subscription (current feed or previous feeds from redirects), OR
-      // 2. Starred, OR
-      // 3. From user's saved feed (type='saved' and feed.userId = userId)
-      // Note: feed_ids is a generated column that combines feedId with previousFeedIds
-      const activeSubscriptionFeedIds = ctx.db
-        .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
-
-      const savedFeedIds = ctx.db
-        .select({ id: feeds.id })
-        .from(feeds)
-        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
-
-      conditions.push(
-        or(
-          inArray(entries.feedId, activeSubscriptionFeedIds),
-          eq(userEntries.starred, true),
-          inArray(entries.feedId, savedFeedIds)
-        )!
-      );
+      // Entry must be visible (from active subscription, starred, or from saved feed)
+      conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
 
       // Filter by feedId if specified
       if (input.feedId) {
@@ -519,7 +555,7 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       // Get the entry with feed and user state
-      // Permission check is in WHERE: must be starred OR have active subscription OR be from saved feed
+      // Permission check uses shared visibility condition
       const result = await ctx.db
         .select({
           entry: entries,
@@ -529,24 +565,11 @@ export const entriesRouter = createTRPCRouter({
         .from(entries)
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .leftJoin(
-          subscriptions,
-          and(
-            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
         .where(
           and(
             eq(entries.id, input.id),
             eq(userEntries.userId, userId),
-            // Permission: starred OR has active subscription OR is user's saved feed
-            or(
-              eq(userEntries.starred, true),
-              sql`${subscriptions.id} IS NOT NULL`,
-              and(eq(feeds.type, "saved"), eq(feeds.userId, userId))
-            )
+            buildEntryVisibilityCondition(ctx.db, userId)
           )
         )
         .limit(1);
@@ -994,28 +1017,8 @@ export const entriesRouter = createTRPCRouter({
       // Visibility is enforced by inner join with user_entries
       const conditions = [eq(userEntries.userId, userId)];
 
-      // Entry must be:
-      // 1. From active subscription (current feed or previous feeds from redirects), OR
-      // 2. Starred, OR
-      // 3. From user's saved feed (type='saved' and feed.userId = userId)
-      // Note: feed_ids is a generated column that combines feedId with previousFeedIds
-      const activeSubscriptionFeedIds = ctx.db
-        .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
-
-      const savedFeedIds = ctx.db
-        .select({ id: feeds.id })
-        .from(feeds)
-        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
-
-      conditions.push(
-        or(
-          inArray(entries.feedId, activeSubscriptionFeedIds),
-          eq(userEntries.starred, true),
-          inArray(entries.feedId, savedFeedIds)
-        )!
-      );
+      // Entry must be visible (from active subscription, starred, or from saved feed)
+      conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
 
       // Filter by feedId if specified
       if (input?.feedId) {
