@@ -22,10 +22,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { validateGoogleCallback, isGoogleOAuthEnabled } from "@/server/auth/oauth/google";
-import { generateSessionToken, getSessionExpiry, processOAuthCallback } from "@/server/auth";
-import { generateUuidv7 } from "@/lib/uuidv7";
+import { createSession, processOAuthCallback } from "@/server/auth";
 import { db } from "@/server/db";
-import { sessions, oauthAccounts } from "@/server/db/schema";
+import { oauthAccounts } from "@/server/db/schema";
 
 /**
  * Handle Google OAuth redirect callback
@@ -72,7 +71,6 @@ export async function GET(request: NextRequest) {
     }
 
     const { userInfo, tokens, scopes, mode, returnUrl } = googleResult;
-    const now = new Date();
 
     // Handle save/link/extension-save modes - user is already logged in, just update OAuth account
     if (mode === "save" || mode === "link" || mode === "extension-save") {
@@ -142,11 +140,6 @@ export async function GET(request: NextRequest) {
       inviteToken: googleResult.inviteToken,
     });
 
-    // Create session
-    const sessionId = generateUuidv7();
-    const { token, tokenHash } = generateSessionToken();
-    const expiresAt = getSessionExpiry();
-
     // Get client info from headers
     const userAgent = request.headers.get("user-agent") ?? undefined;
     const ipAddress =
@@ -154,15 +147,11 @@ export async function GET(request: NextRequest) {
       request.headers.get("x-real-ip") ??
       undefined;
 
-    await db.insert(sessions).values({
-      id: sessionId,
+    // Create session
+    const { token } = await createSession(db, {
       userId: oauthResult.userId,
-      tokenHash,
       userAgent,
       ipAddress,
-      expiresAt,
-      createdAt: now,
-      lastActiveAt: now,
     });
 
     // Redirect to app with session cookie
