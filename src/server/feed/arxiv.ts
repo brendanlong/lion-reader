@@ -90,7 +90,7 @@ export function buildArxivAbsUrl(paperId: string): string {
 /**
  * Result of checking for ArXiv HTML version.
  */
-export interface ArxivHtmlCheckResult {
+interface ArxivHtmlCheckResult {
   /** Whether the HTML version exists */
   exists: boolean;
   /** The HTML URL (set regardless of whether it exists) */
@@ -108,7 +108,7 @@ export interface ArxivHtmlCheckResult {
  * @param url - The ArXiv URL (abs or pdf)
  * @returns Result indicating if HTML version exists
  */
-export async function checkArxivHtmlExists(url: string): Promise<ArxivHtmlCheckResult | null> {
+async function checkArxivHtmlExists(url: string): Promise<ArxivHtmlCheckResult | null> {
   const paperId = extractPaperId(url);
   if (!paperId) {
     logger.debug("Not a valid ArXiv URL", { url });

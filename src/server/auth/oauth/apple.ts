@@ -48,7 +48,7 @@ const APPLE_SCOPES = ["name", "email"];
  * User information from Apple's id_token JWT
  * Note: Apple encodes user info in the JWT, not a separate userinfo endpoint
  */
-export interface AppleUserInfo {
+interface AppleUserInfo {
   /** Apple's unique user ID (subject) - always present in id_token */
   sub: string;
   /** User's email address - may be a private relay address */

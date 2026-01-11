@@ -9,14 +9,7 @@
  * and use next/dynamic with ssr: false for components.
  */
 
-export { NarrationSettings } from "./NarrationSettings";
-export { NarrationControls, type NarrationControlsProps } from "./NarrationControls";
-export { useNarration, type UseNarrationConfig, type UseNarrationReturn } from "./useNarration";
-export {
-  useNarrationHighlight,
-  computeHighlightedParagraphs,
-  type UseNarrationHighlightProps,
-  type UseNarrationHighlightResult,
-} from "./useNarrationHighlight";
-export { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
+export { NarrationControls } from "./NarrationControls";
+export { useNarration } from "./useNarration";
+export { useNarrationHighlight } from "./useNarrationHighlight";
 export { NarrationHighlightStyles } from "./NarrationHighlightStyles";

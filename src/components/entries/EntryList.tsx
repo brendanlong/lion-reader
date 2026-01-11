@@ -22,7 +22,7 @@ import {
 /**
  * Filter options for the entry list.
  */
-export interface EntryListFilters {
+interface EntryListFilters {
   /**
    * Filter by specific feed ID.
    */

@@ -44,7 +44,7 @@ export interface MediaSessionOptions {
 /**
  * Playback state for the media session.
  */
-export type MediaSessionPlaybackState = "playing" | "paused" | "none";
+type MediaSessionPlaybackState = "playing" | "paused" | "none";
 
 /**
  * Sets up the Media Session API for OS-level playback controls.
@@ -156,7 +156,7 @@ export function setupMediaSession(options: MediaSessionOptions): void {
  * updateMediaSessionState("none");
  * ```
  */
-export function updateMediaSessionState(state: MediaSessionPlaybackState): void {
+function updateMediaSessionState(state: MediaSessionPlaybackState): void {
   if (!isMediaSessionSupported()) {
     return;
   }

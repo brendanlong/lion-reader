@@ -37,7 +37,7 @@ export interface RedirectInfo {
 /**
  * Result of a successful feed fetch (status 200).
  */
-export interface FetchSuccessResult {
+interface FetchSuccessResult {
   status: "success";
   /** HTTP status code (200) */
   statusCode: 200;
@@ -56,7 +56,7 @@ export interface FetchSuccessResult {
 /**
  * Result of a 304 Not Modified response.
  */
-export interface FetchNotModifiedResult {
+interface FetchNotModifiedResult {
   status: "not_modified";
   /** HTTP status code (304) */
   statusCode: 304;
@@ -69,7 +69,7 @@ export interface FetchNotModifiedResult {
 /**
  * Result of a permanent redirect (301/308) - caller should update feed URL.
  */
-export interface FetchPermanentRedirectResult {
+interface FetchPermanentRedirectResult {
   status: "permanent_redirect";
   /** HTTP status code (301 or 308) */
   statusCode: 301 | 308;
@@ -82,7 +82,7 @@ export interface FetchPermanentRedirectResult {
 /**
  * Result of a client error (4xx).
  */
-export interface FetchClientErrorResult {
+interface FetchClientErrorResult {
   status: "client_error";
   /** HTTP status code (4xx) */
   statusCode: number;
@@ -95,7 +95,7 @@ export interface FetchClientErrorResult {
 /**
  * Result of a server error (5xx).
  */
-export interface FetchServerErrorResult {
+interface FetchServerErrorResult {
   status: "server_error";
   /** HTTP status code (5xx) */
   statusCode: number;
@@ -108,7 +108,7 @@ export interface FetchServerErrorResult {
 /**
  * Result of a rate limit (429).
  */
-export interface FetchRateLimitedResult {
+interface FetchRateLimitedResult {
   status: "rate_limited";
   /** HTTP status code (429) */
   statusCode: 429;
@@ -119,7 +119,7 @@ export interface FetchRateLimitedResult {
 /**
  * Result of a network or timeout error.
  */
-export interface FetchNetworkErrorResult {
+interface FetchNetworkErrorResult {
   status: "network_error";
   /** Error message */
   message: string;
@@ -130,7 +130,7 @@ export interface FetchNetworkErrorResult {
 /**
  * Result of too many redirects.
  */
-export interface FetchTooManyRedirectsResult {
+interface FetchTooManyRedirectsResult {
   status: "too_many_redirects";
   /** The last URL before giving up */
   lastUrl: string;
@@ -477,39 +477,4 @@ export async function fetchFeed(
     lastUrl: currentUrl,
     redirects,
   };
-}
-
-/**
- * Check if a fetch result indicates the feed should be retried later.
- */
-export function shouldRetry(result: FetchFeedResult): boolean {
-  switch (result.status) {
-    case "server_error":
-    case "rate_limited":
-    case "network_error":
-      return true;
-    case "client_error":
-      // Don't retry permanent client errors
-      return !result.permanent;
-    default:
-      return false;
-  }
-}
-
-/**
- * Get suggested retry delay in seconds for a failed fetch.
- */
-export function getRetryDelay(result: FetchFeedResult, attempt: number): number {
-  // If we have a Retry-After header, use it (with bounds)
-  if (result.status === "rate_limited" || result.status === "server_error") {
-    if (result.retryAfter !== undefined) {
-      // Bound between 1 second and 1 hour
-      return Math.max(1, Math.min(3600, result.retryAfter));
-    }
-  }
-
-  // Exponential backoff: 30s, 60s, 120s, 240s, 480s (capped at 8 minutes)
-  const baseDelay = 30;
-  const maxDelay = 480;
-  return Math.min(maxDelay, baseDelay * Math.pow(2, attempt));
 }

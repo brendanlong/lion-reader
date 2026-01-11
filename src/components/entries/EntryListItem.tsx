@@ -13,7 +13,7 @@ import { ArticleListItem } from "@/components/articles/ArticleListItem";
 /**
  * Entry data for list display (lightweight, no full content).
  */
-export interface EntryListItemData {
+interface EntryListItemData {
   id: string;
   feedId: string;
   url: string | null;

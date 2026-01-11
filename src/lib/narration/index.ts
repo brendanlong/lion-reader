@@ -11,82 +11,20 @@
  */
 
 // TTS Provider types
-export type { TTSProvider, TTSVoice, SpeakOptions, TTSProviderId } from "./types";
-
 // TTS Provider implementations
-export { BrowserTTSProvider, getBrowserTTSProvider } from "./browser-tts-provider";
-export {
-  PiperTTSProvider,
-  getPiperTTSProvider,
-  VoiceNotDownloadedError,
-} from "./piper-tts-provider";
-
 // Voice selection utilities
-export { getAvailableVoices, waitForVoices, rankVoices, findVoiceByUri } from "./voices";
-
 // Feature detection utilities
-export {
-  isNarrationSupported,
-  isMediaSessionSupported,
-  getNarrationSupportInfo,
-  type NarrationSupportInfo,
-} from "./feature-detection";
-
 // Voice caching
 export { VoiceCache, STORAGE_LIMIT_BYTES, type VoiceCacheEntry } from "./voice-cache";
 
 // Enhanced voices (Piper TTS)
-export {
-  ENHANCED_VOICES,
-  findEnhancedVoice,
-  isEnhancedVoice,
-  type EnhancedVoice,
-} from "./enhanced-voices";
 
 // Voice download manager
-export {
-  downloadVoice,
-  isVoiceDownloaded,
-  deleteDownloadedVoice,
-  getDownloadedVoices,
-  getVoiceDownloadUrls,
-  fetchWithProgress,
-  VoiceDownloadError,
-  type ProgressCallback,
-  type VoiceDownloadUrls,
-} from "./voice-download";
 
 // Fallback TTS provider
-export {
-  FallbackTTSProvider,
-  createFallbackProvider,
-  type FallbackCallback,
-  type FallbackTTSProviderOptions,
-} from "./fallback-tts-provider";
 
 // TTS Provider factory
-export {
-  createTTSProvider,
-  getTTSProvider,
-  isPiperAvailable,
-  getBestAvailableProvider,
-  type CreateTTSProviderOptions,
-  type CreateTTSProviderResult,
-} from "./tts-provider-factory";
 
 // Error handling
-export {
-  classifyVoiceError,
-  getVoiceErrorInfo,
-  getVoiceErrorMessage,
-  isVoiceErrorRetryable,
-  type VoiceErrorType,
-  type VoiceErrorInfo,
-} from "./errors";
 
 // HTML to narration input conversion
-export {
-  htmlToNarrationInput,
-  htmlToPlainText,
-  type HtmlToNarrationInputResult,
-} from "./html-to-narration-input";

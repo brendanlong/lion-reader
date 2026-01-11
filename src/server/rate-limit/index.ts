@@ -11,7 +11,6 @@
 
 import { getRedisClient } from "@/server/redis";
 import {
-  type RateLimitConfig,
   type RateLimitType,
   type ConsumeResult,
   RATE_LIMIT_CONFIGS,
@@ -20,13 +19,7 @@ import {
 } from "./token-bucket";
 
 // Re-export types and helpers
-export {
-  type RateLimitConfig,
-  type RateLimitType,
-  type ConsumeResult,
-  RATE_LIMIT_CONFIGS,
-  getRateLimitHeaders,
-};
+export { type RateLimitType, RATE_LIMIT_CONFIGS, getRateLimitHeaders };
 
 /**
  * Lua script for atomic token bucket rate limiting.
@@ -163,78 +156,6 @@ export async function checkRateLimit(
       resetMs: Date.now() + 60000,
       retryAfterSeconds: null,
     };
-  }
-}
-
-/**
- * Gets the current rate limit status without consuming tokens.
- *
- * @param identifier - User ID or IP address
- * @param type - Type of rate limit to check
- * @returns Current bucket status or null if bucket doesn't exist or Redis unavailable
- */
-export async function getRateLimitStatus(
-  identifier: string,
-  type: RateLimitType = "default"
-): Promise<{ tokens: number; remaining: number } | null> {
-  const redis = getRedisClient();
-
-  // If Redis is not available, return null (no status available)
-  if (!redis) {
-    return null;
-  }
-
-  const key = getRateLimitKey(identifier, type);
-  const config = RATE_LIMIT_CONFIGS[type];
-  const nowMs = Date.now();
-
-  try {
-    const data = await redis.hmget(key, "tokens", "last_refill_ms");
-
-    if (!data[0] || !data[1]) {
-      return null;
-    }
-
-    const tokens = parseFloat(data[0]);
-    const lastRefillMs = parseInt(data[1], 10);
-
-    // Calculate refilled tokens
-    const elapsedMs = nowMs - lastRefillMs;
-    const tokensToAdd = (elapsedMs / 1000) * config.refillRate;
-    const currentTokens = Math.min(tokens + tokensToAdd, config.capacity);
-
-    return {
-      tokens: currentTokens,
-      remaining: Math.floor(currentTokens),
-    };
-  } catch (err) {
-    console.error("Failed to get rate limit status:", err);
-    return null;
-  }
-}
-
-/**
- * Resets the rate limit for an identifier (useful for testing).
- *
- * @param identifier - User ID or IP address
- * @param type - Type of rate limit to reset
- */
-export async function resetRateLimit(
-  identifier: string,
-  type: RateLimitType = "default"
-): Promise<void> {
-  const redis = getRedisClient();
-
-  // If Redis is not available, nothing to reset
-  if (!redis) {
-    return;
-  }
-
-  const key = getRateLimitKey(identifier, type);
-  try {
-    await redis.del(key);
-  } catch (err) {
-    console.error("Failed to reset rate limit:", err);
   }
 }
 

@@ -47,7 +47,7 @@ import { useNarrationSettings } from "@/lib/narration/settings";
 /**
  * Format a date as a readable string.
  */
-export function formatDate(date: Date): string {
+function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -72,7 +72,7 @@ export function getDomain(url: string): string {
 /**
  * Star icon component (filled or outline).
  */
-export function StarIcon({ filled }: { filled: boolean }) {
+function StarIcon({ filled }: { filled: boolean }) {
   if (filled) {
     return (
       <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
@@ -102,7 +102,7 @@ export function StarIcon({ filled }: { filled: boolean }) {
  * Read/Unread indicator icon.
  * Filled circle for unread, empty circle for read.
  */
-export function ReadStatusIcon({ read }: { read: boolean }) {
+function ReadStatusIcon({ read }: { read: boolean }) {
   if (read) {
     // Empty circle for read
     return (
@@ -129,7 +129,7 @@ export function ReadStatusIcon({ read }: { read: boolean }) {
 /**
  * External link icon.
  */
-export function ExternalLinkIcon() {
+function ExternalLinkIcon() {
   return (
     <svg
       className="h-4 w-4"
@@ -151,7 +151,7 @@ export function ExternalLinkIcon() {
 /**
  * Back arrow icon.
  */
-export function BackArrowIcon() {
+function BackArrowIcon() {
   return (
     <svg
       className="h-4 w-4"

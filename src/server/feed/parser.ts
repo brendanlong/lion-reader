@@ -16,8 +16,6 @@ import {
 
 // Re-export for backwards compatibility
 export { UnknownFeedFormatError };
-export type { FeedType } from "./streaming/parser";
-
 /**
  * Converts a FeedParseResult to a ParsedFeed.
  * The only difference is the field name: entries -> items.

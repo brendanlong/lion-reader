@@ -17,7 +17,7 @@ import { Pool, PoolClient } from "pg";
 // Types
 // ============================================================================
 
-export interface JournalEntry {
+interface JournalEntry {
   idx: number;
   version: string;
   when: number;

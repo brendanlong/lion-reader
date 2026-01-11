@@ -15,7 +15,7 @@ import { getDomain } from "@/lib/format";
  * Saved article data for list display (lightweight, no full content).
  * Maps to the unified entries endpoint response.
  */
-export interface SavedArticleListItemData {
+interface SavedArticleListItemData {
   id: string;
   url: string | null;
   title: string | null;

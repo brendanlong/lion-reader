@@ -16,12 +16,6 @@
 export const DEFAULT_SENTENCE_GAP_SECONDS = 0.1;
 
 /**
- * Minimum pre-buffer duration in seconds.
- * We try to buffer at least this much audio ahead.
- */
-export const MIN_PREBUFFER_DURATION_SECONDS = 5;
-
-/**
  * Result of concatenating audio buffers, including metadata.
  */
 export interface ConcatenatedAudio {
@@ -130,37 +124,4 @@ export function concatenateAudioBuffers(
     duration: totalFrames / sampleRate,
     offsets,
   };
-}
-
-/**
- * Gets the duration of an AudioBuffer in seconds.
- *
- * @param buffer - The AudioBuffer
- * @returns Duration in seconds
- */
-export function getAudioDuration(buffer: AudioBuffer): number {
-  return buffer.duration;
-}
-
-/**
- * Calculates total duration of multiple AudioBuffers including gaps.
- *
- * @param buffers - Array of AudioBuffers
- * @param gapSeconds - Gap between buffers in seconds
- * @returns Total duration in seconds
- */
-export function calculateTotalDuration(buffers: AudioBuffer[], gapSeconds: number = 0): number {
-  if (buffers.length === 0) return 0;
-
-  let total = 0;
-  for (const buffer of buffers) {
-    total += buffer.duration;
-  }
-
-  // Add gaps between buffers (not after the last one)
-  if (buffers.length > 1) {
-    total += gapSeconds * (buffers.length - 1);
-  }
-
-  return total;
 }

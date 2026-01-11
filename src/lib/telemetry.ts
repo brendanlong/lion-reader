@@ -141,27 +141,3 @@ export function classifyDownloadError(error: unknown): VoiceDownloadErrorType {
 
   return "unknown";
 }
-
-// ============================================================================
-// Narration Highlighting Telemetry
-// ============================================================================
-
-/**
- * Tracks when narration highlighting becomes active.
- * Should be called once per narration session when highlighting first starts.
- */
-export function trackNarrationHighlightActive(): void {
-  void sendTelemetryEvent({
-    event: "narration_highlight_active",
-  });
-}
-
-/**
- * Tracks when auto-scroll is triggered during highlighting.
- * Called each time the view scrolls to a highlighted paragraph.
- */
-export function trackNarrationHighlightScroll(): void {
-  void sendTelemetryEvent({
-    event: "narration_highlight_scroll",
-  });
-}
