@@ -34,6 +34,10 @@ primary_region = "lax"
 
   WORKER_CONCURRENCY = "1"
 
+  # Sign in with Apple
+  APPLE_CLIENT_ID = "com.lionreader.web"
+  APPLE_TEAM_ID = "ZA3392677W"
+
   # Object storage
   STORAGE_BUCKET = "lion-reader-prod"
   STORAGE_ENDPOINT = "https://t3.storage.dev"
