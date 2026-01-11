@@ -262,6 +262,9 @@ export async function createAppleAuthUrl(inviteToken?: string): Promise<AppleAut
   // Create the authorization URL
   const url = apple.createAuthorizationURL(state, APPLE_SCOPES);
 
+  // Apple requires response_mode=form_post when requesting name or email scopes
+  url.searchParams.set("response_mode", "form_post");
+
   return {
     url: url.toString(),
     state,
