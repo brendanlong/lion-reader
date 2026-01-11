@@ -1,0 +1,76 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-android-navigation",
+    "version": "8.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-navigation-8.0.0.aar",
+          "url": "sentry-android-navigation-8.0.0.aar",
+          "size": 10400,
+          "sha512": "2d9c43d6de98d17cdb39d1fc0b911d1e82dd12073cefb6090fb878ada7a0dcfdb2b27ec190126e45b0c083f3406dcfdf8e66a48a07f6d61bd06d8cdfbbce9851",
+          "sha256": "636d39342510ade0a82f88c8fbef95dee2d3ec7054b41f5e437b262523d1c173",
+          "sha1": "b55c1d3eec6baf2b6eb58e07f2fd7d36c46dec45",
+          "md5": "cb8f85122c3c26718a6cd17139e4a307"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-navigation-8.0.0.aar",
+          "url": "sentry-android-navigation-8.0.0.aar",
+          "size": 10400,
+          "sha512": "2d9c43d6de98d17cdb39d1fc0b911d1e82dd12073cefb6090fb878ada7a0dcfdb2b27ec190126e45b0c083f3406dcfdf8e66a48a07f6d61bd06d8cdfbbce9851",
+          "sha256": "636d39342510ade0a82f88c8fbef95dee2d3ec7054b41f5e437b262523d1c173",
+          "sha1": "b55c1d3eec6baf2b6eb58e07f2fd7d36c46dec45",
+          "md5": "cb8f85122c3c26718a6cd17139e4a307"
+        }
+      ]
+    }
+  ]
+}

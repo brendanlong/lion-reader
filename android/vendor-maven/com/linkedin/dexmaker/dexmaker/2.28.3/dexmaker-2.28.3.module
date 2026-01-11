@@ -1,0 +1,109 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.linkedin.dexmaker",
+    "module": "dexmaker",
+    "version": "2.28.3",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "7.3.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 7,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "dexmaker-2.28.3.jar",
+          "url": "dexmaker-2.28.3.jar",
+          "size": 66716,
+          "sha512": "e900459f205b031269c2dc63f0ba8e34d5b3d6c58d56a2039736f1600f9894eb9429ede3b90512c5a9ded90f98ffd59492fbef2b4fa505430941a94aa6ef7d32",
+          "sha256": "7ed7862122ecff00f9c582a61a83397f549f92f347825eca8bb7ad94aef7e92d",
+          "sha1": "d2696cdba886415498d09a039af92678783fc004",
+          "md5": "ff3766ea46e2a969ce5f80faa771df7d"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 7,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "com.jakewharton.android.repackaged",
+          "module": "dalvik-dx",
+          "version": {
+            "requires": "9.0.0_r3"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "dexmaker-2.28.3.jar",
+          "url": "dexmaker-2.28.3.jar",
+          "size": 66716,
+          "sha512": "e900459f205b031269c2dc63f0ba8e34d5b3d6c58d56a2039736f1600f9894eb9429ede3b90512c5a9ded90f98ffd59492fbef2b4fa505430941a94aa6ef7d32",
+          "sha256": "7ed7862122ecff00f9c582a61a83397f549f92f347825eca8bb7ad94aef7e92d",
+          "sha1": "d2696cdba886415498d09a039af92678783fc004",
+          "md5": "ff3766ea46e2a969ce5f80faa771df7d"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "dexmaker-2.28.3-sources.jar",
+          "url": "dexmaker-2.28.3-sources.jar",
+          "size": 45473,
+          "sha512": "aedb720eb0696071f42da3d47192a9833e60ed45b32012c66d639fc85ecbd73da3b67b7844afaabe61bf9a448fb7548952cd3625f29b8b14898557947914468e",
+          "sha256": "d8d1bd8bbb75df05a48a18ab0eb02c4bf0e67606caecfcab1f7596dbc3fed675",
+          "sha1": "a9f4e2a503525fe132b056727f2de2160fd756aa",
+          "md5": "678e53ba2d7156c109ace35baf97626b"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "dexmaker-2.28.3-javadoc.jar",
+          "url": "dexmaker-2.28.3-javadoc.jar",
+          "size": 463197,
+          "sha512": "d56e19fd281dff6111cbc2e3f0d8079c0c7f4cfddb1d8b0f6a80a2bcfa601affdb0c95597e0193f107d3ac7177be86ef15f32af3a8bed012b15773028336a577",
+          "sha256": "a825486df572ab7334f9065bbba2a5d1040a36f961175455a499cab0918f0dd4",
+          "sha1": "ff16f3b358228ae8900a302821567cbc72ecbf7b",
+          "md5": "e116ecf8768a8516b51d899b2b452e4d"
+        }
+      ]
+    }
+  ]
+}

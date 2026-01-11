@@ -1,0 +1,102 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../mockk-agent-api/1.13.13/mockk-agent-api-1.13.13.module",
+    "group": "io.mockk",
+    "module": "mockk-agent-api",
+    "version": "1.13.13",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "mockk-agent-api-jvm-1.13.13.jar",
+          "url": "mockk-agent-api-jvm-1.13.13.jar",
+          "size": 49874,
+          "sha512": "e6246fd5d4ac60b303f747aded2d4995861d01f187847a334d58a6b3fe2621e20739f70999b73a8b59283b6c13b84abdd9edb2e21fa276db9d4b09c1b1d72e73",
+          "sha256": "6aba1cfaba319bdbf624990a3a795ec59d8f71ca7f1bfc34487660fd9f403724",
+          "sha1": "2149adf5a1d176fe0bbcfb8b19c92662401453b4",
+          "md5": "12a946e8d5c84f9e42899b66e320b9f1"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "mockk-agent-api-jvm-1.13.13.jar",
+          "url": "mockk-agent-api-jvm-1.13.13.jar",
+          "size": 49874,
+          "sha512": "e6246fd5d4ac60b303f747aded2d4995861d01f187847a334d58a6b3fe2621e20739f70999b73a8b59283b6c13b84abdd9edb2e21fa276db9d4b09c1b1d72e73",
+          "sha256": "6aba1cfaba319bdbf624990a3a795ec59d8f71ca7f1bfc34487660fd9f403724",
+          "sha1": "2149adf5a1d176fe0bbcfb8b19c92662401453b4",
+          "md5": "12a946e8d5c84f9e42899b66e320b9f1"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "mockk-agent-api-jvm-1.13.13-sources.jar",
+          "url": "mockk-agent-api-jvm-1.13.13-sources.jar",
+          "size": 12679,
+          "sha512": "26127f11eb712869373e7bdf392e71e447a1fdd6ba27ebd5f4c7f4b03fec21e9cf57ee0426feb7be6d1ef26a8c05591d9aacc060b41b24ff61de3ca06fc1ef66",
+          "sha256": "b88f7e2e15058764ed113d7426e3c9700b7fecbe0840f80ca4d5d3a3f5edaf64",
+          "sha1": "0f2f66886939fad2188c7798aacccd74690be758",
+          "md5": "21194017c3a7afdbc27f8a035ad726e0"
+        }
+      ]
+    }
+  ]
+}

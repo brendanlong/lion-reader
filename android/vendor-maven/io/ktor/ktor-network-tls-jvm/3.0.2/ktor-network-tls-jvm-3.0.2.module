@@ -1,0 +1,172 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../ktor-network-tls/3.0.2/ktor-network-tls-3.0.2.module",
+    "group": "io.ktor",
+    "module": "ktor-network-tls",
+    "version": "3.0.2",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.11.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.16"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-http",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-network",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-utils",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktor-network-tls-jvm-3.0.2.jar",
+          "url": "ktor-network-tls-jvm-3.0.2.jar",
+          "size": 194878,
+          "sha512": "9726fee4e15dcec52fcfdc37ce864588456ada1be3b88b61b250686406f20e38b9bdd1dbc80d577f2183812621339fd7dec44aa214a1040a88df8d45ea884f87",
+          "sha256": "482d445736afcff2be1ae21a035e3600a813df1980b361bbe32127fc52b945a2",
+          "sha1": "db31daaee488068f0ba57b113208dd8e6663d0fd",
+          "md5": "ef64da465d6151e94e8beeee9f850e31"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.16"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-http",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-network",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-utils",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktor-network-tls-jvm-3.0.2.jar",
+          "url": "ktor-network-tls-jvm-3.0.2.jar",
+          "size": 194878,
+          "sha512": "9726fee4e15dcec52fcfdc37ce864588456ada1be3b88b61b250686406f20e38b9bdd1dbc80d577f2183812621339fd7dec44aa214a1040a88df8d45ea884f87",
+          "sha256": "482d445736afcff2be1ae21a035e3600a813df1980b361bbe32127fc52b945a2",
+          "sha1": "db31daaee488068f0ba57b113208dd8e6663d0fd",
+          "md5": "ef64da465d6151e94e8beeee9f850e31"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "ktor-network-tls-jvm-3.0.2-sources.jar",
+          "url": "ktor-network-tls-jvm-3.0.2-sources.jar",
+          "size": 37740,
+          "sha512": "dabf8bf58619d8d6466537e1fe64531eece0cb982744442f50bc02c20a558779d882e80eaa37f713c68d686cc49bb2132a98ac947c75c91d8b001a75beebcac9",
+          "sha256": "39fd21ecb2b1939d518d64f0d78ec76c495116a862ae53e35abd5d90f2f05cc6",
+          "sha1": "0c1b4daf5f8a9e3bd65c290eaadf0cb165fc165f",
+          "md5": "6efbc5c160ec7e4839dc06ab019d1503"
+        }
+      ]
+    }
+  ]
+}

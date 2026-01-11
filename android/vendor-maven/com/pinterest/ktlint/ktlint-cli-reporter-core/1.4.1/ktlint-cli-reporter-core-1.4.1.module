@@ -1,0 +1,129 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.pinterest.ktlint",
+    "module": "ktlint-cli-reporter-core",
+    "version": "1.4.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-core-1.4.1.jar",
+          "url": "ktlint-cli-reporter-core-1.4.1.jar",
+          "size": 8201,
+          "sha512": "93796fa8c1c02fa9708f72c02e78ea71276c7a67f37a53ef6c0d8a10ab505cfe79401ba27d6218d0ac810a2b75e73030dd06f6f547e3673078a5f9a624284b4c",
+          "sha256": "8a4df43567110bc9411557acf00c4427da2f09f698012226d7146d22c90b7894",
+          "sha1": "6b760d348ed561f6ae7c3d52519eaa4bfc413b10",
+          "md5": "201bd410655bd0e6d386b08289811c7f"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "dev.drewhamilton.poko",
+          "module": "poko-annotations",
+          "version": {
+            "requires": "0.17.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-core-1.4.1.jar",
+          "url": "ktlint-cli-reporter-core-1.4.1.jar",
+          "size": 8201,
+          "sha512": "93796fa8c1c02fa9708f72c02e78ea71276c7a67f37a53ef6c0d8a10ab505cfe79401ba27d6218d0ac810a2b75e73030dd06f6f547e3673078a5f9a624284b4c",
+          "sha256": "8a4df43567110bc9411557acf00c4427da2f09f698012226d7146d22c90b7894",
+          "sha1": "6b760d348ed561f6ae7c3d52519eaa4bfc413b10",
+          "md5": "201bd410655bd0e6d386b08289811c7f"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-core-1.4.1-sources.jar",
+          "url": "ktlint-cli-reporter-core-1.4.1-sources.jar",
+          "size": 3891,
+          "sha512": "189806b923b53721bf95ab35f9986342738b1f862efc4d4f36737112a447fd286d8c5d84d33b3fbcb524645386dc1d196f959f2da11ec5b470383b1f286d1806",
+          "sha256": "ba26800b210e7c9b306a34853127d2f4764b1893d1fcd9538abeb76db3dcd89c",
+          "sha1": "d4f2a4f4bcce3352f5803b7ff07371861e23ac18",
+          "md5": "86ca4c29f41ef1abe60231c11d92f822"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-core-1.4.1-javadoc.jar",
+          "url": "ktlint-cli-reporter-core-1.4.1-javadoc.jar",
+          "size": 434717,
+          "sha512": "f3c4f4344a89ef42aad004a67532aae4cd82520a8cc57f941930dbd67e6be9965a0a740e6bd157d92b52933496b746716bebdf317f6c29e34d441c212ef453dc",
+          "sha256": "6e7daa2d839cbbce941b454c1f9d1d9ed644e759b061b264601304b97b7fb56f",
+          "sha1": "9605f38b2661e323e567c9d99532ca1da4126a9e",
+          "md5": "77ef911716e4869c597683bbd901e2a5"
+        }
+      ]
+    }
+  ]
+}

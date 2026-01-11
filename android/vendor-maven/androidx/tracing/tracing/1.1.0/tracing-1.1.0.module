@@ -1,0 +1,87 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.tracing",
+    "module": "tracing",
+    "version": "1.1.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "7.4.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "tracing-1.1.0.aar",
+          "url": "tracing-1.1.0.aar",
+          "size": 5149,
+          "sha512": "6797ea92a90fcb525d11b337adfce09595cc1fc422a40a91fbf5fcdcdd11be04336bb416eced5431e46f6eada3679fbb16b0e336c589273af8c88c03766e7312",
+          "sha256": "5b78e2c618fc10b3d14decc01df76158f15954ad746aacf0607766721da081f6",
+          "sha1": "cdc41b1335c3857e4136d399f6a7962663d05e5e",
+          "md5": "4756a2b9656d414186b2dc0dfb23b613"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.2.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "tracing-1.1.0.aar",
+          "url": "tracing-1.1.0.aar",
+          "size": 5149,
+          "sha512": "6797ea92a90fcb525d11b337adfce09595cc1fc422a40a91fbf5fcdcdd11be04336bb416eced5431e46f6eada3679fbb16b0e336c589273af8c88c03766e7312",
+          "sha256": "5b78e2c618fc10b3d14decc01df76158f15954ad746aacf0607766721da081f6",
+          "sha1": "cdc41b1335c3857e4136d399f6a7962663d05e5e",
+          "md5": "4756a2b9656d414186b2dc0dfb23b613"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "tracing-1.1.0-sources.jar",
+          "url": "tracing-1.1.0-sources.jar",
+          "size": 6552,
+          "sha512": "34b66a9346853a692ae3079a47efdffc88ba7d2aaf4a9fc2d13024f41e8ee7223394c439ee7c9760a8559ac368856a9dd31f984538c251e2ecbebd8ace274a0b",
+          "sha256": "e00efd9f977ae4d524dceefa2228be44a413c33646c1f5114016c65e9a90e1b9",
+          "sha1": "6982a4780a1dbaadb32b1422841134f25d146c9d",
+          "md5": "34d540044324615408f1efcdf0a3c221"
+        }
+      ]
+    }
+  ]
+}

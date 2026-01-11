@@ -1,0 +1,723 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.datastore",
+    "module": "datastore-core-okio",
+    "version": "1.1.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.7-rc-1"
+    }
+  },
+  "variants": [
+    {
+      "name": "androidxSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "androidx-multiplatform-docs"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "androidx.datastore",
+          "module": "datastore",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-core",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-core",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-rxjava2",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-rxjava3",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-rxjava2",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-rxjava3",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        }
+      ],
+      "files": [
+        {
+          "name": "datastore-core-okio-1.1.1-multiplatform-sources.jar",
+          "url": "datastore-core-okio-1.1.1-multiplatform-sources.jar",
+          "size": 8764,
+          "sha512": "e5d1dbea351c50ef6f1769a4fd5bda8c8d5542f905f8161c26a7474a90c3dc6527c3c8390b21a9777a46bbc181ab804701a960f12a6230781b3fac27aeeb3791",
+          "sha256": "81a0658917768bbdc3a2de4646de33399bb2369b7437269c7a3f9351a2257ff5",
+          "sha1": "6e485d1439ace524ac9daeed1904402f68bdaf43",
+          "md5": "3c56c480f67376479a2bbdefb93c8aad"
+        }
+      ]
+    },
+    {
+      "name": "libraryVersionMetadata",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.usage": "library-version-metadata"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "androidx.datastore",
+          "module": "datastore",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-core",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-core",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-rxjava2",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-rxjava3",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-rxjava2",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-rxjava3",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        }
+      ],
+      "files": [
+        {
+          "name": "apiLevels.json",
+          "url": "datastore-core-okio-1.1.1-versionMetadata.json",
+          "size": 959,
+          "sha512": "624f709fc3792ac511511b7613d46b4c09e502978c2f73bb1a30da820e97cbe440cc44bff7088c93278306e92c79bdf46c6a3251869c02b07519e2397efb042c",
+          "sha256": "ea857cf1e1afc2adbec4faca5a1e3d8bbfda4cc8e8ac5d68f953221c19123fbe",
+          "sha1": "bc6e08bb9ce5af67d7936d386f42bd79ccba1a22",
+          "md5": "fb92fa5ca9521b96176035efde5130e1"
+        }
+      ]
+    },
+    {
+      "name": "metadataApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-core",
+          "version": {
+            "requires": "1.1.1"
+          }
+        },
+        {
+          "group": "com.squareup.okio",
+          "module": "okio",
+          "version": {
+            "requires": "3.4.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.8.22"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "atomicfu",
+          "version": {
+            "requires": "0.17.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.7.3"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "androidx.datastore",
+          "module": "datastore",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-core",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-core",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-rxjava2",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-rxjava3",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-rxjava2",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-rxjava3",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        }
+      ],
+      "files": [
+        {
+          "name": "datastore-core-okio-metadata-1.1.1.jar",
+          "url": "datastore-core-okio-1.1.1.jar",
+          "size": 9880,
+          "sha512": "5a80c677ef461fefc914db30c080e7f45a1c1464243770ebbb64180f0108d85008ccd68084cda20c75ecd16e1cc4cb8968cc6deb4cd95c5ea0ef67c45c2fa7e2",
+          "sha256": "117beb462cad6a885864fe0296ed8cfee509da08d064c44d226efbd60538599b",
+          "sha1": "5f1d75f519a8807dbc8009d9139b986dd64de54a",
+          "md5": "a2c1c7b2acee9f1d1b460512efa35b67"
+        }
+      ]
+    },
+    {
+      "name": "metadataSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "androidx.datastore",
+          "module": "datastore",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-core",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-core",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-rxjava2",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-preferences-rxjava3",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-rxjava2",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        },
+        {
+          "group": "androidx.datastore",
+          "module": "datastore-rxjava3",
+          "version": {
+            "requires": "1.1.1"
+          },
+          "reason": "datastore-core-okio is in atomic group androidx.datastore"
+        }
+      ],
+      "files": [
+        {
+          "name": "datastore-core-okio-kotlin-1.1.1-sources.jar",
+          "url": "datastore-core-okio-1.1.1-sources.jar",
+          "size": 6784,
+          "sha512": "9b525ab30a0ede635723c89336fd00e09ffc38f0e4884dccae8e191b9289f7196db9ec3cf349efe818eb977abe04ac01166dfde123bf1d1eb26245b0ceb88d1c",
+          "sha256": "fa59a1beded788804efe98f21ff28b9d1bb61b996d2b154e857c686ebf584212",
+          "sha1": "80740f4d51a4b77ff8f14e487251b43453e6277d",
+          "md5": "e4e3dc6abb3d1bb3c87cfc391e46a74c"
+        }
+      ]
+    },
+    {
+      "name": "iosArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "ios_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iosarm64/1.1.1/datastore-core-okio-iosarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iosarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "iosArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "ios_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iosarm64/1.1.1/datastore-core-okio-iosarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iosarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "iosArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "ios_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iosarm64/1.1.1/datastore-core-okio-iosarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iosarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "iosSimulatorArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "ios_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iossimulatorarm64/1.1.1/datastore-core-okio-iossimulatorarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iossimulatorarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "iosSimulatorArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "ios_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iossimulatorarm64/1.1.1/datastore-core-okio-iossimulatorarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iossimulatorarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "iosSimulatorArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "ios_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iossimulatorarm64/1.1.1/datastore-core-okio-iossimulatorarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iossimulatorarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "iosX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "ios_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iosx64/1.1.1/datastore-core-okio-iosx64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iosx64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "iosX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "ios_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iosx64/1.1.1/datastore-core-okio-iosx64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iosx64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "iosX64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "ios_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-iosx64/1.1.1/datastore-core-okio-iosx64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-iosx64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-jvm/1.1.1/datastore-core-okio-jvm-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-jvm",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-jvm/1.1.1/datastore-core-okio-jvm-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-jvm",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-jvm/1.1.1/datastore-core-okio-jvm-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-jvm",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "linuxX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "linux_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-linuxx64/1.1.1/datastore-core-okio-linuxx64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-linuxx64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "linuxX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "linux_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-linuxx64/1.1.1/datastore-core-okio-linuxx64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-linuxx64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "macosArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "macos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-macosarm64/1.1.1/datastore-core-okio-macosarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-macosarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "macosArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "macos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-macosarm64/1.1.1/datastore-core-okio-macosarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-macosarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "macosArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "macos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-macosarm64/1.1.1/datastore-core-okio-macosarm64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-macosarm64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "macosX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "macos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-macosx64/1.1.1/datastore-core-okio-macosx64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-macosx64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "macosX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "macos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-macosx64/1.1.1/datastore-core-okio-macosx64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-macosx64",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "name": "macosX64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "macos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../datastore-core-okio-macosx64/1.1.1/datastore-core-okio-macosx64-1.1.1.module",
+        "group": "androidx.datastore",
+        "module": "datastore-core-okio-macosx64",
+        "version": "1.1.1"
+      }
+    }
+  ]
+}

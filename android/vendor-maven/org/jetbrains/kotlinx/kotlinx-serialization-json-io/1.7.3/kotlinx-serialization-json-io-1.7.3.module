@@ -1,0 +1,1246 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.jetbrains.kotlinx",
+    "module": "kotlinx-serialization-json-io",
+    "version": "1.7.3",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.7"
+    }
+  },
+  "variants": [
+    {
+      "name": "metadataApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.20"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-core",
+          "version": {
+            "requires": "1.7.3"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-json",
+          "version": {
+            "requires": "1.7.3"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-io-core",
+          "version": {
+            "requires": "0.4.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlinx-serialization-json-io-metadata-1.7.3.jar",
+          "url": "kotlinx-serialization-json-io-1.7.3.jar",
+          "size": 3843,
+          "sha512": "57e3fc1b54dfaf17351beb91641596d80fa3f3c3d38d1974c794403bfd0546697fd55a8a9d7b53b8f3c82fb9094513a222b8919da777c0479592991a48835a8d",
+          "sha256": "6135f8ae817abca3fc751db9916ad1592365e84622d5f63140114b7b2db369fa",
+          "sha1": "9bc8bc7e3f7b111e5a54f6484dae96ac52b3934b",
+          "md5": "bf655377d82b283df087b000a08dabd4"
+        }
+      ]
+    },
+    {
+      "name": "metadataSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "files": [
+        {
+          "name": "kotlinx-serialization-json-io-kotlin-1.7.3-sources.jar",
+          "url": "kotlinx-serialization-json-io-1.7.3-sources.jar",
+          "size": 3345,
+          "sha512": "6b72dd4304fe93ba93651e3005ac7528dcdd5581f8d94813fdb209b42bbd4d8bc4b2a16f18a0f091eec6e4393232ab0751986f8bbf8b2b38db72545f029821fb",
+          "sha256": "60a176e88a074452f03e7f359f33bed4ca734e24e008c50677468fd253af9e98",
+          "sha1": "4911bd5f49bdb2b89215ac456b197d8b7a65a7d0",
+          "md5": "3b4048e84fcbdfed73146d6c776b3bf8"
+        }
+      ]
+    },
+    {
+      "name": "androidNativeArm32ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "android_arm32",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-androidnativearm32/1.7.3/kotlinx-serialization-json-io-androidnativearm32-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-androidnativearm32",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "androidNativeArm32SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "android_arm32",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-androidnativearm32/1.7.3/kotlinx-serialization-json-io-androidnativearm32-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-androidnativearm32",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "androidNativeArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "android_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-androidnativearm64/1.7.3/kotlinx-serialization-json-io-androidnativearm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-androidnativearm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "androidNativeArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "android_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-androidnativearm64/1.7.3/kotlinx-serialization-json-io-androidnativearm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-androidnativearm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "androidNativeX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "android_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-androidnativex64/1.7.3/kotlinx-serialization-json-io-androidnativex64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-androidnativex64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "androidNativeX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "android_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-androidnativex64/1.7.3/kotlinx-serialization-json-io-androidnativex64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-androidnativex64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "androidNativeX86ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "android_x86",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-androidnativex86/1.7.3/kotlinx-serialization-json-io-androidnativex86-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-androidnativex86",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "androidNativeX86SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "android_x86",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-androidnativex86/1.7.3/kotlinx-serialization-json-io-androidnativex86-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-androidnativex86",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "ios_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iosarm64/1.7.3/kotlinx-serialization-json-io-iosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "ios_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iosarm64/1.7.3/kotlinx-serialization-json-io-iosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "ios_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iosarm64/1.7.3/kotlinx-serialization-json-io-iosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosSimulatorArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "ios_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iossimulatorarm64/1.7.3/kotlinx-serialization-json-io-iossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosSimulatorArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "ios_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iossimulatorarm64/1.7.3/kotlinx-serialization-json-io-iossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosSimulatorArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "ios_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iossimulatorarm64/1.7.3/kotlinx-serialization-json-io-iossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "ios_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iosx64/1.7.3/kotlinx-serialization-json-io-iosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "ios_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iosx64/1.7.3/kotlinx-serialization-json-io-iosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "iosX64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "ios_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-iosx64/1.7.3/kotlinx-serialization-json-io-iosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-iosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "jsApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.js.compiler": "ir",
+        "org.jetbrains.kotlin.platform.type": "js"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-js/1.7.3/kotlinx-serialization-json-io-js-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-js",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "jsRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.js.compiler": "ir",
+        "org.jetbrains.kotlin.platform.type": "js"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-js/1.7.3/kotlinx-serialization-json-io-js-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-js",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "jsSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.js.compiler": "ir",
+        "org.jetbrains.kotlin.platform.type": "js"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-js/1.7.3/kotlinx-serialization-json-io-js-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-js",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-jvm/1.7.3/kotlinx-serialization-json-io-jvm-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-jvm",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-jvm/1.7.3/kotlinx-serialization-json-io-jvm-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-jvm",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-jvm/1.7.3/kotlinx-serialization-json-io-jvm-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-jvm",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "linuxArm32HfpApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "linux_arm32_hfp",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-linuxarm32hfp/1.7.3/kotlinx-serialization-json-io-linuxarm32hfp-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-linuxarm32hfp",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "linuxArm32HfpSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "linux_arm32_hfp",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-linuxarm32hfp/1.7.3/kotlinx-serialization-json-io-linuxarm32hfp-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-linuxarm32hfp",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "linuxArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "linux_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-linuxarm64/1.7.3/kotlinx-serialization-json-io-linuxarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-linuxarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "linuxArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "linux_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-linuxarm64/1.7.3/kotlinx-serialization-json-io-linuxarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-linuxarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "linuxX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "linux_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-linuxx64/1.7.3/kotlinx-serialization-json-io-linuxx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-linuxx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "linuxX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "linux_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-linuxx64/1.7.3/kotlinx-serialization-json-io-linuxx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-linuxx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "macosArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "macos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-macosarm64/1.7.3/kotlinx-serialization-json-io-macosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-macosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "macosArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "macos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-macosarm64/1.7.3/kotlinx-serialization-json-io-macosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-macosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "macosArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "macos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-macosarm64/1.7.3/kotlinx-serialization-json-io-macosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-macosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "macosX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "macos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-macosx64/1.7.3/kotlinx-serialization-json-io-macosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-macosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "macosX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "macos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-macosx64/1.7.3/kotlinx-serialization-json-io-macosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-macosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "macosX64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "macos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-macosx64/1.7.3/kotlinx-serialization-json-io-macosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-macosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "mingwX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "mingw_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-mingwx64/1.7.3/kotlinx-serialization-json-io-mingwx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-mingwx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "mingwX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "mingw_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-mingwx64/1.7.3/kotlinx-serialization-json-io-mingwx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-mingwx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "tvos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvosarm64/1.7.3/kotlinx-serialization-json-io-tvosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "tvos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvosarm64/1.7.3/kotlinx-serialization-json-io-tvosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "tvos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvosarm64/1.7.3/kotlinx-serialization-json-io-tvosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosSimulatorArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "tvos_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvossimulatorarm64/1.7.3/kotlinx-serialization-json-io-tvossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosSimulatorArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "tvos_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvossimulatorarm64/1.7.3/kotlinx-serialization-json-io-tvossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosSimulatorArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "tvos_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvossimulatorarm64/1.7.3/kotlinx-serialization-json-io-tvossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "tvos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvosx64/1.7.3/kotlinx-serialization-json-io-tvosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "tvos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvosx64/1.7.3/kotlinx-serialization-json-io-tvosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "tvosX64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "tvos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-tvosx64/1.7.3/kotlinx-serialization-json-io-tvosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-tvosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "wasmJsApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "js"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-wasm-js/1.7.3/kotlinx-serialization-json-io-wasm-js-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-wasm-js",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "wasmJsRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "js"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-wasm-js/1.7.3/kotlinx-serialization-json-io-wasm-js-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-wasm-js",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "wasmJsSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "js"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-wasm-js/1.7.3/kotlinx-serialization-json-io-wasm-js-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-wasm-js",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "wasmWasiApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "wasi"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-wasm-wasi/1.7.3/kotlinx-serialization-json-io-wasm-wasi-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-wasm-wasi",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "wasmWasiRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "wasi"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-wasm-wasi/1.7.3/kotlinx-serialization-json-io-wasm-wasi-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-wasm-wasi",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "wasmWasiSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "wasi"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-wasm-wasi/1.7.3/kotlinx-serialization-json-io-wasm-wasi-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-wasm-wasi",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosArm32ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "watchos_arm32",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosarm32/1.7.3/kotlinx-serialization-json-io-watchosarm32-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosarm32",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosArm32SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "watchos_arm32",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosarm32/1.7.3/kotlinx-serialization-json-io-watchosarm32-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosarm32",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosArm32MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "watchos_arm32",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosarm32/1.7.3/kotlinx-serialization-json-io-watchosarm32-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosarm32",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "watchos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosarm64/1.7.3/kotlinx-serialization-json-io-watchosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "watchos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosarm64/1.7.3/kotlinx-serialization-json-io-watchosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "watchos_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosarm64/1.7.3/kotlinx-serialization-json-io-watchosarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosDeviceArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "watchos_device_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosdevicearm64/1.7.3/kotlinx-serialization-json-io-watchosdevicearm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosdevicearm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosDeviceArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "watchos_device_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosdevicearm64/1.7.3/kotlinx-serialization-json-io-watchosdevicearm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosdevicearm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosDeviceArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "watchos_device_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosdevicearm64/1.7.3/kotlinx-serialization-json-io-watchosdevicearm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosdevicearm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosSimulatorArm64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "watchos_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchossimulatorarm64/1.7.3/kotlinx-serialization-json-io-watchossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosSimulatorArm64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "watchos_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchossimulatorarm64/1.7.3/kotlinx-serialization-json-io-watchossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosSimulatorArm64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "watchos_simulator_arm64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchossimulatorarm64/1.7.3/kotlinx-serialization-json-io-watchossimulatorarm64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchossimulatorarm64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosX64ApiElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.native.target": "watchos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosx64/1.7.3/kotlinx-serialization-json-io-watchosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosX64SourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.native.target": "watchos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosx64/1.7.3/kotlinx-serialization-json-io-watchosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosx64",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "name": "watchosX64MetadataElements-published",
+      "attributes": {
+        "artifactType": "org.jetbrains.kotlin.klib",
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.native.target": "watchos_x64",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "available-at": {
+        "url": "../../kotlinx-serialization-json-io-watchosx64/1.7.3/kotlinx-serialization-json-io-watchosx64-1.7.3.module",
+        "group": "org.jetbrains.kotlinx",
+        "module": "kotlinx-serialization-json-io-watchosx64",
+        "version": "1.7.3"
+      }
+    }
+  ]
+}

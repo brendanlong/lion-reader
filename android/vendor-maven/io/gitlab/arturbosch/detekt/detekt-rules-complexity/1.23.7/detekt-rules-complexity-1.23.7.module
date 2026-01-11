@@ -1,0 +1,122 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.gitlab.arturbosch.detekt",
+    "module": "detekt-rules-complexity",
+    "version": "1.23.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-complexity-1.23.7.jar",
+          "url": "detekt-rules-complexity-1.23.7.jar",
+          "size": 96980,
+          "sha512": "6b480650771c2d94eab2acbd3ca429e922a65dce66d41f0b19235c613958d41a8f283ce065025c6d43546e36d8e86bb768ca2da089507280674b6122ac1c35ef",
+          "sha256": "d8f9098f42548785ea26bd08fd23551104fe4357be1e00ad567b626f86766d66",
+          "sha1": "a56451843889ada329ca6675fe699e8efb482d6c",
+          "md5": "e23d378b984d366682c89fcae8e302d6"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-complexity-1.23.7.jar",
+          "url": "detekt-rules-complexity-1.23.7.jar",
+          "size": 96980,
+          "sha512": "6b480650771c2d94eab2acbd3ca429e922a65dce66d41f0b19235c613958d41a8f283ce065025c6d43546e36d8e86bb768ca2da089507280674b6122ac1c35ef",
+          "sha256": "d8f9098f42548785ea26bd08fd23551104fe4357be1e00ad567b626f86766d66",
+          "sha1": "a56451843889ada329ca6675fe699e8efb482d6c",
+          "md5": "e23d378b984d366682c89fcae8e302d6"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-complexity-1.23.7-sources.jar",
+          "url": "detekt-rules-complexity-1.23.7-sources.jar",
+          "size": 25067,
+          "sha512": "f7c229a0590aa22bb48cd3bdcf6a3a23a50ac416eca7aded6659e912249c310d9b405ac6bb6f6f34639eb16baa5c1581c578cb4b438852687095fab3974a7e1b",
+          "sha256": "f4cc385749b12a6e0203a33fd8bbbcaa00aa2a57dfadebbaa185b518b502f995",
+          "sha1": "729de3f7ed860badd4f6df4353b50df6bb111083",
+          "md5": "6180647ef016b555cbee7108313e32a5"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-complexity-1.23.7-javadoc.jar",
+          "url": "detekt-rules-complexity-1.23.7-javadoc.jar",
+          "size": 303,
+          "sha512": "431e6cead14fc7e89fac0ea690136d7d79d81b9d5013036fa58e6ca687a1d5a4c1f8d387a33391009f1606eeb63993fe863952ced2be81c1705525652d4a86c4",
+          "sha256": "ad4604708f3a05d27f80c40669203f1f94cf2ef0a7f6da50e9eb710f0e73f01a",
+          "sha1": "b24a695db5fa6bba8a7382edb5b8c6416830f470",
+          "md5": "5ce60b8dc25017fc78b227b282c04018"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,266 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../material/1.10.0/material-1.10.0.module",
+    "group": "androidx.compose.material",
+    "module": "material",
+    "version": "1.10.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.1.0",
+      "buildId:": "14502077"
+    }
+  },
+  "variants": [
+    {
+      "name": "androidApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "androidx.annotation",
+          "module": "annotation-experimental",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "androidx.compose.animation",
+          "module": "animation-core",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.foundation",
+          "module": "foundation",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.material",
+          "module": "material-ripple",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.runtime",
+          "module": "runtime",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui-text",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "material.aar",
+          "url": "material-android-1.10.0.aar",
+          "size": 2336353,
+          "sha512": "8ecb5ab7e35288b0bea3eaa555363c8c63829466587269bb0270e9b4610646032e89bcd6eaa656bb29cfaf75df02a1c319d00e3345506b15f786fa7524bfa8bd",
+          "sha256": "2f42e9b94ba82da30f9771b44f8e40d6ca53ca5ce8ff17a96b6ff150f135b2a2",
+          "sha1": "417bc6d2bbd96195d72fd2bb9f5849140bcd61bf",
+          "md5": "2c45ff92d1296a5b085b6192311d67b6"
+        }
+      ]
+    },
+    {
+      "name": "androidRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "androidx.annotation",
+          "module": "annotation-experimental",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "androidx.compose.animation",
+          "module": "animation",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.animation",
+          "module": "animation-core",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.foundation",
+          "module": "foundation",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.foundation",
+          "module": "foundation-layout",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.material",
+          "module": "material-ripple",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.runtime",
+          "module": "runtime",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui-text",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui-util",
+          "version": {
+            "requires": "1.8.2"
+          }
+        },
+        {
+          "group": "androidx.lifecycle",
+          "module": "lifecycle-runtime",
+          "version": {
+            "requires": "2.6.1"
+          }
+        },
+        {
+          "group": "androidx.lifecycle",
+          "module": "lifecycle-viewmodel",
+          "version": {
+            "requires": "2.6.1"
+          }
+        },
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate",
+          "version": {
+            "requires": "1.2.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "material.aar",
+          "url": "material-android-1.10.0.aar",
+          "size": 2336353,
+          "sha512": "8ecb5ab7e35288b0bea3eaa555363c8c63829466587269bb0270e9b4610646032e89bcd6eaa656bb29cfaf75df02a1c319d00e3345506b15f786fa7524bfa8bd",
+          "sha256": "2f42e9b94ba82da30f9771b44f8e40d6ca53ca5ce8ff17a96b6ff150f135b2a2",
+          "sha1": "417bc6d2bbd96195d72fd2bb9f5849140bcd61bf",
+          "md5": "2c45ff92d1296a5b085b6192311d67b6"
+        }
+      ]
+    },
+    {
+      "name": "androidSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "files": [
+        {
+          "name": "material-android-1.10.0-sources.jar",
+          "url": "material-android-1.10.0-sources.jar",
+          "size": 263320,
+          "sha512": "3525278e7b1c2706b653080144c047b384462e7a6a04aab5c3b0d3fc7995d5188ebaeb81b5a3d8d35dd1abe268ed75b7b6ee169573ff2bbcc25d0c01ff9c376c",
+          "sha256": "2b77964a1b185e7405b008f6b2c41581f1c77e540958e9c0f321c51b31d2906f",
+          "sha1": "826f52b970bc35ffd45b53b4483471b861692071",
+          "md5": "65fa645915d071c3b17d7c82021c2156"
+        },
+        {
+          "name": "material-1.10.0-samples-sources.jar",
+          "url": "material-android-1.10.0-samples-sources.jar",
+          "size": 49410,
+          "sha512": "6f5a912d3e149796fddfb6654a6c3ff2e64cb102c15c8e9c4066ea223c8d1df71dfa14eb38abfefff5f9d7ad3349274bf8bac4b802b39a4114e3af8f0e2e9a03",
+          "sha256": "4c67d55eb6cde6ac0486cbef241b9d87a0cb522b88959dd9fb27a050a8628a16",
+          "sha1": "6e379c3129c20992c3e7b40a815bd7c71dd94dee",
+          "md5": "2bcfffd5efb2626aaa3c5928d6463397"
+        }
+      ]
+    }
+  ]
+}

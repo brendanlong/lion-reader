@@ -1,0 +1,211 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.android.tools.utp",
+    "module": "android-test-plugin-host-retention",
+    "version": "31.7.3",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.9"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 11,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "android-test-plugin-host-retention-31.7.3.jar",
+          "url": "android-test-plugin-host-retention-31.7.3.jar",
+          "size": 46451,
+          "sha512": "b05e9d74d3f8d4c8b23783d940847892730df39d12b23ae1233826d8bad06edbaf60b6d800bf6909484300af8e1c0b3739aa9565a5c2e0e98aa4d76875376f8d",
+          "sha256": "7a944a016315af54394934c63dfcc18bd649185338ed880b8379eb0a3b571fb8",
+          "sha1": "169487752a85e04a4fd0d825fd58b7d4ef4355ef",
+          "md5": "2d7353e80b9055d6c386d4497bd223be"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 11,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.android.tools",
+          "module": "common",
+          "version": {
+            "requires": "31.7.3"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib-jdk8",
+          "version": {
+            "requires": "1.9.20"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.6.4"
+          }
+        },
+        {
+          "group": "commons-io",
+          "module": "commons-io",
+          "version": {
+            "requires": "2.13.0"
+          }
+        },
+        {
+          "group": "com.google.code.gson",
+          "module": "gson",
+          "version": {
+            "requires": "2.10.1"
+          }
+        },
+        {
+          "group": "io.grpc",
+          "module": "grpc-core",
+          "version": {
+            "requires": "1.57.0"
+          }
+        },
+        {
+          "group": "io.grpc",
+          "module": "grpc-netty",
+          "version": {
+            "requires": "1.57.0"
+          }
+        },
+        {
+          "group": "io.grpc",
+          "module": "grpc-protobuf",
+          "version": {
+            "requires": "1.57.0"
+          }
+        },
+        {
+          "group": "io.grpc",
+          "module": "grpc-stub",
+          "version": {
+            "requires": "1.57.0"
+          }
+        },
+        {
+          "group": "com.google.protobuf",
+          "module": "protobuf-java",
+          "version": {
+            "requires": "3.22.3"
+          }
+        },
+        {
+          "group": "com.google.guava",
+          "module": "guava",
+          "version": {
+            "requires": "32.0.1-jre"
+          }
+        },
+        {
+          "group": "com.android.tools.utp",
+          "module": "utp-common",
+          "version": {
+            "requires": "31.7.3"
+          }
+        },
+        {
+          "group": "com.android.tools.utp",
+          "module": "android-test-plugin-host-retention-proto",
+          "version": {
+            "requires": "31.7.3"
+          }
+        },
+        {
+          "group": "com.android.tools.emulator",
+          "module": "proto",
+          "version": {
+            "requires": "31.7.3"
+          }
+        },
+        {
+          "group": "com.google.testing.platform",
+          "module": "android-device-provider-local",
+          "version": {
+            "requires": "0.0.9-alpha02"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "android-test-plugin-host-retention-31.7.3.jar",
+          "url": "android-test-plugin-host-retention-31.7.3.jar",
+          "size": 46451,
+          "sha512": "b05e9d74d3f8d4c8b23783d940847892730df39d12b23ae1233826d8bad06edbaf60b6d800bf6909484300af8e1c0b3739aa9565a5c2e0e98aa4d76875376f8d",
+          "sha256": "7a944a016315af54394934c63dfcc18bd649185338ed880b8379eb0a3b571fb8",
+          "sha1": "169487752a85e04a4fd0d825fd58b7d4ef4355ef",
+          "md5": "2d7353e80b9055d6c386d4497bd223be"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "android-test-plugin-host-retention-31.7.3-javadoc.jar",
+          "url": "android-test-plugin-host-retention-31.7.3-javadoc.jar",
+          "size": 261,
+          "sha512": "42b9963b95684aace7e9759150789d59fa789f597ac632d18a0caeb3bd2b2246bc589ac8f97dafed803136a2f80f6b8a007f2461cbfd6aedb3945cb4fa91bc18",
+          "sha256": "70b33cd22b0acfe4fa8c9fe7b58bf2bd9591a6e4b5ff804767f7334fbf7070b7",
+          "sha1": "9a7f3343f2e4c8aab5bcb609be8c9e2cef1c9f66",
+          "md5": "1e77caa692f25917a712fb51c80ef9df"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "android-test-plugin-host-retention-31.7.3-sources.jar",
+          "url": "android-test-plugin-host-retention-31.7.3-sources.jar",
+          "size": 12837,
+          "sha512": "3f4de4cd15844c594f6c7197f46de0af56da02084406ba26b3903d0d313396acb9a069a9e8914d59377cfdf4a6d06872a3bda8a6831533649b3ff3e89974223a",
+          "sha256": "da7f6918a4738a91a56ee06df7ed62d5a740d1e28cf25f1a8bb100b4f78d78a4",
+          "sha1": "f46e1d0a71078c5e7fe707389d20faed41ffe3e2",
+          "md5": "7d59fde79ac9fc025531eded7f6d7cc7"
+        }
+      ]
+    }
+  ]
+}

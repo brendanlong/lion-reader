@@ -1,0 +1,97 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-android-core",
+    "version": "8.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-core-8.0.0.aar",
+          "url": "sentry-android-core-8.0.0.aar",
+          "size": 286840,
+          "sha512": "8c89206dc2efa8750110f9935546bceea56083df29cc250f8dc4f400321d3fda93f81f9cbcf11a5263c810a4b3559e9fe23f2ccb5c88e5a5659c9444e0122609",
+          "sha256": "68bb828f7d589013edeb1b186e65927946c105d497e7fcb7c689d2283e44d8e4",
+          "sha1": "4e4f10520aa82933d0564fe7d362662aa92219fe",
+          "md5": "7d3e891cd5420e9f3037f72707667997"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.lifecycle",
+          "module": "lifecycle-process",
+          "version": {
+            "requires": "2.2.0"
+          }
+        },
+        {
+          "group": "androidx.lifecycle",
+          "module": "lifecycle-common-java8",
+          "version": {
+            "requires": "2.2.0"
+          }
+        },
+        {
+          "group": "androidx.core",
+          "module": "core",
+          "version": {
+            "requires": "1.3.2"
+          }
+        },
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-core-8.0.0.aar",
+          "url": "sentry-android-core-8.0.0.aar",
+          "size": 286840,
+          "sha512": "8c89206dc2efa8750110f9935546bceea56083df29cc250f8dc4f400321d3fda93f81f9cbcf11a5263c810a4b3559e9fe23f2ccb5c88e5a5659c9444e0122609",
+          "sha256": "68bb828f7d589013edeb1b186e65927946c105d497e7fcb7c689d2283e44d8e4",
+          "sha1": "4e4f10520aa82933d0564fe7d362662aa92219fe",
+          "md5": "7d3e891cd5420e9f3037f72707667997"
+        }
+      ]
+    }
+  ]
+}

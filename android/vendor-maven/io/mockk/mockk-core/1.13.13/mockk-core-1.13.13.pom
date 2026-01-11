@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <!-- This module was also published with a richer model, Gradle metadata,  -->
+  <!-- which should be used instead. Do not delete the following line which  -->
+  <!-- is to indicate to Gradle or any Gradle module metadata file consumer  -->
+  <!-- that they should prefer consuming it instead. -->
+  <!-- do_not_remove: published-with-gradle-metadata -->
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.mockk</groupId>
+  <artifactId>mockk-core</artifactId>
+  <version>1.13.13</version>
+  <name>MockK Core</name>
+  <description>MockK functionality that is used by other MockK modules</description>
+  <url>https://mockk.io</url>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>oleksiyp</id>
+      <name>Oleksii Pylypenko</name>
+      <email>oleksiy.pylypenko@gmail.com</email>
+    </developer>
+    <developer>
+      <id>Raibaz</id>
+      <name>Mattia Tommasone</name>
+      <email>raibaz@gmail.com</email>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:git@github.com:mockk/mockk.git</connection>
+    <developerConnection>scm:git:git@github.com:mockk/mockk.git</developerConnection>
+    <url>https://github.com/mockk/mockk/</url>
+  </scm>
+  <dependencies>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-stdlib</artifactId>
+      <version>2.0.0</version>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+</project>

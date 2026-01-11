@@ -1,0 +1,165 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.gitlab.arturbosch.detekt",
+    "module": "detekt-cli",
+    "version": "1.23.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-cli-1.23.7.jar",
+          "url": "detekt-cli-1.23.7.jar",
+          "size": 52165,
+          "sha512": "c1ce79b5fd5d16bc3400bb84bd2205965b1e43cd19730bc75092ee1d6f92456401c819bb57912c4b400d48806542ed44f100294e832ef40bac4e3a5f4245acf2",
+          "sha256": "d7ddded00163f57ffc81d740ed6e194d0660eb8c60008af3acc3b9561d907875",
+          "sha1": "0aa8aab9c9b436c4c133736215e7837eff154a3c",
+          "md5": "76d1cfafc608f8c75f791b57e147ff66"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jcommander",
+          "module": "jcommander",
+          "version": {
+            "requires": "1.85"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-tooling",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-parser",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-compiler-embeddable",
+          "version": {
+            "strictly": "2.0.10",
+            "requires": "2.0.10"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-core",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules",
+          "version": {
+            "requires": "1.23.7"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-cli-1.23.7.jar",
+          "url": "detekt-cli-1.23.7.jar",
+          "size": 52165,
+          "sha512": "c1ce79b5fd5d16bc3400bb84bd2205965b1e43cd19730bc75092ee1d6f92456401c819bb57912c4b400d48806542ed44f100294e832ef40bac4e3a5f4245acf2",
+          "sha256": "d7ddded00163f57ffc81d740ed6e194d0660eb8c60008af3acc3b9561d907875",
+          "sha1": "0aa8aab9c9b436c4c133736215e7837eff154a3c",
+          "md5": "76d1cfafc608f8c75f791b57e147ff66"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-cli-1.23.7-sources.jar",
+          "url": "detekt-cli-1.23.7-sources.jar",
+          "size": 13502,
+          "sha512": "e0ecd0ac1b6e1444b9819e8bb1f11e577e588063b77757f02654e0b61f18094394076f68733a5cea58d77ba3a769fa062fdcb48f1177bb2db915ca96985442d8",
+          "sha256": "5427c09328cb35e8a7efd46aaad57d5f7b565db1f514539bed0f674a217d31dc",
+          "sha1": "cb13b91b43c189b79240b10580f4a49c9b7c2910",
+          "md5": "2ed4afa1c5b229d2f62b4e64f2bc609a"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-cli-1.23.7-javadoc.jar",
+          "url": "detekt-cli-1.23.7-javadoc.jar",
+          "size": 331,
+          "sha512": "509527262c81eaa1d485ff3fc5b32480c88becd683974c263f78adab1d8aa33037a31fc30a3ece7d10fb530fcf4cc01d4584bbfa91338b9c2b8d17748d214d37",
+          "sha256": "e9fff68ac3bd7b78692a884c5699765fddc65fe3ee3084c80115b81c71d0f10a",
+          "sha1": "79d83b522b7829827948fc86e7ca735650c54d69",
+          "md5": "031703d591010938e6c48c62305f10ab"
+        }
+      ]
+    }
+  ]
+}

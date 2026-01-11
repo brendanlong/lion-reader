@@ -1,0 +1,158 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../ktor-client-content-negotiation/3.0.2/ktor-client-content-negotiation-3.0.2.module",
+    "group": "io.ktor",
+    "module": "ktor-client-content-negotiation",
+    "version": "3.0.2",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.11.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.16"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-client-core",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-serialization",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktor-client-content-negotiation-jvm-3.0.2.jar",
+          "url": "ktor-client-content-negotiation-jvm-3.0.2.jar",
+          "size": 24450,
+          "sha512": "83483a4995f111127cfccf9dd87b46c3363efffaa8539267e8949a6060d8bc5d50cb42fa6000e8aaa1264fd9c092b4687ff047a9663226b5c7fda4b8f3f8dc7a",
+          "sha256": "b269038693ed5fd1a76f7bc715bd0f6ea60d98b09a99b724352985b7616da6c5",
+          "sha1": "9df80687cfa2a243e0fb0a5d3973fb95979ea8fd",
+          "md5": "289de7da1fb2795943f604283c233871"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.16"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-client-core",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "io.ktor",
+          "module": "ktor-serialization",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktor-client-content-negotiation-jvm-3.0.2.jar",
+          "url": "ktor-client-content-negotiation-jvm-3.0.2.jar",
+          "size": 24450,
+          "sha512": "83483a4995f111127cfccf9dd87b46c3363efffaa8539267e8949a6060d8bc5d50cb42fa6000e8aaa1264fd9c092b4687ff047a9663226b5c7fda4b8f3f8dc7a",
+          "sha256": "b269038693ed5fd1a76f7bc715bd0f6ea60d98b09a99b724352985b7616da6c5",
+          "sha1": "9df80687cfa2a243e0fb0a5d3973fb95979ea8fd",
+          "md5": "289de7da1fb2795943f604283c233871"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "ktor-client-content-negotiation-jvm-3.0.2-sources.jar",
+          "url": "ktor-client-content-negotiation-jvm-3.0.2-sources.jar",
+          "size": 4782,
+          "sha512": "590367b1b3864c34acbd389d2eb1707797cf8cd56ae7fa4978b6722f70fb93346c5ecbc9cf6976a8683e768e63ed2dc95d0ec5914edf1ad24966c54b92778a8b",
+          "sha256": "af8317e710859f3dd1ede5bc083ba93adea1d1366e48c170f1d2ea28b0331d5f",
+          "sha1": "bd0a52905d81d14493689950e8f7c317fb8182b8",
+          "md5": "8e91e20b03112d51626b9939312e61d3"
+        }
+      ]
+    }
+  ]
+}

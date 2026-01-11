@@ -1,0 +1,158 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.coil-kt",
+    "module": "coil-compose-base",
+    "version": "2.7.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.8"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "io.coil-kt",
+          "module": "coil-base",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "androidx.compose.foundation",
+          "module": "foundation",
+          "version": {
+            "requires": "1.6.8"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "coil-compose-base-2.7.0.aar",
+          "url": "coil-compose-base-2.7.0.aar",
+          "size": 103078,
+          "sha512": "d262df89d8ca633815810dfb6614138978e0e9d064f664b44ce211932cd2c81933e49d3e1b2300adff6da7ca33c86c530f86b8cb37e1603ca8bea6d3f228c704",
+          "sha256": "2885960db57beb8a7d521810386f48b98b2c21c0350bfd9d9e80d812d25b2eb1",
+          "sha1": "a8c9199fb207db0174df9a717a2fadb14cc12265",
+          "md5": "d32c42b9ab8678f26166e224f248c69a"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.core",
+          "module": "core-ktx",
+          "version": {
+            "requires": "1.12.0"
+          }
+        },
+        {
+          "group": "com.google.accompanist",
+          "module": "accompanist-drawablepainter",
+          "version": {
+            "requires": "0.32.0"
+          }
+        },
+        {
+          "group": "io.coil-kt",
+          "module": "coil-base",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "androidx.compose.foundation",
+          "module": "foundation",
+          "version": {
+            "requires": "1.6.8"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "coil-compose-base-2.7.0.aar",
+          "url": "coil-compose-base-2.7.0.aar",
+          "size": 103078,
+          "sha512": "d262df89d8ca633815810dfb6614138978e0e9d064f664b44ce211932cd2c81933e49d3e1b2300adff6da7ca33c86c530f86b8cb37e1603ca8bea6d3f228c704",
+          "sha256": "2885960db57beb8a7d521810386f48b98b2c21c0350bfd9d9e80d812d25b2eb1",
+          "sha1": "a8c9199fb207db0174df9a717a2fadb14cc12265",
+          "md5": "d32c42b9ab8678f26166e224f248c69a"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "coil-compose-base-2.7.0-sources.jar",
+          "url": "coil-compose-base-2.7.0-sources.jar",
+          "size": 17574,
+          "sha512": "a8a0021461413f76f2e9c4a04350f9e6d968bcc1bad98e5a814c48a131b4a36b1152090425335a4e03ddd761f19399e075e0b4207388010d6eae4b4ff9f36d89",
+          "sha256": "b85c3856c6b2f3f67e10f8b87bb9f31c7f5c2255561b042690f6f73cb9144f36",
+          "sha1": "fc8f3396e55da713701919a82829b7342f1af5f3",
+          "md5": "0a512e578b1b7e05a3413e1c3b5a1d83"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseJavaDocPublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "coil-compose-base-2.7.0-javadoc.jar",
+          "url": "coil-compose-base-2.7.0-javadoc.jar",
+          "size": 322622,
+          "sha512": "f87af32218d8c3bb095460f1535c26957a179e7e529062aba0acd9968e1c22e06e1eb73583cad76f74a0226a1158932f4a15f0b5f04180b9a5b070bb352f0e1b",
+          "sha256": "b3995881f508ab21f82e267a48a4e8ee31e6ce08921a116a7b123b608105f67e",
+          "sha1": "1216a2d184c74e99b5ebb4ce1488e3f72e25becb",
+          "md5": "e7bf78e2cc90dc88d0f2a5872a766dad"
+        }
+      ]
+    }
+  ]
+}

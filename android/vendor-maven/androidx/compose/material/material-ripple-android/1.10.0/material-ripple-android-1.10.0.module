@@ -1,0 +1,152 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../material-ripple/1.10.0/material-ripple-1.10.0.module",
+    "group": "androidx.compose.material",
+    "module": "material-ripple",
+    "version": "1.10.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.1.0",
+      "buildId:": "14502077"
+    }
+  },
+  "variants": [
+    {
+      "name": "androidApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.compose.foundation",
+          "module": "foundation",
+          "version": {
+            "requires": "1.7.1"
+          }
+        },
+        {
+          "group": "androidx.compose.runtime",
+          "module": "runtime",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "material-ripple.aar",
+          "url": "material-ripple-android-1.10.0.aar",
+          "size": 96259,
+          "sha512": "db4a5f8d2b7e8aafc747bd294e4102038c50042287233893d868b49eb4cc7b2f40e45fc663269cc6b05c20d5ef6e7e06a6a1ff7f1b5d26825379c8ae2ec05695",
+          "sha256": "ad7c12b3256ada337533ebb422c03a203e6e0d4226f83315d2abad16616d80be",
+          "sha1": "c05d92a9978091bf5dc3fd1f600a67ad01fd1ee8",
+          "md5": "bafdc0124aa30478db58ff643c6be433"
+        }
+      ]
+    },
+    {
+      "name": "androidRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.collection",
+          "module": "collection",
+          "version": {
+            "requires": "1.5.0"
+          }
+        },
+        {
+          "group": "androidx.compose.animation",
+          "module": "animation",
+          "version": {
+            "requires": "1.7.1"
+          }
+        },
+        {
+          "group": "androidx.compose.foundation",
+          "module": "foundation",
+          "version": {
+            "requires": "1.7.1"
+          }
+        },
+        {
+          "group": "androidx.compose.runtime",
+          "module": "runtime",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui-util",
+          "version": {
+            "requires": "1.7.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "material-ripple.aar",
+          "url": "material-ripple-android-1.10.0.aar",
+          "size": 96259,
+          "sha512": "db4a5f8d2b7e8aafc747bd294e4102038c50042287233893d868b49eb4cc7b2f40e45fc663269cc6b05c20d5ef6e7e06a6a1ff7f1b5d26825379c8ae2ec05695",
+          "sha256": "ad7c12b3256ada337533ebb422c03a203e6e0d4226f83315d2abad16616d80be",
+          "sha1": "c05d92a9978091bf5dc3fd1f600a67ad01fd1ee8",
+          "md5": "bafdc0124aa30478db58ff643c6be433"
+        }
+      ]
+    },
+    {
+      "name": "androidSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "android",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "androidJvm"
+      },
+      "files": [
+        {
+          "name": "material-ripple-android-1.10.0-sources.jar",
+          "url": "material-ripple-android-1.10.0-sources.jar",
+          "size": 30931,
+          "sha512": "309bf956dd1f33491f1c9bcc3b4425d65b3ac7097653790ec8289c27aacedb65b14e2ac945bc14b48eaa4d55c9690b5019fd9a7832065b585b29bd2e33f86a0a",
+          "sha256": "7ec7d1d2136078edeadd3b01ab10af49b79f3d8b9b498a0ecf49416ebda7d252",
+          "sha1": "d37b944000427856b3a7213886c940ed285356e3",
+          "md5": "3b59f57a315b71974d18033437599da0"
+        }
+      ]
+    }
+  ]
+}

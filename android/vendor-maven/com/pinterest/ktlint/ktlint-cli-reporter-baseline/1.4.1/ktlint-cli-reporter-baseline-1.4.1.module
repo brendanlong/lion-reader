@@ -1,0 +1,150 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.pinterest.ktlint",
+    "module": "ktlint-cli-reporter-baseline",
+    "version": "1.4.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-baseline-1.4.1.jar",
+          "url": "ktlint-cli-reporter-baseline-1.4.1.jar",
+          "size": 21419,
+          "sha512": "2bf2c0877b3778d1724f3b09106d9e2ebf26ae610b6de47368a85d35cb63e534d26ad3ad0de97a5bd2094ef7b4641c1828bc683f0606571b97f34cd6955fd9d5",
+          "sha256": "43b7a2f3663bb3b4405a439e51e52a9ed623dd512fb32de1090d0b048e31354a",
+          "sha1": "d8eb33367b780de66933a881f221780352374952",
+          "md5": "eb8b03951c3badfbbb19d54f1209c67b"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.pinterest.ktlint",
+          "module": "ktlint-logger",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "com.pinterest.ktlint",
+          "module": "ktlint-rule-engine-core",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "com.pinterest.ktlint",
+          "module": "ktlint-cli-reporter-core",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "dev.drewhamilton.poko",
+          "module": "poko-annotations",
+          "version": {
+            "requires": "0.17.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-baseline-1.4.1.jar",
+          "url": "ktlint-cli-reporter-baseline-1.4.1.jar",
+          "size": 21419,
+          "sha512": "2bf2c0877b3778d1724f3b09106d9e2ebf26ae610b6de47368a85d35cb63e534d26ad3ad0de97a5bd2094ef7b4641c1828bc683f0606571b97f34cd6955fd9d5",
+          "sha256": "43b7a2f3663bb3b4405a439e51e52a9ed623dd512fb32de1090d0b048e31354a",
+          "sha1": "d8eb33367b780de66933a881f221780352374952",
+          "md5": "eb8b03951c3badfbbb19d54f1209c67b"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-baseline-1.4.1-sources.jar",
+          "url": "ktlint-cli-reporter-baseline-1.4.1-sources.jar",
+          "size": 5436,
+          "sha512": "d9e1bbc9e6d09d2723dfbb2ad133e27379b75c496912f1a05626bc10856d36ab4c23c9a2bdd87fff1aeab741dfc0b2ef6b2b716fa2d3f36b5fd4a7f7d3ae521e",
+          "sha256": "9ba4a7f5a1c596a6111ab1820fdb7e51e1e7fa169c66a515345f9852ce6c5473",
+          "sha1": "9da6e64ff4ccd1aac6975a00d41efc31e727b6b9",
+          "md5": "54990d5e99e70cccfff8f80ec10b968f"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-baseline-1.4.1-javadoc.jar",
+          "url": "ktlint-cli-reporter-baseline-1.4.1-javadoc.jar",
+          "size": 448612,
+          "sha512": "dcb4f98834123d40bbfe18a9a429b1fbb1abd6bbbb557fcac6bbb6934f8ac64b9abeab4b0b391d9aa4c2b0070885f0c1bd4a9dd3365f2ada2f2bd7c800f56af0",
+          "sha256": "b6a7fb2519786354f81f777d2f391ff450127b56cad3957e7fe23e7df2698c0f",
+          "sha1": "f4137c4544d24077745b7fe82343fcb49b4ac832",
+          "md5": "1a2ee01f7db9005b96c09a31f0f73cc0"
+        }
+      ]
+    }
+  ]
+}

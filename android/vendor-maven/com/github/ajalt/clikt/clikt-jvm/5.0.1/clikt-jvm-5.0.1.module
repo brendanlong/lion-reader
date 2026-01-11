@@ -1,0 +1,130 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../clikt/5.0.1/clikt-5.0.1.module",
+    "group": "com.github.ajalt.clikt",
+    "module": "clikt",
+    "version": "5.0.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.github.ajalt.clikt",
+          "module": "clikt-core",
+          "version": {
+            "requires": "5.0.1"
+          }
+        },
+        {
+          "group": "com.github.ajalt.mordant",
+          "module": "mordant",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "clikt-mordant-jvm.jar",
+          "url": "clikt-jvm-5.0.1.jar",
+          "size": 42333,
+          "sha512": "df5cd813f8ef82671f61a04d03d2d2ef215213d4b09c915e9564240159913da32cd810c5ba7bf24630b4e2a6cfce75580d00c487beb6a2662b3201b5f9f3db3c",
+          "sha256": "ec387fe21884a880bc887dd144d928a95c30d33697e880dbc8f4a4e305a35fb7",
+          "sha1": "0c514c94ad69a6b2c861c68e709ec65f0199939c",
+          "md5": "96f1c867c88bcd56f17461e8d418a83e"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.github.ajalt.clikt",
+          "module": "clikt-core",
+          "version": {
+            "requires": "5.0.1"
+          }
+        },
+        {
+          "group": "com.github.ajalt.mordant",
+          "module": "mordant",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "clikt-mordant-jvm.jar",
+          "url": "clikt-jvm-5.0.1.jar",
+          "size": 42333,
+          "sha512": "df5cd813f8ef82671f61a04d03d2d2ef215213d4b09c915e9564240159913da32cd810c5ba7bf24630b4e2a6cfce75580d00c487beb6a2662b3201b5f9f3db3c",
+          "sha256": "ec387fe21884a880bc887dd144d928a95c30d33697e880dbc8f4a4e305a35fb7",
+          "sha1": "0c514c94ad69a6b2c861c68e709ec65f0199939c",
+          "md5": "96f1c867c88bcd56f17461e8d418a83e"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "clikt-mordant-jvm-sources.jar",
+          "url": "clikt-jvm-5.0.1-sources.jar",
+          "size": 13213,
+          "sha512": "79a29f641f68910d0c768cb21d0729fb70d1602854e7b092923ab4121385c9753eb3cad7b22288d37b600121a9f9c4012da3f662c72382f162eceab70438e562",
+          "sha256": "c6d420f7d4d1064444d3290dad435eba1a1164f3f87cf6b20a99fc0d48e0ed4d",
+          "sha1": "2f506bada035ecdb7c729690128dfaf1332cae8a",
+          "md5": "7a2530112e333d4ea1b0674a36828a4b"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.gitlab.arturbosch.detekt",
+    "module": "detekt-rules-empty",
+    "version": "1.23.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-empty-1.23.7.jar",
+          "url": "detekt-rules-empty-1.23.7.jar",
+          "size": 29275,
+          "sha512": "3794ea8105c0948a2b8f7b8736d15771312e7cf93cb3c746283a5ce4e337f789aa1d5fc3bdc18595eca95a14c35d6c1718e61607a8105c69f98508ae0bdb2457",
+          "sha256": "abe9a00622e63d6c9123a57b79281e3e951d3a6498ddc758564bbdfeb988f0ff",
+          "sha1": "c814a9969007608a879510ce6075618517496dca",
+          "md5": "bcc5e3d3565bee0d32396ff55ea68cb7"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-empty-1.23.7.jar",
+          "url": "detekt-rules-empty-1.23.7.jar",
+          "size": 29275,
+          "sha512": "3794ea8105c0948a2b8f7b8736d15771312e7cf93cb3c746283a5ce4e337f789aa1d5fc3bdc18595eca95a14c35d6c1718e61607a8105c69f98508ae0bdb2457",
+          "sha256": "abe9a00622e63d6c9123a57b79281e3e951d3a6498ddc758564bbdfeb988f0ff",
+          "sha1": "c814a9969007608a879510ce6075618517496dca",
+          "md5": "bcc5e3d3565bee0d32396ff55ea68cb7"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-empty-1.23.7-sources.jar",
+          "url": "detekt-rules-empty-1.23.7-sources.jar",
+          "size": 12204,
+          "sha512": "9dd01ca91ccfa29cf3207e167e6e29ee8baa18ce482f429cc5d63c4916e08f06e086c348f843535f98000dcfe68614f1f7979670d9c5201d208ccf6cfaec47ee",
+          "sha256": "8a8096fc9c80b7ba7357e36fb25e3a7b1186cc4e254873e74d4545680f53f468",
+          "sha1": "373b9f82f2cc973d42c127aec31695c75d17b361",
+          "md5": "218ce832259cd76b61dac5f668bf0e2e"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-empty-1.23.7-javadoc.jar",
+          "url": "detekt-rules-empty-1.23.7-javadoc.jar",
+          "size": 303,
+          "sha512": "890e3021d30859f7954055249f21b5880ddac3b13843d03b3fd2fc97ed3a596e881619934c03a7786c154965f885c292b6aebc2f0ff2c9d8f328dd39458c6750",
+          "sha256": "000422088dab561ded3ca3b38f5d0787aaa42ce034a26330003bd3f082fa152b",
+          "sha1": "87077aab9d24bbd2479bd12a83f7f639faf5710d",
+          "md5": "c120a0ced59b54cd0c579b47b7ace0a3"
+        }
+      ]
+    }
+  ]
+}

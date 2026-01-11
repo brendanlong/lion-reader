@@ -1,0 +1,129 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.gitlab.arturbosch.detekt",
+    "module": "detekt-rules-errorprone",
+    "version": "1.23.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-errorprone-1.23.7.jar",
+          "url": "detekt-rules-errorprone-1.23.7.jar",
+          "size": 167368,
+          "sha512": "43642ec1c942fe4994e68c4ea653c2a83fe0130c6ee4ad55208a64ed77a38bb7a9bdf9b9916f106c66a001d3a8348cd7487341c6ce91c3a44a93d503f6f69bde",
+          "sha256": "431f016bbf3275a5ba6c7b9c6090f63b878df3e801b05190939cc2863402bf04",
+          "sha1": "eb73f8f9d250a78978b02fc831336c53fdd5b8d2",
+          "md5": "1163cc612462dbf5b50f4b5f66b30e46"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-tooling",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-errorprone-1.23.7.jar",
+          "url": "detekt-rules-errorprone-1.23.7.jar",
+          "size": 167368,
+          "sha512": "43642ec1c942fe4994e68c4ea653c2a83fe0130c6ee4ad55208a64ed77a38bb7a9bdf9b9916f106c66a001d3a8348cd7487341c6ce91c3a44a93d503f6f69bde",
+          "sha256": "431f016bbf3275a5ba6c7b9c6090f63b878df3e801b05190939cc2863402bf04",
+          "sha1": "eb73f8f9d250a78978b02fc831336c53fdd5b8d2",
+          "md5": "1163cc612462dbf5b50f4b5f66b30e46"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-errorprone-1.23.7-sources.jar",
+          "url": "detekt-rules-errorprone-1.23.7-sources.jar",
+          "size": 47441,
+          "sha512": "92bf7f212ad8159eba61813b6b93d1ef0cded16c26cf0e3543fccb6938dee2d027cfa2714cc115e6e7c5ff375dc28f1a4bc0e2d7368d72d0c53f53e571644ac3",
+          "sha256": "8ad251e84fef44eeff2fac5da8a00d2ecae6363f153a84faa92b1c5d24863148",
+          "sha1": "c021734c8fe00d098312c5013b1130515205b375",
+          "md5": "a0c8f3f8d76f8672b2c19c4e9cff6830"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-errorprone-1.23.7-javadoc.jar",
+          "url": "detekt-rules-errorprone-1.23.7-javadoc.jar",
+          "size": 303,
+          "sha512": "431e6cead14fc7e89fac0ea690136d7d79d81b9d5013036fa58e6ca687a1d5a4c1f8d387a33391009f1606eeb63993fe863952ced2be81c1705525652d4a86c4",
+          "sha256": "ad4604708f3a05d27f80c40669203f1f94cf2ef0a7f6da50e9eb710f0e73f01a",
+          "sha1": "b24a695db5fa6bba8a7382edb5b8c6416830f470",
+          "md5": "5ce60b8dc25017fc78b227b282c04018"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../sarif4k/0.6.0/sarif4k-0.6.0.module",
+    "group": "io.github.detekt.sarif4k",
+    "module": "sarif4k",
+    "version": "0.6.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.6"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-json",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.9.23"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sarif4k-jvm-0.6.0.jar",
+          "url": "sarif4k-jvm-0.6.0.jar",
+          "size": 520788,
+          "sha512": "96499a151e1250bf976db95def8caf8949ab1464b59dc8a233f12ced64e815635a806e77f81fec846a44d51832628703f64ce5c83313843f90093dc49b9b6353",
+          "sha256": "b3ac96dd97acba8318dbe26f6a432d6c6db91c46c780805e8928b8103e5763dc",
+          "sha1": "a0f3805c3fdd35ff6619e8f057ce50ff1aac7145",
+          "md5": "31e25bd88f4f87516b33aa16ac801cd5"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-serialization-json",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.9.23"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sarif4k-jvm-0.6.0.jar",
+          "url": "sarif4k-jvm-0.6.0.jar",
+          "size": 520788,
+          "sha512": "96499a151e1250bf976db95def8caf8949ab1464b59dc8a233f12ced64e815635a806e77f81fec846a44d51832628703f64ce5c83313843f90093dc49b9b6353",
+          "sha256": "b3ac96dd97acba8318dbe26f6a432d6c6db91c46c780805e8928b8103e5763dc",
+          "sha1": "a0f3805c3fdd35ff6619e8f057ce50ff1aac7145",
+          "md5": "31e25bd88f4f87516b33aa16ac801cd5"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "sarif4k-jvm-0.6.0-sources.jar",
+          "url": "sarif4k-jvm-0.6.0-sources.jar",
+          "size": 20041,
+          "sha512": "b7f144549f37b274e9761e685f92e17475409448daec11531a619b864a4af315b8c9315e4da68709bd262564de54af0312660e607e6877bfd0fa33361afdfabc",
+          "sha256": "6e612fbbe8c7596e77e120d5d8ad7cde93d49238b4f2070774ad1697ecba8022",
+          "sha1": "b31afe5df8db6724bdfe5be4adfb317bb72de398",
+          "md5": "98db690c8f754e287e7e37a59f0aa049"
+        }
+      ]
+    }
+  ]
+}

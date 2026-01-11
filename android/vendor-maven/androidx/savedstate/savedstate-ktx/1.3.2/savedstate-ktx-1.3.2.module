@@ -1,0 +1,210 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.savedstate",
+    "module": "savedstate-ktx",
+    "version": "1.3.2",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13",
+      "buildId:": "13944572"
+    }
+  },
+  "variants": [
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate",
+          "version": {
+            "requires": "1.3.2"
+          },
+          "reason": "savedstate-ktx is in atomic group androidx.savedstate"
+        },
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate-compose",
+          "version": {
+            "requires": "1.3.2"
+          },
+          "reason": "savedstate-ktx is in atomic group androidx.savedstate"
+        }
+      ],
+      "files": [
+        {
+          "name": "savedstate-ktx-1.3.2-sources.jar",
+          "url": "savedstate-ktx-1.3.2-sources.jar",
+          "size": 4426,
+          "sha512": "470b68b1ba0bbefe5afcf0a072635a72e5080f040860d900c972c9797c1ab4c2402ad6a622477ea916ecc6ece19b0290e15a391f7f1a0ea00c612b1da3ea6d82",
+          "sha256": "b1e8d78600a68fb3c0029793146ac07ea0335819f813554e85c568caa35cb5e4",
+          "sha1": "d281a4d66d1b5ed25c21373dedb46a67918618d9",
+          "md5": "c7dd8c25948273de8256385c8a05e3d7"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate",
+          "version": {
+            "requires": "1.3.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib"
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate",
+          "version": {
+            "requires": "1.3.2"
+          },
+          "reason": "savedstate-ktx is in atomic group androidx.savedstate"
+        },
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate-compose",
+          "version": {
+            "requires": "1.3.2"
+          },
+          "reason": "savedstate-ktx is in atomic group androidx.savedstate"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "savedstate-ktx-1.3.2.aar",
+          "url": "savedstate-ktx-1.3.2.aar",
+          "size": 5763,
+          "sha512": "ed0baba14f388f55e9541d75301284c47f837953eb035476d7acb01df7281323abc994c085941bb5987f597aabd0363bf8d86518d85a5ed1c7e7802a410d4235",
+          "sha256": "1c300732ece8e9d0001fb19cc693b0f77f19e77cdf90ca5c4cd56d5e6951d02b",
+          "sha1": "d09ffd11731a36f819dedbfe93f941458e63484f",
+          "md5": "c1d15921fd3d237d6528264fdb66994d"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate",
+          "version": {
+            "requires": "1.3.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib"
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate",
+          "version": {
+            "requires": "1.3.2"
+          },
+          "reason": "savedstate-ktx is in atomic group androidx.savedstate"
+        },
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate-compose",
+          "version": {
+            "requires": "1.3.2"
+          },
+          "reason": "savedstate-ktx is in atomic group androidx.savedstate"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "savedstate-ktx-1.3.2.aar",
+          "url": "savedstate-ktx-1.3.2.aar",
+          "size": 5763,
+          "sha512": "ed0baba14f388f55e9541d75301284c47f837953eb035476d7acb01df7281323abc994c085941bb5987f597aabd0363bf8d86518d85a5ed1c7e7802a410d4235",
+          "sha256": "1c300732ece8e9d0001fb19cc693b0f77f19e77cdf90ca5c4cd56d5e6951d02b",
+          "sha1": "d09ffd11731a36f819dedbfe93f941458e63484f",
+          "md5": "c1d15921fd3d237d6528264fdb66994d"
+        }
+      ]
+    },
+    {
+      "name": "libraryVersionMetadata",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.usage": "library-version-metadata"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate",
+          "version": {
+            "requires": "1.3.2"
+          },
+          "reason": "savedstate-ktx is in atomic group androidx.savedstate"
+        },
+        {
+          "group": "androidx.savedstate",
+          "module": "savedstate-compose",
+          "version": {
+            "requires": "1.3.2"
+          },
+          "reason": "savedstate-ktx is in atomic group androidx.savedstate"
+        }
+      ],
+      "files": [
+        {
+          "name": "savedstate-ktx-1.3.2-versionMetadata.json",
+          "url": "savedstate-ktx-1.3.2-versionMetadata.json",
+          "size": 191,
+          "sha512": "225072cf1e54fc7479700f5339019ceafe1f9e4d514a8893a626190d42dfb31b35804c73597292ee864e5f3034bc73b4c5806109ed130eb268c531948a4be4b7",
+          "sha256": "ff1847220d3c526a133e4f76baed2060de09a72ac96f5b8e1fef2ab1d21ba85e",
+          "sha1": "a1a2692ed79fa0caa20fafeb33e56bd48993f6de",
+          "md5": "57c4eed7a9c15485d30d344fdc944a0a"
+        }
+      ]
+    }
+  ]
+}

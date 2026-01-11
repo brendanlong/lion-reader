@@ -1,0 +1,150 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.gitlab.arturbosch.detekt",
+    "module": "detekt-parser",
+    "version": "1.23.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-compiler-embeddable",
+          "version": {
+            "requires": "2.0.10"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-parser-1.23.7.jar",
+          "url": "detekt-parser-1.23.7.jar",
+          "size": 14246,
+          "sha512": "c84b7a19cf5bbeacb76502e7f02313b2376a4dcd97b51b948d6957ac4ecb53e521d817fdd328b2503985b72e5dc366e143371b8f8978572c0ea7833bc3bfaa4b",
+          "sha256": "e217ab883e2e0f0e8a69b1fce7a131ff93a8bf2e06bd5fd395b38cde6b9c9504",
+          "sha1": "e06e16c52527d4b1b86cf62be9c5d4cb15d71040",
+          "md5": "32fb060dacfe4eab12eb2a870a99ff2d"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-psi-utils",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.github.davidburstrom.contester",
+          "module": "contester-breakpoint",
+          "version": {
+            "requires": "0.2.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-compiler-embeddable",
+          "version": {
+            "requires": "2.0.10"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-parser-1.23.7.jar",
+          "url": "detekt-parser-1.23.7.jar",
+          "size": 14246,
+          "sha512": "c84b7a19cf5bbeacb76502e7f02313b2376a4dcd97b51b948d6957ac4ecb53e521d817fdd328b2503985b72e5dc366e143371b8f8978572c0ea7833bc3bfaa4b",
+          "sha256": "e217ab883e2e0f0e8a69b1fce7a131ff93a8bf2e06bd5fd395b38cde6b9c9504",
+          "sha1": "e06e16c52527d4b1b86cf62be9c5d4cb15d71040",
+          "md5": "32fb060dacfe4eab12eb2a870a99ff2d"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-parser-1.23.7-sources.jar",
+          "url": "detekt-parser-1.23.7-sources.jar",
+          "size": 4659,
+          "sha512": "2426b31c771167279e20e830253fd061c9ea7c7a37cb1b10e9b66a42367b4f7618fa6408d386c2d0f11105c753edf4b7c670da0715bb8a69bbde12512f6c7040",
+          "sha256": "bda568a183f771e4f332c642083fc3f729be95b0765e1d86ce9b5bee32aa81ad",
+          "sha1": "125f5fbb4133c16425b6a75aa77d0e80f61643a4",
+          "md5": "6dc3a1280ae7c7b96636b9a812cb3c6e"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-parser-1.23.7-javadoc.jar",
+          "url": "detekt-parser-1.23.7-javadoc.jar",
+          "size": 303,
+          "sha512": "890e3021d30859f7954055249f21b5880ddac3b13843d03b3fd2fc97ed3a596e881619934c03a7786c154965f885c292b6aebc2f0ff2c9d8f328dd39458c6750",
+          "sha256": "000422088dab561ded3ca3b38f5d0787aaa42ce034a26330003bd3f082fa152b",
+          "sha1": "87077aab9d24bbd2479bd12a83f7f639faf5710d",
+          "md5": "c120a0ced59b54cd0c579b47b7ace0a3"
+        }
+      ]
+    }
+  ]
+}

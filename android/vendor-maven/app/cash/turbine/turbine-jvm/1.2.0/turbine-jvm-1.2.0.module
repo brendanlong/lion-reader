@@ -1,0 +1,123 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../turbine/1.2.0/turbine-1.2.0.module",
+    "group": "app.cash.turbine",
+    "module": "turbine",
+    "version": "1.2.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "Turbine-jvm.jar",
+          "url": "turbine-jvm-1.2.0.jar",
+          "size": 86856,
+          "sha512": "59b84dae4c02795bea345e519c8dbe4cba18be0cf750092ed2b8d5f1ff1944999355004536f68951d5845fa700b86b879fbeeb560b318910432c1cca71046f6b",
+          "sha256": "dcc2e85dbf7d4a0375eb9ff0d4587475e256914f7796aa6c006cc29b66b339da",
+          "sha1": "300d55d23fe50bb39273aaebcfe79c5d442e7c48",
+          "md5": "001e06eb60f0bd8645b334f436b0af81"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-test",
+          "version": {
+            "requires": "1.9.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "Turbine-jvm.jar",
+          "url": "turbine-jvm-1.2.0.jar",
+          "size": 86856,
+          "sha512": "59b84dae4c02795bea345e519c8dbe4cba18be0cf750092ed2b8d5f1ff1944999355004536f68951d5845fa700b86b879fbeeb560b318910432c1cca71046f6b",
+          "sha256": "dcc2e85dbf7d4a0375eb9ff0d4587475e256914f7796aa6c006cc29b66b339da",
+          "sha1": "300d55d23fe50bb39273aaebcfe79c5d442e7c48",
+          "md5": "001e06eb60f0bd8645b334f436b0af81"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "Turbine-jvm-sources.jar",
+          "url": "turbine-jvm-1.2.0-sources.jar",
+          "size": 13505,
+          "sha512": "84b60c999e97de3fc5d4b8ab93cbfe1c3fbcfb5be6a56689a7b8af4782ccfaea7d912778396315f66ffc1a0d46f9eafb739e201847e6ace11885fadbbec6de3e",
+          "sha256": "d7f1844a998b878059f6363c82eb4bf49672e9f6c22dbfd428a0d1371c2a0e8a",
+          "sha1": "e896a30f1e11acff9b2e92c645836161e1899f83",
+          "md5": "481b6385c0ec1721491699988ae9796c"
+        }
+      ]
+    }
+  ]
+}

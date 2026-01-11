@@ -1,0 +1,137 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.tracing",
+    "module": "tracing-ktx",
+    "version": "1.2.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.0"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.tracing",
+          "module": "tracing",
+          "version": {
+            "requires": "1.2.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.8.21"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "androidx.tracing",
+          "module": "tracing",
+          "version": {
+            "requires": "1.2.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "tracing-ktx-1.2.0.aar",
+          "url": "tracing-ktx-1.2.0.aar",
+          "size": 6007,
+          "sha512": "01bae232aa80fe5b80eec707967d0b506b877eec2c547cd6d72d5cf551b7032925ae143323980ec460379d509956f2700aaa33fdd47cd575e49cbe623b927979",
+          "sha256": "c33f9cbd931e6190ca38aa09bf8a7a8a19391d4b0fb7a7605a6b59f2d42580d1",
+          "sha1": "f151f88aed5054c9db05c90acb6b09728d3b1d81",
+          "md5": "bc151d5f17c6f82d780b00abe830e3cc"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.tracing",
+          "module": "tracing",
+          "version": {
+            "requires": "1.2.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.8.21"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "androidx.tracing",
+          "module": "tracing",
+          "version": {
+            "requires": "1.2.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "tracing-ktx-1.2.0.aar",
+          "url": "tracing-ktx-1.2.0.aar",
+          "size": 6007,
+          "sha512": "01bae232aa80fe5b80eec707967d0b506b877eec2c547cd6d72d5cf551b7032925ae143323980ec460379d509956f2700aaa33fdd47cd575e49cbe623b927979",
+          "sha256": "c33f9cbd931e6190ca38aa09bf8a7a8a19391d4b0fb7a7605a6b59f2d42580d1",
+          "sha1": "f151f88aed5054c9db05c90acb6b09728d3b1d81",
+          "md5": "bc151d5f17c6f82d780b00abe830e3cc"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "androidx.tracing",
+          "module": "tracing",
+          "version": {
+            "requires": "1.2.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "tracing-ktx-1.2.0-sources.jar",
+          "url": "tracing-ktx-1.2.0-sources.jar",
+          "size": 1656,
+          "sha512": "59cc2848a824d4e04d07c13d02a168289928c4a4d8cdeaa4d35f54c2dd84491046627602de07383915c27b2042cc268364ed3bf2d9e155b43b3ce6d7df9faa48",
+          "sha256": "a2998626297e803d410f3b800f04bed974def11ac9936538485a46cd4ff21c6d",
+          "sha1": "30cc348deac16dc20078334cd78a8ad8e852c7dd",
+          "md5": "cd551b1fc1cab570608f52b0918d8e29"
+        }
+      ]
+    }
+  ]
+}

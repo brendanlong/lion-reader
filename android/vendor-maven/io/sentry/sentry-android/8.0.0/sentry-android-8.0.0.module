@@ -1,0 +1,104 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-android",
+    "version": "8.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry-android-core",
+          "version": {
+            "requires": "8.0.0"
+          }
+        },
+        {
+          "group": "io.sentry",
+          "module": "sentry-android-ndk",
+          "version": {
+            "requires": "8.0.0"
+          }
+        },
+        {
+          "group": "io.sentry",
+          "module": "sentry-android-replay",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-8.0.0.aar",
+          "url": "sentry-android-8.0.0.aar",
+          "size": 1346,
+          "sha512": "120dd5ac2df68e4ab0edb7325f027877d65e78a2aed539be14beddc7e81cc56d12ced062c39ee27b2c185213ab12ea9d731098c127cdd74b1cf97aae03a2dda0",
+          "sha256": "7468a1866ac6978c9fbf90b1b457b20961acc9afb9579403dc599c1bd25c25b9",
+          "sha1": "c786487db37fe2d44846d4f84ce51c3cf6521318",
+          "md5": "be386e5e5c075d6ece8eaf58203db10f"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry-android-core",
+          "version": {
+            "requires": "8.0.0"
+          }
+        },
+        {
+          "group": "io.sentry",
+          "module": "sentry-android-ndk",
+          "version": {
+            "requires": "8.0.0"
+          }
+        },
+        {
+          "group": "io.sentry",
+          "module": "sentry-android-replay",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-8.0.0.aar",
+          "url": "sentry-android-8.0.0.aar",
+          "size": 1346,
+          "sha512": "120dd5ac2df68e4ab0edb7325f027877d65e78a2aed539be14beddc7e81cc56d12ced062c39ee27b2c185213ab12ea9d731098c127cdd74b1cf97aae03a2dda0",
+          "sha256": "7468a1866ac6978c9fbf90b1b457b20961acc9afb9579403dc599c1bd25c25b9",
+          "sha1": "c786487db37fe2d44846d4f84ce51c3cf6521318",
+          "md5": "be386e5e5c075d6ece8eaf58203db10f"
+        }
+      ]
+    }
+  ]
+}

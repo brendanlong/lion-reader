@@ -1,0 +1,143 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.pinterest.ktlint",
+    "module": "ktlint-cli-reporter-sarif",
+    "version": "1.4.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-sarif-1.4.1.jar",
+          "url": "ktlint-cli-reporter-sarif-1.4.1.jar",
+          "size": 7945,
+          "sha512": "5c153e63e6ffab2374d612ea3ed469520e27a468ae429e57fb30dceeb007122af0bec33f83fe5044077c2781534abe2c9c8f24528faf00dd8b771e46ce82a17a",
+          "sha256": "9c54deef629da4d2cd9b2dccfc20fe2417b007c94aed9ef1983ce4f52bbbd59c",
+          "sha1": "10deb7bbdb534849c3ffc0314a286157f2e8cfc7",
+          "md5": "15949313671d240356339ad78b33d639"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.pinterest.ktlint",
+          "module": "ktlint-cli-reporter-core",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "io.github.detekt.sarif4k",
+          "module": "sarif4k",
+          "version": {
+            "requires": "0.6.0"
+          }
+        },
+        {
+          "group": "dev.drewhamilton.poko",
+          "module": "poko-annotations",
+          "version": {
+            "requires": "0.17.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-sarif-1.4.1.jar",
+          "url": "ktlint-cli-reporter-sarif-1.4.1.jar",
+          "size": 7945,
+          "sha512": "5c153e63e6ffab2374d612ea3ed469520e27a468ae429e57fb30dceeb007122af0bec33f83fe5044077c2781534abe2c9c8f24528faf00dd8b771e46ce82a17a",
+          "sha256": "9c54deef629da4d2cd9b2dccfc20fe2417b007c94aed9ef1983ce4f52bbbd59c",
+          "sha1": "10deb7bbdb534849c3ffc0314a286157f2e8cfc7",
+          "md5": "15949313671d240356339ad78b33d639"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-sarif-1.4.1-sources.jar",
+          "url": "ktlint-cli-reporter-sarif-1.4.1-sources.jar",
+          "size": 3147,
+          "sha512": "99ecc99ef165c4fa5bab76e4902a3c663e64117cce5b4f049abdf2af9989a6883f93342c239e5dffaaedb162df3dacc1f398dc56ae91fafd5424598a999962c9",
+          "sha256": "f5e4605a4860299644b38f5fa28805d40df803338a48926fe75d07871b4b854a",
+          "sha1": "384636c5cab24bae2db782ed7955bc0f08770517",
+          "md5": "235ae76dd457340bb926b9e2ed882d16"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-sarif-1.4.1-javadoc.jar",
+          "url": "ktlint-cli-reporter-sarif-1.4.1-javadoc.jar",
+          "size": 414250,
+          "sha512": "925358e24310ef01e4ba03ab8998d958e12dccdb18944432df0d6e6d5ca530095ac75d7f686a49026cbadf787cb505e84a5abaa540e0b772a818285982a28c00",
+          "sha256": "f098bd952190a5934e004f712984639b30b38210aea566ccb8cfb6255bd8c114",
+          "sha1": "67da489c9c650a942e8b2bf6d4988084a7a73c8a",
+          "md5": "7756d47fb2cb973efafe78d956b26092"
+        }
+      ]
+    }
+  ]
+}

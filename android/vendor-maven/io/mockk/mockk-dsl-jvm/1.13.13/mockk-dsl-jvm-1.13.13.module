@@ -1,0 +1,131 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../mockk-dsl/1.13.13/mockk-dsl-1.13.13.module",
+    "group": "io.mockk",
+    "module": "mockk-dsl",
+    "version": "1.13.13",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "mockk-dsl-jvm-1.13.13.jar",
+          "url": "mockk-dsl-jvm-1.13.13.jar",
+          "size": 459109,
+          "sha512": "6ae8d85858c8d5e9cfe80587c6e9178419f1d57e2ffb75396bd33860fd93a46573c5ede4ee874763418952d49e8c1ea345ac93882815f66ff5f21a5092f674d2",
+          "sha256": "ab430d2b9ddbc9fb1ba021e78245cf32536d090729adc45d68885791791e9ebb",
+          "sha1": "5d34d7f20048e8c2d06bb4ba6b38be8534a91a43",
+          "md5": "52f8d4d7d734391f01e19d9cc32d7747"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-bom",
+          "version": {
+            "requires": "1.6.4"
+          },
+          "attributes": {
+            "org.gradle.category": "platform"
+          },
+          "endorseStrictVersions": true
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-reflect",
+          "version": {
+            "requires": "2.0.0"
+          }
+        },
+        {
+          "group": "io.mockk",
+          "module": "mockk-core",
+          "version": {
+            "requires": "1.13.13"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "mockk-dsl-jvm-1.13.13.jar",
+          "url": "mockk-dsl-jvm-1.13.13.jar",
+          "size": 459109,
+          "sha512": "6ae8d85858c8d5e9cfe80587c6e9178419f1d57e2ffb75396bd33860fd93a46573c5ede4ee874763418952d49e8c1ea345ac93882815f66ff5f21a5092f674d2",
+          "sha256": "ab430d2b9ddbc9fb1ba021e78245cf32536d090729adc45d68885791791e9ebb",
+          "sha1": "5d34d7f20048e8c2d06bb4ba6b38be8534a91a43",
+          "md5": "52f8d4d7d734391f01e19d9cc32d7747"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "mockk-dsl-jvm-1.13.13-sources.jar",
+          "url": "mockk-dsl-jvm-1.13.13-sources.jar",
+          "size": 24490,
+          "sha512": "b6a002e480accba876c72762a755f5d853f48740e6241b394c25bd9ee534fdf7d6bbd6329cc887a5002c25a5cc9549b7d93edba1356a69e4f36aa112df16a8ec",
+          "sha256": "aca581ac9c3a6a7ac623e79d600146ae0cb409ab99617f5034cff6c5cf7abba6",
+          "sha1": "6f58334143d5b5db316f54cbfbfefeef4b377ef2",
+          "md5": "d76df33414a6ce6df2652001d7b68bb1"
+        }
+      ]
+    }
+  ]
+}

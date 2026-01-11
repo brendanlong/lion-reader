@@ -1,0 +1,58 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-native-ndk",
+    "version": "0.7.14",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.4"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "sentry-native-ndk-0.7.14.aar",
+          "url": "sentry-native-ndk-0.7.14.aar",
+          "size": 14327088,
+          "sha512": "109dc9c35319acfdf17889d9f1a4b70628841d4261f1ce6d723cf35dd06031c08db84e6b0c0df09f36acf09e6595a706a494ed48293abbb9b02f5751bc71f57f",
+          "sha256": "ca842b5fda5268941135774ab6a3f6a2388155364e700eb6aa15f8f842703e6f",
+          "sha1": "f37e68bb397390e0a7f8fd2a7d533483bfbdf14c",
+          "md5": "5d09aee5b19b7d3ab76219deea9102a8"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "sentry-native-ndk-0.7.14.aar",
+          "url": "sentry-native-ndk-0.7.14.aar",
+          "size": 14327088,
+          "sha512": "109dc9c35319acfdf17889d9f1a4b70628841d4261f1ce6d723cf35dd06031c08db84e6b0c0df09f36acf09e6595a706a494ed48293abbb9b02f5751bc71f57f",
+          "sha256": "ca842b5fda5268941135774ab6a3f6a2388155364e700eb6aa15f8f842703e6f",
+          "sha1": "f37e68bb397390e0a7f8fd2a7d533483bfbdf14c",
+          "md5": "5d09aee5b19b7d3ab76219deea9102a8"
+        }
+      ]
+    }
+  ]
+}

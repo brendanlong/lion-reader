@@ -1,0 +1,82 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-logback",
+    "version": "8.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-logback-8.0.0.jar",
+          "url": "sentry-logback-8.0.0.jar",
+          "size": 6730,
+          "sha512": "8d31671a941cddf3511a92a1dcf7b4ed0f910e54ff2ec95af0dbcab4c79d6d3df2360357d3922d4f31e92d7cb838b56f1f1f4128b9d593155a1bd1e641cf543b",
+          "sha256": "2c733adff63ab10cc6025af7ec191ecc3935b5130f2978525ee777c4bada00b9",
+          "sha1": "316d84df00838607af177278409f995184659944",
+          "md5": "e8e05fae6c92691b38455be573868179"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-logback-8.0.0.jar",
+          "url": "sentry-logback-8.0.0.jar",
+          "size": 6730,
+          "sha512": "8d31671a941cddf3511a92a1dcf7b4ed0f910e54ff2ec95af0dbcab4c79d6d3df2360357d3922d4f31e92d7cb838b56f1f1f4128b9d593155a1bd1e641cf543b",
+          "sha256": "2c733adff63ab10cc6025af7ec191ecc3935b5130f2978525ee777c4bada00b9",
+          "sha1": "316d84df00838607af177278409f995184659944",
+          "md5": "e8e05fae6c92691b38455be573868179"
+        }
+      ]
+    }
+  ]
+}

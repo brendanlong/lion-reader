@@ -1,0 +1,198 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.transition",
+    "module": "transition",
+    "version": "1.6.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.13",
+      "buildId:": "13314995"
+    }
+  },
+  "variants": [
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "androidx.transition",
+          "module": "transition-ktx",
+          "version": {
+            "requires": "1.6.0"
+          },
+          "reason": "transition is in atomic group androidx.transition"
+        }
+      ],
+      "files": [
+        {
+          "name": "transition-1.6.0-sources.jar",
+          "url": "transition-1.6.0-sources.jar",
+          "size": 136384,
+          "sha512": "6b62fa605e44e57112783b11bef5161d28a19a4ff4f3145419886b96eb5cb786966ccf095ac16a4613763d89791c91f1e2d67935de1bc49dbc2510f051893c99",
+          "sha256": "d366250918f6b6bc89cdc05d771e88ee057574546cd19210cf52fae6dcaa4cec",
+          "sha1": "67af3dea0afa40e9005370a73b5bbde30c3f41cc",
+          "md5": "341448c60569b42bf3a8eef7a232d17a"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "androidx.core",
+          "module": "core",
+          "version": {
+            "requires": "1.16.0"
+          }
+        },
+        {
+          "group": "org.jspecify",
+          "module": "jspecify",
+          "version": {
+            "requires": "1.0.0"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "androidx.transition",
+          "module": "transition-ktx",
+          "version": {
+            "requires": "1.6.0"
+          },
+          "reason": "transition is in atomic group androidx.transition"
+        }
+      ],
+      "files": [
+        {
+          "name": "transition-1.6.0.aar",
+          "url": "transition-1.6.0.aar",
+          "size": 195762,
+          "sha512": "27b9e7caba3ea25596d2c91be6b3e1b1f7226f8f2abd8e85ebbb94f6031e0a15014c5ad5155198e8a66253b29806140b937575b5404ff2b7e61380c1d1bf95ad",
+          "sha256": "248c45e1254d31181d2047b0b01394f09a2e539a5d9e89b773d53c62c96860f6",
+          "sha1": "ce3468969bf3a42b42af76b2a6cfbe77bb4ddc33",
+          "md5": "7788aecafbfe70968b84fa58f28e4f1f"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "androidx.collection",
+          "module": "collection",
+          "version": {
+            "requires": "1.4.2"
+          }
+        },
+        {
+          "group": "androidx.core",
+          "module": "core",
+          "version": {
+            "requires": "1.16.0"
+          }
+        },
+        {
+          "group": "androidx.dynamicanimation",
+          "module": "dynamicanimation",
+          "version": {
+            "requires": "1.0.0"
+          }
+        },
+        {
+          "group": "org.jspecify",
+          "module": "jspecify",
+          "version": {
+            "requires": "1.0.0"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "androidx.transition",
+          "module": "transition-ktx",
+          "version": {
+            "requires": "1.6.0"
+          },
+          "reason": "transition is in atomic group androidx.transition"
+        }
+      ],
+      "files": [
+        {
+          "name": "transition-1.6.0.aar",
+          "url": "transition-1.6.0.aar",
+          "size": 195762,
+          "sha512": "27b9e7caba3ea25596d2c91be6b3e1b1f7226f8f2abd8e85ebbb94f6031e0a15014c5ad5155198e8a66253b29806140b937575b5404ff2b7e61380c1d1bf95ad",
+          "sha256": "248c45e1254d31181d2047b0b01394f09a2e539a5d9e89b773d53c62c96860f6",
+          "sha1": "ce3468969bf3a42b42af76b2a6cfbe77bb4ddc33",
+          "md5": "7788aecafbfe70968b84fa58f28e4f1f"
+        }
+      ]
+    },
+    {
+      "name": "libraryVersionMetadata",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.usage": "library-version-metadata"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "androidx.transition",
+          "module": "transition-ktx",
+          "version": {
+            "requires": "1.6.0"
+          },
+          "reason": "transition is in atomic group androidx.transition"
+        }
+      ],
+      "files": [
+        {
+          "name": "transition-1.6.0-versionMetadata.json",
+          "url": "transition-1.6.0-versionMetadata.json",
+          "size": 14976,
+          "sha512": "bc91f4e65c3685404208fb3a3820432602160fe38dc5d0c76ee68e30cf5af5c76ec5bb5bdf35fcbbd4ece103fdfc882a9e648c468acb9a961649862903c07a60",
+          "sha256": "e03af0858b252dd315f7d1e09975faf7b519df0c450795d77c75b79c543e6f76",
+          "sha1": "767de59370f361ea8957d2f320595cde58409421",
+          "md5": "9d593c3315a7590aba57df38d54bfe12"
+        }
+      ]
+    }
+  ]
+}

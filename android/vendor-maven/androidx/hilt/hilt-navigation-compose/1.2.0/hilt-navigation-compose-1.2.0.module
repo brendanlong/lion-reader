@@ -1,0 +1,187 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.hilt",
+    "module": "hilt-navigation-compose",
+    "version": "1.2.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.6-rc-1"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.compose.runtime",
+          "module": "runtime",
+          "version": {
+            "requires": "1.0.1"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui",
+          "version": {
+            "requires": "1.0.1"
+          }
+        },
+        {
+          "group": "androidx.hilt",
+          "module": "hilt-navigation",
+          "version": {
+            "requires": "1.2.0"
+          }
+        },
+        {
+          "group": "androidx.lifecycle",
+          "module": "lifecycle-viewmodel-compose",
+          "version": {
+            "requires": "2.6.1"
+          }
+        },
+        {
+          "group": "androidx.navigation",
+          "module": "navigation-compose",
+          "version": {
+            "requires": "2.5.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "hilt-navigation-compose-1.2.0.aar",
+          "url": "hilt-navigation-compose-1.2.0.aar",
+          "size": 5401,
+          "sha512": "776582c790722b460ab6efb6dffb293695d16862d1dea7b348f3026745fe7ff2c6de935667d206721d26e959352973bf08852b56a65621bcce0ae9749065d304",
+          "sha256": "e69abbb3f177893b57a596fdcc5ee1f4d7f2385241ac3765c3d7b9c50c9db84e",
+          "sha1": "d54c5166aca7bdaa595a8b952ff4d9d19a5ada10",
+          "md5": "aa2615f781a3c4396bc0475a9e2d1e54"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.compose.runtime",
+          "module": "runtime",
+          "version": {
+            "requires": "1.0.1"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui",
+          "version": {
+            "requires": "1.0.1"
+          }
+        },
+        {
+          "group": "androidx.hilt",
+          "module": "hilt-navigation",
+          "version": {
+            "requires": "1.2.0"
+          }
+        },
+        {
+          "group": "androidx.lifecycle",
+          "module": "lifecycle-viewmodel-compose",
+          "version": {
+            "requires": "2.6.1"
+          }
+        },
+        {
+          "group": "androidx.navigation",
+          "module": "navigation-compose",
+          "version": {
+            "requires": "2.5.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.8.22"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "hilt-navigation-compose-1.2.0.aar",
+          "url": "hilt-navigation-compose-1.2.0.aar",
+          "size": 5401,
+          "sha512": "776582c790722b460ab6efb6dffb293695d16862d1dea7b348f3026745fe7ff2c6de935667d206721d26e959352973bf08852b56a65621bcce0ae9749065d304",
+          "sha256": "e69abbb3f177893b57a596fdcc5ee1f4d7f2385241ac3765c3d7b9c50c9db84e",
+          "sha1": "d54c5166aca7bdaa595a8b952ff4d9d19a5ada10",
+          "md5": "aa2615f781a3c4396bc0475a9e2d1e54"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "hilt-navigation-compose-1.2.0-sources.jar",
+          "url": "hilt-navigation-compose-1.2.0-sources.jar",
+          "size": 2132,
+          "sha512": "aeca5f59d67cdf86e1d0f4f8493bc0d083e75776b88ff23bfb7928bcb6fab88d0b4dcb97a25f392bb661bf682c91a63a0d772e14fe58f348bcf2b3dc316c2d5f",
+          "sha256": "5e6272ad60781eb48126484218dd993a4c68c553456b711a1cae796760c128e8",
+          "sha1": "3316ba490a3081b6cfa8fa21c29a48a6a2e35e2f",
+          "md5": "a240ab079d55e3323f73e74293cec608"
+        },
+        {
+          "name": "hilt-navigation-compose-1.2.0-samples-sources.jar",
+          "url": "hilt-navigation-compose-1.2.0-samples-sources.jar",
+          "size": 1898,
+          "sha512": "0a0905f1cc7a345ed27a71ae97de5dada2e54bdee5b83f54d8639716f8550cbd375d5015301a6f123429556164ead709617e9d134bff30c3b6ea7ccfeaf921e7",
+          "sha256": "0507e71e839567ee9e51119edd9ab1db6c8279b675fef03417199227275ce58d",
+          "sha1": "b8667dbea736b4b1387ebc43139a8298992e5b88",
+          "md5": "671550a9b2f932ac53668f0d379b6881"
+        }
+      ]
+    },
+    {
+      "name": "libraryVersionMetadata",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.usage": "library-version-metadata"
+      },
+      "files": [
+        {
+          "name": "hilt-navigation-compose-1.2.0-versionMetadata.json",
+          "url": "hilt-navigation-compose-1.2.0-versionMetadata.json",
+          "size": 610,
+          "sha512": "0467247655346f300c64312477eecc8120176c9e5b0541bd70cf05f623f6c233d6d7cf977bf3b3b4a9777d833b6c37d8c30aebc6e0c1039f64ae65dc0990dab8",
+          "sha256": "5885bd59822ba7415b1e0f8ee40b817f897c7afd31cdabbb06ce2fa7fc814f86",
+          "sha1": "81714b1536366cc66ac1a67e08b4c2c7b241c82a",
+          "md5": "e5d6a32702ced554ee0862214051bde4"
+        }
+      ]
+    }
+  ]
+}

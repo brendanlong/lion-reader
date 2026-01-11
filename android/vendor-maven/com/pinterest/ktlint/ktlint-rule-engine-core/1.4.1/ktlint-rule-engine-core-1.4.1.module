@@ -1,0 +1,164 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.pinterest.ktlint",
+    "module": "ktlint-rule-engine-core",
+    "version": "1.4.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-compiler-embeddable",
+          "version": {
+            "requires": "2.0.21"
+          }
+        },
+        {
+          "group": "org.ec4j.core",
+          "module": "ec4j-core",
+          "version": {
+            "requires": "1.1.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-rule-engine-core-1.4.1.jar",
+          "url": "ktlint-rule-engine-core-1.4.1.jar",
+          "size": 112078,
+          "sha512": "fa68e226ee30c99c00d964defc59ce6b19ecf47be9b2d2f50bb7500f5517c1e11b18c0cd81b3d0e110a63b42e240079728a42483c1845bee2929898c62091280",
+          "sha256": "7a1a9ccb27b43efbf597f7e884351a83053cabc9a7dd66adc1afe19531d1b75c",
+          "sha1": "8e877b37acd40ad98e74f4b4a8e6509e6dda5d8f",
+          "md5": "a7c5d44eae836dd96064a39cfb41c984"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.pinterest.ktlint",
+          "module": "ktlint-logger",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "dev.drewhamilton.poko",
+          "module": "poko-annotations",
+          "version": {
+            "requires": "0.17.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-compiler-embeddable",
+          "version": {
+            "requires": "2.0.21"
+          }
+        },
+        {
+          "group": "org.ec4j.core",
+          "module": "ec4j-core",
+          "version": {
+            "requires": "1.1.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-rule-engine-core-1.4.1.jar",
+          "url": "ktlint-rule-engine-core-1.4.1.jar",
+          "size": 112078,
+          "sha512": "fa68e226ee30c99c00d964defc59ce6b19ecf47be9b2d2f50bb7500f5517c1e11b18c0cd81b3d0e110a63b42e240079728a42483c1845bee2929898c62091280",
+          "sha256": "7a1a9ccb27b43efbf597f7e884351a83053cabc9a7dd66adc1afe19531d1b75c",
+          "sha1": "8e877b37acd40ad98e74f4b4a8e6509e6dda5d8f",
+          "md5": "a7c5d44eae836dd96064a39cfb41c984"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-rule-engine-core-1.4.1-sources.jar",
+          "url": "ktlint-rule-engine-core-1.4.1-sources.jar",
+          "size": 32365,
+          "sha512": "5f283a0c346c2f9ae532903de7b539d8821e76d18a92c43094d222355aa567cf72cdb19bec761cb9ff8c3e94844853c7e108676fe043dcd315d6cf3d443d620d",
+          "sha256": "a770e6d87e1b393840d449a5a26a8edc82813d53140b308c9eb84d5a3c29ef93",
+          "sha1": "7bbd802e30998e51a796a4c8e96a6ec54b63e8fd",
+          "md5": "db8ee8e41d25e7f67eb41ce7854ebd52"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-rule-engine-core-1.4.1-javadoc.jar",
+          "url": "ktlint-rule-engine-core-1.4.1-javadoc.jar",
+          "size": 636869,
+          "sha512": "091c268c14538d5b5bafbddea6d349357b2e9e9587e41e8250a6b791d59a56aa6c8321eb0073fbdfe418a88863ce2f6defeb917d57b4910544e7f0dc87887f7d",
+          "sha256": "73d77ff0d339f5d4fa781c995d3a3af820855311482d3875b97e830440fe59e7",
+          "sha1": "fb75f7493d9bc5077c3519f657d45ee4f5d43dd1",
+          "md5": "22c62ba5754bdda54acbbe994d4f2dec"
+        }
+      ]
+    }
+  ]
+}

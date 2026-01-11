@@ -1,0 +1,89 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-okhttp",
+    "version": "8.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-okhttp-8.0.0.jar",
+          "url": "sentry-okhttp-8.0.0.jar",
+          "size": 48927,
+          "sha512": "a0605a982a5f954c1df450bc9aeb218afa88081849f75679c47499da44928bd020643541dd21667612889febe670e49aef6693aaa7d59d41236297c47fbcdbf9",
+          "sha256": "e76542d197c4390c0cae8ce60bbe1255f5a73b1208fbceb1c2855e2064931c41",
+          "sha1": "06745c1f30a03530b759de5d523d24d6e1e436f9",
+          "md5": "fe2eafaa97fadd5f29c0bf05d8d6819c"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib-jdk8",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-okhttp-8.0.0.jar",
+          "url": "sentry-okhttp-8.0.0.jar",
+          "size": 48927,
+          "sha512": "a0605a982a5f954c1df450bc9aeb218afa88081849f75679c47499da44928bd020643541dd21667612889febe670e49aef6693aaa7d59d41236297c47fbcdbf9",
+          "sha256": "e76542d197c4390c0cae8ce60bbe1255f5a73b1208fbceb1c2855e2064931c41",
+          "sha1": "06745c1f30a03530b759de5d523d24d6e1e436f9",
+          "md5": "fe2eafaa97fadd5f29c0bf05d8d6819c"
+        }
+      ]
+    }
+  ]
+}

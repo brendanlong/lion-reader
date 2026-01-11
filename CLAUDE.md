@@ -230,3 +230,43 @@ For mutations that update UI state (mark read, star, etc.), use optimistic updat
 ## Android App
 
 The Android app lives in `android/`. When adding new API endpoints to `LionReaderApiImpl`, also add them to `clientPaths` in `ApiContractTest` to ensure they're validated against the server's OpenAPI spec.
+
+### Vendored Dependencies and Offline Mode
+
+Android dependencies and Gradle itself are vendored and tracked with Git LFS. This enables fully offline builds in environments without internet access (like some cloud development environments).
+
+**Building offline (when Gradle dependency fetches fail):**
+
+```bash
+cd android
+./gradlew assembleDebug --offline
+```
+
+The `--offline` flag tells Gradle to only use locally cached/vendored dependencies. The vendored repository is automatically used when present.
+
+**Updating vendored dependencies:**
+
+After adding or updating dependencies in `libs.versions.toml` or `build.gradle.kts`:
+
+```bash
+cd android
+./gradlew vendorDependencies --no-configuration-cache
+git add vendor-maven
+git commit -m "Update vendored Android dependencies"
+```
+
+**Updating Gradle version:**
+
+When upgrading Gradle, update both the wrapper properties and the vendored distribution:
+
+```bash
+cd android
+# Update wrapper (downloads new version)
+./gradlew wrapper --gradle-version=X.Y
+# Copy new distribution to vendor
+cp ~/.gradle/wrapper/dists/gradle-X.Y-bin/*/gradle-X.Y-bin.zip gradle/wrapper/dists/
+git add gradle/wrapper/
+git commit -m "Update vendored Gradle to X.Y"
+```
+
+Note: Binary files (JAR, AAR, ZIP) are tracked with Git LFS to keep the repository size manageable.

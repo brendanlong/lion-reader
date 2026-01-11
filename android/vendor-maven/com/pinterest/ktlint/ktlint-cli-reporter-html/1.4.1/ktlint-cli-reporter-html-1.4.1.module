@@ -1,0 +1,136 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.pinterest.ktlint",
+    "module": "ktlint-cli-reporter-html",
+    "version": "1.4.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-html-1.4.1.jar",
+          "url": "ktlint-cli-reporter-html-1.4.1.jar",
+          "size": 7743,
+          "sha512": "811bb7e3e01bedce8000bede6a1449feac02cfe720efb80243fba50310b26c9904d046882941c357cf78a05f60ac2930dfea1d7fe54ff3bcfcbed8e67592becb",
+          "sha256": "52731558b9cfb7ec196ca7d3e3710f1ba4a118e5e1aff72c83fcedb61510f9de",
+          "sha1": "5f83cd7d3c729c6eece81ac57b590d817232cbb6",
+          "md5": "a93d98ac656c58dc7916832125f97760"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.pinterest.ktlint",
+          "module": "ktlint-cli-reporter-core",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "dev.drewhamilton.poko",
+          "module": "poko-annotations",
+          "version": {
+            "requires": "0.17.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-html-1.4.1.jar",
+          "url": "ktlint-cli-reporter-html-1.4.1.jar",
+          "size": 7743,
+          "sha512": "811bb7e3e01bedce8000bede6a1449feac02cfe720efb80243fba50310b26c9904d046882941c357cf78a05f60ac2930dfea1d7fe54ff3bcfcbed8e67592becb",
+          "sha256": "52731558b9cfb7ec196ca7d3e3710f1ba4a118e5e1aff72c83fcedb61510f9de",
+          "sha1": "5f83cd7d3c729c6eece81ac57b590d817232cbb6",
+          "md5": "a93d98ac656c58dc7916832125f97760"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-html-1.4.1-sources.jar",
+          "url": "ktlint-cli-reporter-html-1.4.1-sources.jar",
+          "size": 4315,
+          "sha512": "5c6a5131ac9e9248030bede8bee1ed3c4b00155d434ee58f9bc8d6383887286d05d662afd887d4e506c670f0fe183c7ee918d37b8602501c6fcf2389b0c8f1a9",
+          "sha256": "f426a398168294c082f5cdc58a18aabf803a29d4131e76e3ef6f3d0559f183cd",
+          "sha1": "d42cd020428a534348a602e10c0bef6b38fc030c",
+          "md5": "6865f94e98dc14fbfa9bd004c78f8ee9"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-html-1.4.1-javadoc.jar",
+          "url": "ktlint-cli-reporter-html-1.4.1-javadoc.jar",
+          "size": 414113,
+          "sha512": "e03fbac40c1784a00b3862e3e4d5374b1fb27f43f8032b5a83bad9bae7648e7575fae83effe046c0ea6619228c89b2815f19d2e6e4980c5d52fed59fce5c7909",
+          "sha256": "8dd57727604e1d10aa676844e529fc1adf92de1e85701041306cb4d46959dbe1",
+          "sha1": "d25923ce0354aa4dd4c2ab4ef09c35559660d379",
+          "md5": "d1f419448b7531bd986f39de4aae4e50"
+        }
+      ]
+    }
+  ]
+}

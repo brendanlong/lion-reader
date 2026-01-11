@@ -1,0 +1,76 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-android-fragment",
+    "version": "8.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-fragment-8.0.0.aar",
+          "url": "sentry-android-fragment-8.0.0.aar",
+          "size": 14342,
+          "sha512": "a746e9b0861c6c446553b46493acfb8644ac36efe1fc2b84ac1ba7c9713facaeed17cc1bcbd0097709542016face7f029a4a4e2d995436cd28fccb24449e5164",
+          "sha256": "2a806208291a6c4012d58102b93d28c39b28eaafad9fbb4000149e75b3ff1e3b",
+          "sha1": "ab6bf7bd237c88a7eba650baa367bc6dc7293d4d",
+          "md5": "4d4696ebb893d3fb94741e56ad867182"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-fragment-8.0.0.aar",
+          "url": "sentry-android-fragment-8.0.0.aar",
+          "size": 14342,
+          "sha512": "a746e9b0861c6c446553b46493acfb8644ac36efe1fc2b84ac1ba7c9713facaeed17cc1bcbd0097709542016face7f029a4a4e2d995436cd28fccb24449e5164",
+          "sha256": "2a806208291a6c4012d58102b93d28c39b28eaafad9fbb4000149e75b3ff1e3b",
+          "sha1": "ab6bf7bd237c88a7eba650baa367bc6dc7293d4d",
+          "md5": "4d4696ebb893d3fb94741e56ad867182"
+        }
+      ]
+    }
+  ]
+}

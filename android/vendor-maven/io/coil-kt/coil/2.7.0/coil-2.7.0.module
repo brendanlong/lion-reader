@@ -1,0 +1,130 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.coil-kt",
+    "module": "coil",
+    "version": "2.7.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.8"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "io.coil-kt",
+          "module": "coil-base",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "coil-2.7.0.aar",
+          "url": "coil-2.7.0.aar",
+          "size": 7258,
+          "sha512": "9d49234f4fc1c06ac86ede1d69417923b5023186438fbbfdb87236f40d4fe3271e53d27bbb387f19d1aee215059cef44bf3c39d6b506f9a72a3b5b37dc02b21c",
+          "sha256": "6e8e46eb813c7290c5ae9954d43f3ffa022c0500096ed4585801a38262b3f851",
+          "sha1": "0a80e1925dbd1377fbd54f36fc651ebc33a2a71f",
+          "md5": "d43d6b4f373ddcae132b936212f9784e"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "io.coil-kt",
+          "module": "coil-base",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "coil-2.7.0.aar",
+          "url": "coil-2.7.0.aar",
+          "size": 7258,
+          "sha512": "9d49234f4fc1c06ac86ede1d69417923b5023186438fbbfdb87236f40d4fe3271e53d27bbb387f19d1aee215059cef44bf3c39d6b506f9a72a3b5b37dc02b21c",
+          "sha256": "6e8e46eb813c7290c5ae9954d43f3ffa022c0500096ed4585801a38262b3f851",
+          "sha1": "0a80e1925dbd1377fbd54f36fc651ebc33a2a71f",
+          "md5": "d43d6b4f373ddcae132b936212f9784e"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "coil-2.7.0-sources.jar",
+          "url": "coil-2.7.0-sources.jar",
+          "size": 2946,
+          "sha512": "6e16951d6f27f98f0963a50e8d420cf3b93ae9bfbb55770a6cb4b3ad0106be21b80ac3a9b248a1fde3d3abcc8ee1e0208630ea0c110ebb83647595e150ce6f6a",
+          "sha256": "2d73133de75104871dae6555732a2fcfc517b08eea7f747b8fb2b7f105bc1c66",
+          "sha1": "937a2d5a82528330e0a0c6b09142703a4a0874ae",
+          "md5": "84fa9cb5c3cef4c23b6dbf3ff7b11d99"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseJavaDocPublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "coil-2.7.0-javadoc.jar",
+          "url": "coil-2.7.0-javadoc.jar",
+          "size": 281288,
+          "sha512": "2d5d7a4bd417d6440faf8d0bf5b1580b3d2da745ff7c6d72115cd66423db0509bc8f73db2ed6e261d2ae07fe016036aa101d5f916c7fd269eaca05c55ae895a0",
+          "sha256": "824687b01cdc60e66839ee1f994c8171af72dea74f489bc413e03dee8eb15182",
+          "sha1": "e4e00fb525eaa0f76e342d74143f814fd413bfda",
+          "md5": "5deaef94d1b74f1cd9a31cfb358a924c"
+        }
+      ]
+    }
+  ]
+}

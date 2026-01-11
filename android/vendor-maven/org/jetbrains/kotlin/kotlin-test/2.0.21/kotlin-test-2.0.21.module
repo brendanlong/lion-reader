@@ -1,0 +1,633 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.jetbrains.kotlin",
+    "module": "kotlin-test",
+    "version": "2.0.21",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.8"
+    }
+  },
+  "variants": [
+    {
+      "name": "metadataApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-metadata",
+        "org.jetbrains.kotlin.platform.type": "common"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test-common",
+          "version": {
+            "requires": "2.0.21"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test-annotations-common",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlin-test-2.0.21-all.jar",
+          "url": "kotlin-test-2.0.21-all.jar",
+          "size": 8721,
+          "sha512": "14837d64fc7e5dbd295f5bba47e8ceaa55a16203f0bee8ff703b67d64e51857afb6870fd079ffafea14b8c8af7788b6fe176f05dcb55310ca54e6959a5dc67df",
+          "sha256": "da2868fa95a3fb8f35e2b4e331ca2e29321486701965ec766bae820f98e0277c",
+          "sha1": "aa7657933c31dfc12ed73bfc4bf68f6a07207515",
+          "md5": "9f05adcaa43bd346dc0fa00393065e7c"
+        }
+      ],
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-junit5",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-testng",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-junit",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test-common",
+          "version": {
+            "requires": "2.0.21"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test-annotations-common",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlin-test-2.0.21.jar",
+          "url": "kotlin-test-2.0.21.jar",
+          "size": 101541,
+          "sha512": "801661b84f78903ca26c6512323e7360cb5e3a3b657f3ed894451697c94cff961af75e03f3792658f6749f358b6115664311ef5a548272f4b740c2d542bad6df",
+          "sha256": "a897b28c6a3ea8ec8f00ed766941a0c0df993d7f65908875879868e08ceb8985",
+          "sha1": "c6ea143e356327ddfda57e53e829c553e3b45b64",
+          "md5": "653aa45edb9239ce226181af8012381d"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "dependencyConstraints": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test-common",
+          "version": {
+            "requires": "2.0.21"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test-annotations-common",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "kotlin-test-2.0.21.jar",
+          "url": "kotlin-test-2.0.21.jar",
+          "size": 101541,
+          "sha512": "801661b84f78903ca26c6512323e7360cb5e3a3b657f3ed894451697c94cff961af75e03f3792658f6749f358b6115664311ef5a548272f4b740c2d542bad6df",
+          "sha256": "a897b28c6a3ea8ec8f00ed766941a0c0df993d7f65908875879868e08ceb8985",
+          "sha1": "c6ea143e356327ddfda57e53e829c553e3b45b64",
+          "md5": "653aa45edb9239ce226181af8012381d"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "kotlin-test-2.0.21-sources.jar",
+          "url": "kotlin-test-2.0.21-sources.jar",
+          "size": 11665,
+          "sha512": "52854e4e06ec7442e23012091d30720af7e313bb2a371d91a3caf76c9abe831a72b4d248354a4715bddbbc7b62c32fbb0de85a3076600e9fee24df6a145cd955",
+          "sha256": "4bfa47ebeb1c6e722434db0458bd5bafc0715c78604282816887517e542912c6",
+          "sha1": "b78aebe27209f0422aa19c6e5f8b83dd32716b87",
+          "md5": "f861b13d8cc8bc3b465c9796fea65f86"
+        }
+      ]
+    },
+    {
+      "name": "nativeApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.platform.type": "native"
+      },
+      "dependencyConstraints": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test-common",
+          "version": {
+            "requires": "2.0.21"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-test-annotations-common",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ]
+    },
+    {
+      "name": "jsApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.js.compiler": "ir",
+        "org.jetbrains.kotlin.platform.type": "js"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-js/2.0.21/kotlin-test-js-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-js",
+        "version": "2.0.21"
+      }
+    },
+    {
+      "name": "jsRuntimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.js.compiler": "ir",
+        "org.jetbrains.kotlin.platform.type": "js"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-js/2.0.21/kotlin-test-js-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-js",
+        "version": "2.0.21"
+      }
+    },
+    {
+      "name": "jsSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.js.compiler": "ir",
+        "org.jetbrains.kotlin.platform.type": "js"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-js/2.0.21/kotlin-test-js-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-js",
+        "version": "2.0.21"
+      }
+    },
+    {
+      "name": "jvmJUnitApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-junit/2.0.21/kotlin-test-junit-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-junit",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-junit",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmJUnitRuntimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-junit/2.0.21/kotlin-test-junit-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-junit",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-junit",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmJUnitSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-junit/2.0.21/kotlin-test-junit-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-junit",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-junit",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmJUnit5ApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-junit5/2.0.21/kotlin-test-junit5-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-junit5",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-junit5",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmJUnit5RuntimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-junit5/2.0.21/kotlin-test-junit5-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-junit5",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-junit5",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmJUnit5SourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-junit5/2.0.21/kotlin-test-junit5-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-junit5",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-junit5",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmTestNGApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-testng/2.0.21/kotlin-test-testng-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-testng",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-testng",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmTestNGRuntimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-testng/2.0.21/kotlin-test-testng-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-testng",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-testng",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "jvmTestNGSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-testng/2.0.21/kotlin-test-testng-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-testng",
+        "version": "2.0.21"
+      },
+      "capabilities": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework",
+          "version": "2.0.21"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "name": "kotlin-test-framework-testng",
+          "version": "2.0.21"
+        }
+      ]
+    },
+    {
+      "name": "wasmJsApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "js"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-wasm-js/2.0.21/kotlin-test-wasm-js-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-wasm-js",
+        "version": "2.0.21"
+      }
+    },
+    {
+      "name": "wasmJsRuntimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "js"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-wasm-js/2.0.21/kotlin-test-wasm-js-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-wasm-js",
+        "version": "2.0.21"
+      }
+    },
+    {
+      "name": "wasmJsSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "js"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-wasm-js/2.0.21/kotlin-test-wasm-js-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-wasm-js",
+        "version": "2.0.21"
+      }
+    },
+    {
+      "name": "wasmWasiApiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-api",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "wasi"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-wasm-wasi/2.0.21/kotlin-test-wasm-wasi-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-wasm-wasi",
+        "version": "2.0.21"
+      }
+    },
+    {
+      "name": "wasmWasiRuntimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "wasi"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-wasm-wasi/2.0.21/kotlin-test-wasm-wasi-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-wasm-wasi",
+        "version": "2.0.21"
+      }
+    },
+    {
+      "name": "wasmWasiSourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "non-jvm",
+        "org.gradle.usage": "kotlin-runtime",
+        "org.jetbrains.kotlin.platform.type": "wasm",
+        "org.jetbrains.kotlin.wasm.target": "wasi"
+      },
+      "available-at": {
+        "url": "../../kotlin-test-wasm-wasi/2.0.21/kotlin-test-wasm-wasi-2.0.21.module",
+        "group": "org.jetbrains.kotlin",
+        "module": "kotlin-test-wasm-wasi",
+        "version": "2.0.21"
+      }
+    }
+  ]
+}

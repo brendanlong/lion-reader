@@ -1,0 +1,136 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.pinterest.ktlint",
+    "module": "ktlint-cli-reporter-checkstyle",
+    "version": "1.4.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-checkstyle-1.4.1.jar",
+          "url": "ktlint-cli-reporter-checkstyle-1.4.1.jar",
+          "size": 7391,
+          "sha512": "a924e7d5ecad5c3c6dd5518bd89a87ffa84a5a48ba59b8f6e7aa534406d777b4e6da6f639e004d6f9e6e631cc1054b05237369aa1f384a842aaaf7d5c8ecd83a",
+          "sha256": "ee573c6f9ed16ea49b112fa96e0ce27c891ca6ce960df400420230452014f485",
+          "sha1": "5c262f11bebc4e6b1495c29ef1c47f574586c55e",
+          "md5": "0dac754c6ae102bf763b295f6d1e902a"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.pinterest.ktlint",
+          "module": "ktlint-cli-reporter-core",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "dev.drewhamilton.poko",
+          "module": "poko-annotations",
+          "version": {
+            "requires": "0.17.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-checkstyle-1.4.1.jar",
+          "url": "ktlint-cli-reporter-checkstyle-1.4.1.jar",
+          "size": 7391,
+          "sha512": "a924e7d5ecad5c3c6dd5518bd89a87ffa84a5a48ba59b8f6e7aa534406d777b4e6da6f639e004d6f9e6e631cc1054b05237369aa1f384a842aaaf7d5c8ecd83a",
+          "sha256": "ee573c6f9ed16ea49b112fa96e0ce27c891ca6ce960df400420230452014f485",
+          "sha1": "5c262f11bebc4e6b1495c29ef1c47f574586c55e",
+          "md5": "0dac754c6ae102bf763b295f6d1e902a"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-checkstyle-1.4.1-sources.jar",
+          "url": "ktlint-cli-reporter-checkstyle-1.4.1-sources.jar",
+          "size": 2723,
+          "sha512": "871c0c35034aef8ef0eec8f98673994b2b88eb5cfa6097d69b34a0a754d76ddccfe733e08f6676a2722e953b6342092d82ea0cc3862636844077daf36abfd6a0",
+          "sha256": "b464af3e655798e1a4276935d1bcdce867396f826b8565598bb6bffb2524e05a",
+          "sha1": "2c14d5cfdee780d13d599fedcf15303778046be8",
+          "md5": "edb78d810958d969a4202ecafb06e6de"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "ktlint-cli-reporter-checkstyle-1.4.1-javadoc.jar",
+          "url": "ktlint-cli-reporter-checkstyle-1.4.1-javadoc.jar",
+          "size": 412683,
+          "sha512": "57b74446080c96c111a1f0c8fb6c92b963a2804113e7c1cd729af3776b1768096ff1cf2b6a602c39a0a3254943ffbe35db5583ef470525c728a61e6d856a98fc",
+          "sha256": "b6c6c09741746e91966a4d48dc5fdaa60079ee8209ff47fde5fbd99edff74b40",
+          "sha1": "802498a546f3554133a73ed6aa748832c35ae2c8",
+          "md5": "7e5a2c5ceb25f8b35ec38a3b790a5da0"
+        }
+      ]
+    }
+  ]
+}

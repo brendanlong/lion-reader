@@ -1,0 +1,148 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.android.tools.utp",
+    "module": "android-test-plugin-host-device-info",
+    "version": "31.7.3",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.9"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 11,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "android-test-plugin-host-device-info-31.7.3.jar",
+          "url": "android-test-plugin-host-device-info-31.7.3.jar",
+          "size": 10543,
+          "sha512": "34ffaf43cf655fb1a08ff1f4573e03e1a35408372a441dadb2270ae864a2289a85da6801741f6612a65d2f074e7c4ece39defcf169ae40af78e2934a61530a73",
+          "sha256": "aae7600061eefd5fc5217278b00db9b2fd75005ccd64f6f19cdcb2523bc8ebc5",
+          "sha1": "158648c03c3b728955bb657d24c8537a16ae40d4",
+          "md5": "90a98e3229ecd3e2aab3ab81d12a1197"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 11,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "com.android.tools",
+          "module": "common",
+          "version": {
+            "requires": "31.7.3"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib-jdk8",
+          "version": {
+            "requires": "1.9.20"
+          }
+        },
+        {
+          "group": "com.google.protobuf",
+          "module": "protobuf-java",
+          "version": {
+            "requires": "3.22.3"
+          }
+        },
+        {
+          "group": "com.android.tools.utp",
+          "module": "utp-common",
+          "version": {
+            "requires": "31.7.3"
+          }
+        },
+        {
+          "group": "com.android.tools.utp",
+          "module": "android-test-plugin-host-device-info-proto",
+          "version": {
+            "requires": "31.7.3"
+          }
+        },
+        {
+          "group": "com.google.testing.platform",
+          "module": "android-device-provider-local",
+          "version": {
+            "requires": "0.0.9-alpha02"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "android-test-plugin-host-device-info-31.7.3.jar",
+          "url": "android-test-plugin-host-device-info-31.7.3.jar",
+          "size": 10543,
+          "sha512": "34ffaf43cf655fb1a08ff1f4573e03e1a35408372a441dadb2270ae864a2289a85da6801741f6612a65d2f074e7c4ece39defcf169ae40af78e2934a61530a73",
+          "sha256": "aae7600061eefd5fc5217278b00db9b2fd75005ccd64f6f19cdcb2523bc8ebc5",
+          "sha1": "158648c03c3b728955bb657d24c8537a16ae40d4",
+          "md5": "90a98e3229ecd3e2aab3ab81d12a1197"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "android-test-plugin-host-device-info-31.7.3-javadoc.jar",
+          "url": "android-test-plugin-host-device-info-31.7.3-javadoc.jar",
+          "size": 261,
+          "sha512": "e533cc877531c0d021172f321741205c3b9c7efc55b7882a381626aa8fb844d4a63b05adec51063c3017e156a7d94747c8520e4c4c2372074a22f2d622902061",
+          "sha256": "4c7b03dd67c19dff3eb50c36d15ec8bb849b3e8140271f9a9d3b9bb0b46d75cd",
+          "sha1": "71cbe2aa75e8a1d239baeb63dc556549cc713247",
+          "md5": "a0f7376e584e68c1dfa580d844ba8ceb"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "android-test-plugin-host-device-info-31.7.3-sources.jar",
+          "url": "android-test-plugin-host-device-info-31.7.3-sources.jar",
+          "size": 4397,
+          "sha512": "afba2dc0495240a0676226247a5b3b11e9ce88287da291dd061f8a654558224fd273387911aadbd0132be89d19f4901b89358ec7123bd54ac7ebcc7866c4b15a",
+          "sha256": "0c0a1911caed9014055792f9352918e01d64728a5281a67c8506a5014ce4e8b2",
+          "sha1": "edb17cb80da5aa014490b4b5a681a7193522012a",
+          "md5": "f0334734c35d0044f5e0ab9f918bd3f0"
+        }
+      ]
+    }
+  ]
+}

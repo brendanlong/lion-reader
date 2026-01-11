@@ -1,0 +1,214 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.coil-kt",
+    "module": "coil-base",
+    "version": "2.7.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.8"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.lifecycle",
+          "module": "lifecycle-runtime",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-android",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        },
+        {
+          "group": "com.squareup.okhttp3",
+          "module": "okhttp",
+          "version": {
+            "requires": "4.12.0"
+          }
+        },
+        {
+          "group": "com.squareup.okio",
+          "module": "okio",
+          "version": {
+            "requires": "3.9.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "coil-base-2.7.0.aar",
+          "url": "coil-base-2.7.0.aar",
+          "size": 428279,
+          "sha512": "1cafc697368e0815a65ce6182079e6d050fd7472f07b75444212a060bb36cfd19210ebae99232de7d46e86081b8d81bdbe7fe714d42ed57191f46e27acfd687b",
+          "sha256": "f45c1e118038266734321f54c3b84ce2d52b491bb00481134724ac33d3d5e2b2",
+          "sha1": "d55574edf778066fc4932c4daa776cf0c644d942",
+          "md5": "7ec51ed2784befb3638679151d665756"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.7.1"
+          }
+        },
+        {
+          "group": "androidx.appcompat",
+          "module": "appcompat-resources",
+          "version": {
+            "requires": "1.6.1"
+          }
+        },
+        {
+          "group": "androidx.collection",
+          "module": "collection",
+          "version": {
+            "requires": "1.4.0"
+          }
+        },
+        {
+          "group": "androidx.core",
+          "module": "core-ktx",
+          "version": {
+            "requires": "1.12.0"
+          }
+        },
+        {
+          "group": "androidx.exifinterface",
+          "module": "exifinterface",
+          "version": {
+            "requires": "1.3.7"
+          }
+        },
+        {
+          "group": "androidx.profileinstaller",
+          "module": "profileinstaller",
+          "version": {
+            "requires": "1.3.1"
+          }
+        },
+        {
+          "group": "androidx.lifecycle",
+          "module": "lifecycle-runtime",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-android",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        },
+        {
+          "group": "com.squareup.okhttp3",
+          "module": "okhttp",
+          "version": {
+            "requires": "4.12.0"
+          }
+        },
+        {
+          "group": "com.squareup.okio",
+          "module": "okio",
+          "version": {
+            "requires": "3.9.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "coil-base-2.7.0.aar",
+          "url": "coil-base-2.7.0.aar",
+          "size": 428279,
+          "sha512": "1cafc697368e0815a65ce6182079e6d050fd7472f07b75444212a060bb36cfd19210ebae99232de7d46e86081b8d81bdbe7fe714d42ed57191f46e27acfd687b",
+          "sha256": "f45c1e118038266734321f54c3b84ce2d52b491bb00481134724ac33d3d5e2b2",
+          "sha1": "d55574edf778066fc4932c4daa776cf0c644d942",
+          "md5": "7ec51ed2784befb3638679151d665756"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "coil-base-2.7.0-sources.jar",
+          "url": "coil-base-2.7.0-sources.jar",
+          "size": 120830,
+          "sha512": "9753689e2d8c5e51ebc0d428ba69ae298585d8b95228cf07b572a1befca36d2cc116f95f7f649787f4dd8a117442a7de61d6c38b5dbb0e001c3b2fd80980dae2",
+          "sha256": "c9e94f1bec40b07d888c1de7f29b0b5e59eebdf9c6c474d955ec2e90007e4af6",
+          "sha1": "70f6dd7d4980de6bb6699320f3e0a9845372c17f",
+          "md5": "519be4e74711514d55a3b1568fce502c"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseJavaDocPublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "coil-base-2.7.0-javadoc.jar",
+          "url": "coil-base-2.7.0-javadoc.jar",
+          "size": 681430,
+          "sha512": "7e79cafb11b4c30345fdcfda6e7bebacbfa865e3d50d9ccc0ccb71103c9f05272d9a949735f593c9a488c2ffa5e251ebe9a4111c8d6c80022cab17daac99f437",
+          "sha256": "8087670cba81c66540da7edc64f778b52c1d5ce92c71085dc74b50d415bbf831",
+          "sha1": "01349e4389f11cc1b080cce40992f91015f8177f",
+          "md5": "59d2e5012ea1a0bacc70138f62872969"
+        }
+      ]
+    }
+  ]
+}

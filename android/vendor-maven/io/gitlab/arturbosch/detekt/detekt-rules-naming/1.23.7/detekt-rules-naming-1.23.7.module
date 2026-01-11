@@ -1,0 +1,122 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.gitlab.arturbosch.detekt",
+    "module": "detekt-rules-naming",
+    "version": "1.23.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-naming-1.23.7.jar",
+          "url": "detekt-rules-naming-1.23.7.jar",
+          "size": 104798,
+          "sha512": "25db463c618de581f59f77ee00b0dc6aa25d72c3452eff7bee58f8d355645ebf6a97cd76deb57075d6025b9e34286008f0764fb652f0553204837176d8dc9771",
+          "sha256": "c99c026cc45578703353b9eb2108b8bc1cd445170cabb3057163f45e53926886",
+          "sha1": "fda334796b392a8ffbf52d0fe5dbeccee0d0a8ec",
+          "md5": "2eaecc6449484af6ab25010e7a2fbb3e"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-naming-1.23.7.jar",
+          "url": "detekt-rules-naming-1.23.7.jar",
+          "size": 104798,
+          "sha512": "25db463c618de581f59f77ee00b0dc6aa25d72c3452eff7bee58f8d355645ebf6a97cd76deb57075d6025b9e34286008f0764fb652f0553204837176d8dc9771",
+          "sha256": "c99c026cc45578703353b9eb2108b8bc1cd445170cabb3057163f45e53926886",
+          "sha1": "fda334796b392a8ffbf52d0fe5dbeccee0d0a8ec",
+          "md5": "2eaecc6449484af6ab25010e7a2fbb3e"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-naming-1.23.7-sources.jar",
+          "url": "detekt-rules-naming-1.23.7-sources.jar",
+          "size": 25678,
+          "sha512": "971c0e4109be524b37da247201cb15d72c408835566d85d7e21104f424e63f018e5cf87066420dd9424888cfe5b8a7a86ba1ae095fb415e7f14842f032e2e642",
+          "sha256": "cc01bcd53fae47871092aad8c1dec34dbd3096f9b32b4e716ea91e30f6eb80a2",
+          "sha1": "2b679ab31a6b0dbbdd518b2cffc2f5b8b1f032e0",
+          "md5": "0cdce69dab6f6cf217ea124d2f24e5a2"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-naming-1.23.7-javadoc.jar",
+          "url": "detekt-rules-naming-1.23.7-javadoc.jar",
+          "size": 303,
+          "sha512": "890e3021d30859f7954055249f21b5880ddac3b13843d03b3fd2fc97ed3a596e881619934c03a7786c154965f885c292b6aebc2f0ff2c9d8f328dd39458c6750",
+          "sha256": "000422088dab561ded3ca3b38f5d0787aaa42ce034a26330003bd3f082fa152b",
+          "sha1": "87077aab9d24bbd2479bd12a83f7f639faf5710d",
+          "md5": "c120a0ced59b54cd0c579b47b7ace0a3"
+        }
+      ]
+    }
+  ]
+}

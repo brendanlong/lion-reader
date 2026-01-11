@@ -1,0 +1,185 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.gitlab.arturbosch.detekt",
+    "module": "detekt-rules",
+    "version": "1.23.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-1.23.7.jar",
+          "url": "detekt-rules-1.23.7.jar",
+          "size": 303,
+          "sha512": "9533d1f69b58a69d02e7e4c1afa196f7d94a175ed8d95af70b78edbe7f0ef035e924c561bfa075d9ed40503e93747b18edfdd560d348c4a0068c27c896ecbd95",
+          "sha256": "b94ae25b9bc5c99bb1b9b289ea9b8138e220428f92d74d2216bc278b6cfa5e46",
+          "sha1": "9e2e327a9e5612c2b013efe0f89458b15d5ac3a7",
+          "md5": "73d619de4e0d8742ccce81156ff123dc"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-complexity",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-coroutines",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-documentation",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-empty",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-errorprone",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-exceptions",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-naming",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-performance",
+          "version": {
+            "requires": "1.23.7"
+          }
+        },
+        {
+          "group": "io.gitlab.arturbosch.detekt",
+          "module": "detekt-rules-style",
+          "version": {
+            "requires": "1.23.7"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-rules-1.23.7.jar",
+          "url": "detekt-rules-1.23.7.jar",
+          "size": 303,
+          "sha512": "9533d1f69b58a69d02e7e4c1afa196f7d94a175ed8d95af70b78edbe7f0ef035e924c561bfa075d9ed40503e93747b18edfdd560d348c4a0068c27c896ecbd95",
+          "sha256": "b94ae25b9bc5c99bb1b9b289ea9b8138e220428f92d74d2216bc278b6cfa5e46",
+          "sha1": "9e2e327a9e5612c2b013efe0f89458b15d5ac3a7",
+          "md5": "73d619de4e0d8742ccce81156ff123dc"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-1.23.7-sources.jar",
+          "url": "detekt-rules-1.23.7-sources.jar",
+          "size": 303,
+          "sha512": "890e3021d30859f7954055249f21b5880ddac3b13843d03b3fd2fc97ed3a596e881619934c03a7786c154965f885c292b6aebc2f0ff2c9d8f328dd39458c6750",
+          "sha256": "000422088dab561ded3ca3b38f5d0787aaa42ce034a26330003bd3f082fa152b",
+          "sha1": "87077aab9d24bbd2479bd12a83f7f639faf5710d",
+          "md5": "c120a0ced59b54cd0c579b47b7ace0a3"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-rules-1.23.7-javadoc.jar",
+          "url": "detekt-rules-1.23.7-javadoc.jar",
+          "size": 303,
+          "sha512": "890e3021d30859f7954055249f21b5880ddac3b13843d03b3fd2fc97ed3a596e881619934c03a7786c154965f885c292b6aebc2f0ff2c9d8f328dd39458c6750",
+          "sha256": "000422088dab561ded3ca3b38f5d0787aaa42ce034a26330003bd3f082fa152b",
+          "sha1": "87077aab9d24bbd2479bd12a83f7f639faf5710d",
+          "md5": "c120a0ced59b54cd0c579b47b7ace0a3"
+        }
+      ]
+    }
+  ]
+}

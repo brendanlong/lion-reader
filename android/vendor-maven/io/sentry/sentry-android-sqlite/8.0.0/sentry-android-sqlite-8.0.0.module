@@ -1,0 +1,83 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-android-sqlite",
+    "version": "8.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-sqlite-8.0.0.aar",
+          "url": "sentry-android-sqlite-8.0.0.aar",
+          "size": 31034,
+          "sha512": "194e32506b8e24181da407cf69e3a5ee7d07c9b4759940d9fde7f1101b332573e79e5cecd2ba470f071022edbaa5ac699b0f50ffa86232d80ce7122dafb814db",
+          "sha256": "55447370fc5d8609ba6743abed66fe4b099ca7cbf811b45b12aefc5cd48f467f",
+          "sha1": "9304c3b629a8b626457d856325aa2a024181b62b",
+          "md5": "33f8e631003c295ac288f78f292e8137"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib-jdk8",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-android-sqlite-8.0.0.aar",
+          "url": "sentry-android-sqlite-8.0.0.aar",
+          "size": 31034,
+          "sha512": "194e32506b8e24181da407cf69e3a5ee7d07c9b4759940d9fde7f1101b332573e79e5cecd2ba470f071022edbaa5ac699b0f50ffa86232d80ce7122dafb814db",
+          "sha256": "55447370fc5d8609ba6743abed66fe4b099ca7cbf811b45b12aefc5cd48f467f",
+          "sha1": "9304c3b629a8b626457d856325aa2a024181b62b",
+          "md5": "33f8e631003c295ac288f78f292e8137"
+        }
+      ]
+    }
+  ]
+}

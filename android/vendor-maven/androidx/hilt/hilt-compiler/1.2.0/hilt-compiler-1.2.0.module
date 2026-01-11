@@ -1,0 +1,114 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.hilt",
+    "module": "hilt-compiler",
+    "version": "1.2.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.6-rc-1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "hilt-compiler-1.2.0.jar",
+          "url": "hilt-compiler-1.2.0.jar",
+          "size": 25426,
+          "sha512": "b21fb1e4fada1ddd36026911a6c5b5100bcb82ed41136a7bb004f07f8977fc7da76387d3070a8e5c3478dc76ded797ed49539d3212cc0338015e8c75203286d1",
+          "sha256": "4369f2d0898ed1fa9d439d21655c964e15d13a3731dee893508ab5fad3a30be8",
+          "sha1": "425ad1cb5df248b15a97604ff13e8cb29481e390",
+          "md5": "8ac0b1c588d8aeff458ca825af285cde"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.room",
+          "module": "room-compiler-processing",
+          "version": {
+            "requires": "2.6.0"
+          }
+        },
+        {
+          "group": "com.google.devtools.ksp",
+          "module": "symbol-processing-api",
+          "version": {
+            "requires": "1.9.22-1.0.17"
+          }
+        },
+        {
+          "group": "com.squareup",
+          "module": "javapoet",
+          "version": {
+            "requires": "1.13.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.8.22"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "hilt-compiler-1.2.0.jar",
+          "url": "hilt-compiler-1.2.0.jar",
+          "size": 25426,
+          "sha512": "b21fb1e4fada1ddd36026911a6c5b5100bcb82ed41136a7bb004f07f8977fc7da76387d3070a8e5c3478dc76ded797ed49539d3212cc0338015e8c75203286d1",
+          "sha256": "4369f2d0898ed1fa9d439d21655c964e15d13a3731dee893508ab5fad3a30be8",
+          "sha1": "425ad1cb5df248b15a97604ff13e8cb29481e390",
+          "md5": "8ac0b1c588d8aeff458ca825af285cde"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "hilt-compiler-1.2.0-sources.jar",
+          "url": "hilt-compiler-1.2.0-sources.jar",
+          "size": 10455,
+          "sha512": "6bb727d6d6f0871921ecff6b268ba36623d38d9866b3d0825019b1eab1ea7053a145c3dd52ff506778aa4e0537f96a71f8fbc7de0bfee6201e078f6d1dd8d2ba",
+          "sha256": "fbc8baa44431f91130cd633a65fca6b74a4e3af9fe142417c4926dc12cd27911",
+          "sha1": "5562cc6f805c0a2c969665bcc9f431da2a71f1d2",
+          "md5": "0764f2925a86b0a5a37d70c21ec3d84a"
+        }
+      ]
+    }
+  ]
+}

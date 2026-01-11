@@ -1,0 +1,82 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.sentry",
+    "module": "sentry-kotlin-extensions",
+    "version": "8.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-kotlin-extensions-8.0.0.jar",
+          "url": "sentry-kotlin-extensions-8.0.0.jar",
+          "size": 3601,
+          "sha512": "fd31ec823a278dea0dbd76e3963feaf11655a4bd227500e41887308b7017ac4673607ff1fc83d02d799e63ee264fa644f2586493acaca53e3a6c1265e5b4d1a8",
+          "sha256": "3801804de9dc718c7e627864c701aed4920c108c9d52867b0965f5e9c4188219",
+          "sha1": "d6bc840378bfec7e8b0a92340eadd74463db47b1",
+          "md5": "e3ae6da6925a3ff2a61d3940427bd23e"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "io.sentry",
+          "module": "sentry",
+          "version": {
+            "requires": "8.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "sentry-kotlin-extensions-8.0.0.jar",
+          "url": "sentry-kotlin-extensions-8.0.0.jar",
+          "size": 3601,
+          "sha512": "fd31ec823a278dea0dbd76e3963feaf11655a4bd227500e41887308b7017ac4673607ff1fc83d02d799e63ee264fa644f2586493acaca53e3a6c1265e5b4d1a8",
+          "sha256": "3801804de9dc718c7e627864c701aed4920c108c9d52867b0965f5e9c4188219",
+          "sha1": "d6bc840378bfec7e8b0a92340eadd74463db47b1",
+          "md5": "e3ae6da6925a3ff2a61d3940427bd23e"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.github.davidburstrom.contester",
+    "module": "contester-breakpoint",
+    "version": "0.2.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "7.4.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "contester-breakpoint-0.2.0.jar",
+          "url": "contester-breakpoint-0.2.0.jar",
+          "size": 1552,
+          "sha512": "4536cbedceab490047cf2a2c0a7438aa8757327469f6559f11ea9cd95e51a8de4d9dc4657c259bcc39575c4c9e15a916e40695bf4f7982124db068971cdcb02c",
+          "sha256": "672cbebb5d45a72b35dd81fd6127e187451bb6fb7fba35315bbdf2f57cfce835",
+          "sha1": "a560e5402378928e889b2eab0cc958cbed8cfe5e",
+          "md5": "c0529cdd38230be94b93126a496933ff"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "contester-breakpoint-0.2.0.jar",
+          "url": "contester-breakpoint-0.2.0.jar",
+          "size": 1552,
+          "sha512": "4536cbedceab490047cf2a2c0a7438aa8757327469f6559f11ea9cd95e51a8de4d9dc4657c259bcc39575c4c9e15a916e40695bf4f7982124db068971cdcb02c",
+          "sha256": "672cbebb5d45a72b35dd81fd6127e187451bb6fb7fba35315bbdf2f57cfce835",
+          "sha1": "a560e5402378928e889b2eab0cc958cbed8cfe5e",
+          "md5": "c0529cdd38230be94b93126a496933ff"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "contester-breakpoint-0.2.0-javadoc.jar",
+          "url": "contester-breakpoint-0.2.0-javadoc.jar",
+          "size": 19423,
+          "sha512": "41cc94ec0b5937ef126809e5dbbe7a54e19a214979a7bf6781a51a641d359d7013f4d3337a237becc6f79aa9344d5dab71ebb5efc2ddd14ad84aa0bdf9530f13",
+          "sha256": "a2206ac80853618ef904809e3469bc8ad19ffdd1791207a9fe55c875213d9344",
+          "sha1": "3a75e8b83694ddff106f68e2a5c1f479dbeb5d37",
+          "md5": "25b265922ae3e7386f0c64f4ed41ba71"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "contester-breakpoint-0.2.0-sources.jar",
+          "url": "contester-breakpoint-0.2.0-sources.jar",
+          "size": 1540,
+          "sha512": "4e450dcd826f808626ee63fa15c13030dc7579b4a1c759f384f5b749ba032a9df73fc9fb376cc5cab47c12f53fcdbd434f8052411cb7424f0c2a1de826eaa5a5",
+          "sha256": "f832679d34642afe7e57e8b7b3eb8d3787352ddd3e304f5965d297c5bc7b42e3",
+          "sha1": "17119d191728eecf65598b1c674c76baae892d44",
+          "md5": "9b606c92c9f5e47da8b6e83bd81b4c40"
+        }
+      ]
+    }
+  ]
+}

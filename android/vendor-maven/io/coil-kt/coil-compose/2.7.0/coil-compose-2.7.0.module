@@ -1,0 +1,144 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.coil-kt",
+    "module": "coil-compose",
+    "version": "2.7.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.8"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "io.coil-kt",
+          "module": "coil-compose-base",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "io.coil-kt",
+          "module": "coil",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "coil-compose-2.7.0.aar",
+          "url": "coil-compose-2.7.0.aar",
+          "size": 17808,
+          "sha512": "dc866a001291c1784c74b1025e7de95d05373256d65014d83582d02581792862d6e962e6ce8fda9ccbbfd6e1a70829261783eecaaf384ebaed963744a2a533ee",
+          "sha256": "8d2ead07c9c9a08696be52a03e689a4afe57d57610e7bf9f05fd88893ee76935",
+          "sha1": "b156bbac23b27d1806d5102381184d7d26faecec",
+          "md5": "a1b19f96de4854bdc6b0ade6018d3e9b"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "io.coil-kt",
+          "module": "coil-compose-base",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "io.coil-kt",
+          "module": "coil",
+          "version": {
+            "requires": "2.7.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "coil-compose-2.7.0.aar",
+          "url": "coil-compose-2.7.0.aar",
+          "size": 17808,
+          "sha512": "dc866a001291c1784c74b1025e7de95d05373256d65014d83582d02581792862d6e962e6ce8fda9ccbbfd6e1a70829261783eecaaf384ebaed963744a2a533ee",
+          "sha256": "8d2ead07c9c9a08696be52a03e689a4afe57d57610e7bf9f05fd88893ee76935",
+          "sha1": "b156bbac23b27d1806d5102381184d7d26faecec",
+          "md5": "a1b19f96de4854bdc6b0ade6018d3e9b"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "coil-compose-2.7.0-sources.jar",
+          "url": "coil-compose-2.7.0-sources.jar",
+          "size": 7335,
+          "sha512": "38bce1b4def3a462d059ef479434222d4652376c6ff6881d02bcf917a7eacbc42f18e64f4aff38bb81e7ac21a28afae4d3aef1032497fa4285a6f550c0a17f71",
+          "sha256": "11cd037326875cb4bc8d2cdb95edceb9a2b49a6df8d330f67c0c368d1b656cbe",
+          "sha1": "1baa363068477a97ae1afd6879892dad14b690f8",
+          "md5": "81eb48b45d1326e2e4c4e89219af9fcd"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseJavaDocPublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "coil-compose-2.7.0-javadoc.jar",
+          "url": "coil-compose-2.7.0-javadoc.jar",
+          "size": 290189,
+          "sha512": "c29aab65ef9e328c7d01248ff962a7d3d9138ff2cde28078ad7852575e4fc0290133efc364cd01dee6088b9636700a0171fd7bd29169f1adcc97d8b6b5d0e68b",
+          "sha256": "dbd7865826b20f21568dd95f0f7bee3e0ac6436a3ba9a4683a31963ac9343925",
+          "sha1": "d3f84d5da8528936d1ac33be37d8b5a2d36fd14e",
+          "md5": "7d84e28a3f1c4563a96efa34149b09f8"
+        }
+      ]
+    }
+  ]
+}

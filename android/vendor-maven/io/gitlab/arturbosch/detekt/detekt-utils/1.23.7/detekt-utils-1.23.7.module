@@ -1,0 +1,122 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.gitlab.arturbosch.detekt",
+    "module": "detekt-utils",
+    "version": "1.23.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-utils-1.23.7.jar",
+          "url": "detekt-utils-1.23.7.jar",
+          "size": 18390,
+          "sha512": "c13ff15222720fe45bd9c3302ccd10d9714bc44e17bc56ade7876ea5c887103d60f549aa1f0fd3330b1d8d4f0fdb7bc1143be8481a7ec6414d0f065579b30188",
+          "sha256": "0b5c211c72f63985a3e2e0f12f9a7733c7b3411b983a1c7f3175f3bd68d72194",
+          "sha1": "632242782837e08f5ddc762e16ffe53b0d289ac5",
+          "md5": "dd70cb5974f636f52e0ac9bed673a1c3"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 8,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "detekt-utils-1.23.7.jar",
+          "url": "detekt-utils-1.23.7.jar",
+          "size": 18390,
+          "sha512": "c13ff15222720fe45bd9c3302ccd10d9714bc44e17bc56ade7876ea5c887103d60f549aa1f0fd3330b1d8d4f0fdb7bc1143be8481a7ec6414d0f065579b30188",
+          "sha256": "0b5c211c72f63985a3e2e0f12f9a7733c7b3411b983a1c7f3175f3bd68d72194",
+          "sha1": "632242782837e08f5ddc762e16ffe53b0d289ac5",
+          "md5": "dd70cb5974f636f52e0ac9bed673a1c3"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-utils-1.23.7-sources.jar",
+          "url": "detekt-utils-1.23.7-sources.jar",
+          "size": 3202,
+          "sha512": "a2e878f25027d07ad1a568b7d11428ef998cf3c13e9b76e54b881bfe4116115fde75d31a704b4e6a313e54a6a987238fb7b13a0cb38f43b2cec50144fb889c36",
+          "sha256": "9e1394dd594e7d8f50763498759bd52acce0d0003be66fef161399d8135b4cf5",
+          "sha1": "ec456f3d4f40d080f0c87ca7ebf9d7d0850bb2b1",
+          "md5": "2623cf5fbf61781f43aee0f880d848dc"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "detekt-utils-1.23.7-javadoc.jar",
+          "url": "detekt-utils-1.23.7-javadoc.jar",
+          "size": 303,
+          "sha512": "890e3021d30859f7954055249f21b5880ddac3b13843d03b3fd2fc97ed3a596e881619934c03a7786c154965f885c292b6aebc2f0ff2c9d8f328dd39458c6750",
+          "sha256": "000422088dab561ded3ca3b38f5d0787aaa42ce034a26330003bd3f082fa152b",
+          "sha1": "87077aab9d24bbd2479bd12a83f7f639faf5710d",
+          "md5": "c120a0ced59b54cd0c579b47b7ace0a3"
+        }
+      ]
+    }
+  ]
+}

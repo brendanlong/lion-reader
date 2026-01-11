@@ -1,0 +1,144 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "url": "../../ktor-io/3.0.2/ktor-io-3.0.2.module",
+    "group": "io.ktor",
+    "module": "ktor-io",
+    "version": "3.0.2",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.11.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "jvmApiElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.16"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-io-core",
+          "version": {
+            "requires": "0.5.4"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktor-io-jvm-3.0.2.jar",
+          "url": "ktor-io-jvm-3.0.2.jar",
+          "size": 238635,
+          "sha512": "461d98eb41bc1b3f6dd57183b1e3b078c7999e8f3305c3f46db5b6797ed4ba87b74f460992743c261bbccaffeda62f56b4916ce38a342d224e11f785c1792cb8",
+          "sha256": "59fcd86ba688627491876f4293b114f598f322d6679475d495539ee1f3e8bba3",
+          "sha1": "53875e775ee532eb0bb410fb0f64fbe0748c8936",
+          "md5": "95e3b488b4bcc1fe038cf71cc866ce1e"
+        }
+      ]
+    },
+    {
+      "name": "jvmRuntimeElements-published",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.16"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-io-core",
+          "version": {
+            "requires": "0.5.4"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.0.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ktor-io-jvm-3.0.2.jar",
+          "url": "ktor-io-jvm-3.0.2.jar",
+          "size": 238635,
+          "sha512": "461d98eb41bc1b3f6dd57183b1e3b078c7999e8f3305c3f46db5b6797ed4ba87b74f460992743c261bbccaffeda62f56b4916ce38a342d224e11f785c1792cb8",
+          "sha256": "59fcd86ba688627491876f4293b114f598f322d6679475d495539ee1f3e8bba3",
+          "sha1": "53875e775ee532eb0bb410fb0f64fbe0748c8936",
+          "md5": "95e3b488b4bcc1fe038cf71cc866ce1e"
+        }
+      ]
+    },
+    {
+      "name": "jvmSourcesElements-published",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "files": [
+        {
+          "name": "ktor-io-jvm-3.0.2-sources.jar",
+          "url": "ktor-io-jvm-3.0.2-sources.jar",
+          "size": 55115,
+          "sha512": "e9800055a71d4562c50b203558605f44ea200ada168cb24e66bf0abe298e512f5596a234a5a0e1f451b565983782ddbb6aee097399f1c3a33f62c4a7f59b3d5d",
+          "sha256": "989b6a44ea5bd0dc01d422d701d225eb4f19c87e9b55a2e288edff2b56b79396",
+          "sha1": "d0368d2fe9dcc4ce6b4d2dbfe6beb63b09ac50cf",
+          "md5": "2090fd668901db95dedd601101ea3024"
+        }
+      ]
+    }
+  ]
+}
