@@ -216,6 +216,50 @@ function encodeCursor(ts: Date, entryId: string): string {
   return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
 }
 
+/**
+ * Database context type for helper functions.
+ */
+type DbContext = {
+  db: typeof import("@/server/db").db;
+};
+
+/**
+ * Updates the starred status of an entry for a user.
+ * Uses UPDATE with RETURNING for efficiency (single query instead of SELECT-UPDATE-SELECT).
+ *
+ * @param ctx - Database context
+ * @param userId - The user ID
+ * @param entryId - The entry ID
+ * @param starred - Whether to star (true) or unstar (false)
+ * @returns The updated entry state
+ * @throws entryNotFound if entry doesn't exist or user doesn't have access
+ */
+async function updateEntryStarred(
+  ctx: DbContext,
+  userId: string,
+  entryId: string,
+  starred: boolean
+): Promise<{ id: string; read: boolean; starred: boolean }> {
+  const result = await ctx.db
+    .update(userEntries)
+    .set({
+      starred,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)))
+    .returning({
+      id: userEntries.entryId,
+      read: userEntries.read,
+      starred: userEntries.starred,
+    });
+
+  if (result.length === 0) {
+    throw errors.entryNotFound();
+  }
+
+  return result[0];
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -834,41 +878,8 @@ export const entriesRouter = createTRPCRouter({
     )
     .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Check if entry is visible to user (via user_entries)
-      const userEntry = await ctx.db
-        .select()
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)))
-        .limit(1);
-
-      if (userEntry.length === 0) {
-        throw errors.entryNotFound();
-      }
-
-      // Update the starred status
-      await ctx.db
-        .update(userEntries)
-        .set({
-          starred: true,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
-
-      // Fetch the updated entry to return its current state
-      // This enables normy to automatically update cached queries
-      const updatedEntry = await ctx.db
-        .select({
-          id: userEntries.entryId,
-          read: userEntries.read,
-          starred: userEntries.starred,
-        })
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)))
-        .limit(1);
-
-      return { entry: updatedEntry[0] };
+      const entry = await updateEntryStarred(ctx, ctx.session.user.id, input.id, true);
+      return { entry };
     }),
 
   /**
@@ -895,41 +906,8 @@ export const entriesRouter = createTRPCRouter({
     )
     .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Check if entry is visible to user (via user_entries)
-      const userEntry = await ctx.db
-        .select()
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)))
-        .limit(1);
-
-      if (userEntry.length === 0) {
-        throw errors.entryNotFound();
-      }
-
-      // Update the starred status
-      await ctx.db
-        .update(userEntries)
-        .set({
-          starred: false,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)));
-
-      // Fetch the updated entry to return its current state
-      // This enables normy to automatically update cached queries
-      const updatedEntry = await ctx.db
-        .select({
-          id: userEntries.entryId,
-          read: userEntries.read,
-          starred: userEntries.starred,
-        })
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, input.id)))
-        .limit(1);
-
-      return { entry: updatedEntry[0] };
+      const entry = await updateEntryStarred(ctx, ctx.session.user.id, input.id, false);
+      return { entry };
     }),
 
   /**
