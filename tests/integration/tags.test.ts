@@ -874,8 +874,8 @@ describe("Tags API", () => {
       const result = await caller.subscriptions.list();
 
       expect(result.items).toHaveLength(1);
-      expect(result.items[0].subscription.tags).toHaveLength(2);
-      expect(result.items[0].subscription.tags.map((t) => t.name).sort()).toEqual(["News", "Tech"]);
+      expect(result.items[0].tags).toHaveLength(2);
+      expect(result.items[0].tags.map((t) => t.name).sort()).toEqual(["News", "Tech"]);
     });
 
     it("returns empty tags array for subscriptions without tags", async () => {
@@ -889,7 +889,7 @@ describe("Tags API", () => {
       const result = await caller.subscriptions.list();
 
       expect(result.items).toHaveLength(1);
-      expect(result.items[0].subscription.tags).toEqual([]);
+      expect(result.items[0].tags).toEqual([]);
     });
   });
 

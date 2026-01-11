@@ -244,8 +244,8 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       const result = await callerB.subscriptions.create({ url: feedUrl });
 
-      expect(result.subscription.feedId).toBe(feedId);
-      expect(result.subscription.unreadCount).toBe(3);
+      expect(result.url).toBe(feedUrl);
+      expect(result.unreadCount).toBe(3);
 
       // Verify User B has user_entries for only the current entries (2, 3, 4)
       const userBEntries = await getUserEntries(userBId);
@@ -297,7 +297,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
-      expect(result.subscription.unreadCount).toBe(3);
+      expect(result.unreadCount).toBe(3);
 
       // Verify all entries are visible
       const entries = await getUserEntries(userId);
@@ -387,7 +387,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
-      expect(result.subscription.unreadCount).toBe(3);
+      expect(result.unreadCount).toBe(3);
 
       // Should only see C, D, E (entries from fetch 3)
       const userEntriesResult = await getUserEntries(userId);
@@ -422,7 +422,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
-      expect(result.subscription.unreadCount).toBe(0);
+      expect(result.unreadCount).toBe(0);
 
       // Verify no user_entries created
       const count = await getUserEntriesCount(userId);
@@ -446,7 +446,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
-      expect(result.subscription.unreadCount).toBe(0);
+      expect(result.unreadCount).toBe(0);
 
       // Verify no user_entries created
       const count = await getUserEntriesCount(userId);
@@ -484,9 +484,9 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       // First subscription
       const result1 = await caller.subscriptions.create({ url: feedUrl });
-      const subscriptionId = result1.subscription.id;
+      const subscriptionId = result1.id;
 
-      expect(result1.subscription.unreadCount).toBe(2);
+      expect(result1.unreadCount).toBe(2);
 
       // Verify user_entries exist
       let userEntriesResult = await getUserEntries(userId);
@@ -507,8 +507,8 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const result2 = await caller.subscriptions.create({ url: feedUrl });
 
       // Should reactivate the same subscription
-      expect(result2.subscription.id).toBe(subscriptionId);
-      expect(result2.subscription.unreadCount).toBe(2);
+      expect(result2.id).toBe(subscriptionId);
+      expect(result2.unreadCount).toBe(2);
 
       // Verify subscription is reactivated
       const reactivated = await db
@@ -582,7 +582,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
-      expect(result.subscription.unreadCount).toBe(0);
+      expect(result.unreadCount).toBe(0);
 
       // Verify no user_entries created
       const count = await getUserEntriesCount(userId);
