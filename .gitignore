@@ -147,3 +147,6 @@ public/onnx/
 
 # Browser extension build output
 extension/*.zip
+
+# Claude Code local settings
+.claude/settings.local.json
