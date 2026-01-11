@@ -63,3 +63,6 @@ export {
   isAppleOAuthEnabled,
   isApplePrivateRelayEmail,
 } from "./oauth";
+
+// Signup helper
+export { createUser, type CreateUserParams, type CreateUserResult } from "./signup";
