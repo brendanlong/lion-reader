@@ -368,19 +368,30 @@ export const authRouter = createTRPCRouter({
         summary: "Get Google OAuth authorization URL",
       },
     })
-    .input(z.object({}).optional())
+    .input(
+      z
+        .object({
+          inviteToken: z.string().optional(),
+        })
+        .optional()
+    )
     .output(
       z.object({
         url: z.string(),
         state: z.string(),
       })
     )
-    .query(async () => {
+    .query(async ({ input }) => {
       if (!isGoogleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Google");
       }
 
-      const result = await createGoogleAuthUrl();
+      const result = await createGoogleAuthUrl(
+        undefined, // additionalScopes
+        "login", // mode
+        undefined, // returnUrl
+        input?.inviteToken // inviteToken
+      );
 
       return {
         url: result.url,
@@ -450,7 +461,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthCallbackFailed("Unknown error");
       }
 
-      const { userInfo, tokens, scopes } = googleResult;
+      const { userInfo, tokens, scopes, inviteToken } = googleResult;
       const now = new Date();
 
       // Check if OAuth account already exists
@@ -537,6 +548,43 @@ export const authRouter = createTRPCRouter({
           }
         } else {
           // Create new user and OAuth account
+          // First, validate invite token if required
+          let validatedInvite: { id: string } | null = null;
+
+          if (!signupConfig.allowAllSignups) {
+            // Invite required
+            if (!inviteToken) {
+              throw errors.inviteRequired();
+            }
+
+            // Validate invite token
+            const invite = await ctx.db
+              .select({
+                id: invites.id,
+                expiresAt: invites.expiresAt,
+                usedAt: invites.usedAt,
+              })
+              .from(invites)
+              .where(eq(invites.token, inviteToken))
+              .limit(1);
+
+            if (invite.length === 0) {
+              throw errors.inviteInvalid();
+            }
+
+            const inv = invite[0];
+
+            if (inv.usedAt) {
+              throw errors.inviteAlreadyUsed();
+            }
+
+            if (inv.expiresAt < new Date()) {
+              throw errors.inviteExpired();
+            }
+
+            validatedInvite = { id: inv.id };
+          }
+
           userId = generateUuidv7();
           userEmail = userInfo.email.toLowerCase();
           userCreatedAt = now;
@@ -548,9 +596,21 @@ export const authRouter = createTRPCRouter({
             email: userEmail,
             emailVerifiedAt: now, // Google verified the email
             passwordHash: null,
+            inviteId: validatedInvite?.id,
             createdAt: now,
             updatedAt: now,
           });
+
+          // Mark invite as used
+          if (validatedInvite) {
+            await ctx.db
+              .update(invites)
+              .set({
+                usedAt: now,
+                usedByUserId: userId,
+              })
+              .where(eq(invites.id, validatedInvite.id));
+          }
 
           // Create OAuth account
           await ctx.db.insert(oauthAccounts).values({
@@ -625,19 +685,25 @@ export const authRouter = createTRPCRouter({
         summary: "Get Apple OAuth authorization URL",
       },
     })
-    .input(z.object({}).optional())
+    .input(
+      z
+        .object({
+          inviteToken: z.string().optional(),
+        })
+        .optional()
+    )
     .output(
       z.object({
         url: z.string(),
         state: z.string(),
       })
     )
-    .query(async () => {
+    .query(async ({ input }) => {
       if (!isAppleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Apple");
       }
 
-      const result = await createAppleAuthUrl();
+      const result = await createAppleAuthUrl(input?.inviteToken);
 
       return {
         url: result.url,
@@ -729,7 +795,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthCallbackFailed("Unknown error");
       }
 
-      const { userInfo, firstAuthData, tokens } = appleResult;
+      const { userInfo, firstAuthData, tokens, inviteToken } = appleResult;
       const now = new Date();
 
       // Get email from JWT or first-auth data
@@ -830,6 +896,43 @@ export const authRouter = createTRPCRouter({
           }
         } else {
           // Create new user and OAuth account
+          // First, validate invite token if required
+          let validatedInvite: { id: string } | null = null;
+
+          if (!signupConfig.allowAllSignups) {
+            // Invite required
+            if (!inviteToken) {
+              throw errors.inviteRequired();
+            }
+
+            // Validate invite token
+            const invite = await ctx.db
+              .select({
+                id: invites.id,
+                expiresAt: invites.expiresAt,
+                usedAt: invites.usedAt,
+              })
+              .from(invites)
+              .where(eq(invites.token, inviteToken))
+              .limit(1);
+
+            if (invite.length === 0) {
+              throw errors.inviteInvalid();
+            }
+
+            const inv = invite[0];
+
+            if (inv.usedAt) {
+              throw errors.inviteAlreadyUsed();
+            }
+
+            if (inv.expiresAt < new Date()) {
+              throw errors.inviteExpired();
+            }
+
+            validatedInvite = { id: inv.id };
+          }
+
           userId = generateUuidv7();
           userEmail = email;
           userCreatedAt = now;
@@ -842,9 +945,21 @@ export const authRouter = createTRPCRouter({
             email: userEmail,
             emailVerifiedAt: now, // Apple verified the email
             passwordHash: null,
+            inviteId: validatedInvite?.id,
             createdAt: now,
             updatedAt: now,
           });
+
+          // Mark invite as used
+          if (validatedInvite) {
+            await ctx.db
+              .update(invites)
+              .set({
+                usedAt: now,
+                usedByUserId: userId,
+              })
+              .where(eq(invites.id, validatedInvite.id));
+          }
 
           // Create OAuth account
           await ctx.db.insert(oauthAccounts).values({

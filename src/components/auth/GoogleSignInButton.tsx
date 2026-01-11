@@ -15,6 +15,8 @@ interface GoogleSignInButtonProps {
   label?: string;
   /** Called when an error occurs */
   onError?: (error: string) => void;
+  /** Optional invite token for new user registration */
+  inviteToken?: string;
 }
 
 /**
@@ -26,6 +28,7 @@ interface GoogleSignInButtonProps {
 export function GoogleSignInButton({
   label = "Sign in with Google",
   onError,
+  inviteToken,
 }: GoogleSignInButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -33,9 +36,12 @@ export function GoogleSignInButton({
   const { data: providersData, isLoading: isProvidersLoading } = trpc.auth.providers.useQuery();
 
   // Get the Google auth URL when the button is clicked
-  const googleAuthUrlQuery = trpc.auth.googleAuthUrl.useQuery(undefined, {
-    enabled: false, // Only fetch when manually triggered
-  });
+  const googleAuthUrlQuery = trpc.auth.googleAuthUrl.useQuery(
+    { inviteToken },
+    {
+      enabled: false, // Only fetch when manually triggered
+    }
+  );
 
   const isGoogleEnabled = providersData?.providers.includes("google") ?? false;
 

@@ -22,6 +22,8 @@ interface AppleSignInButtonProps {
   label?: string;
   /** Called when an error occurs */
   onError?: (error: string) => void;
+  /** Optional invite token for new user registration */
+  inviteToken?: string;
 }
 
 /**
@@ -36,6 +38,7 @@ interface AppleSignInButtonProps {
 export function AppleSignInButton({
   label = "Sign in with Apple",
   onError,
+  inviteToken,
 }: AppleSignInButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -43,9 +46,12 @@ export function AppleSignInButton({
   const { data: providersData, isLoading: isProvidersLoading } = trpc.auth.providers.useQuery();
 
   // Get the Apple auth URL when the button is clicked
-  const appleAuthUrlQuery = trpc.auth.appleAuthUrl.useQuery(undefined, {
-    enabled: false, // Only fetch when manually triggered
-  });
+  const appleAuthUrlQuery = trpc.auth.appleAuthUrl.useQuery(
+    { inviteToken },
+    {
+      enabled: false, // Only fetch when manually triggered
+    }
+  );
 
   const isAppleEnabled = providersData?.providers.includes("apple") ?? false;
 
