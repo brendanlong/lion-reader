@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
   try {
     // Check if Apple OAuth is enabled
     if (!isAppleOAuthEnabled()) {
-      return NextResponse.redirect(`${appUrl}/login?error=provider_not_configured`);
+      // Use 303 to convert POST to GET for the redirect
+      return NextResponse.redirect(`${appUrl}/login?error=provider_not_configured`, 303);
     }
 
     // Parse the form data
@@ -47,11 +48,11 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!code) {
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, 303);
     }
 
     if (!state) {
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, 303);
     }
 
     // Parse user data if provided (only on first auth)
@@ -71,11 +72,11 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       if (error instanceof Error) {
         if (error.message.includes("Invalid or expired OAuth state")) {
-          return NextResponse.redirect(`${appUrl}/login?error=invalid_state`);
+          return NextResponse.redirect(`${appUrl}/login?error=invalid_state`, 303);
         }
       }
       console.error("Apple OAuth callback validation failed:", error);
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, 303);
     }
 
     const { userInfo, firstAuthData, tokens } = appleResult;
@@ -121,7 +122,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Redirect to app with session cookie
-    const response = NextResponse.redirect(`${appUrl}/all`);
+    // Use 303 to convert POST to GET for the redirect
+    const response = NextResponse.redirect(`${appUrl}/all`, 303);
 
     // Set session cookie (30 days)
     response.cookies.set("session", token, {
@@ -140,19 +142,20 @@ export async function POST(request: NextRequest) {
       error instanceof Error && "cause" in error ? (error.cause as { code?: string }) : null;
     const errorCode = cause?.code;
 
+    // Use 303 to convert POST to GET for all redirects
     if (errorCode === "INVITE_REQUIRED") {
-      return NextResponse.redirect(`${appUrl}/login?error=invite_required`);
+      return NextResponse.redirect(`${appUrl}/login?error=invite_required`, 303);
     }
     if (errorCode === "INVITE_INVALID") {
-      return NextResponse.redirect(`${appUrl}/login?error=invite_invalid`);
+      return NextResponse.redirect(`${appUrl}/login?error=invite_invalid`, 303);
     }
     if (errorCode === "INVITE_EXPIRED") {
-      return NextResponse.redirect(`${appUrl}/login?error=invite_expired`);
+      return NextResponse.redirect(`${appUrl}/login?error=invite_expired`, 303);
     }
     if (errorCode === "INVITE_ALREADY_USED") {
-      return NextResponse.redirect(`${appUrl}/login?error=invite_already_used`);
+      return NextResponse.redirect(`${appUrl}/login?error=invite_already_used`, 303);
     }
 
-    return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
+    return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, 303);
   }
 }
