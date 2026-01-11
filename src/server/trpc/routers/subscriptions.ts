@@ -68,35 +68,20 @@ const tagOutputSchema = z.object({
 });
 
 /**
- * Feed output schema - what we return for a feed.
- */
-const feedOutputSchema = z.object({
-  id: z.string(),
-  type: z.enum(["web", "email", "saved"]),
-  url: z.string().nullable(),
-  title: z.string().nullable(),
-  description: z.string().nullable(),
-  siteUrl: z.string().nullable(),
-});
-
-/**
- * Subscription output schema - what we return for a subscription.
+ * Flat subscription output schema - subscription with feed metadata merged.
+ * Uses subscription.id as the primary key, hiding internal feedId from clients.
  */
 const subscriptionOutputSchema = z.object({
-  id: z.string(),
-  feedId: z.string(),
-  customTitle: z.string().nullable(),
+  id: z.string(), // subscription ID (primary key)
+  type: z.enum(["web", "email", "saved"]),
+  url: z.string().nullable(),
+  title: z.string().nullable(), // resolved title (custom or original)
+  originalTitle: z.string().nullable(), // feed's original title for rename UI
+  description: z.string().nullable(),
+  siteUrl: z.string().nullable(),
   subscribedAt: z.date(),
   unreadCount: z.number(),
   tags: z.array(tagOutputSchema),
-});
-
-/**
- * Subscription with feed output schema.
- */
-const subscriptionWithFeedOutputSchema = z.object({
-  subscription: subscriptionOutputSchema,
-  feed: feedOutputSchema,
 });
 
 // ============================================================================
@@ -167,28 +152,23 @@ function buildSubscriptionBaseQuery(db: typeof import("@/server/db").db, userId:
 type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBaseQuery>>[number];
 
 /**
- * Transforms a subscription query row into the output format.
+ * Transforms a subscription query row into the flat output format.
+ * Merges subscription and feed data with subscription.id as primary key.
  */
 function formatSubscriptionRow(
   row: SubscriptionQueryRow
-): z.infer<typeof subscriptionWithFeedOutputSchema> {
+): z.infer<typeof subscriptionOutputSchema> {
   return {
-    subscription: {
-      id: row.subscriptionId,
-      feedId: row.subscriptionFeedId,
-      customTitle: row.subscriptionCustomTitle,
-      subscribedAt: row.subscriptionSubscribedAt,
-      unreadCount: row.unreadCount,
-      tags: row.tags,
-    },
-    feed: {
-      id: row.feedId,
-      type: row.feedType,
-      url: row.feedUrl,
-      title: row.feedTitle,
-      description: row.feedDescription,
-      siteUrl: row.feedSiteUrl,
-    },
+    id: row.subscriptionId,
+    type: row.feedType,
+    url: row.feedUrl,
+    title: row.subscriptionCustomTitle ?? row.feedTitle, // resolved title
+    originalTitle: row.feedTitle, // for rename UI
+    description: row.feedDescription,
+    siteUrl: row.feedSiteUrl,
+    subscribedAt: row.subscriptionSubscribedAt,
+    unreadCount: row.unreadCount,
+    tags: row.tags,
   };
 }
 
@@ -368,7 +348,7 @@ async function subscribeToExistingFeed(
   db: typeof import("@/server/db").db,
   userId: string,
   feedRecord: typeof feeds.$inferSelect
-): Promise<z.infer<typeof subscriptionWithFeedOutputSchema>> {
+): Promise<z.infer<typeof subscriptionOutputSchema>> {
   const feedId = feedRecord.id;
 
   // Ensure job is enabled and sync next_fetch_at
@@ -435,7 +415,7 @@ async function subscribeToNewOrUnfetchedFeed(
   db: typeof import("@/server/db").db,
   userId: string,
   inputUrl: string
-): Promise<z.infer<typeof subscriptionWithFeedOutputSchema>> {
+): Promise<z.infer<typeof subscriptionOutputSchema>> {
   let feedUrl = inputUrl;
 
   // Fetch the URL
@@ -634,7 +614,7 @@ export const subscriptionsRouter = createTRPCRouter({
         url: feedUrlSchema,
       })
     )
-    .output(subscriptionWithFeedOutputSchema)
+    .output(subscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const feedUrl = input.url;
@@ -681,7 +661,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .input(z.object({}).optional())
     .output(
       z.object({
-        items: z.array(subscriptionWithFeedOutputSchema),
+        items: z.array(subscriptionOutputSchema),
       })
     )
     .query(async ({ ctx }) => {
@@ -713,7 +693,7 @@ export const subscriptionsRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(subscriptionWithFeedOutputSchema)
+    .output(subscriptionOutputSchema)
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
