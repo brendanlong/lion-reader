@@ -8,25 +8,43 @@
 import { dehydrate } from "@tanstack/react-query";
 import { createServerQueryClient, createServerCaller } from "@/lib/trpc/server";
 import { HydrationBoundary } from "@/lib/trpc/provider";
+import { getViewPreferences } from "@/lib/hooks/viewPreferences";
 import { TagEntriesClient } from "./client";
 
 interface PageProps {
   params: Promise<{ tagId: string }>;
+  searchParams: Promise<{ unreadOnly?: string; sort?: string }>;
 }
 
-export default async function TagEntriesPage({ params }: PageProps) {
+export default async function TagEntriesPage({ params, searchParams }: PageProps) {
   const { tagId } = await params;
   const queryClient = createServerQueryClient();
   const { caller, session } = await createServerCaller();
 
   const isUncategorized = tagId === "uncategorized";
 
+  // Parse URL params for view preferences
+  const queryParams = await searchParams;
+  const viewType = isUncategorized ? "uncategorized" : "tag";
+  const defaults = getViewPreferences(viewType, isUncategorized ? undefined : tagId);
+  const unreadOnly =
+    queryParams.unreadOnly === "false"
+      ? false
+      : queryParams.unreadOnly === "true"
+        ? true
+        : defaults.showUnreadOnly;
+  const sortOrder =
+    queryParams.sort === "oldest"
+      ? "oldest"
+      : queryParams.sort === "newest"
+        ? "newest"
+        : defaults.sortOrder;
+
   if (session) {
     // Prefetch entries list with tag filter (infinite query)
-    // Uses default view preferences: unreadOnly=true, sortOrder="newest"
     const entriesInput = isUncategorized
-      ? { uncategorized: true as const, unreadOnly: true, sortOrder: "newest" as const, limit: 20 }
-      : { tagId, unreadOnly: true, sortOrder: "newest" as const, limit: 20 };
+      ? { uncategorized: true as const, unreadOnly, sortOrder, limit: 20 }
+      : { tagId, unreadOnly, sortOrder, limit: 20 };
 
     await queryClient.prefetchInfiniteQuery({
       queryKey: [["entries", "list"], { input: entriesInput, type: "infinite" }],

@@ -15,7 +15,6 @@ import {
   MutationCache,
   HydrationBoundary,
   dehydrate,
-  type DehydratedState,
 } from "@tanstack/react-query";
 import { QueryNormalizerProvider } from "@normy/react-query";
 import { httpBatchLink } from "@trpc/client";
@@ -87,34 +86,6 @@ function getBaseUrl() {
 
 interface TRPCProviderProps {
   children: ReactNode;
-  /**
-   * Dehydrated state from server-side prefetching.
-   * When provided, the prefetched data will be hydrated into the QueryClient.
-   *
-   * @example
-   * ```tsx
-   * // In a Server Component:
-   * import { createServerQueryClient, createServerCaller } from "@/lib/trpc/server";
-   * import { dehydrate } from "@/lib/trpc/provider";
-   *
-   * export default async function Page() {
-   *   const queryClient = createServerQueryClient();
-   *   const { caller } = await createServerCaller();
-   *
-   *   await queryClient.prefetchQuery({
-   *     queryKey: [["entries", "list"], { input: { limit: 20 }, type: "query" }],
-   *     queryFn: () => caller.entries.list({ limit: 20 }),
-   *   });
-   *
-   *   return (
-   *     <TRPCProvider dehydratedState={dehydrate(queryClient)}>
-   *       <ClientComponent />
-   *     </TRPCProvider>
-   *   );
-   * }
-   * ```
-   */
-  dehydratedState?: DehydratedState;
 }
 
 /**
@@ -129,7 +100,7 @@ interface TRPCProviderProps {
  * </TRPCProvider>
  * ```
  */
-export function TRPCProvider({ children, dehydratedState }: TRPCProviderProps) {
+export function TRPCProvider({ children }: TRPCProviderProps) {
   const handleError = useCallback((error: Error) => {
     if (isUnauthorizedError(error)) {
       handleUnauthorizedError();
@@ -181,9 +152,7 @@ export function TRPCProvider({ children, dehydratedState }: TRPCProviderProps) {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryNormalizerProvider queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>
-          <HydrationBoundary state={dehydratedState}>{children}</HydrationBoundary>
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </QueryNormalizerProvider>
     </trpc.Provider>
   );

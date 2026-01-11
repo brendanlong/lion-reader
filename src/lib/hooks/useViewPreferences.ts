@@ -11,26 +11,17 @@
 "use client";
 
 import { useSyncExternalStore, useCallback, useMemo } from "react";
+import {
+  type ViewType,
+  type ViewPreferences,
+  DEFAULT_PREFERENCES,
+  getStorageKey,
+  loadPreferences,
+} from "./viewPreferences";
 
-/**
- * View types for storing separate preferences.
- */
-export type ViewType = "all" | "starred" | "feed" | "tag" | "saved" | "uncategorized";
-
-/**
- * View preference settings.
- */
-export interface ViewPreferences {
-  /**
-   * Show only unread items.
-   */
-  showUnreadOnly: boolean;
-
-  /**
-   * Sort order for entries: "newest" (default) or "oldest".
-   */
-  sortOrder: "newest" | "oldest";
-}
+// Re-export types for convenience
+export type { ViewType, ViewPreferences } from "./viewPreferences";
+export { getViewPreferences } from "./viewPreferences";
 
 /**
  * Result of the useViewPreferences hook.
@@ -65,48 +56,6 @@ export interface UseViewPreferencesResult {
    * Set the sortOrder preference directly.
    */
   setSortOrder: (value: "newest" | "oldest") => void;
-}
-
-/**
- * Default preferences for new views.
- */
-const DEFAULT_PREFERENCES: ViewPreferences = {
-  showUnreadOnly: true,
-  sortOrder: "newest",
-};
-
-/**
- * Generate localStorage key for a view.
- */
-function getStorageKey(viewType: ViewType, viewId?: string): string {
-  if (viewId) {
-    return `lion-reader:view-prefs:${viewType}:${viewId}`;
-  }
-  return `lion-reader:view-prefs:${viewType}`;
-}
-
-/**
- * Load preferences from localStorage.
- */
-function loadPreferences(key: string): ViewPreferences {
-  if (typeof window === "undefined") {
-    return DEFAULT_PREFERENCES;
-  }
-
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      const parsed = JSON.parse(stored) as Partial<ViewPreferences>;
-      return {
-        ...DEFAULT_PREFERENCES,
-        ...parsed,
-      };
-    }
-  } catch {
-    // Invalid JSON, use defaults
-  }
-
-  return DEFAULT_PREFERENCES;
 }
 
 /**
@@ -171,20 +120,6 @@ function subscribe(key: string, callback: () => void): () => void {
  */
 function notifyListeners(key: string): void {
   listeners.get(key)?.forEach((callback) => callback());
-}
-
-/**
- * Get view preferences synchronously (for use outside of React components).
- *
- * This is useful for prefetching in event handlers where hooks can't be called.
- *
- * @param viewType - The type of view (all, starred, feed, tag, saved, uncategorized)
- * @param viewId - Optional ID for feed or tag views
- * @returns The current view preferences
- */
-export function getViewPreferences(viewType: ViewType, viewId?: string): ViewPreferences {
-  const key = getStorageKey(viewType, viewId);
-  return getSnapshotCached(key);
 }
 
 /**
