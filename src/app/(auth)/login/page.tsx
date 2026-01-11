@@ -6,12 +6,17 @@
 
 "use client";
 
-import { useState, useMemo, Suspense } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
 import { GoogleSignInButton, AppleSignInButton, AuthFooter } from "@/components/auth";
+import {
+  subscribeToOAuthCompletion,
+  checkOAuthOnVisibilityChange,
+  clearOAuthCompletion,
+} from "@/lib/oauth-channel";
 
 export default function LoginPage() {
   return (
@@ -38,6 +43,29 @@ function LoginForm() {
 
   // Fetch signup configuration to determine if signup link should be shown
   const { data: signupConfigData } = trpc.auth.signupConfig.useQuery();
+
+  // Listen for OAuth completion from other tabs/windows (PWA support for Firefox Android)
+  // When OAuth happens in a separate browser window, this allows the PWA to detect completion
+  useEffect(() => {
+    const handleOAuthComplete = (message: { redirectTo: string }) => {
+      // Clear the completion marker to prevent re-triggering
+      clearOAuthCompletion();
+      // Navigate to the redirect destination - the session cookie should already be set
+      router.push(message.redirectTo);
+      router.refresh();
+    };
+
+    // Subscribe to BroadcastChannel and storage events
+    const unsubscribeBroadcast = subscribeToOAuthCompletion(handleOAuthComplete);
+
+    // Also check when page becomes visible (handles case where PWA is backgrounded)
+    const unsubscribeVisibility = checkOAuthOnVisibilityChange(handleOAuthComplete);
+
+    return () => {
+      unsubscribeBroadcast();
+      unsubscribeVisibility();
+    };
+  }, [router]);
 
   // Get OAuth error from callback redirect and map to user-friendly message
   const oauthError = searchParams.get("error");

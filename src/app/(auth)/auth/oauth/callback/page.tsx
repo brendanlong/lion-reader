@@ -16,6 +16,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
+import { broadcastOAuthComplete } from "@/lib/oauth-channel";
 
 /**
  * Validation result for OAuth callback parameters
@@ -143,6 +144,8 @@ function OAuthCallbackContent() {
       // Store the session token in a cookie
       document.cookie = `session=${data.sessionToken}; path=/; max-age=${30 * 24 * 60 * 60}; samesite=lax`;
       cleanupOAuthState();
+      // Broadcast completion for PWAs that may be listening in another window
+      broadcastOAuthComplete("/all");
       router.push("/all");
       router.refresh();
     },
@@ -157,6 +160,8 @@ function OAuthCallbackContent() {
     onSuccess: (data) => {
       document.cookie = `session=${data.sessionToken}; path=/; max-age=${30 * 24 * 60 * 60}; samesite=lax`;
       cleanupOAuthState();
+      // Broadcast completion for PWAs that may be listening in another window
+      broadcastOAuthComplete("/all");
       router.push("/all");
       router.refresh();
     },
