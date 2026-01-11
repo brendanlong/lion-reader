@@ -166,32 +166,22 @@ export const usersRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const { newPassword } = input;
 
-      // Check if user already has a password
-      const user = await ctx.db
-        .select({ passwordHash: users.passwordHash })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      if (user.length === 0) {
-        throw errors.notFound("User");
-      }
-
-      if (user[0].passwordHash) {
-        throw errors.validation("Account already has a password. Use change password instead.");
-      }
-
       // Hash the new password
       const passwordHash = await argon2.hash(newPassword);
 
-      // Set the password
-      await ctx.db
+      // Attempt to set password only if user doesn't already have one
+      const updated = await ctx.db
         .update(users)
         .set({
           passwordHash,
           updatedAt: new Date(),
         })
-        .where(eq(users.id, userId));
+        .where(and(eq(users.id, userId), isNull(users.passwordHash)))
+        .returning({ id: users.id });
+
+      if (updated.length === 0) {
+        throw errors.validation("Account already has a password. Use change password instead.");
+      }
 
       return { success: true };
     }),
