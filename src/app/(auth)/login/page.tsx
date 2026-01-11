@@ -48,6 +48,11 @@ function LoginForm() {
       invalid_state: "Authentication failed. Please try again.",
       callback_failed: "Failed to complete sign-in. Please try again.",
       provider_not_configured: "This sign-in method is not available.",
+      invite_required:
+        "An invite is required to create an account. If you already have an account, try signing in with email and password instead.",
+      invite_invalid: "The invite link is invalid. Please request a new invite.",
+      invite_expired: "The invite link has expired. Please request a new invite.",
+      invite_already_used: "This invite has already been used. Please request a new invite.",
     };
 
     return errorMessages[oauthError] || "An error occurred during sign-in. Please try again.";

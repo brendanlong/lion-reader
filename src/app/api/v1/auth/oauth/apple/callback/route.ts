@@ -134,6 +134,25 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     console.error("Apple OAuth callback error:", error);
+
+    // Check for invite-related errors and provide specific error codes
+    const cause =
+      error instanceof Error && "cause" in error ? (error.cause as { code?: string }) : null;
+    const errorCode = cause?.code;
+
+    if (errorCode === "INVITE_REQUIRED") {
+      return NextResponse.redirect(`${appUrl}/login?error=invite_required`);
+    }
+    if (errorCode === "INVITE_INVALID") {
+      return NextResponse.redirect(`${appUrl}/login?error=invite_invalid`);
+    }
+    if (errorCode === "INVITE_EXPIRED") {
+      return NextResponse.redirect(`${appUrl}/login?error=invite_expired`);
+    }
+    if (errorCode === "INVITE_ALREADY_USED") {
+      return NextResponse.redirect(`${appUrl}/login?error=invite_already_used`);
+    }
+
     return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
   }
 }
