@@ -134,9 +134,11 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       expect(result.url).toContain("https://appleid.apple.com");
       expect(result.state).toBe("mock-apple-state");
 
-      // Verify state is stored in Redis
+      // Verify state is stored in Redis (stored as JSON with optional inviteToken)
       const storedState = await redis.get("oauth:apple:state:mock-apple-state");
-      expect(storedState).toBe("valid");
+      expect(storedState).not.toBeNull();
+      const stateData = JSON.parse(storedState!);
+      expect(stateData).toEqual({});
     });
   });
 
