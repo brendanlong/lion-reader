@@ -7,6 +7,7 @@ import { Parser } from "htmlparser2";
 import { decode } from "html-entities";
 import type { ParsedEntry, SyndicationHints } from "../types";
 import type { FeedParseResult } from "./types";
+import { VALID_UPDATE_PERIODS, type UpdatePeriod } from "./syndication";
 
 /**
  * State machine states for RSS parsing.
@@ -32,9 +33,6 @@ type RssParserState =
   | "in_item_dc_creator"
   | "in_item_pubDate"
   | "in_item_dc_date";
-
-const VALID_UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
-type UpdatePeriod = (typeof VALID_UPDATE_PERIODS)[number];
 
 /**
  * Parses an RSS feed from a string.

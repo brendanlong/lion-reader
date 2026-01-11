@@ -8,27 +8,10 @@
  * @module narration/client-paragraph-ids
  */
 
-/**
- * Block-level elements that can be highlighted during narration.
- * This matches the server-side BLOCK_ELEMENTS constant.
- */
-export const BLOCK_ELEMENTS = [
-  "p",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "blockquote",
-  "pre",
-  "ul",
-  "ol",
-  "li",
-  "figure",
-  "table",
-  "img",
-] as const;
+import { BLOCK_ELEMENTS } from "./block-elements";
+
+// Re-export for backwards compatibility
+export { BLOCK_ELEMENTS };
 
 /**
  * Result of adding paragraph IDs to HTML content.

@@ -19,6 +19,7 @@ import {
   trackEnhancedVoiceDownloadFailed,
   classifyDownloadError,
 } from "@/lib/telemetry";
+import { PREVIEW_TEXT } from "@/lib/narration/constants";
 
 /**
  * Download status for a voice.
@@ -137,11 +138,6 @@ export interface UseEnhancedVoicesReturn {
    */
   deleteAllVoices: () => Promise<void>;
 }
-
-/**
- * Sample text for voice preview.
- */
-const PREVIEW_TEXT = "This is a preview of how articles will sound with this voice.";
 
 /**
  * Hook for managing enhanced voices.
