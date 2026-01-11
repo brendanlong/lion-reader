@@ -223,6 +223,35 @@ type DbContext = {
   db: typeof import("@/server/db").db;
 };
 
+/**
+ * Looks up the feed IDs for a subscription.
+ * Returns the subscription's feed_ids array (current feed + previous feeds from redirects).
+ *
+ * @param db - Database instance
+ * @param subscriptionId - The subscription ID to look up
+ * @param userId - The user ID (for access control)
+ * @returns Array of feed IDs, or null if subscription not found
+ */
+async function getSubscriptionFeedIds(
+  db: typeof import("@/server/db").db,
+  subscriptionId: string,
+  userId: string
+): Promise<string[] | null> {
+  const result = await db
+    .select({ feedIds: subscriptions.feedIds })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.id, subscriptionId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    )
+    .limit(1);
+
+  return result.length > 0 ? result[0].feedIds : null;
+}
+
 // ============================================================================
 // Base Query Helpers
 // ============================================================================
@@ -347,7 +376,8 @@ export const entriesRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        feedId: uuidSchema.optional(),
+        subscriptionId: uuidSchema.optional(),
+        feedId: uuidSchema.optional(), // @deprecated Use subscriptionId instead
         tagId: uuidSchema.optional(),
         uncategorized: booleanQueryParam,
         type: feedTypeSchema.optional(),
@@ -372,8 +402,16 @@ export const entriesRouter = createTRPCRouter({
       // Entry must be visible (from active subscription, starred, or from saved feed)
       conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
 
-      // Filter by feedId if specified
-      if (input.feedId) {
+      // Filter by subscriptionId (preferred) or feedId (deprecated)
+      if (input.subscriptionId) {
+        const feedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
+        if (feedIds === null) {
+          // Subscription not found or doesn't belong to user
+          return { items: [], nextCursor: undefined };
+        }
+        conditions.push(inArray(entries.feedId, feedIds));
+      } else if (input.feedId) {
+        // @deprecated: Direct feedId filter - use subscriptionId instead
         conditions.push(eq(entries.feedId, input.feedId));
       }
 
@@ -691,7 +729,8 @@ export const entriesRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        feedId: uuidSchema.optional(),
+        subscriptionId: uuidSchema.optional(),
+        feedId: uuidSchema.optional(), // @deprecated Use subscriptionId instead
         tagId: uuidSchema.optional(),
         uncategorized: z.boolean().optional(),
         starredOnly: z.boolean().optional(),
@@ -705,8 +744,30 @@ export const entriesRouter = createTRPCRouter({
       // Build conditions for the update
       const conditions = [eq(userEntries.userId, userId), eq(userEntries.read, false)];
 
-      // If feedId is provided, filter entries by feed
-      if (input.feedId) {
+      // Filter by subscriptionId (preferred) or feedId (deprecated)
+      if (input.subscriptionId) {
+        const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
+        if (subFeedIds === null) {
+          return { count: 0 };
+        }
+        // Get entry IDs for these feeds
+        const feedEntryIds = await ctx.db
+          .select({ id: entries.id })
+          .from(entries)
+          .where(inArray(entries.feedId, subFeedIds));
+
+        if (feedEntryIds.length === 0) {
+          return { count: 0 };
+        }
+
+        conditions.push(
+          inArray(
+            userEntries.entryId,
+            feedEntryIds.map((e) => e.id)
+          )
+        );
+      } else if (input.feedId) {
+        // @deprecated: Direct feedId filter
         // Get entry IDs for this feed
         const feedEntryIds = await ctx.db
           .select({ id: entries.id })
@@ -960,7 +1021,8 @@ export const entriesRouter = createTRPCRouter({
     .input(
       z
         .object({
-          feedId: uuidSchema.optional(),
+          subscriptionId: uuidSchema.optional(),
+          feedId: uuidSchema.optional(), // @deprecated Use subscriptionId instead
           tagId: uuidSchema.optional(),
           uncategorized: booleanQueryParam,
           type: feedTypeSchema.optional(),
@@ -986,8 +1048,15 @@ export const entriesRouter = createTRPCRouter({
       // Entry must be visible (from active subscription, starred, or from saved feed)
       conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
 
-      // Filter by feedId if specified
-      if (input?.feedId) {
+      // Filter by subscriptionId (preferred) or feedId (deprecated)
+      if (input?.subscriptionId) {
+        const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
+        if (subFeedIds === null) {
+          return { total: 0, unread: 0 };
+        }
+        conditions.push(inArray(entries.feedId, subFeedIds));
+      } else if (input?.feedId) {
+        // @deprecated: Direct feedId filter
         conditions.push(eq(entries.feedId, input.feedId));
       }
 
