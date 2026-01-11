@@ -165,8 +165,8 @@ export async function GET(request: NextRequest) {
       lastActiveAt: now,
     });
 
-    // Redirect to app with session cookie
-    const response = NextResponse.redirect(`${appUrl}/all`);
+    // Redirect through OAuth completion page to broadcast success for PWAs
+    const response = NextResponse.redirect(`${appUrl}/auth/oauth/complete?redirect=/all`);
 
     // Set session cookie (30 days)
     response.cookies.set("session", token, {

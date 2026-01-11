@@ -121,9 +121,9 @@ export async function POST(request: NextRequest) {
       lastActiveAt: now,
     });
 
-    // Redirect to app with session cookie
+    // Redirect through OAuth completion page to broadcast success for PWAs
     // Use 303 to convert POST to GET for the redirect
-    const response = NextResponse.redirect(`${appUrl}/all`, 303);
+    const response = NextResponse.redirect(`${appUrl}/auth/oauth/complete?redirect=/all`, 303);
 
     // Set session cookie (30 days)
     response.cookies.set("session", token, {
