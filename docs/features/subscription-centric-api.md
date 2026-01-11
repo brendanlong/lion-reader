@@ -209,37 +209,217 @@ Concern: Could an entry match multiple subscriptions? No - `(user_id, feed_id)` 
 
 ## Implementation Plan
 
-### Phase 1: Create Views
+### Commit 1: Add database views for subscription-centric queries
 
-1. Write migration to create `user_feeds` and `visible_entries` views
-2. Views are read-only, underlying tables unchanged
-3. No application code changes yet
+Create migration `0035_subscription_views.sql`:
 
-### Phase 2: Update Backend Queries
+```sql
+-- user_feeds: Subscriptions with feed metadata merged
+CREATE VIEW user_feeds AS
+SELECT
+  s.id,
+  s.user_id,
+  s.subscribed_at,
+  s.feed_id,           -- internal use only
+  s.feed_ids,          -- for entry visibility
+  s.custom_title,
+  f.type,
+  COALESCE(s.custom_title, f.title) AS title,
+  f.title AS original_title,
+  f.url,
+  f.site_url,
+  f.description
+FROM subscriptions s
+JOIN feeds f ON f.id = s.feed_id
+WHERE s.unsubscribed_at IS NULL;
 
-1. Refactor subscription listing to use `user_feeds` view
-2. Refactor entry listing to use `visible_entries` view
-3. Keep existing response shape initially (extract fields from view)
+-- visible_entries: Entries with visibility rules and subscription context
+CREATE VIEW visible_entries AS
+SELECT
+  ue.user_id,
+  e.*,
+  ue.read,
+  ue.starred,
+  s.id AS subscription_id
+FROM user_entries ue
+JOIN entries e ON e.id = ue.entry_id
+LEFT JOIN subscriptions s ON (
+  s.user_id = ue.user_id
+  AND e.feed_id = ANY(s.feed_ids)
+)
+WHERE
+  s.unsubscribed_at IS NULL
+  OR ue.starred = true;
+```
 
-### Phase 3: Simplify API Responses
+Files changed:
 
-1. Flatten subscription response (remove nesting)
-2. Remove `feedId` from responses
-3. Rename `feedId` parameter to `subscriptionId` on entries endpoints
-4. Keep old parameter names as aliases for backwards compatibility
+- `drizzle/0035_subscription_views.sql` (new)
 
-### Phase 4: Update Clients
+### Commit 2: Add subscriptionId filter to entries router
 
-1. Update web app to use flat response shape
-2. Update web app to use `subscriptionId` parameter
-3. Update Android app similarly
-4. Remove backwards compatibility aliases
+Accept `subscriptionId` as primary filter, keep `feedId` as deprecated alias.
 
-### Phase 5: Documentation
+Files changed:
 
-1. Update API documentation
-2. Update CLAUDE.md guidelines
-3. Archive this design doc as completed
+- `src/server/trpc/routers/entries.ts` - Add `subscriptionId` input, map to feed IDs internally
+
+```typescript
+// Input schema adds subscriptionId
+subscriptionId: uuidSchema.optional(),
+feedId: uuidSchema.optional(), // deprecated, alias for subscriptionId
+
+// In query logic:
+if (input.subscriptionId) {
+  // Look up subscription's feed_ids and filter by those
+  const sub = await db.select({ feedIds: subscriptions.feedIds })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.id, input.subscriptionId), eq(subscriptions.userId, userId)))
+    .limit(1);
+  if (sub.length > 0) {
+    conditions.push(inArray(entries.feedId, sub[0].feedIds));
+  }
+} else if (input.feedId) {
+  // Deprecated: direct feedId filter
+  conditions.push(eq(entries.feedId, input.feedId));
+}
+```
+
+### Commit 3: Add subscriptionId to entry list response
+
+Include `subscriptionId` in entry responses so frontend can associate entries with subscriptions.
+
+Files changed:
+
+- `src/server/trpc/routers/entries.ts` - Add subscriptionId to output schema and query
+
+```typescript
+// Output schema adds subscriptionId
+subscriptionId: z.string().nullable(),
+
+// Query joins to subscriptions to get subscription_id
+// (Similar to visible_entries view logic)
+```
+
+### Commit 4: Flatten subscription list response
+
+Change from nested `{ subscription, feed }` to flat object with subscription ID as primary key.
+
+Files changed:
+
+- `src/server/trpc/routers/subscriptions.ts` - Update output schema and formatters
+
+Before:
+
+```typescript
+{
+  subscription: { id, feedId, customTitle, subscribedAt },
+  feed: { id, type, url, title, description, siteUrl },
+  unreadCount,
+  tags
+}
+```
+
+After:
+
+```typescript
+{
+  (id, // subscription ID
+    type,
+    url,
+    title, // resolved (custom or original)
+    originalTitle, // for rename UI
+    description,
+    siteUrl,
+    subscribedAt,
+    unreadCount,
+    tags);
+}
+```
+
+### Commit 5: Update Sidebar to use flat subscription response
+
+Files changed:
+
+- `src/components/layout/Sidebar.tsx`
+
+### Commit 6: Update entry list hooks to use subscriptionId
+
+Files changed:
+
+- `src/lib/hooks/useEntryListQuery.ts` - Use `subscriptionId` instead of `feedId`
+- `src/lib/hooks/useEntryMutations.ts` - Update cache keys if needed
+
+### Commit 7: Update entry components for subscriptionId
+
+Files changed:
+
+- `src/components/entries/EntryList.tsx`
+- `src/components/entries/EntryListItem.tsx`
+- `src/components/entries/EntryContent.tsx`
+
+### Commit 8: Rename feed route to subscription route
+
+Files changed:
+
+- `src/app/(app)/feed/[feedId]/` → `src/app/(app)/subscription/[id]/`
+- Update any links/redirects referencing old route
+
+### Commit 9: Update settings pages for subscription-centric model
+
+Files changed:
+
+- `src/app/(app)/settings/feed-stats/page.tsx` - Accept subscription ID, map to feed internally
+- `src/app/(app)/settings/broken-feeds/page.tsx` - Similar updates
+
+### Commit 10: Update real-time event handlers
+
+Files changed:
+
+- `src/lib/hooks/useRealtimeUpdates.ts`
+- `src/app/api/v1/events/route.ts`
+
+### Commit 11: Cleanup and documentation
+
+Files changed:
+
+- Remove deprecated `feedId` parameter after frontend migration complete
+- Update OpenAPI schemas
+- Update CLAUDE.md if needed
+
+## Files Requiring Changes (Summary)
+
+### Backend (Commits 1-4)
+
+| File                                       | Change                               |
+| ------------------------------------------ | ------------------------------------ |
+| `drizzle/0035_subscription_views.sql`      | New migration for views              |
+| `src/server/trpc/routers/entries.ts`       | Add subscriptionId filter and output |
+| `src/server/trpc/routers/subscriptions.ts` | Flatten response shape               |
+
+### Frontend (Commits 5-10, parallelizable)
+
+| File                                           | Change                      |
+| ---------------------------------------------- | --------------------------- |
+| `src/components/layout/Sidebar.tsx`            | Use flat subscription shape |
+| `src/lib/hooks/useEntryListQuery.ts`           | Use subscriptionId          |
+| `src/lib/hooks/useEntryMutations.ts`           | Update cache handling       |
+| `src/components/entries/EntryList.tsx`         | Use subscriptionId          |
+| `src/components/entries/EntryListItem.tsx`     | Use subscriptionId          |
+| `src/components/entries/EntryContent.tsx`      | Use subscriptionId          |
+| `src/app/(app)/feed/[feedId]/*`                | Rename to subscription/[id] |
+| `src/app/(app)/settings/feed-stats/page.tsx`   | Map subscription → feed     |
+| `src/app/(app)/settings/broken-feeds/page.tsx` | Map subscription → feed     |
+| `src/lib/hooks/useRealtimeUpdates.ts`          | Update event handling       |
+
+### Internal (No API changes needed)
+
+These files use `feedId` internally and don't need changes:
+
+- `src/server/feed/*` - Internal feed fetching
+- `src/server/jobs/*` - Background job handlers
+- `src/server/email/*` - Email processing
+- `src/app/api/webhooks/*` - WebSub callbacks
 
 ## Migration Notes
 
