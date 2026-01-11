@@ -190,40 +190,91 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
   // markRead mutation with optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
-      if (!listFilters) {
-        return { previousData: undefined };
-      }
-
       // Cancel any in-flight queries
       await utils.entries.list.cancel();
+      await utils.tags.list.cancel();
 
       // Snapshot current state for rollback
-      const previousData = utils.entries.list.getInfiniteData(queryFilters);
+      const previousEntriesData = listFilters
+        ? utils.entries.list.getInfiniteData(queryFilters)
+        : undefined;
+      const previousTagsData = utils.tags.list.getData();
+      const subscriptionsData = utils.subscriptions.list.getData();
 
-      // Optimistically update entries (normy propagates to entries.get automatically)
-      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items
-              .map((item) =>
-                variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
-              )
-              // Filter out entries that no longer match the unreadOnly filter
-              .filter((item) => {
-                if (listFilters?.unreadOnly && item.read) {
-                  return false;
+      // Build feedId -> tagIds map from subscriptions cache
+      const feedTagsMap = new Map<string, string[]>();
+      if (subscriptionsData?.items) {
+        for (const item of subscriptionsData.items) {
+          const tagIds = item.subscription.tags.map((t) => t.id);
+          feedTagsMap.set(item.feed.id, tagIds);
+        }
+      }
+
+      // Calculate tag unread count deltas
+      // We need to find entries that will actually change state
+      const tagDeltas = new Map<string, number>();
+      if (listFilters) {
+        // Find entries in cache that will change state
+        const entriesData = utils.entries.list.getInfiniteData(queryFilters);
+        if (entriesData?.pages) {
+          for (const page of entriesData.pages) {
+            for (const entry of page.items) {
+              if (variables.ids.includes(entry.id) && entry.read !== variables.read) {
+                // This entry's state will change
+                const tagIds = feedTagsMap.get(entry.feedId) ?? [];
+                const delta = variables.read ? -1 : 1; // marking read decreases, unread increases
+                for (const tagId of tagIds) {
+                  tagDeltas.set(tagId, (tagDeltas.get(tagId) ?? 0) + delta);
                 }
-                return true;
-              }),
-          })),
-        };
-      });
+              }
+            }
+          }
+        }
 
-      return { previousData };
+        // Optimistically update entries (normy propagates to entries.get automatically)
+        utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) => ({
+              ...page,
+              items: page.items
+                .map((item) =>
+                  variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
+                )
+                // Filter out entries that no longer match the unreadOnly filter
+                .filter((item) => {
+                  if (listFilters?.unreadOnly && item.read) {
+                    return false;
+                  }
+                  return true;
+                }),
+            })),
+          };
+        });
+      }
+
+      // Optimistically update tag unread counts
+      if (tagDeltas.size > 0 && previousTagsData) {
+        utils.tags.list.setData(undefined, (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            items: oldData.items.map((tag) => {
+              const delta = tagDeltas.get(tag.id);
+              if (delta !== undefined) {
+                return {
+                  ...tag,
+                  unreadCount: Math.max(0, tag.unreadCount + delta),
+                };
+              }
+              return tag;
+            }),
+          };
+        });
+      }
+
+      return { previousEntriesData, previousTagsData, tagDeltas };
     },
     onSuccess: (data, variables) => {
       // Update subscription unread counts using targeted cache updates
@@ -266,15 +317,15 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       }
     },
     onError: (_error, _variables, context) => {
-      // Rollback to previous state (normy propagates rollback to entries.get automatically)
-      if (context?.previousData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
+      // Rollback entries to previous state (normy propagates rollback to entries.get automatically)
+      if (context?.previousEntriesData && listFilters) {
+        utils.entries.list.setInfiniteData(queryFilters, context.previousEntriesData);
+      }
+      // Rollback tags to previous state
+      if (context?.previousTagsData) {
+        utils.tags.list.setData(undefined, context.previousTagsData);
       }
       toast.error("Failed to update read status");
-    },
-    onSettled: () => {
-      // Invalidate tag unread counts - tags have their own count computation
-      utils.tags.list.invalidate();
     },
   });
 
