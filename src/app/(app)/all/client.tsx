@@ -7,7 +7,7 @@
 
 "use client";
 
-import { Suspense, useCallback, useMemo } from "react";
+import { Suspense, useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import {
   EntryList,
   EntryContent,
@@ -25,11 +25,17 @@ import {
   useEntryListQuery,
 } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
-import { useState } from "react";
 
 function AllEntriesContent() {
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
   const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
+
+  // Returns true on client, false on server - for avoiding hydration mismatches with conditional rendering
+  const isClient = useSyncExternalStore(
+    () => () => {}, // No-op subscribe since value never changes
+    () => true, // Client snapshot
+    () => false // Server snapshot
+  );
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
@@ -127,7 +133,8 @@ function AllEntriesContent() {
             All Items
           </h1>
           <div className="flex gap-2">
-            {totalUnreadCount > 0 && (
+            {/* Only render on client to avoid SSR/client hydration mismatch */}
+            {isClient && totalUnreadCount > 0 && (
               <button
                 type="button"
                 onClick={() => setShowMarkAllReadDialog(true)}
