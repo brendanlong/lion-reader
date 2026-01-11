@@ -7,37 +7,7 @@
 -- Do not edit manually - changes should be made via migrations.
 --
 
---
--- PostgreSQL database dump
---
-
-\restrict hXCmdjI9SQ9YfytzpRKl2xgXpR5qVBTuF8G3XDC3LtBXdtvv6EFax5uexJ26bd6
-
--- Dumped from database version 16.11 (Debian 16.11-1.pgdg13+1)
--- Dumped by pg_dump version 17.7 (Ubuntu 17.7-0ubuntu0.25.10.1)
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
---
--- Name: citext; Type: EXTENSION; Schema: -; Owner: -
---
-
 CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
-
-
---
--- Name: feed_type; Type: TYPE; Schema: public; Owner: -
---
 
 CREATE TYPE public.feed_type AS ENUM (
     'web',
@@ -45,23 +15,11 @@ CREATE TYPE public.feed_type AS ENUM (
     'saved'
 );
 
-
---
--- Name: websub_state; Type: TYPE; Schema: public; Owner: -
---
-
 CREATE TYPE public.websub_state AS ENUM (
     'pending',
     'active',
     'unsubscribed'
 );
-
-
-SET default_table_access_method = heap;
-
---
--- Name: api_tokens; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.api_tokens (
     id uuid NOT NULL,
@@ -75,11 +33,6 @@ CREATE TABLE public.api_tokens (
     last_used_at timestamp with time zone
 );
 
-
---
--- Name: blocked_senders; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.blocked_senders (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -88,11 +41,6 @@ CREATE TABLE public.blocked_senders (
     list_unsubscribe_mailto text,
     unsubscribe_sent_at timestamp with time zone
 );
-
-
---
--- Name: entries; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.entries (
     id uuid NOT NULL,
@@ -124,11 +72,6 @@ CREATE TABLE public.entries (
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
 );
 
-
---
--- Name: feeds; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.feeds (
     id uuid NOT NULL,
     type public.feed_type NOT NULL,
@@ -156,11 +99,6 @@ CREATE TABLE public.feeds (
     CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type])) = (user_id IS NOT NULL)))
 );
 
-
---
--- Name: ingest_addresses; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.ingest_addresses (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -170,11 +108,6 @@ CREATE TABLE public.ingest_addresses (
     deleted_at timestamp with time zone
 );
 
-
---
--- Name: invites; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.invites (
     id uuid NOT NULL,
     token text NOT NULL,
@@ -183,11 +116,6 @@ CREATE TABLE public.invites (
     used_by_user_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: jobs; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.jobs (
     id uuid NOT NULL,
@@ -203,11 +131,6 @@ CREATE TABLE public.jobs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-
---
--- Name: narration_content; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.narration_content (
     id uuid NOT NULL,
     content_hash text NOT NULL,
@@ -217,11 +140,6 @@ CREATE TABLE public.narration_content (
     error_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: oauth_accounts; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.oauth_accounts (
     id uuid NOT NULL,
@@ -234,11 +152,6 @@ CREATE TABLE public.oauth_accounts (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     scopes text[]
 );
-
-
---
--- Name: opml_imports; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.opml_imports (
     id uuid NOT NULL,
@@ -256,11 +169,6 @@ CREATE TABLE public.opml_imports (
     completed_at timestamp with time zone
 );
 
-
---
--- Name: sessions; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.sessions (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -273,21 +181,11 @@ CREATE TABLE public.sessions (
     last_active_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-
---
--- Name: subscription_tags; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.subscription_tags (
     subscription_id uuid NOT NULL,
     tag_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: subscriptions; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.subscriptions (
     id uuid NOT NULL,
@@ -302,11 +200,6 @@ CREATE TABLE public.subscriptions (
     feed_ids uuid[] GENERATED ALWAYS AS ((ARRAY[feed_id] || previous_feed_ids)) STORED
 );
 
-
---
--- Name: tags; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.tags (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -315,11 +208,6 @@ CREATE TABLE public.tags (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-
---
--- Name: user_entries; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.user_entries (
     user_id uuid NOT NULL,
     entry_id uuid NOT NULL,
@@ -327,11 +215,6 @@ CREATE TABLE public.user_entries (
     starred boolean DEFAULT false NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: users; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.users (
     id uuid NOT NULL,
@@ -343,11 +226,6 @@ CREATE TABLE public.users (
     invite_id uuid,
     show_spam boolean DEFAULT false NOT NULL
 );
-
-
---
--- Name: websub_subscriptions; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.websub_subscriptions (
     id uuid NOT NULL,
@@ -364,674 +242,226 @@ CREATE TABLE public.websub_subscriptions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-
---
--- Name: api_tokens api_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (id);
-
-
---
--- Name: api_tokens api_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_token_hash_key UNIQUE (token_hash);
 
-
---
--- Name: blocked_senders blocked_senders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT blocked_senders_pkey PRIMARY KEY (id);
-
-
---
--- Name: entries entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
 
-
---
--- Name: feeds feeds_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_pkey PRIMARY KEY (id);
-
-
---
--- Name: feeds feeds_url_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_url_unique UNIQUE (url);
 
-
---
--- Name: ingest_addresses ingest_addresses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.ingest_addresses
     ADD CONSTRAINT ingest_addresses_pkey PRIMARY KEY (id);
-
-
---
--- Name: ingest_addresses ingest_addresses_token_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.ingest_addresses
     ADD CONSTRAINT ingest_addresses_token_unique UNIQUE (token);
 
-
---
--- Name: invites invites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.invites
     ADD CONSTRAINT invites_pkey PRIMARY KEY (id);
-
-
---
--- Name: invites invites_token_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.invites
     ADD CONSTRAINT invites_token_unique UNIQUE (token);
 
-
---
--- Name: jobs jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.jobs
     ADD CONSTRAINT jobs_pkey PRIMARY KEY (id);
-
-
---
--- Name: narration_content narration_content_content_hash_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.narration_content
     ADD CONSTRAINT narration_content_content_hash_unique UNIQUE (content_hash);
 
-
---
--- Name: narration_content narration_content_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.narration_content
     ADD CONSTRAINT narration_content_pkey PRIMARY KEY (id);
-
-
---
--- Name: oauth_accounts oauth_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.oauth_accounts
     ADD CONSTRAINT oauth_accounts_pkey PRIMARY KEY (id);
 
-
---
--- Name: opml_imports opml_imports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.opml_imports
     ADD CONSTRAINT opml_imports_pkey PRIMARY KEY (id);
-
-
---
--- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
 
-
---
--- Name: sessions sessions_token_hash_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_token_hash_unique UNIQUE (token_hash);
-
-
---
--- Name: subscription_tags subscription_tags_subscription_id_tag_id_pk; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_tag_id_pk PRIMARY KEY (subscription_id, tag_id);
 
-
---
--- Name: subscriptions subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT subscriptions_pkey PRIMARY KEY (id);
-
-
---
--- Name: tags tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
 
-
---
--- Name: blocked_senders uq_blocked_senders_user_email; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT uq_blocked_senders_user_email UNIQUE (user_id, sender_email);
-
-
---
--- Name: entries uq_entries_feed_guid; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT uq_entries_feed_guid UNIQUE (feed_id, guid);
 
-
---
--- Name: feeds uq_feeds_email_user_sender; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT uq_feeds_email_user_sender UNIQUE (user_id, email_sender_pattern);
-
-
---
--- Name: oauth_accounts uq_oauth_accounts_provider_account; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.oauth_accounts
     ADD CONSTRAINT uq_oauth_accounts_provider_account UNIQUE (provider, provider_account_id);
 
-
---
--- Name: subscriptions uq_subscriptions_user_feed; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT uq_subscriptions_user_feed UNIQUE (user_id, feed_id);
-
-
---
--- Name: tags uq_tags_user_name; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT uq_tags_user_name UNIQUE (user_id, name);
 
-
---
--- Name: websub_subscriptions uq_websub_subscriptions_feed_hub; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.websub_subscriptions
     ADD CONSTRAINT uq_websub_subscriptions_feed_hub UNIQUE (feed_id, hub_url);
-
-
---
--- Name: user_entries user_entry_states_user_id_entry_id_pk; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_entry_id_pk PRIMARY KEY (user_id, entry_id);
 
-
---
--- Name: users users_email_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_email_unique UNIQUE (email);
-
-
---
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
 
-
---
--- Name: websub_subscriptions websub_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.websub_subscriptions
     ADD CONSTRAINT websub_subscriptions_pkey PRIMARY KEY (id);
 
-
---
--- Name: idx_api_tokens_token; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_api_tokens_token ON public.api_tokens USING btree (token_hash);
-
-
---
--- Name: idx_api_tokens_user; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_api_tokens_user ON public.api_tokens USING btree (user_id);
 
-
---
--- Name: idx_blocked_senders_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_blocked_senders_user ON public.blocked_senders USING btree (user_id);
-
-
---
--- Name: idx_entries_feed; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_entries_feed ON public.entries USING btree (feed_id, id);
 
-
---
--- Name: idx_entries_feed_type; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_entries_feed_type ON public.entries USING btree (feed_id, type);
-
-
---
--- Name: idx_entries_fetched; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_entries_fetched ON public.entries USING btree (feed_id, fetched_at);
 
-
---
--- Name: idx_entries_last_seen; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_entries_last_seen ON public.entries USING btree (feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);
-
-
---
--- Name: idx_entries_spam; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 
-
---
--- Name: idx_entries_type; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_entries_type ON public.entries USING btree (type);
-
-
---
--- Name: idx_feeds_next_fetch; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_feeds_next_fetch ON public.feeds USING btree (next_fetch_at);
 
-
---
--- Name: idx_feeds_type; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_feeds_type ON public.feeds USING btree (type);
-
-
---
--- Name: idx_feeds_user_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_feeds_user_id ON public.feeds USING btree (user_id);
 
-
---
--- Name: idx_ingest_addresses_token; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_ingest_addresses_token ON public.ingest_addresses USING btree (token);
-
-
---
--- Name: idx_ingest_addresses_user; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_ingest_addresses_user ON public.ingest_addresses USING btree (user_id);
 
-
---
--- Name: idx_invites_expires; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_invites_expires ON public.invites USING btree (expires_at);
-
-
---
--- Name: idx_invites_token; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_invites_token ON public.invites USING btree (token);
 
-
---
--- Name: idx_jobs_feed_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_jobs_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE (type = 'fetch_feed'::text);
-
-
---
--- Name: idx_jobs_polling; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_jobs_polling ON public.jobs USING btree (next_run_at) WHERE (enabled = true);
 
-
---
--- Name: idx_narration_needs_generation; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_narration_needs_generation ON public.narration_content USING btree (id);
-
-
---
--- Name: idx_oauth_accounts_scopes; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_oauth_accounts_scopes ON public.oauth_accounts USING gin (scopes);
 
-
---
--- Name: idx_oauth_accounts_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_oauth_accounts_user ON public.oauth_accounts USING btree (user_id);
-
-
---
--- Name: idx_opml_imports_status; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_opml_imports_status ON public.opml_imports USING btree (status);
 
-
---
--- Name: idx_opml_imports_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_opml_imports_user ON public.opml_imports USING btree (user_id);
-
-
---
--- Name: idx_sessions_token; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_sessions_token ON public.sessions USING btree (token_hash);
 
-
---
--- Name: idx_sessions_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
-
-
---
--- Name: idx_subscription_tags_subscription; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_subscription_tags_subscription ON public.subscription_tags USING btree (subscription_id);
 
-
---
--- Name: idx_subscription_tags_tag; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_subscription_tags_tag ON public.subscription_tags USING btree (tag_id);
-
-
---
--- Name: idx_subscriptions_feed; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_subscriptions_feed ON public.subscriptions USING btree (feed_id);
 
-
---
--- Name: idx_subscriptions_feed_active; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_subscriptions_feed_active ON public.subscriptions USING btree (feed_id) WHERE (unsubscribed_at IS NULL);
-
-
---
--- Name: idx_subscriptions_feed_ids; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_subscriptions_feed_ids ON public.subscriptions USING gin (feed_ids);
 
-
---
--- Name: idx_subscriptions_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_subscriptions_user ON public.subscriptions USING btree (user_id);
-
-
---
--- Name: idx_subscriptions_user_active; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
 
-
---
--- Name: idx_tags_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tags_user ON public.tags USING btree (user_id);
-
-
---
--- Name: idx_user_entries_entry_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_user_entries_entry_id ON public.user_entries USING btree (entry_id);
 
-
---
--- Name: idx_user_entries_starred; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_id) WHERE (starred = true);
-
-
---
--- Name: idx_user_entries_unread; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id) WHERE (read = false);
 
-
---
--- Name: idx_user_entries_updated_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
-
-
---
--- Name: idx_websub_expiring; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
 
-
---
--- Name: idx_websub_feed; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
 
-
---
--- Name: uq_feeds_saved_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
-
-
---
--- Name: api_tokens api_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: blocked_senders blocked_senders_user_id_users_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT blocked_senders_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: entries entries_feed_id_feeds_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_feed_id_feeds_id_fk FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
 
-
---
--- Name: feeds feeds_user_id_users_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: ingest_addresses ingest_addresses_user_id_users_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.ingest_addresses
     ADD CONSTRAINT ingest_addresses_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: oauth_accounts oauth_accounts_user_id_users_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.oauth_accounts
     ADD CONSTRAINT oauth_accounts_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: opml_imports opml_imports_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.opml_imports
     ADD CONSTRAINT opml_imports_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: sessions sessions_user_id_users_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: subscription_tags subscription_tags_subscription_id_subscriptions_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_subscriptions_id_fk FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;
 
-
---
--- Name: subscription_tags subscription_tags_tag_id_tags_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_tag_id_tags_id_fk FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE CASCADE;
-
-
---
--- Name: subscriptions subscriptions_feed_id_feeds_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT subscriptions_feed_id_feeds_id_fk FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
 
-
---
--- Name: subscriptions subscriptions_user_id_users_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT subscriptions_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: tags tags_user_id_users_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: user_entries user_entry_states_entry_id_entries_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_entry_id_entries_id_fk FOREIGN KEY (entry_id) REFERENCES public.entries(id) ON DELETE CASCADE;
-
-
---
--- Name: user_entries user_entry_states_user_id_users_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: users users_invite_id_invites_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_invite_id_invites_id_fk FOREIGN KEY (invite_id) REFERENCES public.invites(id) ON DELETE SET NULL;
 
-
---
--- Name: websub_subscriptions websub_subscriptions_feed_id_feeds_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.websub_subscriptions
     ADD CONSTRAINT websub_subscriptions_feed_id_feeds_id_fk FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
-
-
---
--- PostgreSQL database dump complete
---
-
-\unrestrict hXCmdjI9SQ9YfytzpRKl2xgXpR5qVBTuF8G3XDC3LtBXdtvv6EFax5uexJ26bd6
-

@@ -15,6 +15,65 @@ import * as path from "path";
 
 const OUTPUT_FILE = path.join(process.cwd(), "drizzle", "schema.sql");
 
+/**
+ * Cleans up pg_dump output by removing unnecessary lines:
+ * - Comment lines (-- ...)
+ * - \restrict / \unrestrict commands
+ * - Session settings that aren't migration-controlled
+ * - Excessive blank lines
+ */
+function cleanupSchema(schema: string): string {
+  const lines = schema.split("\n");
+  const cleanedLines: string[] = [];
+
+  // Session settings to remove (not migration-controlled)
+  const sessionSettingsToRemove = new Set([
+    "SET statement_timeout",
+    "SET lock_timeout",
+    "SET idle_in_transaction_session_timeout",
+    "SET transaction_timeout",
+    "SET client_encoding",
+    "SET standard_conforming_strings",
+    "SELECT pg_catalog.set_config",
+    "SET check_function_bodies",
+    "SET xmloption",
+    "SET client_min_messages",
+    "SET row_security",
+    "SET default_table_access_method",
+  ]);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip comment lines
+    if (trimmed.startsWith("--")) {
+      continue;
+    }
+
+    // Skip \restrict and \unrestrict commands
+    if (trimmed.startsWith("\\restrict") || trimmed.startsWith("\\unrestrict")) {
+      continue;
+    }
+
+    // Skip session settings
+    const isSessionSetting = Array.from(sessionSettingsToRemove).some((prefix) =>
+      trimmed.startsWith(prefix)
+    );
+    if (isSessionSetting) {
+      continue;
+    }
+
+    cleanedLines.push(line);
+  }
+
+  // Collapse multiple consecutive blank lines into single blank lines
+  let result = cleanedLines.join("\n");
+  result = result.replace(/\n{3,}/g, "\n\n");
+  result = result.trim() + "\n";
+
+  return result;
+}
+
 function parseConnectionString(url: string): {
   host: string;
   port: string;
@@ -68,6 +127,9 @@ export function dumpSchema(databaseUrl: string): void {
     maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large schemas
   });
 
+  // Clean up the schema output
+  const cleanedSchema = cleanupSchema(schema);
+
   // Add header comment
   const header = `--
 -- Lion Reader Database Schema
@@ -80,7 +142,7 @@ export function dumpSchema(databaseUrl: string): void {
 
 `;
 
-  fs.writeFileSync(OUTPUT_FILE, header + schema);
+  fs.writeFileSync(OUTPUT_FILE, header + cleanedSchema);
 
   console.log(`✓ Schema dumped to ${path.relative(process.cwd(), OUTPUT_FILE)}`);
 }
