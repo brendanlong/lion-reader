@@ -226,7 +226,3 @@ For mutations that update UI state (mark read, star, etc.), use optimistic updat
 - **Prefer `setQueryData`/`setInfiniteData`** for updating specific items in lists
 - **Use `invalidate`** only when you need fresh server data (e.g., computed counts)
 - Targeted updates are faster and avoid unnecessary refetches
-
-## Android App
-
-The Android app lives in `android/`. When adding new API endpoints to `LionReaderApiImpl`, also add them to `clientPaths` in `ApiContractTest` to ensure they're validated against the server's OpenAPI spec.
