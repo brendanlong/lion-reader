@@ -90,7 +90,7 @@ const booleanQueryParam = z
 const entryListItemSchema = z.object({
   id: z.string(),
   subscriptionId: z.string().nullable(), // null for orphaned starred entries
-  feedId: z.string(), // @deprecated Use subscriptionId instead
+  feedId: z.string(), // Internal use only - kept for cache invalidation
   type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -110,7 +110,7 @@ const entryListItemSchema = z.object({
 const entryFullSchema = z.object({
   id: z.string(),
   subscriptionId: z.string().nullable(), // null for orphaned starred entries
-  feedId: z.string(), // @deprecated Use subscriptionId instead
+  feedId: z.string(), // Internal use only - kept for cache invalidation
   type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -358,8 +358,8 @@ export const entriesRouter = createTRPCRouter({
    * Entries are visible to a user only if they have a corresponding
    * row in the user_entries table for their user_id.
    *
-   * @param feedId - Optional filter by feed ID
-   * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
+   * @param subscriptionId - Optional filter by subscription ID
+   * @param tagId - Optional filter by tag ID (entries from subscriptions with this tag)
    * @param unreadOnly - Optional filter to show only unread entries
    * @param starredOnly - Optional filter to show only starred entries
    * @param sortOrder - Optional sort order: "newest" (default) or "oldest"
@@ -379,7 +379,6 @@ export const entriesRouter = createTRPCRouter({
     .input(
       z.object({
         subscriptionId: uuidSchema.optional(),
-        feedId: uuidSchema.optional(), // @deprecated Use subscriptionId instead
         tagId: uuidSchema.optional(),
         uncategorized: booleanQueryParam,
         type: feedTypeSchema.optional(),
@@ -404,7 +403,7 @@ export const entriesRouter = createTRPCRouter({
       // Entry must be visible (from active subscription, starred, or from saved feed)
       conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
 
-      // Filter by subscriptionId (preferred) or feedId (deprecated)
+      // Filter by subscriptionId
       if (input.subscriptionId) {
         const feedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
         if (feedIds === null) {
@@ -412,9 +411,6 @@ export const entriesRouter = createTRPCRouter({
           return { items: [], nextCursor: undefined };
         }
         conditions.push(inArray(entries.feedId, feedIds));
-      } else if (input.feedId) {
-        // @deprecated: Direct feedId filter - use subscriptionId instead
-        conditions.push(eq(entries.feedId, input.feedId));
       }
 
       // Filter by tagId if specified
@@ -736,8 +732,8 @@ export const entriesRouter = createTRPCRouter({
   /**
    * Mark all entries as read with optional filters.
    *
-   * @param feedId - Optional filter to mark only entries from a specific feed
-   * @param tagId - Optional filter to mark only entries from feeds with this tag
+   * @param subscriptionId - Optional filter to mark only entries from a specific subscription
+   * @param tagId - Optional filter to mark only entries from subscriptions with this tag
    * @param starredOnly - Optional filter to mark only starred entries
    * @param before - Optional filter to mark only entries fetched before this date
    * @returns The count of entries marked as read
@@ -754,7 +750,6 @@ export const entriesRouter = createTRPCRouter({
     .input(
       z.object({
         subscriptionId: uuidSchema.optional(),
-        feedId: uuidSchema.optional(), // @deprecated Use subscriptionId instead
         tagId: uuidSchema.optional(),
         uncategorized: z.boolean().optional(),
         starredOnly: z.boolean().optional(),
@@ -768,7 +763,7 @@ export const entriesRouter = createTRPCRouter({
       // Build conditions for the update
       const conditions = [eq(userEntries.userId, userId), eq(userEntries.read, false)];
 
-      // Filter by subscriptionId (preferred) or feedId (deprecated)
+      // Filter by subscriptionId
       if (input.subscriptionId) {
         const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
         if (subFeedIds === null) {
@@ -779,24 +774,6 @@ export const entriesRouter = createTRPCRouter({
           .select({ id: entries.id })
           .from(entries)
           .where(inArray(entries.feedId, subFeedIds));
-
-        if (feedEntryIds.length === 0) {
-          return { count: 0 };
-        }
-
-        conditions.push(
-          inArray(
-            userEntries.entryId,
-            feedEntryIds.map((e) => e.id)
-          )
-        );
-      } else if (input.feedId) {
-        // @deprecated: Direct feedId filter
-        // Get entry IDs for this feed
-        const feedEntryIds = await ctx.db
-          .select({ id: entries.id })
-          .from(entries)
-          .where(eq(entries.feedId, input.feedId));
 
         if (feedEntryIds.length === 0) {
           return { count: 0 };
@@ -1024,9 +1001,9 @@ export const entriesRouter = createTRPCRouter({
    * Entries are visible to a user only if they have a corresponding
    * row in the user_entries table for their user_id.
    *
-   * @param feedId - Optional filter by feed ID
-   * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
-   * @param uncategorized - Optional filter to show only entries from uncategorized feeds
+   * @param subscriptionId - Optional filter by subscription ID
+   * @param tagId - Optional filter by tag ID (entries from subscriptions with this tag)
+   * @param uncategorized - Optional filter to show only entries from uncategorized subscriptions
    * @param type - Optional filter by entry type
    * @param excludeTypes - Optional types to exclude
    * @param unreadOnly - Optional filter to count only unread entries
@@ -1046,7 +1023,6 @@ export const entriesRouter = createTRPCRouter({
       z
         .object({
           subscriptionId: uuidSchema.optional(),
-          feedId: uuidSchema.optional(), // @deprecated Use subscriptionId instead
           tagId: uuidSchema.optional(),
           uncategorized: booleanQueryParam,
           type: feedTypeSchema.optional(),
@@ -1072,16 +1048,13 @@ export const entriesRouter = createTRPCRouter({
       // Entry must be visible (from active subscription, starred, or from saved feed)
       conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
 
-      // Filter by subscriptionId (preferred) or feedId (deprecated)
+      // Filter by subscriptionId
       if (input?.subscriptionId) {
         const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
         if (subFeedIds === null) {
           return { total: 0, unread: 0 };
         }
         conditions.push(inArray(entries.feedId, subFeedIds));
-      } else if (input?.feedId) {
-        // @deprecated: Direct feedId filter
-        conditions.push(eq(entries.feedId, input.feedId));
       }
 
       // Filter by tagId if specified

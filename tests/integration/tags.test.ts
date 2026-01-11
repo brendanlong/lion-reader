@@ -1014,8 +1014,8 @@ describe("Tags API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      // Filter by tag AND feedId - should only return entries from feed 1
-      const result = await caller.entries.list({ tagId, feedId: feedId1 });
+      // Filter by tag AND subscriptionId - should only return entries from subscription 1
+      const result = await caller.entries.list({ tagId, subscriptionId: subId1 });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].id).toBe(entryId1);
@@ -1028,7 +1028,7 @@ describe("Tags API", () => {
       const feedId1 = await createTestFeed("https://feed1.com/rss");
       const feedId2 = await createTestFeed("https://feed2.com/rss");
       const subId1 = await createTestSubscription(userId, feedId1);
-      await createTestSubscription(userId, feedId2);
+      const subId2 = await createTestSubscription(userId, feedId2);
 
       // Create a tag and link it to subscription 1 only
       const tagId = generateUuidv7();
@@ -1042,8 +1042,8 @@ describe("Tags API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      // Filter by tag AND feedId (where feedId2 is not in tag)
-      const result = await caller.entries.list({ tagId, feedId: feedId2 });
+      // Filter by tag AND subscriptionId (where subscription for feed2 is not in tag)
+      const result = await caller.entries.list({ tagId, subscriptionId: subId2 });
 
       expect(result.items).toHaveLength(0);
     });

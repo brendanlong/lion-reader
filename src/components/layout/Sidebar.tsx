@@ -146,7 +146,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const handleSubscriptionMouseDown = useCallback(
     (subscriptionId: string) => {
       // Use sync function for per-subscription preferences (can't call hooks in callbacks)
-      const prefs = getViewPreferences("feed", subscriptionId);
+      const prefs = getViewPreferences("subscription", subscriptionId);
       prefetchEntryList({
         subscriptionId,
         unreadOnly: prefs.showUnreadOnly,
@@ -413,7 +413,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                       <ul className="mt-1 ml-6 space-y-1">
                         {tagFeeds.map((sub) => {
                           const displayTitle = sub.title || "Untitled Feed";
-                          const subHref = `/feed/${sub.id}`;
+                          const subHref = `/subscription/${sub.id}`;
                           const isSubActive = pathname === subHref;
 
                           return (
@@ -582,7 +582,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                     <ul className="mt-1 ml-6 space-y-1">
                       {subscriptionsByTag.uncategorized.map((sub) => {
                         const displayTitle = sub.title || "Untitled Feed";
-                        const subHref = `/feed/${sub.id}`;
+                        const subHref = `/subscription/${sub.id}`;
                         const isSubActive = pathname === subHref;
 
                         return (
