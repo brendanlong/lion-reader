@@ -8,12 +8,23 @@
 "use client";
 
 import { useState, useCallback, type ReactNode } from "react";
-import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryCache,
+  MutationCache,
+  HydrationBoundary,
+  dehydrate,
+  type DehydratedState,
+} from "@tanstack/react-query";
 import { QueryNormalizerProvider } from "@normy/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 import { trpc } from "./client";
+
+// Re-export for use in server components
+export { HydrationBoundary, dehydrate };
 
 /**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
@@ -76,6 +87,34 @@ function getBaseUrl() {
 
 interface TRPCProviderProps {
   children: ReactNode;
+  /**
+   * Dehydrated state from server-side prefetching.
+   * When provided, the prefetched data will be hydrated into the QueryClient.
+   *
+   * @example
+   * ```tsx
+   * // In a Server Component:
+   * import { createServerQueryClient, createServerCaller } from "@/lib/trpc/server";
+   * import { dehydrate } from "@/lib/trpc/provider";
+   *
+   * export default async function Page() {
+   *   const queryClient = createServerQueryClient();
+   *   const { caller } = await createServerCaller();
+   *
+   *   await queryClient.prefetchQuery({
+   *     queryKey: [["entries", "list"], { input: { limit: 20 }, type: "query" }],
+   *     queryFn: () => caller.entries.list({ limit: 20 }),
+   *   });
+   *
+   *   return (
+   *     <TRPCProvider dehydratedState={dehydrate(queryClient)}>
+   *       <ClientComponent />
+   *     </TRPCProvider>
+   *   );
+   * }
+   * ```
+   */
+  dehydratedState?: DehydratedState;
 }
 
 /**
@@ -90,7 +129,7 @@ interface TRPCProviderProps {
  * </TRPCProvider>
  * ```
  */
-export function TRPCProvider({ children }: TRPCProviderProps) {
+export function TRPCProvider({ children, dehydratedState }: TRPCProviderProps) {
   const handleError = useCallback((error: Error) => {
     if (isUnauthorizedError(error)) {
       handleUnauthorizedError();
@@ -142,7 +181,9 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryNormalizerProvider queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          <HydrationBoundary state={dehydratedState}>{children}</HydrationBoundary>
+        </QueryClientProvider>
       </QueryNormalizerProvider>
     </trpc.Provider>
   );
