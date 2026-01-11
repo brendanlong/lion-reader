@@ -17,7 +17,7 @@ import {
   expensiveProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
-import { users, sessions, invites } from "@/server/db/schema";
+import { users, sessions, oauthAccounts } from "@/server/db/schema";
 import { signupConfig } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
@@ -32,9 +32,9 @@ import {
   validateAppleCallback,
   isAppleOAuthEnabled,
   GOOGLE_DOCS_READONLY_SCOPE,
+  createUser,
 } from "@/server/auth";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
-import { oauthAccounts } from "@/server/db/schema";
 
 // ============================================================================
 // Validation Schemas
@@ -118,43 +118,6 @@ export const authRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { email, password, inviteToken } = input;
 
-      // Check invite requirement
-      let validatedInvite: { id: string } | null = null;
-
-      if (!signupConfig.allowAllSignups) {
-        // Invite required
-        if (!inviteToken) {
-          throw errors.inviteRequired();
-        }
-
-        // Validate invite token
-        const invite = await ctx.db
-          .select({
-            id: invites.id,
-            expiresAt: invites.expiresAt,
-            usedAt: invites.usedAt,
-          })
-          .from(invites)
-          .where(eq(invites.token, inviteToken))
-          .limit(1);
-
-        if (invite.length === 0) {
-          throw errors.inviteInvalid();
-        }
-
-        const inv = invite[0];
-
-        if (inv.usedAt) {
-          throw errors.inviteAlreadyUsed();
-        }
-
-        if (inv.expiresAt < new Date()) {
-          throw errors.inviteExpired();
-        }
-
-        validatedInvite = { id: inv.id };
-      }
-
       // Check if email already exists
       const existingUser = await ctx.db
         .select({ id: users.id })
@@ -169,8 +132,7 @@ export const authRouter = createTRPCRouter({
       // Hash the password with argon2
       const passwordHash = await argon2.hash(password);
 
-      // Generate IDs
-      const userId = generateUuidv7();
+      // Generate session credentials
       const sessionId = generateUuidv7();
       const { token, tokenHash } = generateSessionToken();
       const expiresAt = getSessionExpiry();
@@ -183,44 +145,35 @@ export const authRouter = createTRPCRouter({
         undefined;
 
       // Create user and session in a transaction
-      const now = new Date();
+      const result = await ctx.db.transaction(async (tx) => {
+        // Create user (handles invite validation atomically)
+        const user = await createUser(tx, {
+          email,
+          passwordHash,
+          emailVerified: false,
+          inviteToken,
+        });
 
-      await ctx.db.insert(users).values({
-        id: userId,
-        email,
-        passwordHash,
-        inviteId: validatedInvite?.id,
-        createdAt: now,
-        updatedAt: now,
-      });
+        // Create session
+        await tx.insert(sessions).values({
+          id: sessionId,
+          userId: user.userId,
+          tokenHash,
+          userAgent,
+          ipAddress,
+          expiresAt,
+          createdAt: user.createdAt,
+          lastActiveAt: user.createdAt,
+        });
 
-      // Mark invite as used
-      if (validatedInvite) {
-        await ctx.db
-          .update(invites)
-          .set({
-            usedAt: now,
-            usedByUserId: userId,
-          })
-          .where(eq(invites.id, validatedInvite.id));
-      }
-
-      await ctx.db.insert(sessions).values({
-        id: sessionId,
-        userId,
-        tokenHash,
-        userAgent,
-        ipAddress,
-        expiresAt,
-        createdAt: now,
-        lastActiveAt: now,
+        return user;
       });
 
       return {
         user: {
-          id: userId,
-          email,
-          createdAt: now,
+          id: result.userId,
+          email: result.email,
+          createdAt: result.createdAt,
         },
         sessionToken: token,
       };
@@ -368,19 +321,30 @@ export const authRouter = createTRPCRouter({
         summary: "Get Google OAuth authorization URL",
       },
     })
-    .input(z.object({}).optional())
+    .input(
+      z
+        .object({
+          inviteToken: z.string().optional(),
+        })
+        .optional()
+    )
     .output(
       z.object({
         url: z.string(),
         state: z.string(),
       })
     )
-    .query(async () => {
+    .query(async ({ input }) => {
       if (!isGoogleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Google");
       }
 
-      const result = await createGoogleAuthUrl();
+      const result = await createGoogleAuthUrl(
+        undefined, // additionalScopes
+        "login", // mode
+        undefined, // returnUrl
+        input?.inviteToken // inviteToken
+      );
 
       return {
         url: result.url,
@@ -450,7 +414,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthCallbackFailed("Unknown error");
       }
 
-      const { userInfo, tokens, scopes } = googleResult;
+      const { userInfo, tokens, scopes, inviteToken } = googleResult;
       const now = new Date();
 
       // Check if OAuth account already exists
@@ -536,34 +500,36 @@ export const authRouter = createTRPCRouter({
               .where(eq(users.id, userId));
           }
         } else {
-          // Create new user and OAuth account
-          userId = generateUuidv7();
-          userEmail = userInfo.email.toLowerCase();
-          userCreatedAt = now;
+          // Create new user and OAuth account in a transaction
+          const newUser = await ctx.db.transaction(async (tx) => {
+            // Create user (handles invite validation atomically)
+            const user = await createUser(tx, {
+              email: userInfo.email.toLowerCase(),
+              passwordHash: null,
+              emailVerified: true, // Google verified the email
+              inviteToken,
+            });
+
+            // Create OAuth account
+            await tx.insert(oauthAccounts).values({
+              id: generateUuidv7(),
+              userId: user.userId,
+              provider: "google",
+              providerAccountId: userInfo.sub,
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken ?? null,
+              expiresAt: tokens.expiresAt ?? null,
+              scopes,
+              createdAt: user.createdAt,
+            });
+
+            return user;
+          });
+
+          userId = newUser.userId;
+          userEmail = newUser.email;
+          userCreatedAt = newUser.createdAt;
           isNewUser = true;
-
-          // Create user (no password since they're using OAuth)
-          await ctx.db.insert(users).values({
-            id: userId,
-            email: userEmail,
-            emailVerifiedAt: now, // Google verified the email
-            passwordHash: null,
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          // Create OAuth account
-          await ctx.db.insert(oauthAccounts).values({
-            id: generateUuidv7(),
-            userId,
-            provider: "google",
-            providerAccountId: userInfo.sub,
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken ?? null,
-            expiresAt: tokens.expiresAt ?? null,
-            scopes,
-            createdAt: now,
-          });
         }
       }
 
@@ -625,19 +591,25 @@ export const authRouter = createTRPCRouter({
         summary: "Get Apple OAuth authorization URL",
       },
     })
-    .input(z.object({}).optional())
+    .input(
+      z
+        .object({
+          inviteToken: z.string().optional(),
+        })
+        .optional()
+    )
     .output(
       z.object({
         url: z.string(),
         state: z.string(),
       })
     )
-    .query(async () => {
+    .query(async ({ input }) => {
       if (!isAppleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Apple");
       }
 
-      const result = await createAppleAuthUrl();
+      const result = await createAppleAuthUrl(input?.inviteToken);
 
       return {
         url: result.url,
@@ -729,12 +701,12 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthCallbackFailed("Unknown error");
       }
 
-      const { userInfo, firstAuthData, tokens } = appleResult;
+      const { userInfo, firstAuthData, tokens, inviteToken } = appleResult;
       const now = new Date();
 
       // Get email from JWT or first-auth data
       // Apple always includes email in JWT on first auth, may not on subsequent auths
-      let email = userInfo.email ?? firstAuthData?.email;
+      const email = userInfo.email ?? firstAuthData?.email;
 
       // Check if OAuth account already exists
       const existingOAuthAccount = await ctx.db
@@ -789,14 +761,14 @@ export const authRouter = createTRPCRouter({
           );
         }
 
-        // Normalize email
-        email = email.toLowerCase();
+        // Normalize email (use const to preserve type narrowing)
+        const normalizedEmail = email.toLowerCase();
 
         // Check if email matches existing user
         const existingUser = await ctx.db
           .select()
           .from(users)
-          .where(eq(users.email, email))
+          .where(eq(users.email, normalizedEmail))
           .limit(1);
 
         if (existingUser.length > 0) {
@@ -829,34 +801,36 @@ export const authRouter = createTRPCRouter({
               .where(eq(users.id, userId));
           }
         } else {
-          // Create new user and OAuth account
-          userId = generateUuidv7();
-          userEmail = email;
-          userCreatedAt = now;
-          isNewUser = true;
-
-          // Create user (no password since they're using OAuth)
+          // Create new user and OAuth account in a transaction
           // Note: Apple private relay emails work just like regular emails
-          await ctx.db.insert(users).values({
-            id: userId,
-            email: userEmail,
-            emailVerifiedAt: now, // Apple verified the email
-            passwordHash: null,
-            createdAt: now,
-            updatedAt: now,
+          const newUser = await ctx.db.transaction(async (tx) => {
+            // Create user (handles invite validation atomically)
+            const user = await createUser(tx, {
+              email: normalizedEmail,
+              passwordHash: null,
+              emailVerified: true, // Apple verified the email
+              inviteToken,
+            });
+
+            // Create OAuth account
+            await tx.insert(oauthAccounts).values({
+              id: generateUuidv7(),
+              userId: user.userId,
+              provider: "apple",
+              providerAccountId: userInfo.sub,
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken ?? null,
+              expiresAt: tokens.expiresAt ?? null,
+              createdAt: user.createdAt,
+            });
+
+            return user;
           });
 
-          // Create OAuth account
-          await ctx.db.insert(oauthAccounts).values({
-            id: generateUuidv7(),
-            userId,
-            provider: "apple",
-            providerAccountId: userInfo.sub,
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken ?? null,
-            expiresAt: tokens.expiresAt ?? null,
-            createdAt: now,
-          });
+          userId = newUser.userId;
+          userEmail = newUser.email;
+          userCreatedAt = newUser.createdAt;
+          isNewUser = true;
         }
       }
 

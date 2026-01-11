@@ -165,10 +165,12 @@ function RegisterForm() {
         <GoogleSignInButton
           label="Continue with Google"
           onError={(error) => setErrors({ form: error })}
+          inviteToken={inviteToken ?? undefined}
         />
         <AppleSignInButton
           label="Continue with Apple"
           onError={(error) => setErrors({ form: error })}
+          inviteToken={inviteToken ?? undefined}
         />
       </div>
 

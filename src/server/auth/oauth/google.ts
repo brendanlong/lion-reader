@@ -92,6 +92,8 @@ export interface GoogleAuthResult {
   mode: OAuthMode;
   /** Optional return URL for extension-save mode */
   returnUrl?: string;
+  /** Optional invite token for new user registration */
+  inviteToken?: string;
 }
 
 // ============================================================================
@@ -119,6 +121,8 @@ interface PkceData {
   mode: OAuthMode;
   /** Optional return URL for modes that need to redirect back to a specific page */
   returnUrl?: string;
+  /** Optional invite token for new user registration */
+  inviteToken?: string;
 }
 
 /**
@@ -130,16 +134,18 @@ interface PkceData {
  * @param scopes - The OAuth scopes being requested
  * @param mode - The OAuth flow mode (login, link, save, or extension-save)
  * @param returnUrl - Optional return URL for extension-save mode
+ * @param inviteToken - Optional invite token for new user registration
  */
 async function storePkceVerifier(
   state: string,
   codeVerifier: string,
   scopes: string[],
   mode: OAuthMode,
-  returnUrl?: string
+  returnUrl?: string,
+  inviteToken?: string
 ): Promise<void> {
   const key = getPkceKey(state);
-  const data: PkceData = { verifier: codeVerifier, scopes, mode, returnUrl };
+  const data: PkceData = { verifier: codeVerifier, scopes, mode, returnUrl, inviteToken };
   await redis.setex(key, PKCE_VERIFIER_TTL_SECONDS, JSON.stringify(data));
 }
 
@@ -183,13 +189,15 @@ async function consumePkceVerifier(state: string): Promise<PkceData | null> {
  * @param additionalScopes - Optional additional scopes to request (for incremental auth)
  * @param mode - The OAuth flow mode (defaults to "login")
  * @param returnUrl - Optional return URL for extension-save mode
+ * @param inviteToken - Optional invite token for new user registration
  * @returns The authorization URL and state
  * @throws Error if Google OAuth is not configured
  */
 export async function createGoogleAuthUrl(
   additionalScopes?: string[],
   mode: OAuthMode = "login",
-  returnUrl?: string
+  returnUrl?: string,
+  inviteToken?: string
 ): Promise<GoogleAuthUrlResult> {
   const google = getGoogleProvider();
 
@@ -206,8 +214,8 @@ export async function createGoogleAuthUrl(
     ? [...GOOGLE_SCOPES, ...additionalScopes.filter((s) => !GOOGLE_SCOPES.includes(s))]
     : GOOGLE_SCOPES;
 
-  // Store the code verifier, scopes, mode, and return URL for later use
-  await storePkceVerifier(state, codeVerifier, scopes, mode, returnUrl);
+  // Store the code verifier, scopes, mode, return URL, and invite token for later use
+  await storePkceVerifier(state, codeVerifier, scopes, mode, returnUrl, inviteToken);
 
   // Create the authorization URL
   const url = google.createAuthorizationURL(state, codeVerifier, scopes);
@@ -264,6 +272,7 @@ export async function validateGoogleCallback(
     scopes: pkceData.scopes,
     mode: pkceData.mode,
     returnUrl: pkceData.returnUrl,
+    inviteToken: pkceData.inviteToken,
   };
 }
 
