@@ -37,11 +37,9 @@ const API_TIMEOUT_MS = 30000;
 export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 
 /**
- * MIME types for Google Drive files.
+ * MIME type for uploaded Word documents.
  */
-export const MIME_TYPE_GOOGLE_DOC = "application/vnd.google-apps.document";
-export const MIME_TYPE_DOCX =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const MIME_TYPE_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // ============================================================================
 // Service Account Authentication
@@ -138,7 +136,7 @@ export interface GoogleDriveContent {
 /**
  * File metadata from Drive API.
  */
-export interface DriveFileMetadata {
+interface DriveFileMetadata {
   id: string;
   name: string;
   mimeType: string;
@@ -286,36 +284,6 @@ export function cleanTitle(name: string): string {
   title = title.replace(/\.(docx?|pdf|odt|rtf|txt)$/i, "");
 
   return title;
-}
-
-/**
- * Checks if the Google Drive API is available (service account configured).
- */
-export function isGoogleDriveApiAvailable(): boolean {
-  return !!googleConfig.serviceAccountJson;
-}
-
-/**
- * Gets a service account access token for Google APIs.
- * Exported for use by docs.ts to check file metadata.
- */
-export async function getDriveServiceAccountToken(): Promise<string | null> {
-  return getServiceAccountAccessToken();
-}
-
-/**
- * Fetches file metadata from Google Drive.
- * Used to determine if a file is a native Google Doc or an uploaded .docx.
- *
- * @param fileId - The Google Drive file ID
- * @param accessToken - OAuth access token with drive.readonly scope
- * @returns File metadata or null if fetch fails
- */
-export async function fetchDriveFileMetadata(
-  fileId: string,
-  accessToken: string
-): Promise<DriveFileMetadata | null> {
-  return getFileMetadata(fileId, accessToken);
 }
 
 /**

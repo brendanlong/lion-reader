@@ -22,7 +22,7 @@ import { getRedisClient } from "@/server/redis";
 /**
  * Session duration in days
  */
-export const SESSION_DURATION_DAYS = 30;
+const SESSION_DURATION_DAYS = 30;
 
 /**
  * Redis cache TTL for sessions (5 minutes)
@@ -89,7 +89,7 @@ export function generateSessionToken(): { token: string; tokenHash: string } {
  * Hashes a session token using SHA-256.
  * Used for both storage and lookup.
  */
-export function hashToken(token: string): string {
+function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
@@ -321,43 +321,6 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
 
   // Drizzle returns affected row count
   return result.rowCount !== null && result.rowCount > 0;
-}
-
-/**
- * Revokes all sessions for a user.
- * Useful for "logout everywhere" functionality.
- *
- * @param userId - The user ID whose sessions to revoke
- * @returns The number of sessions revoked
- */
-export async function revokeAllUserSessions(userId: string): Promise<number> {
-  // Get all active sessions to invalidate their cache entries
-  const activeSessions = await db
-    .select({ tokenHash: sessions.tokenHash })
-    .from(sessions)
-    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
-
-  // Revoke all sessions in database
-  const result = await db
-    .update(sessions)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
-
-  // Invalidate all cache entries (if Redis available)
-  const redis = getRedisClient();
-  if (redis && activeSessions.length > 0) {
-    try {
-      const pipeline = redis.pipeline();
-      for (const session of activeSessions) {
-        pipeline.del(getCacheKey(session.tokenHash));
-      }
-      await pipeline.exec();
-    } catch (err) {
-      console.error("Failed to invalidate session caches:", err);
-    }
-  }
-
-  return result.rowCount ?? 0;
 }
 
 /**

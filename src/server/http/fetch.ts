@@ -21,7 +21,7 @@ export const FEED_FETCH_TIMEOUT_MS = 10000;
  * Timeout for page fetch requests (30 seconds).
  * Used for saved articles where pages may be slower to load.
  */
-export const PAGE_FETCH_TIMEOUT_MS = 30000;
+const PAGE_FETCH_TIMEOUT_MS = 30000;
 
 // ============================================================================
 // Types
@@ -52,13 +52,13 @@ export interface FetchUrlOptions {
 /**
  * Accept header for feed requests (RSS, Atom, XML).
  */
-export const FEED_ACCEPT_HEADER =
+const FEED_ACCEPT_HEADER =
   "application/rss+xml, application/atom+xml, application/xml, text/xml, */*";
 
 /**
  * Accept header for HTML page requests.
  */
-export const HTML_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+const HTML_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 
 // ============================================================================
 // Fetch Utilities

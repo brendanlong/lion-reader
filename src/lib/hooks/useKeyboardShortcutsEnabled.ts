@@ -58,5 +58,3 @@ export function useKeyboardShortcutsEnabled() {
     isLoading: false,
   };
 }
-
-export type UseKeyboardShortcutsEnabledResult = ReturnType<typeof useKeyboardShortcutsEnabled>;

@@ -268,27 +268,6 @@ export function getJobPayload<T extends JobType>(job: Job): JobPayloads[T] {
 }
 
 /**
- * Gets a feed job by feed ID.
- *
- * @param feedId The feed ID
- * @returns The job, or null if not found
- */
-export async function getFeedJob(feedId: string): Promise<Job | null> {
-  const result = await db.execute<RawJobRow>(sql`
-    SELECT * FROM ${jobs}
-    WHERE type = 'fetch_feed'
-      AND payload->>'feedId' = ${feedId}
-    LIMIT 1
-  `);
-
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  return rowToJob(result.rows[0]);
-}
-
-/**
  * Creates or enables a job for a feed.
  * Idempotent - if a job already exists, enables it if disabled.
  *
@@ -445,28 +424,4 @@ export async function listJobs(
   }
 
   return query;
-}
-
-/**
- * Ensures the renew_websub job exists.
- * Creates it if it doesn't exist, does nothing if it does.
- * Should be called at application startup.
- *
- * @returns The job (created or existing)
- */
-export async function ensureRenewWebsubJobExists(): Promise<Job> {
-  // Check if job already exists
-  const [existingJob] = await db.select().from(jobs).where(eq(jobs.type, "renew_websub")).limit(1);
-
-  if (existingJob) {
-    return existingJob;
-  }
-
-  // Create the job
-  return createJob({
-    type: "renew_websub",
-    payload: {},
-    nextRunAt: new Date(),
-    enabled: true,
-  });
 }

@@ -61,7 +61,7 @@ const HTTPS_TIMEOUT_MS = 10000;
  * @param mailtoUrl - The mailto URL to parse
  * @returns Parsed components or null if invalid
  */
-export function parseMailtoUrl(mailtoUrl: string): ParsedMailto | null {
+function parseMailtoUrl(mailtoUrl: string): ParsedMailto | null {
   try {
     // mailto: URLs use a non-standard format, so we need to handle them carefully
     if (!mailtoUrl.toLowerCase().startsWith("mailto:")) {
@@ -130,7 +130,7 @@ export function parseMailtoUrl(mailtoUrl: string): ParsedMailto | null {
  * @param mailtoUrl - The mailto: URL from the List-Unsubscribe header
  * @returns Promise that resolves when "sent" (logged)
  */
-export async function sendUnsubscribeEmail(mailtoUrl: string): Promise<void> {
+async function sendUnsubscribeEmail(mailtoUrl: string): Promise<void> {
   const parsed = parseMailtoUrl(mailtoUrl);
 
   if (!parsed) {
@@ -164,7 +164,7 @@ export async function sendUnsubscribeEmail(mailtoUrl: string): Promise<void> {
  * @param url - The HTTPS URL from the List-Unsubscribe header
  * @throws Error if the request fails
  */
-export async function sendUnsubscribePost(url: string): Promise<void> {
+async function sendUnsubscribePost(url: string): Promise<void> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), HTTPS_TIMEOUT_MS);
 

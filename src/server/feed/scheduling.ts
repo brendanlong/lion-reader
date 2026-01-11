@@ -11,7 +11,7 @@ import type { SyndicationHints } from "./types";
  * This is used when no cache headers are provided (TTL, syndication, or no hints).
  * This can be overridden via the FEED_MIN_FETCH_INTERVAL_MINUTES environment variable.
  */
-export const DEFAULT_MIN_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
+const DEFAULT_MIN_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
 
 /**
  * Minimum interval when server explicitly provides cache headers: 10 minutes.
@@ -48,7 +48,7 @@ export const DEFAULT_JITTER_FRACTION = 0.1;
 export const MAX_JITTER_SECONDS = 30 * 60; // 1800
 
 /** Maximum consecutive failures before permanent max backoff */
-export const MAX_CONSECUTIVE_FAILURES = 10;
+const MAX_CONSECUTIVE_FAILURES = 10;
 
 /** Base backoff time for failures: 30 minutes */
 const FAILURE_BASE_BACKOFF_SECONDS = 30 * 60; // 1800
@@ -96,7 +96,7 @@ export function syndicationToSeconds(hints: SyndicationHints | undefined): numbe
 /**
  * Feed hints for scheduling extracted from the feed itself.
  */
-export interface FeedHints {
+interface FeedHints {
   /** RSS 2.0 <ttl> element value in minutes */
   ttlMinutes?: number;
   /** Syndication namespace hints */

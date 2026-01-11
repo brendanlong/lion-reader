@@ -15,7 +15,7 @@ import { trpc } from "@/lib/trpc/client";
  * Filters for the current saved article list.
  * Used to target optimistic updates to the correct cache entry.
  */
-export interface SavedArticleListFilters {
+interface SavedArticleListFilters {
   /**
    * Show only unread articles.
    */

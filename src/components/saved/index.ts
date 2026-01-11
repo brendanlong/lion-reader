@@ -5,9 +5,6 @@
  */
 
 export { SavedArticleList } from "./SavedArticleList";
-export type { SavedArticleListFilters, SavedArticleListEntryData } from "./SavedArticleList";
-
-export { SavedArticleListItem } from "./SavedArticleListItem";
-export type { SavedArticleListItemData } from "./SavedArticleListItem";
+export type { SavedArticleListEntryData } from "./SavedArticleList";
 
 export { SavedArticleContent } from "./SavedArticleContent";

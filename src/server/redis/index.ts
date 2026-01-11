@@ -20,13 +20,6 @@ let redisClient: Redis | null = null;
 let redisInitialized = false;
 
 /**
- * Checks if Redis is configured (REDIS_URL is set).
- */
-export function isRedisConfigured(): boolean {
-  return !!process.env.REDIS_URL;
-}
-
-/**
  * Gets the Redis client, initializing it lazily if needed.
  * Returns null if REDIS_URL is not set.
  */
@@ -93,27 +86,3 @@ export const redis = new Proxy({} as Redis, {
     return value;
   },
 });
-
-export type RedisClient = Redis;
-
-// Re-export pub/sub functionality
-export {
-  publishFeedEvent,
-  publishNewEntry,
-  publishEntryUpdated,
-  publishSubscriptionCreated,
-  createSubscriberClient,
-  parseFeedEvent,
-  parseUserEvent,
-  closePublisher,
-  checkRedisHealth,
-  getFeedEventsChannel,
-  getUserEventsChannel,
-  type FeedEvent,
-  type FeedEventType,
-  type NewEntryEvent,
-  type EntryUpdatedEvent,
-  type UserEvent,
-  type UserEventType,
-  type SubscriptionCreatedEvent,
-} from "./pubsub";

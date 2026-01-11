@@ -5,13 +5,10 @@
  */
 
 // Router and procedures
-export { createTRPCRouter, publicProcedure, protectedProcedure, mergeRouters } from "./trpc";
-
 // Context
-export { createContext, type Context, type SessionData } from "./context";
+export { createContext } from "./context";
 
 // Root router
-export { appRouter, createCaller, type AppRouter } from "./root";
+export { appRouter, createCaller } from "./root";
 
 // Error utilities
-export { errors, ErrorCodes, createError, type ErrorCode } from "./errors";

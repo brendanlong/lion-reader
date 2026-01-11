@@ -14,7 +14,7 @@ import { metricsEnabled, updateBusinessMetrics, updateJobQueueMetrics } from "./
  * Collects and updates all business metrics from the database.
  * This function has zero overhead when metrics are disabled.
  */
-export async function collectBusinessMetrics(): Promise<void> {
+async function collectBusinessMetrics(): Promise<void> {
   if (!metricsEnabled) return;
 
   // Collect all counts in parallel for efficiency
@@ -50,7 +50,7 @@ export async function collectBusinessMetrics(): Promise<void> {
  * Collects and updates job queue size metrics from the database.
  * This function has zero overhead when metrics are disabled.
  */
-export async function collectJobQueueMetrics(): Promise<void> {
+async function collectJobQueueMetrics(): Promise<void> {
   if (!metricsEnabled) return;
 
   // Count jobs by type and status

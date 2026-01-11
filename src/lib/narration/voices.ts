@@ -24,7 +24,7 @@
  * const allVoices = getAvailableVoices('');
  * ```
  */
-export function getAvailableVoices(lang: string = "en"): SpeechSynthesisVoice[] {
+function getAvailableVoices(lang: string = "en"): SpeechSynthesisVoice[] {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
     return [];
   }

@@ -44,7 +44,7 @@ if (metricsEnabled) {
  * Counter for total HTTP requests.
  * Labels: method (GET, POST, etc.), path (normalized route), status (HTTP status code)
  */
-export const httpRequestsTotal = metricsEnabled
+const httpRequestsTotal = metricsEnabled
   ? new Counter({
       name: "http_requests_total",
       help: "Total HTTP requests",
@@ -62,7 +62,7 @@ export const httpRequestsTotal = metricsEnabled
  * - 50ms, 100ms, 250ms: typical responses
  * - 500ms, 1s, 2.5s, 5s, 10s: slow responses
  */
-export const httpRequestDurationSeconds = metricsEnabled
+const httpRequestDurationSeconds = metricsEnabled
   ? new Histogram({
       name: "http_request_duration_seconds",
       help: "HTTP request duration in seconds",
@@ -73,17 +73,6 @@ export const httpRequestDurationSeconds = metricsEnabled
   : null;
 
 /**
- * Helper function for conditional metric tracking.
- * Use this to wrap metric updates so they're no-ops when disabled.
- *
- * @param fn - The metric update function to execute
- */
-export function trackMetric(fn: () => void): void {
-  if (!metricsEnabled) return;
-  fn();
-}
-
-/**
  * Track an HTTP request.
  * This function has zero overhead when metrics are disabled.
  *
@@ -92,12 +81,7 @@ export function trackMetric(fn: () => void): void {
  * @param status - HTTP status code
  * @param durationMs - Request duration in milliseconds
  */
-export function trackHttpRequest(
-  method: string,
-  path: string,
-  status: number,
-  durationMs: number
-): void {
+function trackHttpRequest(method: string, path: string, status: number, durationMs: number): void {
   if (!metricsEnabled) return;
 
   const durationSeconds = durationMs / 1000;
@@ -156,7 +140,7 @@ export type FeedFetchStatus = "success" | "not_modified" | "error";
  * Counter for total feed fetches.
  * Labels: status (success, not_modified, error)
  */
-export const feedFetchTotal = metricsEnabled
+const feedFetchTotal = metricsEnabled
   ? new Counter({
       name: "feed_fetch_total",
       help: "Total feed fetch attempts",
@@ -171,7 +155,7 @@ export const feedFetchTotal = metricsEnabled
  *
  * Buckets cover typical fetch times from 50ms to 30s.
  */
-export const feedFetchDurationSeconds = metricsEnabled
+const feedFetchDurationSeconds = metricsEnabled
   ? new Histogram({
       name: "feed_fetch_duration_seconds",
       help: "Feed fetch duration in seconds",
@@ -187,7 +171,7 @@ export const feedFetchDurationSeconds = metricsEnabled
  * @param status - The fetch result status
  * @param durationMs - Fetch duration in milliseconds
  */
-export function trackFeedFetch(status: FeedFetchStatus, durationMs: number): void {
+function trackFeedFetch(status: FeedFetchStatus, durationMs: number): void {
   if (!metricsEnabled) return;
 
   feedFetchTotal?.inc({ status });
@@ -229,7 +213,7 @@ export type JobStatus = "success" | "failure";
  * Counter for total jobs processed.
  * Labels: type (fetch_feed, cleanup, etc.), status (success, failure)
  */
-export const jobProcessedTotal = metricsEnabled
+const jobProcessedTotal = metricsEnabled
   ? new Counter({
       name: "job_processed_total",
       help: "Total jobs processed",
@@ -244,7 +228,7 @@ export const jobProcessedTotal = metricsEnabled
  *
  * Buckets cover typical job durations from 10ms to 5 minutes.
  */
-export const jobDurationSeconds = metricsEnabled
+const jobDurationSeconds = metricsEnabled
   ? new Histogram({
       name: "job_duration_seconds",
       help: "Job processing duration in seconds",
@@ -258,7 +242,7 @@ export const jobDurationSeconds = metricsEnabled
  * Gauge for current job queue size.
  * Labels: type (fetch_feed, cleanup, etc.), status (pending, running)
  */
-export const jobQueueSize = metricsEnabled
+const jobQueueSize = metricsEnabled
   ? new Gauge({
       name: "job_queue_size",
       help: "Current job queue size by type and status",
@@ -282,20 +266,6 @@ export function trackJobProcessed(type: string, status: JobStatus, durationMs: n
   jobDurationSeconds?.observe({ type }, durationMs / 1000);
 }
 
-/**
- * Updates the job queue size gauge.
- * This function has zero overhead when metrics are disabled.
- *
- * @param type - Job type
- * @param status - Job status (pending, running)
- * @param count - Number of jobs in this state
- */
-export function setJobQueueSize(type: string, status: string, count: number): void {
-  if (!metricsEnabled) return;
-
-  jobQueueSize?.set({ type, status }, count);
-}
-
 // ============================================================================
 // SSE Connection Metrics
 // ============================================================================
@@ -304,7 +274,7 @@ export function setJobQueueSize(type: string, status: string, count: number): vo
  * Gauge for active SSE connections.
  * Incremented when a client connects, decremented on disconnect.
  */
-export const sseConnectionsActive = metricsEnabled
+const sseConnectionsActive = metricsEnabled
   ? new Gauge({
       name: "sse_connections_active",
       help: "Number of active SSE connections",
@@ -316,7 +286,7 @@ export const sseConnectionsActive = metricsEnabled
  * Counter for total SSE events sent.
  * Labels: type (new_entry, entry_updated, heartbeat)
  */
-export const sseEventsSentTotal = metricsEnabled
+const sseEventsSentTotal = metricsEnabled
   ? new Counter({
       name: "sse_events_sent_total",
       help: "Total SSE events sent to clients",
@@ -361,7 +331,7 @@ export function trackSSEEventSent(eventType: string): void {
 /**
  * Gauge for total registered users.
  */
-export const usersTotal = metricsEnabled
+const usersTotal = metricsEnabled
   ? new Gauge({
       name: "users_total",
       help: "Total number of registered users",
@@ -372,7 +342,7 @@ export const usersTotal = metricsEnabled
 /**
  * Gauge for total active subscriptions.
  */
-export const subscriptionsTotal = metricsEnabled
+const subscriptionsTotal = metricsEnabled
   ? new Gauge({
       name: "subscriptions_total",
       help: "Total number of active subscriptions",
@@ -383,7 +353,7 @@ export const subscriptionsTotal = metricsEnabled
 /**
  * Gauge for total entries in the database.
  */
-export const entriesTotal = metricsEnabled
+const entriesTotal = metricsEnabled
   ? new Gauge({
       name: "entries_total",
       help: "Total number of entries",
@@ -394,7 +364,7 @@ export const entriesTotal = metricsEnabled
 /**
  * Gauge for total feeds in the database.
  */
-export const feedsTotal = metricsEnabled
+const feedsTotal = metricsEnabled
   ? new Gauge({
       name: "feeds_total",
       help: "Total number of feeds",
@@ -451,31 +421,10 @@ export function updateJobQueueMetrics(
 // ============================================================================
 
 /**
- * WebSub subscription status values.
- * - pending: Subscription request sent, awaiting verification
- * - active: Subscription verified and active
- * - unsubscribed: Subscription expired or failed
- */
-export type WebsubStatus = "pending" | "active" | "unsubscribed";
-
-/**
- * Gauge for WebSub subscriptions by status.
- * Labels: status (pending, active, unsubscribed)
- */
-export const websubSubscriptionsTotal = metricsEnabled
-  ? new Gauge({
-      name: "websub_subscriptions_total",
-      help: "Total WebSub subscriptions by status",
-      labelNames: ["status"] as const,
-      registers: [registry],
-    })
-  : null;
-
-/**
  * Counter for WebSub notifications received.
  * Tracks content push notifications from hubs.
  */
-export const websubNotificationsReceivedTotal = metricsEnabled
+const websubNotificationsReceivedTotal = metricsEnabled
   ? new Counter({
       name: "websub_notifications_received_total",
       help: "Total WebSub content notifications received",
@@ -487,7 +436,7 @@ export const websubNotificationsReceivedTotal = metricsEnabled
  * Counter for WebSub renewal attempts.
  * Labels: status (success, failure)
  */
-export const websubRenewalsTotal = metricsEnabled
+const websubRenewalsTotal = metricsEnabled
   ? new Counter({
       name: "websub_renewals_total",
       help: "Total WebSub subscription renewal attempts",
@@ -516,30 +465,6 @@ export function trackWebsubRenewal(success: boolean): void {
   websubRenewalsTotal?.inc({ status: success ? "success" : "failure" });
 }
 
-/**
- * Updates WebSub subscription metrics by status.
- * This function has zero overhead when metrics are disabled.
- *
- * @param counts - Subscription counts by status
- */
-export function updateWebsubMetrics(counts: {
-  pending?: number;
-  active?: number;
-  unsubscribed?: number;
-}): void {
-  if (!metricsEnabled) return;
-
-  if (counts.pending !== undefined) {
-    websubSubscriptionsTotal?.set({ status: "pending" }, counts.pending);
-  }
-  if (counts.active !== undefined) {
-    websubSubscriptionsTotal?.set({ status: "active" }, counts.active);
-  }
-  if (counts.unsubscribed !== undefined) {
-    websubSubscriptionsTotal?.set({ status: "unsubscribed" }, counts.unsubscribed);
-  }
-}
-
 // ============================================================================
 // Narration Metrics
 // ============================================================================
@@ -565,7 +490,7 @@ export type NarrationErrorType = "api_error" | "empty_response" | "unknown";
  * - cached: "true" if served from cache, "false" if newly generated
  * - source: "llm" for LLM-generated, "fallback" for plain text conversion
  */
-export const narrationGeneratedTotal = metricsEnabled
+const narrationGeneratedTotal = metricsEnabled
   ? new Counter({
       name: "narration_generated_total",
       help: "Total narration generations",
@@ -580,7 +505,7 @@ export const narrationGeneratedTotal = metricsEnabled
  *
  * Buckets cover typical LLM latencies from 100ms to 30s.
  */
-export const narrationGenerationDurationSeconds = metricsEnabled
+const narrationGenerationDurationSeconds = metricsEnabled
   ? new Histogram({
       name: "narration_generation_duration_seconds",
       help: "Narration generation duration in seconds",
@@ -593,7 +518,7 @@ export const narrationGenerationDurationSeconds = metricsEnabled
  * Counter for narration generation errors.
  * Labels: error_type (api_error, empty_response, unknown)
  */
-export const narrationGenerationErrorsTotal = metricsEnabled
+const narrationGenerationErrorsTotal = metricsEnabled
   ? new Counter({
       name: "narration_generation_errors_total",
       help: "Total narration generation errors",
@@ -620,7 +545,7 @@ export function trackNarrationGenerated(cached: boolean, source: NarrationSource
  *
  * @param durationMs - Generation duration in milliseconds
  */
-export function trackNarrationGenerationDuration(durationMs: number): void {
+function trackNarrationGenerationDuration(durationMs: number): void {
   if (!metricsEnabled) return;
   narrationGenerationDurationSeconds?.observe(durationMs / 1000);
 }
@@ -664,7 +589,7 @@ export function startNarrationGenerationTimer(): () => void {
  * Counter for enhanced voice selections.
  * Labels: voice_id (the selected voice identifier)
  */
-export const enhancedVoiceSelectedTotal = metricsEnabled
+const enhancedVoiceSelectedTotal = metricsEnabled
   ? new Counter({
       name: "enhanced_voice_selected_total",
       help: "Total enhanced voice selections",
@@ -677,7 +602,7 @@ export const enhancedVoiceSelectedTotal = metricsEnabled
  * Counter for enhanced voice download completions.
  * Labels: voice_id (the downloaded voice identifier)
  */
-export const enhancedVoiceDownloadCompletedTotal = metricsEnabled
+const enhancedVoiceDownloadCompletedTotal = metricsEnabled
   ? new Counter({
       name: "enhanced_voice_download_completed_total",
       help: "Total enhanced voice downloads completed",
@@ -692,7 +617,7 @@ export const enhancedVoiceDownloadCompletedTotal = metricsEnabled
  * - voice_id: The voice that failed to download
  * - error_type: Type of error (network, storage, unknown)
  */
-export const enhancedVoiceDownloadFailedTotal = metricsEnabled
+const enhancedVoiceDownloadFailedTotal = metricsEnabled
   ? new Counter({
       name: "enhanced_voice_download_failed_total",
       help: "Total enhanced voice download failures",
@@ -705,7 +630,7 @@ export const enhancedVoiceDownloadFailedTotal = metricsEnabled
  * Counter for narration playback starts.
  * Labels: provider (browser or piper)
  */
-export const narrationPlaybackStartedTotal = metricsEnabled
+const narrationPlaybackStartedTotal = metricsEnabled
   ? new Counter({
       name: "narration_playback_started_total",
       help: "Total narration playbacks started",
@@ -778,7 +703,7 @@ export function trackNarrationPlaybackStarted(provider: "browser" | "piper"): vo
  * Counter for times highlighting was active during narration.
  * Incremented when highlighting first becomes active in a session.
  */
-export const narrationHighlightActiveTotal = metricsEnabled
+const narrationHighlightActiveTotal = metricsEnabled
   ? new Counter({
       name: "narration_highlight_active_total",
       help: "Total times narration highlighting was active",
@@ -790,7 +715,7 @@ export const narrationHighlightActiveTotal = metricsEnabled
  * Counter for times fallback mapping was used for highlighting.
  * Incremented when positional mapping is used instead of LLM markers.
  */
-export const narrationHighlightFallbackTotal = metricsEnabled
+const narrationHighlightFallbackTotal = metricsEnabled
   ? new Counter({
       name: "narration_highlight_fallback_total",
       help: "Total times fallback positional mapping was used for highlighting",
@@ -802,7 +727,7 @@ export const narrationHighlightFallbackTotal = metricsEnabled
  * Counter for times auto-scroll was triggered during highlighting.
  * Incremented when the view scrolls to a highlighted paragraph.
  */
-export const narrationHighlightScrollTotal = metricsEnabled
+const narrationHighlightScrollTotal = metricsEnabled
   ? new Counter({
       name: "narration_highlight_scroll_total",
       help: "Total times auto-scroll was triggered during highlighting",

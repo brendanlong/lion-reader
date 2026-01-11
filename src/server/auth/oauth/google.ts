@@ -47,7 +47,7 @@ export const GOOGLE_DOCS_READONLY_SCOPE = "https://www.googleapis.com/auth/docum
 /**
  * Response from Google's userinfo endpoint
  */
-export interface GoogleUserInfo {
+interface GoogleUserInfo {
   /** Google's unique user ID (subject) */
   sub: string;
   /** User's email address */

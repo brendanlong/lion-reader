@@ -24,12 +24,12 @@ import type { Job } from "../db/schema";
 /**
  * Function type for claiming a job from the queue.
  */
-export type ClaimJobFn = (options?: { types?: JobType[] }) => Promise<Job | null>;
+type ClaimJobFn = (options?: { types?: JobType[] }) => Promise<Job | null>;
 
 /**
  * Function type for processing a claimed job.
  */
-export type ProcessJobFn = (job: Job) => Promise<void>;
+type ProcessJobFn = (job: Job) => Promise<void>;
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
 import { trackJobProcessed } from "../metrics/metrics";
