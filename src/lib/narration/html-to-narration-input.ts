@@ -9,28 +9,10 @@
  */
 
 import { parseHTML } from "linkedom";
+import { BLOCK_ELEMENTS } from "./block-elements";
 
-/**
- * Block-level elements that get paragraph markers.
- * Must match the client-side BLOCK_ELEMENTS in client-paragraph-ids.ts
- */
-export const BLOCK_ELEMENTS = [
-  "p",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "blockquote",
-  "pre",
-  "ul",
-  "ol",
-  "li",
-  "figure",
-  "table",
-  "img",
-] as const;
+// Re-export for backwards compatibility
+export { BLOCK_ELEMENTS };
 
 /**
  * Set version of BLOCK_ELEMENTS for efficient lookup.

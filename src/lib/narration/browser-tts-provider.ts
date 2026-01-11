@@ -10,43 +10,15 @@
 import type { TTSProvider, TTSVoice, SpeakOptions } from "./types";
 import { isFirefox } from "./feature-detection";
 import { waitForVoices as waitForBrowserVoices } from "./voices";
-
-/**
- * Default speech rate (1.0 = normal speed).
- */
-const DEFAULT_RATE = 1.0;
-
-/**
- * Default speech pitch (1.0 = normal pitch).
- */
-const DEFAULT_PITCH = 1.0;
-
-/**
- * Minimum allowed rate value.
- */
-const MIN_RATE = 0.5;
-
-/**
- * Maximum allowed rate value.
- */
-const MAX_RATE = 2.0;
-
-/**
- * Minimum allowed pitch value.
- */
-const MIN_PITCH = 0.5;
-
-/**
- * Maximum allowed pitch value.
- */
-const MAX_PITCH = 2.0;
-
-/**
- * Clamps a value between a minimum and maximum.
- */
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
+import {
+  DEFAULT_RATE,
+  DEFAULT_PITCH,
+  MIN_RATE,
+  MAX_RATE,
+  MIN_PITCH,
+  MAX_PITCH,
+  clamp,
+} from "./constants";
 
 /**
  * BrowserTTSProvider implements TTSProvider using the Web Speech API.

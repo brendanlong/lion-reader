@@ -7,6 +7,7 @@ import { Parser } from "htmlparser2";
 import { decode } from "html-entities";
 import type { ParsedEntry, SyndicationHints } from "../types";
 import type { FeedParseResult } from "./types";
+import { VALID_UPDATE_PERIODS, type UpdatePeriod } from "./syndication";
 
 type AtomParserState =
   | "initial"
@@ -26,9 +27,6 @@ type AtomParserState =
   | "in_entry_updated"
   | "in_entry_author"
   | "in_entry_author_name";
-
-const VALID_UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
-type UpdatePeriod = (typeof VALID_UPDATE_PERIODS)[number];
 
 /**
  * Parses an Atom feed from a string.

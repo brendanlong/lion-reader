@@ -15,6 +15,7 @@ import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
 import type { TTSProviderId } from "@/lib/narration/types";
+import { PREVIEW_TEXT } from "@/lib/narration/constants";
 import { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
 import { trpc } from "@/lib/trpc/client";
 
@@ -24,11 +25,6 @@ const EnhancedVoiceList = dynamic(
   () => import("./EnhancedVoiceList").then((mod) => mod.EnhancedVoiceList),
   { ssr: false }
 );
-
-/**
- * Sample text used for voice preview.
- */
-const PREVIEW_TEXT = "This is a preview of how articles will sound with this voice.";
 
 export function NarrationSettings() {
   const [settings, setSettings] = useNarrationSettings();
