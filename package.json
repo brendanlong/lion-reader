@@ -21,6 +21,7 @@
     "prepare": "husky",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "dotenv -- tsx scripts/migrate.ts",
+    "db:schema": "dotenv -- tsx scripts/dump-schema.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "dotenv -- tsx scripts/seed.ts",
