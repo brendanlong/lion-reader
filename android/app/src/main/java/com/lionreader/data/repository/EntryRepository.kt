@@ -3,9 +3,9 @@ package com.lionreader.data.repository
 import android.util.Log
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
+import com.lionreader.data.api.models.EntriesCountResponse
 import com.lionreader.data.api.models.EntryDto
 import com.lionreader.data.api.models.SortOrder
-import com.lionreader.data.api.models.StarredCountResponse
 import com.lionreader.data.api.models.SubscriptionWithFeedDto
 import com.lionreader.data.api.models.SyncChangesResponse
 import com.lionreader.data.api.models.SyncEntryDto
@@ -142,10 +142,10 @@ class EntryRepository
         /**
          * Fetches the starred entries count from the server.
          *
-         * @return StarredCountResponse with total and unread counts, or null on failure
+         * @return EntriesCountResponse with total and unread counts, or null on failure
          */
-        suspend fun fetchStarredCount(): StarredCountResponse? =
-            when (val result = api.getStarredCount()) {
+        suspend fun fetchStarredCount(): EntriesCountResponse? =
+            when (val result = api.getEntriesCount(starredOnly = true)) {
                 is ApiResult.Success -> result.data
                 else -> null
             }

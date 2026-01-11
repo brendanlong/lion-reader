@@ -14,7 +14,6 @@ import com.lionreader.data.api.models.ProvidersResponse
 import com.lionreader.data.api.models.SaveArticleRequest
 import com.lionreader.data.api.models.SavedArticleResponse
 import com.lionreader.data.api.models.SortOrder
-import com.lionreader.data.api.models.StarredCountResponse
 import com.lionreader.data.api.models.SubscriptionsResponse
 import com.lionreader.data.api.models.SyncChangesResponse
 import com.lionreader.data.api.models.TagsResponse
@@ -152,13 +151,6 @@ interface LionReaderApi {
     suspend fun unstar(id: String): ApiResult<Unit>
 
     /**
-     * Get the count of starred entries.
-     *
-     * @return StarredCountResponse with total and unread counts
-     */
-    suspend fun getStarredCount(): ApiResult<StarredCountResponse>
-
-    /**
      * Get the count of entries with optional filters.
      *
      * @param feedId Filter by feed ID
@@ -166,6 +158,8 @@ interface LionReaderApi {
      * @param uncategorized If true, only count entries from subscriptions with no tags
      * @param type Filter to only include entries of this type
      * @param excludeTypes Filter to exclude entries of these types
+     * @param unreadOnly If true, only count unread entries
+     * @param starredOnly If true, only count starred entries
      * @return EntriesCountResponse with total and unread counts
      */
     suspend fun getEntriesCount(
@@ -174,6 +168,8 @@ interface LionReaderApi {
         uncategorized: Boolean? = null,
         type: EntryType? = null,
         excludeTypes: List<EntryType>? = null,
+        unreadOnly: Boolean? = null,
+        starredOnly: Boolean? = null,
     ): ApiResult<EntriesCountResponse>
 
     // ============================================================================
@@ -328,14 +324,14 @@ class LionReaderApiImpl
 
         override suspend fun unstar(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "entries/$id/star")
 
-        override suspend fun getStarredCount(): ApiResult<StarredCountResponse> = apiClient.get(path = "entries/starred/count")
-
         override suspend fun getEntriesCount(
             feedId: String?,
             tagId: String?,
             uncategorized: Boolean?,
             type: EntryType?,
             excludeTypes: List<EntryType>?,
+            unreadOnly: Boolean?,
+            starredOnly: Boolean?,
         ): ApiResult<EntriesCountResponse> =
             apiClient.get(path = "entries/count") {
                 queryParam("feedId", feedId)
@@ -343,6 +339,8 @@ class LionReaderApiImpl
                 queryParam("uncategorized", uncategorized)
                 type?.let { queryParam("type", it.name.lowercase()) }
                 excludeTypes?.forEach { queryParam("excludeTypes", it.name.lowercase()) }
+                queryParam("unreadOnly", unreadOnly)
+                queryParam("starredOnly", starredOnly)
             }
 
         // ============================================================================

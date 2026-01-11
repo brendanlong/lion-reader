@@ -254,7 +254,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       // Only the unread count changes - total stays the same since starred status isn't changing
       const starredEntries = data.entries.filter((e) => e.starred);
       if (starredEntries.length > 0) {
-        utils.entries.starredCount.setData(undefined, (old) => {
+        utils.entries.count.setData({ starredOnly: true }, (old) => {
           if (!old) return old;
           // When marking read, decrease unread count; when marking unread, increase it
           const delta = variables.read ? -starredEntries.length : starredEntries.length;
@@ -288,7 +288,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       // Invalidate tag unread counts
       utils.tags.list.invalidate();
       // Invalidate starred count as it may have changed
-      utils.entries.starredCount.invalidate();
+      utils.entries.count.invalidate({ starredOnly: true });
     },
     onError: () => {
       toast.error("Failed to mark all as read");
@@ -325,7 +325,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
     onSuccess: (data) => {
       // Update starred count directly - total increases by 1, unread increases if entry is unread
-      utils.entries.starredCount.setData(undefined, (old) => {
+      utils.entries.count.setData({ starredOnly: true }, (old) => {
         if (!old) return old;
         return {
           total: old.total + 1,
@@ -382,7 +382,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
     onSuccess: (data) => {
       // Update starred count directly - total decreases by 1, unread decreases if entry is unread
-      utils.entries.starredCount.setData(undefined, (old) => {
+      utils.entries.count.setData({ starredOnly: true }, (old) => {
         if (!old) return old;
         return {
           total: Math.max(0, old.total - 1),
