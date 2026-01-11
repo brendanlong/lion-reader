@@ -8,7 +8,7 @@
 import { dehydrate } from "@tanstack/react-query";
 import { createServerQueryClient, createServerCaller } from "@/lib/trpc/server";
 import { HydrationBoundary } from "@/lib/trpc/provider";
-import { getViewPreferences } from "@/lib/hooks";
+import { getViewPreferences } from "@/lib/hooks/viewPreferences";
 import { StarredEntriesClient } from "./client";
 
 interface StarredEntriesPageProps {
