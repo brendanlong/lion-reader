@@ -22,7 +22,7 @@ import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import {
   useKeyboardShortcuts,
-  useViewPreferences,
+  useUrlViewPreferences,
   useEntryMutations,
   useEntryUrlState,
   useEntryListQuery,
@@ -93,10 +93,8 @@ function SingleFeedContent() {
   const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences(
-    "feed",
-    feedId
-  );
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
+    useUrlViewPreferences("feed", feedId);
   const utils = trpc.useUtils();
 
   // Use entry list query that stays mounted while viewing entries

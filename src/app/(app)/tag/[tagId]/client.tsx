@@ -22,7 +22,7 @@ import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import {
   useKeyboardShortcuts,
-  useViewPreferences,
+  useUrlViewPreferences,
   useEntryMutations,
   useEntryUrlState,
   useEntryListQuery,
@@ -94,7 +94,7 @@ function UncategorizedContent() {
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
-    useViewPreferences("uncategorized");
+    useUrlViewPreferences("uncategorized");
   const utils = trpc.useUtils();
 
   // Use entry list query that stays mounted while viewing entries
@@ -301,10 +301,8 @@ function TagContent({ tagId }: { tagId: string }) {
   const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } = useViewPreferences(
-    "tag",
-    tagId
-  );
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
+    useUrlViewPreferences("tag", tagId);
   const utils = trpc.useUtils();
 
   // Use entry list query that stays mounted while viewing entries
