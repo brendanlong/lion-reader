@@ -8,6 +8,7 @@ export {
   generateSessionToken,
   hashToken,
   getSessionExpiry,
+  createSession,
   validateSession,
   revokeSession,
   revokeSessionByToken,
@@ -15,6 +16,8 @@ export {
   invalidateUserSessionCaches,
   SESSION_DURATION_DAYS,
   type SessionData,
+  type CreateSessionParams,
+  type CreateSessionResult,
 } from "./session";
 
 // API Token exports

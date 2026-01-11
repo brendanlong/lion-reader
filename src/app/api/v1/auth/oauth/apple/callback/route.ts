@@ -16,10 +16,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { validateAppleCallback, isAppleOAuthEnabled } from "@/server/auth/oauth/apple";
-import { generateSessionToken, getSessionExpiry, processOAuthCallback } from "@/server/auth";
-import { generateUuidv7 } from "@/lib/uuidv7";
+import { createSession, processOAuthCallback } from "@/server/auth";
 import { db } from "@/server/db";
-import { sessions } from "@/server/db/schema";
 
 /**
  * Handle Apple OAuth form_post callback
@@ -80,7 +78,6 @@ export async function POST(request: NextRequest) {
     }
 
     const { userInfo, firstAuthData, tokens } = appleResult;
-    const now = new Date();
 
     // Get email from JWT or first-auth data
     // Apple only sends email on first auth, but we can look up returning users by providerAccountId
@@ -98,11 +95,6 @@ export async function POST(request: NextRequest) {
       inviteToken: appleResult.inviteToken,
     });
 
-    // Create session
-    const sessionId = generateUuidv7();
-    const { token, tokenHash } = generateSessionToken();
-    const expiresAt = getSessionExpiry();
-
     // Get client info from headers
     const userAgent = request.headers.get("user-agent") ?? undefined;
     const ipAddress =
@@ -110,15 +102,11 @@ export async function POST(request: NextRequest) {
       request.headers.get("x-real-ip") ??
       undefined;
 
-    await db.insert(sessions).values({
-      id: sessionId,
+    // Create session
+    const { token } = await createSession(db, {
       userId: oauthResult.userId,
-      tokenHash,
       userAgent,
       ipAddress,
-      expiresAt,
-      createdAt: now,
-      lastActiveAt: now,
     });
 
     // Redirect to app with session cookie
