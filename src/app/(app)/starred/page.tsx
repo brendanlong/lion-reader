@@ -8,28 +8,44 @@
 import { dehydrate } from "@tanstack/react-query";
 import { createServerQueryClient, createServerCaller } from "@/lib/trpc/server";
 import { HydrationBoundary } from "@/lib/trpc/provider";
+import { getViewPreferences } from "@/lib/hooks";
 import { StarredEntriesClient } from "./client";
 
-export default async function StarredEntriesPage() {
+interface StarredEntriesPageProps {
+  searchParams: Promise<{ unreadOnly?: string; sort?: string }>;
+}
+
+export default async function StarredEntriesPage({ searchParams }: StarredEntriesPageProps) {
   const queryClient = createServerQueryClient();
   const { caller, session } = await createServerCaller();
 
+  // Parse URL params with localStorage defaults as fallback
+  const params = await searchParams;
+  const defaults = getViewPreferences("starred");
+  const unreadOnly =
+    params.unreadOnly === "false"
+      ? false
+      : params.unreadOnly === "true"
+        ? true
+        : defaults.showUnreadOnly;
+  const sortOrder =
+    params.sort === "oldest" ? "oldest" : params.sort === "newest" ? "newest" : defaults.sortOrder;
+
   if (session) {
     // Prefetch starred entries list (infinite query)
-    // Uses default view preferences: unreadOnly=true, sortOrder="newest"
     await queryClient.prefetchInfiniteQuery({
       queryKey: [
         ["entries", "list"],
         {
-          input: { starredOnly: true, unreadOnly: true, sortOrder: "newest", limit: 20 },
+          input: { starredOnly: true, unreadOnly, sortOrder, limit: 20 },
           type: "infinite",
         },
       ],
       queryFn: () =>
         caller.entries.list({
           starredOnly: true,
-          unreadOnly: true,
-          sortOrder: "newest",
+          unreadOnly,
+          sortOrder,
           limit: 20,
         }),
       initialPageParam: undefined,
