@@ -45,6 +45,7 @@ import {
 } from "../redis/pubsub";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isLessWrongUserFeedUrl } from "../feed/lesswrong";
+import { createOrReactivateSubscription } from "../trpc/routers/subscriptions";
 
 /**
  * Result of a job handler execution.
@@ -1346,39 +1347,18 @@ export async function handleProcessOpmlImport(
           await createOrEnableFeedJob(feedId);
         }
 
-        // Check for existing soft-deleted subscription
-        const existingSub = await db
-          .select()
-          .from(subscriptions)
-          .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-          .limit(1);
+        // Create or reactivate subscription with entry population
+        // Use lastSeenAt if feed has been fetched, otherwise no entries (feed will be fetched soon)
+        const subscriptionResult = await createOrReactivateSubscription(db, {
+          userId,
+          feedId,
+          entrySource:
+            existingFeed.length > 0 && existingFeed[0].lastEntriesUpdatedAt
+              ? { type: "lastSeenAt", lastEntriesUpdatedAt: existingFeed[0].lastEntriesUpdatedAt }
+              : { type: "none" },
+        });
 
-        const now = new Date();
-        const subscriptionId = generateUuidv7();
-        let actualSubscriptionId = subscriptionId;
-
-        if (existingSub.length > 0 && existingSub[0].unsubscribedAt !== null) {
-          // Reactivate soft-deleted subscription
-          actualSubscriptionId = existingSub[0].id;
-          await db
-            .update(subscriptions)
-            .set({
-              unsubscribedAt: null,
-              subscribedAt: now,
-              updatedAt: now,
-            })
-            .where(eq(subscriptions.id, actualSubscriptionId));
-        } else if (existingSub.length === 0) {
-          // Create new subscription
-          await db.insert(subscriptions).values({
-            id: subscriptionId,
-            userId,
-            feedId,
-            subscribedAt: now,
-            createdAt: now,
-            updatedAt: now,
-          });
-        }
+        const actualSubscriptionId = subscriptionResult.subscriptionId;
 
         // Associate subscription with tags from categories
         // Also collect tag info for the subscription_created event
@@ -1431,8 +1411,8 @@ export async function handleProcessOpmlImport(
             id: actualSubscriptionId,
             feedId,
             customTitle: null,
-            subscribedAt: now.toISOString(),
-            unreadCount: 0, // New subscriptions from OPML start with 0 unread
+            subscribedAt: subscriptionResult.subscribedAt.toISOString(),
+            unreadCount: subscriptionResult.unreadCount,
             tags: subscriptionTagsList,
           },
           {

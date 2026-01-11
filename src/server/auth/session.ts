@@ -11,8 +11,9 @@
 
 import crypto from "crypto";
 import { eq, and, isNull, gt } from "drizzle-orm";
-import { db } from "@/server/db";
+import { db, type Database } from "@/server/db";
 import { sessions, users, type User, type Session } from "@/server/db/schema";
+import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
 
 // ============================================================================
@@ -100,6 +101,72 @@ export function getSessionExpiry(): Date {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + SESSION_DURATION_DAYS);
   return expiresAt;
+}
+
+// ============================================================================
+// Session Creation
+// ============================================================================
+
+/**
+ * Parameters for creating a new session
+ */
+export interface CreateSessionParams {
+  /** User ID to create session for */
+  userId: string;
+  /** User-Agent header from request */
+  userAgent?: string;
+  /** IP address from request */
+  ipAddress?: string;
+}
+
+/**
+ * Result of creating a new session
+ */
+export interface CreateSessionResult {
+  /** Session ID (UUIDv7) */
+  sessionId: string;
+  /** Raw session token to return to client (never stored) */
+  token: string;
+}
+
+/**
+ * Transaction type - accepts both db and transaction contexts
+ */
+type DbOrTx = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * Creates a new session for a user.
+ *
+ * This centralizes session creation logic that was previously duplicated
+ * across 6 different places (register, login, OAuth callbacks).
+ *
+ * @param dbOrTx - Database or transaction context
+ * @param params - Session creation parameters
+ * @returns The session ID and raw token (token should be returned to client)
+ */
+export async function createSession(
+  dbOrTx: DbOrTx,
+  params: CreateSessionParams
+): Promise<CreateSessionResult> {
+  const { userId, userAgent, ipAddress } = params;
+
+  const sessionId = generateUuidv7();
+  const { token, tokenHash } = generateSessionToken();
+  const expiresAt = getSessionExpiry();
+  const now = new Date();
+
+  await dbOrTx.insert(sessions).values({
+    id: sessionId,
+    userId,
+    tokenHash,
+    userAgent,
+    ipAddress,
+    expiresAt,
+    createdAt: now,
+    lastActiveAt: now,
+  });
+
+  return { sessionId, token };
 }
 
 // ============================================================================

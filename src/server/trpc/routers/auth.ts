@@ -17,12 +17,11 @@ import {
   expensiveProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
-import { users, sessions, oauthAccounts } from "@/server/db/schema";
+import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
-  generateSessionToken,
-  getSessionExpiry,
+  createSession,
   revokeSessionByToken,
   getEnabledProviders,
   createGoogleAuthUrl,
@@ -133,11 +132,6 @@ export const authRouter = createTRPCRouter({
       // Hash the password with argon2
       const passwordHash = await argon2.hash(password);
 
-      // Generate session credentials
-      const sessionId = generateUuidv7();
-      const { token, tokenHash } = generateSessionToken();
-      const expiresAt = getSessionExpiry();
-
       // Get client info from headers
       const userAgent = ctx.headers.get("user-agent") ?? undefined;
       const ipAddress =
@@ -156,27 +150,22 @@ export const authRouter = createTRPCRouter({
         });
 
         // Create session
-        await tx.insert(sessions).values({
-          id: sessionId,
+        const { token } = await createSession(tx, {
           userId: user.userId,
-          tokenHash,
           userAgent,
           ipAddress,
-          expiresAt,
-          createdAt: user.createdAt,
-          lastActiveAt: user.createdAt,
         });
 
-        return user;
+        return { user, token };
       });
 
       return {
         user: {
-          id: result.userId,
-          email: result.email,
-          createdAt: result.createdAt,
+          id: result.user.userId,
+          email: result.user.email,
+          createdAt: result.user.createdAt,
         },
-        sessionToken: token,
+        sessionToken: result.token,
       };
     }),
 
@@ -235,11 +224,6 @@ export const authRouter = createTRPCRouter({
         throw errors.invalidCredentials();
       }
 
-      // Create new session
-      const sessionId = generateUuidv7();
-      const { token, tokenHash } = generateSessionToken();
-      const expiresAt = getSessionExpiry();
-
       // Get client info from headers
       const userAgent = ctx.headers.get("user-agent") ?? undefined;
       const ipAddress =
@@ -247,17 +231,11 @@ export const authRouter = createTRPCRouter({
         ctx.headers.get("x-real-ip") ??
         undefined;
 
-      const now = new Date();
-
-      await ctx.db.insert(sessions).values({
-        id: sessionId,
+      // Create new session
+      const { token } = await createSession(ctx.db, {
         userId: foundUser.id,
-        tokenHash,
         userAgent,
         ipAddress,
-        expiresAt,
-        createdAt: now,
-        lastActiveAt: now,
       });
 
       return {
@@ -416,7 +394,6 @@ export const authRouter = createTRPCRouter({
       }
 
       const { userInfo, tokens, scopes, inviteToken } = googleResult;
-      const now = new Date();
 
       // Process OAuth callback - handles existing accounts, linking, and new user creation
       const oauthResult = await processOAuthCallback({
@@ -430,11 +407,6 @@ export const authRouter = createTRPCRouter({
         inviteToken,
       });
 
-      // Create session
-      const sessionId = generateUuidv7();
-      const { token, tokenHash } = generateSessionToken();
-      const expiresAt = getSessionExpiry();
-
       // Get client info from headers
       const userAgent = ctx.headers.get("user-agent") ?? undefined;
       const ipAddress =
@@ -442,15 +414,11 @@ export const authRouter = createTRPCRouter({
         ctx.headers.get("x-real-ip") ??
         undefined;
 
-      await ctx.db.insert(sessions).values({
-        id: sessionId,
+      // Create session
+      const { token } = await createSession(ctx.db, {
         userId: oauthResult.userId,
-        tokenHash,
         userAgent,
         ipAddress,
-        expiresAt,
-        createdAt: now,
-        lastActiveAt: now,
       });
 
       return {
@@ -599,7 +567,6 @@ export const authRouter = createTRPCRouter({
       }
 
       const { userInfo, firstAuthData, tokens, inviteToken } = appleResult;
-      const now = new Date();
 
       // Get email from JWT or first-auth data
       // Apple always includes email in JWT on first auth, may not on subsequent auths
@@ -616,11 +583,6 @@ export const authRouter = createTRPCRouter({
         inviteToken,
       });
 
-      // Create session
-      const sessionId = generateUuidv7();
-      const { token, tokenHash } = generateSessionToken();
-      const expiresAt = getSessionExpiry();
-
       // Get client info from headers
       const userAgent = ctx.headers.get("user-agent") ?? undefined;
       const ipAddress =
@@ -628,15 +590,11 @@ export const authRouter = createTRPCRouter({
         ctx.headers.get("x-real-ip") ??
         undefined;
 
-      await ctx.db.insert(sessions).values({
-        id: sessionId,
+      // Create session
+      const { token } = await createSession(ctx.db, {
         userId: oauthResult.userId,
-        tokenHash,
         userAgent,
         ipAddress,
-        expiresAt,
-        createdAt: now,
-        lastActiveAt: now,
       });
 
       return {
