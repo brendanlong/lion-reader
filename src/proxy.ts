@@ -1,9 +1,9 @@
 /**
- * Next.js Middleware
+ * Next.js Proxy
  *
  * Handles route protection and authentication redirects.
  *
- * This middleware checks for the presence of a session cookie on protected routes.
+ * This proxy checks for the presence of a session cookie on protected routes.
  * It performs a lightweight check (cookie existence only) - full validation happens
  * in tRPC/API routes.
  *
@@ -52,7 +52,7 @@ function isPublicPath(pathname: string): boolean {
   });
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   // Allow public paths without auth check
@@ -82,7 +82,7 @@ export function middleware(request: NextRequest) {
 
 /**
  * Matcher configuration to exclude static assets.
- * This improves performance by not running the middleware on files that
+ * This improves performance by not running the proxy on files that
  * don't need auth checks.
  */
 export const config = {
