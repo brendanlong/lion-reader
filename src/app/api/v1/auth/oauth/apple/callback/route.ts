@@ -15,12 +15,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
 import { validateAppleCallback, isAppleOAuthEnabled } from "@/server/auth/oauth/apple";
-import { generateSessionToken, getSessionExpiry } from "@/server/auth/session";
+import { generateSessionToken, getSessionExpiry, processOAuthCallback } from "@/server/auth";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { db } from "@/server/db";
-import { users, sessions, oauthAccounts } from "@/server/db/schema";
+import { sessions } from "@/server/db/schema";
 
 /**
  * Handle Apple OAuth form_post callback
@@ -83,114 +82,20 @@ export async function POST(request: NextRequest) {
     const now = new Date();
 
     // Get email from JWT or first-auth data
-    let email = userInfo.email ?? firstAuthData?.email;
+    // Apple only sends email on first auth, but we can look up returning users by providerAccountId
+    const email = userInfo.email ?? firstAuthData?.email;
 
-    // Check if OAuth account already exists
-    const existingOAuthAccount = await db
-      .select({
-        id: oauthAccounts.id,
-        userId: oauthAccounts.userId,
-      })
-      .from(oauthAccounts)
-      .where(
-        and(eq(oauthAccounts.provider, "apple"), eq(oauthAccounts.providerAccountId, userInfo.sub))
-      )
-      .limit(1);
-
-    let userId: string;
-    let userEmail: string;
-
-    if (existingOAuthAccount.length > 0) {
-      // OAuth account exists - log in as that user
-      userId = existingOAuthAccount[0].userId;
-
-      // Get user details
-      const userResult = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-
-      if (userResult.length === 0) {
-        console.error("Orphaned OAuth account found");
-        return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
-      }
-
-      userEmail = userResult[0].email;
-
-      // Update OAuth tokens
-      await db
-        .update(oauthAccounts)
-        .set({
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken ?? null,
-          expiresAt: tokens.expiresAt ?? null,
-        })
-        .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
-    } else {
-      // OAuth account doesn't exist
-      // Apple only sends email on first auth - it MUST be present for new accounts
-      if (!email) {
-        return NextResponse.redirect(`${appUrl}/login?error=callback_failed`);
-      }
-
-      // Normalize email
-      email = email.toLowerCase();
-
-      // Check if email matches existing user
-      const existingUser = await db.select().from(users).where(eq(users.email, email)).limit(1);
-
-      if (existingUser.length > 0) {
-        // Link OAuth to existing user account
-        userId = existingUser[0].id;
-        userEmail = existingUser[0].email;
-
-        // Create OAuth account link
-        await db.insert(oauthAccounts).values({
-          id: generateUuidv7(),
-          userId,
-          provider: "apple",
-          providerAccountId: userInfo.sub,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken ?? null,
-          expiresAt: tokens.expiresAt ?? null,
-          createdAt: now,
-        });
-
-        // Mark email as verified if not already
-        if (!existingUser[0].emailVerifiedAt) {
-          await db
-            .update(users)
-            .set({
-              emailVerifiedAt: now,
-              updatedAt: now,
-            })
-            .where(eq(users.id, userId));
-        }
-      } else {
-        // Create new user and OAuth account
-        userId = generateUuidv7();
-        userEmail = email;
-
-        // Create user
-        await db.insert(users).values({
-          id: userId,
-          email: userEmail,
-          emailVerifiedAt: now,
-          passwordHash: null,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        // Create OAuth account
-        await db.insert(oauthAccounts).values({
-          id: generateUuidv7(),
-          userId,
-          provider: "apple",
-          providerAccountId: userInfo.sub,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken ?? null,
-          expiresAt: tokens.expiresAt ?? null,
-          createdAt: now,
-        });
-      }
-    }
+    // Process OAuth callback - handles existing accounts, linking, and new user creation
+    // Note: inviteToken is passed through from Redis state data
+    const oauthResult = await processOAuthCallback({
+      provider: "apple",
+      providerAccountId: userInfo.sub,
+      email,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+      inviteToken: appleResult.inviteToken,
+    });
 
     // Create session
     const sessionId = generateUuidv7();
@@ -206,7 +111,7 @@ export async function POST(request: NextRequest) {
 
     await db.insert(sessions).values({
       id: sessionId,
-      userId,
+      userId: oauthResult.userId,
       tokenHash,
       userAgent,
       ipAddress,

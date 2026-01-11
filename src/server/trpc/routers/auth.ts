@@ -33,6 +33,7 @@ import {
   isAppleOAuthEnabled,
   GOOGLE_DOCS_READONLY_SCOPE,
   createUser,
+  processOAuthCallback,
 } from "@/server/auth";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 
@@ -417,121 +418,17 @@ export const authRouter = createTRPCRouter({
       const { userInfo, tokens, scopes, inviteToken } = googleResult;
       const now = new Date();
 
-      // Check if OAuth account already exists
-      const existingOAuthAccount = await ctx.db
-        .select({
-          id: oauthAccounts.id,
-          userId: oauthAccounts.userId,
-        })
-        .from(oauthAccounts)
-        .where(
-          and(
-            eq(oauthAccounts.provider, "google"),
-            eq(oauthAccounts.providerAccountId, userInfo.sub)
-          )
-        )
-        .limit(1);
-
-      let userId: string;
-      let userEmail: string;
-      let userCreatedAt: Date;
-      let isNewUser = false;
-
-      if (existingOAuthAccount.length > 0) {
-        // OAuth account exists - log in as that user
-        userId = existingOAuthAccount[0].userId;
-
-        // Get user details
-        const userResult = await ctx.db.select().from(users).where(eq(users.id, userId)).limit(1);
-
-        if (userResult.length === 0) {
-          // Orphaned OAuth account - this shouldn't happen
-          throw errors.internal("User account not found");
-        }
-
-        userEmail = userResult[0].email;
-        userCreatedAt = userResult[0].createdAt;
-
-        // Update OAuth tokens and scopes
-        await ctx.db
-          .update(oauthAccounts)
-          .set({
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken ?? null,
-            expiresAt: tokens.expiresAt ?? null,
-            scopes,
-          })
-          .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
-      } else {
-        // OAuth account doesn't exist - check if email matches existing user
-        const existingUser = await ctx.db
-          .select()
-          .from(users)
-          .where(eq(users.email, userInfo.email.toLowerCase()))
-          .limit(1);
-
-        if (existingUser.length > 0) {
-          // Link OAuth to existing user account
-          userId = existingUser[0].id;
-          userEmail = existingUser[0].email;
-          userCreatedAt = existingUser[0].createdAt;
-
-          // Create OAuth account link
-          await ctx.db.insert(oauthAccounts).values({
-            id: generateUuidv7(),
-            userId,
-            provider: "google",
-            providerAccountId: userInfo.sub,
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken ?? null,
-            expiresAt: tokens.expiresAt ?? null,
-            scopes,
-            createdAt: now,
-          });
-
-          // Mark email as verified if not already (Google verified it)
-          if (!existingUser[0].emailVerifiedAt) {
-            await ctx.db
-              .update(users)
-              .set({
-                emailVerifiedAt: now,
-                updatedAt: now,
-              })
-              .where(eq(users.id, userId));
-          }
-        } else {
-          // Create new user and OAuth account in a transaction
-          const newUser = await ctx.db.transaction(async (tx) => {
-            // Create user (handles invite validation atomically)
-            const user = await createUser(tx, {
-              email: userInfo.email.toLowerCase(),
-              passwordHash: null,
-              emailVerified: true, // Google verified the email
-              inviteToken,
-            });
-
-            // Create OAuth account
-            await tx.insert(oauthAccounts).values({
-              id: generateUuidv7(),
-              userId: user.userId,
-              provider: "google",
-              providerAccountId: userInfo.sub,
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken ?? null,
-              expiresAt: tokens.expiresAt ?? null,
-              scopes,
-              createdAt: user.createdAt,
-            });
-
-            return user;
-          });
-
-          userId = newUser.userId;
-          userEmail = newUser.email;
-          userCreatedAt = newUser.createdAt;
-          isNewUser = true;
-        }
-      }
+      // Process OAuth callback - handles existing accounts, linking, and new user creation
+      const oauthResult = await processOAuthCallback({
+        provider: "google",
+        providerAccountId: userInfo.sub,
+        email: userInfo.email,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        scopes,
+        inviteToken,
+      });
 
       // Create session
       const sessionId = generateUuidv7();
@@ -547,7 +444,7 @@ export const authRouter = createTRPCRouter({
 
       await ctx.db.insert(sessions).values({
         id: sessionId,
-        userId,
+        userId: oauthResult.userId,
         tokenHash,
         userAgent,
         ipAddress,
@@ -558,12 +455,12 @@ export const authRouter = createTRPCRouter({
 
       return {
         user: {
-          id: userId,
-          email: userEmail,
-          createdAt: userCreatedAt,
+          id: oauthResult.userId,
+          email: oauthResult.email,
+          createdAt: oauthResult.createdAt,
         },
         sessionToken: token,
-        isNewUser,
+        isNewUser: oauthResult.isNewUser,
       };
     }),
 
@@ -708,131 +605,16 @@ export const authRouter = createTRPCRouter({
       // Apple always includes email in JWT on first auth, may not on subsequent auths
       const email = userInfo.email ?? firstAuthData?.email;
 
-      // Check if OAuth account already exists
-      const existingOAuthAccount = await ctx.db
-        .select({
-          id: oauthAccounts.id,
-          userId: oauthAccounts.userId,
-        })
-        .from(oauthAccounts)
-        .where(
-          and(
-            eq(oauthAccounts.provider, "apple"),
-            eq(oauthAccounts.providerAccountId, userInfo.sub)
-          )
-        )
-        .limit(1);
-
-      let userId: string;
-      let userEmail: string;
-      let userCreatedAt: Date;
-      let isNewUser = false;
-
-      if (existingOAuthAccount.length > 0) {
-        // OAuth account exists - log in as that user
-        userId = existingOAuthAccount[0].userId;
-
-        // Get user details
-        const userResult = await ctx.db.select().from(users).where(eq(users.id, userId)).limit(1);
-
-        if (userResult.length === 0) {
-          // Orphaned OAuth account - this shouldn't happen
-          throw errors.internal("User account not found");
-        }
-
-        userEmail = userResult[0].email;
-        userCreatedAt = userResult[0].createdAt;
-
-        // Update OAuth tokens
-        await ctx.db
-          .update(oauthAccounts)
-          .set({
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken ?? null,
-            expiresAt: tokens.expiresAt ?? null,
-          })
-          .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
-      } else {
-        // OAuth account doesn't exist
-        // Apple only sends email on first auth - it MUST be present for new accounts
-        if (!email) {
-          throw errors.oauthCallbackFailed(
-            "Email not provided. Please try signing in again and grant email permission."
-          );
-        }
-
-        // Normalize email (use const to preserve type narrowing)
-        const normalizedEmail = email.toLowerCase();
-
-        // Check if email matches existing user
-        const existingUser = await ctx.db
-          .select()
-          .from(users)
-          .where(eq(users.email, normalizedEmail))
-          .limit(1);
-
-        if (existingUser.length > 0) {
-          // Link OAuth to existing user account
-          userId = existingUser[0].id;
-          userEmail = existingUser[0].email;
-          userCreatedAt = existingUser[0].createdAt;
-
-          // Create OAuth account link
-          await ctx.db.insert(oauthAccounts).values({
-            id: generateUuidv7(),
-            userId,
-            provider: "apple",
-            providerAccountId: userInfo.sub,
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken ?? null,
-            expiresAt: tokens.expiresAt ?? null,
-            createdAt: now,
-          });
-
-          // Mark email as verified if not already (Apple verified it)
-          // Note: Even private relay emails are verified by Apple
-          if (!existingUser[0].emailVerifiedAt) {
-            await ctx.db
-              .update(users)
-              .set({
-                emailVerifiedAt: now,
-                updatedAt: now,
-              })
-              .where(eq(users.id, userId));
-          }
-        } else {
-          // Create new user and OAuth account in a transaction
-          // Note: Apple private relay emails work just like regular emails
-          const newUser = await ctx.db.transaction(async (tx) => {
-            // Create user (handles invite validation atomically)
-            const user = await createUser(tx, {
-              email: normalizedEmail,
-              passwordHash: null,
-              emailVerified: true, // Apple verified the email
-              inviteToken,
-            });
-
-            // Create OAuth account
-            await tx.insert(oauthAccounts).values({
-              id: generateUuidv7(),
-              userId: user.userId,
-              provider: "apple",
-              providerAccountId: userInfo.sub,
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken ?? null,
-              expiresAt: tokens.expiresAt ?? null,
-              createdAt: user.createdAt,
-            });
-
-            return user;
-          });
-
-          userId = newUser.userId;
-          userEmail = newUser.email;
-          userCreatedAt = newUser.createdAt;
-          isNewUser = true;
-        }
-      }
+      // Process OAuth callback - handles existing accounts, linking, and new user creation
+      const oauthResult = await processOAuthCallback({
+        provider: "apple",
+        providerAccountId: userInfo.sub,
+        email,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        inviteToken,
+      });
 
       // Create session
       const sessionId = generateUuidv7();
@@ -848,7 +630,7 @@ export const authRouter = createTRPCRouter({
 
       await ctx.db.insert(sessions).values({
         id: sessionId,
-        userId,
+        userId: oauthResult.userId,
         tokenHash,
         userAgent,
         ipAddress,
@@ -859,12 +641,12 @@ export const authRouter = createTRPCRouter({
 
       return {
         user: {
-          id: userId,
-          email: userEmail,
-          createdAt: userCreatedAt,
+          id: oauthResult.userId,
+          email: oauthResult.email,
+          createdAt: oauthResult.createdAt,
         },
         sessionToken: token,
-        isNewUser,
+        isNewUser: oauthResult.isNewUser,
       };
     }),
 
