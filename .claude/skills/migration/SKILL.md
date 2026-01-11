@@ -99,12 +99,14 @@ pnpm db:migrate
 pnpm db:migrate:test
 ```
 
-## Updating the Schema Dump
+## Verifying Migrations
 
-After migrations are applied, regenerate the schema dump:
+**When Docker/Postgres is available:** Always run the integration tests after writing a migration:
 
 ```bash
-pnpm db:schema
+pnpm test:integration
 ```
 
-This updates `drizzle/schema.sql` with the current database state.
+This runs the migrations against a real Postgres instance and updates `drizzle/schema.sql` with the current database state.
+
+**In cloud environments without Docker:** If you cannot run Docker, manually update `drizzle/schema.sql` as best you can to reflect your migration changes. The schema dump will be corrected automatically by a future run of the integration tests.

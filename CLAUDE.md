@@ -193,6 +193,7 @@ The User-Agent includes app version, git commit SHA, website URL, GitHub repo, a
 - Don't commit unless explicitly asked
 - Commit messages: imperative mood, explain why not what
 - One logical change per commit
+- If you see changes to `drizzle/schema.sql` unrelated to your current work, commit them separately - they may be leftover from previous migrations that couldn't update it (e.g., in environments without Docker)
 
 ## Background Jobs
 
