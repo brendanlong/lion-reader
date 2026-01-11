@@ -934,45 +934,6 @@ export const entriesRouter = createTRPCRouter({
     }),
 
   /**
-   * Get count of starred entries.
-   *
-   * @returns Total and unread counts for starred entries
-   */
-  starredCount: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/entries/starred/count",
-        tags: ["Entries"],
-        summary: "Get starred entries count",
-      },
-    })
-    .input(z.object({}).optional())
-    .output(
-      z.object({
-        total: z.number(),
-        unread: z.number(),
-      })
-    )
-    .query(async ({ ctx }) => {
-      const userId = ctx.session.user.id;
-
-      // Get total and unread starred counts in a single query using conditional aggregation
-      const result = await ctx.db
-        .select({
-          total: sql<number>`count(*)::int`,
-          unread: sql<number>`count(*) FILTER (WHERE ${userEntries.read} = false)::int`,
-        })
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.starred, true)));
-
-      return {
-        total: result[0]?.total ?? 0,
-        unread: result[0]?.unread ?? 0,
-      };
-    }),
-
-  /**
    * Get count of entries with optional filters.
    *
    * Entries are visible to a user only if they have a corresponding
@@ -980,8 +941,11 @@ export const entriesRouter = createTRPCRouter({
    *
    * @param feedId - Optional filter by feed ID
    * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
+   * @param uncategorized - Optional filter to show only entries from uncategorized feeds
    * @param type - Optional filter by entry type
    * @param excludeTypes - Optional types to exclude
+   * @param unreadOnly - Optional filter to count only unread entries
+   * @param starredOnly - Optional filter to count only starred entries
    * @returns Count of total and unread entries
    */
   count: protectedProcedure
@@ -1001,6 +965,8 @@ export const entriesRouter = createTRPCRouter({
           uncategorized: booleanQueryParam,
           type: feedTypeSchema.optional(),
           excludeTypes: z.array(feedTypeSchema).optional(),
+          unreadOnly: booleanQueryParam,
+          starredOnly: booleanQueryParam,
         })
         .optional()
     )
@@ -1070,6 +1036,16 @@ export const entriesRouter = createTRPCRouter({
           );
 
         conditions.push(inArray(entries.feedId, uncategorizedFeedIds));
+      }
+
+      // Apply unreadOnly filter
+      if (input?.unreadOnly) {
+        conditions.push(eq(userEntries.read, false));
+      }
+
+      // Apply starredOnly filter
+      if (input?.starredOnly) {
+        conditions.push(eq(userEntries.starred, true));
       }
 
       // Apply type filter if specified
