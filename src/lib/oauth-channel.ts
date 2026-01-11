@@ -54,7 +54,7 @@ export function broadcastOAuthComplete(redirectTo: string): void {
  * Check if OAuth has recently completed (for visibility change detection).
  * Returns the completion message if found and recent (within 5 minutes).
  */
-export function checkOAuthCompletion(): OAuthCompletionMessage | null {
+function checkOAuthCompletion(): OAuthCompletionMessage | null {
   try {
     const stored = localStorage.getItem(OAUTH_COMPLETION_KEY);
     if (!stored) return null;

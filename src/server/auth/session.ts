@@ -76,7 +76,7 @@ interface CachedSession {
  * Generates a secure session token.
  * Returns both the raw token (for client) and its hash (for storage).
  */
-export function generateSessionToken(): { token: string; tokenHash: string } {
+function generateSessionToken(): { token: string; tokenHash: string } {
   // Generate 32 random bytes, encode as base64url
   const token = crypto.randomBytes(32).toString("base64url");
 
@@ -97,7 +97,7 @@ function hashToken(token: string): string {
 /**
  * Calculates session expiry date
  */
-export function getSessionExpiry(): Date {
+function getSessionExpiry(): Date {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + SESSION_DURATION_DAYS);
   return expiresAt;
