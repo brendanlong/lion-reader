@@ -449,30 +449,13 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Use targeted invalidation to avoid refetching entries for feeds the user isn't viewing.
-        // Invalidate "all entries" view (no feedId filter)
-        utils.entries.list.invalidate({ feedId: undefined });
-        // Invalidate the specific feed's view
-        utils.entries.list.invalidate({ feedId: data.feedId });
-        // Invalidate unread-only views since new entries are unread by default
-        utils.entries.list.invalidate({ unreadOnly: true });
+        // Invalidate all entry list queries since new entries affect multiple views
+        // (The feedId-based targeting was removed when we switched to subscription-centric API)
+        utils.entries.list.invalidate();
 
-        // Increment the unread count for the specific subscription instead of invalidating all
-        utils.subscriptions.list.setData(undefined, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            items: oldData.items.map((item) => {
-              if (item.id === data.feedId) {
-                return {
-                  ...item,
-                  unreadCount: item.unreadCount + 1,
-                };
-              }
-              return item;
-            }),
-          };
-        });
+        // Invalidate subscription list to refresh unread counts
+        // (We can't optimistically update because new_entry event has feedId, not subscriptionId)
+        utils.subscriptions.list.invalidate();
       } else if (data.type === "entry_updated") {
         utils.entries.get.invalidate({ id: data.entryId });
         utils.entries.list.invalidate();
@@ -566,10 +549,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         // always come with an entry. This handles the race condition where the
         // new_entry event might arrive before we've subscribed to the feed channel.
         if (data.feed.type === "email") {
-          // Invalidate All Items view (feedId undefined matches all unreadOnly variants)
-          utils.entries.list.invalidate({ feedId: undefined });
-          // Invalidate the specific feed's view (probably not cached yet, but for consistency)
-          utils.entries.list.invalidate({ feedId: data.feedId });
+          utils.entries.list.invalidate();
         }
         // For non-email feeds, no invalidation needed - cache is already updated!
       } else if (data.type === "subscription_deleted") {

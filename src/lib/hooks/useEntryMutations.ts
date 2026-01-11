@@ -17,9 +17,9 @@ import { trpc } from "@/lib/trpc/client";
  */
 export interface EntryListFilters {
   /**
-   * Filter by specific feed ID.
+   * Filter by specific subscription ID.
    */
-  feedId?: string;
+  subscriptionId?: string;
 
   /**
    * Filter by specific tag ID.
@@ -63,9 +63,9 @@ export interface UseEntryMutationsOptions {
  */
 export interface MarkAllReadOptions {
   /**
-   * Filter by specific feed ID.
+   * Filter by specific subscription ID.
    */
-  feedId?: string;
+  subscriptionId?: string;
 
   /**
    * Filter by specific tag ID.
@@ -172,14 +172,14 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
   // This must match the filters used by the EntryList component
   const queryFilters = useMemo(
     () => ({
-      feedId: listFilters?.feedId,
+      subscriptionId: listFilters?.subscriptionId,
       tagId: listFilters?.tagId,
       unreadOnly: listFilters?.unreadOnly,
       starredOnly: listFilters?.starredOnly,
       sortOrder: listFilters?.sortOrder,
     }),
     [
-      listFilters?.feedId,
+      listFilters?.subscriptionId,
       listFilters?.tagId,
       listFilters?.unreadOnly,
       listFilters?.starredOnly,

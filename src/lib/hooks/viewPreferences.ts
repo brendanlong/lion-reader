@@ -8,7 +8,7 @@
 /**
  * View types for storing separate preferences.
  */
-export type ViewType = "all" | "starred" | "feed" | "tag" | "saved" | "uncategorized";
+export type ViewType = "all" | "starred" | "subscription" | "tag" | "saved" | "uncategorized";
 
 /**
  * View preference settings.
