@@ -234,14 +234,11 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
           return {
             ...oldData,
             items: oldData.items.map((item) => {
-              const feedCount = data.feedUnreadCounts.find((f) => f.feedId === item.feed.id);
+              const feedCount = data.feedUnreadCounts.find((f) => f.feedId === item.id);
               if (feedCount) {
                 return {
                   ...item,
-                  subscription: {
-                    ...item.subscription,
-                    unreadCount: feedCount.unreadCount,
-                  },
+                  unreadCount: feedCount.unreadCount,
                 };
               }
               return item;
