@@ -91,15 +91,6 @@ enum class SortOrder(
 }
 
 /**
- * Response from starred entries count endpoint.
- */
-@Serializable
-data class StarredCountResponse(
-    val total: Int,
-    val unread: Int,
-)
-
-/**
  * Response from entries count endpoint.
  */
 @Serializable
