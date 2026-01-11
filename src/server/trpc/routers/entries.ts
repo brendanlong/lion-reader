@@ -89,7 +89,8 @@ const booleanQueryParam = z
  */
 const entryListItemSchema = z.object({
   id: z.string(),
-  feedId: z.string(),
+  subscriptionId: z.string().nullable(), // null for orphaned starred entries
+  feedId: z.string(), // @deprecated Use subscriptionId instead
   type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -108,7 +109,8 @@ const entryListItemSchema = z.object({
  */
 const entryFullSchema = z.object({
   id: z.string(),
-  feedId: z.string(),
+  subscriptionId: z.string().nullable(), // null for orphaned starred entries
+  feedId: z.string(), // @deprecated Use subscriptionId instead
   type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -513,8 +515,9 @@ export const entriesRouter = createTRPCRouter({
         }
       }
 
-      // Query entries with user state
+      // Query entries with user state and subscription context
       // Inner join with user_entries enforces visibility
+      // Left join with subscriptions to get subscription_id (may be null for orphaned starred entries)
       // We fetch one extra to determine if there are more results
       const orderByClause =
         sortOrder === "newest"
@@ -525,10 +528,19 @@ export const entriesRouter = createTRPCRouter({
           entry: entries,
           feed: feeds,
           userState: userEntries,
+          subscriptionId: subscriptions.id,
         })
         .from(entries)
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .leftJoin(
+          subscriptions,
+          and(
+            eq(subscriptions.userId, userId),
+            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
         .where(and(...conditions))
         .orderBy(...orderByClause)
         .limit(limit + 1);
@@ -538,8 +550,9 @@ export const entriesRouter = createTRPCRouter({
       const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
 
       // Format the output
-      const items = resultEntries.map(({ entry, feed, userState }) => ({
+      const items = resultEntries.map(({ entry, feed, userState, subscriptionId }) => ({
         id: entry.id,
+        subscriptionId,
         feedId: entry.feedId,
         type: entry.type,
         url: entry.url,
@@ -592,17 +605,27 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Get the entry with feed and user state
+      // Get the entry with feed, user state, and subscription context
       // Permission check uses shared visibility condition
+      // Left join with subscriptions to get subscription_id (may be null for orphaned starred entries)
       const result = await ctx.db
         .select({
           entry: entries,
           feed: feeds,
           userState: userEntries,
+          subscriptionId: subscriptions.id,
         })
         .from(entries)
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .leftJoin(
+          subscriptions,
+          and(
+            eq(subscriptions.userId, userId),
+            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
         .where(
           and(
             eq(entries.id, input.id),
@@ -616,11 +639,12 @@ export const entriesRouter = createTRPCRouter({
         throw errors.entryNotFound();
       }
 
-      const { entry, feed, userState } = result[0];
+      const { entry, feed, userState, subscriptionId } = result[0];
 
       return {
         entry: {
           id: entry.id,
+          subscriptionId,
           feedId: entry.feedId,
           type: entry.type,
           url: entry.url,
