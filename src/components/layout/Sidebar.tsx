@@ -57,7 +57,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         if (!oldData) return oldData;
         return {
           ...oldData,
-          items: oldData.items.filter((item) => item.subscription.id !== variables.id),
+          items: oldData.items.filter((item) => item.id !== variables.id),
         };
       });
 
@@ -91,7 +91,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   // Prefetch entry list on mousedown for faster navigation
   const prefetchEntryList = useCallback(
     (options: {
-      feedId?: string;
+      subscriptionId?: string;
       tagId?: string;
       type?: "saved";
       starredOnly?: boolean;
@@ -101,7 +101,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     }) => {
       utils.entries.list.prefetchInfinite(
         {
-          feedId: options.feedId,
+          subscriptionId: options.subscriptionId,
           tagId: options.tagId,
           type: options.type,
           starredOnly: options.starredOnly,
@@ -143,12 +143,12 @@ export function Sidebar({ onClose }: SidebarProps) {
     });
   }, [prefetchEntryList, savedPrefs.showUnreadOnly, savedPrefs.sortOrder]);
 
-  const handleFeedMouseDown = useCallback(
-    (feedId: string) => {
-      // Use sync function for per-feed preferences (can't call hooks in callbacks)
-      const prefs = getViewPreferences("feed", feedId);
+  const handleSubscriptionMouseDown = useCallback(
+    (subscriptionId: string) => {
+      // Use sync function for per-subscription preferences (can't call hooks in callbacks)
+      const prefs = getViewPreferences("feed", subscriptionId);
       prefetchEntryList({
-        feedId,
+        subscriptionId,
         unreadOnly: prefs.showUnreadOnly,
         sortOrder: prefs.sortOrder,
       });
@@ -180,8 +180,8 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   // Calculate total unread count (subscriptions + saved articles)
   const totalUnreadCount =
-    (subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.subscription.unreadCount, 0) ??
-      0) + (savedCountQuery.data?.unread ?? 0);
+    (subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.unreadCount, 0) ?? 0) +
+    (savedCountQuery.data?.unread ?? 0);
 
   // Hook for managing tag expansion state
   const { isExpanded, toggleExpanded } = useExpandedTags();
@@ -193,10 +193,10 @@ export function Sidebar({ onClose }: SidebarProps) {
     const uncategorized: SubscriptionItem[] = [];
 
     for (const item of subscriptionsQuery.data?.items ?? []) {
-      if (item.subscription.tags.length === 0) {
+      if (item.tags.length === 0) {
         uncategorized.push(item);
       } else {
-        for (const tag of item.subscription.tags) {
+        for (const tag of item.tags) {
           const existing = byTag.get(tag.id) ?? [];
           existing.push(item);
           byTag.set(tag.id, existing);
@@ -217,10 +217,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   // Compute uncategorized stats
   const uncategorizedUnreadCount = useMemo(() => {
-    return subscriptionsByTag.uncategorized.reduce(
-      (sum, item) => sum + item.subscription.unreadCount,
-      0
-    );
+    return subscriptionsByTag.uncategorized.reduce((sum, item) => sum + item.unreadCount, 0);
   }, [subscriptionsByTag.uncategorized]);
 
   const isActiveLink = (href: string) => {
@@ -414,28 +411,28 @@ export function Sidebar({ onClose }: SidebarProps) {
                     {/* Nested feeds (when expanded) */}
                     {expanded && (
                       <ul className="mt-1 ml-6 space-y-1">
-                        {tagFeeds.map(({ subscription, feed }) => {
-                          const title = subscription.customTitle || feed.title || "Untitled Feed";
-                          const feedHref = `/feed/${feed.id}`;
-                          const isFeedActive = pathname === feedHref;
+                        {tagFeeds.map((sub) => {
+                          const displayTitle = sub.title || "Untitled Feed";
+                          const subHref = `/feed/${sub.id}`;
+                          const isSubActive = pathname === subHref;
 
                           return (
-                            <li key={subscription.id} className="group relative">
+                            <li key={sub.id} className="group relative">
                               <Link
-                                href={feedHref}
+                                href={subHref}
                                 prefetch={false}
                                 onClick={handleClose}
-                                onMouseDown={() => handleFeedMouseDown(feed.id)}
+                                onMouseDown={() => handleSubscriptionMouseDown(sub.id)}
                                 className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
-                                  isFeedActive
+                                  isSubActive
                                     ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                                     : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                                 }`}
                               >
-                                <span className="truncate pr-8">{title}</span>
-                                {subscription.unreadCount > 0 && (
+                                <span className="truncate pr-8">{displayTitle}</span>
+                                {sub.unreadCount > 0 && (
                                   <span className="shrink-0 text-xs text-zinc-500 group-hover:hidden dark:text-zinc-400">
-                                    ({subscription.unreadCount})
+                                    ({sub.unreadCount})
                                   </span>
                                 )}
                               </Link>
@@ -447,15 +444,16 @@ export function Sidebar({ onClose }: SidebarProps) {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setEditTarget({
-                                      id: subscription.id,
-                                      title,
-                                      customTitle: subscription.customTitle,
-                                      tagIds: subscription.tags.map((t) => t.id),
+                                      id: sub.id,
+                                      title: displayTitle,
+                                      customTitle:
+                                        sub.title !== sub.originalTitle ? sub.title : null,
+                                      tagIds: sub.tags.map((t) => t.id),
                                     });
                                   }}
                                   className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
                                   title="Edit subscription"
-                                  aria-label={`Edit ${title}`}
+                                  aria-label={`Edit ${displayTitle}`}
                                 >
                                   <svg
                                     className="h-3.5 w-3.5"
@@ -477,13 +475,13 @@ export function Sidebar({ onClose }: SidebarProps) {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setUnsubscribeTarget({
-                                      id: subscription.id,
-                                      title,
+                                      id: sub.id,
+                                      title: displayTitle,
                                     });
                                   }}
                                   className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
                                   title="Unsubscribe"
-                                  aria-label={`Unsubscribe from ${title}`}
+                                  aria-label={`Unsubscribe from ${displayTitle}`}
                                 >
                                   <svg
                                     className="h-3.5 w-3.5"
@@ -582,28 +580,28 @@ export function Sidebar({ onClose }: SidebarProps) {
                   {/* Nested uncategorized feeds (when expanded) */}
                   {isExpanded("uncategorized") && (
                     <ul className="mt-1 ml-6 space-y-1">
-                      {subscriptionsByTag.uncategorized.map(({ subscription, feed }) => {
-                        const title = subscription.customTitle || feed.title || "Untitled Feed";
-                        const feedHref = `/feed/${feed.id}`;
-                        const isFeedActive = pathname === feedHref;
+                      {subscriptionsByTag.uncategorized.map((sub) => {
+                        const displayTitle = sub.title || "Untitled Feed";
+                        const subHref = `/feed/${sub.id}`;
+                        const isSubActive = pathname === subHref;
 
                         return (
-                          <li key={subscription.id} className="group relative">
+                          <li key={sub.id} className="group relative">
                             <Link
-                              href={feedHref}
+                              href={subHref}
                               prefetch={false}
                               onClick={handleClose}
-                              onMouseDown={() => handleFeedMouseDown(feed.id)}
+                              onMouseDown={() => handleSubscriptionMouseDown(sub.id)}
                               className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
-                                isFeedActive
+                                isSubActive
                                   ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                                   : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                               }`}
                             >
-                              <span className="truncate pr-8">{title}</span>
-                              {subscription.unreadCount > 0 && (
+                              <span className="truncate pr-8">{displayTitle}</span>
+                              {sub.unreadCount > 0 && (
                                 <span className="shrink-0 text-xs text-zinc-500 group-hover:hidden dark:text-zinc-400">
-                                  ({subscription.unreadCount})
+                                  ({sub.unreadCount})
                                 </span>
                               )}
                             </Link>
@@ -615,15 +613,15 @@ export function Sidebar({ onClose }: SidebarProps) {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setEditTarget({
-                                    id: subscription.id,
-                                    title,
-                                    customTitle: subscription.customTitle,
-                                    tagIds: subscription.tags.map((t) => t.id),
+                                    id: sub.id,
+                                    title: displayTitle,
+                                    customTitle: sub.title !== sub.originalTitle ? sub.title : null,
+                                    tagIds: sub.tags.map((t) => t.id),
                                   });
                                 }}
                                 className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
                                 title="Edit subscription"
-                                aria-label={`Edit ${title}`}
+                                aria-label={`Edit ${displayTitle}`}
                               >
                                 <svg
                                   className="h-3.5 w-3.5"
@@ -645,13 +643,13 @@ export function Sidebar({ onClose }: SidebarProps) {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setUnsubscribeTarget({
-                                    id: subscription.id,
-                                    title,
+                                    id: sub.id,
+                                    title: displayTitle,
                                   });
                                 }}
                                 className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
                                 title="Unsubscribe"
-                                aria-label={`Unsubscribe from ${title}`}
+                                aria-label={`Unsubscribe from ${displayTitle}`}
                               >
                                 <svg
                                   className="h-3.5 w-3.5"
