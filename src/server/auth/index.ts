@@ -66,3 +66,11 @@ export {
 
 // Signup helper
 export { createUser, type CreateUserParams, type CreateUserResult } from "./signup";
+
+// OAuth callback processing
+export {
+  processOAuthCallback,
+  type OAuthProvider,
+  type ProcessOAuthCallbackParams,
+  type ProcessOAuthCallbackResult,
+} from "./oauth/callback";

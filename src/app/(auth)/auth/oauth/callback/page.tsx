@@ -37,6 +37,19 @@ function getErrorCode(message: string): string {
   if (message.includes("already linked")) {
     return "already_linked";
   }
+  // Invite-related errors
+  if (message.includes("invite is required")) {
+    return "invite_required";
+  }
+  if (message.includes("Invalid invite")) {
+    return "invite_invalid";
+  }
+  if (message.includes("expired")) {
+    return "invite_expired";
+  }
+  if (message.includes("already been used")) {
+    return "invite_already_used";
+  }
   return "callback_failed";
 }
 
