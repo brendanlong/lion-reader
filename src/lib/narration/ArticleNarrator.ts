@@ -22,6 +22,15 @@
  */
 
 import { isFirefox } from "./feature-detection";
+import {
+  DEFAULT_RATE,
+  DEFAULT_PITCH,
+  MIN_RATE,
+  MAX_RATE,
+  MIN_PITCH,
+  MAX_PITCH,
+  clamp,
+} from "./constants";
 
 /**
  * Possible states for the narration playback.
@@ -46,43 +55,6 @@ export interface NarrationState {
  * Callback type for state change notifications.
  */
 export type StateChangeCallback = (state: NarrationState) => void;
-
-/**
- * Default rate for speech synthesis (1.0 = normal speed).
- */
-const DEFAULT_RATE = 1.0;
-
-/**
- * Default pitch for speech synthesis (1.0 = normal pitch).
- */
-const DEFAULT_PITCH = 1.0;
-
-/**
- * Minimum allowed rate value.
- */
-const MIN_RATE = 0.5;
-
-/**
- * Maximum allowed rate value.
- */
-const MAX_RATE = 2.0;
-
-/**
- * Minimum allowed pitch value.
- */
-const MIN_PITCH = 0.5;
-
-/**
- * Maximum allowed pitch value.
- */
-const MAX_PITCH = 2.0;
-
-/**
- * Clamps a value between a minimum and maximum.
- */
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 /**
  * ArticleNarrator provides paragraph-based narration for articles using the Web Speech API.

@@ -12,6 +12,7 @@ import type { TTSProvider, TTSVoice, SpeakOptions } from "./types";
 import { ENHANCED_VOICES, findEnhancedVoice } from "./enhanced-voices";
 import { splitIntoSentences } from "./sentence-splitter";
 import { concatenateAudioBuffers, DEFAULT_SENTENCE_GAP_SECONDS } from "./audio-buffer-utils";
+import { DEFAULT_RATE, MIN_RATE, MAX_RATE, clamp } from "./constants";
 
 /**
  * Dynamically imports the piper-tts-web module.
@@ -64,28 +65,6 @@ const CUSTOM_WASM_PATHS = {
   piperWasm:
     "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm",
 };
-
-/**
- * Default speech rate (1.0 = normal speed).
- */
-const DEFAULT_RATE = 1.0;
-
-/**
- * Minimum allowed rate value.
- */
-const MIN_RATE = 0.5;
-
-/**
- * Maximum allowed rate value.
- */
-const MAX_RATE = 2.0;
-
-/**
- * Clamps a value between a minimum and maximum.
- */
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 /**
  * Error thrown when a voice is not downloaded.
