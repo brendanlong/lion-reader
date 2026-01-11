@@ -20,9 +20,13 @@ export default async function SavedArticlesPage() {
     await queryClient.prefetchInfiniteQuery({
       queryKey: [
         ["entries", "list"],
-        { input: { type: "saved", unreadOnly: true, sortOrder: "newest", limit: 20 }, type: "infinite" },
+        {
+          input: { type: "saved", unreadOnly: true, sortOrder: "newest", limit: 20 },
+          type: "infinite",
+        },
       ],
-      queryFn: () => caller.entries.list({ type: "saved", unreadOnly: true, sortOrder: "newest", limit: 20 }),
+      queryFn: () =>
+        caller.entries.list({ type: "saved", unreadOnly: true, sortOrder: "newest", limit: 20 }),
       initialPageParam: undefined,
     });
   }

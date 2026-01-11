@@ -37,8 +37,8 @@ export default async function StarredEntriesPage() {
 
     // Prefetch starred count for unread count display
     await queryClient.prefetchQuery({
-      queryKey: [["entries", "starredCount"], { input: undefined, type: "query" }],
-      queryFn: () => caller.entries.starredCount(),
+      queryKey: [["entries", "count"], { input: { starredOnly: true }, type: "query" }],
+      queryFn: () => caller.entries.count({ starredOnly: true }),
     });
   }
 

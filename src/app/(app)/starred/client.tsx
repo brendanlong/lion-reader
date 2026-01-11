@@ -42,7 +42,7 @@ function StarredEntriesContent() {
   });
 
   // Get starred entries count (total and unread)
-  const starredCountQuery = trpc.entries.starredCount.useQuery();
+  const starredCountQuery = trpc.entries.count.useQuery({ starredOnly: true });
   const unreadStarredCount = starredCountQuery.data?.unread ?? 0;
 
   // Entry mutations with optimistic updates
