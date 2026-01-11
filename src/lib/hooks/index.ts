@@ -10,6 +10,8 @@ export { useSavedArticleKeyboardShortcuts } from "./useSavedArticleKeyboardShort
 
 export { useViewPreferences, getViewPreferences } from "./useViewPreferences";
 
+export { useUrlViewPreferences, parseViewPreferencesFromParams } from "./useUrlViewPreferences";
+
 export { useEntryMutations, type EntryListFilters } from "./useEntryMutations";
 
 export { useSavedArticleMutations } from "./useSavedArticleMutations";

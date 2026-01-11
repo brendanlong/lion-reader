@@ -18,7 +18,7 @@ import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import {
   useSavedArticleKeyboardShortcuts,
   useSavedArticleMutations,
-  useViewPreferences,
+  useUrlViewPreferences,
   useEntryUrlState,
 } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
@@ -33,7 +33,7 @@ function SavedArticlesContent() {
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
-    useViewPreferences("saved");
+    useUrlViewPreferences("saved");
   const utils = trpc.useUtils();
 
   // Use the consolidated mutations hook with list filters

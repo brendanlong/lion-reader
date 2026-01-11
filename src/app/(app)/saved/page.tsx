@@ -2,31 +2,52 @@
  * Saved Articles Page
  *
  * Server component that prefetches data for the saved articles view.
- * The actual UI is rendered by the client component.
+ * Reads view preferences from URL query params for accurate prefetching.
  */
 
 import { dehydrate } from "@tanstack/react-query";
 import { createServerQueryClient, createServerCaller } from "@/lib/trpc/server";
 import { HydrationBoundary } from "@/lib/trpc/provider";
 import { SavedArticlesClient } from "./client";
+import { getViewPreferences } from "@/lib/hooks";
 
-export default async function SavedArticlesPage() {
+interface PageProps {
+  searchParams: Promise<{
+    unreadOnly?: string;
+    sort?: string;
+  }>;
+}
+
+export default async function SavedArticlesPage({ searchParams }: PageProps) {
+  const params = await searchParams;
+
+  // Get defaults from localStorage pattern (server will use defaults)
+  const defaults = getViewPreferences("saved");
+
+  // Parse URL params with fallback to defaults
+  const unreadOnly =
+    params.unreadOnly === "false"
+      ? false
+      : params.unreadOnly === "true"
+        ? true
+        : defaults.showUnreadOnly;
+  const sortOrder =
+    params.sort === "oldest" ? "oldest" : params.sort === "newest" ? "newest" : defaults.sortOrder;
+
   const queryClient = createServerQueryClient();
   const { caller, session } = await createServerCaller();
 
   if (session) {
-    // Prefetch saved articles list (infinite query)
-    // Uses default view preferences: unreadOnly=true, sortOrder="newest"
+    // Prefetch saved articles list with URL-specified filters
     await queryClient.prefetchInfiniteQuery({
       queryKey: [
         ["entries", "list"],
         {
-          input: { type: "saved", unreadOnly: true, sortOrder: "newest", limit: 20 },
+          input: { type: "saved", unreadOnly, sortOrder, limit: 20 },
           type: "infinite",
         },
       ],
-      queryFn: () =>
-        caller.entries.list({ type: "saved", unreadOnly: true, sortOrder: "newest", limit: 20 }),
+      queryFn: () => caller.entries.list({ type: "saved", unreadOnly, sortOrder, limit: 20 }),
       initialPageParam: undefined,
     });
   }

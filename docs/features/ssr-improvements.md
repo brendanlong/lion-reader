@@ -9,12 +9,6 @@ Currently, all data-fetching pages in the app use `'use client'` and fetch data 
 - **Slower perceived performance** - Users see loading spinners instead of content
 - **Worse SEO** (if applicable) - Search engines see empty shells
 
-### Current State
-
-- **17 of 17 data-fetching pages** use `'use client'` and client-side tRPC queries
-- **No auth middleware** - Authentication is checked client-side via tRPC, meaning unauthenticated users load the full app shell before being redirected
-- **Good example exists** - `/extension/save/page.tsx` demonstrates proper server-side auth, data fetching, and redirects
-
 ### Intentional Exceptions (No Changes Needed)
 
 - **Webhook routes** - Correctly use `export const dynamic = 'force-dynamic'` since they must process fresh incoming data
@@ -22,17 +16,17 @@ Currently, all data-fetching pages in the app use `'use client'` and fetch data 
 
 ## Solution
 
-### 1. Auth Middleware
+### 1. Auth Proxy
 
-Add Next.js middleware to check authentication before pages render. This provides:
+Next.js 16 uses `proxy.ts` (replacing the deprecated `middleware.ts`) to check authentication before pages render. This provides:
 
 - Faster redirects for unauthenticated users (no need to load app shell)
 - Consistent auth checking across all protected routes
 
-**Implementation:**
+**Implementation:** `src/proxy.ts`
 
 ```typescript
-// src/middleware.ts
+// src/proxy.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -44,10 +38,11 @@ const PUBLIC_PATHS = [
   "/auth/oauth/complete",
   "/api/",
   "/_next/",
+  "/extension/",
   "/favicon.ico",
 ];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow public paths
@@ -75,109 +70,105 @@ export const config = {
 
 Use tRPC's server-side calling pattern with React Query's hydration to prefetch data on the server and pass it to the client.
 
-**Infrastructure needed:**
+**Infrastructure:** `src/lib/trpc/server.ts`
 
-1. **Server-side query client factory** - Create query clients that can be used in server components
-2. **Hydration wrapper** - Dehydrate server state and pass to client
-3. **Page pattern** - Server component fetches data, client component receives hydrated state
+- `createServerQueryClient()` - Query client for server use
+- `createServerCaller()` - tRPC caller with server context
 
-**Pattern:**
+**Page Pattern:**
 
 ```typescript
 // Server component (page.tsx)
-import { createServerQueryClient, createServerCaller } from '@/lib/trpc/server';
-import { HydrationBoundary, dehydrate } from '@tanstack/react-query';
-import { AllPageClient } from './client';
+import { dehydrate } from "@tanstack/react-query";
+import { createServerQueryClient, createServerCaller } from "@/lib/trpc/server";
+import { HydrationBoundary } from "@/lib/trpc/provider";
+import { AllEntriesClient } from "./client";
 
-export default async function AllPage() {
+export default async function AllEntriesPage({ searchParams }) {
+  const params = await searchParams;
+  const unreadOnly = params.unreadOnly !== "false"; // default true
+  const sortOrder = params.sort === "oldest" ? "oldest" : "newest";
+
   const queryClient = createServerQueryClient();
-  const caller = await createServerCaller();
+  const { caller, session } = await createServerCaller();
 
-  // Prefetch data
-  await queryClient.prefetchInfiniteQuery({
-    queryKey: [['entries', 'list'], { type: 'query', input: { feedId: undefined } }],
-    queryFn: () => caller.entries.list({ feedId: undefined }),
-    initialPageParam: undefined,
-  });
+  if (session) {
+    await queryClient.prefetchInfiniteQuery({
+      queryKey: [
+        ["entries", "list"],
+        { input: { unreadOnly, sortOrder, limit: 20 }, type: "infinite" },
+      ],
+      queryFn: () => caller.entries.list({ unreadOnly, sortOrder, limit: 20 }),
+      initialPageParam: undefined,
+    });
+  }
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <AllPageClient />
+      <AllEntriesClient />
     </HydrationBoundary>
   );
 }
-
-// Client component (client.tsx)
-'use client';
-// ... existing client code, useQuery calls will use hydrated data
 ```
 
-## Implementation Plan
+### 3. URL-Based View Preferences
 
-### Phase 1: Auth Middleware (Low Risk)
+View preferences (unreadOnly, sortOrder) are synced to URL query params:
 
-1. Create `src/middleware.ts` with session cookie checking
-2. Test that protected routes redirect to login
-3. Test that public routes remain accessible
-4. Test that login redirect preserves the original URL
+- `/all?unreadOnly=false&sort=oldest` - Show all entries, oldest first
+- `/starred?sort=newest` - Show unread starred entries (default), newest first
 
-### Phase 2: Prefetching Infrastructure
+This enables:
 
-1. Create `src/lib/trpc/server.ts` with:
-   - `createServerQueryClient()` - Query client for server use
-   - `createServerCaller()` - tRPC caller with server context
-2. Update `TRPCProvider` to accept initial dehydrated state
-3. Create helper utilities for common prefetch patterns
+- Server-side prefetching with correct filters
+- Shareable/bookmarkable filtered views
+- Browser back/forward navigation through filter changes
 
-### Phase 3: Migrate Pages (Incremental)
+## Implementation Status
 
-Convert pages one at a time, starting with highest-traffic pages:
+### Completed
 
-1. `/all` - Main entry list (most used)
-2. `/feed/[feedId]` - Single feed view
-3. `/tag/[tagId]` - Tag view
-4. `/starred` - Starred entries
-5. `/saved` - Saved articles
-6. Settings pages (lower priority)
+- [x] Auth proxy (`src/proxy.ts`)
+- [x] Server-side prefetching infrastructure (`src/lib/trpc/server.ts`)
+- [x] `/all` page conversion
+- [x] `/feed/[feedId]` page conversion
+- [x] `/tag/[tagId]` page conversion
+- [x] `/starred` page conversion
+- [x] `/saved` page conversion
 
-Each page conversion:
+### Not Converting (Intentionally)
 
-1. Create server component wrapper
-2. Move existing code to `client.tsx`
-3. Add prefetch calls for main data queries
-4. Test hydration works correctly
+- `/subscribe` - All queries are manually triggered by user input
+- Settings pages - Lower priority, complex state management
 
-## Files to Modify
+## Files Modified
 
-### Phase 1
+### Infrastructure
 
-- `src/middleware.ts` (new)
+- `src/proxy.ts` - Auth proxy for early redirect
+- `src/lib/trpc/server.ts` - Server-side tRPC utilities
+- `src/lib/trpc/provider.tsx` - Re-exports HydrationBoundary
 
-### Phase 2
+### Pages
 
-- `src/lib/trpc/server.ts` (new)
-- `src/lib/trpc/provider.tsx` (update for hydration)
-
-### Phase 3
-
-- `src/app/(app)/all/page.tsx` → server wrapper + `client.tsx`
-- `src/app/(app)/feed/[feedId]/page.tsx` → server wrapper + `client.tsx`
-- `src/app/(app)/tag/[tagId]/page.tsx` → server wrapper + `client.tsx`
-- `src/app/(app)/starred/page.tsx` → server wrapper + `client.tsx`
-- `src/app/(app)/saved/page.tsx` → server wrapper + `client.tsx`
-- `src/app/(app)/subscribe/page.tsx` → server wrapper + `client.tsx`
+- `src/app/(app)/all/page.tsx` + `client.tsx`
+- `src/app/(app)/feed/[feedId]/page.tsx` + `client.tsx`
+- `src/app/(app)/tag/[tagId]/page.tsx` + `client.tsx`
+- `src/app/(app)/starred/page.tsx` + `client.tsx`
+- `src/app/(app)/saved/page.tsx` + `client.tsx`
 
 ## Testing Plan
 
-1. **Auth middleware**: Test login/logout flows, redirect preservation
+1. **Auth proxy**: Test login/logout flows, redirect preservation
 2. **Hydration**: Verify data appears immediately without loading spinners
 3. **Client interaction**: Verify mutations, pagination, and other interactions work after hydration
 4. **Error handling**: Test behavior when server prefetch fails
+5. **URL params**: Verify filter changes update URL and vice versa
 
 ## Rollback Plan
 
 Each phase is independent:
 
-- Middleware can be removed if issues arise
+- Proxy can be removed if issues arise
 - Pages can be reverted to client-only individually
 - No database changes required
