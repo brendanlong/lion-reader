@@ -17,4 +17,8 @@ export {
   handleVerificationChallenge,
   verifyHmacSignature,
   renewExpiringSubscriptions,
+  canUseWebSub,
+  subscribeToHub,
+  deactivateWebsub,
+  type SubscribeToHubResult,
 } from "./websub";
