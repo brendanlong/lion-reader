@@ -9,7 +9,15 @@ import { z } from "zod";
 import { eq, and, isNull, gt, inArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { entries, feeds, subscriptions, userEntries, tags } from "@/server/db/schema";
+import {
+  entries,
+  feeds,
+  subscriptions,
+  userEntries,
+  tags,
+  visibleEntries,
+  userFeeds,
+} from "@/server/db/schema";
 
 // ============================================================================
 // Constants
@@ -143,6 +151,7 @@ export const syncRouter = createTRPCRouter({
 
       // ========================================================================
       // Fetch new entries (created since timestamp)
+      // Using visible_entries view which handles visibility rules
       // ========================================================================
       let createdEntries: z.infer<typeof syncEntrySchema>[] = [];
 
@@ -150,15 +159,25 @@ export const syncRouter = createTRPCRouter({
         // Get entries created since the timestamp that are visible to this user
         const newEntryResults = await ctx.db
           .select({
-            entry: entries,
-            feed: feeds,
-            userState: userEntries,
+            id: visibleEntries.id,
+            feedId: visibleEntries.feedId,
+            type: visibleEntries.type,
+            url: visibleEntries.url,
+            title: visibleEntries.title,
+            author: visibleEntries.author,
+            summary: visibleEntries.summary,
+            publishedAt: visibleEntries.publishedAt,
+            fetchedAt: visibleEntries.fetchedAt,
+            read: visibleEntries.read,
+            starred: visibleEntries.starred,
+            siteName: visibleEntries.siteName,
+            createdAt: visibleEntries.createdAt,
+            feedTitle: feeds.title,
           })
-          .from(entries)
-          .innerJoin(feeds, eq(entries.feedId, feeds.id))
-          .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-          .where(and(eq(userEntries.userId, userId), gt(entries.createdAt, sinceDate)))
-          .orderBy(entries.createdAt)
+          .from(visibleEntries)
+          .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+          .where(and(eq(visibleEntries.userId, userId), gt(visibleEntries.createdAt, sinceDate)))
+          .orderBy(visibleEntries.createdAt)
           .limit(MAX_ENTRIES + 1);
 
         if (newEntryResults.length > MAX_ENTRIES) {
@@ -166,34 +185,43 @@ export const syncRouter = createTRPCRouter({
           newEntryResults.pop();
         }
 
-        createdEntries = newEntryResults.map(({ entry, feed, userState }) => ({
-          id: entry.id,
-          feedId: entry.feedId,
-          type: entry.type,
-          url: entry.url,
-          title: entry.title,
-          author: entry.author,
-          summary: entry.summary,
-          publishedAt: entry.publishedAt,
-          fetchedAt: entry.fetchedAt,
-          read: userState.read,
-          starred: userState.starred,
-          feedTitle: feed.title,
-          siteName: entry.siteName,
+        createdEntries = newEntryResults.map((row) => ({
+          id: row.id,
+          feedId: row.feedId,
+          type: row.type,
+          url: row.url,
+          title: row.title,
+          author: row.author,
+          summary: row.summary,
+          publishedAt: row.publishedAt,
+          fetchedAt: row.fetchedAt,
+          read: row.read,
+          starred: row.starred,
+          feedTitle: row.feedTitle,
+          siteName: row.siteName,
         }));
       } else {
         // Initial sync: get recent entries
         const recentEntryResults = await ctx.db
           .select({
-            entry: entries,
-            feed: feeds,
-            userState: userEntries,
+            id: visibleEntries.id,
+            feedId: visibleEntries.feedId,
+            type: visibleEntries.type,
+            url: visibleEntries.url,
+            title: visibleEntries.title,
+            author: visibleEntries.author,
+            summary: visibleEntries.summary,
+            publishedAt: visibleEntries.publishedAt,
+            fetchedAt: visibleEntries.fetchedAt,
+            read: visibleEntries.read,
+            starred: visibleEntries.starred,
+            siteName: visibleEntries.siteName,
+            feedTitle: feeds.title,
           })
-          .from(entries)
-          .innerJoin(feeds, eq(entries.feedId, feeds.id))
-          .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-          .where(eq(userEntries.userId, userId))
-          .orderBy(sql`COALESCE(${entries.publishedAt}, ${entries.fetchedAt}) DESC`)
+          .from(visibleEntries)
+          .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+          .where(eq(visibleEntries.userId, userId))
+          .orderBy(sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) DESC`)
           .limit(MAX_ENTRIES + 1);
 
         if (recentEntryResults.length > MAX_ENTRIES) {
@@ -201,20 +229,20 @@ export const syncRouter = createTRPCRouter({
           recentEntryResults.pop();
         }
 
-        createdEntries = recentEntryResults.map(({ entry, feed, userState }) => ({
-          id: entry.id,
-          feedId: entry.feedId,
-          type: entry.type,
-          url: entry.url,
-          title: entry.title,
-          author: entry.author,
-          summary: entry.summary,
-          publishedAt: entry.publishedAt,
-          fetchedAt: entry.fetchedAt,
-          read: userState.read,
-          starred: userState.starred,
-          feedTitle: feed.title,
-          siteName: entry.siteName,
+        createdEntries = recentEntryResults.map((row) => ({
+          id: row.id,
+          feedId: row.feedId,
+          type: row.type,
+          url: row.url,
+          title: row.title,
+          author: row.author,
+          summary: row.summary,
+          publishedAt: row.publishedAt,
+          fetchedAt: row.fetchedAt,
+          read: row.read,
+          starred: row.starred,
+          feedTitle: row.feedTitle,
+          siteName: row.siteName,
         }));
       }
 
@@ -261,6 +289,7 @@ export const syncRouter = createTRPCRouter({
       let createdSubscriptions: z.infer<typeof syncSubscriptionSchema>[] = [];
 
       if (sinceDate) {
+        // For incremental sync, need raw subscriptions table to filter by createdAt
         const newSubscriptionResults = await ctx.db
           .select({
             subscription: subscriptions,
@@ -286,24 +315,28 @@ export const syncRouter = createTRPCRouter({
           subscribedAt: subscription.subscribedAt,
         }));
       } else {
-        // Initial sync: get all active subscriptions
+        // Initial sync: use user_feeds view for all active subscriptions
         const allSubscriptionResults = await ctx.db
           .select({
-            subscription: subscriptions,
-            feed: feeds,
+            id: userFeeds.id,
+            feedId: userFeeds.feedId,
+            feedTitle: userFeeds.originalTitle,
+            feedUrl: userFeeds.url,
+            feedType: userFeeds.type,
+            customTitle: userFeeds.customTitle,
+            subscribedAt: userFeeds.subscribedAt,
           })
-          .from(subscriptions)
-          .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-          .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+          .from(userFeeds)
+          .where(eq(userFeeds.userId, userId));
 
-        createdSubscriptions = allSubscriptionResults.map(({ subscription, feed }) => ({
-          id: subscription.id,
-          feedId: subscription.feedId,
-          feedTitle: feed.title,
-          feedUrl: feed.url,
-          feedType: feed.type,
-          customTitle: subscription.customTitle,
-          subscribedAt: subscription.subscribedAt,
+        createdSubscriptions = allSubscriptionResults.map((row) => ({
+          id: row.id,
+          feedId: row.feedId,
+          feedTitle: row.feedTitle,
+          feedUrl: row.feedUrl,
+          feedType: row.feedType,
+          customTitle: row.customTitle,
+          subscribedAt: row.subscribedAt,
         }));
       }
 

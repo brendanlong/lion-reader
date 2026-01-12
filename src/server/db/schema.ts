@@ -6,6 +6,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  pgView,
   primaryKey,
   real,
   text,
@@ -440,6 +441,72 @@ export const userEntries = pgTable(
 );
 
 // ============================================================================
+// DATABASE VIEWS
+// These views simplify queries by abstracting common joins and visibility rules
+// ============================================================================
+
+/**
+ * user_feeds view - Active subscriptions with feed metadata merged.
+ * Uses subscription.id as the primary key, hiding the internal feedId from clients.
+ *
+ * Note: This view is defined in migration 0035_subscription_views.sql.
+ * The Drizzle definition here allows type-safe queries against the view.
+ */
+export const userFeeds = pgView("user_feeds", {
+  id: uuid("id").notNull(),
+  userId: uuid("user_id").notNull(),
+  subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull(),
+  feedId: uuid("feed_id").notNull(), // internal use only
+  feedIds: uuid("feed_ids").array().notNull(), // for entry visibility queries
+  customTitle: text("custom_title"),
+  type: feedTypeEnum("type").notNull(),
+  title: text("title"), // resolved title (custom or original)
+  originalTitle: text("original_title"), // feed's original title for rename UI
+  url: text("url"),
+  siteUrl: text("site_url"),
+  description: text("description"),
+}).existing();
+
+/**
+ * visible_entries view - Entries with visibility rules and subscription context.
+ * An entry is visible if:
+ * 1. User has a user_entries row for it, AND
+ * 2. Either the entry is from an active subscription, OR the entry is starred
+ *
+ * Note: This view is defined in migration 0035_subscription_views.sql.
+ * The Drizzle definition here allows type-safe queries against the view.
+ */
+export const visibleEntries = pgView("visible_entries", {
+  userId: uuid("user_id").notNull(),
+  id: uuid("id").notNull(),
+  feedId: uuid("feed_id").notNull(),
+  type: feedTypeEnum("type").notNull(),
+  guid: text("guid").notNull(),
+  url: text("url"),
+  title: text("title"),
+  author: text("author"),
+  contentOriginal: text("content_original"),
+  contentCleaned: text("content_cleaned"),
+  summary: text("summary"),
+  siteName: text("site_name"),
+  imageUrl: text("image_url"),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  contentHash: text("content_hash").notNull(),
+  spamScore: real("spam_score"),
+  isSpam: boolean("is_spam").notNull(),
+  listUnsubscribeMailto: text("list_unsubscribe_mailto"),
+  listUnsubscribeHttps: text("list_unsubscribe_https"),
+  listUnsubscribePost: boolean("list_unsubscribe_post"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  read: boolean("read").notNull(),
+  starred: boolean("starred").notNull(),
+  subscriptionId: uuid("subscription_id"), // nullable - null for orphaned starred entries
+}).existing();
+
+// ============================================================================
 // JOB QUEUE
 // See docs/job-queue-design.md for detailed documentation.
 // ============================================================================
@@ -733,3 +800,7 @@ export type NewBlockedSender = typeof blockedSenders.$inferInsert;
 
 export type OpmlImport = typeof opmlImports.$inferSelect;
 export type NewOpmlImport = typeof opmlImports.$inferInsert;
+
+// View types
+export type UserFeed = typeof userFeeds.$inferSelect;
+export type VisibleEntry = typeof visibleEntries.$inferSelect;
