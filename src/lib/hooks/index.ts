@@ -8,7 +8,7 @@ export { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
 export { useSavedArticleKeyboardShortcuts } from "./useSavedArticleKeyboardShortcuts";
 
-export { useViewPreferences, getViewPreferences } from "./useViewPreferences";
+export { getViewPreferences, type ViewType } from "./viewPreferences";
 
 export { useUrlViewPreferences, parseViewPreferencesFromParams } from "./useUrlViewPreferences";
 
