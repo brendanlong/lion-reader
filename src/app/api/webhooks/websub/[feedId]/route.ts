@@ -16,18 +16,12 @@ import {
   verifyHmacSignature,
   parseFeed,
   processEntries,
+  WEBSUB_BACKUP_POLL_INTERVAL_SECONDS,
 } from "@/server/feed";
 import { updateFeedJobNextRun } from "@/server/jobs/queue";
 import { trackWebsubNotificationReceived } from "@/server/metrics/metrics";
 import { logger } from "@/lib/logger";
 import { isValidUuid } from "@/lib/uuidv7";
-
-/**
- * Longer interval for backup polling when WebSub is active.
- * WebSub should deliver updates in real-time, so we use a 4-hour backup interval
- * instead of the normal 15-minute interval.
- */
-const WEBSUB_BACKUP_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 /**
  * Route segment config for Next.js
@@ -222,7 +216,7 @@ export async function POST(
  * Updates the existing job's next_run_at rather than creating a new job.
  */
 async function scheduleBackupPoll(feedId: string): Promise<void> {
-  const nextRunAt = new Date(Date.now() + WEBSUB_BACKUP_POLL_INTERVAL_MS);
+  const nextRunAt = new Date(Date.now() + WEBSUB_BACKUP_POLL_INTERVAL_SECONDS * 1000);
 
   try {
     await updateFeedJobNextRun(feedId, nextRunAt);

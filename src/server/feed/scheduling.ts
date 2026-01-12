@@ -38,6 +38,13 @@ export function getMinFetchIntervalSeconds(): number {
 /** Maximum interval between fetches: 7 days */
 export const MAX_FETCH_INTERVAL_SECONDS = 7 * 24 * 60 * 60; // 604800
 
+/**
+ * Backup polling interval when WebSub is active: 24 hours.
+ * WebSub provides real-time push notifications, so we only need infrequent
+ * polling as a backup in case WebSub stops working.
+ */
+export const WEBSUB_BACKUP_POLL_INTERVAL_SECONDS = 24 * 60 * 60; // 86400
+
 /** Default interval when no hints available: 60 minutes */
 export const DEFAULT_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
 
@@ -113,6 +120,12 @@ export interface CalculateNextFetchOptions {
   feedHints?: FeedHints;
   /** Number of consecutive fetch failures */
   consecutiveFailures?: number;
+  /**
+   * Whether WebSub is active for this feed.
+   * When true, uses a longer backup polling interval since WebSub
+   * provides real-time push notifications.
+   */
+  websubActive?: boolean;
   /** The reference time to calculate from (defaults to now) */
   now?: Date;
   /**
@@ -148,7 +161,8 @@ export type NextFetchReason =
   | "syndication_clamped_min" // Syndication was below minimum, clamped up
   | "syndication_clamped_max" // Syndication was above maximum, clamped down
   | "default" // No hints available, using default
-  | "failure_backoff"; // Exponential backoff due to failures
+  | "failure_backoff" // Exponential backoff due to failures
+  | "websub_backup"; // WebSub is active, using backup polling interval
 
 /**
  * Clamps a value to the configured bounds and returns the result with appropriate reason.
@@ -186,18 +200,27 @@ function clampInterval(
  *
  * Priority order:
  * 1. If there are consecutive failures, use exponential backoff
- * 2. Use Cache-Control max-age from HTTP response (clamped to bounds)
- * 3. Use feed hints: RSS <ttl> element or syndication namespace (clamped to bounds)
- * 4. If no hints available, use default interval (60 minutes)
+ * 2. If WebSub is active, use backup polling interval (24 hours)
+ * 3. Use Cache-Control max-age from HTTP response (clamped to bounds)
+ * 4. Use feed hints: RSS <ttl> element or syndication namespace (clamped to bounds)
+ * 5. If no hints available, use default interval (60 minutes)
  *
  * Bounds:
  * - Minimum with cache headers: 10 minutes (server explicitly tells us to poll faster)
  * - Minimum without cache headers: 60 minutes (configurable via FEED_MIN_FETCH_INTERVAL_MINUTES)
+ * - WebSub backup: 24 hours (WebSub provides real-time push)
  * - Maximum: 7 days (always check eventually)
  * - Failures capped at 10 (then max backoff)
  *
  * @param options - Calculation options
  * @returns The next fetch result with time and reason
+ *
+ * @example
+ * // With WebSub active (backup polling)
+ * calculateNextFetch({
+ *   websubActive: true,
+ * })
+ * // => { nextFetchAt: Date, intervalSeconds: 86400, reason: "websub_backup" }
  *
  * @example
  * // With cache headers
@@ -237,6 +260,7 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
     cacheControl,
     feedHints,
     consecutiveFailures = 0,
+    websubActive = false,
     now = new Date(),
     randomSource = Math.random,
   } = options;
@@ -249,7 +273,13 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
     intervalSeconds = calculateFailureBackoff(consecutiveFailures);
     reason = "failure_backoff";
   }
-  // 2. Try to use Cache-Control max-age (HTTP headers take precedence)
+  // 2. If WebSub is active, use longer backup polling interval
+  // WebSub provides real-time push notifications, so polling is just a backup
+  else if (websubActive) {
+    intervalSeconds = WEBSUB_BACKUP_POLL_INTERVAL_SECONDS;
+    reason = "websub_backup";
+  }
+  // 3. Try to use Cache-Control max-age (HTTP headers take precedence)
   // Server-provided cache hints get a lower minimum (10 min) since we trust them more
   else if (cacheControl) {
     const effectiveMaxAge = getEffectiveMaxAge(cacheControl);
@@ -267,16 +297,16 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
       reason = "default";
     }
   }
-  // 3. Try feed hints
+  // 4. Try feed hints
   else if (feedHints) {
-    // 3a. Try RSS <ttl> element (value is in minutes)
+    // 4a. Try RSS <ttl> element (value is in minutes)
     if (feedHints.ttlMinutes !== undefined && feedHints.ttlMinutes > 0) {
       const ttlSeconds = feedHints.ttlMinutes * 60;
       const clamped = clampInterval(ttlSeconds, "ttl");
       intervalSeconds = clamped.intervalSeconds;
       reason = clamped.reason;
     }
-    // 3b. Try syndication namespace hints
+    // 4b. Try syndication namespace hints
     else {
       const syndicationSeconds = syndicationToSeconds(feedHints.syndication);
       if (syndicationSeconds !== undefined) {
@@ -289,7 +319,7 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
       }
     }
   }
-  // 4. Default: 60 minutes
+  // 5. Default: 60 minutes
   else {
     intervalSeconds = DEFAULT_FETCH_INTERVAL_SECONDS;
     reason = "default";
