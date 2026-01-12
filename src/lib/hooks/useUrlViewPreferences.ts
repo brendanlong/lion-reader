@@ -14,7 +14,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { getViewPreferences, type ViewType } from "./useViewPreferences";
+import { getViewPreferences, type ViewType } from "./viewPreferences";
 
 /**
  * Result of the useUrlViewPreferences hook.
