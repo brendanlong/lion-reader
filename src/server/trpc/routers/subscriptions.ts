@@ -145,7 +145,18 @@ function buildSubscriptionBaseQuery(db: typeof import("@/server/db").db, userId:
     .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.feedId, userFeeds.feedId))
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
-    .groupBy(userFeeds.id, userFeeds.feedId, unreadCountsSubquery.unreadCount);
+    .groupBy(
+      userFeeds.id,
+      userFeeds.subscribedAt,
+      userFeeds.feedId,
+      userFeeds.type,
+      userFeeds.url,
+      userFeeds.title,
+      userFeeds.originalTitle,
+      userFeeds.description,
+      userFeeds.siteUrl,
+      unreadCountsSubquery.unreadCount
+    );
 }
 
 /**
