@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -251,16 +252,16 @@ class EntryListViewModelTest {
             }
 
         @Test
-        @DisplayName("Setting feed route uses feed filter")
-        fun settingFeedRouteUsesFeedFilter() =
+        @DisplayName("Setting subscription route uses subscription filter")
+        fun settingSubscriptionRouteUsesSubscriptionFilter() =
             runTest {
-                coEvery { subscriptionRepository.getSubscriptionByFeedId("feed-123") } returns
+                coEvery { subscriptionRepository.getSubscription("subscription-123").firstOrNull() } returns
                     mockk { every { displayTitle } returns "My Feed" }
 
                 viewModel = createViewModel()
                 testDispatcher.scheduler.advanceUntilIdle()
 
-                viewModel.setRoute("feed/feed-123")
+                viewModel.setRoute("subscription/subscription-123")
                 testDispatcher.scheduler.advanceUntilIdle()
 
                 assertEquals("My Feed", viewModel.uiState.value.title)

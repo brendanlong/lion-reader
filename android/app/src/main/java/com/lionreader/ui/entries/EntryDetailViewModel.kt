@@ -34,7 +34,7 @@ data class SwipeNavigationState(
     val entryIds: List<String> = emptyList(),
     /** Current position in the entry IDs list */
     val currentIndex: Int = -1,
-    /** The list context route (e.g., "all", "starred", "feed/xxx") */
+    /** The list context route (e.g., "all", "starred", "subscription/xxx") */
     val listContext: String? = null,
     /** Preloaded previous entry (if available) */
     val previousEntry: EntryWithState? = null,

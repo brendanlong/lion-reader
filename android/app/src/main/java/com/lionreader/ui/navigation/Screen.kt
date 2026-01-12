@@ -49,14 +49,14 @@ sealed class Screen(
     }
 
     /**
-     * Feed entries view - shows entries for a specific feed/subscription.
-     * Requires a feed ID argument.
+     * Subscription entries view - shows entries for a specific subscription.
+     * Requires a subscription ID argument.
      */
-    data object Feed : Screen("feed/{feedId}") {
+    data object Subscription : Screen("subscription/{subscriptionId}") {
         /**
-         * Creates the route with the given feed ID.
+         * Creates the route with the given subscription ID.
          */
-        fun createRoute(feedId: String): String = "feed/$feedId"
+        fun createRoute(subscriptionId: String): String = "subscription/$subscriptionId"
     }
 
     /**
@@ -64,7 +64,7 @@ sealed class Screen(
      * Requires an entry ID argument and optional list context for swipe navigation.
      *
      * @param entryId The ID of the entry to display
-     * @param listContext The route context from which this entry was opened (e.g., "all", "starred", "feed/xxx")
+     * @param listContext The route context from which this entry was opened (e.g., "all", "starred", "subscription/xxx")
      *                    Used to determine adjacent entries for swipe navigation.
      */
     data object EntryDetail : Screen("entry/{entryId}?listContext={listContext}") {
@@ -120,7 +120,7 @@ sealed class Screen(
 
         /**
          * Route argument name for list context in EntryDetail screen.
-         * Contains the route from which entry detail was opened (e.g., "all", "starred", "feed/xxx").
+         * Contains the route from which entry detail was opened (e.g., "all", "starred", "subscription/xxx").
          */
         const val ARG_LIST_CONTEXT = "listContext"
 
@@ -130,9 +130,9 @@ sealed class Screen(
         const val ARG_TAG_ID = "tagId"
 
         /**
-         * Route argument name for feed ID in Feed screen.
+         * Route argument name for subscription ID in Subscription screen.
          */
-        const val ARG_FEED_ID = "feedId"
+        const val ARG_SUBSCRIPTION_ID = "subscriptionId"
 
         /**
          * Route argument name for saved article ID in SavedArticleDetail screen.

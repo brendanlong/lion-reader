@@ -74,7 +74,7 @@ class MainViewModel
         /**
          * Gets the title for a given route.
          *
-         * For dynamic routes (tag/feed), fetches the name from the repository.
+         * For dynamic routes (tag/subscription), fetches the name from the repository.
          */
         private suspend fun getRouteTitle(route: String): String =
             when {
@@ -85,12 +85,12 @@ class MainViewModel
                     val tagId = route.removePrefix("tag/")
                     tagRepository.getTag(tagId)?.name ?: "Tag"
                 }
-                route.startsWith("feed/") -> {
-                    val feedId = route.removePrefix("feed/")
+                route.startsWith("subscription/") -> {
+                    val subscriptionId = route.removePrefix("subscription/")
                     subscriptionRepository
                         .getSubscriptions()
                         .first()
-                        .find { it.subscription.feedId == feedId }
+                        .find { it.subscription.id == subscriptionId }
                         ?.displayTitle ?: "Feed"
                 }
                 else -> "Lion Reader"

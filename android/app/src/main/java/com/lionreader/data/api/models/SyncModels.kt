@@ -22,12 +22,18 @@ enum class SyncFeedType {
 
 /**
  * Entry data from the sync API (lightweight, no content).
+ *
+ * Note: subscriptionId is the primary external identifier for linking entries
+ * to subscriptions. feedId is still present for internal cache invalidation.
+ * subscriptionId may be null for orphaned starred entries (from unsubscribed feeds).
  */
 @Serializable
 data class SyncEntryDto(
     val id: String,
+    @SerialName("subscriptionId")
+    val subscriptionId: String? = null, // primary external identifier, null for orphaned starred
     @SerialName("feedId")
-    val feedId: String,
+    val feedId: String, // still present for cache invalidation
     val type: SyncFeedType,
     val url: String? = null,
     val title: String? = null,
@@ -56,21 +62,23 @@ data class SyncEntryStateDto(
 )
 
 /**
- * Subscription data from the sync API.
+ * Subscription data from the sync API (flat format with merged feed data).
+ *
+ * The subscription ID is the primary external identifier. Feed IDs are now
+ * internal implementation details. All feed metadata is merged into this
+ * response for a simpler, flatter API.
  */
 @Serializable
 data class SyncSubscriptionDto(
-    val id: String,
-    @SerialName("feedId")
-    val feedId: String,
-    @SerialName("feedTitle")
-    val feedTitle: String? = null,
-    @SerialName("feedUrl")
-    val feedUrl: String? = null,
-    @SerialName("feedType")
-    val feedType: SyncFeedType,
-    @SerialName("customTitle")
-    val customTitle: String? = null,
+    val id: String, // subscription_id is THE id
+    val type: SyncFeedType,
+    val url: String? = null,
+    val title: String, // resolved (custom or original)
+    @SerialName("originalTitle")
+    val originalTitle: String? = null, // feed's original title for rename UI
+    val description: String? = null,
+    @SerialName("siteUrl")
+    val siteUrl: String? = null,
     @SerialName("subscribedAt")
     val subscribedAt: String, // ISO 8601
 )
