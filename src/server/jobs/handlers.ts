@@ -197,6 +197,7 @@ async function processSuccessfulFetch(
     const errorMessage = error instanceof Error ? error.message : "Failed to parse feed";
     const nextFetch = calculateNextFetch({
       consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
+      websubActive: feed.websubActive ?? false,
       now,
     });
     await updateFeedOnError(feed.id, errorMessage, now, nextFetch.nextFetchAt);
@@ -270,6 +271,7 @@ async function processSuccessfulFetch(
       syndication: feedMetadata.syndication,
     },
     consecutiveFailures: 0, // Reset failures on success
+    websubActive: feed.websubActive ?? false,
     now,
   });
 
@@ -404,6 +406,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         const nextFetch = calculateNextFetch({
           cacheControl: result.cacheHeaders.cacheControl,
           consecutiveFailures: 0,
+          websubActive: feed.websubActive ?? false,
           now,
         });
 
@@ -466,6 +469,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       const nextFetch = calculateNextFetch({
         cacheControl: result.cacheHeaders.cacheControl,
         consecutiveFailures: 0,
+        websubActive: feed.websubActive ?? false,
         now,
       });
 
@@ -633,6 +637,7 @@ async function handleTemporaryError(
 
   const nextFetch = calculateNextFetch({
     consecutiveFailures: newFailureCount,
+    websubActive: feed.websubActive ?? false,
     now,
   });
 
