@@ -274,7 +274,8 @@ class EntryListViewModel
                 starredOnly -> Screen.Starred.TITLE
                 uncategorized -> Screen.Uncategorized.TITLE
                 subscriptionId != null -> {
-                    subscriptionRepository.getSubscription(subscriptionId)
+                    subscriptionRepository
+                        .getSubscription(subscriptionId)
                         .firstOrNull()
                         ?.displayTitle ?: "Feed"
                 }
