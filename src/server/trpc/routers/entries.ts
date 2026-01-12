@@ -89,7 +89,8 @@ const booleanQueryParam = z
  */
 const entryListItemSchema = z.object({
   id: z.string(),
-  feedId: z.string(),
+  subscriptionId: z.string().nullable(), // null for orphaned starred entries
+  feedId: z.string(), // Internal use only - kept for cache invalidation
   type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -108,7 +109,8 @@ const entryListItemSchema = z.object({
  */
 const entryFullSchema = z.object({
   id: z.string(),
-  feedId: z.string(),
+  subscriptionId: z.string().nullable(), // null for orphaned starred entries
+  feedId: z.string(), // Internal use only - kept for cache invalidation
   type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -223,6 +225,35 @@ type DbContext = {
   db: typeof import("@/server/db").db;
 };
 
+/**
+ * Looks up the feed IDs for a subscription.
+ * Returns the subscription's feed_ids array (current feed + previous feeds from redirects).
+ *
+ * @param db - Database instance
+ * @param subscriptionId - The subscription ID to look up
+ * @param userId - The user ID (for access control)
+ * @returns Array of feed IDs, or null if subscription not found
+ */
+async function getSubscriptionFeedIds(
+  db: typeof import("@/server/db").db,
+  subscriptionId: string,
+  userId: string
+): Promise<string[] | null> {
+  const result = await db
+    .select({ feedIds: subscriptions.feedIds })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.id, subscriptionId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    )
+    .limit(1);
+
+  return result.length > 0 ? result[0].feedIds : null;
+}
+
 // ============================================================================
 // Base Query Helpers
 // ============================================================================
@@ -327,8 +358,8 @@ export const entriesRouter = createTRPCRouter({
    * Entries are visible to a user only if they have a corresponding
    * row in the user_entries table for their user_id.
    *
-   * @param feedId - Optional filter by feed ID
-   * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
+   * @param subscriptionId - Optional filter by subscription ID
+   * @param tagId - Optional filter by tag ID (entries from subscriptions with this tag)
    * @param unreadOnly - Optional filter to show only unread entries
    * @param starredOnly - Optional filter to show only starred entries
    * @param sortOrder - Optional sort order: "newest" (default) or "oldest"
@@ -347,7 +378,7 @@ export const entriesRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        feedId: uuidSchema.optional(),
+        subscriptionId: uuidSchema.optional(),
         tagId: uuidSchema.optional(),
         uncategorized: booleanQueryParam,
         type: feedTypeSchema.optional(),
@@ -372,9 +403,14 @@ export const entriesRouter = createTRPCRouter({
       // Entry must be visible (from active subscription, starred, or from saved feed)
       conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
 
-      // Filter by feedId if specified
-      if (input.feedId) {
-        conditions.push(eq(entries.feedId, input.feedId));
+      // Filter by subscriptionId
+      if (input.subscriptionId) {
+        const feedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
+        if (feedIds === null) {
+          // Subscription not found or doesn't belong to user
+          return { items: [], nextCursor: undefined };
+        }
+        conditions.push(inArray(entries.feedId, feedIds));
       }
 
       // Filter by tagId if specified
@@ -475,8 +511,9 @@ export const entriesRouter = createTRPCRouter({
         }
       }
 
-      // Query entries with user state
+      // Query entries with user state and subscription context
       // Inner join with user_entries enforces visibility
+      // Left join with subscriptions to get subscription_id (may be null for orphaned starred entries)
       // We fetch one extra to determine if there are more results
       const orderByClause =
         sortOrder === "newest"
@@ -487,10 +524,19 @@ export const entriesRouter = createTRPCRouter({
           entry: entries,
           feed: feeds,
           userState: userEntries,
+          subscriptionId: subscriptions.id,
         })
         .from(entries)
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .leftJoin(
+          subscriptions,
+          and(
+            eq(subscriptions.userId, userId),
+            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
         .where(and(...conditions))
         .orderBy(...orderByClause)
         .limit(limit + 1);
@@ -500,8 +546,9 @@ export const entriesRouter = createTRPCRouter({
       const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
 
       // Format the output
-      const items = resultEntries.map(({ entry, feed, userState }) => ({
+      const items = resultEntries.map(({ entry, feed, userState, subscriptionId }) => ({
         id: entry.id,
+        subscriptionId,
         feedId: entry.feedId,
         type: entry.type,
         url: entry.url,
@@ -554,17 +601,27 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Get the entry with feed and user state
+      // Get the entry with feed, user state, and subscription context
       // Permission check uses shared visibility condition
+      // Left join with subscriptions to get subscription_id (may be null for orphaned starred entries)
       const result = await ctx.db
         .select({
           entry: entries,
           feed: feeds,
           userState: userEntries,
+          subscriptionId: subscriptions.id,
         })
         .from(entries)
         .innerJoin(feeds, eq(entries.feedId, feeds.id))
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .leftJoin(
+          subscriptions,
+          and(
+            eq(subscriptions.userId, userId),
+            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
         .where(
           and(
             eq(entries.id, input.id),
@@ -578,11 +635,12 @@ export const entriesRouter = createTRPCRouter({
         throw errors.entryNotFound();
       }
 
-      const { entry, feed, userState } = result[0];
+      const { entry, feed, userState, subscriptionId } = result[0];
 
       return {
         entry: {
           id: entry.id,
+          subscriptionId,
           feedId: entry.feedId,
           type: entry.type,
           url: entry.url,
@@ -674,8 +732,8 @@ export const entriesRouter = createTRPCRouter({
   /**
    * Mark all entries as read with optional filters.
    *
-   * @param feedId - Optional filter to mark only entries from a specific feed
-   * @param tagId - Optional filter to mark only entries from feeds with this tag
+   * @param subscriptionId - Optional filter to mark only entries from a specific subscription
+   * @param tagId - Optional filter to mark only entries from subscriptions with this tag
    * @param starredOnly - Optional filter to mark only starred entries
    * @param before - Optional filter to mark only entries fetched before this date
    * @returns The count of entries marked as read
@@ -691,7 +749,7 @@ export const entriesRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        feedId: uuidSchema.optional(),
+        subscriptionId: uuidSchema.optional(),
         tagId: uuidSchema.optional(),
         uncategorized: z.boolean().optional(),
         starredOnly: z.boolean().optional(),
@@ -705,13 +763,17 @@ export const entriesRouter = createTRPCRouter({
       // Build conditions for the update
       const conditions = [eq(userEntries.userId, userId), eq(userEntries.read, false)];
 
-      // If feedId is provided, filter entries by feed
-      if (input.feedId) {
-        // Get entry IDs for this feed
+      // Filter by subscriptionId
+      if (input.subscriptionId) {
+        const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
+        if (subFeedIds === null) {
+          return { count: 0 };
+        }
+        // Get entry IDs for these feeds
         const feedEntryIds = await ctx.db
           .select({ id: entries.id })
           .from(entries)
-          .where(eq(entries.feedId, input.feedId));
+          .where(inArray(entries.feedId, subFeedIds));
 
         if (feedEntryIds.length === 0) {
           return { count: 0 };
@@ -939,9 +1001,9 @@ export const entriesRouter = createTRPCRouter({
    * Entries are visible to a user only if they have a corresponding
    * row in the user_entries table for their user_id.
    *
-   * @param feedId - Optional filter by feed ID
-   * @param tagId - Optional filter by tag ID (entries from feeds with this tag)
-   * @param uncategorized - Optional filter to show only entries from uncategorized feeds
+   * @param subscriptionId - Optional filter by subscription ID
+   * @param tagId - Optional filter by tag ID (entries from subscriptions with this tag)
+   * @param uncategorized - Optional filter to show only entries from uncategorized subscriptions
    * @param type - Optional filter by entry type
    * @param excludeTypes - Optional types to exclude
    * @param unreadOnly - Optional filter to count only unread entries
@@ -960,7 +1022,7 @@ export const entriesRouter = createTRPCRouter({
     .input(
       z
         .object({
-          feedId: uuidSchema.optional(),
+          subscriptionId: uuidSchema.optional(),
           tagId: uuidSchema.optional(),
           uncategorized: booleanQueryParam,
           type: feedTypeSchema.optional(),
@@ -986,9 +1048,13 @@ export const entriesRouter = createTRPCRouter({
       // Entry must be visible (from active subscription, starred, or from saved feed)
       conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
 
-      // Filter by feedId if specified
-      if (input?.feedId) {
-        conditions.push(eq(entries.feedId, input.feedId));
+      // Filter by subscriptionId
+      if (input?.subscriptionId) {
+        const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
+        if (subFeedIds === null) {
+          return { total: 0, unread: 0 };
+        }
+        conditions.push(inArray(entries.feedId, subFeedIds));
       }
 
       // Filter by tagId if specified

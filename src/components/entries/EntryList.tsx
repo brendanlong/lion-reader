@@ -24,12 +24,12 @@ import {
  */
 interface EntryListFilters {
   /**
-   * Filter by specific feed ID.
+   * Filter by specific subscription ID.
    */
-  feedId?: string;
+  subscriptionId?: string;
 
   /**
-   * Filter by tag ID (entries from feeds with this tag).
+   * Filter by tag ID (entries from subscriptions with this tag).
    */
   tagId?: string;
 
@@ -188,7 +188,7 @@ export function EntryList({
   // Use infinite query for cursor-based pagination (only when not using external data)
   const internalQuery = trpc.entries.list.useInfiniteQuery(
     {
-      feedId: filters.feedId,
+      subscriptionId: filters.subscriptionId,
       tagId: filters.tagId,
       uncategorized: filters.uncategorized,
       unreadOnly: filters.unreadOnly,

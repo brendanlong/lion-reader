@@ -99,15 +99,23 @@ The schema is defined in `drizzle/` migrations. Key tables:
 
 - **users** - User accounts with email, password hash, OAuth links
 - **sessions** - Session tokens with expiry and revocation
-- **feeds** - Canonical feed data (URL, metadata, fetch state)
+- **feeds** - Canonical feed data (URL, metadata, fetch state) - shared across users for efficiency
 - **entries** - Feed entries with content and timestamps
 - **subscriptions** - User-to-feed relationships with subscription time
-- **user_entry_states** - Per-user read/starred state for entries
-- **saved_articles** - Read-it-later articles saved by users
+- **user_entries** - Per-user read/starred state for entries
 - **jobs** - Background job queue for feed fetching
 - **websub_subscriptions** - WebSub push subscription state
 - **ingest_addresses** - Per-user email addresses for newsletter ingestion
 - **narration_content** - Cached LLM-processed narration text
+
+### Database Views
+
+Views simplify queries by abstracting the feeds/subscriptions join:
+
+- **user_feeds** - Subscriptions with feed metadata merged, using subscription ID as the primary key
+- **visible_entries** - Entries with visibility rules applied, including subscription context
+
+See `docs/features/subscription-centric-api.md` for design details.
 
 ### Key Design Decisions
 
@@ -199,16 +207,25 @@ When a user subscribes to a new feed, the SSE connection dynamically subscribes 
 
 ## API Design
 
+### Subscription-Centric Model
+
+The API uses **subscription ID as the primary user-facing identifier**. While feeds are shared internally for efficiency (fetching `nytimes.com/rss` once serves all subscribers), this is hidden from clients. Users interact with "their subscriptions" rather than "shared feeds."
+
+- Subscription responses include feed metadata (title, URL, etc.) flattened into a single object
+- Entry filtering uses `subscriptionId`, not `feedId`
+- The `feeds` router is only used for pre-subscription operations (preview, discover)
+
+See `docs/features/subscription-centric-api.md` for full design.
+
 ### tRPC Router Structure
 
 Routers are organized by resource:
 
 - `auth` - Registration, login, logout, OAuth
 - `users` - Profile, sessions, settings
-- `subscriptions` - CRUD for feed subscriptions
+- `subscriptions` - CRUD for feed subscriptions (primary user-facing API)
 - `entries` - List, read, star, mark read
-- `feeds` - Preview, discover feeds
-- `saved` - Saved articles (read-it-later)
+- `feeds` - Preview, discover feeds (pre-subscription only)
 - `narration` - Text-to-speech generation
 - `imports` - OPML import/export
 - `admin` - Invite management (invite-only mode)
@@ -245,16 +262,16 @@ Token bucket via Redis, per-user. Different buckets for different operations (e.
 
 ```
 app/
-  (auth)/           # Login, register, forgot password
-  (app)/            # Main app (requires auth)
-    all/            # All entries timeline
-    starred/        # Starred entries
-    saved/          # Saved articles
-    feed/[feedId]/  # Single feed entries
-    entry/[id]/     # Full entry view
-    settings/       # User settings
-    subscribe/      # Add subscription flow
-    save/           # Bookmarklet landing page
+  (auth)/                     # Login, register, forgot password
+  (app)/                      # Main app (requires auth)
+    all/                      # All entries timeline
+    starred/                  # Starred entries
+    saved/                    # Saved articles
+    subscription/[id]/        # Single subscription entries (uses subscription ID)
+    entry/[id]/               # Full entry view
+    settings/                 # User settings
+    subscribe/                # Add subscription flow
+    save/                     # Bookmarklet landing page
 ```
 
 ### Component Architecture

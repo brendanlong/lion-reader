@@ -17,7 +17,7 @@ import { trpc } from "@/lib/trpc/client";
  * Filter options for the entry list query.
  */
 interface EntryListQueryFilters {
-  feedId?: string;
+  subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
   unreadOnly?: boolean;
@@ -174,7 +174,7 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     refetch,
   } = trpc.entries.list.useInfiniteQuery(
     {
-      feedId: filters.feedId,
+      subscriptionId: filters.subscriptionId,
       tagId: filters.tagId,
       uncategorized: filters.uncategorized,
       unreadOnly: filters.unreadOnly,

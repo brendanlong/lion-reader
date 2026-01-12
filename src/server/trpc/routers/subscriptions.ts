@@ -68,35 +68,20 @@ const tagOutputSchema = z.object({
 });
 
 /**
- * Feed output schema - what we return for a feed.
- */
-const feedOutputSchema = z.object({
-  id: z.string(),
-  type: z.enum(["web", "email", "saved"]),
-  url: z.string().nullable(),
-  title: z.string().nullable(),
-  description: z.string().nullable(),
-  siteUrl: z.string().nullable(),
-});
-
-/**
- * Subscription output schema - what we return for a subscription.
+ * Flat subscription output schema - subscription with feed metadata merged.
+ * Uses subscription.id as the primary key, hiding internal feedId from clients.
  */
 const subscriptionOutputSchema = z.object({
-  id: z.string(),
-  feedId: z.string(),
-  customTitle: z.string().nullable(),
+  id: z.string(), // subscription ID (primary key)
+  type: z.enum(["web", "email", "saved"]),
+  url: z.string().nullable(),
+  title: z.string().nullable(), // resolved title (custom or original)
+  originalTitle: z.string().nullable(), // feed's original title for rename UI
+  description: z.string().nullable(),
+  siteUrl: z.string().nullable(),
   subscribedAt: z.date(),
   unreadCount: z.number(),
   tags: z.array(tagOutputSchema),
-});
-
-/**
- * Subscription with feed output schema.
- */
-const subscriptionWithFeedOutputSchema = z.object({
-  subscription: subscriptionOutputSchema,
-  feed: feedOutputSchema,
 });
 
 // ============================================================================
@@ -167,28 +152,23 @@ function buildSubscriptionBaseQuery(db: typeof import("@/server/db").db, userId:
 type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBaseQuery>>[number];
 
 /**
- * Transforms a subscription query row into the output format.
+ * Transforms a subscription query row into the flat output format.
+ * Merges subscription and feed data with subscription.id as primary key.
  */
 function formatSubscriptionRow(
   row: SubscriptionQueryRow
-): z.infer<typeof subscriptionWithFeedOutputSchema> {
+): z.infer<typeof subscriptionOutputSchema> {
   return {
-    subscription: {
-      id: row.subscriptionId,
-      feedId: row.subscriptionFeedId,
-      customTitle: row.subscriptionCustomTitle,
-      subscribedAt: row.subscriptionSubscribedAt,
-      unreadCount: row.unreadCount,
-      tags: row.tags,
-    },
-    feed: {
-      id: row.feedId,
-      type: row.feedType,
-      url: row.feedUrl,
-      title: row.feedTitle,
-      description: row.feedDescription,
-      siteUrl: row.feedSiteUrl,
-    },
+    id: row.subscriptionId,
+    type: row.feedType,
+    url: row.feedUrl,
+    title: row.subscriptionCustomTitle ?? row.feedTitle, // resolved title
+    originalTitle: row.feedTitle, // for rename UI
+    description: row.feedDescription,
+    siteUrl: row.feedSiteUrl,
+    subscribedAt: row.subscriptionSubscribedAt,
+    unreadCount: row.unreadCount,
+    tags: row.tags,
   };
 }
 
@@ -368,7 +348,7 @@ async function subscribeToExistingFeed(
   db: typeof import("@/server/db").db,
   userId: string,
   feedRecord: typeof feeds.$inferSelect
-): Promise<z.infer<typeof subscriptionWithFeedOutputSchema>> {
+): Promise<z.infer<typeof subscriptionOutputSchema>> {
   const feedId = feedRecord.id;
 
   // Ensure job is enabled and sync next_fetch_at
@@ -390,15 +370,6 @@ async function subscribeToExistingFeed(
     },
   });
 
-  const subscriptionData = {
-    id: result.subscriptionId,
-    feedId,
-    customTitle: null,
-    subscribedAt: result.subscribedAt,
-    unreadCount: result.unreadCount,
-    tags: [] as Array<{ id: string; name: string; color: string | null }>,
-  };
-
   const feedData = {
     id: feedRecord.id,
     type: feedRecord.type,
@@ -408,22 +379,38 @@ async function subscribeToExistingFeed(
     siteUrl: feedRecord.siteUrl,
   };
 
+  // SSE event uses nested format for compatibility
+  const sseSubscriptionData = {
+    id: result.subscriptionId,
+    feedId,
+    customTitle: null,
+    subscribedAt: result.subscribedAt.toISOString(),
+    unreadCount: result.unreadCount,
+    tags: [] as Array<{ id: string; name: string; color: string | null }>,
+  };
+
   publishSubscriptionCreated(
     userId,
     feedId,
     result.subscriptionId,
-    {
-      ...subscriptionData,
-      subscribedAt: result.subscribedAt.toISOString(),
-    },
+    sseSubscriptionData,
     feedData
   ).catch((err) => {
     logger.error("Failed to publish subscription_created event", { err, userId, feedId });
   });
 
+  // Return flat format for API response
   return {
-    subscription: subscriptionData,
-    feed: feedData,
+    id: result.subscriptionId,
+    type: feedRecord.type,
+    url: feedRecord.url,
+    title: feedRecord.title, // no custom title for new subscriptions
+    originalTitle: feedRecord.title,
+    description: feedRecord.description,
+    siteUrl: feedRecord.siteUrl,
+    subscribedAt: result.subscribedAt,
+    unreadCount: result.unreadCount,
+    tags: [] as Array<{ id: string; name: string; color: string | null }>,
   };
 }
 
@@ -435,7 +422,7 @@ async function subscribeToNewOrUnfetchedFeed(
   db: typeof import("@/server/db").db,
   userId: string,
   inputUrl: string
-): Promise<z.infer<typeof subscriptionWithFeedOutputSchema>> {
+): Promise<z.infer<typeof subscriptionOutputSchema>> {
   let feedUrl = inputUrl;
 
   // Fetch the URL
@@ -562,15 +549,6 @@ async function subscribeToNewOrUnfetchedFeed(
     },
   });
 
-  const subscriptionData = {
-    id: result.subscriptionId,
-    feedId,
-    customTitle: null,
-    subscribedAt: result.subscribedAt,
-    unreadCount: result.unreadCount,
-    tags: [] as Array<{ id: string; name: string; color: string | null }>,
-  };
-
   const feedData = {
     id: feedRecord.id,
     type: feedRecord.type,
@@ -580,22 +558,38 @@ async function subscribeToNewOrUnfetchedFeed(
     siteUrl: feedRecord.siteUrl,
   };
 
+  // SSE event uses nested format for compatibility
+  const sseSubscriptionData = {
+    id: result.subscriptionId,
+    feedId,
+    customTitle: null,
+    subscribedAt: result.subscribedAt.toISOString(),
+    unreadCount: result.unreadCount,
+    tags: [] as Array<{ id: string; name: string; color: string | null }>,
+  };
+
   publishSubscriptionCreated(
     userId,
     feedId,
     result.subscriptionId,
-    {
-      ...subscriptionData,
-      subscribedAt: result.subscribedAt.toISOString(),
-    },
+    sseSubscriptionData,
     feedData
   ).catch((err) => {
     logger.error("Failed to publish subscription_created event", { err, userId, feedId });
   });
 
+  // Return flat format for API response
   return {
-    subscription: subscriptionData,
-    feed: feedData,
+    id: result.subscriptionId,
+    type: feedRecord.type,
+    url: feedRecord.url,
+    title: feedRecord.title, // no custom title for new subscriptions
+    originalTitle: feedRecord.title,
+    description: feedRecord.description,
+    siteUrl: feedRecord.siteUrl,
+    subscribedAt: result.subscribedAt,
+    unreadCount: result.unreadCount,
+    tags: [] as Array<{ id: string; name: string; color: string | null }>,
   };
 }
 
@@ -634,7 +628,7 @@ export const subscriptionsRouter = createTRPCRouter({
         url: feedUrlSchema,
       })
     )
-    .output(subscriptionWithFeedOutputSchema)
+    .output(subscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const feedUrl = input.url;
@@ -681,7 +675,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .input(z.object({}).optional())
     .output(
       z.object({
-        items: z.array(subscriptionWithFeedOutputSchema),
+        items: z.array(subscriptionOutputSchema),
       })
     )
     .query(async ({ ctx }) => {
@@ -713,7 +707,7 @@ export const subscriptionsRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(subscriptionWithFeedOutputSchema)
+    .output(subscriptionOutputSchema)
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
@@ -755,11 +749,7 @@ export const subscriptionsRouter = createTRPCRouter({
         customTitle: customTitleSchema.optional(),
       })
     )
-    .output(
-      z.object({
-        subscription: subscriptionOutputSchema,
-      })
-    )
+    .output(subscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
@@ -796,8 +786,9 @@ export const subscriptionsRouter = createTRPCRouter({
 
       const subscription = updateResult[0];
 
-      // Fetch tags and unread count concurrently
-      const [subscriptionTagsData, unreadResult] = await Promise.all([
+      // Fetch feed, tags, and unread count concurrently
+      const [feedResult, subscriptionTagsData, unreadResult] = await Promise.all([
+        ctx.db.select().from(feeds).where(eq(feeds.id, subscription.feedId)).limit(1),
         ctx.db
           .select({
             tagId: tags.id,
@@ -817,6 +808,11 @@ export const subscriptionsRouter = createTRPCRouter({
           .where(and(eq(entries.feedId, subscription.feedId), eq(userEntries.read, false))),
       ]);
 
+      const feed = feedResult[0];
+      if (!feed) {
+        throw errors.subscriptionNotFound();
+      }
+
       const subscriptionTagsList = subscriptionTagsData.map((row) => ({
         id: row.tagId,
         name: row.tagName,
@@ -825,15 +821,18 @@ export const subscriptionsRouter = createTRPCRouter({
 
       const unreadCount = unreadResult[0]?.count ?? 0;
 
+      // Return flat format
       return {
-        subscription: {
-          id: subscription.id,
-          feedId: subscription.feedId,
-          customTitle: subscription.customTitle,
-          subscribedAt: subscription.subscribedAt,
-          unreadCount,
-          tags: subscriptionTagsList,
-        },
+        id: subscription.id,
+        type: feed.type,
+        url: feed.url,
+        title: subscription.customTitle ?? feed.title, // resolved title
+        originalTitle: feed.title,
+        description: feed.description,
+        siteUrl: feed.siteUrl,
+        subscribedAt: subscription.subscribedAt,
+        unreadCount,
+        tags: subscriptionTagsList,
       };
     }),
 
