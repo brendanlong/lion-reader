@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
 
@@ -282,6 +282,43 @@ export interface ArticleContentBodyProps {
   /** Callback when swiping to previous article */
   onSwipePrevious?: () => void;
 }
+
+/**
+ * Memoized component for rendering the article content HTML.
+ * Extracted to prevent image flashing when read/starred status changes.
+ * Only re-renders when the actual content changes.
+ */
+interface ArticleContentRendererProps {
+  sanitizedContent: string | null;
+  fallbackContent: string | null;
+  contentRef: React.RefObject<HTMLDivElement | null>;
+}
+
+const ArticleContentRenderer = React.memo(function ArticleContentRenderer({
+  sanitizedContent,
+  fallbackContent,
+  contentRef,
+}: ArticleContentRendererProps) {
+  if (sanitizedContent) {
+    return (
+      <div
+        ref={contentRef}
+        className="prose prose-zinc prose-sm sm:prose-base dark:prose-invert prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 prose-a:hover:text-blue-700 dark:prose-a:hover:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:overflow-x-auto prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none"
+        dangerouslySetInnerHTML={{ __html: sanitizedContent }}
+      />
+    );
+  }
+
+  if (fallbackContent) {
+    return (
+      <p className="text-base leading-relaxed text-zinc-700 dark:text-zinc-300">
+        {fallbackContent}
+      </p>
+    );
+  }
+
+  return <p className="text-zinc-500 italic dark:text-zinc-400">No content available.</p>;
+});
 
 /**
  * Shared component for rendering article content with narration highlighting.
@@ -599,20 +636,12 @@ export function ArticleContentBody({
         />
       )}
 
-      {/* Content */}
-      {sanitizedContent ? (
-        <div
-          ref={contentRef}
-          className="prose prose-zinc prose-sm sm:prose-base dark:prose-invert prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 prose-a:hover:text-blue-700 dark:prose-a:hover:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:overflow-x-auto prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none"
-          dangerouslySetInnerHTML={{ __html: sanitizedContent }}
-        />
-      ) : fallbackContent ? (
-        <p className="text-base leading-relaxed text-zinc-700 dark:text-zinc-300">
-          {fallbackContent}
-        </p>
-      ) : (
-        <p className="text-zinc-500 italic dark:text-zinc-400">No content available.</p>
-      )}
+      {/* Content - memoized to prevent image flashing on read/star changes */}
+      <ArticleContentRenderer
+        sanitizedContent={sanitizedContent}
+        fallbackContent={fallbackContent}
+        contentRef={contentRef}
+      />
 
       {/* Footer with original link */}
       {url && (
