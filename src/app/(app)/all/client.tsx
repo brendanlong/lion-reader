@@ -52,8 +52,7 @@ function AllEntriesContent() {
   // Get total unread count from subscriptions
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
   const totalUnreadCount =
-    subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.subscription.unreadCount, 0) ??
-    0;
+    subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.unreadCount, 0) ?? 0;
 
   // Entry mutations with optimistic updates
   const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({

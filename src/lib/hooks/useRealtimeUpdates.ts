@@ -449,33 +449,13 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Use targeted invalidation to avoid refetching entries for feeds the user isn't viewing.
-        // Invalidate "all entries" view (no feedId filter)
-        utils.entries.list.invalidate({ feedId: undefined });
-        // Invalidate the specific feed's view
-        utils.entries.list.invalidate({ feedId: data.feedId });
-        // Invalidate unread-only views since new entries are unread by default
-        utils.entries.list.invalidate({ unreadOnly: true });
+        // Invalidate all entry list queries since new entries affect multiple views
+        // (The feedId-based targeting was removed when we switched to subscription-centric API)
+        utils.entries.list.invalidate();
 
-        // Increment the unread count for the specific subscription instead of invalidating all
-        utils.subscriptions.list.setData(undefined, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            items: oldData.items.map((item) => {
-              if (item.feed.id === data.feedId) {
-                return {
-                  ...item,
-                  subscription: {
-                    ...item.subscription,
-                    unreadCount: item.subscription.unreadCount + 1,
-                  },
-                };
-              }
-              return item;
-            }),
-          };
-        });
+        // Invalidate subscription list to refresh unread counts
+        // (We can't optimistically update because new_entry event has feedId, not subscriptionId)
+        utils.subscriptions.list.invalidate();
       } else if (data.type === "entry_updated") {
         utils.entries.get.invalidate({ id: data.entryId });
         utils.entries.list.invalidate();
@@ -484,44 +464,48 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         utils.subscriptions.list.setData(undefined, (oldData) => {
           if (!oldData) {
             // If no data yet, create with the new subscription
+            // Transform SSE event data to flat subscription format
             return {
               items: [
                 {
-                  subscription: {
-                    id: data.subscription.id,
-                    feedId: data.subscription.feedId,
-                    customTitle: data.subscription.customTitle,
-                    subscribedAt: new Date(data.subscription.subscribedAt),
-                    unreadCount: data.subscription.unreadCount,
-                    tags: data.subscription.tags,
-                  },
-                  feed: data.feed,
+                  id: data.subscription.id,
+                  type: data.feed.type,
+                  url: data.feed.url,
+                  title: data.subscription.customTitle || data.feed.title,
+                  originalTitle: data.feed.title,
+                  description: data.feed.description,
+                  siteUrl: data.feed.siteUrl,
+                  subscribedAt: new Date(data.subscription.subscribedAt),
+                  unreadCount: data.subscription.unreadCount,
+                  tags: data.subscription.tags,
                 },
               ],
             };
           }
 
           // Check for duplicates
-          if (oldData.items.some((item) => item.subscription.id === data.subscription.id)) {
+          if (oldData.items.some((item) => item.id === data.subscription.id)) {
             return oldData;
           }
 
           // Add new subscription to cache and maintain alphabetical order
+          // Transform SSE event data to flat subscription format
           const newItem = {
-            subscription: {
-              id: data.subscription.id,
-              feedId: data.subscription.feedId,
-              customTitle: data.subscription.customTitle,
-              subscribedAt: new Date(data.subscription.subscribedAt),
-              unreadCount: data.subscription.unreadCount,
-              tags: data.subscription.tags,
-            },
-            feed: data.feed,
+            id: data.subscription.id,
+            type: data.feed.type,
+            url: data.feed.url,
+            title: data.subscription.customTitle || data.feed.title,
+            originalTitle: data.feed.title,
+            description: data.feed.description,
+            siteUrl: data.feed.siteUrl,
+            subscribedAt: new Date(data.subscription.subscribedAt),
+            unreadCount: data.subscription.unreadCount,
+            tags: data.subscription.tags,
           };
           const newItems = [...oldData.items, newItem];
           newItems.sort((a, b) => {
-            const titleA = (a.subscription.customTitle || a.feed.title || "").toLowerCase();
-            const titleB = (b.subscription.customTitle || b.feed.title || "").toLowerCase();
+            const titleA = (a.title || "").toLowerCase();
+            const titleB = (b.title || "").toLowerCase();
             return titleA.localeCompare(titleB);
           });
           return { items: newItems };
@@ -565,17 +549,12 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         // always come with an entry. This handles the race condition where the
         // new_entry event might arrive before we've subscribed to the feed channel.
         if (data.feed.type === "email") {
-          // Invalidate All Items view (feedId undefined matches all unreadOnly variants)
-          utils.entries.list.invalidate({ feedId: undefined });
-          // Invalidate the specific feed's view (probably not cached yet, but for consistency)
-          utils.entries.list.invalidate({ feedId: data.feedId });
+          utils.entries.list.invalidate();
         }
         // For non-email feeds, no invalidation needed - cache is already updated!
       } else if (data.type === "subscription_deleted") {
         const existingData = utils.subscriptions.list.getData();
-        const stillInCache = existingData?.items.some(
-          (item) => item.subscription.id === data.subscriptionId
-        );
+        const stillInCache = existingData?.items.some((item) => item.id === data.subscriptionId);
 
         if (stillInCache) {
           utils.subscriptions.list.invalidate();
@@ -648,14 +627,11 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
             return {
               ...oldData,
               items: oldData.items.map((item) => {
-                const delta = unreadCountChanges.get(item.feed.id);
+                const delta = unreadCountChanges.get(item.id);
                 if (delta) {
                   return {
                     ...item,
-                    subscription: {
-                      ...item.subscription,
-                      unreadCount: item.subscription.unreadCount + delta,
-                    },
+                    unreadCount: item.unreadCount + delta,
                   };
                 }
                 return item;
@@ -674,7 +650,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
             if (!oldData) return oldData;
             return {
               ...oldData,
-              items: oldData.items.filter((item) => !removedIds.has(item.subscription.id)),
+              items: oldData.items.filter((item) => !removedIds.has(item.id)),
             };
           });
         }

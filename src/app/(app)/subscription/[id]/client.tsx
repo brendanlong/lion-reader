@@ -1,8 +1,8 @@
 /**
- * Single Feed Client Component
+ * Single Subscription Client Component
  *
- * Client-side component for the Single Feed page.
- * Contains all the interactive logic for displaying and managing entries from a specific feed.
+ * Client-side component for the Single Subscription page.
+ * Contains all the interactive logic for displaying and managing entries from a specific subscription.
  */
 
 "use client";
@@ -29,9 +29,9 @@ import {
 } from "@/lib/hooks";
 
 /**
- * Loading skeleton for the feed header.
+ * Loading skeleton for the subscription header.
  */
-function FeedHeaderSkeleton() {
+function SubscriptionHeaderSkeleton() {
   return (
     <div className="mb-6 animate-pulse">
       <div className="mb-2 h-8 w-48 rounded bg-zinc-200 dark:bg-zinc-700" />
@@ -41,9 +41,9 @@ function FeedHeaderSkeleton() {
 }
 
 /**
- * Error state for when the feed is not found.
+ * Error state for when the subscription is not found.
  */
-function FeedNotFound() {
+function SubscriptionNotFound() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="rounded-lg border border-zinc-200 bg-white p-6 text-center sm:p-8 dark:border-zinc-800 dark:bg-zinc-900">
@@ -62,9 +62,12 @@ function FeedNotFound() {
             />
           </svg>
         </div>
-        <h2 className="mb-2 text-lg font-medium text-zinc-900 dark:text-zinc-50">Feed not found</h2>
+        <h2 className="mb-2 text-lg font-medium text-zinc-900 dark:text-zinc-50">
+          Subscription not found
+        </h2>
         <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-          The feed you&apos;re looking for doesn&apos;t exist or you&apos;re not subscribed to it.
+          The subscription you&apos;re looking for doesn&apos;t exist or you&apos;re not subscribed
+          to it.
         </p>
         <Link
           href="/all"
@@ -85,33 +88,33 @@ function FeedNotFound() {
   );
 }
 
-function SingleFeedContent() {
-  const params = useParams<{ feedId: string }>();
-  const feedId = params.feedId;
+function SingleSubscriptionContent() {
+  const params = useParams<{ id: string }>();
+  const subscriptionId = params.id;
 
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
   const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
-    useUrlViewPreferences("feed", feedId);
+    useUrlViewPreferences("subscription", subscriptionId);
   const utils = trpc.useUtils();
 
   // Use entry list query that stays mounted while viewing entries
   const entryListQuery = useEntryListQuery({
-    filters: { feedId, unreadOnly: showUnreadOnly, sortOrder },
+    filters: { subscriptionId, unreadOnly: showUnreadOnly, sortOrder },
     openEntryId,
   });
 
   // Entry mutations with optimistic updates
   const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
-    listFilters: { feedId, unreadOnly: showUnreadOnly, sortOrder },
+    listFilters: { subscriptionId, unreadOnly: showUnreadOnly, sortOrder },
   });
 
   const handleMarkAllRead = useCallback(() => {
-    markAllRead({ feedId });
+    markAllRead({ subscriptionId });
     setShowMarkAllReadDialog(false);
-  }, [markAllRead, feedId]);
+  }, [markAllRead, subscriptionId]);
 
   // Keyboard navigation and actions (also provides swipe navigation functions)
   const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
@@ -129,11 +132,11 @@ function SingleFeedContent() {
       onToggleUnreadOnly: toggleShowUnreadOnly,
     });
 
-  // Fetch subscription info to get feed title and validate access
+  // Fetch subscription info to get title and validate access
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
-  // Find the subscription for this feed
-  const subscription = subscriptionsQuery.data?.items.find((item) => item.feed.id === feedId);
+  // Find the subscription by ID
+  const subscription = subscriptionsQuery.data?.items.find((item) => item.id === subscriptionId);
 
   const handleEntryClick = useCallback(
     (entryId: string) => {
@@ -166,19 +169,18 @@ function SingleFeedContent() {
   if (subscriptionsQuery.isLoading) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-        <FeedHeaderSkeleton />
+        <SubscriptionHeaderSkeleton />
       </div>
     );
   }
 
-  // Show error if subscription not found (not subscribed to this feed)
+  // Show error if subscription not found (not subscribed)
   if (!subscription) {
-    return <FeedNotFound />;
+    return <SubscriptionNotFound />;
   }
 
-  const feedTitle =
-    subscription.subscription.customTitle ?? subscription.feed.title ?? "Untitled Feed";
-  const unreadCount = subscription.subscription.unreadCount;
+  const feedTitle = subscription.title ?? subscription.originalTitle ?? "Untitled Feed";
+  const unreadCount = subscription.unreadCount;
 
   // Render both list and content, hiding the list when viewing an entry.
   // This preserves scroll position and enables seamless j/k navigation.
@@ -189,7 +191,7 @@ function SingleFeedContent() {
         <EntryContent
           key={openEntryId}
           entryId={openEntryId}
-          listFilters={{ feedId, unreadOnly: showUnreadOnly, sortOrder }}
+          listFilters={{ subscriptionId, unreadOnly: showUnreadOnly, sortOrder }}
           onBack={handleBack}
           onSwipeNext={goToNextEntry}
           onSwipePrevious={goToPreviousEntry}
@@ -259,20 +261,20 @@ function SingleFeedContent() {
           </div>
 
           {/* Feed URL if available */}
-          {subscription.feed.siteUrl && (
+          {subscription.siteUrl && (
             <a
-              href={subscription.feed.siteUrl}
+              href={subscription.siteUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-1 inline-block text-sm text-zinc-500 hover:underline dark:text-zinc-400"
             >
-              {new URL(subscription.feed.siteUrl).hostname}
+              {new URL(subscription.siteUrl).hostname}
             </a>
           )}
         </div>
 
         <EntryList
-          filters={{ feedId, unreadOnly: showUnreadOnly, sortOrder }}
+          filters={{ subscriptionId, unreadOnly: showUnreadOnly, sortOrder }}
           onEntryClick={handleEntryClick}
           selectedEntryId={selectedEntryId}
           onToggleRead={toggleRead}
@@ -281,14 +283,14 @@ function SingleFeedContent() {
           externalQueryState={externalQueryState}
           emptyMessage={
             showUnreadOnly
-              ? "No unread entries in this feed. Toggle to show all items."
-              : "No entries in this feed yet. Entries will appear here once the feed is fetched."
+              ? "No unread entries in this subscription. Toggle to show all items."
+              : "No entries in this subscription yet. Entries will appear here once the feed is fetched."
           }
         />
 
         <MarkAllReadDialog
           isOpen={showMarkAllReadDialog}
-          contextDescription="this feed"
+          contextDescription="this subscription"
           unreadCount={unreadCount}
           isLoading={isMarkAllReadPending}
           onConfirm={handleMarkAllRead}
@@ -299,10 +301,10 @@ function SingleFeedContent() {
   );
 }
 
-export function SingleFeedClient() {
+export function SingleSubscriptionClient() {
   return (
     <Suspense>
-      <SingleFeedContent />
+      <SingleSubscriptionContent />
     </Suspense>
   );
 }

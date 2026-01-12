@@ -70,14 +70,14 @@ export default function SubscribePage() {
           return { items: [data] };
         }
         // Check for duplicates - SSE might have already added this subscription
-        if (oldData.items.some((item) => item.subscription.id === data.subscription.id)) {
+        if (oldData.items.some((item) => item.id === data.id)) {
           return oldData;
         }
         // Insert the new subscription and maintain alphabetical order by title
         const newItems = [...oldData.items, data];
         newItems.sort((a, b) => {
-          const titleA = (a.subscription.customTitle || a.feed.title || "").toLowerCase();
-          const titleB = (b.subscription.customTitle || b.feed.title || "").toLowerCase();
+          const titleA = (a.title || a.originalTitle || "").toLowerCase();
+          const titleB = (b.title || b.originalTitle || "").toLowerCase();
           return titleA.localeCompare(titleB);
         });
         return { ...oldData, items: newItems };
