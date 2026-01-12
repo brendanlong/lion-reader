@@ -8,22 +8,12 @@
 "use client";
 
 import { useState, useCallback, type ReactNode } from "react";
-import {
-  QueryClient,
-  QueryClientProvider,
-  QueryCache,
-  MutationCache,
-  HydrationBoundary,
-  dehydrate,
-} from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
 import { QueryNormalizerProvider } from "@normy/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 import { trpc } from "./client";
-
-// Re-export for use in server components
-export { HydrationBoundary, dehydrate };
 
 /**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
