@@ -7,12 +7,12 @@
 
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { getViewPreferences, useViewPreferences, useExpandedTags } from "@/lib/hooks";
+import { useExpandedTags } from "@/lib/hooks";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 
@@ -82,101 +82,6 @@ export function Sidebar({ onClose }: SidebarProps) {
       utils.tags.list.invalidate();
     },
   });
-
-  // Get view preferences for prefetching with correct filters
-  const allPrefs = useViewPreferences("all");
-  const starredPrefs = useViewPreferences("starred");
-  const savedPrefs = useViewPreferences("saved");
-
-  // Prefetch entry list on mousedown for faster navigation
-  const prefetchEntryList = useCallback(
-    (options: {
-      subscriptionId?: string;
-      tagId?: string;
-      type?: "saved";
-      starredOnly?: boolean;
-      uncategorized?: boolean;
-      unreadOnly?: boolean;
-      sortOrder?: "newest" | "oldest";
-    }) => {
-      utils.entries.list.prefetchInfinite(
-        {
-          subscriptionId: options.subscriptionId,
-          tagId: options.tagId,
-          type: options.type,
-          starredOnly: options.starredOnly,
-          uncategorized: options.uncategorized,
-          unreadOnly: options.unreadOnly,
-          sortOrder: options.sortOrder,
-          limit: 20,
-        },
-        {
-          pages: 1,
-          getNextPageParam: (lastPage) => lastPage.nextCursor,
-        }
-      );
-    },
-    [utils]
-  );
-
-  // Mousedown handlers for prefetching
-  const handleAllMouseDown = useCallback(() => {
-    prefetchEntryList({
-      unreadOnly: allPrefs.showUnreadOnly,
-      sortOrder: allPrefs.sortOrder,
-    });
-  }, [prefetchEntryList, allPrefs.showUnreadOnly, allPrefs.sortOrder]);
-
-  const handleStarredMouseDown = useCallback(() => {
-    prefetchEntryList({
-      starredOnly: true,
-      unreadOnly: starredPrefs.showUnreadOnly,
-      sortOrder: starredPrefs.sortOrder,
-    });
-  }, [prefetchEntryList, starredPrefs.showUnreadOnly, starredPrefs.sortOrder]);
-
-  const handleSavedMouseDown = useCallback(() => {
-    prefetchEntryList({
-      type: "saved",
-      unreadOnly: savedPrefs.showUnreadOnly,
-      sortOrder: savedPrefs.sortOrder,
-    });
-  }, [prefetchEntryList, savedPrefs.showUnreadOnly, savedPrefs.sortOrder]);
-
-  const handleSubscriptionMouseDown = useCallback(
-    (subscriptionId: string) => {
-      // Use sync function for per-subscription preferences (can't call hooks in callbacks)
-      const prefs = getViewPreferences("subscription", subscriptionId);
-      prefetchEntryList({
-        subscriptionId,
-        unreadOnly: prefs.showUnreadOnly,
-        sortOrder: prefs.sortOrder,
-      });
-    },
-    [prefetchEntryList]
-  );
-
-  const handleTagMouseDown = useCallback(
-    (tagId: string) => {
-      // Use sync function for per-tag preferences (can't call hooks in callbacks)
-      const prefs = getViewPreferences("tag", tagId);
-      prefetchEntryList({
-        tagId,
-        unreadOnly: prefs.showUnreadOnly,
-        sortOrder: prefs.sortOrder,
-      });
-    },
-    [prefetchEntryList]
-  );
-
-  const handleUncategorizedMouseDown = useCallback(() => {
-    const prefs = getViewPreferences("uncategorized");
-    prefetchEntryList({
-      uncategorized: true,
-      unreadOnly: prefs.showUnreadOnly,
-      sortOrder: prefs.sortOrder,
-    });
-  }, [prefetchEntryList]);
 
   // Calculate total unread count (subscriptions + saved articles)
   const totalUnreadCount =
@@ -251,7 +156,6 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/all"
             onClick={handleClose}
-            onMouseDown={handleAllMouseDown}
             className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActiveLink("/all")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -269,7 +173,6 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/starred"
             onClick={handleClose}
-            onMouseDown={handleStarredMouseDown}
             className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActiveLink("/starred")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -287,7 +190,6 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/saved"
             onClick={handleClose}
-            onMouseDown={handleSavedMouseDown}
             className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActiveLink("/saved")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -387,7 +289,6 @@ export function Sidebar({ onClose }: SidebarProps) {
                       <Link
                         href={tagHref}
                         onClick={handleClose}
-                        onMouseDown={() => handleTagMouseDown(tag.id)}
                         className={`flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
                           isActive
                             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -420,9 +321,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                             <li key={sub.id} className="group relative">
                               <Link
                                 href={subHref}
-                                prefetch={false}
                                 onClick={handleClose}
-                                onMouseDown={() => handleSubscriptionMouseDown(sub.id)}
                                 className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
                                   isSubActive
                                     ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -556,7 +455,6 @@ export function Sidebar({ onClose }: SidebarProps) {
                     <Link
                       href="/uncategorized"
                       onClick={handleClose}
-                      onMouseDown={handleUncategorizedMouseDown}
                       className={`flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
                         isActiveLink("/uncategorized")
                           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -589,9 +487,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                           <li key={sub.id} className="group relative">
                             <Link
                               href={subHref}
-                              prefetch={false}
                               onClick={handleClose}
-                              onMouseDown={() => handleSubscriptionMouseDown(sub.id)}
                               className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
                                 isSubActive
                                   ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
