@@ -2,249 +2,62 @@
 
 ## Documentation
 
-- `docs/` - Design documents and feature specs (feature docs were written at design time and may be outdated)
-- `docs/references/` - Reference documentation for external tools we use. Always consult these before editing related config files to avoid hallucinating invalid options.
+- `docs/` - Design documents and feature specs (may be outdated)
+- `docs/references/` - Reference docs for external tools. Consult before editing related configs.
 
-## Coding
+## Commands
 
-- When you're done with a task, always commit the changes. If more changes are needed, you can always
-  amend the commit (but generally prefer to make a new commit if it makes sense)
+- `pnpm typecheck` - Run before committing (no `any`, no `@ts-ignore`)
 
-## Type Safety
+## Code Quality
 
-- **All non-test code must be fully type checked** - no `any`, no `// @ts-ignore`, no implicit any
-- Run `pnpm typecheck` (tsc --noEmit) before committing
-- Use Zod schemas for runtime validation at system boundaries (API inputs, external data)
-- Prefer `unknown` over `any` when type is truly unknown, then narrow with type guards
+- **Types**: Explicit types everywhere; use Zod for runtime validation
+- **Queries**: Avoid N+1 queries; use joins or batch fetching
+- **UI**: Use optimistic updates for responsive UX
 
-## Testing Philosophy
+## Git
 
-### Unit Tests vs Integration Tests
+- Break work into commit-sized chunks; commit when finished
+- Use amend commits when it makes sense
+- Main branch: `master`
+- Commit `drizzle/schema.sql` changes separately if unrelated to current work
 
-**Unit tests** are for pure business logic with no I/O:
-
-- Feed parsing (XML → ParsedFeed)
-- Cache header interpretation
-- Next fetch time calculation
-- Entry diffing / change detection
-- Rate limit decisions
-- Any pure function that transforms data
-
-**Integration tests** are for code that touches external systems:
-
-- Database queries and transactions
-- Redis operations
-- HTTP endpoints (tRPC routes)
-- Background job execution
-- Full user flows (register → subscribe → read)
-
-### Mocking Approach
-
-**We avoid mocks.** Structure code so they're not needed:
-
-1. **Separate pure logic from I/O** - Pure functions are easy to unit test, I/O is tested via integration tests
-2. **Use real databases in integration tests** - docker-compose provides Postgres and Redis
-3. **Don't mock internal code** - If you need to mock your own code, refactor it instead
-
-```typescript
-// GOOD: Pure function, easy to unit test
-function calculateNextFetch(cacheControl: CacheHeaders, lastFetch: Date): Date;
-
-// GOOD: I/O function, test with real DB in integration tests
-async function fetchFeed(url: string): Promise<FetchResult>;
-
-// BAD: Mixed concerns, would need mocks to test
-async function fetchAndCalculateNext(feedId: string): Promise<Date> {
-  const feed = await db.getFeed(feedId); // I/O mixed with logic
-  // ...
-}
-```
-
-**Exceptions where mocks are acceptable:**
-
-- External HTTP APIs in integration tests (use a test server or recorded responses)
-- Time-dependent code (inject a clock abstraction)
-- Third-party services we don't control (email providers, OAuth providers)
-
-### Test File Organization
+## Project Structure
 
 ```
-tests/
-  unit/           # Fast, no I/O, run frequently
-  integration/    # Requires Docker services, run in CI
+src/server/     # Server-only (tRPC routers, DB, background jobs)
+src/lib/        # Shared utilities (client and server)
+src/components/ # React components
+src/app/        # Next.js routes
+tests/unit/     # Pure logic tests (no mocks, no DB)
+tests/integration/ # Real DB via docker-compose (no mocks)
 ```
-
-## Code Structure
-
-### Pure Logic at Core, I/O at Edges
-
-```
-┌─────────────────────────────────────────┐
-│           I/O Layer (thin)              │  ← Integration tested
-│  HTTP handlers, DB queries, Redis ops   │
-└────────────────────┬────────────────────┘
-                     │
-┌────────────────────▼────────────────────┐
-│         Pure Business Logic             │  ← Unit tested
-│  Parsing, validation, calculations      │
-└─────────────────────────────────────────┘
-```
-
-### Directory Conventions
-
-- `src/server/` - Server-only code (tRPC routers, DB, background jobs)
-- `src/lib/` - Shared utilities (both client and server)
-- `src/components/` - React components
-- `src/app/` - Next.js routes
 
 ## Database Conventions
 
-### IDs
-
-- Use **UUIDv7** for all primary keys (time-ordered, globally unique)
-- Generate with `gen_uuidv7()` in Postgres or equivalent in TypeScript
-- UUIDv7 ordering means `ORDER BY id DESC` gives reverse chronological order
-
-### Timestamps
-
-- Always use `timestamptz` (with timezone), never `timestamp`
-- Store in UTC, convert to user timezone in frontend
-- Use `created_at` and `updated_at` on all tables
-
-### Soft Deletes
-
-- Use `deleted_at` or `unsubscribed_at` patterns, not hard deletes
-- Always filter these out in queries: `WHERE deleted_at IS NULL`
-
-### Upsert Pattern ("Just Do It")
-
-Default to attempting operations directly rather than checking state first:
-
-```typescript
-// GOOD: Just attempt the insert, handle conflict
-await db.insert(tags).values({ ... }).onConflictDoNothing();
-
-// GOOD: Delete with RETURNING to check if row existed
-const deleted = await db.delete(tags).where(...).returning({ id: tags.id });
-if (deleted.length === 0) throw errors.tagNotFound();
-
-// BAD: Check-then-act (race conditions, extra round trip)
-const existing = await db.select().from(tags).where(...);
-if (existing.length > 0) throw errors.alreadyExists();
-await db.insert(tags).values({ ... });
-```
-
-**Use this pattern when:**
-
-- Creating records (INSERT ON CONFLICT DO NOTHING/UPDATE)
-- Deleting records (DELETE ... RETURNING to verify existence)
-- Updating records (UPDATE ... RETURNING to verify existence)
-
-**Skip this pattern when:**
-
-- Business logic requires inspecting the current state (e.g., soft-delete reactivation where you need to check `unsubscribedAt` value)
-- The upsert would make the query significantly more complex
-- You need to return different errors based on the current state
+- **IDs**: UUIDv7 via `gen_uuidv7()` - time-ordered, so `ORDER BY id DESC` = reverse chronological
+- **Timestamps**: Always `timestamptz`, store UTC
+- **Soft deletes**: Use `deleted_at`/`unsubscribed_at` patterns
+- **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act
+- **Background jobs**: Postgres-based queue
+- **Caching/SSE**: Redis available for caching and coordinating SSE
 
 ## API Conventions
 
-### Pagination
-
-- Always cursor-based, never offset-based
-- Return `{ items: T[], nextCursor?: string }`
-- Cursor is opaque to client (base64-encoded ID or compound key)
-
-### Error Responses
-
-```typescript
-{
-  error: {
-    code: string;       // 'UNAUTHORIZED', 'NOT_FOUND', 'VALIDATION_ERROR'
-    message: string;    // Human-readable
-    details?: object;   // Optional additional context
-  }
-}
-```
-
-### Naming
-
-- tRPC procedures: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
-- REST endpoints: `HTTP_METHOD /v1/noun` (e.g., `GET /v1/entries`, `POST /v1/entries/mark-read`)
+- **Pagination**: Always cursor-based (never offset); return `{ items: T[], nextCursor?: string }`
+- **tRPC naming**: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
 
 ## Outgoing HTTP Requests
 
-When making outgoing HTTP requests (fetching feeds, calling external APIs, downloading images), always set the `User-Agent` header using the centralized module:
-
 ```typescript
 import { USER_AGENT, buildUserAgent } from "@/server/http/user-agent";
-
-// For general requests
 headers: { "User-Agent": USER_AGENT }
-
-// For requests with context (e.g., feed fetching)
-headers: { "User-Agent": buildUserAgent({ context: `feed:${feedId}` }) }
+// Or with context: buildUserAgent({ context: `feed:${feedId}` })
 ```
 
-The User-Agent includes app version, git commit SHA, website URL, GitHub repo, and contact email - making it easy for external services to identify and contact us if needed.
+## Parsing
 
-## Git Conventions
-
-- The main branch is named `master`
-- Don't commit unless explicitly asked
-- Commit messages: imperative mood, explain why not what
-- One logical change per commit
-- If you see changes to `drizzle/schema.sql` unrelated to your current work, commit them separately - they may be leftover from previous migrations that couldn't update it (e.g., in environments without Docker)
-
-## Background Jobs
-
-- Use Postgres-based job queue (not Redis)
-- Jobs are idempotent - safe to retry
-- Set reasonable `max_attempts` (usually 3)
-- Use exponential backoff for retries
-
-## Performance Guidelines
-
-- Avoid N+1 queries - use joins or batch fetching
-- Add database indexes for common query patterns
-- Use Redis for caching hot data (sessions, rate limits)
-- Keep API responses small - use pagination, select specific fields
-
-## Parsing Guidelines
-
-### Avoid Reparsing
-
-- **Never parse the same data multiple times** - parse once and pass the parsed structure through your code
-- Cache parsed results when the same data will be accessed by multiple operations
-- If you need to extract different information, do it all in a single parse pass
-
-### Parser Selection
-
-**Use SAX-style (streaming) parsers when possible:**
-
-- `fast-xml-parser` for RSS/Atom feeds - parses to JSON without building a full DOM
-- `htmlparser2` for HTML when you need to extract specific data (streaming parser)
-- Streaming parsers use less memory and are faster for large documents
-
-**Use linkedom when an algorithm requires a DOM:**
-
-- Mozilla Readability requires a DOM API (DOMParser, Element, Document, etc.)
-- Article extraction algorithms that need tree traversal and DOM manipulation
-- When porting browser-based code that assumes `window.document`
-
-## React Query / tRPC Patterns
-
-### Optimistic Updates
-
-For mutations that update UI state (mark read, star, etc.), use optimistic updates:
-
-- Cancel in-flight queries in `onMutate` to prevent race conditions
-- Snapshot current state for rollback
-- Update cache immediately with `setQueryData`/`setInfiniteData`
-- Rollback in `onError` if mutation fails
-- Show toast notification on errors
-
-### Targeted Cache Updates vs Invalidation
-
-- **Prefer `setQueryData`/`setInfiniteData`** for updating specific items in lists
-- **Use `invalidate`** only when you need fresh server data (e.g., computed counts)
-- Targeted updates are faster and avoid unnecessary refetches
+- XML/RSS: `fast-xml-parser` (streaming)
+- HTML extraction: `htmlparser2` (streaming)
+- DOM required (Readability): `linkedom`
+- Parse once, pass parsed structure through code
