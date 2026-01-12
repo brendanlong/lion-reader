@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, and, desc, asc, lte, inArray, notInArray, sql, isNull } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -18,6 +18,7 @@ import {
   entries,
   feeds,
   userEntries,
+  subscriptions,
   subscriptionTags,
   tags,
   visibleEntries,
@@ -147,21 +148,31 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
- * Schema for feed unread count.
+ * Schema for subscription unread count.
  * Returns the absolute count (not delta) for robustness - self-correcting if counts drift.
  */
-const feedUnreadCountSchema = z.object({
-  feedId: z.string(),
+const subscriptionUnreadCountSchema = z.object({
+  subscriptionId: z.string(),
+  unreadCount: z.number(),
+});
+
+/**
+ * Schema for tag unread count.
+ * Returns the absolute count (not delta) for robustness - self-correcting if counts drift.
+ */
+const tagUnreadCountSchema = z.object({
+  tagId: z.string(),
   unreadCount: z.number(),
 });
 
 /**
  * Output schema for markRead mutation.
- * Includes final unread counts for affected feeds to enable targeted cache updates.
+ * Includes final unread counts for affected subscriptions and tags to enable targeted cache updates.
  */
 const markReadOutputSchema = z.object({
   entries: z.array(entryMutationResultSchema),
-  feedUnreadCounts: z.array(feedUnreadCountSchema),
+  subscriptionUnreadCounts: z.array(subscriptionUnreadCountSchema),
+  tagUnreadCounts: z.array(tagUnreadCountSchema),
 });
 
 /**
@@ -634,28 +645,76 @@ export const entriesRouter = createTRPCRouter({
           starred: userEntries.starred,
         });
 
-      // Get feed IDs and their unread counts in a single query
-      // Uses subquery for affected feeds + LEFT JOIN to include feeds with 0 unread
+      // Get affected feed IDs from entries being marked
       const affectedFeedsSubquery = ctx.db
         .selectDistinct({ feedId: entries.feedId })
         .from(entries)
         .where(inArray(entries.id, input.ids))
         .as("affected_feeds");
 
-      const feedUnreadCounts = await ctx.db
+      // Find subscriptions that contain the affected feeds and get their unread counts
+      const affectedSubscriptionsSubquery = ctx.db
+        .selectDistinct({ subscriptionId: subscriptions.id })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            isNull(subscriptions.unsubscribedAt),
+            sql`${subscriptions.feedIds} && ARRAY(SELECT feed_id FROM ${affectedFeedsSubquery})`
+          )
+        )
+        .as("affected_subscriptions");
+
+      const subscriptionUnreadCounts = await ctx.db
         .select({
-          feedId: affectedFeedsSubquery.feedId,
-          unreadCount: sql<number>`COALESCE(COUNT(${userEntries.entryId}) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
+          subscriptionId: affectedSubscriptionsSubquery.subscriptionId,
+          unreadCount: sql<number>`COALESCE(COUNT(*) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
         })
-        .from(affectedFeedsSubquery)
-        .leftJoin(entries, eq(entries.feedId, affectedFeedsSubquery.feedId))
+        .from(affectedSubscriptionsSubquery)
+        .leftJoin(subscriptions, eq(subscriptions.id, affectedSubscriptionsSubquery.subscriptionId))
+        .leftJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
         .leftJoin(
           userEntries,
           and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
         )
-        .groupBy(affectedFeedsSubquery.feedId);
+        .groupBy(affectedSubscriptionsSubquery.subscriptionId);
 
-      return { entries: updatedEntries, feedUnreadCounts };
+      // Get tag unread counts for tags associated with affected subscriptions
+      const affectedTagsSubquery = ctx.db
+        .selectDistinct({ tagId: subscriptionTags.tagId })
+        .from(subscriptionTags)
+        .where(
+          inArray(
+            subscriptionTags.subscriptionId,
+            sql`(SELECT subscription_id FROM ${affectedSubscriptionsSubquery})`
+          )
+        )
+        .as("affected_tags");
+
+      // Then get unread counts for those tags
+      const tagUnreadCounts = await ctx.db
+        .select({
+          tagId: affectedTagsSubquery.tagId,
+          unreadCount: sql<number>`COALESCE(COUNT(*) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
+        })
+        .from(affectedTagsSubquery)
+        .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, affectedTagsSubquery.tagId))
+        .leftJoin(
+          subscriptions,
+          and(
+            eq(subscriptionTags.subscriptionId, subscriptions.id),
+            eq(subscriptions.userId, userId),
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .leftJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
+        .leftJoin(
+          userEntries,
+          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
+        )
+        .groupBy(affectedTagsSubquery.tagId);
+
+      return { entries: updatedEntries, subscriptionUnreadCounts, tagUnreadCounts };
     }),
 
   /**
