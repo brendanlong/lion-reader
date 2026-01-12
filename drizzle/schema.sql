@@ -216,6 +216,23 @@ CREATE TABLE public.user_entries (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE VIEW public.user_feeds AS
+ SELECT s.id,
+    s.user_id,
+    s.subscribed_at,
+    s.feed_id,
+    s.feed_ids,
+    s.custom_title,
+    f.type,
+    COALESCE(s.custom_title, f.title) AS title,
+    f.title AS original_title,
+    f.url,
+    f.site_url,
+    f.description
+   FROM (public.subscriptions s
+     JOIN public.feeds f ON ((f.id = s.feed_id)))
+  WHERE (s.unsubscribed_at IS NULL);
+
 CREATE TABLE public.users (
     id uuid NOT NULL,
     email public.citext NOT NULL,
@@ -226,6 +243,39 @@ CREATE TABLE public.users (
     invite_id uuid,
     show_spam boolean DEFAULT false NOT NULL
 );
+
+CREATE VIEW public.visible_entries AS
+ SELECT ue.user_id,
+    e.id,
+    e.feed_id,
+    e.type,
+    e.guid,
+    e.url,
+    e.title,
+    e.author,
+    e.content_original,
+    e.content_cleaned,
+    e.summary,
+    e.site_name,
+    e.image_url,
+    e.published_at,
+    e.fetched_at,
+    e.last_seen_at,
+    e.content_hash,
+    e.spam_score,
+    e.is_spam,
+    e.list_unsubscribe_mailto,
+    e.list_unsubscribe_https,
+    e.list_unsubscribe_post,
+    e.created_at,
+    e.updated_at,
+    ue.read,
+    ue.starred,
+    s.id AS subscription_id
+   FROM ((public.user_entries ue
+     JOIN public.entries e ON ((e.id = ue.entry_id)))
+     LEFT JOIN public.subscriptions s ON (((s.user_id = ue.user_id) AND (e.feed_id = ANY (s.feed_ids)))))
+  WHERE ((s.unsubscribed_at IS NULL) OR (ue.starred = true));
 
 CREATE TABLE public.websub_subscriptions (
     id uuid NOT NULL,
