@@ -12,21 +12,40 @@ import { useState, useCallback, useSyncExternalStore } from "react";
 const STORAGE_KEY = "lion-reader-expanded-tags";
 
 /**
+ * Cached snapshots to avoid infinite loops per React requirements.
+ * getSnapshot must return the same reference if the data hasn't changed.
+ */
+let cachedSnapshot: Set<string> | null = null;
+let cachedStorageValue: string | null = null;
+
+/**
  * Read expanded tag IDs from localStorage.
+ * Returns cached value if localStorage hasn't changed.
  */
 function getSnapshot(): Set<string> {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
+    // Return cached snapshot if storage value hasn't changed
+    if (stored === cachedStorageValue && cachedSnapshot !== null) {
+      return cachedSnapshot;
+    }
+    cachedStorageValue = stored;
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
-        return new Set(parsed);
+        cachedSnapshot = new Set(parsed);
+        return cachedSnapshot;
       }
     }
+    cachedSnapshot = new Set();
+    return cachedSnapshot;
   } catch (error) {
     console.error("Failed to parse expanded tags from localStorage:", error);
+    if (cachedSnapshot === null) {
+      cachedSnapshot = new Set();
+    }
+    return cachedSnapshot;
   }
-  return new Set();
 }
 
 /**
@@ -40,10 +59,13 @@ function getServerSnapshot(): Set<string> {
 
 /**
  * Subscribe to storage changes (for cross-tab sync).
+ * Invalidates the cache when storage changes.
  */
 function subscribe(callback: () => void): () => void {
   const handler = (event: StorageEvent) => {
     if (event.key === STORAGE_KEY) {
+      // Invalidate cache so next getSnapshot reads fresh value
+      cachedStorageValue = null;
       callback();
     }
   };
@@ -82,9 +104,13 @@ export function useExpandedTags(): UseExpandedTagsResult {
           next.add(tagId);
         }
 
-        // Persist to localStorage
+        // Persist to localStorage and invalidate cache
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(next)));
+          const serialized = JSON.stringify(Array.from(next));
+          localStorage.setItem(STORAGE_KEY, serialized);
+          // Update cache to match what we just wrote
+          cachedStorageValue = serialized;
+          cachedSnapshot = next;
         } catch (error) {
           console.error("Failed to save expanded tags to localStorage:", error);
         }
