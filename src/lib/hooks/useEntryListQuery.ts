@@ -135,11 +135,6 @@ export interface UseEntryListQueryResult {
    * Returns the entry ID to navigate to, or undefined if at the start.
    */
   getPreviousEntryId: () => string | undefined;
-
-  /**
-   * Prefetch entry data on mousedown (before click completes).
-   */
-  prefetchEntry: (entryId: string) => void;
 }
 
 /**
@@ -151,8 +146,6 @@ export interface UseEntryListQueryResult {
  */
 export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryListQueryResult {
   const { filters, pageSize = 20, openEntryId, prefetchThreshold = 3 } = options;
-
-  const utils = trpc.useUtils();
 
   // Track if we've triggered a fetch to avoid duplicate calls
   const fetchingRef = useRef(false);
@@ -320,14 +313,6 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     return undefined;
   }, [entries, openEntryId]);
 
-  // Prefetch entry data on mousedown
-  const prefetchEntry = useCallback(
-    (entryId: string) => {
-      utils.entries.get.fetch({ id: entryId });
-    },
-    [utils]
-  );
-
   // Wrap fetchNextPage to reset the fetching ref
   const wrappedFetchNextPage = useCallback(() => {
     fetchNextPage();
@@ -346,6 +331,5 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     previousEntryId,
     getNextEntryId,
     getPreviousEntryId,
-    prefetchEntry,
   };
 }

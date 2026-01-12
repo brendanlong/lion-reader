@@ -36,8 +36,6 @@ interface ArticleListItemProps {
   onToggleRead?: (id: string, currentlyRead: boolean) => void;
   /** Callback when the star indicator is clicked */
   onToggleStar?: (id: string, currentlyStarred: boolean) => void;
-  /** Callback to prefetch article data on mousedown (before click completes) */
-  onPrefetch?: (id: string) => void;
 }
 
 /**
@@ -77,7 +75,6 @@ export const ArticleListItem = memo(function ArticleListItem({
   onClick,
   onToggleRead,
   onToggleStar,
-  onPrefetch,
 }: ArticleListItemProps) {
   const displayTitle = title ?? "Untitled";
 
@@ -90,12 +87,6 @@ export const ArticleListItem = memo(function ArticleListItem({
       e.preventDefault();
       onClick?.(id);
     }
-  };
-
-  const handleMouseDown = () => {
-    // Prefetch article data when user presses mouse button (before click completes)
-    // This gives a 50-150ms head start with near-zero false positives
-    onPrefetch?.(id);
   };
 
   const handleToggleRead = (e: React.MouseEvent) => {
@@ -114,7 +105,6 @@ export const ArticleListItem = memo(function ArticleListItem({
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      onMouseDown={handleMouseDown}
       data-entry-id={id}
       className={getItemClasses(read, selected)}
       aria-label={`${read ? "Read" : "Unread"}${selected ? ", selected" : ""} article: ${displayTitle} from ${source}`}

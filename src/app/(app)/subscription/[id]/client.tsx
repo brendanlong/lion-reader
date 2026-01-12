@@ -160,7 +160,6 @@ function SingleSubscriptionContent() {
       hasNextPage: entryListQuery.hasNextPage,
       fetchNextPage: entryListQuery.fetchNextPage,
       refetch: entryListQuery.refetch,
-      prefetchEntry: entryListQuery.prefetchEntry,
     }),
     [entryListQuery]
   );
