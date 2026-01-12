@@ -25,6 +25,9 @@ import {
   processEntries,
   calculateNextFetch,
   renewExpiringSubscriptions,
+  canUseWebSub,
+  subscribeToHub,
+  deactivateWebsub,
   getDomainFromUrl,
   type FetchFeedResult,
   type ParsedCacheHeaders,
@@ -278,6 +281,12 @@ async function processSuccessfulFetch(
   // This timestamp must match entries.lastSeenAt for entries currently in the feed
   const lastEntriesUpdatedAt = processResult.hasChanges ? now : feed.lastEntriesUpdatedAt;
 
+  // Determine the new hub URL state
+  // If the feed content has a hub URL, use it; otherwise clear it
+  // (falling back to old value would prevent detecting when a feed removes WebSub)
+  const newHubUrl = feedMetadata.hubUrl ?? null;
+  const newSelfUrl = feedMetadata.selfUrl ?? feed.selfUrl;
+
   await db
     .update(feeds)
     .set({
@@ -292,12 +301,47 @@ async function processSuccessfulFetch(
       nextFetchAt: nextFetch.nextFetchAt,
       consecutiveFailures: 0,
       lastError: null,
-      // Store WebSub hub and self URLs if discovered
-      hubUrl: feedMetadata.hubUrl ?? feed.hubUrl,
-      selfUrl: feedMetadata.selfUrl ?? feed.selfUrl,
+      // Store WebSub hub and self URLs from feed content
+      hubUrl: newHubUrl,
+      selfUrl: newSelfUrl,
       updatedAt: now,
     })
     .where(eq(feeds.id, feed.id));
+
+  // Handle WebSub subscription changes
+  const websubMetadata: Record<string, unknown> = {};
+
+  if (newHubUrl && !feed.websubActive && canUseWebSub()) {
+    // Feed has a hub URL but WebSub isn't active - try to subscribe
+    const updatedFeed: Feed = {
+      ...feed,
+      hubUrl: newHubUrl,
+      selfUrl: newSelfUrl,
+    };
+    const subscribeResult = await subscribeToHub(updatedFeed);
+    if (subscribeResult.success) {
+      websubMetadata.websubSubscribed = true;
+      logger.info("Initiated WebSub subscription for feed", {
+        feedId: feed.id,
+        hubUrl: newHubUrl,
+      });
+    } else {
+      websubMetadata.websubSubscribeFailed = subscribeResult.error;
+      logger.warn("Failed to subscribe to WebSub hub", {
+        feedId: feed.id,
+        hubUrl: newHubUrl,
+        error: subscribeResult.error,
+      });
+    }
+  } else if (!newHubUrl && feed.websubActive) {
+    // Feed had WebSub active but hub URL is now gone - deactivate
+    await deactivateWebsub(feed.id);
+    websubMetadata.websubDeactivated = true;
+    logger.info("Deactivated WebSub - hub URL removed from feed", {
+      feedId: feed.id,
+      previousHubUrl: feed.hubUrl,
+    });
+  }
 
   return {
     success: true,
@@ -308,6 +352,7 @@ async function processSuccessfulFetch(
       unchangedEntries: processResult.unchangedCount,
       disappearedEntries: processResult.disappearedCount,
       nextFetchReason: nextFetch.reason,
+      ...websubMetadata,
     },
   };
 }

@@ -86,7 +86,7 @@ function isPrivateHostname(hostname: string): boolean {
  *   await scheduleNextFetch(feed);
  * }
  */
-function canUseWebSub(): boolean {
+export function canUseWebSub(): boolean {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
 
   // WebSub requires a configured base URL
@@ -156,7 +156,7 @@ export function generateCallbackSecret(): string {
 /**
  * Result of a subscription request to a hub.
  */
-interface SubscribeToHubResult {
+export interface SubscribeToHubResult {
   /** Whether the subscription request was accepted by the hub */
   success: boolean;
   /** The subscription record ID if successful */
@@ -183,7 +183,7 @@ interface SubscribeToHubResult {
  *   }
  * }
  */
-async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> {
+export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> {
   if (!feed.hubUrl) {
     return { success: false, error: "Feed has no hub URL" };
   }
@@ -667,4 +667,59 @@ async function markSubscriptionFailed(
     feedId,
     error,
   });
+}
+
+/**
+ * Deactivates WebSub for a feed when the hub URL is removed.
+ * Marks any active subscription as unsubscribed and sets websubActive to false.
+ *
+ * @param feedId - The feed ID
+ * @returns true if WebSub was deactivated, false if it wasn't active
+ */
+export async function deactivateWebsub(feedId: string): Promise<boolean> {
+  // Find active subscription for this feed
+  const [subscription] = await db
+    .select()
+    .from(websubSubscriptions)
+    .where(and(eq(websubSubscriptions.feedId, feedId), eq(websubSubscriptions.state, "active")))
+    .limit(1);
+
+  if (!subscription) {
+    // No active subscription - just ensure websubActive is false
+    await db
+      .update(feeds)
+      .set({
+        websubActive: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(feeds.id, feedId));
+
+    return false;
+  }
+
+  // Mark subscription as unsubscribed
+  await db
+    .update(websubSubscriptions)
+    .set({
+      state: "unsubscribed",
+      lastError: "Hub URL removed from feed",
+      updatedAt: new Date(),
+    })
+    .where(eq(websubSubscriptions.id, subscription.id));
+
+  // Mark feed as not using WebSub
+  await db
+    .update(feeds)
+    .set({
+      websubActive: false,
+      updatedAt: new Date(),
+    })
+    .where(eq(feeds.id, feedId));
+
+  logger.info("WebSub deactivated - hub URL removed from feed", {
+    subscriptionId: subscription.id,
+    feedId,
+  });
+
+  return true;
 }
