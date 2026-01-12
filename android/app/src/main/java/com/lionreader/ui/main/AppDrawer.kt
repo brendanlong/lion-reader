@@ -211,7 +211,7 @@ fun AppDrawer(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             }
 
-            // Feeds section
+            // Subscriptions section
             Text(
                 text = "Feeds",
                 style = MaterialTheme.typography.labelMedium,
@@ -220,7 +220,7 @@ fun AppDrawer(
             )
 
             subscriptions.forEach { sub ->
-                val feedRoute = Screen.Feed.createRoute(sub.subscription.feedId)
+                val subscriptionRoute = Screen.Subscription.createRoute(sub.subscription.id)
                 NavigationDrawerItem(
                     label = {
                         Text(
@@ -242,8 +242,8 @@ fun AppDrawer(
                             }
                         }
                     },
-                    selected = currentRoute == feedRoute,
-                    onClick = { onNavigate(feedRoute) },
+                    selected = currentRoute == subscriptionRoute,
+                    onClick = { onNavigate(subscriptionRoute) },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                 )
             }

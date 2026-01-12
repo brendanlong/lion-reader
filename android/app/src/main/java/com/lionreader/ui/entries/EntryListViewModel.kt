@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -59,7 +60,7 @@ class EntryListViewModel
         }
 
         // Route-based filter parameters (updated via setRoute)
-        private val _feedId = MutableStateFlow<String?>(null)
+        private val _subscriptionId = MutableStateFlow<String?>(null)
         private val _tagId = MutableStateFlow<String?>(null)
         private val _uncategorized = MutableStateFlow(false)
         private val _starredOnly = MutableStateFlow(false)
@@ -99,7 +100,7 @@ class EntryListViewModel
         @OptIn(ExperimentalCoroutinesApi::class)
         private val filtersFlow =
             combine(
-                _feedId,
+                _subscriptionId,
                 _tagId,
                 _uncategorized,
                 _starredOnly,
@@ -108,7 +109,7 @@ class EntryListViewModel
                 _currentOffset,
             ) { values ->
                 @Suppress("UNCHECKED_CAST")
-                val feedId = values[0] as String?
+                val subscriptionId = values[0] as String?
                 val tagId = values[1] as String?
                 val uncategorized = values[2] as Boolean
                 val starredOnly = values[3] as Boolean
@@ -117,7 +118,7 @@ class EntryListViewModel
                 val offset = values[6] as Int
 
                 EntryFilters(
-                    feedId = feedId,
+                    subscriptionId = subscriptionId,
                     tagId = tagId,
                     uncategorized = uncategorized,
                     unreadOnly = unreadOnly,
@@ -173,7 +174,7 @@ class EntryListViewModel
          * Call this when the navigation route changes to update the entry list
          * to show the appropriate entries.
          *
-         * @param route The route string (e.g., "all", "starred", "tag/xxx", "feed/xxx")
+         * @param route The route string (e.g., "all", "starred", "tag/xxx", "subscription/xxx")
          */
         fun setRoute(route: String) {
             if (route == _currentRoute.value) return
@@ -194,7 +195,7 @@ class EntryListViewModel
          */
         private fun parseAndApplyRoute(route: String) {
             // Parse route to extract filter parameters
-            val newFeedId: String?
+            val newSubscriptionId: String?
             val newTagId: String?
             val newUncategorized: Boolean
             val newStarredOnly: Boolean
@@ -202,28 +203,28 @@ class EntryListViewModel
 
             when {
                 route == Screen.Starred.route -> {
-                    newFeedId = null
+                    newSubscriptionId = null
                     newTagId = null
                     newUncategorized = false
                     newStarredOnly = true
                     staticTitle = Screen.Starred.TITLE
                 }
                 route == Screen.Uncategorized.route -> {
-                    newFeedId = null
+                    newSubscriptionId = null
                     newTagId = null
                     newUncategorized = true
                     newStarredOnly = false
                     staticTitle = Screen.Uncategorized.TITLE
                 }
                 route.startsWith("tag/") -> {
-                    newFeedId = null
+                    newSubscriptionId = null
                     newTagId = route.removePrefix("tag/")
                     newUncategorized = false
                     newStarredOnly = false
                     staticTitle = "Tag" // Will be resolved dynamically
                 }
-                route.startsWith("feed/") -> {
-                    newFeedId = route.removePrefix("feed/")
+                route.startsWith("subscription/") -> {
+                    newSubscriptionId = route.removePrefix("subscription/")
                     newTagId = null
                     newUncategorized = false
                     newStarredOnly = false
@@ -231,7 +232,7 @@ class EntryListViewModel
                 }
                 else -> {
                     // Default to "all"
-                    newFeedId = null
+                    newSubscriptionId = null
                     newTagId = null
                     newUncategorized = false
                     newStarredOnly = false
@@ -240,7 +241,7 @@ class EntryListViewModel
             }
 
             // Update filter state
-            _feedId.value = newFeedId
+            _subscriptionId.value = newSubscriptionId
             _tagId.value = newTagId
             _uncategorized.value = newUncategorized
             _starredOnly.value = newStarredOnly
@@ -254,17 +255,17 @@ class EntryListViewModel
 
             // Resolve dynamic title and sync
             viewModelScope.launch {
-                val dynamicTitle = resolveDynamicTitle(newFeedId, newTagId, newUncategorized, newStarredOnly)
+                val dynamicTitle = resolveDynamicTitle(newSubscriptionId, newTagId, newUncategorized, newStarredOnly)
                 _uiState.value = _uiState.value.copy(title = dynamicTitle)
                 syncEntries()
             }
         }
 
         /**
-         * Resolves the dynamic title for tag/feed routes.
+         * Resolves the dynamic title for tag/subscription routes.
          */
         private suspend fun resolveDynamicTitle(
-            feedId: String?,
+            subscriptionId: String?,
             tagId: String?,
             uncategorized: Boolean,
             starredOnly: Boolean,
@@ -272,8 +273,10 @@ class EntryListViewModel
             when {
                 starredOnly -> Screen.Starred.TITLE
                 uncategorized -> Screen.Uncategorized.TITLE
-                feedId != null -> {
-                    subscriptionRepository.getSubscriptionByFeedId(feedId)?.displayTitle ?: "Feed"
+                subscriptionId != null -> {
+                    subscriptionRepository.getSubscription(subscriptionId)
+                        .firstOrNull()
+                        ?.displayTitle ?: "Feed"
                 }
                 tagId != null -> {
                     tagRepository.getTag(tagId)?.name ?: "Tag"
@@ -291,7 +294,7 @@ class EntryListViewModel
                 val result =
                     entryRepository.syncEntries(
                         EntryFilters(
-                            feedId = _feedId.value,
+                            subscriptionId = _subscriptionId.value,
                             tagId = _tagId.value,
                             uncategorized = _uncategorized.value,
                             unreadOnly = _unreadOnly.value,
@@ -419,7 +422,7 @@ class EntryListViewModel
                     val result =
                         entryRepository.syncEntries(
                             EntryFilters(
-                                feedId = _feedId.value,
+                                subscriptionId = _subscriptionId.value,
                                 tagId = _tagId.value,
                                 uncategorized = _uncategorized.value,
                                 unreadOnly = _unreadOnly.value,
@@ -471,7 +474,7 @@ class EntryListViewModel
                     val result =
                         entryRepository.syncEntries(
                             EntryFilters(
-                                feedId = _feedId.value,
+                                subscriptionId = _subscriptionId.value,
                                 tagId = _tagId.value,
                                 uncategorized = _uncategorized.value,
                                 unreadOnly = _unreadOnly.value,

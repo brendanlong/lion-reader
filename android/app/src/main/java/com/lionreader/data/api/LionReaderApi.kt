@@ -92,7 +92,7 @@ interface LionReaderApi {
     /**
      * List entries with optional filters.
      *
-     * @param feedId Filter by feed ID
+     * @param subscriptionId Filter by subscription ID (the server looks up which feed(s) belong to this subscription)
      * @param tagId Filter by tag ID
      * @param uncategorized If true, only return entries from subscriptions with no tags
      * @param unreadOnly Only return unread entries
@@ -105,7 +105,7 @@ interface LionReaderApi {
      * @return EntriesResponse containing entries and optional next cursor
      */
     suspend fun listEntries(
-        feedId: String? = null,
+        subscriptionId: String? = null,
         tagId: String? = null,
         uncategorized: Boolean? = null,
         unreadOnly: Boolean? = null,
@@ -153,7 +153,7 @@ interface LionReaderApi {
     /**
      * Get the count of entries with optional filters.
      *
-     * @param feedId Filter by feed ID
+     * @param subscriptionId Filter by subscription ID (the server looks up which feed(s) belong to this subscription)
      * @param tagId Filter by tag ID
      * @param uncategorized If true, only count entries from subscriptions with no tags
      * @param type Filter to only include entries of this type
@@ -163,7 +163,7 @@ interface LionReaderApi {
      * @return EntriesCountResponse with total and unread counts
      */
     suspend fun getEntriesCount(
-        feedId: String? = null,
+        subscriptionId: String? = null,
         tagId: String? = null,
         uncategorized: Boolean? = null,
         type: EntryType? = null,
@@ -285,7 +285,7 @@ class LionReaderApiImpl
         // ============================================================================
 
         override suspend fun listEntries(
-            feedId: String?,
+            subscriptionId: String?,
             tagId: String?,
             uncategorized: Boolean?,
             unreadOnly: Boolean?,
@@ -297,7 +297,7 @@ class LionReaderApiImpl
             excludeTypes: List<EntryType>?,
         ): ApiResult<EntriesResponse> =
             apiClient.get(path = "entries") {
-                queryParam("feedId", feedId)
+                queryParam("subscriptionId", subscriptionId)
                 queryParam("tagId", tagId)
                 queryParam("uncategorized", uncategorized)
                 queryParam("unreadOnly", unreadOnly)
@@ -325,7 +325,7 @@ class LionReaderApiImpl
         override suspend fun unstar(id: String): ApiResult<Unit> = apiClient.deleteNoContent(path = "entries/$id/star")
 
         override suspend fun getEntriesCount(
-            feedId: String?,
+            subscriptionId: String?,
             tagId: String?,
             uncategorized: Boolean?,
             type: EntryType?,
@@ -334,7 +334,7 @@ class LionReaderApiImpl
             starredOnly: Boolean?,
         ): ApiResult<EntriesCountResponse> =
             apiClient.get(path = "entries/count") {
-                queryParam("feedId", feedId)
+                queryParam("subscriptionId", subscriptionId)
                 queryParam("tagId", tagId)
                 queryParam("uncategorized", uncategorized)
                 type?.let { queryParam("type", it.name.lowercase()) }

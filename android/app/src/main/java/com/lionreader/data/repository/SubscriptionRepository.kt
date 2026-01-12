@@ -2,7 +2,7 @@ package com.lionreader.data.repository
 
 import com.lionreader.data.api.ApiResult
 import com.lionreader.data.api.LionReaderApi
-import com.lionreader.data.api.models.SubscriptionWithFeedDto
+import com.lionreader.data.api.models.SubscriptionDto
 import com.lionreader.data.db.dao.SubscriptionDao
 import com.lionreader.data.db.dao.TagDao
 import com.lionreader.data.db.entities.FeedEntity
@@ -120,20 +120,25 @@ class SubscriptionRepository
 
         /**
          * Updates the local database with subscription data from the API.
+         *
+         * Note: With the subscription-centric API, feedId is no longer exposed in the
+         * subscription response. We use subscription.id as the feed.id locally since
+         * subscriptions and feeds are 1:1 in the user-facing API.
          */
-        private suspend fun updateLocalDatabase(items: List<SubscriptionWithFeedDto>) {
+        private suspend fun updateLocalDatabase(items: List<SubscriptionDto>) {
             val now = System.currentTimeMillis()
 
             // Extract feeds and insert them first (due to foreign key constraint)
+            // Use subscription.id as the feed.id since they're now 1:1 in the API
             val feeds =
-                items.map { item ->
+                items.map { sub ->
                     FeedEntity(
-                        id = item.feed.id,
-                        type = item.feed.type,
-                        url = item.feed.url,
-                        title = item.feed.title,
-                        description = item.feed.description,
-                        siteUrl = item.feed.siteUrl,
+                        id = sub.id, // Use subscription ID as feed ID
+                        type = sub.type,
+                        url = sub.url,
+                        title = sub.originalTitle, // Original title for the feed
+                        description = sub.description,
+                        siteUrl = sub.siteUrl,
                         lastSyncedAt = now,
                     )
                 }
@@ -141,13 +146,13 @@ class SubscriptionRepository
 
             // Map subscription DTOs to entities
             val subscriptionEntities =
-                items.map { item ->
+                items.map { sub ->
                     SubscriptionEntity(
-                        id = item.subscription.id,
-                        feedId = item.subscription.feedId,
-                        customTitle = item.subscription.customTitle,
-                        subscribedAt = parseIsoTimestamp(item.subscription.subscribedAt),
-                        unreadCount = item.subscription.unreadCount,
+                        id = sub.id,
+                        feedId = sub.id, // Use subscription ID as feed ID
+                        customTitle = if (sub.title != sub.originalTitle) sub.title else null,
+                        subscribedAt = parseIsoTimestamp(sub.subscribedAt),
+                        unreadCount = sub.unreadCount,
                         lastSyncedAt = now,
                     )
                 }
@@ -157,8 +162,8 @@ class SubscriptionRepository
             val allTags = mutableMapOf<String, TagEntity>()
             val subscriptionTags = mutableListOf<SubscriptionTagEntity>()
 
-            items.forEach { item ->
-                item.subscription.tags.forEach { tagDto ->
+            items.forEach { sub ->
+                sub.tags.forEach { tagDto ->
                     // Store unique tags
                     allTags[tagDto.id] =
                         TagEntity(
@@ -171,7 +176,7 @@ class SubscriptionRepository
                     // Store subscription-tag relationship
                     subscriptionTags.add(
                         SubscriptionTagEntity(
-                            subscriptionId = item.subscription.id,
+                            subscriptionId = sub.id,
                             tagId = tagDto.id,
                         ),
                     )
