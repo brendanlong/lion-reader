@@ -13,7 +13,7 @@ import { SingleSubscriptionClient } from "./client";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ unreadOnly?: string; sort?: string }>;
+  searchParams: Promise<{ unreadOnly?: string; sort?: string; entry?: string }>;
 }
 
 export default async function SingleSubscriptionPage({ params, searchParams }: PageProps) {
@@ -52,6 +52,15 @@ export default async function SingleSubscriptionPage({ params, searchParams }: P
       queryKey: [["subscriptions", "list"], { input: undefined, type: "query" }],
       queryFn: () => caller.subscriptions.list(),
     });
+
+    // Prefetch entry content if viewing a specific entry
+    // This eliminates the second round-trip when opening an entry
+    if (queryParams.entry) {
+      await queryClient.prefetchQuery({
+        queryKey: [["entries", "get"], { input: { id: queryParams.entry }, type: "query" }],
+        queryFn: () => caller.entries.get({ id: queryParams.entry! }),
+      });
+    }
   }
 
   return (

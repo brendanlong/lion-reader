@@ -15,6 +15,7 @@ interface PageProps {
   searchParams: Promise<{
     unreadOnly?: string;
     sort?: string;
+    entry?: string;
   }>;
 }
 
@@ -50,6 +51,15 @@ export default async function SavedArticlesPage({ searchParams }: PageProps) {
       queryFn: () => caller.entries.list({ type: "saved", unreadOnly, sortOrder, limit: 20 }),
       initialPageParam: undefined,
     });
+
+    // Prefetch entry content if viewing a specific entry
+    // This eliminates the second round-trip when opening an entry
+    if (params.entry) {
+      await queryClient.prefetchQuery({
+        queryKey: [["entries", "get"], { input: { id: params.entry }, type: "query" }],
+        queryFn: () => caller.entries.get({ id: params.entry! }),
+      });
+    }
   }
 
   return (

@@ -15,6 +15,7 @@ interface PageProps {
   searchParams: Promise<{
     unreadOnly?: string;
     sort?: string;
+    entry?: string;
   }>;
 }
 
@@ -53,6 +54,15 @@ export default async function AllEntriesPage({ searchParams }: PageProps) {
       queryKey: [["subscriptions", "list"], { input: undefined, type: "query" }],
       queryFn: () => caller.subscriptions.list(),
     });
+
+    // Prefetch entry content if viewing a specific entry
+    // This eliminates the second round-trip when opening an entry
+    if (params.entry) {
+      await queryClient.prefetchQuery({
+        queryKey: [["entries", "get"], { input: { id: params.entry }, type: "query" }],
+        queryFn: () => caller.entries.get({ id: params.entry! }),
+      });
+    }
   }
 
   return (
