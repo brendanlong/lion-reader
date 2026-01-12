@@ -163,7 +163,6 @@ function UncategorizedContent() {
       hasNextPage: entryListQuery.hasNextPage,
       fetchNextPage: entryListQuery.fetchNextPage,
       refetch: entryListQuery.refetch,
-      prefetchEntry: entryListQuery.prefetchEntry,
     }),
     [entryListQuery]
   );
@@ -363,7 +362,6 @@ function TagContent({ tagId }: { tagId: string }) {
       hasNextPage: entryListQuery.hasNextPage,
       fetchNextPage: entryListQuery.fetchNextPage,
       refetch: entryListQuery.refetch,
-      prefetchEntry: entryListQuery.prefetchEntry,
     }),
     [entryListQuery]
   );

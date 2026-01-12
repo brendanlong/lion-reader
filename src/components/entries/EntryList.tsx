@@ -103,11 +103,6 @@ export interface ExternalQueryState {
    * Refetch all entries.
    */
   refetch: () => void;
-
-  /**
-   * Prefetch entry data on mousedown.
-   */
-  prefetchEntry: (entryId: string) => void;
 }
 
 interface EntryListProps {
@@ -203,22 +198,6 @@ export function EntryList({
       // Disable when using external data
       enabled: !useExternalData,
     }
-  );
-
-  // Get tRPC utils for prefetching on mousedown
-  const utils = trpc.useUtils();
-
-  // Prefetch entry data on mousedown (before click completes)
-  // This gives a 50-150ms head start with near-zero false positives
-  const handlePrefetch = useCallback(
-    (entryId: string) => {
-      if (useExternalData && externalQueryState?.prefetchEntry) {
-        externalQueryState.prefetchEntry(entryId);
-      } else {
-        utils.entries.get.fetch({ id: entryId });
-      }
-    },
-    [useExternalData, externalQueryState, utils]
   );
 
   // Flatten all pages into a single array of entries (from internal query)
@@ -321,7 +300,6 @@ export function EntryList({
           selected={selectedEntryId === entry.id}
           onToggleRead={onToggleRead}
           onToggleStar={onToggleStar}
-          onPrefetch={handlePrefetch}
         />
       ))}
 

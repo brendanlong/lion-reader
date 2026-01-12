@@ -42,10 +42,6 @@ interface EntryListItemProps {
    * Callback when the star indicator is clicked.
    */
   onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
-  /**
-   * Callback to prefetch entry data on mousedown (before click completes).
-   */
-  onPrefetch?: (entryId: string) => void;
 }
 
 /**
@@ -58,7 +54,6 @@ export const EntryListItem = memo(function EntryListItem({
   selected = false,
   onToggleRead,
   onToggleStar,
-  onPrefetch,
 }: EntryListItemProps) {
   return (
     <ArticleListItem
@@ -73,7 +68,6 @@ export const EntryListItem = memo(function EntryListItem({
       onClick={onClick}
       onToggleRead={onToggleRead}
       onToggleStar={onToggleStar}
-      onPrefetch={onPrefetch}
     />
   );
 });
