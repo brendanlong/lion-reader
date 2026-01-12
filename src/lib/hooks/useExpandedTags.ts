@@ -31,9 +31,11 @@ function getSnapshot(): Set<string> {
 
 /**
  * Server snapshot - always empty to match SSR.
+ * Must be cached to avoid infinite loop per React requirements.
  */
+const SERVER_SNAPSHOT = new Set<string>();
 function getServerSnapshot(): Set<string> {
-  return new Set();
+  return SERVER_SNAPSHOT;
 }
 
 /**
