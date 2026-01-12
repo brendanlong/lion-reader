@@ -251,16 +251,16 @@ class EntryListViewModelTest {
             }
 
         @Test
-        @DisplayName("Setting feed route uses feed filter")
-        fun settingFeedRouteUsesFeedFilter() =
+        @DisplayName("Setting subscription route uses subscription filter")
+        fun settingSubscriptionRouteUsesSubscriptionFilter() =
             runTest {
-                coEvery { subscriptionRepository.getSubscriptionByFeedId("feed-123") } returns
-                    mockk { every { displayTitle } returns "My Feed" }
+                every { subscriptionRepository.getSubscription("subscription-123") } returns
+                    flowOf(mockk { every { displayTitle } returns "My Feed" })
 
                 viewModel = createViewModel()
                 testDispatcher.scheduler.advanceUntilIdle()
 
-                viewModel.setRoute("feed/feed-123")
+                viewModel.setRoute("subscription/subscription-123")
                 testDispatcher.scheduler.advanceUntilIdle()
 
                 assertEquals("My Feed", viewModel.uiState.value.title)
