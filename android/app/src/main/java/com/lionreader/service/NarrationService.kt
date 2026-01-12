@@ -1,5 +1,6 @@
 package com.lionreader.service
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -617,6 +618,7 @@ class NarrationService : MediaSessionService() {
         notificationManager.createNotificationChannel(channel)
     }
 
+    @SuppressLint("NotificationPermission") // Foreground service notifications are exempt from permission
     private fun updateNotification() {
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.notify(NOTIFICATION_ID, createNotification())

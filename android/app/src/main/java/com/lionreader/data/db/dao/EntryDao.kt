@@ -18,9 +18,12 @@ interface EntryDao {
     /**
      * Gets entries with their read/starred state, filtered by various criteria.
      *
-     * @param feedId Optional filter by feed ID
-     * @param tagId Optional filter by tag ID (entries from feeds with this tag)
-     * @param uncategorized If true, only return entries from feeds with no tags
+     * Note: With the subscription-centric API, we filter by subscription ID instead of feed ID.
+     * Since we use subscription.id as feed.id locally, this maps directly to e.feedId.
+     *
+     * @param subscriptionId Optional filter by subscription ID (maps to feedId locally)
+     * @param tagId Optional filter by tag ID (entries from subscriptions with this tag)
+     * @param uncategorized If true, only return entries from subscriptions with no tags
      * @param unreadOnly If true, only return unread entries
      * @param starredOnly If true, only return starred entries
      * @param sortOrder Sort direction: "newest" or "oldest"
@@ -33,7 +36,7 @@ interface EntryDao {
         SELECT e.*, s.read, s.starred, s.readAt, s.starredAt
         FROM entries e
         LEFT JOIN entry_states s ON e.id = s.entryId
-        WHERE (:feedId IS NULL OR e.feedId = :feedId)
+        WHERE (:subscriptionId IS NULL OR e.feedId = :subscriptionId)
           AND (:tagId IS NULL OR e.feedId IN (
               SELECT sub.feedId FROM subscriptions sub
               JOIN subscription_tags st ON sub.id = st.subscriptionId
@@ -56,7 +59,7 @@ interface EntryDao {
         """,
     )
     fun getEntries(
-        feedId: String?,
+        subscriptionId: String?,
         tagId: String?,
         uncategorized: Boolean,
         unreadOnly: Boolean,
@@ -136,9 +139,12 @@ interface EntryDao {
      * Used for swipe navigation to determine previous/next entries.
      * Returns only IDs for efficiency since we just need navigation context.
      *
-     * @param feedId Optional filter by feed ID
-     * @param tagId Optional filter by tag ID (entries from feeds with this tag)
-     * @param uncategorized If true, only return entries from feeds with no tags
+     * Note: With the subscription-centric API, we filter by subscription ID instead of feed ID.
+     * Since we use subscription.id as feed.id locally, this maps directly to e.feedId.
+     *
+     * @param subscriptionId Optional filter by subscription ID (maps to feedId locally)
+     * @param tagId Optional filter by tag ID (entries from subscriptions with this tag)
+     * @param uncategorized If true, only return entries from subscriptions with no tags
      * @param unreadOnly If true, only return unread entries
      * @param starredOnly If true, only return starred entries
      * @param sortOrder Sort direction: "newest" or "oldest"
@@ -149,7 +155,7 @@ interface EntryDao {
         SELECT e.id
         FROM entries e
         LEFT JOIN entry_states s ON e.id = s.entryId
-        WHERE (:feedId IS NULL OR e.feedId = :feedId)
+        WHERE (:subscriptionId IS NULL OR e.feedId = :subscriptionId)
           AND (:tagId IS NULL OR e.feedId IN (
               SELECT sub.feedId FROM subscriptions sub
               JOIN subscription_tags st ON sub.id = st.subscriptionId
@@ -171,7 +177,7 @@ interface EntryDao {
         """,
     )
     suspend fun getEntryIds(
-        feedId: String?,
+        subscriptionId: String?,
         tagId: String?,
         uncategorized: Boolean,
         unreadOnly: Boolean,

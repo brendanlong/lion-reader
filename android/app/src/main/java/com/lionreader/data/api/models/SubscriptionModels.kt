@@ -4,20 +4,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Feed data from the API.
- */
-@Serializable
-data class FeedDto(
-    val id: String,
-    val type: String, // "web", "email", "saved"
-    val url: String? = null,
-    val title: String? = null,
-    val description: String? = null,
-    @SerialName("siteUrl")
-    val siteUrl: String? = null,
-)
-
-/**
  * Tag reference within a subscription.
  */
 @Serializable
@@ -28,15 +14,23 @@ data class SubscriptionTagDto(
 )
 
 /**
- * Subscription data from the API (without nested feed).
+ * Subscription data from the API (flat format with merged feed data).
+ *
+ * The subscription ID is the primary external identifier. Feed IDs are now
+ * internal implementation details. All feed metadata is merged into this
+ * response for a simpler, flatter API.
  */
 @Serializable
 data class SubscriptionDto(
-    val id: String,
-    @SerialName("feedId")
-    val feedId: String,
-    @SerialName("customTitle")
-    val customTitle: String? = null,
+    val id: String, // subscription_id is THE id
+    val type: String, // "web", "email", "saved"
+    val url: String? = null,
+    val title: String, // resolved (custom or original)
+    @SerialName("originalTitle")
+    val originalTitle: String? = null, // feed's original title for rename UI
+    val description: String? = null,
+    @SerialName("siteUrl")
+    val siteUrl: String? = null,
     @SerialName("subscribedAt")
     val subscribedAt: String,
     @SerialName("unreadCount")
@@ -45,19 +39,9 @@ data class SubscriptionDto(
 )
 
 /**
- * Subscription with its feed from the API.
- * Server returns subscription and feed as sibling objects.
- */
-@Serializable
-data class SubscriptionWithFeedDto(
-    val subscription: SubscriptionDto,
-    val feed: FeedDto,
-)
-
-/**
  * Response from list subscriptions endpoint.
  */
 @Serializable
 data class SubscriptionsResponse(
-    val items: List<SubscriptionWithFeedDto>,
+    val items: List<SubscriptionDto>,
 )

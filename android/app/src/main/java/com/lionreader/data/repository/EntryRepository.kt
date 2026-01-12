@@ -6,7 +6,7 @@ import com.lionreader.data.api.LionReaderApi
 import com.lionreader.data.api.models.EntriesCountResponse
 import com.lionreader.data.api.models.EntryDto
 import com.lionreader.data.api.models.SortOrder
-import com.lionreader.data.api.models.SubscriptionWithFeedDto
+import com.lionreader.data.api.models.SubscriptionDto
 import com.lionreader.data.api.models.SyncChangesResponse
 import com.lionreader.data.api.models.SyncEntryDto
 import com.lionreader.data.api.models.SyncFeedType
@@ -35,9 +35,12 @@ import javax.inject.Singleton
 
 /**
  * Filter options for querying entries.
+ *
+ * Note: subscriptionId is the primary external identifier for filtering.
+ * The server looks up which feed(s) belong to a subscription when filtering.
  */
 data class EntryFilters(
-    val feedId: String? = null,
+    val subscriptionId: String? = null,
     val tagId: String? = null,
     val uncategorized: Boolean = false,
     val unreadOnly: Boolean = false,
@@ -121,7 +124,7 @@ class EntryRepository
          */
         fun getEntries(filters: EntryFilters = EntryFilters()): Flow<List<EntryWithState>> =
             entryDao.getEntries(
-                feedId = filters.feedId,
+                subscriptionId = filters.subscriptionId,
                 tagId = filters.tagId,
                 uncategorized = filters.uncategorized,
                 unreadOnly = filters.unreadOnly,
@@ -257,7 +260,7 @@ class EntryRepository
         ): EntrySyncResult {
             val result =
                 api.listEntries(
-                    feedId = filters.feedId,
+                    subscriptionId = filters.subscriptionId,
                     tagId = filters.tagId,
                     uncategorized = if (filters.uncategorized) true else null,
                     unreadOnly = if (filters.unreadOnly) true else null,
@@ -699,6 +702,10 @@ class EntryRepository
 
         /**
          * Applies subscription changes from sync response.
+         *
+         * Note: With the subscription-centric API, feedId is no longer exposed in the
+         * subscription response. We use subscription.id as the feed.id locally since
+         * subscriptions and feeds are 1:1 in the user-facing API.
          */
         private suspend fun applySubscriptionChanges(changes: SyncChangesResponse) {
             val now = System.currentTimeMillis()
@@ -706,15 +713,16 @@ class EntryRepository
             // Handle created subscriptions
             if (changes.subscriptions.created.isNotEmpty()) {
                 // Insert feeds first (due to foreign key constraint)
+                // Use subscription.id as the feed.id since they're now 1:1 in the API
                 val feeds =
                     changes.subscriptions.created.map { sub ->
                         FeedEntity(
-                            id = sub.feedId,
-                            type = mapSyncFeedType(sub.feedType),
-                            url = sub.feedUrl,
-                            title = sub.feedTitle,
-                            description = null,
-                            siteUrl = null,
+                            id = sub.id, // Use subscription ID as feed ID
+                            type = mapSyncFeedType(sub.type),
+                            url = sub.url,
+                            title = sub.originalTitle, // Original title for the feed
+                            description = sub.description,
+                            siteUrl = sub.siteUrl,
                             lastSyncedAt = now,
                         )
                     }
@@ -725,8 +733,8 @@ class EntryRepository
                     changes.subscriptions.created.map { sub ->
                         SubscriptionEntity(
                             id = sub.id,
-                            feedId = sub.feedId,
-                            customTitle = sub.customTitle,
+                            feedId = sub.id, // Use subscription ID as feed ID
+                            customTitle = if (sub.title != sub.originalTitle) sub.title else null,
                             subscribedAt = parseIsoTimestamp(sub.subscribedAt),
                             unreadCount = 0, // Will be calculated from entries
                             lastSyncedAt = now,
@@ -892,20 +900,25 @@ class EntryRepository
 
         /**
          * Updates the local database with subscription data from the API.
+         *
+         * Note: With the subscription-centric API, feedId is no longer exposed in the
+         * subscription response. We use subscription.id as the feed.id locally since
+         * subscriptions and feeds are 1:1 in the user-facing API.
          */
-        private suspend fun updateLocalSubscriptions(items: List<SubscriptionWithFeedDto>) {
+        private suspend fun updateLocalSubscriptions(items: List<SubscriptionDto>) {
             val now = System.currentTimeMillis()
 
             // Extract feeds and insert them first (due to foreign key constraint)
+            // Use subscription.id as the feed.id since they're now 1:1 in the API
             val feeds =
-                items.map { item ->
+                items.map { sub ->
                     FeedEntity(
-                        id = item.feed.id,
-                        type = item.feed.type,
-                        url = item.feed.url,
-                        title = item.feed.title,
-                        description = item.feed.description,
-                        siteUrl = item.feed.siteUrl,
+                        id = sub.id, // Use subscription ID as feed ID
+                        type = sub.type,
+                        url = sub.url,
+                        title = sub.originalTitle, // Original title for the feed
+                        description = sub.description,
+                        siteUrl = sub.siteUrl,
                         lastSyncedAt = now,
                     )
                 }
@@ -913,13 +926,13 @@ class EntryRepository
 
             // Map subscription DTOs to entities
             val subscriptionEntities =
-                items.map { item ->
+                items.map { sub ->
                     SubscriptionEntity(
-                        id = item.subscription.id,
-                        feedId = item.subscription.feedId,
-                        customTitle = item.subscription.customTitle,
-                        subscribedAt = parseIsoTimestamp(item.subscription.subscribedAt),
-                        unreadCount = item.subscription.unreadCount,
+                        id = sub.id,
+                        feedId = sub.id, // Use subscription ID as feed ID
+                        customTitle = if (sub.title != sub.originalTitle) sub.title else null,
+                        subscribedAt = parseIsoTimestamp(sub.subscribedAt),
+                        unreadCount = sub.unreadCount,
                         lastSyncedAt = now,
                     )
                 }
@@ -929,8 +942,8 @@ class EntryRepository
             val allTags = mutableMapOf<String, TagEntity>()
             val subscriptionTags = mutableListOf<SubscriptionTagEntity>()
 
-            items.forEach { item ->
-                item.subscription.tags.forEach { tagDto ->
+            items.forEach { sub ->
+                sub.tags.forEach { tagDto ->
                     // Store unique tags
                     allTags[tagDto.id] =
                         TagEntity(
@@ -943,7 +956,7 @@ class EntryRepository
                     // Store subscription-tag relationship
                     subscriptionTags.add(
                         SubscriptionTagEntity(
-                            subscriptionId = item.subscription.id,
+                            subscriptionId = sub.id,
                             tagId = tagDto.id,
                         ),
                     )
@@ -1169,7 +1182,7 @@ class EntryRepository
          * Parses the route to determine filter parameters and returns ordered entry IDs
          * that match the same criteria as the entry list the user navigated from.
          *
-         * @param listContext The route from which entry detail was opened (e.g., "all", "starred", "feed/xxx")
+         * @param listContext The route from which entry detail was opened (e.g., "all", "starred", "subscription/xxx")
          * @param sortOrder The sort order to use (defaults to NEWEST)
          * @return List of entry IDs in display order
          */
@@ -1178,39 +1191,39 @@ class EntryRepository
             sortOrder: SortOrder = SortOrder.NEWEST,
         ): List<String> {
             // Parse the list context to determine filters
-            val feedId: String?
+            val subscriptionId: String?
             val tagId: String?
             val uncategorized: Boolean
             val starredOnly: Boolean
 
             when {
                 listContext == Screen.Starred.route -> {
-                    feedId = null
+                    subscriptionId = null
                     tagId = null
                     uncategorized = false
                     starredOnly = true
                 }
                 listContext == Screen.Uncategorized.route -> {
-                    feedId = null
+                    subscriptionId = null
                     tagId = null
                     uncategorized = true
                     starredOnly = false
                 }
                 listContext.startsWith("tag/") -> {
-                    feedId = null
+                    subscriptionId = null
                     tagId = listContext.removePrefix("tag/")
                     uncategorized = false
                     starredOnly = false
                 }
-                listContext.startsWith("feed/") -> {
-                    feedId = listContext.removePrefix("feed/")
+                listContext.startsWith("subscription/") -> {
+                    subscriptionId = listContext.removePrefix("subscription/")
                     tagId = null
                     uncategorized = false
                     starredOnly = false
                 }
                 else -> {
                     // Default to "all"
-                    feedId = null
+                    subscriptionId = null
                     tagId = null
                     uncategorized = false
                     starredOnly = false
@@ -1218,7 +1231,7 @@ class EntryRepository
             }
 
             return entryDao.getEntryIds(
-                feedId = feedId,
+                subscriptionId = subscriptionId,
                 tagId = tagId,
                 uncategorized = uncategorized,
                 unreadOnly = false, // Don't filter by unread for swipe - user may want to swipe to read entries

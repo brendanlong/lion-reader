@@ -26,12 +26,18 @@ enum class EntryType {
 
 /**
  * Entry data from the API.
+ *
+ * Note: subscriptionId is the primary external identifier for linking entries
+ * to subscriptions. feedId is still present for internal cache invalidation.
+ * subscriptionId may be null for orphaned starred entries (from unsubscribed feeds).
  */
 @Serializable
 data class EntryDto(
     val id: String,
+    @SerialName("subscriptionId")
+    val subscriptionId: String? = null, // primary external identifier, null for orphaned starred
     @SerialName("feedId")
-    val feedId: String,
+    val feedId: String, // still present for cache invalidation
     val url: String? = null,
     val title: String? = null,
     val author: String? = null,
