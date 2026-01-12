@@ -12,7 +12,7 @@ import { getViewPreferences } from "@/lib/hooks/viewPreferences";
 import { StarredEntriesClient } from "./client";
 
 interface StarredEntriesPageProps {
-  searchParams: Promise<{ unreadOnly?: string; sort?: string }>;
+  searchParams: Promise<{ unreadOnly?: string; sort?: string; entry?: string }>;
 }
 
 export default async function StarredEntriesPage({ searchParams }: StarredEntriesPageProps) {
@@ -56,6 +56,15 @@ export default async function StarredEntriesPage({ searchParams }: StarredEntrie
       queryKey: [["entries", "count"], { input: { starredOnly: true }, type: "query" }],
       queryFn: () => caller.entries.count({ starredOnly: true }),
     });
+
+    // Prefetch entry content if viewing a specific entry
+    // This eliminates the second round-trip when opening an entry
+    if (params.entry) {
+      await queryClient.prefetchQuery({
+        queryKey: [["entries", "get"], { input: { id: params.entry }, type: "query" }],
+        queryFn: () => caller.entries.get({ id: params.entry! }),
+      });
+    }
   }
 
   return (

@@ -13,7 +13,7 @@ import { TagEntriesClient } from "./client";
 
 interface PageProps {
   params: Promise<{ tagId: string }>;
-  searchParams: Promise<{ unreadOnly?: string; sort?: string }>;
+  searchParams: Promise<{ unreadOnly?: string; sort?: string; entry?: string }>;
 }
 
 export default async function TagEntriesPage({ params, searchParams }: PageProps) {
@@ -63,6 +63,15 @@ export default async function TagEntriesPage({ params, searchParams }: PageProps
       queryKey: [["subscriptions", "list"], { input: undefined, type: "query" }],
       queryFn: () => caller.subscriptions.list(),
     });
+
+    // Prefetch entry content if viewing a specific entry
+    // This eliminates the second round-trip when opening an entry
+    if (queryParams.entry) {
+      await queryClient.prefetchQuery({
+        queryKey: [["entries", "get"], { input: { id: queryParams.entry }, type: "query" }],
+        queryFn: () => caller.entries.get({ id: queryParams.entry! }),
+      });
+    }
   }
 
   return (
