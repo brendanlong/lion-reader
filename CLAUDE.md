@@ -42,6 +42,15 @@ tests/integration/ # Real DB via docker-compose (no mocks)
 - **Background jobs**: Postgres-based queue
 - **Caching/SSE**: Redis available for caching and coordinating SSE
 
+### Subscription Views
+
+Use the database views for frontend queries instead of manual joins:
+
+- **`user_feeds`**: Active subscriptions with feed data merged. Use for `subscriptions.list/get/export`. Already filters out unsubscribed entries and resolves title (custom or original).
+- **`visible_entries`**: Entries with visibility rules applied. Use for `entries.list/get/count`. Includes read/starred state and subscription_id. An entry is visible if it's from an active subscription OR is starred.
+
+These views are defined in `drizzle/0035_subscription_views.sql` and have Drizzle schemas in `src/server/db/schema.ts`.
+
 ## API Conventions
 
 - **Pagination**: Always cursor-based (never offset); return `{ items: T[], nextCursor?: string }`
