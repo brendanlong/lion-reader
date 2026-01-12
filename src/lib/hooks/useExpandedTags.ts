@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useCallback, useSyncExternalStore } from "react";
 
 /**
  * useExpandedTags Hook
@@ -10,6 +10,44 @@ import { useState, useEffect } from "react";
  */
 
 const STORAGE_KEY = "lion-reader-expanded-tags";
+
+/**
+ * Read expanded tag IDs from localStorage.
+ */
+function getSnapshot(): Set<string> {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        return new Set(parsed);
+      }
+    }
+  } catch (error) {
+    console.error("Failed to parse expanded tags from localStorage:", error);
+  }
+  return new Set();
+}
+
+/**
+ * Server snapshot - always empty to match SSR.
+ */
+function getServerSnapshot(): Set<string> {
+  return new Set();
+}
+
+/**
+ * Subscribe to storage changes (for cross-tab sync).
+ */
+function subscribe(callback: () => void): () => void {
+  const handler = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY) {
+      callback();
+    }
+  };
+  window.addEventListener("storage", handler);
+  return () => window.removeEventListener("storage", handler);
+}
 
 export interface UseExpandedTagsResult {
   /** Set of currently expanded tag IDs (includes "uncategorized" as a special key) */
@@ -21,58 +59,46 @@ export interface UseExpandedTagsResult {
 }
 
 export function useExpandedTags(): UseExpandedTagsResult {
-  // Use lazy initializer to avoid reading localStorage on every render
-  const [expandedTagIds, setExpandedTagIds] = useState<Set<string>>(() => {
-    // SSR safety check
-    if (typeof window === "undefined") {
-      return new Set();
-    }
+  // Use useSyncExternalStore for SSR-safe localStorage access
+  // This returns server snapshot during SSR and client snapshot after hydration
+  const storedIds = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          return new Set(parsed);
+  // Local state to track optimistic updates before they're persisted
+  const [localIds, setLocalIds] = useState<Set<string> | null>(null);
+
+  // Use local state if set, otherwise use stored state
+  const expandedTagIds = localIds ?? storedIds;
+
+  const toggleExpanded = useCallback(
+    (tagId: string) => {
+      setLocalIds((prev) => {
+        const current = prev ?? storedIds;
+        const next = new Set(current);
+        if (next.has(tagId)) {
+          next.delete(tagId);
+        } else {
+          next.add(tagId);
         }
-      }
-    } catch (error) {
-      // If localStorage contains invalid JSON, default to empty Set
-      console.error("Failed to parse expanded tags from localStorage:", error);
-    }
 
-    return new Set();
-  });
+        // Persist to localStorage
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(next)));
+        } catch (error) {
+          console.error("Failed to save expanded tags to localStorage:", error);
+        }
 
-  // Persist to localStorage whenever state changes
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
+        return next;
+      });
+    },
+    [storedIds]
+  );
 
-    try {
-      const tagIdsArray = Array.from(expandedTagIds);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(tagIdsArray));
-    } catch (error) {
-      console.error("Failed to save expanded tags to localStorage:", error);
-    }
-  }, [expandedTagIds]);
-
-  const toggleExpanded = (tagId: string) => {
-    setExpandedTagIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(tagId)) {
-        next.delete(tagId);
-      } else {
-        next.add(tagId);
-      }
-      return next;
-    });
-  };
-
-  const isExpanded = (tagId: string) => {
-    return expandedTagIds.has(tagId);
-  };
+  const isExpanded = useCallback(
+    (tagId: string) => {
+      return expandedTagIds.has(tagId);
+    },
+    [expandedTagIds]
+  );
 
   return {
     expandedTagIds,
