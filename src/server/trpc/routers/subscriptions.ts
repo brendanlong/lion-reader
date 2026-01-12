@@ -21,6 +21,7 @@ import {
   subscriptionTags,
   blockedSenders,
   opmlImports,
+  userFeeds,
   type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -89,8 +90,11 @@ const subscriptionOutputSchema = z.object({
 // ============================================================================
 
 /**
- * Builds the base query for fetching subscriptions with feeds, unread counts, and tags.
- * Used by both .list and .get to avoid duplication.
+ * Builds the base query for fetching subscriptions using the user_feeds view.
+ * Includes unread counts and tags. Used by both .list and .get.
+ *
+ * The user_feeds view already joins subscriptions with feeds and filters
+ * out unsubscribed entries, so we only need to add unread counts and tags.
  *
  * @param db - Database instance
  * @param userId - User ID for filtering and unread counts
@@ -114,18 +118,17 @@ function buildSubscriptionBaseQuery(db: typeof import("@/server/db").db, userId:
 
   return db
     .select({
-      // Subscription fields
-      subscriptionId: subscriptions.id,
-      subscriptionFeedId: subscriptions.feedId,
-      subscriptionCustomTitle: subscriptions.customTitle,
-      subscriptionSubscribedAt: subscriptions.subscribedAt,
-      // Feed fields
-      feedId: feeds.id,
-      feedType: feeds.type,
-      feedUrl: feeds.url,
-      feedTitle: feeds.title,
-      feedDescription: feeds.description,
-      feedSiteUrl: feeds.siteUrl,
+      // From user_feeds view - subscription fields
+      id: userFeeds.id,
+      subscribedAt: userFeeds.subscribedAt,
+      feedId: userFeeds.feedId, // internal use only
+      // From user_feeds view - feed fields (already merged)
+      type: userFeeds.type,
+      url: userFeeds.url,
+      title: userFeeds.title, // already resolved (COALESCE of customTitle and original)
+      originalTitle: userFeeds.originalTitle,
+      description: userFeeds.description,
+      siteUrl: userFeeds.siteUrl,
       // Unread count from subquery
       unreadCount: sql<number>`COALESCE(${unreadCountsSubquery.unreadCount}, 0)`,
       // Tags aggregated as JSON array
@@ -138,12 +141,11 @@ function buildSubscriptionBaseQuery(db: typeof import("@/server/db").db, userId:
         )
       `,
     })
-    .from(subscriptions)
-    .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-    .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.feedId, feeds.id))
-    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
+    .from(userFeeds)
+    .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.feedId, userFeeds.feedId))
+    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
-    .groupBy(subscriptions.id, feeds.id, unreadCountsSubquery.unreadCount);
+    .groupBy(userFeeds.id, userFeeds.feedId, unreadCountsSubquery.unreadCount);
 }
 
 /**
@@ -153,20 +155,20 @@ type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBaseQuery
 
 /**
  * Transforms a subscription query row into the flat output format.
- * Merges subscription and feed data with subscription.id as primary key.
+ * The user_feeds view already merges subscription and feed data.
  */
 function formatSubscriptionRow(
   row: SubscriptionQueryRow
 ): z.infer<typeof subscriptionOutputSchema> {
   return {
-    id: row.subscriptionId,
-    type: row.feedType,
-    url: row.feedUrl,
-    title: row.subscriptionCustomTitle ?? row.feedTitle, // resolved title
-    originalTitle: row.feedTitle, // for rename UI
-    description: row.feedDescription,
-    siteUrl: row.feedSiteUrl,
-    subscribedAt: row.subscriptionSubscribedAt,
+    id: row.id,
+    type: row.type,
+    url: row.url,
+    title: row.title, // already resolved by view
+    originalTitle: row.originalTitle,
+    description: row.description,
+    siteUrl: row.siteUrl,
+    subscribedAt: row.subscribedAt,
     unreadCount: row.unreadCount,
     tags: row.tags,
   };
@@ -681,9 +683,10 @@ export const subscriptionsRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
+      // user_feeds view already filters out unsubscribed, just need user_id filter
       const results = await buildSubscriptionBaseQuery(ctx.db, userId)
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)))
-        .orderBy(feeds.title);
+        .where(eq(userFeeds.userId, userId))
+        .orderBy(userFeeds.title);
 
       return { items: results.map(formatSubscriptionRow) };
     }),
@@ -711,14 +714,9 @@ export const subscriptionsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
+      // user_feeds view already filters out unsubscribed
       const results = await buildSubscriptionBaseQuery(ctx.db, userId)
-        .where(
-          and(
-            eq(subscriptions.id, input.id),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
+        .where(and(eq(userFeeds.id, input.id), eq(userFeeds.userId, userId)))
         .limit(1);
 
       if (results.length === 0) {
@@ -1129,14 +1127,14 @@ export const subscriptionsRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
-      // Get all active subscriptions with feed info and tags
+      // Get all active subscriptions with feed info and tags using user_feeds view
+      // View already filters out unsubscribed and resolves title
       const userSubscriptions = await ctx.db
         .select({
-          subscriptionId: subscriptions.id,
-          subscriptionCustomTitle: subscriptions.customTitle,
-          feedUrl: feeds.url,
-          feedTitle: feeds.title,
-          feedSiteUrl: feeds.siteUrl,
+          id: userFeeds.id,
+          title: userFeeds.title, // already resolved (custom or original)
+          url: userFeeds.url,
+          siteUrl: userFeeds.siteUrl,
           // Tags aggregated as JSON array
           tagNames: sql<string[]>`
             COALESCE(
@@ -1145,21 +1143,20 @@ export const subscriptionsRouter = createTRPCRouter({
             )
           `,
         })
-        .from(subscriptions)
-        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-        .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
+        .from(userFeeds)
+        .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
         .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
-        .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)))
-        .groupBy(subscriptions.id, feeds.id)
-        .orderBy(feeds.title);
+        .where(eq(userFeeds.userId, userId))
+        .groupBy(userFeeds.id)
+        .orderBy(userFeeds.title);
 
       // Convert to OPML subscription format
       const opmlSubscriptions: OpmlSubscription[] = userSubscriptions
-        .filter((row) => row.feedUrl !== null)
+        .filter((row) => row.url !== null)
         .map((row) => ({
-          title: row.subscriptionCustomTitle || row.feedTitle || row.feedUrl || "Untitled Feed",
-          xmlUrl: row.feedUrl!,
-          htmlUrl: row.feedSiteUrl ?? undefined,
+          title: row.title || row.url || "Untitled Feed",
+          xmlUrl: row.url!,
+          htmlUrl: row.siteUrl ?? undefined,
           tags: row.tagNames.length > 0 ? row.tagNames : undefined,
         }));
 

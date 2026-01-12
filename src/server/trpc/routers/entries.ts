@@ -10,17 +10,18 @@
  */
 
 import { z } from "zod";
-import { eq, and, or, isNull, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, and, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import {
   entries,
   feeds,
-  subscriptions,
   userEntries,
   subscriptionTags,
   tags,
+  visibleEntries,
+  userFeeds,
 } from "@/server/db/schema";
 
 // ============================================================================
@@ -228,6 +229,7 @@ type DbContext = {
 /**
  * Looks up the feed IDs for a subscription.
  * Returns the subscription's feed_ids array (current feed + previous feeds from redirects).
+ * Uses user_feeds view which already filters out unsubscribed entries.
  *
  * @param db - Database instance
  * @param subscriptionId - The subscription ID to look up
@@ -240,75 +242,17 @@ async function getSubscriptionFeedIds(
   userId: string
 ): Promise<string[] | null> {
   const result = await db
-    .select({ feedIds: subscriptions.feedIds })
-    .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.id, subscriptionId),
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt)
-      )
-    )
+    .select({ feedIds: userFeeds.feedIds })
+    .from(userFeeds)
+    .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
     .limit(1);
 
   return result.length > 0 ? result[0].feedIds : null;
 }
 
 // ============================================================================
-// Base Query Helpers
+// Mutation Helpers
 // ============================================================================
-
-/**
- * Creates a subquery for active subscription feed IDs.
- * Returns feed IDs (including previous feed IDs from redirects) for all active subscriptions.
- *
- * @param db - Database instance
- * @param userId - User ID to filter subscriptions
- * @returns Subquery that can be used with inArray()
- */
-function activeSubscriptionFeedIdsSubquery(db: typeof import("@/server/db").db, userId: string) {
-  return db
-    .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
-}
-
-/**
- * Creates a subquery for saved feed IDs.
- * Returns feed IDs for feeds with type='saved' owned by the user.
- *
- * @param db - Database instance
- * @param userId - User ID to filter saved feeds
- * @returns Subquery that can be used with inArray()
- */
-function savedFeedIdsSubquery(db: typeof import("@/server/db").db, userId: string) {
-  return db
-    .select({ id: feeds.id })
-    .from(feeds)
-    .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
-}
-
-/**
- * Builds the visibility condition for entries.
- * An entry is visible if it:
- * 1. Is from an active subscription (current feed or previous feeds from redirects), OR
- * 2. Is starred, OR
- * 3. Is from the user's saved feed
- *
- * @param db - Database instance
- * @param userId - User ID for visibility check
- * @returns SQL condition for entry visibility
- */
-function buildEntryVisibilityCondition(db: typeof import("@/server/db").db, userId: string) {
-  const activeSubFeedIds = activeSubscriptionFeedIdsSubquery(db, userId);
-  const savedFeedIds = savedFeedIdsSubquery(db, userId);
-
-  return or(
-    inArray(entries.feedId, activeSubFeedIds),
-    eq(userEntries.starred, true),
-    inArray(entries.feedId, savedFeedIds)
-  )!;
-}
 
 /**
  * Updates the starred status of an entry for a user.
@@ -396,12 +340,9 @@ export const entriesRouter = createTRPCRouter({
       const limit = input.limit ?? DEFAULT_LIMIT;
       const sortOrder = input.sortOrder ?? "newest";
 
-      // Build the base query conditions
-      // Visibility is enforced by inner join with user_entries
-      const conditions = [eq(userEntries.userId, userId)];
-
-      // Entry must be visible (from active subscription, starred, or from saved feed)
-      conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
+      // Build the base query conditions using visible_entries view
+      // The view already enforces visibility (active subscription OR starred)
+      const conditions = [eq(visibleEntries.userId, userId)];
 
       // Filter by subscriptionId
       if (input.subscriptionId) {
@@ -410,7 +351,7 @@ export const entriesRouter = createTRPCRouter({
           // Subscription not found or doesn't belong to user
           return { items: [], nextCursor: undefined };
         }
-        conditions.push(inArray(entries.feedId, feedIds));
+        conditions.push(inArray(visibleEntries.feedId, feedIds));
       }
 
       // Filter by tagId if specified
@@ -427,15 +368,13 @@ export const entriesRouter = createTRPCRouter({
           return { items: [], nextCursor: undefined };
         }
 
-        // Get feed IDs for subscriptions with this tag (including previous feeds from redirects)
+        // Get feed IDs for subscriptions with this tag using user_feeds view
         const taggedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
+          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
           .from(subscriptionTags)
-          .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
-          .where(
-            and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
-          );
-        conditions.push(inArray(entries.feedId, taggedFeedIds));
+          .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
+          .where(eq(subscriptionTags.tagId, input.tagId));
+        conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
       }
 
       // Filter by uncategorized if specified
@@ -445,98 +384,91 @@ export const entriesRouter = createTRPCRouter({
           .select({ subscriptionId: subscriptionTags.subscriptionId })
           .from(subscriptionTags);
 
-        // Get feed IDs for subscriptions with no tags (including previous feeds from redirects)
+        // Get feed IDs for subscriptions with no tags using user_feeds view
         const uncategorizedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
-          .from(subscriptions)
+          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+          .from(userFeeds)
           .where(
-            and(
-              eq(subscriptions.userId, userId),
-              isNull(subscriptions.unsubscribedAt),
-              notInArray(subscriptions.id, taggedSubscriptionIds)
-            )
+            and(eq(userFeeds.userId, userId), notInArray(userFeeds.id, taggedSubscriptionIds))
           );
 
-        conditions.push(inArray(entries.feedId, uncategorizedFeedIds));
+        conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
       }
 
       // Apply unreadOnly filter
       if (input.unreadOnly) {
-        conditions.push(eq(userEntries.read, false));
+        conditions.push(eq(visibleEntries.read, false));
       }
 
       // Apply starredOnly filter
       if (input.starredOnly) {
-        conditions.push(eq(userEntries.starred, true));
+        conditions.push(eq(visibleEntries.starred, true));
       }
 
       // Apply type filter if specified
       if (input.type) {
-        conditions.push(eq(entries.type, input.type));
+        conditions.push(eq(visibleEntries.type, input.type));
       }
 
       // Apply excludeTypes filter if specified
       if (input.excludeTypes && input.excludeTypes.length > 0) {
-        conditions.push(notInArray(entries.type, input.excludeTypes));
+        conditions.push(notInArray(visibleEntries.type, input.excludeTypes));
       }
 
       // Apply spam filter: exclude spam entries unless user has showSpam enabled
-      // Filter: entries shown if (NOT is_spam) OR (user.showSpam is true)
       const showSpam = ctx.session.user.showSpam;
       if (!showSpam) {
-        conditions.push(eq(entries.isSpam, false));
+        conditions.push(eq(visibleEntries.isSpam, false));
       }
 
       // Sort by publishedAt, falling back to fetchedAt if null
       // Use entry.id as tiebreaker for stable ordering
-      const sortColumn = sql`COALESCE(${entries.publishedAt}, ${entries.fetchedAt})`;
+      const sortColumn = sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
 
       // Add cursor condition if present
       // Uses compound comparison: (sortColumn, id) for stable pagination
-      // For newest-first (desc), we want entries with (date, id) < cursor
-      // For oldest-first (asc), we want entries with (date, id) > cursor
       if (input.cursor) {
         const { ts, id } = decodeCursor(input.cursor);
         const cursorTs = new Date(ts);
         if (sortOrder === "newest") {
           // Entries older than cursor, or same timestamp with smaller ID
           conditions.push(
-            sql`(${sortColumn} < ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${entries.id} < ${id}))`
+            sql`(${sortColumn} < ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${visibleEntries.id} < ${id}))`
           );
         } else {
           // Entries newer than cursor, or same timestamp with larger ID
           conditions.push(
-            sql`(${sortColumn} > ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${entries.id} > ${id}))`
+            sql`(${sortColumn} > ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${visibleEntries.id} > ${id}))`
           );
         }
       }
 
-      // Query entries with user state and subscription context
-      // Inner join with user_entries enforces visibility
-      // Left join with subscriptions to get subscription_id (may be null for orphaned starred entries)
-      // We fetch one extra to determine if there are more results
+      // Query entries using visible_entries view
+      // The view already includes entry data, user state (read/starred), and subscription_id
+      // Just need to join feeds for feedTitle
       const orderByClause =
         sortOrder === "newest"
-          ? [desc(sortColumn), desc(entries.id)]
-          : [asc(sortColumn), asc(entries.id)];
+          ? [desc(sortColumn), desc(visibleEntries.id)]
+          : [asc(sortColumn), asc(visibleEntries.id)];
       const queryResults = await ctx.db
         .select({
-          entry: entries,
-          feed: feeds,
-          userState: userEntries,
-          subscriptionId: subscriptions.id,
+          id: visibleEntries.id,
+          feedId: visibleEntries.feedId,
+          type: visibleEntries.type,
+          url: visibleEntries.url,
+          title: visibleEntries.title,
+          author: visibleEntries.author,
+          summary: visibleEntries.summary,
+          publishedAt: visibleEntries.publishedAt,
+          fetchedAt: visibleEntries.fetchedAt,
+          read: visibleEntries.read,
+          starred: visibleEntries.starred,
+          subscriptionId: visibleEntries.subscriptionId,
+          siteName: visibleEntries.siteName,
+          feedTitle: feeds.title,
         })
-        .from(entries)
-        .innerJoin(feeds, eq(entries.feedId, feeds.id))
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .leftJoin(
-          subscriptions,
-          and(
-            eq(subscriptions.userId, userId),
-            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
+        .from(visibleEntries)
+        .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
         .where(and(...conditions))
         .orderBy(...orderByClause)
         .limit(limit + 1);
@@ -546,27 +478,27 @@ export const entriesRouter = createTRPCRouter({
       const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
 
       // Format the output
-      const items = resultEntries.map(({ entry, feed, userState, subscriptionId }) => ({
-        id: entry.id,
-        subscriptionId,
-        feedId: entry.feedId,
-        type: entry.type,
-        url: entry.url,
-        title: entry.title,
-        author: entry.author,
-        summary: entry.summary,
-        publishedAt: entry.publishedAt,
-        fetchedAt: entry.fetchedAt,
-        read: userState.read,
-        starred: userState.starred,
-        feedTitle: feed.title,
-        siteName: entry.siteName,
+      const items = resultEntries.map((row) => ({
+        id: row.id,
+        subscriptionId: row.subscriptionId,
+        feedId: row.feedId,
+        type: row.type,
+        url: row.url,
+        title: row.title,
+        author: row.author,
+        summary: row.summary,
+        publishedAt: row.publishedAt,
+        fetchedAt: row.fetchedAt,
+        read: row.read,
+        starred: row.starred,
+        feedTitle: row.feedTitle,
+        siteName: row.siteName,
       }));
 
       // Generate next cursor if there are more results
       let nextCursor: string | undefined;
       if (hasMore && resultEntries.length > 0) {
-        const lastEntry = resultEntries[resultEntries.length - 1].entry;
+        const lastEntry = resultEntries[resultEntries.length - 1];
         const lastTs = lastEntry.publishedAt ?? lastEntry.fetchedAt;
         nextCursor = encodeCursor(lastTs, lastEntry.id);
       }
@@ -601,46 +533,43 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Get the entry with feed, user state, and subscription context
-      // Permission check uses shared visibility condition
-      // Left join with subscriptions to get subscription_id (may be null for orphaned starred entries)
+      // Get the entry using visible_entries view
+      // The view already enforces visibility and includes subscription_id
       const result = await ctx.db
         .select({
-          entry: entries,
-          feed: feeds,
-          userState: userEntries,
-          subscriptionId: subscriptions.id,
+          id: visibleEntries.id,
+          feedId: visibleEntries.feedId,
+          type: visibleEntries.type,
+          url: visibleEntries.url,
+          title: visibleEntries.title,
+          author: visibleEntries.author,
+          contentOriginal: visibleEntries.contentOriginal,
+          contentCleaned: visibleEntries.contentCleaned,
+          summary: visibleEntries.summary,
+          publishedAt: visibleEntries.publishedAt,
+          fetchedAt: visibleEntries.fetchedAt,
+          read: visibleEntries.read,
+          starred: visibleEntries.starred,
+          subscriptionId: visibleEntries.subscriptionId,
+          siteName: visibleEntries.siteName,
+          feedTitle: feeds.title,
+          feedUrl: feeds.url,
         })
-        .from(entries)
-        .innerJoin(feeds, eq(entries.feedId, feeds.id))
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .leftJoin(
-          subscriptions,
-          and(
-            eq(subscriptions.userId, userId),
-            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .where(
-          and(
-            eq(entries.id, input.id),
-            eq(userEntries.userId, userId),
-            buildEntryVisibilityCondition(ctx.db, userId)
-          )
-        )
+        .from(visibleEntries)
+        .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+        .where(and(eq(visibleEntries.id, input.id), eq(visibleEntries.userId, userId)))
         .limit(1);
 
       if (result.length === 0) {
         throw errors.entryNotFound();
       }
 
-      const { entry, feed, userState, subscriptionId } = result[0];
+      const entry = result[0];
 
       return {
         entry: {
           id: entry.id,
-          subscriptionId,
+          subscriptionId: entry.subscriptionId,
           feedId: entry.feedId,
           type: entry.type,
           url: entry.url,
@@ -651,10 +580,10 @@ export const entriesRouter = createTRPCRouter({
           summary: entry.summary,
           publishedAt: entry.publishedAt,
           fetchedAt: entry.fetchedAt,
-          read: userState.read,
-          starred: userState.starred,
-          feedTitle: feed.title,
-          feedUrl: feed.url,
+          read: entry.read,
+          starred: entry.starred,
+          feedTitle: entry.feedTitle,
+          feedUrl: entry.feedUrl,
           siteName: entry.siteName,
         },
       };
@@ -801,14 +730,12 @@ export const entriesRouter = createTRPCRouter({
           return { count: 0 };
         }
 
-        // Get feed IDs for subscriptions with this tag (including previous feeds from redirects)
+        // Get feed IDs for subscriptions with this tag using user_feeds view
         const taggedSubscriptions = await ctx.db
-          .select({ feedIds: subscriptions.feedIds })
+          .select({ feedIds: userFeeds.feedIds })
           .from(subscriptionTags)
-          .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
-          .where(
-            and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
-          );
+          .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
+          .where(eq(subscriptionTags.tagId, input.tagId));
 
         if (taggedSubscriptions.length === 0) {
           return { count: 0 };
@@ -841,27 +768,26 @@ export const entriesRouter = createTRPCRouter({
           .select({ subscriptionId: subscriptionTags.subscriptionId })
           .from(subscriptionTags);
 
-        // Get feed IDs for subscriptions with no tags (including previous feeds from redirects)
+        // Get feed IDs for subscriptions with no tags using user_feeds view
         let uncategorizedFeedIds: string[];
         if (taggedSubscriptionIds.length === 0) {
           // No tagged subscriptions, all active subscriptions are uncategorized
           const allSubscriptions = await ctx.db
-            .select({ feedIds: subscriptions.feedIds })
-            .from(subscriptions)
-            .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+            .select({ feedIds: userFeeds.feedIds })
+            .from(userFeeds)
+            .where(eq(userFeeds.userId, userId));
 
           uncategorizedFeedIds = allSubscriptions.flatMap((s) => s.feedIds);
         } else {
           // Get subscriptions that are not in the tagged list
           const uncategorizedSubscriptions = await ctx.db
-            .select({ feedIds: subscriptions.feedIds })
-            .from(subscriptions)
+            .select({ feedIds: userFeeds.feedIds })
+            .from(userFeeds)
             .where(
               and(
-                eq(subscriptions.userId, userId),
-                isNull(subscriptions.unsubscribedAt),
+                eq(userFeeds.userId, userId),
                 notInArray(
-                  subscriptions.id,
+                  userFeeds.id,
                   taggedSubscriptionIds.map((s) => s.subscriptionId)
                 )
               )
@@ -1041,12 +967,9 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Build the base query conditions
-      // Visibility is enforced by inner join with user_entries
-      const conditions = [eq(userEntries.userId, userId)];
-
-      // Entry must be visible (from active subscription, starred, or from saved feed)
-      conditions.push(buildEntryVisibilityCondition(ctx.db, userId));
+      // Build the base query conditions using visible_entries view
+      // The view already enforces visibility (active subscription OR starred)
+      const conditions = [eq(visibleEntries.userId, userId)];
 
       // Filter by subscriptionId
       if (input?.subscriptionId) {
@@ -1054,7 +977,7 @@ export const entriesRouter = createTRPCRouter({
         if (subFeedIds === null) {
           return { total: 0, unread: 0 };
         }
-        conditions.push(inArray(entries.feedId, subFeedIds));
+        conditions.push(inArray(visibleEntries.feedId, subFeedIds));
       }
 
       // Filter by tagId if specified
@@ -1071,15 +994,13 @@ export const entriesRouter = createTRPCRouter({
           return { total: 0, unread: 0 };
         }
 
-        // Get feed IDs for subscriptions with this tag (including previous feeds from redirects)
+        // Get feed IDs for subscriptions with this tag using user_feeds view
         const taggedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
+          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
           .from(subscriptionTags)
-          .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
-          .where(
-            and(eq(subscriptionTags.tagId, input.tagId), isNull(subscriptions.unsubscribedAt))
-          );
-        conditions.push(inArray(entries.feedId, taggedFeedIds));
+          .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
+          .where(eq(subscriptionTags.tagId, input.tagId));
+        conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
       }
 
       // Filter by uncategorized if specified
@@ -1089,55 +1010,50 @@ export const entriesRouter = createTRPCRouter({
           .select({ subscriptionId: subscriptionTags.subscriptionId })
           .from(subscriptionTags);
 
-        // Get feed IDs for subscriptions with no tags (including previous feeds from redirects)
+        // Get feed IDs for subscriptions with no tags using user_feeds view
         const uncategorizedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${subscriptions.feedIds})`.as("feed_id") })
-          .from(subscriptions)
+          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+          .from(userFeeds)
           .where(
-            and(
-              eq(subscriptions.userId, userId),
-              isNull(subscriptions.unsubscribedAt),
-              notInArray(subscriptions.id, taggedSubscriptionIds)
-            )
+            and(eq(userFeeds.userId, userId), notInArray(userFeeds.id, taggedSubscriptionIds))
           );
 
-        conditions.push(inArray(entries.feedId, uncategorizedFeedIds));
+        conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
       }
 
       // Apply unreadOnly filter
       if (input?.unreadOnly) {
-        conditions.push(eq(userEntries.read, false));
+        conditions.push(eq(visibleEntries.read, false));
       }
 
       // Apply starredOnly filter
       if (input?.starredOnly) {
-        conditions.push(eq(userEntries.starred, true));
+        conditions.push(eq(visibleEntries.starred, true));
       }
 
       // Apply type filter if specified
       if (input?.type) {
-        conditions.push(eq(entries.type, input.type));
+        conditions.push(eq(visibleEntries.type, input.type));
       }
 
       // Apply excludeTypes filter if specified
       if (input?.excludeTypes && input.excludeTypes.length > 0) {
-        conditions.push(notInArray(entries.type, input.excludeTypes));
+        conditions.push(notInArray(visibleEntries.type, input.excludeTypes));
       }
 
       // Apply spam filter: exclude spam entries unless user has showSpam enabled
       const showSpam = ctx.session.user.showSpam;
       if (!showSpam) {
-        conditions.push(eq(entries.isSpam, false));
+        conditions.push(eq(visibleEntries.isSpam, false));
       }
 
       // Get total and unread counts in a single query using conditional aggregation
       const result = await ctx.db
         .select({
           total: sql<number>`count(*)::int`,
-          unread: sql<number>`count(*) FILTER (WHERE ${userEntries.read} = false)::int`,
+          unread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.read} = false)::int`,
         })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .from(visibleEntries)
         .where(and(...conditions));
 
       return {
