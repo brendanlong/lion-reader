@@ -201,6 +201,27 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       const previousTagsData = utils.tags.list.getData();
       const subscriptionsData = utils.subscriptions.list.getData();
 
+      // Snapshot and optimistically update entries.get for each entry
+      // This is needed because SSR-prefetched entries.get data doesn't auto-sync with entries.list
+      const previousEntryGetData = new Map<
+        string,
+        Awaited<ReturnType<typeof utils.entries.get.getData>>
+      >();
+      for (const id of variables.ids) {
+        await utils.entries.get.cancel({ id });
+        const entryData = utils.entries.get.getData({ id });
+        previousEntryGetData.set(id, entryData);
+        if (entryData?.entry) {
+          utils.entries.get.setData(
+            { id },
+            {
+              ...entryData,
+              entry: { ...entryData.entry, read: variables.read },
+            }
+          );
+        }
+      }
+
       // Build subscriptionId -> tagIds map from subscriptions cache
       const subscriptionTagsMap = new Map<string, string[]>();
       if (subscriptionsData?.items) {
@@ -276,7 +297,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         });
       }
 
-      return { previousEntriesData, previousTagsData, tagDeltas };
+      return { previousEntriesData, previousTagsData, tagDeltas, previousEntryGetData };
     },
     onSuccess: (data, variables) => {
       // Update subscription unread counts using targeted cache updates
@@ -316,7 +337,15 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       }
     },
     onError: (_error, _variables, context) => {
-      // Rollback entries to previous state (normy propagates rollback to entries.get automatically)
+      // Rollback entries.get to previous state
+      if (context?.previousEntryGetData) {
+        for (const [id, data] of context.previousEntryGetData) {
+          if (data) {
+            utils.entries.get.setData({ id }, data);
+          }
+        }
+      }
+      // Rollback entries.list to previous state
       if (context?.previousEntriesData && listFilters) {
         utils.entries.list.setInfiniteData(queryFilters, context.previousEntriesData);
       }
@@ -348,16 +377,30 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
   // star mutation with optimistic updates
   const starMutation = trpc.entries.star.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
+      // Snapshot and optimistically update entries.get
+      // This is needed because SSR-prefetched entries.get data doesn't auto-sync with entries.list
+      await utils.entries.get.cancel({ id: variables.id });
+      const previousEntryData = utils.entries.get.getData({ id: variables.id });
+      if (previousEntryData?.entry) {
+        utils.entries.get.setData(
+          { id: variables.id },
+          {
+            ...previousEntryData,
+            entry: { ...previousEntryData.entry, starred: true },
+          }
+        );
+      }
+
+      // Skip list optimistic updates if no list filters provided
       if (!listFilters) {
-        return { previousData: undefined };
+        return { previousData: undefined, previousEntryData };
       }
 
       await utils.entries.list.cancel();
 
       const previousData = utils.entries.list.getInfiniteData(queryFilters);
 
-      // Optimistically update list (normy propagates to entries.get automatically)
+      // Optimistically update list
       utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -371,7 +414,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         };
       });
 
-      return { previousData };
+      return { previousData, previousEntryData };
     },
     onSuccess: (data) => {
       // Update starred count directly - total increases by 1, unread increases if entry is unread
@@ -383,8 +426,12 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         };
       });
     },
-    onError: (_error, _variables, context) => {
-      // Rollback list (normy propagates rollback to entries.get automatically)
+    onError: (_error, variables, context) => {
+      // Rollback entries.get to previous state
+      if (context?.previousEntryData) {
+        utils.entries.get.setData({ id: variables.id }, context.previousEntryData);
+      }
+      // Rollback list to previous state
       if (context?.previousData && listFilters) {
         utils.entries.list.setInfiniteData(queryFilters, context.previousData);
       }
@@ -399,16 +446,30 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
   // unstar mutation with optimistic updates
   const unstarMutation = trpc.entries.unstar.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
+      // Snapshot and optimistically update entries.get
+      // This is needed because SSR-prefetched entries.get data doesn't auto-sync with entries.list
+      await utils.entries.get.cancel({ id: variables.id });
+      const previousEntryData = utils.entries.get.getData({ id: variables.id });
+      if (previousEntryData?.entry) {
+        utils.entries.get.setData(
+          { id: variables.id },
+          {
+            ...previousEntryData,
+            entry: { ...previousEntryData.entry, starred: false },
+          }
+        );
+      }
+
+      // Skip list optimistic updates if no list filters provided
       if (!listFilters) {
-        return { previousData: undefined };
+        return { previousData: undefined, previousEntryData };
       }
 
       await utils.entries.list.cancel();
 
       const previousData = utils.entries.list.getInfiniteData(queryFilters);
 
-      // Optimistically update list (normy propagates to entries.get automatically)
+      // Optimistically update list
       utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -428,7 +489,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         };
       });
 
-      return { previousData };
+      return { previousData, previousEntryData };
     },
     onSuccess: (data) => {
       // Update starred count directly - total decreases by 1, unread decreases if entry is unread
@@ -440,8 +501,12 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         };
       });
     },
-    onError: (_error, _variables, context) => {
-      // Rollback list (normy propagates rollback to entries.get automatically)
+    onError: (_error, variables, context) => {
+      // Rollback entries.get to previous state
+      if (context?.previousEntryData) {
+        utils.entries.get.setData({ id: variables.id }, context.previousEntryData);
+      }
+      // Rollback list to previous state
       if (context?.previousData && listFilters) {
         utils.entries.list.setInfiniteData(queryFilters, context.previousData);
       }
