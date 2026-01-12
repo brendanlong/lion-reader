@@ -201,12 +201,12 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       const previousTagsData = utils.tags.list.getData();
       const subscriptionsData = utils.subscriptions.list.getData();
 
-      // Build feedId -> tagIds map from subscriptions cache
-      const feedTagsMap = new Map<string, string[]>();
+      // Build subscriptionId -> tagIds map from subscriptions cache
+      const subscriptionTagsMap = new Map<string, string[]>();
       if (subscriptionsData?.items) {
         for (const item of subscriptionsData.items) {
-          const tagIds = item.subscription.tags.map((t) => t.id);
-          feedTagsMap.set(item.feed.id, tagIds);
+          const tagIds = item.tags.map((t) => t.id);
+          subscriptionTagsMap.set(item.id, tagIds);
         }
       }
 
@@ -221,7 +221,9 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
             for (const entry of page.items) {
               if (variables.ids.includes(entry.id) && entry.read !== variables.read) {
                 // This entry's state will change
-                const tagIds = feedTagsMap.get(entry.feedId) ?? [];
+                const tagIds = entry.subscriptionId
+                  ? (subscriptionTagsMap.get(entry.subscriptionId) ?? [])
+                  : [];
                 const delta = variables.read ? -1 : 1; // marking read decreases, unread increases
                 for (const tagId of tagIds) {
                   tagDeltas.set(tagId, (tagDeltas.get(tagId) ?? 0) + delta);
