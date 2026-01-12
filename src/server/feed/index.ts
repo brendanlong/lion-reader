@@ -11,7 +11,7 @@ export { parseFeed, detectFeedType } from "./parser";
 export { discoverFeeds, getCommonFeedUrls, type DiscoveredFeed } from "./discovery";
 export { type ParsedCacheHeaders } from "./cache-headers";
 export { fetchFeed, type FetchFeedResult, type RedirectInfo } from "./fetcher";
-export { calculateNextFetch } from "./scheduling";
+export { calculateNextFetch, WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
 export { deriveGuid, processEntries, createUserEntriesForFeed } from "./entry-processor";
 export {
   handleVerificationChallenge,
