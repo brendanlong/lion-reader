@@ -23,6 +23,7 @@
 
 import { z } from "zod";
 import { GoogleAuth } from "google-auth-library";
+import { parseHTML } from "linkedom";
 import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
 import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
@@ -1215,24 +1216,44 @@ function normalizeText(text: string): string {
  * @returns HTML with the title header removed if it matched
  */
 function stripTitleHeader(html: string, title: string): string {
-  // Match the first header element (h1-h6) at the start of the content
-  // Allows for leading whitespace/newlines
-  const headerRegex = /^(\s*)<(h[1-6])>([\s\S]*?)<\/\2>/i;
-  const match = html.match(headerRegex);
+  // Parse the HTML using linkedom for proper DOM handling
+  const { document } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
+  const body = document.body;
 
-  if (!match) {
+  // Find the first non-whitespace child element
+  let firstElement: Element | null = null;
+  for (const child of body.childNodes) {
+    if (child.nodeType === 1) {
+      // Element node
+      firstElement = child as Element;
+      break;
+    } else if (child.nodeType === 3) {
+      // Text node - skip if it's only whitespace
+      const text = child.textContent ?? "";
+      if (text.trim()) {
+        // Non-whitespace text before any header - don't strip anything
+        return html;
+      }
+    }
+  }
+
+  if (!firstElement) {
     return html;
   }
 
-  const [fullMatch, , , headerContent] = match;
+  // Check if it's a header element (h1-h6)
+  const tagName = firstElement.tagName.toLowerCase();
+  if (!/^h[1-6]$/.test(tagName)) {
+    return html;
+  }
 
-  // Extract text content from the header (strip any nested HTML tags)
-  const headerText = headerContent.replace(/<[^>]+>/g, "");
-
-  // Compare normalized versions of the title and header text
+  // Compare normalized versions of the title and header text content
+  const headerText = firstElement.textContent ?? "";
   if (normalizeText(headerText) === normalizeText(title)) {
-    // Remove the header and any immediately following newlines
-    return html.slice(fullMatch.length).replace(/^\n+/, "");
+    // Remove the header element
+    firstElement.remove();
+    // Return the innerHTML of the body (removes wrapper we added)
+    return body.innerHTML.replace(/^\n+/, "");
   }
 
   return html;
