@@ -177,16 +177,52 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         ? useRealtimeStore.getState().markRead
         : useRealtimeStore.getState().markUnread;
 
-      // Mark each entry (needs subscriptionId for count tracking)
-      // If we have a subscriptionId filter, use it; otherwise skip count updates
-      if (listFilters?.subscriptionId) {
-        for (const entryId of variables.ids) {
-          markFn(entryId, listFilters.subscriptionId);
+      // Get subscriptions data to look up tag IDs
+      const subscriptionsData = utils.subscriptions.list.getData();
+
+      // Mark each entry with proper subscription and tag tracking
+      for (const entryId of variables.ids) {
+        let subscriptionId: string | undefined;
+        let tagIds: string[] | undefined;
+
+        // First, try to get subscriptionId from listFilters (feed view)
+        if (listFilters?.subscriptionId) {
+          subscriptionId = listFilters.subscriptionId;
+        } else {
+          // Otherwise, look up the entry in the cache to find its subscriptionId
+          // This handles tag view, uncategorized view, and all view
+          const infiniteData = utils.entries.list.getInfiniteData({
+            subscriptionId: listFilters?.subscriptionId,
+            tagId: listFilters?.tagId,
+            uncategorized: listFilters?.uncategorized,
+            unreadOnly: listFilters?.unreadOnly,
+            starredOnly: listFilters?.starredOnly,
+            sortOrder: listFilters?.sortOrder,
+          });
+
+          // Find the entry in the cached pages
+          for (const page of infiniteData?.pages ?? []) {
+            const entry = page.items.find((item) => item.id === entryId);
+            if (entry?.subscriptionId) {
+              subscriptionId = entry.subscriptionId;
+              break;
+            }
+          }
         }
-      } else {
-        // For "All" view without specific subscription, just track read state
-        // (count deltas will come from SSE/polling instead)
-        for (const entryId of variables.ids) {
+
+        // If we found a subscriptionId, look up its tags
+        if (subscriptionId && subscriptionsData) {
+          const subscription = subscriptionsData.items.find((sub) => sub.id === subscriptionId);
+          if (subscription) {
+            tagIds = subscription.tags.map((tag) => tag.id);
+          }
+        }
+
+        // Update Zustand with subscription and tag tracking
+        if (subscriptionId) {
+          markFn(entryId, subscriptionId, tagIds);
+        } else {
+          // Fallback: just track read state without count updates
           if (variables.read) {
             useRealtimeStore.setState((s) => ({
               readIds: new Set([...s.readIds, entryId]),
@@ -199,6 +235,11 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         }
       }
       // No React Query invalidations needed - UI updates via Zustand deltas
+    },
+    onSuccess: () => {
+      // Invalidate starred count since marking read/unread affects starred unread count
+      // We don't track starred count deltas in Zustand, so just refetch
+      utils.entries.count.invalidate({ starredOnly: true });
     },
     onError: () => {
       // On error, reset Zustand and refetch server data
