@@ -10,6 +10,7 @@
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useRealtimeStore } from "@/lib/store/realtime";
 
 /**
  * Filters for the current entry list.
@@ -189,108 +190,48 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     ]
   );
 
-  // markRead mutation with optimistic updates
+  // markRead mutation with Zustand optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
     onMutate: async (variables) => {
-      // Cancel any in-flight queries
-      await utils.entries.list.cancel();
+      // Update Zustand for instant UI feedback
+      const markFn = variables.read
+        ? useRealtimeStore.getState().markRead
+        : useRealtimeStore.getState().markUnread;
 
-      // Snapshot current state for rollback
-      const previousEntriesData = listFilters
-        ? utils.entries.list.getInfiniteData(queryFilters)
-        : undefined;
-
-      if (listFilters) {
-        // Optimistically update entries (normy propagates to entries.get automatically)
-        utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) => ({
-              ...page,
-              items: page.items
-                .map((item) =>
-                  variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
-                )
-                // Filter out entries that no longer match the unreadOnly filter
-                .filter((item) => {
-                  if (listFilters?.unreadOnly && item.read) {
-                    return false;
-                  }
-                  return true;
-                }),
-            })),
-          };
-        });
+      // Mark each entry (needs subscriptionId for count tracking)
+      // If we have a subscriptionId filter, use it; otherwise skip count updates
+      if (listFilters?.subscriptionId) {
+        for (const entryId of variables.ids) {
+          markFn(entryId, listFilters.subscriptionId);
+        }
+      } else {
+        // For "All" view without specific subscription, just track read state
+        // (count deltas will come from SSE/polling instead)
+        for (const entryId of variables.ids) {
+          if (variables.read) {
+            useRealtimeStore.setState((s) => ({
+              readIds: new Set([...s.readIds, entryId]),
+            }));
+          } else {
+            useRealtimeStore.setState((s) => ({
+              unreadIds: new Set([...s.unreadIds, entryId]),
+            }));
+          }
+        }
       }
 
-      return { previousEntriesData };
+      // Also invalidate React Query for backward compatibility
+      // TODO: Remove once components use Zustand deltas
+      utils.entries.list.invalidate();
+      utils.subscriptions.list.invalidate();
+      utils.tags.list.invalidate();
     },
-    onSuccess: (data, variables) => {
-      // Update subscription unread counts using server data
-      // Uses absolute counts for robustness - self-correcting if counts drift
-      if (data.subscriptionUnreadCounts.length > 0) {
-        utils.subscriptions.list.setData(undefined, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            items: oldData.items.map((item) => {
-              const subCount = data.subscriptionUnreadCounts.find(
-                (s) => s.subscriptionId === item.id
-              );
-              if (subCount) {
-                return {
-                  ...item,
-                  unreadCount: subCount.unreadCount,
-                };
-              }
-              return item;
-            }),
-          };
-        });
-      }
-
-      // Update tag unread counts using server data
-      // Uses absolute counts for robustness - self-correcting if counts drift
-      if (data.tagUnreadCounts.length > 0) {
-        utils.tags.list.setData(undefined, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            items: oldData.items.map((tag) => {
-              const tagCount = data.tagUnreadCounts.find((t) => t.tagId === tag.id);
-              if (tagCount) {
-                return {
-                  ...tag,
-                  unreadCount: tagCount.unreadCount,
-                };
-              }
-              return tag;
-            }),
-          };
-        });
-      }
-
-      // Update starred count directly if starred entries were affected
-      // Only the unread count changes - total stays the same since starred status isn't changing
-      const starredEntries = data.entries.filter((e) => e.starred);
-      if (starredEntries.length > 0) {
-        utils.entries.count.setData({ starredOnly: true }, (old) => {
-          if (!old) return old;
-          // When marking read, decrease unread count; when marking unread, increase it
-          const delta = variables.read ? -starredEntries.length : starredEntries.length;
-          return {
-            total: old.total,
-            unread: Math.max(0, old.unread + delta),
-          };
-        });
-      }
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback entries to previous state (normy propagates rollback to entries.get automatically)
-      if (context?.previousEntriesData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousEntriesData);
-      }
+    onError: () => {
+      // On error, reset and refetch
+      // TODO: Implement proper rollback once we have Zustand snapshot support
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
+      utils.subscriptions.list.invalidate();
       toast.error("Failed to update read status");
     },
   });
