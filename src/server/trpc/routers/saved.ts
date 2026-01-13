@@ -23,7 +23,8 @@ import { Parser } from "htmlparser2";
 import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, scopedProtectedProcedure } from "../trpc";
+import { API_TOKEN_SCOPES } from "@/server/auth";
 import { errors } from "../errors";
 import { fetchHtmlPage } from "@/server/http/fetch";
 import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
@@ -215,7 +216,7 @@ export const savedRouter = createTRPCRouter({
    * @param title - Optional title hint (from bookmarklet's document.title)
    * @returns The saved article
    */
-  save: protectedProcedure
+  save: scopedProtectedProcedure(API_TOKEN_SCOPES.SAVED_WRITE)
     .meta({
       openapi: {
         method: "POST",
