@@ -138,7 +138,7 @@ const entriesListOutputSchema = z.object({
 
 /**
  * Schema for entries returned from mutation operations.
- * Used by normy for automatic cache normalization.
+ * Contains minimal fields needed for optimistic updates.
  */
 const entryMutationResultSchema = z.object({
   id: z.string(),
@@ -148,7 +148,7 @@ const entryMutationResultSchema = z.object({
 
 /**
  * Output schema for star/unstar mutations.
- * Returns single entry for normy cache normalization.
+ * Returns the updated entry with new starred state.
  */
 const starOutputSchema = z.object({
   entry: entryMutationResultSchema,

@@ -7,9 +7,10 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations, useShowOriginalPreference, type EntryListFilters } from "@/lib/hooks";
+import { useRealtimeStore } from "@/lib/store/realtime";
 import {
   ArticleContentBody,
   ArticleContentSkeleton,
@@ -78,7 +79,26 @@ export function EntryContent({
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
 
-  const entry = data?.entry;
+  // Get Zustand deltas
+  const readIds = useRealtimeStore((s) => s.readIds);
+  const unreadIds = useRealtimeStore((s) => s.unreadIds);
+  const starredIds = useRealtimeStore((s) => s.starredIds);
+  const unstarredIds = useRealtimeStore((s) => s.unstarredIds);
+
+  // Merge server data with Zustand deltas at render time
+  const entry = useMemo(() => {
+    if (!data?.entry) return null;
+
+    let read = data.entry.read;
+    if (readIds.has(entryId)) read = true;
+    else if (unreadIds.has(entryId)) read = false;
+
+    let starred = data.entry.starred;
+    if (starredIds.has(entryId)) starred = true;
+    else if (unstarredIds.has(entryId)) starred = false;
+
+    return { ...data.entry, read, starred };
+  }, [data, readIds, unreadIds, starredIds, unstarredIds, entryId]);
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
