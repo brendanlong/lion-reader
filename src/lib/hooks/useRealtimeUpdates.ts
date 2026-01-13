@@ -610,9 +610,8 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
   );
 
   /**
-   * Performs a sync and applies changes to the cache.
-   * Uses targeted cache updates to avoid full refetches where possible.
-   * Returns the new syncedAt timestamp.
+   * Performs a sync and applies changes to Zustand delta store and cache.
+   * Used during polling mode and for catch-up sync after SSE reconnection.
    */
   const performSync = useCallback(async () => {
     try {
@@ -633,7 +632,14 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
 
       const hasTagChanges = result.tags.created.length > 0 || result.tags.removed.length > 0;
 
-      // Handle entry changes
+      // Push entry changes to Zustand (same interface as SSE)
+      for (const entry of result.entries.created) {
+        useRealtimeStore
+          .getState()
+          .onNewEntry(entry.id, entry.feedId, entry.fetchedAt.toISOString());
+      }
+
+      // Handle entry changes (TODO: remove React Query updates once Zustand integration complete)
       if (hasEntryChanges) {
         utils.entries.list.invalidate();
         utils.entries.count.invalidate();
