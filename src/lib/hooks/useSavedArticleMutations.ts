@@ -157,6 +157,14 @@ export function useSavedArticleMutations(
           markFn(entryId, subscriptionId, tagIds);
         } else {
           // Fallback: just track read state without count updates
+          if (process.env.NODE_ENV === "development") {
+            console.warn("⚠️  markRead (saved): subscriptionId not found for entry", {
+              entryId,
+              queryFilters,
+              cacheHasData: !!infiniteData,
+              pageCount: infiniteData?.pages?.length ?? 0,
+            });
+          }
           if (variables.read) {
             useRealtimeStore.setState((s) => ({
               readIds: new Set([...s.readIds, entryId]),
