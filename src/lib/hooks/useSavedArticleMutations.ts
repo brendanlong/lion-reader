@@ -10,6 +10,7 @@
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useRealtimeStore } from "@/lib/store/realtime";
 
 /**
  * Filters for the current saved article list.
@@ -114,143 +115,109 @@ export function useSavedArticleMutations(
     [listFilters?.unreadOnly, listFilters?.starredOnly, listFilters?.sortOrder]
   );
 
-  // markRead mutation with optimistic updates
+  // markRead mutation with Zustand optimistic updates
   // Uses entries.markRead endpoint which works for both feed entries and saved articles
   const markReadMutation = trpc.entries.markRead.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
-      if (!listFilters) {
-        return { previousData: undefined };
+      // Update Zustand for instant UI feedback
+      const markFn = variables.read
+        ? useRealtimeStore.getState().markRead
+        : useRealtimeStore.getState().markUnread;
+
+      // Get subscriptions data to look up tag IDs
+      const subscriptionsData = utils.subscriptions.list.getData();
+
+      // Mark each entry with proper subscription and tag tracking
+      for (const entryId of variables.ids) {
+        let subscriptionId: string | undefined;
+        let tagIds: string[] | undefined;
+
+        // Look up the entry in the cache to find its subscriptionId
+        const infiniteData = utils.entries.list.getInfiniteData(queryFilters);
+
+        // Find the entry in the cached pages
+        for (const page of infiniteData?.pages ?? []) {
+          const entry = page.items.find((item) => item.id === entryId);
+          if (entry?.subscriptionId) {
+            subscriptionId = entry.subscriptionId;
+            break;
+          }
+        }
+
+        // If we found a subscriptionId, look up its tags
+        if (subscriptionId && subscriptionsData) {
+          const subscription = subscriptionsData.items.find((sub) => sub.id === subscriptionId);
+          if (subscription) {
+            tagIds = subscription.tags.map((tag) => tag.id);
+          }
+        }
+
+        // Update Zustand with subscription and tag tracking
+        if (subscriptionId) {
+          markFn(entryId, subscriptionId, tagIds);
+        } else {
+          // Fallback: just track read state without count updates
+          if (variables.read) {
+            useRealtimeStore.setState((s) => ({
+              readIds: new Set([...s.readIds, entryId]),
+            }));
+          } else {
+            useRealtimeStore.setState((s) => ({
+              unreadIds: new Set([...s.unreadIds, entryId]),
+            }));
+          }
+        }
       }
-
-      // Cancel any in-flight queries
-      await utils.entries.list.cancel();
-
-      // Snapshot current state for rollback
-      const previousData = utils.entries.list.getInfiniteData(queryFilters);
-
-      // Optimistically update list
-      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
-            ),
-          })),
-        };
-      });
-
-      return { previousData };
+      // No React Query invalidations needed - UI updates via Zustand deltas
     },
-    onError: (_error, _variables, context) => {
-      // Rollback to previous state
-      if (context?.previousData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
-      }
+    onSuccess: () => {
+      // Invalidate starred count since marking read/unread affects starred unread count
+      utils.entries.count.invalidate({ starredOnly: true });
+    },
+    onError: () => {
+      // On error, reset Zustand and refetch server data
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
+      utils.subscriptions.list.invalidate();
       toast.error("Failed to update read status");
-    },
-    onSettled: () => {
-      // Invalidate saved articles count
-      utils.entries.count.invalidate({ type: "saved" });
     },
   });
 
-  // star mutation with optimistic updates
+  // star mutation with Zustand optimistic updates
   // Uses entries.star endpoint which works for both feed entries and saved articles
   const starMutation = trpc.entries.star.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
-      if (!listFilters) {
-        return { previousData: undefined };
-      }
-
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData(queryFilters);
-
-      // Optimistically update list
-      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              item.id === variables.id ? { ...item, starred: true } : item
-            ),
-          })),
-        };
-      });
-
-      return { previousData };
+      // Update Zustand for instant UI feedback
+      useRealtimeStore.getState().toggleStar(variables.id, false);
     },
-    onSuccess: (data) => {
-      // Update starred count directly - total increases by 1, unread increases if entry is unread
-      utils.entries.count.setData({ starredOnly: true }, (old) => {
-        if (!old) return old;
-        return {
-          total: old.total + 1,
-          unread: old.unread + (data.entry.read ? 0 : 1),
-        };
-      });
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback list
-      if (context?.previousData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
-      }
+    onError: () => {
+      // On error, reset Zustand and refetch
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
       toast.error("Failed to star article");
+    },
+    onSettled: () => {
+      // Invalidate starred entries list so the Starred page shows the new item
+      utils.entries.list.invalidate({ starredOnly: true });
     },
   });
 
-  // unstar mutation with optimistic updates
+  // unstar mutation with Zustand optimistic updates
   // Uses entries.unstar endpoint which works for both feed entries and saved articles
   const unstarMutation = trpc.entries.unstar.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
-      if (!listFilters) {
-        return { previousData: undefined };
-      }
-
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData(queryFilters);
-
-      // Optimistically update list
-      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              item.id === variables.id ? { ...item, starred: false } : item
-            ),
-          })),
-        };
-      });
-
-      return { previousData };
+      // Update Zustand for instant UI feedback
+      useRealtimeStore.getState().toggleStar(variables.id, true);
     },
-    onSuccess: (data) => {
-      // Update starred count directly - total decreases by 1, unread decreases if entry is unread
-      utils.entries.count.setData({ starredOnly: true }, (old) => {
-        if (!old) return old;
-        return {
-          total: Math.max(0, old.total - 1),
-          unread: Math.max(0, old.unread - (data.entry.read ? 0 : 1)),
-        };
-      });
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback list
-      if (context?.previousData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
-      }
+    onError: () => {
+      // On error, reset Zustand and refetch
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
       toast.error("Failed to unstar article");
+    },
+    onSettled: () => {
+      // Invalidate starred entries list so the Starred page reflects the removal
+      utils.entries.list.invalidate({ starredOnly: true });
     },
   });
 
