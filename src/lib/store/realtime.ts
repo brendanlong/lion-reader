@@ -119,8 +119,10 @@ export const useRealtimeStore = create<RealtimeStore>()(
               unreadIds: newUnreadIds,
               subscriptionCountDeltas: {
                 ...state.subscriptionCountDeltas,
-                [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + 1,
+                // Undo the previous +1 by subtracting -1 (not adding +1!)
+                [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) - 1,
               },
+              // Tag deltas calculated at top already subtract -1, which correctly undoes the +1 from markUnread
               tagCountDeltas: newTagCountDeltas,
             };
           }
