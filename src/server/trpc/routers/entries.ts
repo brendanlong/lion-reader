@@ -14,7 +14,15 @@ import { eq, and, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { entries, feeds, userEntries, tags, visibleEntries, userFeeds } from "@/server/db/schema";
+import {
+  entries,
+  feeds,
+  userEntries,
+  subscriptionTags,
+  tags,
+  visibleEntries,
+  userFeeds,
+} from "@/server/db/schema";
 
 // ============================================================================
 // Constants

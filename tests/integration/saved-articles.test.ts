@@ -449,8 +449,8 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       const result = await caller.entries.markRead({ ids: [id1, id2], read: true });
-      expect(result.entries).toHaveLength(2);
-      expect(result.entries.every((a) => a.read === true)).toBe(true);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
 
       // Verify both are read in user_entries
       const userEntriesResults = await db
@@ -469,8 +469,8 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       const result = await caller.entries.markRead({ ids: [id1, id2], read: false });
-      expect(result.entries).toHaveLength(2);
-      expect(result.entries.every((a) => a.read === false)).toBe(true);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
 
       // Verify both are unread in user_entries
       const userEntriesResults = await db
@@ -492,10 +492,9 @@ describe("Saved Articles API", () => {
         ids: [validId, generateUuidv7()],
         read: true,
       });
-      // Only the valid article is returned
-      expect(result.entries).toHaveLength(1);
-      expect(result.entries[0].id).toBe(validId);
-      expect(result.entries[0].read).toBe(true);
+      // Only the valid article is counted
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(1);
 
       // Verify valid article is updated in user_entries
       const dbUserEntry = await db
@@ -544,7 +543,8 @@ describe("Saved Articles API", () => {
         ids: [generateUuidv7()],
         read: true,
       });
-      expect(result.entries).toEqual([]);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(0);
     });
   });
 

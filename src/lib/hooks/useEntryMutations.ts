@@ -169,27 +169,6 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
   const utils = trpc.useUtils();
   const listFilters = options?.listFilters;
 
-  // Build the query key for the entries list
-  // This must match the filters used by the EntryList component
-  const queryFilters = useMemo(
-    () => ({
-      subscriptionId: listFilters?.subscriptionId,
-      tagId: listFilters?.tagId,
-      uncategorized: listFilters?.uncategorized,
-      unreadOnly: listFilters?.unreadOnly,
-      starredOnly: listFilters?.starredOnly,
-      sortOrder: listFilters?.sortOrder,
-    }),
-    [
-      listFilters?.subscriptionId,
-      listFilters?.tagId,
-      listFilters?.uncategorized,
-      listFilters?.unreadOnly,
-      listFilters?.starredOnly,
-      listFilters?.sortOrder,
-    ]
-  );
-
   // markRead mutation with Zustand optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
     onMutate: async (variables) => {
@@ -219,16 +198,10 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
           }
         }
       }
-
-      // Also invalidate React Query for backward compatibility
-      // TODO: Remove once components use Zustand deltas
-      utils.entries.list.invalidate();
-      utils.subscriptions.list.invalidate();
-      utils.tags.list.invalidate();
+      // No React Query invalidations needed - UI updates via Zustand deltas
     },
     onError: () => {
-      // On error, reset and refetch
-      // TODO: Implement proper rollback once we have Zustand snapshot support
+      // On error, reset Zustand and refetch server data
       useRealtimeStore.getState().reset();
       utils.entries.list.invalidate();
       utils.subscriptions.list.invalidate();
@@ -253,49 +226,16 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
   });
 
-  // star mutation with optimistic updates
+  // star mutation with Zustand optimistic updates
   const starMutation = trpc.entries.star.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
-      if (!listFilters) {
-        return { previousData: undefined };
-      }
-
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData(queryFilters);
-
-      // Optimistically update list (normy propagates to entries.get automatically)
-      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              item.id === variables.id ? { ...item, starred: true } : item
-            ),
-          })),
-        };
-      });
-
-      return { previousData };
+      // Update Zustand for instant UI feedback
+      useRealtimeStore.getState().toggleStar(variables.id, false);
     },
-    onSuccess: (data) => {
-      // Update starred count directly - total increases by 1, unread increases if entry is unread
-      utils.entries.count.setData({ starredOnly: true }, (old) => {
-        if (!old) return old;
-        return {
-          total: old.total + 1,
-          unread: old.unread + (data.entry.read ? 0 : 1),
-        };
-      });
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback list (normy propagates rollback to entries.get automatically)
-      if (context?.previousData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
-      }
+    onError: () => {
+      // On error, reset Zustand and refetch
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
       toast.error("Failed to star entry");
     },
     onSettled: () => {
@@ -304,55 +244,16 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
   });
 
-  // unstar mutation with optimistic updates
+  // unstar mutation with Zustand optimistic updates
   const unstarMutation = trpc.entries.unstar.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
-      if (!listFilters) {
-        return { previousData: undefined };
-      }
-
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData(queryFilters);
-
-      // Optimistically update list (normy propagates to entries.get automatically)
-      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items
-              .map((item) => (item.id === variables.id ? { ...item, starred: false } : item))
-              // Filter out entries that no longer match the starredOnly filter
-              .filter((item) => {
-                if (listFilters?.starredOnly && !item.starred) {
-                  return false;
-                }
-                return true;
-              }),
-          })),
-        };
-      });
-
-      return { previousData };
+      // Update Zustand for instant UI feedback
+      useRealtimeStore.getState().toggleStar(variables.id, true);
     },
-    onSuccess: (data) => {
-      // Update starred count directly - total decreases by 1, unread decreases if entry is unread
-      utils.entries.count.setData({ starredOnly: true }, (old) => {
-        if (!old) return old;
-        return {
-          total: Math.max(0, old.total - 1),
-          unread: Math.max(0, old.unread - (data.entry.read ? 0 : 1)),
-        };
-      });
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback list (normy propagates rollback to entries.get automatically)
-      if (context?.previousData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
-      }
+    onError: () => {
+      // On error, reset Zustand and refetch
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
       toast.error("Failed to unstar entry");
     },
     onSettled: () => {
