@@ -32,6 +32,7 @@ interface EntryListQueryFilters {
 export interface EntryListData {
   id: string;
   feedId: string;
+  subscriptionId: string | null;
   url: string | null;
   title: string | null;
   author: string | null;
@@ -188,6 +189,7 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
         page.items.map((entry) => ({
           id: entry.id,
           feedId: entry.feedId,
+          subscriptionId: entry.subscriptionId,
           url: entry.url,
           title: entry.title,
           author: entry.author,
