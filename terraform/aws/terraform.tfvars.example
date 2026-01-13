@@ -1,0 +1,36 @@
+# AWS Region
+aws_region = "us-west-2"
+
+# Environment name
+environment = "prod"
+
+# Application name
+app_name = "lion-reader"
+
+# Domain configuration
+domain_name = "lionreader.com"
+subdomain   = "" # Empty for apex domain, or e.g. "app" for app.lionreader.com
+
+# Database configuration
+db_instance_class = "db.t4g.micro"
+db_name           = "lionreader"
+db_username       = "lionreader"
+db_password       = "CHANGE_ME_TO_A_SECURE_PASSWORD"
+
+# ECS configuration (smallest Fargate sizes)
+api_cpu    = 256  # 0.25 vCPU
+api_memory = 512  # 512 MB
+worker_cpu    = 256
+worker_memory = 512
+redis_cpu     = 256
+redis_memory  = 512
+
+# Desired task counts
+api_desired_count    = 1
+worker_desired_count = 1
+
+# Application configuration
+app_image_tag         = "latest"
+allow_all_signups     = false
+worker_concurrency    = 1
+fetcher_contact_email = "your-email@example.com"
