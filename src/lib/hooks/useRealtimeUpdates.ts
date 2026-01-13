@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { useRealtimeStore } from "@/lib/store/realtime";
 
 /**
  * Connection status for real-time updates.
@@ -445,25 +446,43 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
   }, []);
 
   /**
-   * Handles incoming SSE events by invalidating the appropriate queries.
+   * Handles incoming SSE events by updating Zustand delta store and invalidating queries.
+   * Tracks sync cursor from event.lastEventId for reconnection.
    */
   const handleEvent = useCallback(
     (event: MessageEvent) => {
+      // Update sync cursor from SSE event ID (browser automatically tracks this)
+      // @ts-expect-error - MessageEvent has lastEventId property but TypeScript types don't include it
+      if (event.lastEventId) {
+        // @ts-expect-error - MessageEvent has lastEventId property but TypeScript types don't include it
+        lastSyncedAtRef.current = event.lastEventId;
+      }
+
       const data = parseEventData(event.data);
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Invalidate all entry list queries since new entries affect multiple views
-        // (The feedId-based targeting was removed when we switched to subscription-centric API)
-        utils.entries.list.invalidate();
+        // Push to Zustand delta store (instant UI update)
+        useRealtimeStore.getState().onNewEntry(data.entryId, data.feedId, data.timestamp);
 
-        // Invalidate subscription list to refresh unread counts
-        // (We can't optimistically update because new_entry event has feedId, not subscriptionId)
+        // Also invalidate (TODO: remove this once Zustand integration is complete)
+        utils.entries.list.invalidate();
         utils.subscriptions.list.invalidate();
       } else if (data.type === "entry_updated") {
+        // Push to Zustand
+        useRealtimeStore.getState().onEntryUpdated(data.entryId);
+
+        // Also invalidate (TODO: remove once Zustand integration complete)
         utils.entries.get.invalidate({ id: data.entryId });
         utils.entries.list.invalidate();
       } else if (data.type === "subscription_created") {
+        // Push to Zustand delta store
+        const tagIds = data.subscription.tags.map((t) => t.id);
+        useRealtimeStore
+          .getState()
+          .onSubscriptionCreated(data.subscription.id, data.subscription.unreadCount, tagIds);
+
+        // Also update React Query cache (TODO: remove once Zustand integration complete)
         // Optimistic cache update - insert subscription directly into cache
         utils.subscriptions.list.setData(undefined, (oldData) => {
           if (!oldData) {
@@ -557,6 +576,10 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
         }
         // For non-email feeds, no invalidation needed - cache is already updated!
       } else if (data.type === "subscription_deleted") {
+        // TODO: Push to Zustand (needs tag IDs from subscription, which event doesn't include)
+        // useRealtimeStore.getState().onSubscriptionDeleted(data.subscriptionId, tagIds);
+
+        // Invalidate React Query cache
         const existingData = utils.subscriptions.list.getData();
         const stillInCache = existingData?.items.some((item) => item.id === data.subscriptionId);
 
@@ -835,6 +858,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
         };
 
         // Handle named events
+        eventSource.addEventListener("connected", handleEvent); // Initial cursor from server
         eventSource.addEventListener("new_entry", handleEvent);
         eventSource.addEventListener("entry_updated", handleEvent);
         eventSource.addEventListener("subscription_created", handleEvent);
