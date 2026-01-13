@@ -23,7 +23,7 @@
 
 import { z } from "zod";
 import { GoogleAuth } from "google-auth-library";
-import { parseHTML } from "linkedom";
+import { Parser } from "htmlparser2";
 import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
 import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
@@ -1204,6 +1204,9 @@ function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+/** Header tag names for matching */
+const HEADER_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
+
 /**
  * Strips the first header element if its text content matches the document title.
  *
@@ -1211,49 +1214,76 @@ function normalizeText(text: string): string {
  * but since we already have the title from document metadata, showing it twice
  * is redundant. This function removes the first header if it matches the title.
  *
+ * Uses htmlparser2 for efficient SAX-style parsing with position tracking,
+ * avoiding a full DOM parse.
+ *
  * @param html - The HTML content
  * @param title - The document title to compare against
  * @returns HTML with the title header removed if it matched
  */
 function stripTitleHeader(html: string, title: string): string {
-  // Parse the HTML using linkedom for proper DOM handling
-  const { document } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
-  const body = document.body;
+  // State for tracking the first header element
+  let foundFirstElement = false;
+  let isInHeader = false;
+  let headerDepth = 0;
+  let headerText = "";
+  let headerEndIndex = -1;
 
-  // Find the first non-whitespace child element
-  let firstElement: Element | null = null;
-  for (const child of body.childNodes) {
-    if (child.nodeType === 1) {
-      // Element node
-      firstElement = child as Element;
-      break;
-    } else if (child.nodeType === 3) {
-      // Text node - skip if it's only whitespace
-      const text = child.textContent ?? "";
-      if (text.trim()) {
-        // Non-whitespace text before any header - don't strip anything
-        return html;
-      }
-    }
-  }
+  const parser = new Parser(
+    {
+      onopentagname(name) {
+        const tag = name.toLowerCase();
 
-  if (!firstElement) {
-    return html;
-  }
+        if (!foundFirstElement) {
+          foundFirstElement = true;
+          // Check if it's a header element (h1-h6)
+          if (HEADER_TAGS.has(tag)) {
+            isInHeader = true;
+            headerDepth = 1;
+          } else {
+            // First element is not a header, stop parsing
+            parser.pause();
+          }
+        } else if (isInHeader) {
+          // Track nested elements inside the header
+          headerDepth++;
+        }
+      },
+      ontext(text) {
+        // Check for non-whitespace text before any element
+        if (!foundFirstElement && text.trim()) {
+          // Non-whitespace text before first element, stop
+          parser.pause();
+          return;
+        }
 
-  // Check if it's a header element (h1-h6)
-  const tagName = firstElement.tagName.toLowerCase();
-  if (!/^h[1-6]$/.test(tagName)) {
-    return html;
-  }
+        if (isInHeader) {
+          headerText += text;
+        }
+      },
+      onclosetag() {
+        if (isInHeader) {
+          headerDepth--;
+          if (headerDepth === 0) {
+            // Finished parsing the header, record end position
+            // endIndex points to the character after '>'
+            headerEndIndex = parser.endIndex! + 1;
+            isInHeader = false;
+            parser.pause();
+          }
+        }
+      },
+    },
+    { decodeEntities: true }
+  );
 
-  // Compare normalized versions of the title and header text content
-  const headerText = firstElement.textContent ?? "";
-  if (normalizeText(headerText) === normalizeText(title)) {
-    // Remove the header element
-    firstElement.remove();
-    // Return the innerHTML of the body (removes wrapper we added)
-    return body.innerHTML.replace(/^\n+/, "");
+  parser.write(html);
+  parser.end();
+
+  // If we found a header and got its end position, check if it matches the title
+  if (headerEndIndex > 0 && normalizeText(headerText) === normalizeText(title)) {
+    // Remove the header and any immediately following newlines
+    return html.slice(headerEndIndex).replace(/^\n+/, "");
   }
 
   return html;
