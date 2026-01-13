@@ -100,8 +100,21 @@ export function SavedArticleContent({
   trpc.entries.get.useQuery({ id: nextArticleId! }, { enabled: !!nextArticleId });
   trpc.entries.get.useQuery({ id: previousArticleId! }, { enabled: !!previousArticleId });
 
-  // Use the consolidated mutations hook (no list filters since we're in single article view)
-  const { markRead, star, unstar } = useSavedArticleMutations();
+  // Get subscriptions to look up tags for the entry's subscription
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+  const tagIds = useMemo(() => {
+    if (!article?.subscriptionId || !subscriptionsQuery.data) return undefined;
+    const subscription = subscriptionsQuery.data.items.find(
+      (sub) => sub.id === article.subscriptionId
+    );
+    return subscription?.tags.map((tag) => tag.id);
+  }, [article, subscriptionsQuery.data]);
+
+  // Use the consolidated mutations hook with subscriptionId from entry data (bypasses cache lookup)
+  const { markRead, star, unstar } = useSavedArticleMutations({
+    subscriptionId: article?.subscriptionId ?? undefined,
+    tagIds,
+  });
 
   // Mark article as read when component mounts and article is loaded
   // Uses lastMarkedReadId to track which article was marked, correctly handling navigation between articles

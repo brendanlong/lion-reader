@@ -109,9 +109,23 @@ export function EntryContent({
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
-  // Entry mutations with list filters for optimistic updates
+  // Get subscriptions to look up tags for the entry's subscription
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+  const tagIds = useMemo(() => {
+    if (!entry?.subscriptionId || !subscriptionsQuery.data) return undefined;
+    const subscription = subscriptionsQuery.data.items.find(
+      (sub) => sub.id === entry.subscriptionId
+    );
+    return subscription?.tags.map((tag) => tag.id);
+  }, [entry, subscriptionsQuery.data]);
+
+  // Entry mutations with subscriptionId from entry data (bypasses cache lookup)
   // When marking an entry as read, this ensures it gets filtered from the list immediately
-  const { markRead, star, unstar } = useEntryMutations({ listFilters });
+  const { markRead, star, unstar } = useEntryMutations({
+    listFilters,
+    subscriptionId: entry?.subscriptionId ?? undefined,
+    tagIds,
+  });
 
   // Mark entry as read once when component mounts and entry data loads
   // The ref prevents re-marking if user later toggles read status

@@ -57,6 +57,19 @@ export interface UseEntryMutationsOptions {
    * If not provided, mutations will work but without list optimistic updates.
    */
   listFilters?: EntryListFilters;
+
+  /**
+   * Optional subscription ID for the current entry.
+   * When provided, bypasses cache lookup for subscription tracking.
+   * Used in detail views where we already have the entry data.
+   */
+  subscriptionId?: string;
+
+  /**
+   * Optional tag IDs for the current entry's subscription.
+   * When provided along with subscriptionId, bypasses tag lookup.
+   */
+  tagIds?: string[];
 }
 
 /**
@@ -168,6 +181,8 @@ export interface UseEntryMutationsResult {
 export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryMutationsResult {
   const utils = trpc.useUtils();
   const listFilters = options?.listFilters;
+  const knownSubscriptionId = options?.subscriptionId;
+  const knownTagIds = options?.tagIds;
 
   // markRead mutation with Zustand optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
@@ -184,14 +199,20 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       for (const entryId of variables.ids) {
         let subscriptionId: string | undefined;
         let tagIds: string[] | undefined;
+        let cacheData: ReturnType<typeof utils.entries.list.getInfiniteData> | undefined;
 
-        // First, try to get subscriptionId from listFilters (feed view)
-        if (listFilters?.subscriptionId) {
+        // Priority 1: Use known subscriptionId from options (detail view with entry data)
+        if (knownSubscriptionId) {
+          subscriptionId = knownSubscriptionId;
+          tagIds = knownTagIds;
+        }
+        // Priority 2: Get subscriptionId from listFilters (feed view)
+        else if (listFilters?.subscriptionId) {
           subscriptionId = listFilters.subscriptionId;
-        } else {
-          // Otherwise, look up the entry in the cache to find its subscriptionId
-          // This handles tag view, uncategorized view, and all view
-          const infiniteData = utils.entries.list.getInfiniteData({
+        }
+        // Priority 3: Look up in list cache (all/tag/starred views)
+        else {
+          cacheData = utils.entries.list.getInfiniteData({
             subscriptionId: listFilters?.subscriptionId,
             tagId: listFilters?.tagId,
             uncategorized: listFilters?.uncategorized,
@@ -201,7 +222,7 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
           });
 
           // Find the entry in the cached pages
-          for (const page of infiniteData?.pages ?? []) {
+          for (const page of cacheData?.pages ?? []) {
             const entry = page.items.find((item) => item.id === entryId);
             if (entry?.subscriptionId) {
               subscriptionId = entry.subscriptionId;
@@ -210,8 +231,8 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
           }
         }
 
-        // If we found a subscriptionId, look up its tags
-        if (subscriptionId && subscriptionsData) {
+        // If we found a subscriptionId but don't have tags yet, look them up
+        if (subscriptionId && !tagIds && subscriptionsData) {
           const subscription = subscriptionsData.items.find((sub) => sub.id === subscriptionId);
           if (subscription) {
             tagIds = subscription.tags.map((tag) => tag.id);
@@ -227,8 +248,8 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
             console.warn("⚠️  markRead: subscriptionId not found for entry", {
               entryId,
               listFilters,
-              cacheHasData: !!infiniteData,
-              pageCount: infiniteData?.pages?.length ?? 0,
+              cacheHasData: !!cacheData,
+              pageCount: cacheData?.pages?.length ?? 0,
             });
           }
           if (variables.read) {
