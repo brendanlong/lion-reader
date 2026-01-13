@@ -324,7 +324,16 @@ export const feedsRouter = createTRPCRouter({
       }
 
       // Step 4: Build and return the preview
-      const sampleEntries = parsedFeed.items
+      // Sort entries by publication date (newest first) before taking sample
+      // Entries without dates are placed last
+      const sortedItems = [...parsedFeed.items].sort((a, b) => {
+        if (!a.pubDate && !b.pubDate) return 0;
+        if (!a.pubDate) return 1;
+        if (!b.pubDate) return -1;
+        return b.pubDate.getTime() - a.pubDate.getTime();
+      });
+
+      const sampleEntries = sortedItems
         .slice(0, MAX_SAMPLE_ENTRIES)
         .map((entry) => toSampleEntry(entry, finalFeedUrl));
 
