@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useRealtimeStore } from "@/lib/store/realtime";
@@ -103,13 +103,22 @@ export interface MarkAllReadOptions {
 export interface UseEntryMutationsResult {
   /**
    * Mark one or more entries as read or unread.
+   * @param subscriptionId - Optional subscription ID for count tracking
+   * @param tagIds - Optional tag IDs for count tracking
    */
-  markRead: (ids: string[], read: boolean) => void;
+  markRead: (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => void;
 
   /**
    * Toggle the read status of an entry.
+   * @param subscriptionId - Optional subscription ID for count tracking
+   * @param tagIds - Optional tag IDs for count tracking
    */
-  toggleRead: (entryId: string, currentlyRead: boolean) => void;
+  toggleRead: (
+    entryId: string,
+    currentlyRead: boolean,
+    subscriptionId?: string,
+    tagIds?: string[]
+  ) => void;
 
   /**
    * Mark all entries as read with optional filters.
@@ -180,9 +189,11 @@ export interface UseEntryMutationsResult {
  */
 export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryMutationsResult {
   const utils = trpc.useUtils();
-  const listFilters = options?.listFilters;
   const knownSubscriptionId = options?.subscriptionId;
   const knownTagIds = options?.tagIds;
+
+  // Store subscription context for the current mutation in a ref
+  const mutationContextRef = useRef<{ subscriptionId?: string; tagIds?: string[] }>({});
 
   // markRead mutation with Zustand optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
@@ -192,69 +203,20 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         ? useRealtimeStore.getState().markRead
         : useRealtimeStore.getState().markUnread;
 
-      // Get subscriptions data to look up tag IDs
-      const subscriptionsData = utils.subscriptions.list.getData();
+      // Use subscription context from the ref (set by wrapper function)
+      const subscriptionId = mutationContextRef.current.subscriptionId ?? knownSubscriptionId;
+      const tagIds = mutationContextRef.current.tagIds ?? knownTagIds;
 
-      // Mark each entry with proper subscription and tag tracking
+      // Mark each entry with subscription and tag tracking
       for (const entryId of variables.ids) {
-        let subscriptionId: string | undefined;
-        let tagIds: string[] | undefined;
-        let cacheData: ReturnType<typeof utils.entries.list.getInfiniteData> | undefined;
-
-        // Priority 1: Use known subscriptionId from options (detail view with entry data)
-        if (knownSubscriptionId) {
-          subscriptionId = knownSubscriptionId;
-          tagIds = knownTagIds;
-        }
-        // Priority 2: Get subscriptionId from listFilters (feed view)
-        else if (listFilters?.subscriptionId) {
-          subscriptionId = listFilters.subscriptionId;
-        }
-        // Priority 3: Look up in list cache (all/tag/starred views)
-        else {
-          // Build query params matching the original list query
-          // IMPORTANT: useEntryListQuery passes ALL params including undefined ones,
-          // so we must do the same to match the query key
-          const queryParams = {
-            subscriptionId: listFilters?.subscriptionId,
-            tagId: listFilters?.tagId,
-            uncategorized: listFilters?.uncategorized,
-            unreadOnly: listFilters?.unreadOnly,
-            starredOnly: listFilters?.starredOnly,
-            sortOrder: listFilters?.sortOrder,
-          };
-
-          cacheData = utils.entries.list.getInfiniteData(queryParams);
-
-          // Find the entry in the cached pages
-          for (const page of cacheData?.pages ?? []) {
-            const entry = page.items.find((item) => item.id === entryId);
-            if (entry?.subscriptionId) {
-              subscriptionId = entry.subscriptionId;
-              break;
-            }
-          }
-        }
-
-        // If we found a subscriptionId but don't have tags yet, look them up
-        if (subscriptionId && !tagIds && subscriptionsData) {
-          const subscription = subscriptionsData.items.find((sub) => sub.id === subscriptionId);
-          if (subscription) {
-            tagIds = subscription.tags.map((tag) => tag.id);
-          }
-        }
-
-        // Update Zustand with subscription and tag tracking
         if (subscriptionId) {
           markFn(entryId, subscriptionId, tagIds);
         } else {
           // Fallback: just track read state without count updates
           if (process.env.NODE_ENV === "development") {
-            console.warn("⚠️  markRead: subscriptionId not found for entry", {
+            console.warn("⚠️  markRead: no subscriptionId provided", {
               entryId,
-              listFilters,
-              cacheHasData: !!cacheData,
-              pageCount: cacheData?.pages?.length ?? 0,
+              hint: "Pass subscriptionId when calling markRead/toggleRead for count updates",
             });
           }
           if (variables.read) {
@@ -341,15 +303,23 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
 
   // Convenience wrapper functions
   const markRead = useCallback(
-    (ids: string[], read: boolean) => {
+    (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => {
+      // Set context for this mutation
+      mutationContextRef.current = { subscriptionId, tagIds };
       markReadMutation.mutate({ ids, read });
+      // Clear context after mutation starts
+      mutationContextRef.current = {};
     },
     [markReadMutation]
   );
 
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => {
+    (entryId: string, currentlyRead: boolean, subscriptionId?: string, tagIds?: string[]) => {
+      // Set context for this mutation
+      mutationContextRef.current = { subscriptionId, tagIds };
       markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
+      // Clear context after mutation starts
+      mutationContextRef.current = {};
     },
     [markReadMutation]
   );

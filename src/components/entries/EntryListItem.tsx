@@ -16,6 +16,7 @@ import { ArticleListItem } from "@/components/articles/ArticleListItem";
 interface EntryListItemData {
   id: string;
   feedId: string;
+  subscriptionId: string | null;
   url: string | null;
   title: string | null;
   author: string | null;
