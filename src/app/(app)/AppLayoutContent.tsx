@@ -20,9 +20,10 @@ import { trpc } from "@/lib/trpc/client";
 
 interface AppLayoutContentProps {
   children: React.ReactNode;
+  initialSyncCursor: string;
 }
 
-export function AppLayoutContent({ children }: AppLayoutContentProps) {
+export function AppLayoutContent({ children, initialSyncCursor }: AppLayoutContentProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -45,7 +46,7 @@ export function AppLayoutContent({ children }: AppLayoutContentProps) {
   };
 
   return (
-    <RealtimeProvider>
+    <RealtimeProvider initialSyncCursor={initialSyncCursor}>
       <KeyboardShortcutsProvider>
         <Toaster position="bottom-right" richColors closeButton />
         <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950">

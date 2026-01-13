@@ -372,10 +372,13 @@ function parseEventData(data: string): SSEEventData | null {
 /**
  * Hook to manage real-time updates with SSE primary and polling fallback.
  *
+ * @param initialSyncCursor - Initial sync cursor from server (ISO8601 timestamp)
+ *
  * @example
  * ```tsx
  * function AppLayout({ children }) {
- *   const { status, isConnected, isPolling } = useRealtimeUpdates();
+ *   const initialCursor = new Date().toISOString();
+ *   const { status, isConnected, isPolling } = useRealtimeUpdates(initialCursor);
  *
  *   return (
  *     <div>
@@ -387,7 +390,7 @@ function parseEventData(data: string): SSEEventData | null {
  * }
  * ```
  */
-export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
+export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdatesResult {
   const utils = trpc.useUtils();
 
   // Connection status state
@@ -402,7 +405,8 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const isManuallyClosedRef = useRef(false);
   const shouldConnectRef = useRef(false);
-  const lastSyncedAtRef = useRef<string | null>(null);
+  // Initialize with server-provided cursor (no client-side guessing!)
+  const lastSyncedAtRef = useRef<string>(initialSyncCursor);
 
   // State to trigger reconnection
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
@@ -684,10 +688,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
     setIsPollingMode(true);
     setConnectionStatus("polling");
 
-    // Initialize lastSyncedAt to now if not set
-    if (!lastSyncedAtRef.current) {
-      lastSyncedAtRef.current = new Date().toISOString();
-    }
+    // lastSyncedAt already initialized with server-provided cursor
 
     // Start polling interval
     pollIntervalRef.current = setInterval(() => {
