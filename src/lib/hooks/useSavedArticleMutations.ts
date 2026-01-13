@@ -197,8 +197,9 @@ export function useSavedArticleMutations(
       toast.error("Failed to star article");
     },
     onSettled: () => {
-      // Invalidate starred entries list so the Starred page shows the new item
+      // Invalidate starred entries list and count
       utils.entries.list.invalidate({ starredOnly: true });
+      utils.entries.count.invalidate({ starredOnly: true });
     },
   });
 
@@ -216,8 +217,9 @@ export function useSavedArticleMutations(
       toast.error("Failed to unstar article");
     },
     onSettled: () => {
-      // Invalidate starred entries list so the Starred page reflects the removal
+      // Invalidate starred entries list and count
       utils.entries.list.invalidate({ starredOnly: true });
+      utils.entries.count.invalidate({ starredOnly: true });
     },
   });
 
