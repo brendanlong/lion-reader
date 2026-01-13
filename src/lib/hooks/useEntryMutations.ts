@@ -280,8 +280,9 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       toast.error("Failed to star entry");
     },
     onSettled: () => {
-      // Invalidate starred entries list so the Starred page shows the new item
+      // Invalidate starred entries list and count
       utils.entries.list.invalidate({ starredOnly: true });
+      utils.entries.count.invalidate({ starredOnly: true });
     },
   });
 
@@ -298,8 +299,9 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       toast.error("Failed to unstar entry");
     },
     onSettled: () => {
-      // Invalidate starred entries list so the Starred page reflects the removal
+      // Invalidate starred entries list and count
       utils.entries.list.invalidate({ starredOnly: true });
+      utils.entries.count.invalidate({ starredOnly: true });
     },
   });
 
