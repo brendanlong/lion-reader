@@ -216,28 +216,39 @@ export function EntryList({
   const starredIds = useRealtimeStore((s) => s.starredIds);
   const unstarredIds = useRealtimeStore((s) => s.unstarredIds);
 
-  // Merge server data with Zustand deltas at render time
+  // Merge server data with Zustand deltas at render time, then filter by view criteria
   const allEntries = useMemo(() => {
-    return serverEntries.map((entry) => {
-      // Apply read state deltas
-      let read = entry.read;
-      if (readIds.has(entry.id)) {
-        read = true;
-      } else if (unreadIds.has(entry.id)) {
-        read = false;
-      }
+    return serverEntries
+      .map((entry) => {
+        // Apply read state deltas
+        let read = entry.read;
+        if (readIds.has(entry.id)) {
+          read = true;
+        } else if (unreadIds.has(entry.id)) {
+          read = false;
+        }
 
-      // Apply starred state deltas
-      let starred = entry.starred;
-      if (starredIds.has(entry.id)) {
-        starred = true;
-      } else if (unstarredIds.has(entry.id)) {
-        starred = false;
-      }
+        // Apply starred state deltas
+        let starred = entry.starred;
+        if (starredIds.has(entry.id)) {
+          starred = true;
+        } else if (unstarredIds.has(entry.id)) {
+          starred = false;
+        }
 
-      return { ...entry, read, starred };
-    });
-  }, [serverEntries, readIds, unreadIds, starredIds, unstarredIds]);
+        return { ...entry, read, starred };
+      })
+      .filter((entry) => {
+        // Filter out entries that no longer match the view criteria after applying deltas
+        if (filters?.unreadOnly && entry.read) {
+          return false;
+        }
+        if (filters?.starredOnly && !entry.starred) {
+          return false;
+        }
+        return true;
+      });
+  }, [serverEntries, readIds, unreadIds, starredIds, unstarredIds, filters]);
 
   // Query state - use external if provided, otherwise use internal
   const isLoading = useExternalData ? externalQueryState.isLoading : internalQuery.isLoading;
