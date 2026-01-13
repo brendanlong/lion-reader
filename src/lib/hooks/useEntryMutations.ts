@@ -212,14 +212,20 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         }
         // Priority 3: Look up in list cache (all/tag/starred views)
         else {
-          cacheData = utils.entries.list.getInfiniteData({
-            subscriptionId: listFilters?.subscriptionId,
-            tagId: listFilters?.tagId,
-            uncategorized: listFilters?.uncategorized,
-            unreadOnly: listFilters?.unreadOnly,
-            starredOnly: listFilters?.starredOnly,
-            sortOrder: listFilters?.sortOrder,
-          });
+          // Build query params matching the original list query
+          // Only include params that were actually set to avoid key mismatch
+          const queryParams: Record<string, unknown> = {};
+          if (listFilters?.subscriptionId) queryParams.subscriptionId = listFilters.subscriptionId;
+          if (listFilters?.tagId) queryParams.tagId = listFilters.tagId;
+          if (listFilters?.uncategorized) queryParams.uncategorized = listFilters.uncategorized;
+          if (listFilters?.unreadOnly !== undefined)
+            queryParams.unreadOnly = listFilters.unreadOnly;
+          if (listFilters?.starredOnly) queryParams.starredOnly = listFilters.starredOnly;
+          if (listFilters?.sortOrder) queryParams.sortOrder = listFilters.sortOrder;
+
+          cacheData = utils.entries.list.getInfiniteData(
+            queryParams as Parameters<typeof utils.entries.list.getInfiniteData>[0]
+          );
 
           // Find the entry in the cached pages
           for (const page of cacheData?.pages ?? []) {
