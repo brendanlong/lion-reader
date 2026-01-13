@@ -44,8 +44,8 @@ interface RealtimeStore {
   hasNewEntries: boolean;
 
   // Actions - all idempotent
-  markRead: (entryId: string, subscriptionId: string) => void;
-  markUnread: (entryId: string, subscriptionId: string) => void;
+  markRead: (entryId: string, subscriptionId: string, tagIds?: string[]) => void;
+  markUnread: (entryId: string, subscriptionId: string, tagIds?: string[]) => void;
   toggleStar: (entryId: string, currentlyStarred: boolean, subscriptionId?: string) => void;
   onNewEntry: (entryId: string, subscriptionId: string, timestamp: string) => void;
   onEntryUpdated: (entryId: string) => void;
@@ -53,7 +53,7 @@ interface RealtimeStore {
   onSubscriptionDeleted: (subscriptionId: string, tagIds: string[]) => void;
 
   // Bulk operations
-  markMultipleRead: (entryIds: string[], subscriptionId: string) => void;
+  markMultipleRead: (entryIds: string[], subscriptionId: string, tagIds?: string[]) => void;
 
   // Reset operations
   reset: () => void;
@@ -80,14 +80,25 @@ export const useRealtimeStore = create<RealtimeStore>((set) => ({
 
   /**
    * Mark an entry as read (idempotent).
-   * Decrements the unread count for the subscription.
+   * Decrements the unread count for the subscription and all its tags.
    */
-  markRead: (entryId: string, subscriptionId: string) =>
+  markRead: (entryId: string, subscriptionId: string, tagIds?: string[]) =>
     set((state) => {
       // Idempotent: skip if already marked read
       if (state.readIds.has(entryId)) {
         return state;
       }
+
+      // Update tag count deltas (decrement for all tags)
+      const newTagCountDeltas = tagIds
+        ? tagIds.reduce(
+            (acc, tagId) => ({
+              ...acc,
+              [tagId]: (state.tagCountDeltas[tagId] || 0) - 1,
+            }),
+            { ...state.tagCountDeltas }
+          )
+        : state.tagCountDeltas;
 
       // If we previously marked it unread, undo that instead
       if (state.unreadIds.has(entryId)) {
@@ -99,6 +110,7 @@ export const useRealtimeStore = create<RealtimeStore>((set) => ({
             ...state.subscriptionCountDeltas,
             [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + 1,
           },
+          tagCountDeltas: newTagCountDeltas,
         };
       }
 
@@ -108,19 +120,31 @@ export const useRealtimeStore = create<RealtimeStore>((set) => ({
           ...state.subscriptionCountDeltas,
           [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) - 1,
         },
+        tagCountDeltas: newTagCountDeltas,
       };
     }),
 
   /**
    * Mark an entry as unread (idempotent).
-   * Increments the unread count for the subscription.
+   * Increments the unread count for the subscription and all its tags.
    */
-  markUnread: (entryId: string, subscriptionId: string) =>
+  markUnread: (entryId: string, subscriptionId: string, tagIds?: string[]) =>
     set((state) => {
       // Idempotent: skip if already marked unread
       if (state.unreadIds.has(entryId)) {
         return state;
       }
+
+      // Update tag count deltas (increment for all tags)
+      const newTagCountDeltas = tagIds
+        ? tagIds.reduce(
+            (acc, tagId) => ({
+              ...acc,
+              [tagId]: (state.tagCountDeltas[tagId] || 0) + 1,
+            }),
+            { ...state.tagCountDeltas }
+          )
+        : state.tagCountDeltas;
 
       // If we previously marked it read, undo that instead
       if (state.readIds.has(entryId)) {
@@ -132,6 +156,7 @@ export const useRealtimeStore = create<RealtimeStore>((set) => ({
             ...state.subscriptionCountDeltas,
             [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + 1,
           },
+          tagCountDeltas: newTagCountDeltas,
         };
       }
 
@@ -141,6 +166,7 @@ export const useRealtimeStore = create<RealtimeStore>((set) => ({
           ...state.subscriptionCountDeltas,
           [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + 1,
         },
+        tagCountDeltas: newTagCountDeltas,
       };
     }),
 
@@ -265,7 +291,7 @@ export const useRealtimeStore = create<RealtimeStore>((set) => ({
    * Mark multiple entries as read at once.
    * More efficient than calling markRead in a loop.
    */
-  markMultipleRead: (entryIds: string[], subscriptionId: string) =>
+  markMultipleRead: (entryIds: string[], subscriptionId: string, tagIds?: string[]) =>
     set((state) => {
       let countDelta = 0;
       const newReadIds = new Set(state.readIds);
@@ -288,6 +314,17 @@ export const useRealtimeStore = create<RealtimeStore>((set) => ({
         }
       }
 
+      // Update tag count deltas
+      const newTagCountDeltas = tagIds
+        ? tagIds.reduce(
+            (acc, tagId) => ({
+              ...acc,
+              [tagId]: (state.tagCountDeltas[tagId] || 0) + countDelta,
+            }),
+            { ...state.tagCountDeltas }
+          )
+        : state.tagCountDeltas;
+
       return {
         readIds: newReadIds,
         unreadIds: newUnreadIds,
@@ -295,6 +332,7 @@ export const useRealtimeStore = create<RealtimeStore>((set) => ({
           ...state.subscriptionCountDeltas,
           [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + countDelta,
         },
+        tagCountDeltas: newTagCountDeltas,
       };
     }),
 
