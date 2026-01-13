@@ -452,9 +452,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
   const handleEvent = useCallback(
     (event: MessageEvent) => {
       // Update sync cursor from SSE event ID (browser automatically tracks this)
-      // @ts-expect-error - MessageEvent has lastEventId property but TypeScript types don't include it
       if (event.lastEventId) {
-        // @ts-expect-error - MessageEvent has lastEventId property but TypeScript types don't include it
         lastSyncedAtRef.current = event.lastEventId;
       }
 
@@ -462,19 +460,14 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Push to Zustand delta store (instant UI update)
+        // Push to Zustand delta store - UI updates instantly via deltas
         useRealtimeStore.getState().onNewEntry(data.entryId, data.feedId, data.timestamp);
-
-        // Also invalidate (TODO: remove this once Zustand integration is complete)
-        utils.entries.list.invalidate();
-        utils.subscriptions.list.invalidate();
+        // No invalidation needed - counts updated via Zustand deltas
       } else if (data.type === "entry_updated") {
         // Push to Zustand
         useRealtimeStore.getState().onEntryUpdated(data.entryId);
-
-        // Also invalidate (TODO: remove once Zustand integration complete)
+        // Invalidate the specific entry to refresh content
         utils.entries.get.invalidate({ id: data.entryId });
-        utils.entries.list.invalidate();
       } else if (data.type === "subscription_created") {
         // Push to Zustand delta store
         const tagIds = data.subscription.tags.map((t) => t.id);
@@ -534,47 +527,11 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
           return { items: newItems };
         });
 
-        // Update tags cache with new/updated tag counts
-        if (data.subscription.tags.length > 0) {
-          utils.tags.list.setData(undefined, (oldData) => {
-            if (!oldData) return oldData;
+        // Tag counts updated via Zustand deltas (onSubscriptionCreated already called)
+        // Invalidate tag list only to add newly created tags to the list
+        utils.tags.list.invalidate();
 
-            const updatedTags = [...oldData.items];
-            for (const eventTag of data.subscription.tags) {
-              const existingIndex = updatedTags.findIndex((t) => t.id === eventTag.id);
-
-              if (existingIndex >= 0) {
-                // Increment feedCount and unreadCount for existing tag
-                updatedTags[existingIndex] = {
-                  ...updatedTags[existingIndex],
-                  feedCount: updatedTags[existingIndex].feedCount + 1,
-                  unreadCount:
-                    updatedTags[existingIndex].unreadCount + data.subscription.unreadCount,
-                };
-              } else {
-                // Add new tag (in case it was just created)
-                updatedTags.push({
-                  id: eventTag.id,
-                  name: eventTag.name,
-                  color: eventTag.color,
-                  feedCount: 1,
-                  unreadCount: data.subscription.unreadCount,
-                  createdAt: new Date(),
-                });
-              }
-            }
-
-            return { items: updatedTags };
-          });
-        }
-
-        // For email feeds, also invalidate entries list since new email feeds
-        // always come with an entry. This handles the race condition where the
-        // new_entry event might arrive before we've subscribed to the feed channel.
-        if (data.feed.type === "email") {
-          utils.entries.list.invalidate();
-        }
-        // For non-email feeds, no invalidation needed - cache is already updated!
+        // Note: Entry list doesn't need invalidation - new entries come via new_entry events
       } else if (data.type === "subscription_deleted") {
         // TODO: Push to Zustand (needs tag IDs from subscription, which event doesn't include)
         // useRealtimeStore.getState().onSubscriptionDeleted(data.subscriptionId, tagIds);
@@ -639,39 +596,10 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
           .onNewEntry(entry.id, entry.feedId, entry.fetchedAt.toISOString());
       }
 
-      // Handle entry changes (TODO: remove React Query updates once Zustand integration complete)
+      // Handle entry changes - invalidate list so new entries appear
+      // Counts are updated via Zustand (onNewEntry calls above)
       if (hasEntryChanges) {
         utils.entries.list.invalidate();
-        utils.entries.count.invalidate();
-
-        // Calculate unread count changes from new entries (they are unread by default)
-        // Group by feedId and count how many new entries per feed
-        const unreadCountChanges = new Map<string, number>();
-        for (const entry of result.entries.created) {
-          if (!entry.read) {
-            unreadCountChanges.set(entry.feedId, (unreadCountChanges.get(entry.feedId) ?? 0) + 1);
-          }
-        }
-
-        // Apply unread count changes to subscriptions if we have any
-        if (unreadCountChanges.size > 0) {
-          utils.subscriptions.list.setData(undefined, (oldData) => {
-            if (!oldData) return oldData;
-            return {
-              ...oldData,
-              items: oldData.items.map((item) => {
-                const delta = unreadCountChanges.get(item.id);
-                if (delta) {
-                  return {
-                    ...item,
-                    unreadCount: item.unreadCount + delta,
-                  };
-                }
-                return item;
-              }),
-            };
-          });
-        }
       }
 
       // Handle subscription changes

@@ -145,22 +145,6 @@ export function useSavedArticleMutations(
 
       return { previousData };
     },
-    onSuccess: (data, variables) => {
-      // Update starred count directly if starred entries were affected
-      // Only the unread count changes - total stays the same since starred status isn't changing
-      const starredEntries = data.entries.filter((e) => e.starred);
-      if (starredEntries.length > 0) {
-        utils.entries.count.setData({ starredOnly: true }, (old) => {
-          if (!old) return old;
-          // When marking read, decrease unread count; when marking unread, increase it
-          const delta = variables.read ? -starredEntries.length : starredEntries.length;
-          return {
-            total: old.total,
-            unread: Math.max(0, old.unread + delta),
-          };
-        });
-      }
-    },
     onError: (_error, _variables, context) => {
       // Rollback to previous state
       if (context?.previousData && listFilters) {
