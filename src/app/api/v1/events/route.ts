@@ -90,16 +90,20 @@ async function getUserFeedIds(userId: string): Promise<Set<string>> {
 
 /**
  * Formats an SSE event message for feed events.
+ * Includes an `id` field with server timestamp for client sync cursor tracking.
  */
 function formatSSEFeedEvent(event: FeedEvent): string {
-  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+  const cursor = new Date().toISOString();
+  return `event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 /**
  * Formats an SSE event message for user events.
+ * Includes an `id` field with server timestamp for client sync cursor tracking.
  */
 function formatSSEUserEvent(event: UserEvent): string {
-  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+  const cursor = new Date().toISOString();
+  return `event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 /**
@@ -371,6 +375,13 @@ export async function GET(req: Request): Promise<Response> {
 
         // Increment active SSE connections counter
         incrementSSEConnections();
+
+        // Send initial connected event with cursor for client sync tracking
+        const initialCursor = new Date().toISOString();
+        send(
+          `event: connected\nid: ${initialCursor}\ndata: ${JSON.stringify({ cursor: initialCursor })}\n\n`
+        );
+        trackSSEEventSent("connected");
 
         // Send initial heartbeat to confirm connection
         send(formatSSEHeartbeat());
