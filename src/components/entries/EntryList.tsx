@@ -18,6 +18,7 @@ import {
   ArticleListLoadingMore,
   ArticleListEnd,
 } from "@/components/articles/ArticleListStates";
+import { useRealtimeStore } from "@/lib/store/realtime";
 
 /**
  * Filter options for the entry list.
@@ -207,7 +208,36 @@ export function EntryList({
   );
 
   // Use external entries if provided, otherwise use internal query results
-  const allEntries = useExternalData ? externalEntries : internalEntries;
+  const serverEntries = useExternalData ? externalEntries : internalEntries;
+
+  // Get Zustand deltas for real-time state updates
+  const readIds = useRealtimeStore((s) => s.readIds);
+  const unreadIds = useRealtimeStore((s) => s.unreadIds);
+  const starredIds = useRealtimeStore((s) => s.starredIds);
+  const unstarredIds = useRealtimeStore((s) => s.unstarredIds);
+
+  // Merge server data with Zustand deltas at render time
+  const allEntries = useMemo(() => {
+    return serverEntries.map((entry) => {
+      // Apply read state deltas
+      let read = entry.read;
+      if (readIds.has(entry.id)) {
+        read = true;
+      } else if (unreadIds.has(entry.id)) {
+        read = false;
+      }
+
+      // Apply starred state deltas
+      let starred = entry.starred;
+      if (starredIds.has(entry.id)) {
+        starred = true;
+      } else if (unstarredIds.has(entry.id)) {
+        starred = false;
+      }
+
+      return { ...entry, read, starred };
+    });
+  }, [serverEntries, readIds, unreadIds, starredIds, unstarredIds]);
 
   // Query state - use external if provided, otherwise use internal
   const isLoading = useExternalData ? externalQueryState.isLoading : internalQuery.isLoading;
@@ -227,10 +257,10 @@ export function EntryList({
   const refetch = useExternalData ? externalQueryState.refetch : internalQuery.refetch;
 
   // Notify parent of entry data for keyboard navigation and actions
-  // Only when using internal query (external entries are already in parent)
+  // Use delta-merged entries to include optimistic updates
   useEffect(() => {
     if (onEntriesLoaded && !useExternalData) {
-      const entries: EntryListEntryData[] = internalEntries.map((entry) => ({
+      const entries: EntryListEntryData[] = allEntries.map((entry) => ({
         id: entry.id,
         url: entry.url,
         read: entry.read,
@@ -238,7 +268,7 @@ export function EntryList({
       }));
       onEntriesLoaded(entries);
     }
-  }, [internalEntries, onEntriesLoaded, useExternalData]);
+  }, [allEntries, onEntriesLoaded, useExternalData]);
 
   // Intersection Observer for infinite scroll
   const handleObserver = useCallback(
