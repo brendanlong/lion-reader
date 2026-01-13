@@ -33,6 +33,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
+import { generateSummary } from "@/server/html/strip-html";
 import {
   isLessWrongUrl,
   fetchLessWrongContentFromUrl,
@@ -545,15 +546,8 @@ export const savedRouter = createTRPCRouter({
       // Generate excerpt
       let excerpt: string | null = null;
       if (googleDocsContent) {
-        // For Google Docs API content, extract text from the HTML for excerpt
-        const textMatch = googleDocsContent.html
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-        excerpt = textMatch.slice(0, 300).trim() || null;
-        if (excerpt && excerpt.length > 297) {
-          excerpt = excerpt.slice(0, 297) + "...";
-        }
+        // For Google Docs API content, use generateSummary which properly decodes HTML entities
+        excerpt = generateSummary(googleDocsContent.html) || null;
       } else if (cleaned) {
         excerpt = cleaned.excerpt || cleaned.textContent.slice(0, 300).trim() || null;
         if (excerpt && excerpt.length > 300) {
