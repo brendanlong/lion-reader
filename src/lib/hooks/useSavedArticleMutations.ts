@@ -129,7 +129,7 @@ export function useSavedArticleMutations(
       // Snapshot current state for rollback
       const previousData = utils.entries.list.getInfiniteData(queryFilters);
 
-      // Optimistically update list (normy propagates to entries.get automatically)
+      // Optimistically update list
       utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -171,7 +171,7 @@ export function useSavedArticleMutations(
 
       const previousData = utils.entries.list.getInfiniteData(queryFilters);
 
-      // Optimistically update list (normy propagates to entries.get automatically)
+      // Optimistically update list
       utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -219,7 +219,7 @@ export function useSavedArticleMutations(
 
       const previousData = utils.entries.list.getInfiniteData(queryFilters);
 
-      // Optimistically update list (normy propagates to entries.get automatically)
+      // Optimistically update list
       utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
         if (!oldData) return oldData;
         return {
