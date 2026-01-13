@@ -10,6 +10,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 import type { Context } from "./context";
 import type { OpenApiMeta } from "trpc-to-openapi";
+import type { ApiTokenScope } from "@/server/auth";
 import {
   checkRateLimit,
   getClientIdentifier,
@@ -135,6 +136,54 @@ const authMiddleware = t.middleware(({ ctx, next }) => {
  * The session is guaranteed to be non-null in the handler.
  */
 export const protectedProcedure = t.procedure.use(timingMiddleware).use(authMiddleware);
+
+// ============================================================================
+// Scope Enforcement Middleware
+// ============================================================================
+
+/**
+ * Creates a middleware that enforces a specific API token scope.
+ * Session-based auth (browser) has full access; API tokens must have the scope.
+ *
+ * Must be chained after authMiddleware to receive narrowed types.
+ */
+function createScopeMiddleware(requiredScope: ApiTokenScope) {
+  return t.middleware(({ ctx, next }) => {
+    // Session and sessionToken are guaranteed non-null after authMiddleware
+    const session = ctx.session!;
+    const sessionToken = ctx.sessionToken!;
+
+    // API token auth - must have the required scope
+    // Session auth (browser) has full access - no scope restrictions
+    if (ctx.authType === "api_token") {
+      if (!ctx.scopes.includes(requiredScope)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `This operation requires the '${requiredScope}' scope`,
+        });
+      }
+    }
+
+    // Pass through the narrowed types from authMiddleware
+    return next({
+      ctx: {
+        ...ctx,
+        session,
+        sessionToken,
+      },
+    });
+  });
+}
+
+/**
+ * Creates a protected procedure that requires a specific API token scope.
+ * Session-based auth has full access; API tokens must have the specified scope.
+ *
+ * @param scope - The required scope for API token access
+ */
+export function scopedProtectedProcedure(scope: ApiTokenScope) {
+  return t.procedure.use(timingMiddleware).use(authMiddleware).use(createScopeMiddleware(scope));
+}
 
 // ============================================================================
 // Rate Limiting Middleware
