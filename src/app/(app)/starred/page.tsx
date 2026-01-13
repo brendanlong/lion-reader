@@ -45,10 +45,28 @@ function StarredEntriesContent() {
   const starredCountQuery = trpc.entries.count.useQuery({ starredOnly: true });
   const unreadStarredCount = starredCountQuery.data?.unread ?? 0;
 
+  // Get subscriptions to look up tags for entries
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+
   // Entry mutations with optimistic updates
   const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
     listFilters: { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
   });
+
+  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  const handleToggleRead = useCallback(
+    (entryId: string, currentlyRead: boolean, subscriptionId?: string) => {
+      if (!subscriptionId) {
+        toggleRead(entryId, currentlyRead);
+        return;
+      }
+      // Look up tags for this subscription
+      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
+      const tagIds = subscription?.tags.map((tag) => tag.id);
+      toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
+    },
+    [toggleRead, subscriptionsQuery.data]
+  );
 
   const handleMarkAllRead = useCallback(() => {
     markAllRead({ starredOnly: true });
@@ -63,7 +81,7 @@ function StarredEntriesContent() {
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
       enabled: keyboardShortcutsEnabled,
-      onToggleRead: toggleRead,
+      onToggleRead: handleToggleRead,
       onToggleStar: toggleStar,
       onRefresh: () => {
         utils.entries.list.invalidate();
@@ -154,7 +172,7 @@ function StarredEntriesContent() {
           filters={{ starredOnly: true, unreadOnly: showUnreadOnly, sortOrder }}
           onEntryClick={handleEntryClick}
           selectedEntryId={selectedEntryId}
-          onToggleRead={toggleRead}
+          onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
           externalEntries={entryListQuery.entries}
           externalQueryState={externalQueryState}

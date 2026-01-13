@@ -33,6 +33,7 @@ export interface KeyboardEntryData {
   url: string | null;
   read: boolean;
   starred: boolean;
+  subscriptionId?: string | null;
 }
 
 /**
@@ -69,9 +70,9 @@ export interface UseKeyboardShortcutsOptions {
 
   /**
    * Callback when read status should be toggled.
-   * Receives the entry ID and its current read status.
+   * Receives the entry ID, its current read status, and optional subscriptionId.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId?: string) => void;
 
   /**
    * Callback when star status should be toggled.
@@ -483,7 +484,7 @@ export function useKeyboardShortcuts(
       e.preventDefault();
       const entry = getSelectedEntry();
       if (entry && onToggleRead) {
-        onToggleRead(entry.id, entry.read);
+        onToggleRead(entry.id, entry.read, entry.subscriptionId ?? undefined);
       }
     },
     {

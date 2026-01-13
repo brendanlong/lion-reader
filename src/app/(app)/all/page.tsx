@@ -59,6 +59,21 @@ function AllEntriesContent() {
     listFilters: { unreadOnly: showUnreadOnly, sortOrder },
   });
 
+  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  const handleToggleRead = useCallback(
+    (entryId: string, currentlyRead: boolean, subscriptionId?: string) => {
+      if (!subscriptionId) {
+        toggleRead(entryId, currentlyRead);
+        return;
+      }
+      // Look up tags for this subscription
+      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
+      const tagIds = subscription?.tags.map((tag) => tag.id);
+      toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
+    },
+    [toggleRead, subscriptionsQuery.data]
+  );
+
   const handleMarkAllRead = useCallback(() => {
     markAllRead({});
     setShowMarkAllReadDialog(false);
@@ -72,7 +87,7 @@ function AllEntriesContent() {
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
       enabled: keyboardShortcutsEnabled,
-      onToggleRead: toggleRead,
+      onToggleRead: handleToggleRead,
       onToggleStar: toggleStar,
       onRefresh: () => {
         utils.entries.list.invalidate();
@@ -166,7 +181,7 @@ function AllEntriesContent() {
           filters={{ unreadOnly: showUnreadOnly, sortOrder }}
           onEntryClick={handleEntryClick}
           selectedEntryId={selectedEntryId}
-          onToggleRead={toggleRead}
+          onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
           externalEntries={entryListQuery.entries}
           externalQueryState={externalQueryState}

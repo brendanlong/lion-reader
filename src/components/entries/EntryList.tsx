@@ -63,6 +63,7 @@ export interface EntryListEntryData {
   url: string | null;
   read: boolean;
   starred: boolean;
+  subscriptionId?: string | null;
 }
 
 /**
@@ -144,7 +145,7 @@ interface EntryListProps {
   /**
    * Callback when the read status indicator is clicked.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId?: string) => void;
 
   /**
    * Callback when the star indicator is clicked.
@@ -276,6 +277,7 @@ export function EntryList({
         url: entry.url,
         read: entry.read,
         starred: entry.starred,
+        subscriptionId: entry.subscriptionId,
       }));
       onEntriesLoaded(entries);
     }

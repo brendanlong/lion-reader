@@ -103,10 +103,28 @@ function UncategorizedContent() {
     openEntryId,
   });
 
+  // Fetch subscriptions to compute feed count and unread count
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+
   // Entry mutations with optimistic updates
   const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
     listFilters: { uncategorized: true, unreadOnly: showUnreadOnly, sortOrder },
   });
+
+  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  const handleToggleRead = useCallback(
+    (entryId: string, currentlyRead: boolean, subscriptionId?: string) => {
+      if (!subscriptionId) {
+        toggleRead(entryId, currentlyRead);
+        return;
+      }
+      // Look up tags for this subscription
+      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
+      const tagIds = subscription?.tags.map((tag) => tag.id);
+      toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
+    },
+    [toggleRead, subscriptionsQuery.data]
+  );
 
   const handleMarkAllRead = useCallback(() => {
     markAllRead({ uncategorized: true });
@@ -121,16 +139,13 @@ function UncategorizedContent() {
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
       enabled: keyboardShortcutsEnabled,
-      onToggleRead: toggleRead,
+      onToggleRead: handleToggleRead,
       onToggleStar: toggleStar,
       onRefresh: () => {
         utils.entries.list.invalidate();
       },
       onToggleUnreadOnly: toggleShowUnreadOnly,
     });
-
-  // Fetch subscriptions to compute feed count and unread count
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
   const uncategorizedFeeds = useMemo(() => {
     return subscriptionsQuery.data?.items.filter((item) => item.tags.length === 0) ?? [];
@@ -266,7 +281,7 @@ function UncategorizedContent() {
           filters={{ uncategorized: true, unreadOnly: showUnreadOnly, sortOrder }}
           onEntryClick={handleEntryClick}
           selectedEntryId={selectedEntryId}
-          onToggleRead={toggleRead}
+          onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
           externalEntries={entryListQuery.entries}
           externalQueryState={externalQueryState}
@@ -308,10 +323,29 @@ function TagContent({ tagId }: { tagId: string }) {
     openEntryId,
   });
 
+  // Fetch tag info and subscriptions
+  const tagsQuery = trpc.tags.list.useQuery();
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+
   // Entry mutations with optimistic updates
   const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
     listFilters: { tagId, unreadOnly: showUnreadOnly, sortOrder },
   });
+
+  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  const handleToggleRead = useCallback(
+    (entryId: string, currentlyRead: boolean, subscriptionId?: string) => {
+      if (!subscriptionId) {
+        toggleRead(entryId, currentlyRead);
+        return;
+      }
+      // Look up tags for this subscription
+      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
+      const tagIds = subscription?.tags.map((tag) => tag.id);
+      toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
+    },
+    [toggleRead, subscriptionsQuery.data]
+  );
 
   const handleMarkAllRead = useCallback(() => {
     markAllRead({ tagId });
@@ -326,16 +360,13 @@ function TagContent({ tagId }: { tagId: string }) {
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
       enabled: keyboardShortcutsEnabled,
-      onToggleRead: toggleRead,
+      onToggleRead: handleToggleRead,
       onToggleStar: toggleStar,
       onRefresh: () => {
         utils.entries.list.invalidate();
       },
       onToggleUnreadOnly: toggleShowUnreadOnly,
     });
-
-  // Fetch tag info
-  const tagsQuery = trpc.tags.list.useQuery();
 
   // Find the tag
   const tag = tagsQuery.data?.items.find((t) => t.id === tagId);
@@ -470,7 +501,7 @@ function TagContent({ tagId }: { tagId: string }) {
           filters={{ tagId, unreadOnly: showUnreadOnly, sortOrder }}
           onEntryClick={handleEntryClick}
           selectedEntryId={selectedEntryId}
-          onToggleRead={toggleRead}
+          onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
           externalEntries={entryListQuery.entries}
           externalQueryState={externalQueryState}

@@ -33,9 +33,11 @@ interface ArticleListItemProps {
   /** Callback when the article is clicked */
   onClick?: (id: string) => void;
   /** Callback when the read status indicator is clicked */
-  onToggleRead?: (id: string, currentlyRead: boolean) => void;
+  onToggleRead?: (id: string, currentlyRead: boolean, subscriptionId?: string) => void;
   /** Callback when the star indicator is clicked */
   onToggleStar?: (id: string, currentlyStarred: boolean) => void;
+  /** Subscription ID for count tracking */
+  subscriptionId?: string | null;
 }
 
 /**
@@ -75,6 +77,7 @@ export const ArticleListItem = memo(function ArticleListItem({
   onClick,
   onToggleRead,
   onToggleStar,
+  subscriptionId,
 }: ArticleListItemProps) {
   const displayTitle = title ?? "Untitled";
 
@@ -91,7 +94,7 @@ export const ArticleListItem = memo(function ArticleListItem({
 
   const handleToggleRead = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onToggleRead?.(id, read);
+    onToggleRead?.(id, read, subscriptionId ?? undefined);
   };
 
   const handleToggleStar = (e: React.MouseEvent) => {

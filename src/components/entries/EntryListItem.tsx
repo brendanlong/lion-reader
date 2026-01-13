@@ -38,7 +38,7 @@ interface EntryListItemProps {
   /**
    * Callback when the read status indicator is clicked.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId?: string) => void;
   /**
    * Callback when the star indicator is clicked.
    */
@@ -69,6 +69,7 @@ export const EntryListItem = memo(function EntryListItem({
       onClick={onClick}
       onToggleRead={onToggleRead}
       onToggleStar={onToggleStar}
+      subscriptionId={entry.subscriptionId}
     />
   );
 });
