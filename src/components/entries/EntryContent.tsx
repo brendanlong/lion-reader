@@ -2,7 +2,7 @@
  * EntryContent Component
  *
  * Displays the full content of a single entry.
- * Fetches entry data and delegates rendering to the shared ArticleContentBody.
+ * Fetches entry data and delegates rendering to the shared EntryContentBody.
  */
 
 "use client";
@@ -16,11 +16,11 @@ import {
   type EntryListFilters,
 } from "@/lib/hooks";
 import {
-  ArticleContentBody,
-  ArticleContentSkeleton,
-  ArticleContentError,
+  EntryContentBody,
+  EntryContentSkeleton,
+  EntryContentError,
   getDomain,
-} from "./ArticleContentBody";
+} from "./EntryContentBody";
 
 /**
  * Props for the EntryContent component.
@@ -145,19 +145,19 @@ export function EntryContent({
   // Determine content based on loading/error/success state
   let content: React.ReactNode;
   if (isLoading) {
-    content = <ArticleContentSkeleton />;
+    content = <EntryContentSkeleton />;
   } else if (isError) {
     content = (
-      <ArticleContentError
+      <EntryContentError
         message={error?.message ?? "Failed to load entry"}
         onRetry={() => refetch()}
       />
     );
   } else if (!entry) {
-    content = <ArticleContentError message="Entry not found" onRetry={() => refetch()} />;
+    content = <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
   } else {
     content = (
-      <ArticleContentBody
+      <EntryContentBody
         articleId={entryId}
         title={entry.title ?? "Untitled"}
         source={entry.feedTitle ?? "Unknown Feed"}

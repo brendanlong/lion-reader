@@ -10,9 +10,9 @@
 import { type ReactNode } from "react";
 
 /**
- * Props for the ArticleListEmpty component.
+ * Props for the EntryListEmpty component.
  */
-export interface ArticleListEmptyProps {
+export interface EntryListEmptyProps {
   /** Message to display */
   message: string;
   /** Optional custom icon */
@@ -64,9 +64,9 @@ export function BookmarkEmptyIcon() {
 }
 
 /**
- * Empty state component for article lists.
+ * Empty state component for entry lists.
  */
-export function ArticleListEmpty({ message, icon }: ArticleListEmptyProps) {
+export function EntryListEmpty({ message, icon }: EntryListEmptyProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       {icon ?? <DefaultEmptyIcon />}
@@ -76,9 +76,9 @@ export function ArticleListEmpty({ message, icon }: ArticleListEmptyProps) {
 }
 
 /**
- * Props for the ArticleListError component.
+ * Props for the EntryListError component.
  */
-export interface ArticleListErrorProps {
+export interface EntryListErrorProps {
   /** Error message to display */
   message: string;
   /** Callback when retry button is clicked */
@@ -86,9 +86,9 @@ export interface ArticleListErrorProps {
 }
 
 /**
- * Error state component for article lists.
+ * Error state component for entry lists.
  */
-export function ArticleListError({ message, onRetry }: ArticleListErrorProps) {
+export function EntryListError({ message, onRetry }: EntryListErrorProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <svg
@@ -119,7 +119,7 @@ export function ArticleListError({ message, onRetry }: ArticleListErrorProps) {
 /**
  * Loading more indicator shown at bottom during pagination.
  */
-export function ArticleListLoadingMore({ label = "Loading more..." }: { label?: string }) {
+export function EntryListLoadingMore({ label = "Loading more..." }: { label?: string }) {
   return (
     <div className="flex items-center justify-center py-4" role="status" aria-label={label}>
       <svg
@@ -151,6 +151,6 @@ export function ArticleListLoadingMore({ label = "Loading more..." }: { label?: 
 /**
  * End of list indicator.
  */
-export function ArticleListEnd({ message = "No more articles" }: { message?: string }) {
+export function EntryListEnd({ message = "No more entries" }: { message?: string }) {
   return <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">{message}</p>;
 }

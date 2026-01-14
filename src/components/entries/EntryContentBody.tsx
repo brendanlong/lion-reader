@@ -1,7 +1,7 @@
 /**
- * ArticleContentBody Component
+ * EntryContentBody Component
  *
- * Shared component for displaying article content.
+ * Shared component for displaying entry content.
  * Used by EntryContent for all entry types (web, email, saved).
  */
 
@@ -167,9 +167,9 @@ function BackArrowIcon() {
 }
 
 /**
- * Loading skeleton for article content.
+ * Loading skeleton for entry content.
  */
-export function ArticleContentSkeleton() {
+export function EntryContentSkeleton() {
   return (
     <div className="mx-auto max-w-3xl animate-pulse px-4 py-6 sm:py-8">
       {/* Back button placeholder */}
@@ -204,15 +204,9 @@ export function ArticleContentSkeleton() {
 }
 
 /**
- * Error state component for article content.
+ * Error state component for entry content.
  */
-export function ArticleContentError({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
+export function EntryContentError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <svg
@@ -238,9 +232,9 @@ export function ArticleContentError({
 }
 
 /**
- * Props for the ArticleContentBody component.
+ * Props for the EntryContentBody component.
  */
-export interface ArticleContentBodyProps {
+export interface EntryContentBodyProps {
   /** The unique identifier for the article */
   articleId: string;
   /** The article title */
@@ -284,21 +278,21 @@ export interface ArticleContentBodyProps {
 }
 
 /**
- * Memoized component for rendering the article content HTML.
+ * Memoized component for rendering the entry content HTML.
  * Extracted to prevent image flashing when read/starred status changes.
  * Only re-renders when the actual content changes.
  */
-interface ArticleContentRendererProps {
+interface EntryContentRendererProps {
   sanitizedContent: string | null;
   fallbackContent: string | null;
   contentRef: React.RefObject<HTMLDivElement | null>;
 }
 
-const ArticleContentRenderer = React.memo(function ArticleContentRenderer({
+const EntryContentRenderer = React.memo(function EntryContentRenderer({
   sanitizedContent,
   fallbackContent,
   contentRef,
-}: ArticleContentRendererProps) {
+}: EntryContentRendererProps) {
   if (sanitizedContent) {
     return (
       <div
@@ -321,14 +315,14 @@ const ArticleContentRenderer = React.memo(function ArticleContentRenderer({
 });
 
 /**
- * Shared component for rendering article content with narration highlighting.
+ * Shared component for rendering entry content with narration highlighting.
  * Used by EntryContent for all entry types.
  */
 // Swipe gesture configuration
 const SWIPE_THRESHOLD = 50; // Minimum horizontal distance for swipe
 const MAX_VERTICAL_DISTANCE = 100; // Maximum vertical movement allowed
 
-export function ArticleContentBody({
+export function EntryContentBody({
   articleId,
   title,
   source,
@@ -349,7 +343,7 @@ export function ArticleContentBody({
   footerLinkDomain,
   onSwipeNext,
   onSwipePrevious,
-}: ArticleContentBodyProps) {
+}: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -637,7 +631,7 @@ export function ArticleContentBody({
       )}
 
       {/* Content - memoized to prevent image flashing on read/star changes */}
-      <ArticleContentRenderer
+      <EntryContentRenderer
         sanitizedContent={sanitizedContent}
         fallbackContent={fallbackContent}
         contentRef={contentRef}
