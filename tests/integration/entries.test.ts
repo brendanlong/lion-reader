@@ -1,0 +1,614 @@
+/**
+ * Integration tests for entries endpoints.
+ *
+ * These tests verify entry operations: list, get, search, markRead, star/unstar.
+ */
+
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { eq } from "drizzle-orm";
+import { db } from "../../src/server/db";
+import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createCaller } from "../../src/server/trpc/root";
+import type { Context } from "../../src/server/trpc/context";
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/**
+ * Creates a test user and returns their ID.
+ */
+async function createTestUser(emailPrefix: string = "user"): Promise<string> {
+  const userId = generateUuidv7();
+  await db.insert(users).values({
+    id: userId,
+    email: `${emailPrefix}-${userId}@test.com`,
+    passwordHash: "test-hash",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return userId;
+}
+
+/**
+ * Creates an authenticated context for a test user.
+ */
+function createAuthContext(userId: string): Context {
+  const now = new Date();
+  return {
+    db,
+    session: {
+      session: {
+        id: generateUuidv7(),
+        userId,
+        tokenHash: "test-hash",
+        userAgent: null,
+        ipAddress: null,
+        createdAt: now,
+        expiresAt: new Date(Date.now() + 3600000),
+        revokedAt: null,
+        lastActiveAt: now,
+      },
+      user: {
+        id: userId,
+        email: `${userId}@test.com`,
+        emailVerifiedAt: null,
+        passwordHash: "test-hash",
+        inviteId: null,
+        showSpam: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
+    apiToken: null,
+    authType: "session",
+    scopes: [],
+    sessionToken: "test-token",
+    headers: new Headers(),
+  };
+}
+
+/**
+ * Creates a test feed.
+ */
+async function createTestFeed(url: string, title: string = "Test Feed"): Promise<string> {
+  const feedId = generateUuidv7();
+  const now = new Date();
+  await db.insert(feeds).values({
+    id: feedId,
+    type: "web",
+    url,
+    title,
+    lastFetchedAt: now,
+    lastEntriesUpdatedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return feedId;
+}
+
+/**
+ * Creates a test subscription.
+ */
+async function createTestSubscription(userId: string, feedId: string): Promise<string> {
+  const subscriptionId = generateUuidv7();
+  await db.insert(subscriptions).values({
+    id: subscriptionId,
+    userId,
+    feedId,
+    subscribedAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return subscriptionId;
+}
+
+/**
+ * Creates a test entry.
+ */
+async function createTestEntry(
+  feedId: string,
+  options: {
+    guid?: string;
+    title?: string;
+    contentCleaned?: string;
+    publishedAt?: Date;
+  } = {}
+): Promise<string> {
+  const entryId = generateUuidv7();
+  const now = new Date();
+  const guid = options.guid ?? `guid-${entryId}`;
+
+  await db.insert(entries).values({
+    id: entryId,
+    feedId,
+    type: "web",
+    guid,
+    title: options.title ?? `Entry ${entryId}`,
+    contentCleaned: options.contentCleaned ?? `Content for ${options.title ?? entryId}`,
+    contentHash: `hash-${entryId}`,
+    fetchedAt: options.publishedAt ?? now,
+    publishedAt: options.publishedAt ?? now,
+    lastSeenAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return entryId;
+}
+
+/**
+ * Creates a user_entries row.
+ */
+async function createUserEntry(
+  userId: string,
+  entryId: string,
+  options: { read?: boolean; starred?: boolean } = {}
+): Promise<void> {
+  await db.insert(userEntries).values({
+    userId,
+    entryId,
+    read: options.read ?? false,
+    starred: options.starred ?? false,
+    updatedAt: new Date(),
+  });
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+describe("Entries", () => {
+  beforeEach(async () => {
+    await db.delete(userEntries);
+    await db.delete(entries);
+    await db.delete(subscriptions);
+    await db.delete(feeds);
+    await db.delete(users);
+  });
+
+  afterAll(async () => {
+    await db.delete(userEntries);
+    await db.delete(entries);
+    await db.delete(subscriptions);
+    await db.delete(feeds);
+    await db.delete(users);
+  });
+
+  describe("list", () => {
+    it("lists entries for a user's subscription", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entry1Id = await createTestEntry(feedId, { title: "Entry 1" });
+      const entry2Id = await createTestEntry(feedId, { title: "Entry 2" });
+
+      await createUserEntry(userId, entry1Id);
+      await createUserEntry(userId, entry2Id);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.list({});
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items.map((e) => e.id)).toContain(entry1Id);
+      expect(result.items.map((e) => e.id)).toContain(entry2Id);
+    });
+
+    it("filters by unreadOnly", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const unreadId = await createTestEntry(feedId, { title: "Unread Entry" });
+      const readId = await createTestEntry(feedId, { title: "Read Entry" });
+
+      await createUserEntry(userId, unreadId, { read: false });
+      await createUserEntry(userId, readId, { read: true });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.list({ unreadOnly: true });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe(unreadId);
+      expect(result.items[0].read).toBe(false);
+    });
+
+    it("filters by starredOnly", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const starredId = await createTestEntry(feedId, { title: "Starred Entry" });
+      const unstarredId = await createTestEntry(feedId, { title: "Unstarred Entry" });
+
+      await createUserEntry(userId, starredId, { starred: true });
+      await createUserEntry(userId, unstarredId, { starred: false });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.list({ starredOnly: true });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe(starredId);
+      expect(result.items[0].starred).toBe(true);
+    });
+  });
+
+  describe("get", () => {
+    it("gets a single entry with full content", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entryId = await createTestEntry(feedId, {
+        title: "Test Entry",
+        contentCleaned: "<p>This is test content</p>",
+      });
+      await createUserEntry(userId, entryId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.get({ id: entryId });
+
+      expect(result.entry.id).toBe(entryId);
+      expect(result.entry.title).toBe("Test Entry");
+      expect(result.entry.contentCleaned).toBe("<p>This is test content</p>");
+    });
+
+    it("throws error for entry that doesn't exist", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const nonExistentId = generateUuidv7();
+      await expect(caller.entries.get({ id: nonExistentId })).rejects.toThrow();
+    });
+
+    it("throws error for entry user doesn't have access to", async () => {
+      const user1Id = await createTestUser("user1");
+      const user2Id = await createTestUser("user2");
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(user1Id, feedId);
+
+      const entryId = await createTestEntry(feedId, { title: "User 1 Entry" });
+      await createUserEntry(user1Id, entryId);
+
+      // User 2 tries to access User 1's entry
+      const ctx2 = createAuthContext(user2Id);
+      const caller2 = createCaller(ctx2);
+
+      await expect(caller2.entries.get({ id: entryId })).rejects.toThrow();
+    });
+  });
+
+  describe("search", () => {
+    it("searches entries by title", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entry1Id = await createTestEntry(feedId, {
+        title: "PostgreSQL Full-Text Search",
+        contentCleaned: "Some content about databases",
+      });
+      const entry2Id = await createTestEntry(feedId, {
+        title: "MySQL Query Optimization",
+        contentCleaned: "Some content about queries",
+      });
+      const entry3Id = await createTestEntry(feedId, {
+        title: "MongoDB Aggregations",
+        contentCleaned: "Some content about NoSQL",
+      });
+
+      await createUserEntry(userId, entry1Id);
+      await createUserEntry(userId, entry2Id);
+      await createUserEntry(userId, entry3Id);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.search({ query: "PostgreSQL", searchIn: "title" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe(entry1Id);
+      expect(result.items[0].title).toBe("PostgreSQL Full-Text Search");
+    });
+
+    it("searches entries by content", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entry1Id = await createTestEntry(feedId, {
+        title: "Article 1",
+        contentCleaned: "This article discusses artificial intelligence and machine learning",
+      });
+      const entry2Id = await createTestEntry(feedId, {
+        title: "Article 2",
+        contentCleaned: "This article is about database indexing strategies",
+      });
+
+      await createUserEntry(userId, entry1Id);
+      await createUserEntry(userId, entry2Id);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.search({
+        query: "artificial intelligence",
+        searchIn: "content",
+      });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe(entry1Id);
+    });
+
+    it("searches entries by both title and content (default)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entry1Id = await createTestEntry(feedId, {
+        title: "TypeScript Guide",
+        contentCleaned: "Learn about static typing",
+      });
+      const entry2Id = await createTestEntry(feedId, {
+        title: "JavaScript Basics",
+        contentCleaned: "Introduction to TypeScript features",
+      });
+      const entry3Id = await createTestEntry(feedId, {
+        title: "Python Tutorial",
+        contentCleaned: "Learn Python programming",
+      });
+
+      await createUserEntry(userId, entry1Id);
+      await createUserEntry(userId, entry2Id);
+      await createUserEntry(userId, entry3Id);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Should match both entry1 (title) and entry2 (content)
+      const result = await caller.entries.search({ query: "TypeScript" });
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items.map((e) => e.id)).toContain(entry1Id);
+      expect(result.items.map((e) => e.id)).toContain(entry2Id);
+    });
+
+    it("combines search with unreadOnly filter", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const unreadMatch = await createTestEntry(feedId, {
+        title: "Unread React Article",
+        contentCleaned: "About React hooks",
+      });
+      const readMatch = await createTestEntry(feedId, {
+        title: "Read React Article",
+        contentCleaned: "About React context",
+      });
+
+      await createUserEntry(userId, unreadMatch, { read: false });
+      await createUserEntry(userId, readMatch, { read: true });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.search({ query: "React", unreadOnly: true });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe(unreadMatch);
+      expect(result.items[0].read).toBe(false);
+    });
+
+    it("returns empty results for non-matching query", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      await createTestEntry(feedId, { title: "JavaScript Basics" });
+      await createUserEntry(userId, await createTestEntry(feedId, { title: "Python Tutorial" }));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.search({ query: "nonexistentquery12345" });
+
+      expect(result.items).toHaveLength(0);
+    });
+  });
+
+  describe("markRead", () => {
+    it("marks entries as read", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entry1Id = await createTestEntry(feedId, { title: "Entry 1" });
+      const entry2Id = await createTestEntry(feedId, { title: "Entry 2" });
+
+      await createUserEntry(userId, entry1Id, { read: false });
+      await createUserEntry(userId, entry2Id, { read: false });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.markRead({ ids: [entry1Id, entry2Id], read: true });
+
+      expect(result.entries).toHaveLength(2);
+      expect(result.entries.every((e) => e.read === true)).toBe(true);
+
+      // Verify database state
+      const dbEntries = await db.select().from(userEntries).where(eq(userEntries.userId, userId));
+
+      expect(dbEntries.every((e) => e.read === true)).toBe(true);
+    });
+
+    it("marks entries as unread", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entryId = await createTestEntry(feedId, { title: "Read Entry" });
+      await createUserEntry(userId, entryId, { read: true });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.markRead({ ids: [entryId], read: false });
+
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].read).toBe(false);
+    });
+
+    it("returns unread counts for affected subscriptions", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      const subscriptionId = await createTestSubscription(userId, feedId);
+
+      const entry1Id = await createTestEntry(feedId, { title: "Entry 1" });
+      const entry2Id = await createTestEntry(feedId, { title: "Entry 2" });
+      const entry3Id = await createTestEntry(feedId, { title: "Entry 3" });
+
+      await createUserEntry(userId, entry1Id, { read: false });
+      await createUserEntry(userId, entry2Id, { read: false });
+      await createUserEntry(userId, entry3Id, { read: false });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Mark 2 as read, leaving 1 unread
+      const result = await caller.entries.markRead({ ids: [entry1Id, entry2Id], read: true });
+
+      expect(result.subscriptionUnreadCounts).toHaveLength(1);
+      expect(result.subscriptionUnreadCounts[0].subscriptionId).toBe(subscriptionId);
+      expect(result.subscriptionUnreadCounts[0].unreadCount).toBe(1);
+    });
+  });
+
+  describe("star/unstar", () => {
+    it("stars an entry", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entryId = await createTestEntry(feedId, { title: "Entry to star" });
+      await createUserEntry(userId, entryId, { starred: false });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.star({ id: entryId });
+
+      expect(result.entry.id).toBe(entryId);
+      expect(result.entry.starred).toBe(true);
+
+      // Verify database state
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].starred).toBe(true);
+    });
+
+    it("unstars an entry", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entryId = await createTestEntry(feedId, { title: "Starred entry" });
+      await createUserEntry(userId, entryId, { starred: true });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.unstar({ id: entryId });
+
+      expect(result.entry.id).toBe(entryId);
+      expect(result.entry.starred).toBe(false);
+
+      // Verify database state
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].starred).toBe(false);
+    });
+
+    it("throws error when starring entry user doesn't have access to", async () => {
+      const user1Id = await createTestUser("user1");
+      const user2Id = await createTestUser("user2");
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(user1Id, feedId);
+
+      const entryId = await createTestEntry(feedId, { title: "User 1 Entry" });
+      await createUserEntry(user1Id, entryId);
+
+      // User 2 tries to star User 1's entry
+      const ctx2 = createAuthContext(user2Id);
+      const caller2 = createCaller(ctx2);
+
+      await expect(caller2.entries.star({ id: entryId })).rejects.toThrow();
+    });
+  });
+
+  describe("count", () => {
+    it("counts total and unread entries", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entry1Id = await createTestEntry(feedId, { title: "Entry 1" });
+      const entry2Id = await createTestEntry(feedId, { title: "Entry 2" });
+      const entry3Id = await createTestEntry(feedId, { title: "Entry 3" });
+
+      await createUserEntry(userId, entry1Id, { read: false });
+      await createUserEntry(userId, entry2Id, { read: false });
+      await createUserEntry(userId, entry3Id, { read: true });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.count({});
+
+      expect(result.total).toBe(3);
+      expect(result.unread).toBe(2);
+    });
+
+    it("counts with filters", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const unread1Id = await createTestEntry(feedId, { title: "Unread 1" });
+      const unread2Id = await createTestEntry(feedId, { title: "Unread 2" });
+      const readId = await createTestEntry(feedId, { title: "Read" });
+
+      await createUserEntry(userId, unread1Id, { read: false });
+      await createUserEntry(userId, unread2Id, { read: false });
+      await createUserEntry(userId, readId, { read: true });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.count({ unreadOnly: true });
+
+      expect(result.total).toBe(2);
+      expect(result.unread).toBe(2);
+    });
+  });
+});
