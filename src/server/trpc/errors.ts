@@ -60,6 +60,9 @@ const ErrorCodes = {
   FEED_FETCH_ERROR: "FEED_FETCH_ERROR",
   PARSE_ERROR: "PARSE_ERROR",
   SAVED_ARTICLE_FETCH_ERROR: "SAVED_ARTICLE_FETCH_ERROR",
+
+  // Bad gateway errors (502)
+  SITE_BLOCKED: "SITE_BLOCKED",
 } as const;
 
 type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -76,6 +79,7 @@ const errorCodeToTRPCCode: Record<
   | "CONFLICT"
   | "TOO_MANY_REQUESTS"
   | "INTERNAL_SERVER_ERROR"
+  | "BAD_GATEWAY"
 > = {
   UNAUTHORIZED: "UNAUTHORIZED",
   INVALID_CREDENTIALS: "UNAUTHORIZED",
@@ -112,6 +116,7 @@ const errorCodeToTRPCCode: Record<
   FEED_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
   PARSE_ERROR: "INTERNAL_SERVER_ERROR",
   SAVED_ARTICLE_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
+  SITE_BLOCKED: "BAD_GATEWAY",
 };
 
 /**
@@ -232,6 +237,16 @@ export const errors = {
     createError(ErrorCodes.SAVED_ARTICLE_FETCH_ERROR, `Failed to fetch page: ${reason}`, {
       url,
     }),
+
+  siteBlocked: (url: string, status: number) =>
+    createError(
+      ErrorCodes.SITE_BLOCKED,
+      "This website blocked the request. Some sites don't allow automated access.",
+      {
+        url,
+        status,
+      }
+    ),
 
   // Invite errors
   inviteRequired: () =>

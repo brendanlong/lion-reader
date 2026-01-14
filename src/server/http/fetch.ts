@@ -9,6 +9,33 @@ import { USER_AGENT } from "./user-agent";
 import { errors } from "../trpc/errors";
 
 // ============================================================================
+// Custom Errors
+// ============================================================================
+
+/**
+ * Error thrown when an HTTP request fails.
+ * Includes the HTTP status code for better error handling.
+ */
+export class HttpFetchError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly statusText: string,
+    public readonly url: string
+  ) {
+    super(`HTTP ${status}: ${statusText}`);
+    this.name = "HttpFetchError";
+  }
+
+  /**
+   * Check if this error indicates the site blocked the request.
+   * This includes 403 Forbidden, 429 Too Many Requests, and 406 Not Acceptable.
+   */
+  isBlocked(): boolean {
+    return this.status === 403 || this.status === 429 || this.status === 406;
+  }
+}
+
+// ============================================================================
 // Constants
 // ============================================================================
 
@@ -136,7 +163,7 @@ export async function fetchHtmlPage(url: string): Promise<string> {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw new HttpFetchError(response.status, response.statusText, url);
     }
 
     const contentType = response.headers.get("content-type") || "";

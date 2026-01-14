@@ -108,7 +108,16 @@ async function saveWithToken(url, title, token) {
       throw new Error("TOKEN_EXPIRED");
     }
 
-    throw new Error(data.error?.message || `HTTP ${response.status}`);
+    // Extract error message from tRPC response format
+    // trpc-to-openapi returns { message: "...", code: "..." } at top level
+    const errorMessage = data.message || data.error?.message || `HTTP ${response.status}`;
+
+    // Check if site blocked the request (502 Bad Gateway from our server)
+    if (response.status === 502 || errorMessage.includes("blocked the request")) {
+      throw new Error("SITE_BLOCKED");
+    }
+
+    throw new Error(errorMessage);
   }
 
   return await response.json();
@@ -193,7 +202,14 @@ async function save() {
   } catch (err) {
     console.error("Save failed:", err);
     showState("error");
-    errorAlertEl.textContent = err.message || "Failed to save article";
+
+    // Show friendly message for blocked sites
+    if (err.message === "SITE_BLOCKED") {
+      errorAlertEl.textContent =
+        "This website blocked our request. Some sites don't allow automated access.";
+    } else {
+      errorAlertEl.textContent = err.message || "Failed to save article";
+    }
     errorUrlEl.textContent = currentUrl || "";
   }
 }
