@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useRealtimeStore } from "@/lib/store/realtime";
@@ -63,13 +63,26 @@ export interface UseSavedArticleMutationsOptions {
 export interface UseSavedArticleMutationsResult {
   /**
    * Mark one or more articles as read or unread.
+   * @param ids - Array of article IDs to mark
+   * @param read - Whether to mark as read (true) or unread (false)
+   * @param subscriptionId - Optional subscription ID for count updates
+   * @param tagIds - Optional tag IDs for count updates
    */
-  markRead: (ids: string[], read: boolean) => void;
+  markRead: (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => void;
 
   /**
    * Toggle the read status of an article.
+   * @param articleId - ID of the article to toggle
+   * @param currentlyRead - Current read status
+   * @param subscriptionId - Optional subscription ID for count updates
+   * @param tagIds - Optional tag IDs for count updates
    */
-  toggleRead: (articleId: string, currentlyRead: boolean) => void;
+  toggleRead: (
+    articleId: string,
+    currentlyRead: boolean,
+    subscriptionId?: string,
+    tagIds?: string[]
+  ) => void;
 
   /**
    * Star an article.
@@ -115,79 +128,31 @@ export function useSavedArticleMutations(
   options?: UseSavedArticleMutationsOptions
 ): UseSavedArticleMutationsResult {
   const utils = trpc.useUtils();
-  const listFilters = options?.listFilters;
   const knownSubscriptionId = options?.subscriptionId;
   const knownTagIds = options?.tagIds;
 
-  // Build the query key for the saved articles list (using entries endpoint with type='saved')
-  const queryFilters = useMemo(
-    () => ({
-      type: "saved" as const,
-      unreadOnly: listFilters?.unreadOnly,
-      starredOnly: listFilters?.starredOnly,
-      sortOrder: listFilters?.sortOrder,
-    }),
-    [listFilters?.unreadOnly, listFilters?.starredOnly, listFilters?.sortOrder]
-  );
+  // Ref to pass mutation context (subscriptionId, tagIds) to mutation callbacks
+  const mutationContextRef = useRef<{ subscriptionId?: string; tagIds?: string[] }>({});
 
   // markRead mutation with Zustand optimistic updates
   // Uses entries.markRead endpoint which works for both feed entries and saved articles
   const markReadMutation = trpc.entries.markRead.useMutation({
     onMutate: async (variables) => {
-      // Update Zustand for instant UI feedback
       const markFn = variables.read
         ? useRealtimeStore.getState().markRead
         : useRealtimeStore.getState().markUnread;
 
-      // Get subscriptions data to look up tag IDs
-      const subscriptionsData = utils.subscriptions.list.getData();
+      // Get subscriptionId and tagIds from context ref (passed from mutation functions)
+      // or from knownSubscriptionId/knownTagIds if provided in options
+      const subscriptionId = mutationContextRef.current.subscriptionId ?? knownSubscriptionId;
+      const tagIds = mutationContextRef.current.tagIds ?? knownTagIds;
 
-      // Mark each entry with proper subscription and tag tracking
       for (const entryId of variables.ids) {
-        let subscriptionId: string | undefined;
-        let tagIds: string[] | undefined;
-        let cacheData: ReturnType<typeof utils.entries.list.getInfiniteData> | undefined;
-
-        // Priority 1: Use known subscriptionId from options (detail view with entry data)
-        if (knownSubscriptionId) {
-          subscriptionId = knownSubscriptionId;
-          tagIds = knownTagIds;
-        }
-        // Priority 2: Look up in saved articles cache
-        else {
-          cacheData = utils.entries.list.getInfiniteData(queryFilters);
-
-          // Find the entry in the cached pages
-          for (const page of cacheData?.pages ?? []) {
-            const entry = page.items.find((item) => item.id === entryId);
-            if (entry?.subscriptionId) {
-              subscriptionId = entry.subscriptionId;
-              break;
-            }
-          }
-        }
-
-        // If we found a subscriptionId but don't have tags yet, look them up
-        if (subscriptionId && !tagIds && subscriptionsData) {
-          const subscription = subscriptionsData.items.find((sub) => sub.id === subscriptionId);
-          if (subscription) {
-            tagIds = subscription.tags.map((tag) => tag.id);
-          }
-        }
-
-        // Update Zustand with subscription and tag tracking
         if (subscriptionId) {
           markFn(entryId, subscriptionId, tagIds);
         } else {
           // Fallback: just track read state without count updates
-          if (process.env.NODE_ENV === "development") {
-            console.warn("⚠️  markRead (saved): subscriptionId not found for entry", {
-              entryId,
-              queryFilters,
-              cacheHasData: !!cacheData,
-              pageCount: cacheData?.pages?.length ?? 0,
-            });
-          }
+          // This is normal for saved articles that aren't from feeds
           if (variables.read) {
             useRealtimeStore.setState((s) => ({
               readIds: new Set([...s.readIds, entryId]),
@@ -254,17 +219,25 @@ export function useSavedArticleMutations(
     },
   });
 
-  // Convenience wrapper functions
+  // Convenience wrapper functions with subscriptionId passthrough
   const markRead = useCallback(
-    (ids: string[], read: boolean) => {
+    (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => {
+      // Set context for this mutation
+      mutationContextRef.current = { subscriptionId, tagIds };
       markReadMutation.mutate({ ids, read });
+      // Clear context after mutation starts
+      mutationContextRef.current = {};
     },
     [markReadMutation]
   );
 
   const toggleRead = useCallback(
-    (articleId: string, currentlyRead: boolean) => {
+    (articleId: string, currentlyRead: boolean, subscriptionId?: string, tagIds?: string[]) => {
+      // Set context for this mutation
+      mutationContextRef.current = { subscriptionId, tagIds };
       markReadMutation.mutate({ ids: [articleId], read: !currentlyRead });
+      // Clear context after mutation starts
+      mutationContextRef.current = {};
     },
     [markReadMutation]
   );
