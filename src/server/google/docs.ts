@@ -1221,7 +1221,7 @@ const HEADER_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
  * @param title - The document title to compare against
  * @returns HTML with the title header removed if it matched
  */
-function stripTitleHeader(html: string, title: string): string {
+export function stripTitleHeader(html: string, title: string): string {
   // State for tracking the first header element
   let foundFirstElement = false;
   let isInHeader = false;
