@@ -106,6 +106,11 @@ export function useMergedEntries<T extends BaseEntryData>(
   const starredIds = useRealtimeStore((s) => s.starredIds);
   const unstarredIds = useRealtimeStore((s) => s.unstarredIds);
 
+  // Extract filter values as primitives for stable deps
+  // (callers often pass inline objects like { unreadOnly: true } which create new references)
+  const unreadOnly = filters?.unreadOnly;
+  const starredOnly = filters?.starredOnly;
+
   return useMemo(() => {
     return entries
       .map((entry) => {
@@ -123,13 +128,13 @@ export function useMergedEntries<T extends BaseEntryData>(
       })
       .filter((entry) => {
         // Filter out entries that no longer match the view criteria after applying deltas
-        if (filters?.unreadOnly && entry.read) {
+        if (unreadOnly && entry.read) {
           return false;
         }
-        if (filters?.starredOnly && !entry.starred) {
+        if (starredOnly && !entry.starred) {
           return false;
         }
         return true;
       });
-  }, [entries, readIds, unreadIds, starredIds, unstarredIds, filters]);
+  }, [entries, readIds, unreadIds, starredIds, unstarredIds, unreadOnly, starredOnly]);
 }
