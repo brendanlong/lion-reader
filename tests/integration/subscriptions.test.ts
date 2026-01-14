@@ -647,4 +647,138 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(userCEntries.map((e) => e.entryId).sort()).toEqual([entry1Id, entry2Id].sort());
     });
   });
+
+  describe("search", () => {
+    it("searches subscriptions by title", async () => {
+      const userId = await createTestUser();
+
+      // Create multiple feeds
+      const feed1Id = await createTestFeed({
+        url: "https://example.com/tech.xml",
+        title: "Tech Blog",
+      });
+      const feed2Id = await createTestFeed({
+        url: "https://example.com/science.xml",
+        title: "Science Daily",
+      });
+      const feed3Id = await createTestFeed({
+        url: "https://example.com/cooking.xml",
+        title: "Cooking Tips",
+      });
+
+      // Subscribe to all
+      await createTestSubscription(userId, feed1Id);
+      await createTestSubscription(userId, feed2Id);
+      await createTestSubscription(userId, feed3Id);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Search for "Tech"
+      const result = await caller.subscriptions.search({ query: "Tech" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].title).toBe("Tech Blog");
+    });
+
+    it("searches subscriptions with custom titles", async () => {
+      const userId = await createTestUser();
+
+      const feedId = await createTestFeed({
+        url: "https://example.com/feed.xml",
+        title: "Original Title",
+      });
+      const subscriptionId = await createTestSubscription(userId, feedId);
+
+      // Update to custom title
+      await db
+        .update(subscriptions)
+        .set({ customTitle: "My Custom Feed Name" })
+        .where(eq(subscriptions.id, subscriptionId));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Search should match custom title
+      const result = await caller.subscriptions.search({ query: "Custom" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].title).toBe("My Custom Feed Name");
+    });
+
+    it("returns multiple matching subscriptions ranked by relevance", async () => {
+      const userId = await createTestUser();
+
+      const feed1Id = await createTestFeed({
+        url: "https://example.com/js1.xml",
+        title: "JavaScript Weekly",
+      });
+      const feed2Id = await createTestFeed({
+        url: "https://example.com/js2.xml",
+        title: "JavaScript Daily News",
+      });
+      const feed3Id = await createTestFeed({
+        url: "https://example.com/py.xml",
+        title: "Python Tutorial",
+      });
+
+      await createTestSubscription(userId, feed1Id);
+      await createTestSubscription(userId, feed2Id);
+      await createTestSubscription(userId, feed3Id);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.subscriptions.search({ query: "JavaScript" });
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items.map((s) => s.title)).toContain("JavaScript Weekly");
+      expect(result.items.map((s) => s.title)).toContain("JavaScript Daily News");
+    });
+
+    it("returns empty results for non-matching query", async () => {
+      const userId = await createTestUser();
+
+      const feedId = await createTestFeed({
+        url: "https://example.com/tech.xml",
+        title: "Tech News",
+      });
+      await createTestSubscription(userId, feedId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.subscriptions.search({ query: "nonexistentquery12345" });
+
+      expect(result.items).toHaveLength(0);
+    });
+
+    it("only searches user's own subscriptions", async () => {
+      const user1Id = await createTestUser("user1");
+      const user2Id = await createTestUser("user2");
+
+      const feed1Id = await createTestFeed({
+        url: "https://example.com/feed1.xml",
+        title: "Shared Topic Feed",
+      });
+      const feed2Id = await createTestFeed({
+        url: "https://example.com/feed2.xml",
+        title: "Another Topic Feed",
+      });
+
+      // User 1 subscribes to feed 1
+      await createTestSubscription(user1Id, feed1Id);
+      // User 2 subscribes to feed 2
+      await createTestSubscription(user2Id, feed2Id);
+
+      // User 1 searches for "Topic"
+      const ctx1 = createAuthContext(user1Id);
+      const caller1 = createCaller(ctx1);
+      const result1 = await caller1.subscriptions.search({ query: "Topic" });
+
+      // Should only see their own subscription
+      expect(result1.items).toHaveLength(1);
+      expect(result1.items[0].title).toBe("Shared Topic Feed");
+    });
+  });
 });
