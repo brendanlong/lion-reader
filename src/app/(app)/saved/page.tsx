@@ -2,136 +2,142 @@
  * Saved Articles Client Component
  *
  * Client-side component for the Saved Articles page.
- * Contains all the interactive logic for displaying and managing saved articles.
+ * Uses the same unified components as other entry pages.
  */
 
 "use client";
 
-import { Suspense, useState, useCallback, useMemo } from "react";
+import { Suspense, useCallback, useMemo } from "react";
 import {
-  SavedArticleList,
-  SavedArticleContent,
-  type SavedArticleListEntryData,
-} from "@/components/saved";
-import { UnreadToggle, SortToggle } from "@/components/entries";
+  EntryList,
+  EntryContent,
+  UnreadToggle,
+  SortToggle,
+  type ExternalQueryState,
+} from "@/components/entries";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import {
-  useSavedArticleKeyboardShortcuts,
-  useSavedArticleMutations,
+  useKeyboardShortcuts,
   useUrlViewPreferences,
+  useEntryMutations,
   useEntryUrlState,
+  useEntryListQuery,
+  useMergedEntries,
 } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
 function SavedArticlesContent() {
-  const {
-    openEntryId: openArticleId,
-    setOpenEntryId: setOpenArticleId,
-    closeEntry: closeArticle,
-  } = useEntryUrlState();
-  const [articles, setArticles] = useState<SavedArticleListEntryData[]>([]);
+  const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
     useUrlViewPreferences("saved");
   const utils = trpc.useUtils();
 
+  // Use unified entry list query with type="saved"
+  const entryListQuery = useEntryListQuery({
+    filters: { type: "saved", unreadOnly: showUnreadOnly, sortOrder },
+    openEntryId,
+  });
+
+  // Merge entries with Zustand deltas for consistent state across components
+  const mergedEntries = useMergedEntries(entryListQuery.entries, {
+    unreadOnly: showUnreadOnly,
+  });
+
   // Fetch subscriptions for tag lookup
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
-  // Use the consolidated mutations hook with list filters
-  const { toggleRead, toggleStar } = useSavedArticleMutations({
-    listFilters: { unreadOnly: showUnreadOnly, sortOrder },
+  // Use unified entry mutations
+  const { toggleRead, toggleStar } = useEntryMutations({
+    listFilters: { type: "saved", unreadOnly: showUnreadOnly, sortOrder },
   });
 
   // Wrapper to look up tags and pass entryType + subscriptionId + tagIds to mutations
   // Saved articles always have type "saved"
   const handleToggleRead = useCallback(
     (
-      articleId: string,
+      entryId: string,
       currentlyRead: boolean,
       _entryType: "web" | "email" | "saved",
       subscriptionId: string | null
     ) => {
       // Saved articles always use "saved" type regardless of what's passed
       if (!subscriptionId) {
-        toggleRead(articleId, currentlyRead, "saved");
+        toggleRead(entryId, currentlyRead, "saved");
         return;
       }
       // Look up tags for this subscription
       const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
       const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(articleId, currentlyRead, "saved", subscriptionId, tagIds);
+      toggleRead(entryId, currentlyRead, "saved", subscriptionId, tagIds);
     },
     [toggleRead, subscriptionsQuery.data]
   );
 
-  // Keyboard navigation and actions (also provides swipe navigation functions)
-  const { selectedArticleId, setSelectedArticleId, goToNextArticle, goToPreviousArticle } =
-    useSavedArticleKeyboardShortcuts({
-      articles,
-      onOpenArticle: setOpenArticleId,
-      onClose: closeArticle,
-      isArticleOpen: !!openArticleId,
+  // Use unified keyboard shortcuts
+  const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
+    useKeyboardShortcuts({
+      entries: mergedEntries,
+      onOpenEntry: setOpenEntryId,
+      onClose: closeEntry,
+      isEntryOpen: !!openEntryId,
       enabled: keyboardShortcutsEnabled,
       onToggleRead: handleToggleRead,
       onToggleStar: toggleStar,
       onRefresh: () => {
-        // Invalidate entries queries with saved type filter
         utils.entries.list.invalidate({ type: "saved" });
         utils.entries.count.invalidate({ type: "saved" });
       },
       onToggleUnreadOnly: toggleShowUnreadOnly,
     });
 
-  const handleArticleClick = useCallback(
-    (articleId: string) => {
-      setSelectedArticleId(articleId);
-      setOpenArticleId(articleId);
+  const handleEntryClick = useCallback(
+    (entryId: string) => {
+      setSelectedEntryId(entryId);
+      setOpenEntryId(entryId);
     },
-    [setSelectedArticleId, setOpenArticleId]
+    [setSelectedEntryId, setOpenEntryId]
   );
 
   const handleBack = useCallback(() => {
-    closeArticle();
-  }, [closeArticle]);
+    closeEntry();
+  }, [closeEntry]);
 
-  const handleArticlesLoaded = useCallback((loadedArticles: SavedArticleListEntryData[]) => {
-    setArticles(loadedArticles);
-  }, []);
+  // Build external query state for EntryList
+  const externalQueryState: ExternalQueryState = useMemo(
+    () => ({
+      isLoading: entryListQuery.isLoading,
+      isError: entryListQuery.isError,
+      errorMessage: entryListQuery.errorMessage,
+      isFetchingNextPage: entryListQuery.isFetchingNextPage,
+      hasNextPage: entryListQuery.hasNextPage,
+      fetchNextPage: entryListQuery.fetchNextPage,
+      refetch: entryListQuery.refetch,
+    }),
+    [entryListQuery]
+  );
 
-  // Calculate next and previous article IDs for prefetching
-  const { nextArticleId, previousArticleId } = useMemo(() => {
-    if (!openArticleId) return { nextArticleId: undefined, previousArticleId: undefined };
-
-    const currentIndex = articles.findIndex((a) => a.id === openArticleId);
-    if (currentIndex === -1) return { nextArticleId: undefined, previousArticleId: undefined };
-
-    return {
-      nextArticleId: currentIndex < articles.length - 1 ? articles[currentIndex + 1].id : undefined,
-      previousArticleId: currentIndex > 0 ? articles[currentIndex - 1].id : undefined,
-    };
-  }, [openArticleId, articles]);
-
-  // Render both list and content, hiding the list when viewing an article.
+  // Render both list and content, hiding the list when viewing an entry.
   // This preserves scroll position and enables seamless j/k navigation.
   return (
     <>
-      {/* Article content - only rendered when an article is open */}
-      {openArticleId && (
-        <SavedArticleContent
-          key={openArticleId}
-          articleId={openArticleId}
+      {/* Entry content - only rendered when an entry is open */}
+      {openEntryId && (
+        <EntryContent
+          key={openEntryId}
+          entryId={openEntryId}
+          listFilters={{ type: "saved", unreadOnly: showUnreadOnly, sortOrder }}
           onBack={handleBack}
-          onSwipeNext={goToNextArticle}
-          onSwipePrevious={goToPreviousArticle}
-          nextArticleId={nextArticleId}
-          previousArticleId={previousArticleId}
+          onSwipeNext={goToNextEntry}
+          onSwipePrevious={goToPreviousEntry}
+          nextEntryId={entryListQuery.nextEntryId}
+          previousEntryId={entryListQuery.previousEntryId}
         />
       )}
 
-      {/* Article list - always mounted but hidden when viewing an article */}
-      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openArticleId ? "hidden" : ""}`}>
+      {/* Entry list - always mounted but hidden when viewing an entry */}
+      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
         <div className="mb-4 flex items-center justify-between sm:mb-6">
           <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Saved</h1>
           <div className="flex gap-2">
@@ -140,13 +146,14 @@ function SavedArticlesContent() {
           </div>
         </div>
 
-        <SavedArticleList
-          filters={{ unreadOnly: showUnreadOnly, sortOrder }}
-          onArticleClick={handleArticleClick}
-          selectedArticleId={selectedArticleId}
-          onArticlesLoaded={handleArticlesLoaded}
+        <EntryList
+          filters={{ type: "saved", unreadOnly: showUnreadOnly, sortOrder }}
+          onEntryClick={handleEntryClick}
+          selectedEntryId={selectedEntryId}
           onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
+          externalEntries={mergedEntries}
+          externalQueryState={externalQueryState}
           emptyMessage={
             showUnreadOnly
               ? "No unread saved articles. Toggle to show all items."

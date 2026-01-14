@@ -2,7 +2,7 @@
  * ArticleContentBody Component
  *
  * Shared component for displaying article content.
- * Used by both EntryContent (feed entries) and SavedArticleContent (saved articles).
+ * Used by EntryContent for all entry types (web, email, saved).
  */
 
 "use client";
@@ -322,7 +322,7 @@ const ArticleContentRenderer = React.memo(function ArticleContentRenderer({
 
 /**
  * Shared component for rendering article content with narration highlighting.
- * Used by both EntryContent and SavedArticleContent.
+ * Used by EntryContent for all entry types.
  */
 // Swipe gesture configuration
 const SWIPE_THRESHOLD = 50; // Minimum horizontal distance for swipe

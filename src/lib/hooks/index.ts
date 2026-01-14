@@ -6,8 +6,6 @@
 
 export { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
-export { useSavedArticleKeyboardShortcuts } from "./useSavedArticleKeyboardShortcuts";
-
 export { getViewPreferences, type ViewType } from "./viewPreferences";
 
 export { useUrlViewPreferences, parseViewPreferencesFromParams } from "./useUrlViewPreferences";
@@ -16,8 +14,6 @@ export { useEntryMutations, type EntryListFilters } from "./useEntryMutations";
 
 // Re-export EntryType from the store for convenience
 export { type EntryType } from "@/lib/store/realtime";
-
-export { useSavedArticleMutations } from "./useSavedArticleMutations";
 
 export { useEntryWithDeltas, useMergedEntries, type EntryFilterOptions } from "./useEntryDeltas";
 

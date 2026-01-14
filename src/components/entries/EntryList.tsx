@@ -52,6 +52,11 @@ interface EntryListFilters {
    * Sort order: "newest" (default) or "oldest".
    */
   sortOrder?: "newest" | "oldest";
+
+  /**
+   * Filter by entry type (web, email, saved).
+   */
+  type?: EntryType;
 }
 
 /**
@@ -196,6 +201,7 @@ export function EntryList({
       unreadOnly: filters.unreadOnly,
       starredOnly: filters.starredOnly,
       sortOrder: filters.sortOrder,
+      type: filters.type,
       limit: pageSize,
     },
     {

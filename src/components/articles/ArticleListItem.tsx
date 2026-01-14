@@ -2,7 +2,7 @@
  * ArticleListItem Component
  *
  * Shared component for displaying a single article/entry in a list.
- * Used by both EntryListItem and SavedArticleListItem.
+ * Used by EntryListItem for all entry types (web, email, saved).
  */
 
 "use client";

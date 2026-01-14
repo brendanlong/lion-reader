@@ -24,6 +24,8 @@ interface EntryListQueryFilters {
   unreadOnly?: boolean;
   starredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
+  /** Filter by entry type (web, email, saved) */
+  type?: EntryType;
 }
 
 /**
@@ -176,6 +178,7 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
       unreadOnly: filters.unreadOnly,
       starredOnly: filters.starredOnly,
       sortOrder: filters.sortOrder,
+      type: filters.type,
       limit: pageSize,
     },
     {
