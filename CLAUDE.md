@@ -25,11 +25,16 @@
 ## Project Structure
 
 ```
-src/server/     # Server-only (tRPC routers, DB, background jobs)
-src/lib/        # Shared utilities (client and server)
-src/components/ # React components
-src/app/        # Next.js routes
-tests/unit/     # Pure logic tests (no mocks, no DB)
+src/server/
+  trpc/routers/  # tRPC API endpoints
+  services/      # Reusable business logic (shared across APIs)
+  db/            # Database schemas and client
+  jobs/          # Background job queue
+  mcp/           # MCP server (if present)
+src/lib/         # Shared utilities (client and server)
+src/components/  # React components
+src/app/         # Next.js routes
+tests/unit/      # Pure logic tests (no mocks, no DB)
 tests/integration/ # Real DB via docker-compose (no mocks)
 ```
 
@@ -55,6 +60,51 @@ These views are defined in `drizzle/0035_subscription_views.sql` and have Drizzl
 
 - **Pagination**: Always cursor-based (never offset); return `{ items: T[], nextCursor?: string }`
 - **tRPC naming**: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
+
+## Services Layer
+
+Business logic should be extracted into reusable service functions in `src/server/services/`:
+
+- **Purpose**: Share logic between tRPC routers, MCP server, background jobs, etc.
+- **Pattern**: Pure functions that accept `db` and parameters, return plain data objects
+- **Location**: `src/server/services/{domain}.ts` (e.g., `entries.ts`, `subscriptions.ts`)
+- **Naming**: `verbNoun` (e.g., `listEntries`, `searchSubscriptions`, `markEntriesRead`)
+
+**Example:**
+
+```typescript
+// src/server/services/entries.ts
+export async function listEntries(
+  db: typeof dbType,
+  params: ListEntriesParams
+): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
+  // Business logic here
+}
+
+// Usage in tRPC router
+import * as entriesService from "@/server/services/entries";
+export const entriesRouter = createTRPCRouter({
+  list: protectedProcedure.query(({ ctx, input }) => {
+    return entriesService.listEntries(ctx.db, { ...input, userId: ctx.session.user.id });
+  }),
+});
+
+// Usage in MCP server
+import * as entriesService from "@/server/services/entries";
+const entries = await entriesService.listEntries(db, { userId, ...filters });
+```
+
+**When to use services:**
+
+- Operations that might be used by multiple API surfaces (tRPC, MCP, jobs)
+- Complex business logic that benefits from testing in isolation
+- When logic is duplicated across routers
+
+**When NOT to use services:**
+
+- One-off operations specific to a single router
+- Simple pass-through operations with no logic
+- Operations with complex HTTP/external dependencies (keep in router for now)
 
 ## Frontend State Management
 
