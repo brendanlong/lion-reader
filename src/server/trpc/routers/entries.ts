@@ -63,6 +63,11 @@ const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
 const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
 
 /**
+ * Search field validation schema.
+ */
+const searchInSchema = z.enum(["title", "content", "both"]).optional();
+
+/**
  * Feed type validation schema for filtering entries by type.
  */
 const feedTypeSchema = z.enum(["web", "email", "saved"]);
@@ -483,6 +488,214 @@ export const entriesRouter = createTRPCRouter({
         const lastEntry = resultEntries[resultEntries.length - 1];
         const lastTs = lastEntry.publishedAt ?? lastEntry.fetchedAt;
         nextCursor = encodeCursor(lastTs, lastEntry.id);
+      }
+
+      return { items, nextCursor };
+    }),
+
+  /**
+   * Search entries by title and/or content using PostgreSQL full-text search.
+   *
+   * Results are ranked by relevance and support the same filters as list.
+   *
+   * @param query - The search query text
+   * @param searchIn - Where to search: "title", "content", or "both" (default)
+   * @param subscriptionId - Optional filter by subscription ID
+   * @param tagId - Optional filter by tag ID
+   * @param unreadOnly - Optional filter to show only unread entries
+   * @param starredOnly - Optional filter to show only starred entries
+   * @param cursor - Optional pagination cursor (from previous response)
+   * @param limit - Optional number of entries per page (default: 50, max: 100)
+   * @returns Paginated list of matching entries, ranked by relevance
+   */
+  search: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/entries/search",
+        tags: ["Entries"],
+        summary: "Search entries",
+      },
+    })
+    .input(
+      z.object({
+        query: z.string().min(1, "Search query is required"),
+        searchIn: searchInSchema,
+        subscriptionId: uuidSchema.optional(),
+        tagId: uuidSchema.optional(),
+        uncategorized: booleanQueryParam,
+        type: feedTypeSchema.optional(),
+        excludeTypes: z.array(feedTypeSchema).optional(),
+        unreadOnly: booleanQueryParam,
+        starredOnly: booleanQueryParam,
+        cursor: cursorSchema,
+        limit: limitSchema,
+      })
+    )
+    .output(entriesListOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const limit = input.limit ?? DEFAULT_LIMIT;
+      const searchIn = input.searchIn ?? "both";
+
+      // Build the base query conditions using visible_entries view
+      const conditions = [eq(visibleEntries.userId, userId)];
+
+      // Build full-text search vector based on searchIn parameter
+      let searchVector: ReturnType<typeof sql>;
+      if (searchIn === "title") {
+        searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.title}, ''))`;
+      } else if (searchIn === "content") {
+        searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.contentCleaned}, ''))`;
+      } else {
+        // both
+        searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.title}, '') || ' ' || COALESCE(${visibleEntries.contentCleaned}, ''))`;
+      }
+
+      // Create the search query
+      const searchQuery = sql`plainto_tsquery('english', ${input.query})`;
+
+      // Add full-text search condition
+      conditions.push(sql`${searchVector} @@ ${searchQuery}`);
+
+      // Calculate relevance rank for sorting
+      const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
+
+      // Filter by subscriptionId
+      if (input.subscriptionId) {
+        const feedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
+        if (feedIds === null) {
+          return { items: [], nextCursor: undefined };
+        }
+        conditions.push(inArray(visibleEntries.feedId, feedIds));
+      }
+
+      // Filter by tagId if specified
+      if (input.tagId) {
+        const tagExists = await ctx.db
+          .select({ id: tags.id })
+          .from(tags)
+          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId)))
+          .limit(1);
+
+        if (tagExists.length === 0) {
+          return { items: [], nextCursor: undefined };
+        }
+
+        const taggedFeedIds = ctx.db
+          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+          .from(subscriptionTags)
+          .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
+          .where(eq(subscriptionTags.tagId, input.tagId));
+        conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
+      }
+
+      // Filter by uncategorized if specified
+      if (input.uncategorized) {
+        const taggedSubscriptionIds = ctx.db
+          .select({ subscriptionId: subscriptionTags.subscriptionId })
+          .from(subscriptionTags);
+
+        const uncategorizedFeedIds = ctx.db
+          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+          .from(userFeeds)
+          .where(
+            and(eq(userFeeds.userId, userId), notInArray(userFeeds.id, taggedSubscriptionIds))
+          );
+
+        conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
+      }
+
+      // Apply unreadOnly filter
+      if (input.unreadOnly) {
+        conditions.push(eq(visibleEntries.read, false));
+      }
+
+      // Apply starredOnly filter
+      if (input.starredOnly) {
+        conditions.push(eq(visibleEntries.starred, true));
+      }
+
+      // Apply type filter if specified
+      if (input.type) {
+        conditions.push(eq(visibleEntries.type, input.type));
+      }
+
+      // Apply excludeTypes filter if specified
+      if (input.excludeTypes && input.excludeTypes.length > 0) {
+        conditions.push(notInArray(visibleEntries.type, input.excludeTypes));
+      }
+
+      // Apply spam filter
+      const showSpam = ctx.session.user.showSpam;
+      if (!showSpam) {
+        conditions.push(eq(visibleEntries.isSpam, false));
+      }
+
+      // For search results, we use rank for primary sorting, with ID as tiebreaker
+      // Cursor contains { rank, id } for pagination
+      if (input.cursor) {
+        const { ts: rankStr, id } = decodeCursor(input.cursor);
+        const cursorRank = parseFloat(rankStr);
+        // Results with lower rank than cursor, or same rank with smaller ID
+        conditions.push(
+          sql`(${rankColumn} < ${cursorRank} OR (${rankColumn} = ${cursorRank} AND ${visibleEntries.id} < ${id}))`
+        );
+      }
+
+      // Query entries, ordered by relevance rank (descending), then ID
+      const queryResults = await ctx.db
+        .select({
+          id: visibleEntries.id,
+          feedId: visibleEntries.feedId,
+          type: visibleEntries.type,
+          url: visibleEntries.url,
+          title: visibleEntries.title,
+          author: visibleEntries.author,
+          summary: visibleEntries.summary,
+          publishedAt: visibleEntries.publishedAt,
+          fetchedAt: visibleEntries.fetchedAt,
+          read: visibleEntries.read,
+          starred: visibleEntries.starred,
+          subscriptionId: visibleEntries.subscriptionId,
+          siteName: visibleEntries.siteName,
+          feedTitle: feeds.title,
+          rank: rankColumn,
+        })
+        .from(visibleEntries)
+        .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+        .where(and(...conditions))
+        .orderBy(desc(rankColumn), desc(visibleEntries.id))
+        .limit(limit + 1);
+
+      // Determine if there are more results
+      const hasMore = queryResults.length > limit;
+      const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
+
+      // Format the output
+      const items = resultEntries.map((row) => ({
+        id: row.id,
+        subscriptionId: row.subscriptionId,
+        feedId: row.feedId,
+        type: row.type,
+        url: row.url,
+        title: row.title,
+        author: row.author,
+        summary: row.summary,
+        publishedAt: row.publishedAt,
+        fetchedAt: row.fetchedAt,
+        read: row.read,
+        starred: row.starred,
+        feedTitle: row.feedTitle,
+        siteName: row.siteName,
+      }));
+
+      // Generate next cursor if there are more results
+      // For search, cursor contains rank (as string) + ID
+      let nextCursor: string | undefined;
+      if (hasMore && resultEntries.length > 0) {
+        const lastEntry = resultEntries[resultEntries.length - 1];
+        nextCursor = encodeCursor(new Date(lastEntry.rank.toString()), lastEntry.id);
       }
 
       return { items, nextCursor };
