@@ -210,24 +210,30 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       // Mark each entry with subscription and tag tracking
       for (const entryId of variables.ids) {
         if (subscriptionId) {
+          // Entry has a subscription - update counts for subscription and tags
           markFn(entryId, subscriptionId, tagIds);
         } else {
-          // Fallback: just track read state without count updates
-          if (process.env.NODE_ENV === "development") {
-            console.warn("⚠️  markRead: no subscriptionId provided", {
-              entryId,
-              hint: "Pass subscriptionId when calling markRead/toggleRead for count updates",
-            });
-          }
-          if (variables.read) {
-            useRealtimeStore.setState((s) => ({
-              readIds: new Set([...s.readIds, entryId]),
-            }));
-          } else {
-            useRealtimeStore.setState((s) => ({
-              unreadIds: new Set([...s.unreadIds, entryId]),
-            }));
-          }
+          // No subscription (e.g., saved article) - just track read state without count updates
+          // This is expected for saved articles that aren't from feeds
+          useRealtimeStore.setState((s) => {
+            if (variables.read) {
+              // Marking as read: add to readIds, remove from unreadIds if present
+              if (s.readIds.has(entryId)) return s; // Already read, no change
+              const newReadIds = new Set(s.readIds);
+              newReadIds.add(entryId);
+              const newUnreadIds = new Set(s.unreadIds);
+              newUnreadIds.delete(entryId);
+              return { readIds: newReadIds, unreadIds: newUnreadIds };
+            } else {
+              // Marking as unread: add to unreadIds, remove from readIds if present
+              if (s.unreadIds.has(entryId)) return s; // Already unread, no change
+              const newUnreadIds = new Set(s.unreadIds);
+              newUnreadIds.add(entryId);
+              const newReadIds = new Set(s.readIds);
+              newReadIds.delete(entryId);
+              return { readIds: newReadIds, unreadIds: newUnreadIds };
+            }
+          });
         }
       }
       // No React Query invalidations needed - UI updates via Zustand deltas
