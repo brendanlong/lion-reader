@@ -24,6 +24,7 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRouter } from "next/navigation";
+import { type EntryType } from "@/lib/store/realtime";
 
 /**
  * Entry data needed for keyboard actions.
@@ -34,6 +35,7 @@ export interface KeyboardEntryData {
   read: boolean;
   starred: boolean;
   subscriptionId?: string | null;
+  type: EntryType;
 }
 
 /**
@@ -70,9 +72,14 @@ export interface UseKeyboardShortcutsOptions {
 
   /**
    * Callback when read status should be toggled.
-   * Receives the entry ID, its current read status, and subscriptionId (required but nullable).
+   * Receives the entry ID, its current read status, entry type, and subscriptionId (required but nullable).
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
+  onToggleRead?: (
+    entryId: string,
+    currentlyRead: boolean,
+    entryType: EntryType,
+    subscriptionId: string | null
+  ) => void;
 
   /**
    * Callback when star status should be toggled.
@@ -484,7 +491,7 @@ export function useKeyboardShortcuts(
       e.preventDefault();
       const entry = getSelectedEntry();
       if (entry && onToggleRead) {
-        onToggleRead(entry.id, entry.read, entry.subscriptionId ?? null);
+        onToggleRead(entry.id, entry.read, entry.type, entry.subscriptionId ?? null);
       }
     },
     {

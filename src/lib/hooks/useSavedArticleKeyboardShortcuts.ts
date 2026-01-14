@@ -24,6 +24,7 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRouter } from "next/navigation";
+import { type EntryType } from "@/lib/store/realtime";
 
 /**
  * Article data needed for keyboard actions.
@@ -70,9 +71,14 @@ export interface UseSavedArticleKeyboardShortcutsOptions {
 
   /**
    * Callback when read status should be toggled.
-   * Receives the article ID, its current read status, and subscriptionId (required but nullable).
+   * Receives the article ID, its current read status, entry type ("saved"), and subscriptionId.
    */
-  onToggleRead?: (articleId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
+  onToggleRead?: (
+    articleId: string,
+    currentlyRead: boolean,
+    entryType: EntryType,
+    subscriptionId: string | null
+  ) => void;
 
   /**
    * Callback when star status should be toggled.
@@ -403,7 +409,8 @@ export function useSavedArticleKeyboardShortcuts(
       e.preventDefault();
       const article = getSelectedArticle();
       if (article && onToggleRead) {
-        onToggleRead(article.id, article.read, article.subscriptionId);
+        // Saved articles always have type "saved"
+        onToggleRead(article.id, article.read, "saved", article.subscriptionId);
       }
     },
     {

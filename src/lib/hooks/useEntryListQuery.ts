@@ -12,6 +12,7 @@
 
 import { useMemo, useCallback, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { type EntryType } from "@/lib/store/realtime";
 
 /**
  * Filter options for the entry list query.
@@ -33,6 +34,7 @@ export interface EntryListData {
   id: string;
   feedId: string;
   subscriptionId: string | null;
+  type: EntryType;
   url: string | null;
   title: string | null;
   author: string | null;
@@ -190,6 +192,7 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
           id: entry.id,
           feedId: entry.feedId,
           subscriptionId: entry.subscriptionId,
+          type: entry.type,
           url: entry.url,
           title: entry.title,
           author: entry.author,

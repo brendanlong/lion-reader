@@ -10,6 +10,7 @@
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useMergedEntries } from "@/lib/hooks";
+import { type EntryType } from "@/lib/store/realtime";
 import { SavedArticleListItem } from "./SavedArticleListItem";
 import { EntryListSkeleton } from "@/components/entries/EntryListSkeleton";
 import {
@@ -86,9 +87,14 @@ interface SavedArticleListProps {
 
   /**
    * Callback when the read status indicator is clicked.
-   * subscriptionId is required (but can be null) to force explicit handling.
+   * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling.
    */
-  onToggleRead?: (articleId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
+  onToggleRead?: (
+    articleId: string,
+    currentlyRead: boolean,
+    entryType: EntryType,
+    subscriptionId: string | null
+  ) => void;
 
   /**
    * Callback when the star indicator is clicked.

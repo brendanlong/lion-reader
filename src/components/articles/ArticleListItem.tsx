@@ -9,6 +9,7 @@
 
 import { memo } from "react";
 import { formatRelativeTime } from "@/lib/format";
+import { type EntryType } from "@/lib/store/realtime";
 
 /**
  * Props for the ArticleListItem component.
@@ -33,10 +34,17 @@ interface ArticleListItemProps {
   /** Callback when the article is clicked */
   onClick?: (id: string) => void;
   /** Callback when the read status indicator is clicked
-   * subscriptionId is required (but can be null) to force explicit handling */
-  onToggleRead?: (id: string, currentlyRead: boolean, subscriptionId: string | null) => void;
+   * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling */
+  onToggleRead?: (
+    id: string,
+    currentlyRead: boolean,
+    entryType: EntryType,
+    subscriptionId: string | null
+  ) => void;
   /** Callback when the star indicator is clicked */
   onToggleStar?: (id: string, currentlyStarred: boolean) => void;
+  /** Entry type for count delta routing */
+  entryType: EntryType;
   /** Subscription ID for count tracking (required to ensure it's always considered) */
   subscriptionId: string | null;
 }
@@ -78,6 +86,7 @@ export const ArticleListItem = memo(function ArticleListItem({
   onClick,
   onToggleRead,
   onToggleStar,
+  entryType,
   subscriptionId,
 }: ArticleListItemProps) {
   const displayTitle = title ?? "Untitled";
@@ -95,8 +104,8 @@ export const ArticleListItem = memo(function ArticleListItem({
 
   const handleToggleRead = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Always pass subscriptionId (even if null) so page components must handle it explicitly
-    onToggleRead?.(id, read, subscriptionId);
+    // Always pass entryType and subscriptionId so page components must handle them explicitly
+    onToggleRead?.(id, read, entryType, subscriptionId);
   };
 
   const handleToggleStar = (e: React.MouseEvent) => {

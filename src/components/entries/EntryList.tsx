@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { type EntryListData, useMergedEntries } from "@/lib/hooks";
+import { type EntryListData, useMergedEntries, type EntryType } from "@/lib/hooks";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import {
@@ -143,9 +143,14 @@ interface EntryListProps {
 
   /**
    * Callback when the read status indicator is clicked.
-   * subscriptionId is required (but can be null) to force explicit handling.
+   * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
+  onToggleRead?: (
+    entryId: string,
+    currentlyRead: boolean,
+    entryType: EntryType,
+    subscriptionId: string | null
+  ) => void;
 
   /**
    * Callback when the star indicator is clicked.

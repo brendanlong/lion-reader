@@ -92,7 +92,9 @@ export function SavedArticleContent({
   }, [article, subscriptionsQuery.data]);
 
   // Use the consolidated mutations hook with subscriptionId from entry data (bypasses cache lookup)
+  // Saved articles always have entryType: "saved" for proper count routing
   const { markRead, star, unstar } = useSavedArticleMutations({
+    entryType: "saved",
     subscriptionId: article?.subscriptionId ?? undefined,
     tagIds,
   });
@@ -102,7 +104,7 @@ export function SavedArticleContent({
   useEffect(() => {
     if (article && lastMarkedReadId.current !== articleId && !article.read) {
       lastMarkedReadId.current = articleId;
-      markRead([articleId], true);
+      markRead([articleId], true, "saved");
     }
   }, [article, articleId, markRead]);
 
@@ -120,7 +122,7 @@ export function SavedArticleContent({
   // Handle read toggle
   const handleReadToggle = () => {
     if (!article) return;
-    markRead([articleId], !article.read);
+    markRead([articleId], !article.read, "saved");
   };
 
   // Determine content based on loading/error/success state

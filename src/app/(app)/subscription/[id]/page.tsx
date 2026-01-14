@@ -114,18 +114,23 @@ function SingleSubscriptionContent() {
     listFilters: { subscriptionId, unreadOnly: showUnreadOnly, sortOrder },
   });
 
-  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  // Wrapper to look up tags and pass entryType + subscriptionId + tagIds to mutations
   const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subId: string | null) => {
+    (
+      entryId: string,
+      currentlyRead: boolean,
+      entryType: "web" | "email" | "saved",
+      subId: string | null
+    ) => {
       const effectiveSubId = subId ?? subscriptionId;
       if (!effectiveSubId) {
-        toggleRead(entryId, currentlyRead);
+        toggleRead(entryId, currentlyRead, entryType);
         return;
       }
       // Look up tags for this subscription
       const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === effectiveSubId);
       const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(entryId, currentlyRead, effectiveSubId, tagIds);
+      toggleRead(entryId, currentlyRead, entryType, effectiveSubId, tagIds);
     },
     [toggleRead, subscriptionId, subscriptionsQuery.data]
   );
