@@ -61,8 +61,9 @@ function AllEntriesContent() {
 
   // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
   const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subscriptionId?: string) => {
+    (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => {
       if (!subscriptionId) {
+        // No subscription - likely a saved article or starred entry from deleted subscription
         toggleRead(entryId, currentlyRead);
         return;
       }

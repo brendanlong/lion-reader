@@ -52,7 +52,7 @@ function UncategorizedEntriesContent() {
 
   // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
   const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subscriptionId?: string) => {
+    (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => {
       if (!subscriptionId) {
         toggleRead(entryId, currentlyRead);
         return;
