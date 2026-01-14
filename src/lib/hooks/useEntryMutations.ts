@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useRealtimeStore, type EntryType } from "@/lib/store/realtime";
@@ -214,41 +214,9 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
   const knownSubscriptionId = options?.subscriptionId;
   const knownTagIds = options?.tagIds;
 
-  // Store mutation context in a ref (set by wrapper function, read by onMutate)
-  const mutationContextRef = useRef<{
-    entryType?: EntryType;
-    subscriptionId?: string;
-    tagIds?: string[];
-  }>({});
-
-  // markRead mutation with Zustand optimistic updates
+  // markRead mutation - Zustand updates happen synchronously in wrapper functions
+  // This avoids the fragile ref pattern that could race with async onMutate
   const markReadMutation = trpc.entries.markRead.useMutation({
-    onMutate: async (variables) => {
-      // Update Zustand for instant UI feedback
-      const markFn = variables.read
-        ? useRealtimeStore.getState().markRead
-        : useRealtimeStore.getState().markUnread;
-
-      // Use context from the ref (set by wrapper function), fall back to hook options
-      const entryType = mutationContextRef.current.entryType ?? knownEntryType;
-      const subscriptionId = mutationContextRef.current.subscriptionId ?? knownSubscriptionId;
-      const tagIds = mutationContextRef.current.tagIds ?? knownTagIds;
-
-      // entryType is required for proper count routing
-      if (!entryType) {
-        console.warn(
-          "⚠️  markRead mutation called without entryType - counts won't update correctly",
-          { ids: variables.ids }
-        );
-        return;
-      }
-
-      // Mark each entry with explicit type routing
-      for (const entryId of variables.ids) {
-        markFn(entryId, { entryType, subscriptionId, tagIds });
-      }
-      // No React Query invalidations needed - UI updates via Zustand deltas
-    },
     onSuccess: () => {
       // Invalidate starred count since marking read/unread affects starred unread count
       // We don't track starred count deltas in Zustand, so just refetch
@@ -318,7 +286,8 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
   });
 
-  // Convenience wrapper functions
+  // Wrapper functions that perform Zustand updates synchronously before the mutation
+  // This is more reliable than onMutate which can have timing issues with refs
   const markRead = useCallback(
     (
       ids: string[],
@@ -327,13 +296,29 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       subscriptionId?: string,
       tagIds?: string[]
     ) => {
-      // Set context for this mutation
-      mutationContextRef.current = { entryType, subscriptionId, tagIds };
+      // Use provided values or fall back to hook options
+      const effectiveEntryType = entryType ?? knownEntryType;
+      const effectiveSubscriptionId = subscriptionId ?? knownSubscriptionId;
+      const effectiveTagIds = tagIds ?? knownTagIds;
+
+      // Update Zustand synchronously for instant UI feedback
+      if (effectiveEntryType) {
+        const markFn = read
+          ? useRealtimeStore.getState().markRead
+          : useRealtimeStore.getState().markUnread;
+        for (const id of ids) {
+          markFn(id, {
+            entryType: effectiveEntryType,
+            subscriptionId: effectiveSubscriptionId,
+            tagIds: effectiveTagIds,
+          });
+        }
+      }
+
+      // Trigger server mutation
       markReadMutation.mutate({ ids, read });
-      // Clear context after mutation starts
-      mutationContextRef.current = {};
     },
-    [markReadMutation]
+    [markReadMutation, knownEntryType, knownSubscriptionId, knownTagIds]
   );
 
   const toggleRead = useCallback(
@@ -344,13 +329,27 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       subscriptionId?: string,
       tagIds?: string[]
     ) => {
-      // Set context for this mutation
-      mutationContextRef.current = { entryType, subscriptionId, tagIds };
+      // Use provided values or fall back to hook options
+      const effectiveEntryType = entryType ?? knownEntryType;
+      const effectiveSubscriptionId = subscriptionId ?? knownSubscriptionId;
+      const effectiveTagIds = tagIds ?? knownTagIds;
+
+      // Update Zustand synchronously for instant UI feedback
+      if (effectiveEntryType) {
+        const markFn = currentlyRead
+          ? useRealtimeStore.getState().markUnread
+          : useRealtimeStore.getState().markRead;
+        markFn(entryId, {
+          entryType: effectiveEntryType,
+          subscriptionId: effectiveSubscriptionId,
+          tagIds: effectiveTagIds,
+        });
+      }
+
+      // Trigger server mutation
       markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
-      // Clear context after mutation starts
-      mutationContextRef.current = {};
     },
-    [markReadMutation]
+    [markReadMutation, knownEntryType, knownSubscriptionId, knownTagIds]
   );
 
   const markAllRead = useCallback(
