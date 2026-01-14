@@ -66,6 +66,8 @@ The app uses Zustand for optimistic updates, storing only **deltas** from the se
 
 **CRITICAL**: Entry mutations (markRead, toggleStar) need `subscriptionId` to update unread counts correctly. **Always pass subscriptionId as a parameter** through the callback chain—do NOT use cache lookups.
 
+**Type Safety**: `subscriptionId` is **required (but nullable)** in all callback signatures—TypeScript enforces this at compile time. You cannot accidentally forget to pass it.
+
 #### Implementation Pattern
 
 Page components should create a wrapper that looks up tags and passes both subscriptionId and tagIds:
@@ -75,8 +77,9 @@ Page components should create a wrapper that looks up tags and passes both subsc
 const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
 const handleToggleRead = useCallback(
-  (entryId: string, currentlyRead: boolean, subscriptionId?: string) => {
+  (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => {
     if (!subscriptionId) {
+      // No subscription - saved article or starred entry from deleted subscription
       toggleRead(entryId, currentlyRead);
       return;
     }
