@@ -20,7 +20,7 @@ import {
   ArticleContentSkeleton,
   ArticleContentError,
   getDomain,
-} from "@/components/articles/ArticleContentBody";
+} from "./ArticleContentBody";
 
 /**
  * Props for the EntryContent component.

@@ -17,7 +17,7 @@ import {
   ArticleListError,
   ArticleListLoadingMore,
   ArticleListEnd,
-} from "@/components/articles/ArticleListStates";
+} from "./ArticleListStates";
 
 /**
  * Filter options for the entry list.

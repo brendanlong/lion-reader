@@ -8,7 +8,7 @@
 "use client";
 
 import { memo } from "react";
-import { ArticleListItem } from "@/components/articles/ArticleListItem";
+import { ArticleListItem } from "./ArticleListItem";
 import { type EntryType } from "@/lib/store/realtime";
 
 /**
