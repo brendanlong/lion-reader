@@ -46,6 +46,11 @@ export interface EntryListFilters {
    * Sort order for entries.
    */
   sortOrder?: "newest" | "oldest";
+
+  /**
+   * Filter by entry type (web, email, saved).
+   */
+  type?: EntryType;
 }
 
 /**

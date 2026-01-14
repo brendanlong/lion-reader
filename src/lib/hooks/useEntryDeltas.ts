@@ -2,7 +2,7 @@
  * useEntryDeltas Hook
  *
  * Shared hook for merging server entry data with Zustand deltas.
- * Used by both EntryContent and SavedArticleContent to apply optimistic updates.
+ * Used by EntryContent to apply optimistic updates for all entry types.
  *
  * The Zustand store tracks deltas (differences from server state), not copies.
  * This hook merges those deltas with server data at render time for instant UI updates.
@@ -26,8 +26,8 @@ interface BaseEntryData {
 /**
  * Hook that merges a single entry with Zustand deltas.
  *
- * Use this for detail views (EntryContent, SavedArticleContent) where
- * you're displaying a single entry and need optimistic updates.
+ * Use this for detail views (EntryContent) where you're displaying
+ * a single entry and need optimistic updates.
  *
  * @param entry - Server entry data (or null if loading)
  * @returns Entry with deltas merged, or null if entry is null
@@ -80,8 +80,8 @@ export interface EntryFilterOptions {
 /**
  * Hook that merges a list of entries with Zustand deltas and optionally filters.
  *
- * Use this for list views (EntryList, SavedArticleList) where you're displaying
- * multiple entries and need optimistic updates with filter support.
+ * Use this for list views (EntryList) where you're displaying multiple
+ * entries and need optimistic updates with filter support.
  *
  * The filter is applied AFTER merging deltas, so marking an entry as read
  * in an "unread only" view will instantly hide it from the list.

@@ -2,7 +2,7 @@
  * Shared state components for article lists.
  *
  * Provides empty state, error state, and loading indicator
- * components used by both EntryList and SavedArticleList.
+ * components used by EntryList for all entry types.
  */
 
 "use client";
