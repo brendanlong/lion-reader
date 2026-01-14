@@ -23,6 +23,7 @@ import {
   useEntryMutations,
   useEntryUrlState,
   useEntryListQuery,
+  useMergedEntries,
 } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc/client";
 
@@ -39,6 +40,12 @@ function StarredEntriesContent() {
   const entryListQuery = useEntryListQuery({
     filters: { starredOnly: true, unreadOnly: showUnreadOnly, sortOrder },
     openEntryId,
+  });
+
+  // Merge entries with Zustand deltas for consistent state across components
+  const mergedEntries = useMergedEntries(entryListQuery.entries, {
+    unreadOnly: showUnreadOnly,
+    starredOnly: true,
   });
 
   // Get starred entries count (total and unread)
@@ -79,9 +86,10 @@ function StarredEntriesContent() {
   }, [markAllRead]);
 
   // Keyboard navigation and actions (also provides swipe navigation functions)
+  // Uses merged entries so keyboard shortcuts see the same state as the list
   const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
     useKeyboardShortcuts({
-      entries: entryListQuery.entries,
+      entries: mergedEntries,
       onOpenEntry: setOpenEntryId,
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
@@ -179,7 +187,7 @@ function StarredEntriesContent() {
           selectedEntryId={selectedEntryId}
           onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
-          externalEntries={entryListQuery.entries}
+          externalEntries={mergedEntries}
           externalQueryState={externalQueryState}
           emptyMessage={
             showUnreadOnly

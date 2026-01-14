@@ -26,6 +26,7 @@ import {
   useEntryMutations,
   useEntryUrlState,
   useEntryListQuery,
+  useMergedEntries,
 } from "@/lib/hooks";
 
 /**
@@ -106,6 +107,11 @@ function SingleSubscriptionContent() {
     openEntryId,
   });
 
+  // Merge entries with Zustand deltas for consistent state across components
+  const mergedEntries = useMergedEntries(entryListQuery.entries, {
+    unreadOnly: showUnreadOnly,
+  });
+
   // Fetch subscription info to get title and validate access
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
@@ -141,9 +147,10 @@ function SingleSubscriptionContent() {
   }, [markAllRead, subscriptionId]);
 
   // Keyboard navigation and actions (also provides swipe navigation functions)
+  // Uses merged entries so keyboard shortcuts see the same state as the list
   const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
     useKeyboardShortcuts({
-      entries: entryListQuery.entries,
+      entries: mergedEntries,
       onOpenEntry: setOpenEntryId,
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
@@ -299,7 +306,7 @@ function SingleSubscriptionContent() {
           selectedEntryId={selectedEntryId}
           onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
-          externalEntries={entryListQuery.entries}
+          externalEntries={mergedEntries}
           externalQueryState={externalQueryState}
           emptyMessage={
             showUnreadOnly

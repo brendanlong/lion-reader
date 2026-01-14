@@ -26,6 +26,7 @@ import {
   useEntryMutations,
   useEntryUrlState,
   useEntryListQuery,
+  useMergedEntries,
 } from "@/lib/hooks";
 
 /**
@@ -103,6 +104,11 @@ function UncategorizedContent() {
     openEntryId,
   });
 
+  // Merge entries with Zustand deltas for consistent state across components
+  const mergedEntries = useMergedEntries(entryListQuery.entries, {
+    unreadOnly: showUnreadOnly,
+  });
+
   // Fetch subscriptions to compute feed count and unread count
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
@@ -137,9 +143,10 @@ function UncategorizedContent() {
   }, [markAllRead]);
 
   // Keyboard navigation and actions (also provides swipe navigation functions)
+  // Uses merged entries so keyboard shortcuts see the same state as the list
   const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
     useKeyboardShortcuts({
-      entries: entryListQuery.entries,
+      entries: mergedEntries,
       onOpenEntry: setOpenEntryId,
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
@@ -288,7 +295,7 @@ function UncategorizedContent() {
           selectedEntryId={selectedEntryId}
           onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
-          externalEntries={entryListQuery.entries}
+          externalEntries={mergedEntries}
           externalQueryState={externalQueryState}
           emptyMessage={
             showUnreadOnly
@@ -328,6 +335,11 @@ function TagContent({ tagId }: { tagId: string }) {
     openEntryId,
   });
 
+  // Merge entries with Zustand deltas for consistent state across components
+  const mergedEntries = useMergedEntries(entryListQuery.entries, {
+    unreadOnly: showUnreadOnly,
+  });
+
   // Fetch tag info and subscriptions
   const tagsQuery = trpc.tags.list.useQuery();
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
@@ -363,9 +375,10 @@ function TagContent({ tagId }: { tagId: string }) {
   }, [markAllRead, tagId]);
 
   // Keyboard navigation and actions (also provides swipe navigation functions)
+  // Uses merged entries so keyboard shortcuts see the same state as the list
   const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
     useKeyboardShortcuts({
-      entries: entryListQuery.entries,
+      entries: mergedEntries,
       onOpenEntry: setOpenEntryId,
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
@@ -513,7 +526,7 @@ function TagContent({ tagId }: { tagId: string }) {
           selectedEntryId={selectedEntryId}
           onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
-          externalEntries={entryListQuery.entries}
+          externalEntries={mergedEntries}
           externalQueryState={externalQueryState}
           emptyMessage={
             showUnreadOnly
