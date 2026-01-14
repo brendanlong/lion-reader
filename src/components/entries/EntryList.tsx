@@ -13,11 +13,11 @@ import { type EntryListData, useMergedEntries, type EntryType } from "@/lib/hook
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import {
-  ArticleListEmpty,
-  ArticleListError,
-  ArticleListLoadingMore,
-  ArticleListEnd,
-} from "./ArticleListStates";
+  EntryListEmpty,
+  EntryListError,
+  EntryListLoadingMore,
+  EntryListEnd,
+} from "./EntryListStates";
 
 /**
  * Filter options for the entry list.
@@ -298,7 +298,7 @@ export function EntryList({
   // Error state
   if (isError) {
     return (
-      <ArticleListError
+      <EntryListError
         message={errorMessage ?? "Failed to load entries"}
         onRetry={() => refetch()}
       />
@@ -307,7 +307,7 @@ export function EntryList({
 
   // Empty state
   if (allEntries.length === 0) {
-    return <ArticleListEmpty message={emptyMessage} />;
+    return <EntryListEmpty message={emptyMessage} />;
   }
 
   return (
@@ -327,10 +327,10 @@ export function EntryList({
       <div ref={loadMoreRef} className="h-1" />
 
       {/* Loading indicator */}
-      {isFetchingNextPage && <ArticleListLoadingMore label="Loading more entries..." />}
+      {isFetchingNextPage && <EntryListLoadingMore label="Loading more entries..." />}
 
       {/* End of list indicator */}
-      {!hasNextPage && allEntries.length > 0 && <ArticleListEnd message="No more entries" />}
+      {!hasNextPage && allEntries.length > 0 && <EntryListEnd message="No more entries" />}
     </div>
   );
 }
