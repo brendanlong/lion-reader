@@ -111,17 +111,22 @@ function UncategorizedContent() {
     listFilters: { uncategorized: true, unreadOnly: showUnreadOnly, sortOrder },
   });
 
-  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  // Wrapper to look up tags and pass entryType + subscriptionId + tagIds to mutations
   const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => {
+    (
+      entryId: string,
+      currentlyRead: boolean,
+      entryType: "web" | "email" | "saved",
+      subscriptionId: string | null
+    ) => {
       if (!subscriptionId) {
-        toggleRead(entryId, currentlyRead);
+        toggleRead(entryId, currentlyRead, entryType);
         return;
       }
       // Look up tags for this subscription
       const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
       const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
+      toggleRead(entryId, currentlyRead, entryType, subscriptionId, tagIds);
     },
     [toggleRead, subscriptionsQuery.data]
   );
@@ -332,17 +337,22 @@ function TagContent({ tagId }: { tagId: string }) {
     listFilters: { tagId, unreadOnly: showUnreadOnly, sortOrder },
   });
 
-  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  // Wrapper to look up tags and pass entryType + subscriptionId + tagIds to mutations
   const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => {
+    (
+      entryId: string,
+      currentlyRead: boolean,
+      entryType: "web" | "email" | "saved",
+      subscriptionId: string | null
+    ) => {
       if (!subscriptionId) {
-        toggleRead(entryId, currentlyRead);
+        toggleRead(entryId, currentlyRead, entryType);
         return;
       }
       // Look up tags for this subscription
       const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
       const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
+      toggleRead(entryId, currentlyRead, entryType, subscriptionId, tagIds);
     },
     [toggleRead, subscriptionsQuery.data]
   );

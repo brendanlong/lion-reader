@@ -10,7 +10,7 @@
 import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { useRealtimeStore } from "@/lib/store/realtime";
+import { useRealtimeStore, type EntryType } from "@/lib/store/realtime";
 
 /**
  * Filters for the current entry list.
@@ -59,6 +59,13 @@ export interface UseEntryMutationsOptions {
   listFilters?: EntryListFilters;
 
   /**
+   * Entry type for the current entry/view context.
+   * When provided, bypasses per-entry type lookup.
+   * Used in detail views or saved article views where type is known.
+   */
+  entryType?: EntryType;
+
+  /**
    * Optional subscription ID for the current entry.
    * When provided, bypasses cache lookup for subscription tracking.
    * Used in detail views where we already have the entry data.
@@ -103,19 +110,28 @@ export interface MarkAllReadOptions {
 export interface UseEntryMutationsResult {
   /**
    * Mark one or more entries as read or unread.
-   * @param subscriptionId - Optional subscription ID for count tracking
-   * @param tagIds - Optional tag IDs for count tracking
+   * @param entryType - Entry type for count delta routing
+   * @param subscriptionId - Optional subscription ID for count tracking (web/email only)
+   * @param tagIds - Optional tag IDs for count tracking (web/email only)
    */
-  markRead: (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => void;
+  markRead: (
+    ids: string[],
+    read: boolean,
+    entryType: EntryType,
+    subscriptionId?: string,
+    tagIds?: string[]
+  ) => void;
 
   /**
    * Toggle the read status of an entry.
-   * @param subscriptionId - Optional subscription ID for count tracking
-   * @param tagIds - Optional tag IDs for count tracking
+   * @param entryType - Entry type for count delta routing
+   * @param subscriptionId - Optional subscription ID for count tracking (web/email only)
+   * @param tagIds - Optional tag IDs for count tracking (web/email only)
    */
   toggleRead: (
     entryId: string,
     currentlyRead: boolean,
+    entryType: EntryType,
     subscriptionId?: string,
     tagIds?: string[]
   ) => void;
@@ -189,11 +205,16 @@ export interface UseEntryMutationsResult {
  */
 export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryMutationsResult {
   const utils = trpc.useUtils();
+  const knownEntryType = options?.entryType;
   const knownSubscriptionId = options?.subscriptionId;
   const knownTagIds = options?.tagIds;
 
-  // Store subscription context for the current mutation in a ref
-  const mutationContextRef = useRef<{ subscriptionId?: string; tagIds?: string[] }>({});
+  // Store mutation context in a ref (set by wrapper function, read by onMutate)
+  const mutationContextRef = useRef<{
+    entryType?: EntryType;
+    subscriptionId?: string;
+    tagIds?: string[];
+  }>({});
 
   // markRead mutation with Zustand optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
@@ -203,14 +224,23 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
         ? useRealtimeStore.getState().markRead
         : useRealtimeStore.getState().markUnread;
 
-      // Use subscription context from the ref (set by wrapper function)
+      // Use context from the ref (set by wrapper function), fall back to hook options
+      const entryType = mutationContextRef.current.entryType ?? knownEntryType;
       const subscriptionId = mutationContextRef.current.subscriptionId ?? knownSubscriptionId;
       const tagIds = mutationContextRef.current.tagIds ?? knownTagIds;
 
-      // Mark each entry - subscriptionId is optional (undefined for saved articles)
-      // The store handles both cases: with subscriptionId it updates counts, without it just tracks read state
+      // entryType is required for proper count routing
+      if (!entryType) {
+        console.warn(
+          "⚠️  markRead mutation called without entryType - counts won't update correctly",
+          { ids: variables.ids }
+        );
+        return;
+      }
+
+      // Mark each entry with explicit type routing
       for (const entryId of variables.ids) {
-        markFn(entryId, subscriptionId, tagIds);
+        markFn(entryId, { entryType, subscriptionId, tagIds });
       }
       // No React Query invalidations needed - UI updates via Zustand deltas
     },
@@ -285,9 +315,15 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
 
   // Convenience wrapper functions
   const markRead = useCallback(
-    (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => {
+    (
+      ids: string[],
+      read: boolean,
+      entryType: EntryType,
+      subscriptionId?: string,
+      tagIds?: string[]
+    ) => {
       // Set context for this mutation
-      mutationContextRef.current = { subscriptionId, tagIds };
+      mutationContextRef.current = { entryType, subscriptionId, tagIds };
       markReadMutation.mutate({ ids, read });
       // Clear context after mutation starts
       mutationContextRef.current = {};
@@ -296,9 +332,15 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
   );
 
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subscriptionId?: string, tagIds?: string[]) => {
+    (
+      entryId: string,
+      currentlyRead: boolean,
+      entryType: EntryType,
+      subscriptionId?: string,
+      tagIds?: string[]
+    ) => {
       // Set context for this mutation
-      mutationContextRef.current = { subscriptionId, tagIds };
+      mutationContextRef.current = { entryType, subscriptionId, tagIds };
       markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
       // Clear context after mutation starts
       mutationContextRef.current = {};

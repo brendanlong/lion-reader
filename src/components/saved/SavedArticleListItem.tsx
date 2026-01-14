@@ -10,6 +10,7 @@
 import { memo } from "react";
 import { ArticleListItem } from "@/components/articles/ArticleListItem";
 import { getDomain } from "@/lib/format";
+import { type EntryType } from "@/lib/store/realtime";
 
 /**
  * Saved article data for list display (lightweight, no full content).
@@ -38,9 +39,14 @@ interface SavedArticleListItemProps {
   selected?: boolean;
   /**
    * Callback when the read status indicator is clicked.
-   * subscriptionId is required (but can be null) to force explicit handling.
+   * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling.
    */
-  onToggleRead?: (articleId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
+  onToggleRead?: (
+    articleId: string,
+    currentlyRead: boolean,
+    entryType: EntryType,
+    subscriptionId: string | null
+  ) => void;
   /**
    * Callback when the star indicator is clicked.
    */
@@ -60,6 +66,7 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
 }: SavedArticleListItemProps) {
   // For saved articles, prefer siteName (from og:site_name) over feedTitle (which is "Saved Articles")
   const source = article.siteName ?? getDomain(article.url ?? "");
+
   return (
     <ArticleListItem
       id={article.id}
@@ -73,6 +80,7 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
       onClick={onClick}
       onToggleRead={onToggleRead}
       onToggleStar={onToggleStar}
+      entryType="saved"
       subscriptionId={article.subscriptionId}
     />
   );

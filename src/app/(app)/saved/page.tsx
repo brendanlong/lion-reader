@@ -44,18 +44,24 @@ function SavedArticlesContent() {
     listFilters: { unreadOnly: showUnreadOnly, sortOrder },
   });
 
-  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  // Wrapper to look up tags and pass entryType + subscriptionId + tagIds to mutations
+  // Saved articles always have type "saved"
   const handleToggleRead = useCallback(
-    (articleId: string, currentlyRead: boolean, subscriptionId: string | null) => {
+    (
+      articleId: string,
+      currentlyRead: boolean,
+      _entryType: "web" | "email" | "saved",
+      subscriptionId: string | null
+    ) => {
+      // Saved articles always use "saved" type regardless of what's passed
       if (!subscriptionId) {
-        // No subscription - direct saved article (not from a feed)
-        toggleRead(articleId, currentlyRead);
+        toggleRead(articleId, currentlyRead, "saved");
         return;
       }
       // Look up tags for this subscription
       const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
       const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(articleId, currentlyRead, subscriptionId, tagIds);
+      toggleRead(articleId, currentlyRead, "saved", subscriptionId, tagIds);
     },
     [toggleRead, subscriptionsQuery.data]
   );

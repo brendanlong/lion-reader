@@ -105,10 +105,11 @@ export function EntryContent({
     return subscription?.tags.map((tag) => tag.id);
   }, [entry, subscriptionsQuery.data]);
 
-  // Entry mutations with subscriptionId from entry data (bypasses cache lookup)
+  // Entry mutations with subscriptionId and entryType from entry data (bypasses cache lookup)
   // When marking an entry as read, this ensures it gets filtered from the list immediately
   const { markRead, star, unstar } = useEntryMutations({
     listFilters,
+    entryType: entry?.type,
     subscriptionId: entry?.subscriptionId ?? undefined,
     tagIds,
   });
@@ -120,7 +121,7 @@ export function EntryContent({
     if (hasAutoMarkedRead.current || !entry) return;
     hasAutoMarkedRead.current = true;
     if (!entry.read) {
-      markRead([entryId], true);
+      markRead([entryId], true, entry.type);
     }
   }, [entry, entryId, markRead]);
 
@@ -138,7 +139,7 @@ export function EntryContent({
   // Handle read toggle - use local mutation for consistent loading state
   const handleReadToggle = () => {
     if (!entry) return;
-    markRead([entryId], !entry.read);
+    markRead([entryId], !entry.read, entry.type);
   };
 
   // Determine content based on loading/error/success state

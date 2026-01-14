@@ -9,6 +9,7 @@
 
 import { memo } from "react";
 import { ArticleListItem } from "@/components/articles/ArticleListItem";
+import { type EntryType } from "@/lib/store/realtime";
 
 /**
  * Entry data for list display (lightweight, no full content).
@@ -17,6 +18,7 @@ interface EntryListItemData {
   id: string;
   feedId: string;
   subscriptionId: string | null;
+  type: EntryType;
   url: string | null;
   title: string | null;
   author: string | null;
@@ -37,9 +39,14 @@ interface EntryListItemProps {
   selected?: boolean;
   /**
    * Callback when the read status indicator is clicked.
-   * subscriptionId is required (but can be null) to force explicit handling.
+   * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
+  onToggleRead?: (
+    entryId: string,
+    currentlyRead: boolean,
+    entryType: EntryType,
+    subscriptionId: string | null
+  ) => void;
   /**
    * Callback when the star indicator is clicked.
    */
@@ -70,6 +77,7 @@ export const EntryListItem = memo(function EntryListItem({
       onClick={onClick}
       onToggleRead={onToggleRead}
       onToggleStar={onToggleStar}
+      entryType={entry.type}
       subscriptionId={entry.subscriptionId}
     />
   );

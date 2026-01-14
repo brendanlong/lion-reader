@@ -18,12 +18,29 @@ import { devtools } from "zustand/middleware";
 const DEBUG = process.env.NODE_ENV === "development";
 
 /**
+ * Entry type for count delta routing
+ */
+export type EntryType = "web" | "email" | "saved";
+
+/**
  * Entry added via SSE that hasn't been fetched from server yet
  */
 interface PendingEntry {
   id: string;
   subscriptionId: string;
   timestamp: string;
+}
+
+/**
+ * Options for markRead/markUnread operations
+ */
+export interface MarkReadOptions {
+  /** Entry type determines which count to update */
+  entryType: EntryType;
+  /** Required for web/email entries to update subscription counts */
+  subscriptionId?: string;
+  /** Optional tag IDs for updating tag counts (web/email only) */
+  tagIds?: string[];
 }
 
 /**
@@ -42,16 +59,19 @@ interface RealtimeStore {
   // Count deltas (positive or negative adjustments)
   subscriptionCountDeltas: Record<string, number>;
   tagCountDeltas: Record<string, number>;
+  savedCountDelta: number; // Delta for saved articles
 
   // Pending data from SSE
   pendingEntries: PendingEntry[];
   hasNewEntries: boolean;
 
   // Actions - all idempotent
-  // subscriptionId is optional - if not provided, just tracks read state without count updates
-  markRead: (entryId: string, subscriptionId?: string, tagIds?: string[]) => void;
-  markUnread: (entryId: string, subscriptionId?: string, tagIds?: string[]) => void;
-  toggleStar: (entryId: string, currentlyStarred: boolean, subscriptionId?: string) => void;
+  // entryType determines which counts to update:
+  // - "saved": updates savedCountDelta
+  // - "web"/"email": updates subscriptionCountDeltas and tagCountDeltas
+  markRead: (entryId: string, options: MarkReadOptions) => void;
+  markUnread: (entryId: string, options: MarkReadOptions) => void;
+  toggleStar: (entryId: string, currentlyStarred: boolean) => void;
   onNewEntry: (entryId: string, subscriptionId: string, timestamp: string) => void;
   onEntryUpdated: (entryId: string) => void;
   onSubscriptionCreated: (subscriptionId: string, unreadCount: number, tagIds: string[]) => void;
@@ -73,6 +93,7 @@ const initialState = {
   newEntryIds: new Set<string>(),
   subscriptionCountDeltas: {},
   tagCountDeltas: {},
+  savedCountDelta: 0,
   pendingEntries: [],
   hasNewEntries: false,
 };
@@ -87,11 +108,14 @@ export const useRealtimeStore = create<RealtimeStore>()(
 
       /**
        * Mark an entry as read (idempotent).
-       * If subscriptionId is provided, also decrements the unread count for the subscription and tags.
-       * If not provided (e.g., saved articles), just tracks read state without count updates.
+       * Updates counts based on entryType:
+       * - "saved": updates savedCountDelta
+       * - "web"/"email": updates subscriptionCountDeltas and tagCountDeltas
        */
-      markRead: (entryId: string, subscriptionId?: string, tagIds?: string[]) =>
+      markRead: (entryId: string, options: MarkReadOptions) =>
         set((state) => {
+          const { entryType, subscriptionId, tagIds } = options;
+
           // Idempotent: skip if already marked read
           if (state.readIds.has(entryId)) {
             if (DEBUG) console.log("⏭️  markRead: already read", { entryId });
@@ -99,75 +123,78 @@ export const useRealtimeStore = create<RealtimeStore>()(
           }
 
           if (DEBUG) {
-            console.log("📖 markRead:", { entryId, subscriptionId, tagIds });
+            console.log("📖 markRead:", { entryId, entryType, subscriptionId, tagIds });
           }
 
-          // If we previously marked it unread, undo that instead
-          if (state.unreadIds.has(entryId)) {
-            const newUnreadIds = new Set(state.unreadIds);
-            newUnreadIds.delete(entryId);
+          // Validate consistency
+          if (entryType === "saved" && subscriptionId) {
+            console.warn("⚠️  markRead: saved article should not have subscriptionId", {
+              entryId,
+              subscriptionId,
+            });
+          }
+          if ((entryType === "web" || entryType === "email") && !subscriptionId) {
+            console.warn(
+              "⚠️  markRead: web/email entry missing subscriptionId, counts won't update",
+              { entryId, entryType }
+            );
+          }
 
-            // Only update counts if we have a subscriptionId
+          // Helper to compute count delta updates
+          const getCountUpdates = (delta: number) => {
+            if (entryType === "saved") {
+              return { savedCountDelta: state.savedCountDelta + delta };
+            }
             if (subscriptionId) {
               const newTagCountDeltas = tagIds
                 ? tagIds.reduce(
                     (acc, tagId) => ({
                       ...acc,
-                      [tagId]: (state.tagCountDeltas[tagId] || 0) - 1,
+                      [tagId]: (state.tagCountDeltas[tagId] || 0) + delta,
                     }),
                     { ...state.tagCountDeltas }
                   )
                 : state.tagCountDeltas;
-
               return {
-                unreadIds: newUnreadIds,
                 subscriptionCountDeltas: {
                   ...state.subscriptionCountDeltas,
-                  [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) - 1,
+                  [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + delta,
                 },
                 tagCountDeltas: newTagCountDeltas,
               };
             }
+            return {};
+          };
 
-            return { unreadIds: newUnreadIds };
+          // If we previously marked it unread, undo that instead
+          if (state.unreadIds.has(entryId)) {
+            const newUnreadIds = new Set(state.unreadIds);
+            newUnreadIds.delete(entryId);
+            return {
+              unreadIds: newUnreadIds,
+              ...getCountUpdates(-1),
+            };
           }
 
           // Normal case: marking as read for the first time
           const newReadIds = new Set(state.readIds);
           newReadIds.add(entryId);
-
-          // Only update counts if we have a subscriptionId
-          if (subscriptionId) {
-            const newTagCountDeltas = tagIds
-              ? tagIds.reduce(
-                  (acc, tagId) => ({
-                    ...acc,
-                    [tagId]: (state.tagCountDeltas[tagId] || 0) - 1,
-                  }),
-                  { ...state.tagCountDeltas }
-                )
-              : state.tagCountDeltas;
-
-            return {
-              readIds: newReadIds,
-              subscriptionCountDeltas: {
-                ...state.subscriptionCountDeltas,
-                [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) - 1,
-              },
-              tagCountDeltas: newTagCountDeltas,
-            };
-          }
-
-          return { readIds: newReadIds };
+          return {
+            readIds: newReadIds,
+            ...getCountUpdates(-1),
+          };
         }),
 
       /**
        * Mark an entry as unread (idempotent).
-       * If subscriptionId is provided, also increments the unread count for the subscription and tags.
-       * If not provided (e.g., saved articles), just tracks unread state without count updates.
+       * Updates counts based on entryType:
+       * - "saved": updates savedCountDelta
+       * - "web"/"email": updates subscriptionCountDeltas and tagCountDeltas
        */
-      markUnread: (entryId: string, subscriptionId?: string, tagIds?: string[]) =>
+      markUnread: (entryId: string, options: MarkReadOptions) =>
         set((state) => {
+          const { entryType, subscriptionId, tagIds } = options;
+
           // Idempotent: skip if already marked unread
           if (state.unreadIds.has(entryId)) {
             if (DEBUG) console.log("⏭️  markUnread: already unread", { entryId });
@@ -175,66 +202,66 @@ export const useRealtimeStore = create<RealtimeStore>()(
           }
 
           if (DEBUG) {
-            console.log("📕 markUnread:", { entryId, subscriptionId, tagIds });
+            console.log("📕 markUnread:", { entryId, entryType, subscriptionId, tagIds });
           }
 
-          // If we previously marked it read, undo that instead
-          if (state.readIds.has(entryId)) {
-            const newReadIds = new Set(state.readIds);
-            newReadIds.delete(entryId);
+          // Validate consistency
+          if (entryType === "saved" && subscriptionId) {
+            console.warn("⚠️  markUnread: saved article should not have subscriptionId", {
+              entryId,
+              subscriptionId,
+            });
+          }
+          if ((entryType === "web" || entryType === "email") && !subscriptionId) {
+            console.warn(
+              "⚠️  markUnread: web/email entry missing subscriptionId, counts won't update",
+              { entryId, entryType }
+            );
+          }
 
-            // Only update counts if we have a subscriptionId
+          // Helper to compute count delta updates
+          const getCountUpdates = (delta: number) => {
+            if (entryType === "saved") {
+              return { savedCountDelta: state.savedCountDelta + delta };
+            }
             if (subscriptionId) {
               const newTagCountDeltas = tagIds
                 ? tagIds.reduce(
                     (acc, tagId) => ({
                       ...acc,
-                      [tagId]: (state.tagCountDeltas[tagId] || 0) + 1,
+                      [tagId]: (state.tagCountDeltas[tagId] || 0) + delta,
                     }),
                     { ...state.tagCountDeltas }
                   )
                 : state.tagCountDeltas;
-
               return {
-                readIds: newReadIds,
                 subscriptionCountDeltas: {
                   ...state.subscriptionCountDeltas,
-                  [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + 1,
+                  [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + delta,
                 },
                 tagCountDeltas: newTagCountDeltas,
               };
             }
+            return {};
+          };
 
-            return { readIds: newReadIds };
+          // If we previously marked it read, undo that instead
+          if (state.readIds.has(entryId)) {
+            const newReadIds = new Set(state.readIds);
+            newReadIds.delete(entryId);
+            return {
+              readIds: newReadIds,
+              ...getCountUpdates(+1),
+            };
           }
 
           // Normal case: marking as unread for the first time
           const newUnreadIds = new Set(state.unreadIds);
           newUnreadIds.add(entryId);
-
-          // Only update counts if we have a subscriptionId
-          if (subscriptionId) {
-            const newTagCountDeltas = tagIds
-              ? tagIds.reduce(
-                  (acc, tagId) => ({
-                    ...acc,
-                    [tagId]: (state.tagCountDeltas[tagId] || 0) + 1,
-                  }),
-                  { ...state.tagCountDeltas }
-                )
-              : state.tagCountDeltas;
-
-            return {
-              unreadIds: newUnreadIds,
-              subscriptionCountDeltas: {
-                ...state.subscriptionCountDeltas,
-                [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + 1,
-              },
-              tagCountDeltas: newTagCountDeltas,
-            };
-          }
-
-          return { unreadIds: newUnreadIds };
+          return {
+            unreadIds: newUnreadIds,
+            ...getCountUpdates(+1),
+          };
         }),
 
       /**
