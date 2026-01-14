@@ -26,7 +26,7 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure, scopedProtectedProcedure } from "../trpc";
 import { API_TOKEN_SCOPES } from "@/server/auth";
 import { errors } from "../errors";
-import { fetchHtmlPage } from "@/server/http/fetch";
+import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -441,6 +441,9 @@ export const savedRouter = createTRPCRouter({
                 url: normalizedUrl,
                 error: error instanceof Error ? error.message : String(error),
               });
+              if (error instanceof HttpFetchError && error.isBlocked()) {
+                throw errors.siteBlocked(normalizedUrl, error.status);
+              }
               throw errors.savedArticleFetchError(
                 normalizedUrl,
                 error instanceof Error ? error.message : "Unknown error"
@@ -482,6 +485,9 @@ export const savedRouter = createTRPCRouter({
               url: input.url,
               error: error instanceof Error ? error.message : String(error),
             });
+            if (error instanceof HttpFetchError && error.isBlocked()) {
+              throw errors.siteBlocked(input.url, error.status);
+            }
             throw errors.savedArticleFetchError(
               input.url,
               error instanceof Error ? error.message : "Unknown error"
@@ -509,6 +515,9 @@ export const savedRouter = createTRPCRouter({
             originalUrl: input.url,
             error: error instanceof Error ? error.message : String(error),
           });
+          if (error instanceof HttpFetchError && error.isBlocked()) {
+            throw errors.siteBlocked(input.url, error.status);
+          }
           throw errors.savedArticleFetchError(
             input.url,
             error instanceof Error ? error.message : "Unknown error"
@@ -522,6 +531,10 @@ export const savedRouter = createTRPCRouter({
             url: input.url,
             error: error instanceof Error ? error.message : String(error),
           });
+          // Check if this is a blocked site error (403, 429, etc.)
+          if (error instanceof HttpFetchError && error.isBlocked()) {
+            throw errors.siteBlocked(input.url, error.status);
+          }
           throw errors.savedArticleFetchError(
             input.url,
             error instanceof Error ? error.message : "Unknown error"
