@@ -207,34 +207,10 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
       const subscriptionId = mutationContextRef.current.subscriptionId ?? knownSubscriptionId;
       const tagIds = mutationContextRef.current.tagIds ?? knownTagIds;
 
-      // Mark each entry with subscription and tag tracking
+      // Mark each entry - subscriptionId is optional (undefined for saved articles)
+      // The store handles both cases: with subscriptionId it updates counts, without it just tracks read state
       for (const entryId of variables.ids) {
-        if (subscriptionId) {
-          // Entry has a subscription - update counts for subscription and tags
-          markFn(entryId, subscriptionId, tagIds);
-        } else {
-          // No subscription (e.g., saved article) - just track read state without count updates
-          // This is expected for saved articles that aren't from feeds
-          useRealtimeStore.setState((s) => {
-            if (variables.read) {
-              // Marking as read: add to readIds, remove from unreadIds if present
-              if (s.readIds.has(entryId)) return s; // Already read, no change
-              const newReadIds = new Set(s.readIds);
-              newReadIds.add(entryId);
-              const newUnreadIds = new Set(s.unreadIds);
-              newUnreadIds.delete(entryId);
-              return { readIds: newReadIds, unreadIds: newUnreadIds };
-            } else {
-              // Marking as unread: add to unreadIds, remove from readIds if present
-              if (s.unreadIds.has(entryId)) return s; // Already unread, no change
-              const newUnreadIds = new Set(s.unreadIds);
-              newUnreadIds.add(entryId);
-              const newReadIds = new Set(s.readIds);
-              newReadIds.delete(entryId);
-              return { readIds: newReadIds, unreadIds: newUnreadIds };
-            }
-          });
-        }
+        markFn(entryId, subscriptionId, tagIds);
       }
       // No React Query invalidations needed - UI updates via Zustand deltas
     },
