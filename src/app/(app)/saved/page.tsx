@@ -36,10 +36,29 @@ function SavedArticlesContent() {
     useUrlViewPreferences("saved");
   const utils = trpc.useUtils();
 
+  // Fetch subscriptions for tag lookup
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+
   // Use the consolidated mutations hook with list filters
   const { toggleRead, toggleStar } = useSavedArticleMutations({
     listFilters: { unreadOnly: showUnreadOnly, sortOrder },
   });
+
+  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  const handleToggleRead = useCallback(
+    (articleId: string, currentlyRead: boolean, subscriptionId: string | null) => {
+      if (!subscriptionId) {
+        // No subscription - direct saved article (not from a feed)
+        toggleRead(articleId, currentlyRead);
+        return;
+      }
+      // Look up tags for this subscription
+      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
+      const tagIds = subscription?.tags.map((tag) => tag.id);
+      toggleRead(articleId, currentlyRead, subscriptionId, tagIds);
+    },
+    [toggleRead, subscriptionsQuery.data]
+  );
 
   // Keyboard navigation and actions (also provides swipe navigation functions)
   const { selectedArticleId, setSelectedArticleId, goToNextArticle, goToPreviousArticle } =
@@ -49,7 +68,7 @@ function SavedArticlesContent() {
       onClose: closeArticle,
       isArticleOpen: !!openArticleId,
       enabled: keyboardShortcutsEnabled,
-      onToggleRead: toggleRead,
+      onToggleRead: handleToggleRead,
       onToggleStar: toggleStar,
       onRefresh: () => {
         // Invalidate entries queries with saved type filter
@@ -120,7 +139,7 @@ function SavedArticlesContent() {
           onArticleClick={handleArticleClick}
           selectedArticleId={selectedArticleId}
           onArticlesLoaded={handleArticlesLoaded}
-          onToggleRead={toggleRead}
+          onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
           emptyMessage={
             showUnreadOnly

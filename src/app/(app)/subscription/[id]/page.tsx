@@ -116,7 +116,7 @@ function SingleSubscriptionContent() {
 
   // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
   const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subId?: string) => {
+    (entryId: string, currentlyRead: boolean, subId: string | null) => {
       const effectiveSubId = subId ?? subscriptionId;
       if (!effectiveSubId) {
         toggleRead(entryId, currentlyRead);

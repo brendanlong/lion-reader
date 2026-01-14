@@ -144,8 +144,9 @@ interface EntryListProps {
 
   /**
    * Callback when the read status indicator is clicked.
+   * subscriptionId is required (but can be null) to force explicit handling.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId?: string) => void;
+  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
 
   /**
    * Callback when the star indicator is clicked.
