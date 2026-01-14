@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { useMergedEntries } from "@/lib/hooks";
 import { SavedArticleListItem } from "./SavedArticleListItem";
 import { EntryListSkeleton } from "@/components/entries/EntryListSkeleton";
 import {
@@ -137,9 +138,19 @@ export function SavedArticleList({
   );
 
   // Flatten all pages into a single array of articles
-  const allArticles = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
+  const serverArticles = useMemo(
+    () => data?.pages.flatMap((page) => page.items) ?? [],
+    [data?.pages]
+  );
+
+  // Merge server data with Zustand deltas at render time, then filter by view criteria
+  const allArticles = useMergedEntries(serverArticles, {
+    unreadOnly: filters?.unreadOnly,
+    starredOnly: filters?.starredOnly,
+  });
 
   // Notify parent of article data for keyboard navigation and actions
+  // Use delta-merged articles to include optimistic updates
   useEffect(() => {
     if (onArticlesLoaded) {
       const articles: SavedArticleListEntryData[] = allArticles.map((article) => ({

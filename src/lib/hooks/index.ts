@@ -16,6 +16,8 @@ export { useEntryMutations, type EntryListFilters } from "./useEntryMutations";
 
 export { useSavedArticleMutations } from "./useSavedArticleMutations";
 
+export { useEntryWithDeltas, useMergedEntries, type EntryFilterOptions } from "./useEntryDeltas";
+
 export { useEntryUrlState } from "./useEntryUrlState";
 
 export { useExpandedTags } from "./useExpandedTags";
