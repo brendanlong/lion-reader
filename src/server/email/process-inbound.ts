@@ -9,6 +9,7 @@ import { createHash } from "crypto";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import { generateSummary } from "../html/strip-html";
+import { cleanContent } from "../feed/content-cleaner";
 import {
   feeds,
   entries,
@@ -373,9 +374,29 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   }
 
   // 8. Create entry with email content
-  const content = email.html || email.text || "";
-  const contentHash = generateEmailContentHash(email.subject, content);
-  const summary = generateSummary(content);
+  const contentOriginal = email.html || email.text || "";
+  const contentHash = generateEmailContentHash(email.subject, contentOriginal);
+
+  // Try to clean HTML content using Readability for better reading experience.
+  // This extracts main content and strips email boilerplate (headers, footers, unsubscribe links).
+  // Use lower thresholds than web articles since emails are often shorter.
+  // Set to null if cleaning fails - UI only shows toggle when both versions exist.
+  let contentCleaned: string | null = null;
+  if (email.html) {
+    const cleaned = cleanContent(email.html, {
+      minContentLength: 50,
+      minCleanedLength: 20,
+    });
+    if (cleaned) {
+      contentCleaned = cleaned.content;
+      logger.debug("Email content cleaned with Readability", {
+        originalLength: email.html.length,
+        cleanedLength: cleaned.content.length,
+      });
+    }
+  }
+
+  const summary = generateSummary(contentOriginal);
 
   // Parse List-Unsubscribe headers
   const listUnsubscribeMailto = parseListUnsubscribeMailto(email.headers.listUnsubscribe);
@@ -392,8 +413,8 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     guid: email.messageId,
     title: email.subject,
     author: email.from.name || email.from.address,
-    contentOriginal: content,
-    contentCleaned: content, // TODO: Sanitize HTML in a future phase
+    contentOriginal,
+    contentCleaned,
     summary,
     publishedAt: now,
     fetchedAt: now,
