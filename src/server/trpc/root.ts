@@ -8,6 +8,7 @@
 import { createTRPCRouter, createCallerFactory } from "./trpc";
 import {
   adminRouter,
+  apiTokensRouter,
   authRouter,
   usersRouter,
   subscriptionsRouter,
@@ -30,6 +31,7 @@ import {
  */
 export const appRouter = createTRPCRouter({
   admin: adminRouter,
+  apiTokens: apiTokensRouter,
   auth: authRouter,
   users: usersRouter,
   subscriptions: subscriptionsRouter,
