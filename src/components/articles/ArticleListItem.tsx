@@ -32,10 +32,13 @@ interface ArticleListItemProps {
   selected?: boolean;
   /** Callback when the article is clicked */
   onClick?: (id: string) => void;
-  /** Callback when the read status indicator is clicked */
-  onToggleRead?: (id: string, currentlyRead: boolean) => void;
+  /** Callback when the read status indicator is clicked
+   * subscriptionId is required (but can be null) to force explicit handling */
+  onToggleRead?: (id: string, currentlyRead: boolean, subscriptionId: string | null) => void;
   /** Callback when the star indicator is clicked */
   onToggleStar?: (id: string, currentlyStarred: boolean) => void;
+  /** Subscription ID for count tracking (required to ensure it's always considered) */
+  subscriptionId: string | null;
 }
 
 /**
@@ -75,6 +78,7 @@ export const ArticleListItem = memo(function ArticleListItem({
   onClick,
   onToggleRead,
   onToggleStar,
+  subscriptionId,
 }: ArticleListItemProps) {
   const displayTitle = title ?? "Untitled";
 
@@ -91,7 +95,8 @@ export const ArticleListItem = memo(function ArticleListItem({
 
   const handleToggleRead = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onToggleRead?.(id, read);
+    // Always pass subscriptionId (even if null) so page components must handle it explicitly
+    onToggleRead?.(id, read, subscriptionId);
   };
 
   const handleToggleStar = (e: React.MouseEvent) => {

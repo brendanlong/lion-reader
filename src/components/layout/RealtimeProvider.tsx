@@ -21,6 +21,12 @@ interface RealtimeProviderProps {
   children: ReactNode;
 
   /**
+   * Initial sync cursor from server (ISO8601 timestamp).
+   * Used for SSE reconnection and polling mode to avoid missing events.
+   */
+  initialSyncCursor: string;
+
+  /**
    * Whether to show the connection status indicator.
    * @default true
    */
@@ -39,16 +45,21 @@ interface RealtimeProviderProps {
  * ```tsx
  * // In your app layout:
  * export default function AppLayout({ children }) {
+ *   const initialSyncCursor = new Date().toISOString();
  *   return (
- *     <RealtimeProvider>
+ *     <RealtimeProvider initialSyncCursor={initialSyncCursor}>
  *       {children}
  *     </RealtimeProvider>
  *   );
  * }
  * ```
  */
-export function RealtimeProvider({ children, showStatusIndicator = true }: RealtimeProviderProps) {
-  const { status, reconnect } = useRealtimeUpdates();
+export function RealtimeProvider({
+  children,
+  initialSyncCursor,
+  showStatusIndicator = true,
+}: RealtimeProviderProps) {
+  const { status, reconnect } = useRealtimeUpdates(initialSyncCursor);
 
   return (
     <>

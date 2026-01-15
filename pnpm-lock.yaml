@@ -17,9 +17,6 @@ importers:
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
-      '@normy/react-query':
-        specifier: ^0.21.0
-        version: 0.21.0(@tanstack/query-core@5.90.12)(@tanstack/react-query@5.90.12(react@19.2.3))
       '@sentry/nextjs':
         specifier: ^10.32.1
         version: 10.32.1(@opentelemetry/context-async-hooks@2.2.0(@opentelemetry/api@1.9.0))(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(next@16.1.1(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)(webpack@5.104.1(esbuild@0.27.2))
@@ -122,6 +119,9 @@ importers:
       zod:
         specifier: ^4.2.1
         version: 4.2.1
+      zustand:
+        specifier: ^5.0.10
+        version: 5.0.10(@types/react@19.2.7)(react@19.2.3)
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4
@@ -419,10 +419,6 @@ packages:
     resolution: {integrity: sha512-KKBU1VGYR7ORr3At5HAtUQ+TV3SzRCXmA/8OdDZiLDBIZxVyzXuztPjfLd3BV1PRAQGCMWWSHYhL0F8d5uHBDQ==}
     engines: {node: '>=6.0.0'}
     hasBin: true
-
-  '@babel/runtime@7.28.4':
-    resolution: {integrity: sha512-Q/N6JNWvIvPnLDvjlE1OUBLPQHH6l3CltCEsHIujp45zQUSSh8K+gHnaEX45yAT1nyngnINhvWtzN+Nb9D8RAQ==}
-    engines: {node: '>=6.9.0'}
 
   '@babel/template@7.27.2':
     resolution: {integrity: sha512-LPDZ85aEJyYSd18/DkjNh4/y1ntkE5KwUHWTiqgRxruuZL2F1yuHligVHLvcHY2vMHXttKFpJn6LwfI7cw7ODw==}
@@ -1248,19 +1244,6 @@ packages:
   '@nolyfill/is-core-module@1.0.39':
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
-
-  '@normy/core@0.14.0':
-    resolution: {integrity: sha512-3I0S62BNEIlvSL10TutHsLvTxguRoXEjs6b/udSUnxlKFVgrAIdW4F4tJDiZsJQrWRi6A6V3Eo5Dzji3zyn40Q==}
-
-  '@normy/query-core@0.21.0':
-    resolution: {integrity: sha512-O1GM0wqXIHHiWremrbvGG3ZuDxPsg+k9DDin+7sjkK/jHT2ER2MVodoMG40sB3I+zCKCdGVDi+/nZlb36m/mmA==}
-    peerDependencies:
-      '@tanstack/query-core': '>=5.4.3'
-
-  '@normy/react-query@0.21.0':
-    resolution: {integrity: sha512-hyFHtdPFzDuSS4yWXTtCacTm0GE/+L8ZflULH7Ua3KYgoDFNxZZkWCigd74vvbyV6AJptyxVBaoaCtg/Vgs3jQ==}
-    peerDependencies:
-      '@tanstack/react-query': '>=5.4.3'
 
   '@opentelemetry/api-logs@0.208.0':
     resolution: {integrity: sha512-CjruKY9V6NMssL/T1kAFgzosF1v9o6oeN+aX5JB/C/xPNtmgIJqcXHG7fA82Ou1zCpWGl4lROQUKwUNE1pMCyg==}
@@ -2926,10 +2909,6 @@ packages:
 
   deep-is@0.1.4:
     resolution: {integrity: sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==}
-
-  deepmerge@4.3.1:
-    resolution: {integrity: sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==}
-    engines: {node: '>=0.10.0'}
 
   define-data-property@1.1.4:
     resolution: {integrity: sha512-rBMvIzlpA8v6E+SJZoo++HAYqsLrkg7MSfIinMPFhmkorw7X+dOXVJQs+QT69zGkzMyfDnIMN2Wid1+NbL3T+A==}
@@ -5284,6 +5263,24 @@ packages:
   zod@4.2.1:
     resolution: {integrity: sha512-0wZ1IRqGGhMP76gLqz8EyfBXKk0J2qo2+H3fi4mcUP/KtTocoX08nmIAHl1Z2kJIZbZee8KOpBCSNPRgauucjw==}
 
+  zustand@5.0.10:
+    resolution: {integrity: sha512-U1AiltS1O9hSy3rul+Ub82ut2fqIAefiSuwECWt6jlMVUGejvf+5omLcRBSzqbRagSM3hQZbtzdeRc6QVScXTg==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=18.0.0'
+      immer: '>=9.0.6'
+      react: '>=18.0.0'
+      use-sync-external-store: '>=1.2.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
+      use-sync-external-store:
+        optional: true
+
 snapshots:
 
   '@acemir/cssom@0.9.30':
@@ -5884,8 +5881,6 @@ snapshots:
     dependencies:
       '@babel/types': 7.28.5
 
-  '@babel/runtime@7.28.4': {}
-
   '@babel/template@7.27.2':
     dependencies:
       '@babel/code-frame': 7.27.1
@@ -6446,24 +6441,6 @@ snapshots:
       fastq: 1.20.1
 
   '@nolyfill/is-core-module@1.0.39': {}
-
-  '@normy/core@0.14.0':
-    dependencies:
-      '@babel/runtime': 7.28.4
-      deepmerge: 4.3.1
-
-  '@normy/query-core@0.21.0(@tanstack/query-core@5.90.12)':
-    dependencies:
-      '@normy/core': 0.14.0
-      '@tanstack/query-core': 5.90.12
-
-  '@normy/react-query@0.21.0(@tanstack/query-core@5.90.12)(@tanstack/react-query@5.90.12(react@19.2.3))':
-    dependencies:
-      '@normy/core': 0.14.0
-      '@normy/query-core': 0.21.0(@tanstack/query-core@5.90.12)
-      '@tanstack/react-query': 5.90.12(react@19.2.3)
-    transitivePeerDependencies:
-      - '@tanstack/query-core'
 
   '@opentelemetry/api-logs@0.208.0':
     dependencies:
@@ -8323,8 +8300,6 @@ snapshots:
     optional: true
 
   deep-is@0.1.4: {}
-
-  deepmerge@4.3.1: {}
 
   define-data-property@1.1.4:
     dependencies:
@@ -10963,3 +10938,8 @@ snapshots:
       zod: 4.2.1
 
   zod@4.2.1: {}
+
+  zustand@5.0.10(@types/react@19.2.7)(react@19.2.3):
+    optionalDependencies:
+      '@types/react': 19.2.7
+      react: 19.2.3

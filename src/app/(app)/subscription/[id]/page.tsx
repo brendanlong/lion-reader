@@ -106,10 +106,29 @@ function SingleSubscriptionContent() {
     openEntryId,
   });
 
+  // Fetch subscription info to get title and validate access
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+
   // Entry mutations with optimistic updates
   const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
     listFilters: { subscriptionId, unreadOnly: showUnreadOnly, sortOrder },
   });
+
+  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
+  const handleToggleRead = useCallback(
+    (entryId: string, currentlyRead: boolean, subId: string | null) => {
+      const effectiveSubId = subId ?? subscriptionId;
+      if (!effectiveSubId) {
+        toggleRead(entryId, currentlyRead);
+        return;
+      }
+      // Look up tags for this subscription
+      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === effectiveSubId);
+      const tagIds = subscription?.tags.map((tag) => tag.id);
+      toggleRead(entryId, currentlyRead, effectiveSubId, tagIds);
+    },
+    [toggleRead, subscriptionId, subscriptionsQuery.data]
+  );
 
   const handleMarkAllRead = useCallback(() => {
     markAllRead({ subscriptionId });
@@ -124,16 +143,13 @@ function SingleSubscriptionContent() {
       onClose: closeEntry,
       isEntryOpen: !!openEntryId,
       enabled: keyboardShortcutsEnabled,
-      onToggleRead: toggleRead,
+      onToggleRead: handleToggleRead,
       onToggleStar: toggleStar,
       onRefresh: () => {
         utils.entries.list.invalidate();
       },
       onToggleUnreadOnly: toggleShowUnreadOnly,
     });
-
-  // Fetch subscription info to get title and validate access
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
   // Find the subscription by ID
   const subscription = subscriptionsQuery.data?.items.find((item) => item.id === subscriptionId);
@@ -276,7 +292,7 @@ function SingleSubscriptionContent() {
           filters={{ subscriptionId, unreadOnly: showUnreadOnly, sortOrder }}
           onEntryClick={handleEntryClick}
           selectedEntryId={selectedEntryId}
-          onToggleRead={toggleRead}
+          onToggleRead={handleToggleRead}
           onToggleStar={toggleStar}
           externalEntries={entryListQuery.entries}
           externalQueryState={externalQueryState}

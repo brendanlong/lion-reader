@@ -7,9 +7,10 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useSavedArticleMutations } from "@/lib/hooks";
+import { useRealtimeStore } from "@/lib/store/realtime";
 import {
   ArticleContentBody,
   ArticleContentSkeleton,
@@ -72,17 +73,48 @@ export function SavedArticleContent({
   // Fetch the saved article using unified entries endpoint
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: articleId });
 
+  // Get Zustand deltas
+  const readIds = useRealtimeStore((s) => s.readIds);
+  const unreadIds = useRealtimeStore((s) => s.unreadIds);
+  const starredIds = useRealtimeStore((s) => s.starredIds);
+  const unstarredIds = useRealtimeStore((s) => s.unstarredIds);
+
+  // Merge server data with Zustand deltas at render time
+  const article = useMemo(() => {
+    if (!data?.entry) return null;
+
+    let read = data.entry.read;
+    if (readIds.has(articleId)) read = true;
+    else if (unreadIds.has(articleId)) read = false;
+
+    let starred = data.entry.starred;
+    if (starredIds.has(articleId)) starred = true;
+    else if (unstarredIds.has(articleId)) starred = false;
+
+    return { ...data.entry, read, starred };
+  }, [data, readIds, unreadIds, starredIds, unstarredIds, articleId]);
+
   // Prefetch next and previous articles with active observers to keep them in cache
   // These queries run in parallel and don't block the main article fetch
   // We don't use their loading states, so they're invisible to the UI
   trpc.entries.get.useQuery({ id: nextArticleId! }, { enabled: !!nextArticleId });
   trpc.entries.get.useQuery({ id: previousArticleId! }, { enabled: !!previousArticleId });
 
-  // Use the consolidated mutations hook (no list filters since we're in single article view)
-  // normy automatically propagates changes to entries.get when server responds
-  const { markRead, star, unstar } = useSavedArticleMutations();
+  // Get subscriptions to look up tags for the entry's subscription
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+  const tagIds = useMemo(() => {
+    if (!article?.subscriptionId || !subscriptionsQuery.data) return undefined;
+    const subscription = subscriptionsQuery.data.items.find(
+      (sub) => sub.id === article.subscriptionId
+    );
+    return subscription?.tags.map((tag) => tag.id);
+  }, [article, subscriptionsQuery.data]);
 
-  const article = data?.entry;
+  // Use the consolidated mutations hook with subscriptionId from entry data (bypasses cache lookup)
+  const { markRead, star, unstar } = useSavedArticleMutations({
+    subscriptionId: article?.subscriptionId ?? undefined,
+    tagIds,
+  });
 
   // Mark article as read when component mounts and article is loaded
   // Uses lastMarkedReadId to track which article was marked, correctly handling navigation between articles

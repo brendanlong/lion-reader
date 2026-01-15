@@ -7,9 +7,10 @@
 
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useRealtimeStore } from "@/lib/store/realtime";
 
 /**
  * Filters for the current entry list.
@@ -56,6 +57,19 @@ export interface UseEntryMutationsOptions {
    * If not provided, mutations will work but without list optimistic updates.
    */
   listFilters?: EntryListFilters;
+
+  /**
+   * Optional subscription ID for the current entry.
+   * When provided, bypasses cache lookup for subscription tracking.
+   * Used in detail views where we already have the entry data.
+   */
+  subscriptionId?: string;
+
+  /**
+   * Optional tag IDs for the current entry's subscription.
+   * When provided along with subscriptionId, bypasses tag lookup.
+   */
+  tagIds?: string[];
 }
 
 /**
@@ -89,13 +103,22 @@ export interface MarkAllReadOptions {
 export interface UseEntryMutationsResult {
   /**
    * Mark one or more entries as read or unread.
+   * @param subscriptionId - Optional subscription ID for count tracking
+   * @param tagIds - Optional tag IDs for count tracking
    */
-  markRead: (ids: string[], read: boolean) => void;
+  markRead: (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => void;
 
   /**
    * Toggle the read status of an entry.
+   * @param subscriptionId - Optional subscription ID for count tracking
+   * @param tagIds - Optional tag IDs for count tracking
    */
-  toggleRead: (entryId: string, currentlyRead: boolean) => void;
+  toggleRead: (
+    entryId: string,
+    currentlyRead: boolean,
+    subscriptionId?: string,
+    tagIds?: string[]
+  ) => void;
 
   /**
    * Mark all entries as read with optional filters.
@@ -166,131 +189,59 @@ export interface UseEntryMutationsResult {
  */
 export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryMutationsResult {
   const utils = trpc.useUtils();
-  const listFilters = options?.listFilters;
+  const knownSubscriptionId = options?.subscriptionId;
+  const knownTagIds = options?.tagIds;
 
-  // Build the query key for the entries list
-  // This must match the filters used by the EntryList component
-  const queryFilters = useMemo(
-    () => ({
-      subscriptionId: listFilters?.subscriptionId,
-      tagId: listFilters?.tagId,
-      uncategorized: listFilters?.uncategorized,
-      unreadOnly: listFilters?.unreadOnly,
-      starredOnly: listFilters?.starredOnly,
-      sortOrder: listFilters?.sortOrder,
-    }),
-    [
-      listFilters?.subscriptionId,
-      listFilters?.tagId,
-      listFilters?.uncategorized,
-      listFilters?.unreadOnly,
-      listFilters?.starredOnly,
-      listFilters?.sortOrder,
-    ]
-  );
+  // Store subscription context for the current mutation in a ref
+  const mutationContextRef = useRef<{ subscriptionId?: string; tagIds?: string[] }>({});
 
-  // markRead mutation with optimistic updates
+  // markRead mutation with Zustand optimistic updates
   const markReadMutation = trpc.entries.markRead.useMutation({
     onMutate: async (variables) => {
-      // Cancel any in-flight queries
-      await utils.entries.list.cancel();
+      // Update Zustand for instant UI feedback
+      const markFn = variables.read
+        ? useRealtimeStore.getState().markRead
+        : useRealtimeStore.getState().markUnread;
 
-      // Snapshot current state for rollback
-      const previousEntriesData = listFilters
-        ? utils.entries.list.getInfiniteData(queryFilters)
-        : undefined;
+      // Use subscription context from the ref (set by wrapper function)
+      const subscriptionId = mutationContextRef.current.subscriptionId ?? knownSubscriptionId;
+      const tagIds = mutationContextRef.current.tagIds ?? knownTagIds;
 
-      if (listFilters) {
-        // Optimistically update entries (normy propagates to entries.get automatically)
-        utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) => ({
-              ...page,
-              items: page.items
-                .map((item) =>
-                  variables.ids.includes(item.id) ? { ...item, read: variables.read } : item
-                )
-                // Filter out entries that no longer match the unreadOnly filter
-                .filter((item) => {
-                  if (listFilters?.unreadOnly && item.read) {
-                    return false;
-                  }
-                  return true;
-                }),
-            })),
-          };
-        });
+      // Mark each entry with subscription and tag tracking
+      for (const entryId of variables.ids) {
+        if (subscriptionId) {
+          markFn(entryId, subscriptionId, tagIds);
+        } else {
+          // Fallback: just track read state without count updates
+          if (process.env.NODE_ENV === "development") {
+            console.warn("⚠️  markRead: no subscriptionId provided", {
+              entryId,
+              hint: "Pass subscriptionId when calling markRead/toggleRead for count updates",
+            });
+          }
+          if (variables.read) {
+            useRealtimeStore.setState((s) => ({
+              readIds: new Set([...s.readIds, entryId]),
+            }));
+          } else {
+            useRealtimeStore.setState((s) => ({
+              unreadIds: new Set([...s.unreadIds, entryId]),
+            }));
+          }
+        }
       }
-
-      return { previousEntriesData };
+      // No React Query invalidations needed - UI updates via Zustand deltas
     },
-    onSuccess: (data, variables) => {
-      // Update subscription unread counts using server data
-      // Uses absolute counts for robustness - self-correcting if counts drift
-      if (data.subscriptionUnreadCounts.length > 0) {
-        utils.subscriptions.list.setData(undefined, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            items: oldData.items.map((item) => {
-              const subCount = data.subscriptionUnreadCounts.find(
-                (s) => s.subscriptionId === item.id
-              );
-              if (subCount) {
-                return {
-                  ...item,
-                  unreadCount: subCount.unreadCount,
-                };
-              }
-              return item;
-            }),
-          };
-        });
-      }
-
-      // Update tag unread counts using server data
-      // Uses absolute counts for robustness - self-correcting if counts drift
-      if (data.tagUnreadCounts.length > 0) {
-        utils.tags.list.setData(undefined, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            items: oldData.items.map((tag) => {
-              const tagCount = data.tagUnreadCounts.find((t) => t.tagId === tag.id);
-              if (tagCount) {
-                return {
-                  ...tag,
-                  unreadCount: tagCount.unreadCount,
-                };
-              }
-              return tag;
-            }),
-          };
-        });
-      }
-
-      // Update starred count directly if starred entries were affected
-      // Only the unread count changes - total stays the same since starred status isn't changing
-      const starredEntries = data.entries.filter((e) => e.starred);
-      if (starredEntries.length > 0) {
-        utils.entries.count.setData({ starredOnly: true }, (old) => {
-          if (!old) return old;
-          // When marking read, decrease unread count; when marking unread, increase it
-          const delta = variables.read ? -starredEntries.length : starredEntries.length;
-          return {
-            total: old.total,
-            unread: Math.max(0, old.unread + delta),
-          };
-        });
-      }
+    onSuccess: () => {
+      // Invalidate starred count since marking read/unread affects starred unread count
+      // We don't track starred count deltas in Zustand, so just refetch
+      utils.entries.count.invalidate({ starredOnly: true });
     },
-    onError: (_error, _variables, context) => {
-      // Rollback entries to previous state (normy propagates rollback to entries.get automatically)
-      if (context?.previousEntriesData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousEntriesData);
-      }
+    onError: () => {
+      // On error, reset Zustand and refetch server data
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
+      utils.subscriptions.list.invalidate();
       toast.error("Failed to update read status");
     },
   });
@@ -312,125 +263,63 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
   });
 
-  // star mutation with optimistic updates
+  // star mutation with Zustand optimistic updates
   const starMutation = trpc.entries.star.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
-      if (!listFilters) {
-        return { previousData: undefined };
-      }
-
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData(queryFilters);
-
-      // Optimistically update list (normy propagates to entries.get automatically)
-      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              item.id === variables.id ? { ...item, starred: true } : item
-            ),
-          })),
-        };
-      });
-
-      return { previousData };
+      // Update Zustand for instant UI feedback
+      useRealtimeStore.getState().toggleStar(variables.id, false);
     },
-    onSuccess: (data) => {
-      // Update starred count directly - total increases by 1, unread increases if entry is unread
-      utils.entries.count.setData({ starredOnly: true }, (old) => {
-        if (!old) return old;
-        return {
-          total: old.total + 1,
-          unread: old.unread + (data.entry.read ? 0 : 1),
-        };
-      });
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback list (normy propagates rollback to entries.get automatically)
-      if (context?.previousData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
-      }
+    onError: () => {
+      // On error, reset Zustand and refetch
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
       toast.error("Failed to star entry");
     },
     onSettled: () => {
-      // Invalidate starred entries list so the Starred page shows the new item
+      // Invalidate starred entries list and count
       utils.entries.list.invalidate({ starredOnly: true });
+      utils.entries.count.invalidate({ starredOnly: true });
     },
   });
 
-  // unstar mutation with optimistic updates
+  // unstar mutation with Zustand optimistic updates
   const unstarMutation = trpc.entries.unstar.useMutation({
     onMutate: async (variables) => {
-      // Skip optimistic updates if no list filters provided
-      if (!listFilters) {
-        return { previousData: undefined };
-      }
-
-      await utils.entries.list.cancel();
-
-      const previousData = utils.entries.list.getInfiniteData(queryFilters);
-
-      // Optimistically update list (normy propagates to entries.get automatically)
-      utils.entries.list.setInfiniteData(queryFilters, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items
-              .map((item) => (item.id === variables.id ? { ...item, starred: false } : item))
-              // Filter out entries that no longer match the starredOnly filter
-              .filter((item) => {
-                if (listFilters?.starredOnly && !item.starred) {
-                  return false;
-                }
-                return true;
-              }),
-          })),
-        };
-      });
-
-      return { previousData };
+      // Update Zustand for instant UI feedback
+      useRealtimeStore.getState().toggleStar(variables.id, true);
     },
-    onSuccess: (data) => {
-      // Update starred count directly - total decreases by 1, unread decreases if entry is unread
-      utils.entries.count.setData({ starredOnly: true }, (old) => {
-        if (!old) return old;
-        return {
-          total: Math.max(0, old.total - 1),
-          unread: Math.max(0, old.unread - (data.entry.read ? 0 : 1)),
-        };
-      });
-    },
-    onError: (_error, _variables, context) => {
-      // Rollback list (normy propagates rollback to entries.get automatically)
-      if (context?.previousData && listFilters) {
-        utils.entries.list.setInfiniteData(queryFilters, context.previousData);
-      }
+    onError: () => {
+      // On error, reset Zustand and refetch
+      useRealtimeStore.getState().reset();
+      utils.entries.list.invalidate();
       toast.error("Failed to unstar entry");
     },
     onSettled: () => {
-      // Invalidate starred entries list so the Starred page reflects the removal
+      // Invalidate starred entries list and count
       utils.entries.list.invalidate({ starredOnly: true });
+      utils.entries.count.invalidate({ starredOnly: true });
     },
   });
 
   // Convenience wrapper functions
   const markRead = useCallback(
-    (ids: string[], read: boolean) => {
+    (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => {
+      // Set context for this mutation
+      mutationContextRef.current = { subscriptionId, tagIds };
       markReadMutation.mutate({ ids, read });
+      // Clear context after mutation starts
+      mutationContextRef.current = {};
     },
     [markReadMutation]
   );
 
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => {
+    (entryId: string, currentlyRead: boolean, subscriptionId?: string, tagIds?: string[]) => {
+      // Set context for this mutation
+      mutationContextRef.current = { subscriptionId, tagIds };
       markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
+      // Clear context after mutation starts
+      mutationContextRef.current = {};
     },
     [markReadMutation]
   );

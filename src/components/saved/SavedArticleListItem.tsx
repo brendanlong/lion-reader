@@ -26,6 +26,7 @@ interface SavedArticleListItemData {
   read: boolean;
   starred: boolean;
   fetchedAt: Date; // Used as savedAt
+  subscriptionId: string | null; // Subscription ID if from a feed
 }
 
 interface SavedArticleListItemProps {
@@ -37,8 +38,9 @@ interface SavedArticleListItemProps {
   selected?: boolean;
   /**
    * Callback when the read status indicator is clicked.
+   * subscriptionId is required (but can be null) to force explicit handling.
    */
-  onToggleRead?: (articleId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (articleId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
   /**
    * Callback when the star indicator is clicked.
    */
@@ -71,6 +73,7 @@ export const SavedArticleListItem = memo(function SavedArticleListItem({
       onClick={onClick}
       onToggleRead={onToggleRead}
       onToggleStar={onToggleStar}
+      subscriptionId={article.subscriptionId}
     />
   );
 });

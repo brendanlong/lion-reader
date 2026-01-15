@@ -7,9 +7,10 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations, useShowOriginalPreference, type EntryListFilters } from "@/lib/hooks";
+import { useRealtimeStore } from "@/lib/store/realtime";
 import {
   ArticleContentBody,
   ArticleContentSkeleton,
@@ -78,7 +79,26 @@ export function EntryContent({
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
 
-  const entry = data?.entry;
+  // Get Zustand deltas
+  const readIds = useRealtimeStore((s) => s.readIds);
+  const unreadIds = useRealtimeStore((s) => s.unreadIds);
+  const starredIds = useRealtimeStore((s) => s.starredIds);
+  const unstarredIds = useRealtimeStore((s) => s.unstarredIds);
+
+  // Merge server data with Zustand deltas at render time
+  const entry = useMemo(() => {
+    if (!data?.entry) return null;
+
+    let read = data.entry.read;
+    if (readIds.has(entryId)) read = true;
+    else if (unreadIds.has(entryId)) read = false;
+
+    let starred = data.entry.starred;
+    if (starredIds.has(entryId)) starred = true;
+    else if (unstarredIds.has(entryId)) starred = false;
+
+    return { ...data.entry, read, starred };
+  }, [data, readIds, unreadIds, starredIds, unstarredIds, entryId]);
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
@@ -89,9 +109,23 @@ export function EntryContent({
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
-  // Entry mutations with list filters for optimistic updates
+  // Get subscriptions to look up tags for the entry's subscription
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+  const tagIds = useMemo(() => {
+    if (!entry?.subscriptionId || !subscriptionsQuery.data) return undefined;
+    const subscription = subscriptionsQuery.data.items.find(
+      (sub) => sub.id === entry.subscriptionId
+    );
+    return subscription?.tags.map((tag) => tag.id);
+  }, [entry, subscriptionsQuery.data]);
+
+  // Entry mutations with subscriptionId from entry data (bypasses cache lookup)
   // When marking an entry as read, this ensures it gets filtered from the list immediately
-  const { markRead, star, unstar } = useEntryMutations({ listFilters });
+  const { markRead, star, unstar } = useEntryMutations({
+    listFilters,
+    subscriptionId: entry?.subscriptionId ?? undefined,
+    tagIds,
+  });
 
   // Mark entry as read once when component mounts and entry data loads
   // The ref prevents re-marking if user later toggles read status

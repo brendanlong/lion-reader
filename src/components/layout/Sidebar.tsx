@@ -15,6 +15,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
+import { useRealtimeStore } from "@/lib/store/realtime";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -40,6 +41,26 @@ export function Sidebar({ onClose }: SidebarProps) {
   // Use unified entries.count with starredOnly filter
   const starredCountQuery = trpc.entries.count.useQuery({ starredOnly: true });
   const utils = trpc.useUtils();
+
+  // Get count deltas from Zustand for real-time updates
+  const subscriptionCountDeltas = useRealtimeStore((s) => s.subscriptionCountDeltas);
+  const tagCountDeltas = useRealtimeStore((s) => s.tagCountDeltas);
+
+  // Apply deltas to subscription counts
+  const subscriptionsWithDeltas = useMemo(() => {
+    return subscriptionsQuery.data?.items.map((item) => ({
+      ...item,
+      unreadCount: Math.max(0, item.unreadCount + (subscriptionCountDeltas[item.id] || 0)),
+    }));
+  }, [subscriptionsQuery.data?.items, subscriptionCountDeltas]);
+
+  // Apply deltas to tag counts
+  const tagsWithDeltas = useMemo(() => {
+    return tagsQuery.data?.items.map((tag) => ({
+      ...tag,
+      unreadCount: Math.max(0, tag.unreadCount + (tagCountDeltas[tag.id] || 0)),
+    }));
+  }, [tagsQuery.data?.items, tagCountDeltas]);
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
     onMutate: async (variables) => {
@@ -83,21 +104,21 @@ export function Sidebar({ onClose }: SidebarProps) {
     },
   });
 
-  // Calculate total unread count (subscriptions + saved articles)
+  // Calculate total unread count (subscriptions + saved articles) using delta-merged data
   const totalUnreadCount =
-    (subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.unreadCount, 0) ?? 0) +
+    (subscriptionsWithDeltas?.reduce((sum, item) => sum + item.unreadCount, 0) ?? 0) +
     (savedCountQuery.data?.unread ?? 0);
 
   // Hook for managing tag expansion state
   const { isExpanded, toggleExpanded } = useExpandedTags();
 
-  // Group subscriptions by tag
+  // Group subscriptions by tag (using delta-merged data)
   const subscriptionsByTag = useMemo(() => {
-    type SubscriptionItem = NonNullable<typeof subscriptionsQuery.data>["items"][number];
+    type SubscriptionItem = NonNullable<typeof subscriptionsWithDeltas>[number];
     const byTag = new Map<string, SubscriptionItem[]>();
     const uncategorized: SubscriptionItem[] = [];
 
-    for (const item of subscriptionsQuery.data?.items ?? []) {
+    for (const item of subscriptionsWithDeltas ?? []) {
       if (item.tags.length === 0) {
         uncategorized.push(item);
       } else {
@@ -110,15 +131,14 @@ export function Sidebar({ onClose }: SidebarProps) {
     }
 
     return { byTag, uncategorized };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subscriptionsQuery.data]);
+  }, [subscriptionsWithDeltas]);
 
-  // Sort tags alphabetically and filter out empty ones (tags with no subscriptions)
+  // Sort tags alphabetically and filter out empty ones (using delta-merged data)
   const sortedTags = useMemo(() => {
-    return [...(tagsQuery.data?.items ?? [])]
+    return [...(tagsWithDeltas ?? [])]
       .filter((tag) => subscriptionsByTag.byTag.has(tag.id))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [tagsQuery.data?.items, subscriptionsByTag.byTag]);
+  }, [tagsWithDeltas, subscriptionsByTag.byTag]);
 
   // Compute uncategorized stats
   const uncategorizedUnreadCount = useMemo(() => {
