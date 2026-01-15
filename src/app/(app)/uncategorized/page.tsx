@@ -1,140 +1,37 @@
 /**
- * Uncategorized Entries Client Component
+ * Uncategorized Entries Page
  *
- * Client-side component for the Uncategorized Entries page.
- * Contains all the interactive logic for displaying and managing uncategorized entries.
+ * Displays entries from feeds with no tags.
  */
 
 "use client";
 
-import { Suspense, useState, useCallback, useMemo } from "react";
+import { Suspense, useState, useMemo } from "react";
 import Link from "next/link";
-import { trpc } from "@/lib/trpc/client";
-import {
-  EntryList,
-  EntryContent,
-  UnreadToggle,
-  SortToggle,
-  type ExternalQueryState,
-} from "@/components/entries";
+import { EntryList, EntryContent, UnreadToggle, SortToggle } from "@/components/entries";
 import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
-import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import {
-  useKeyboardShortcuts,
-  useUrlViewPreferences,
-  useEntryMutations,
-  useEntryUrlState,
-  useEntryListQuery,
-  useMergedEntries,
-} from "@/lib/hooks";
+import { useEntryPage } from "@/lib/hooks";
 
 function UncategorizedEntriesContent() {
-  const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
   const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
 
-  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
-    useUrlViewPreferences("uncategorized");
-  const utils = trpc.useUtils();
-
-  // Use entry list query that stays mounted while viewing entries
-  const entryListQuery = useEntryListQuery({
-    filters: { uncategorized: true, unreadOnly: showUnreadOnly, sortOrder },
-    openEntryId,
+  const page = useEntryPage({
+    viewId: "uncategorized",
+    filters: { uncategorized: true },
   });
 
-  // Merge entries with Zustand deltas for consistent state across components
-  const mergedEntries = useMergedEntries(entryListQuery.entries, {
-    unreadOnly: showUnreadOnly,
-  });
-
-  // Fetch subscriptions to compute feed count and unread count
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
-
-  // Entry mutations with optimistic updates
-  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
-    listFilters: { uncategorized: true, unreadOnly: showUnreadOnly, sortOrder },
-  });
-
-  // Wrapper to look up tags and pass entryType + subscriptionId + tagIds to mutations
-  const handleToggleRead = useCallback(
-    (
-      entryId: string,
-      currentlyRead: boolean,
-      entryType: "web" | "email" | "saved",
-      subscriptionId: string | null
-    ) => {
-      if (!subscriptionId) {
-        toggleRead(entryId, currentlyRead, entryType);
-        return;
-      }
-      // Look up tags for this subscription
-      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
-      const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(entryId, currentlyRead, entryType, subscriptionId, tagIds);
-    },
-    [toggleRead, subscriptionsQuery.data]
-  );
-
-  const handleMarkAllRead = useCallback(() => {
-    markAllRead({ uncategorized: true });
-    setShowMarkAllReadDialog(false);
-  }, [markAllRead]);
-
-  // Keyboard navigation and actions (also provides swipe navigation functions)
-  // Uses merged entries so keyboard shortcuts see the same state as the list
-  const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
-    useKeyboardShortcuts({
-      entries: mergedEntries,
-      onOpenEntry: setOpenEntryId,
-      onClose: closeEntry,
-      isEntryOpen: !!openEntryId,
-      enabled: keyboardShortcutsEnabled,
-      onToggleRead: handleToggleRead,
-      onToggleStar: toggleStar,
-      onRefresh: () => {
-        utils.entries.list.invalidate();
-      },
-      onToggleUnreadOnly: toggleShowUnreadOnly,
-    });
-
+  // Compute uncategorized feed stats
   const uncategorizedFeeds = useMemo(() => {
-    return subscriptionsQuery.data?.items.filter((item) => item.tags.length === 0) ?? [];
-  }, [subscriptionsQuery.data?.items]);
+    return page.subscriptions?.items.filter((item) => item.tags.length === 0) ?? [];
+  }, [page.subscriptions?.items]);
 
   const feedCount = uncategorizedFeeds.length;
   const unreadCount = useMemo(() => {
     return uncategorizedFeeds.reduce((sum, item) => sum + item.unreadCount, 0);
   }, [uncategorizedFeeds]);
 
-  const handleEntryClick = useCallback(
-    (entryId: string) => {
-      setSelectedEntryId(entryId);
-      setOpenEntryId(entryId);
-    },
-    [setSelectedEntryId, setOpenEntryId]
-  );
-
-  const handleBack = useCallback(() => {
-    closeEntry();
-  }, [closeEntry]);
-
-  // Build external query state for EntryList
-  const externalQueryState: ExternalQueryState = useMemo(
-    () => ({
-      isLoading: entryListQuery.isLoading,
-      isError: entryListQuery.isError,
-      errorMessage: entryListQuery.errorMessage,
-      isFetchingNextPage: entryListQuery.isFetchingNextPage,
-      hasNextPage: entryListQuery.hasNextPage,
-      fetchNextPage: entryListQuery.fetchNextPage,
-      refetch: entryListQuery.refetch,
-    }),
-    [entryListQuery]
-  );
-
   // Show loading state while checking subscriptions
-  if (subscriptionsQuery.isLoading) {
+  if (page.subscriptionsLoading) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
         <div className="mb-6 animate-pulse">
@@ -145,26 +42,13 @@ function UncategorizedEntriesContent() {
     );
   }
 
-  // Render both list and content, hiding the list when viewing an entry.
-  // This preserves scroll position and enables seamless j/k navigation.
   return (
     <>
-      {/* Entry content - only rendered when an entry is open */}
-      {openEntryId && (
-        <EntryContent
-          key={openEntryId}
-          entryId={openEntryId}
-          listFilters={{ uncategorized: true, unreadOnly: showUnreadOnly, sortOrder }}
-          onBack={handleBack}
-          onSwipeNext={goToNextEntry}
-          onSwipePrevious={goToPreviousEntry}
-          nextEntryId={entryListQuery.nextEntryId}
-          previousEntryId={entryListQuery.previousEntryId}
-        />
+      {page.entryContentProps && (
+        <EntryContent key={page.entryContentProps.entryId} {...page.entryContentProps} />
       )}
 
-      {/* Entry list - always mounted but hidden when viewing an entry */}
-      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
+      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${page.openEntryId ? "hidden" : ""}`}>
         <div className="mb-4 sm:mb-6">
           {/* Breadcrumb back link */}
           <Link
@@ -225,22 +109,19 @@ function UncategorizedEntriesContent() {
                   <span className="ml-1.5 hidden text-sm sm:inline">Mark All Read</span>
                 </button>
               )}
-              <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
-              <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+              <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />
+              <UnreadToggle
+                showUnreadOnly={page.showUnreadOnly}
+                onToggle={page.toggleShowUnreadOnly}
+              />
             </div>
           </div>
         </div>
 
         <EntryList
-          filters={{ uncategorized: true, unreadOnly: showUnreadOnly, sortOrder }}
-          onEntryClick={handleEntryClick}
-          selectedEntryId={selectedEntryId}
-          onToggleRead={handleToggleRead}
-          onToggleStar={toggleStar}
-          externalEntries={mergedEntries}
-          externalQueryState={externalQueryState}
+          {...page.entryListProps}
           emptyMessage={
-            showUnreadOnly
+            page.showUnreadOnly
               ? "No unread entries from uncategorized feeds. Toggle to show all items."
               : "No entries from uncategorized feeds yet."
           }
@@ -250,8 +131,11 @@ function UncategorizedEntriesContent() {
           isOpen={showMarkAllReadDialog}
           contextDescription="uncategorized feeds"
           unreadCount={unreadCount}
-          isLoading={isMarkAllReadPending}
-          onConfirm={handleMarkAllRead}
+          isLoading={page.isMarkAllReadPending}
+          onConfirm={() => {
+            page.handleMarkAllRead({ uncategorized: true });
+            setShowMarkAllReadDialog(false);
+          }}
           onCancel={() => setShowMarkAllReadDialog(false)}
         />
       </div>
