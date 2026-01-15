@@ -46,7 +46,6 @@ export function registerTools(): Tool[] {
       inputSchema: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
           subscriptionId: { type: "string", description: "Filter by subscription ID" },
           tagId: { type: "string", description: "Filter by tag ID" },
           uncategorized: { type: "boolean", description: "Show only uncategorized entries" },
@@ -65,7 +64,6 @@ export function registerTools(): Tool[] {
           limit: { type: "number", description: "Number of entries per page (max 100)" },
           cursor: { type: "string", description: "Pagination cursor from previous response" },
         },
-        required: ["userId"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
@@ -85,7 +83,6 @@ export function registerTools(): Tool[] {
       inputSchema: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
           query: { type: "string", description: "Search query" },
           searchIn: {
             type: "string",
@@ -99,7 +96,7 @@ export function registerTools(): Tool[] {
           limit: { type: "number", description: "Number of entries per page (max 100)" },
           cursor: { type: "string", description: "Pagination cursor from previous response" },
         },
-        required: ["userId", "query"],
+        required: ["query"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
@@ -119,10 +116,9 @@ export function registerTools(): Tool[] {
       inputSchema: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
           entryId: { type: "string", description: "Entry ID" },
         },
-        required: ["userId", "entryId"],
+        required: ["entryId"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
@@ -137,7 +133,6 @@ export function registerTools(): Tool[] {
       inputSchema: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
           entryIds: {
             type: "array",
             items: { type: "string" },
@@ -145,7 +140,7 @@ export function registerTools(): Tool[] {
           },
           read: { type: "boolean", description: "Mark as read (true) or unread (false)" },
         },
-        required: ["userId", "entryIds", "read"],
+        required: ["entryIds", "read"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
@@ -160,11 +155,10 @@ export function registerTools(): Tool[] {
       inputSchema: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
           entryId: { type: "string", description: "Entry ID" },
           starred: { type: "boolean", description: "Star (true) or unstar (false)" },
         },
-        required: ["userId", "entryId", "starred"],
+        required: ["entryId", "starred"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
@@ -178,7 +172,6 @@ export function registerTools(): Tool[] {
       inputSchema: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
           subscriptionId: { type: "string", description: "Filter by subscription ID" },
           tagId: { type: "string", description: "Filter by tag ID" },
           uncategorized: { type: "boolean", description: "Count only uncategorized entries" },
@@ -190,7 +183,6 @@ export function registerTools(): Tool[] {
           unreadOnly: { type: "boolean", description: "Count only unread entries" },
           starredOnly: { type: "boolean", description: "Count only starred entries" },
         },
-        required: ["userId"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
@@ -211,10 +203,7 @@ export function registerTools(): Tool[] {
       description: "List all active feed subscriptions with unread counts and tags.",
       inputSchema: {
         type: "object",
-        properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
-        },
-        required: ["userId"],
+        properties: {},
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
@@ -230,10 +219,9 @@ export function registerTools(): Tool[] {
       inputSchema: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
           query: { type: "string", description: "Search query" },
         },
-        required: ["userId", "query"],
+        required: ["query"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
@@ -252,10 +240,9 @@ export function registerTools(): Tool[] {
       inputSchema: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "User ID (required for authentication)" },
           subscriptionId: { type: "string", description: "Subscription ID" },
         },
-        required: ["userId", "subscriptionId"],
+        required: ["subscriptionId"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
