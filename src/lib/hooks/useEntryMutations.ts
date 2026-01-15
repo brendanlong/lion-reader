@@ -7,10 +7,10 @@
 
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { useRealtimeStore } from "@/lib/store/realtime";
+import { useRealtimeStore, type EntryType } from "@/lib/store/realtime";
 
 /**
  * Filters for the current entry list.
@@ -46,6 +46,11 @@ export interface EntryListFilters {
    * Sort order for entries.
    */
   sortOrder?: "newest" | "oldest";
+
+  /**
+   * Filter by entry type (web, email, saved).
+   */
+  type?: EntryType;
 }
 
 /**
@@ -57,6 +62,13 @@ export interface UseEntryMutationsOptions {
    * If not provided, mutations will work but without list optimistic updates.
    */
   listFilters?: EntryListFilters;
+
+  /**
+   * Entry type for the current entry/view context.
+   * When provided, bypasses per-entry type lookup.
+   * Used in detail views or saved article views where type is known.
+   */
+  entryType?: EntryType;
 
   /**
    * Optional subscription ID for the current entry.
@@ -103,19 +115,28 @@ export interface MarkAllReadOptions {
 export interface UseEntryMutationsResult {
   /**
    * Mark one or more entries as read or unread.
-   * @param subscriptionId - Optional subscription ID for count tracking
-   * @param tagIds - Optional tag IDs for count tracking
+   * @param entryType - Entry type for count delta routing
+   * @param subscriptionId - Optional subscription ID for count tracking (web/email only)
+   * @param tagIds - Optional tag IDs for count tracking (web/email only)
    */
-  markRead: (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => void;
+  markRead: (
+    ids: string[],
+    read: boolean,
+    entryType: EntryType,
+    subscriptionId?: string,
+    tagIds?: string[]
+  ) => void;
 
   /**
    * Toggle the read status of an entry.
-   * @param subscriptionId - Optional subscription ID for count tracking
-   * @param tagIds - Optional tag IDs for count tracking
+   * @param entryType - Entry type for count delta routing
+   * @param subscriptionId - Optional subscription ID for count tracking (web/email only)
+   * @param tagIds - Optional tag IDs for count tracking (web/email only)
    */
   toggleRead: (
     entryId: string,
     currentlyRead: boolean,
+    entryType: EntryType,
     subscriptionId?: string,
     tagIds?: string[]
   ) => void;
@@ -189,49 +210,13 @@ export interface UseEntryMutationsResult {
  */
 export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryMutationsResult {
   const utils = trpc.useUtils();
+  const knownEntryType = options?.entryType;
   const knownSubscriptionId = options?.subscriptionId;
   const knownTagIds = options?.tagIds;
 
-  // Store subscription context for the current mutation in a ref
-  const mutationContextRef = useRef<{ subscriptionId?: string; tagIds?: string[] }>({});
-
-  // markRead mutation with Zustand optimistic updates
+  // markRead mutation - Zustand updates happen synchronously in wrapper functions
+  // This avoids the fragile ref pattern that could race with async onMutate
   const markReadMutation = trpc.entries.markRead.useMutation({
-    onMutate: async (variables) => {
-      // Update Zustand for instant UI feedback
-      const markFn = variables.read
-        ? useRealtimeStore.getState().markRead
-        : useRealtimeStore.getState().markUnread;
-
-      // Use subscription context from the ref (set by wrapper function)
-      const subscriptionId = mutationContextRef.current.subscriptionId ?? knownSubscriptionId;
-      const tagIds = mutationContextRef.current.tagIds ?? knownTagIds;
-
-      // Mark each entry with subscription and tag tracking
-      for (const entryId of variables.ids) {
-        if (subscriptionId) {
-          markFn(entryId, subscriptionId, tagIds);
-        } else {
-          // Fallback: just track read state without count updates
-          if (process.env.NODE_ENV === "development") {
-            console.warn("⚠️  markRead: no subscriptionId provided", {
-              entryId,
-              hint: "Pass subscriptionId when calling markRead/toggleRead for count updates",
-            });
-          }
-          if (variables.read) {
-            useRealtimeStore.setState((s) => ({
-              readIds: new Set([...s.readIds, entryId]),
-            }));
-          } else {
-            useRealtimeStore.setState((s) => ({
-              unreadIds: new Set([...s.unreadIds, entryId]),
-            }));
-          }
-        }
-      }
-      // No React Query invalidations needed - UI updates via Zustand deltas
-    },
     onSuccess: () => {
       // Invalidate starred count since marking read/unread affects starred unread count
       // We don't track starred count deltas in Zustand, so just refetch
@@ -301,27 +286,70 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
   });
 
-  // Convenience wrapper functions
+  // Wrapper functions that perform Zustand updates synchronously before the mutation
+  // This is more reliable than onMutate which can have timing issues with refs
   const markRead = useCallback(
-    (ids: string[], read: boolean, subscriptionId?: string, tagIds?: string[]) => {
-      // Set context for this mutation
-      mutationContextRef.current = { subscriptionId, tagIds };
+    (
+      ids: string[],
+      read: boolean,
+      entryType: EntryType,
+      subscriptionId?: string,
+      tagIds?: string[]
+    ) => {
+      // Use provided values or fall back to hook options
+      const effectiveEntryType = entryType ?? knownEntryType;
+      const effectiveSubscriptionId = subscriptionId ?? knownSubscriptionId;
+      const effectiveTagIds = tagIds ?? knownTagIds;
+
+      // Update Zustand synchronously for instant UI feedback
+      if (effectiveEntryType) {
+        const markFn = read
+          ? useRealtimeStore.getState().markRead
+          : useRealtimeStore.getState().markUnread;
+        for (const id of ids) {
+          markFn(id, {
+            entryType: effectiveEntryType,
+            subscriptionId: effectiveSubscriptionId,
+            tagIds: effectiveTagIds,
+          });
+        }
+      }
+
+      // Trigger server mutation
       markReadMutation.mutate({ ids, read });
-      // Clear context after mutation starts
-      mutationContextRef.current = {};
     },
-    [markReadMutation]
+    [markReadMutation, knownEntryType, knownSubscriptionId, knownTagIds]
   );
 
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subscriptionId?: string, tagIds?: string[]) => {
-      // Set context for this mutation
-      mutationContextRef.current = { subscriptionId, tagIds };
+    (
+      entryId: string,
+      currentlyRead: boolean,
+      entryType: EntryType,
+      subscriptionId?: string,
+      tagIds?: string[]
+    ) => {
+      // Use provided values or fall back to hook options
+      const effectiveEntryType = entryType ?? knownEntryType;
+      const effectiveSubscriptionId = subscriptionId ?? knownSubscriptionId;
+      const effectiveTagIds = tagIds ?? knownTagIds;
+
+      // Update Zustand synchronously for instant UI feedback
+      if (effectiveEntryType) {
+        const markFn = currentlyRead
+          ? useRealtimeStore.getState().markUnread
+          : useRealtimeStore.getState().markRead;
+        markFn(entryId, {
+          entryType: effectiveEntryType,
+          subscriptionId: effectiveSubscriptionId,
+          tagIds: effectiveTagIds,
+        });
+      }
+
+      // Trigger server mutation
       markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
-      // Clear context after mutation starts
-      mutationContextRef.current = {};
     },
-    [markReadMutation]
+    [markReadMutation, knownEntryType, knownSubscriptionId, knownTagIds]
   );
 
   const markAllRead = useCallback(

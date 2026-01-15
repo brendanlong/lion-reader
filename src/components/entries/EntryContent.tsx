@@ -2,21 +2,25 @@
  * EntryContent Component
  *
  * Displays the full content of a single entry.
- * Fetches entry data and delegates rendering to the shared ArticleContentBody.
+ * Fetches entry data and delegates rendering to the shared EntryContentBody.
  */
 
 "use client";
 
 import { useEffect, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { useEntryMutations, useShowOriginalPreference, type EntryListFilters } from "@/lib/hooks";
-import { useRealtimeStore } from "@/lib/store/realtime";
 import {
-  ArticleContentBody,
-  ArticleContentSkeleton,
-  ArticleContentError,
+  useEntryMutations,
+  useShowOriginalPreference,
+  useEntryWithDeltas,
+  type EntryListFilters,
+} from "@/lib/hooks";
+import {
+  EntryContentBody,
+  EntryContentSkeleton,
+  EntryContentError,
   getDomain,
-} from "@/components/articles/ArticleContentBody";
+} from "./EntryContentBody";
 
 /**
  * Props for the EntryContent component.
@@ -79,26 +83,8 @@ export function EntryContent({
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
 
-  // Get Zustand deltas
-  const readIds = useRealtimeStore((s) => s.readIds);
-  const unreadIds = useRealtimeStore((s) => s.unreadIds);
-  const starredIds = useRealtimeStore((s) => s.starredIds);
-  const unstarredIds = useRealtimeStore((s) => s.unstarredIds);
-
   // Merge server data with Zustand deltas at render time
-  const entry = useMemo(() => {
-    if (!data?.entry) return null;
-
-    let read = data.entry.read;
-    if (readIds.has(entryId)) read = true;
-    else if (unreadIds.has(entryId)) read = false;
-
-    let starred = data.entry.starred;
-    if (starredIds.has(entryId)) starred = true;
-    else if (unstarredIds.has(entryId)) starred = false;
-
-    return { ...data.entry, read, starred };
-  }, [data, readIds, unreadIds, starredIds, unstarredIds, entryId]);
+  const entry = useEntryWithDeltas(data?.entry ?? null);
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
@@ -119,10 +105,11 @@ export function EntryContent({
     return subscription?.tags.map((tag) => tag.id);
   }, [entry, subscriptionsQuery.data]);
 
-  // Entry mutations with subscriptionId from entry data (bypasses cache lookup)
+  // Entry mutations with subscriptionId and entryType from entry data (bypasses cache lookup)
   // When marking an entry as read, this ensures it gets filtered from the list immediately
   const { markRead, star, unstar } = useEntryMutations({
     listFilters,
+    entryType: entry?.type,
     subscriptionId: entry?.subscriptionId ?? undefined,
     tagIds,
   });
@@ -134,7 +121,7 @@ export function EntryContent({
     if (hasAutoMarkedRead.current || !entry) return;
     hasAutoMarkedRead.current = true;
     if (!entry.read) {
-      markRead([entryId], true);
+      markRead([entryId], true, entry.type);
     }
   }, [entry, entryId, markRead]);
 
@@ -152,25 +139,25 @@ export function EntryContent({
   // Handle read toggle - use local mutation for consistent loading state
   const handleReadToggle = () => {
     if (!entry) return;
-    markRead([entryId], !entry.read);
+    markRead([entryId], !entry.read, entry.type);
   };
 
   // Determine content based on loading/error/success state
   let content: React.ReactNode;
   if (isLoading) {
-    content = <ArticleContentSkeleton />;
+    content = <EntryContentSkeleton />;
   } else if (isError) {
     content = (
-      <ArticleContentError
+      <EntryContentError
         message={error?.message ?? "Failed to load entry"}
         onRetry={() => refetch()}
       />
     );
   } else if (!entry) {
-    content = <ArticleContentError message="Entry not found" onRetry={() => refetch()} />;
+    content = <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
   } else {
     content = (
-      <ArticleContentBody
+      <EntryContentBody
         articleId={entryId}
         title={entry.title ?? "Untitled"}
         source={entry.feedTitle ?? "Unknown Feed"}
