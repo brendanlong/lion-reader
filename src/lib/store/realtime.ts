@@ -14,8 +14,10 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
-// Enable debug logging in development
-const DEBUG = process.env.NODE_ENV === "development";
+/**
+ * Entry type for count delta routing
+ */
+export type EntryType = "web" | "email" | "saved";
 
 /**
  * Entry added via SSE that hasn't been fetched from server yet
@@ -24,6 +26,18 @@ interface PendingEntry {
   id: string;
   subscriptionId: string;
   timestamp: string;
+}
+
+/**
+ * Options for markRead/markUnread operations
+ */
+export interface MarkReadOptions {
+  /** Entry type determines which count to update */
+  entryType: EntryType;
+  /** Required for web/email entries to update subscription counts */
+  subscriptionId?: string;
+  /** Optional tag IDs for updating tag counts (web/email only) */
+  tagIds?: string[];
 }
 
 /**
@@ -42,15 +56,19 @@ interface RealtimeStore {
   // Count deltas (positive or negative adjustments)
   subscriptionCountDeltas: Record<string, number>;
   tagCountDeltas: Record<string, number>;
+  savedCountDelta: number; // Delta for saved articles
 
   // Pending data from SSE
   pendingEntries: PendingEntry[];
   hasNewEntries: boolean;
 
   // Actions - all idempotent
-  markRead: (entryId: string, subscriptionId: string, tagIds?: string[]) => void;
-  markUnread: (entryId: string, subscriptionId: string, tagIds?: string[]) => void;
-  toggleStar: (entryId: string, currentlyStarred: boolean, subscriptionId?: string) => void;
+  // entryType determines which counts to update:
+  // - "saved": updates savedCountDelta
+  // - "web"/"email": updates subscriptionCountDeltas and tagCountDeltas
+  markRead: (entryId: string, options: MarkReadOptions) => void;
+  markUnread: (entryId: string, options: MarkReadOptions) => void;
+  toggleStar: (entryId: string, currentlyStarred: boolean) => void;
   onNewEntry: (entryId: string, subscriptionId: string, timestamp: string) => void;
   onEntryUpdated: (entryId: string) => void;
   onSubscriptionCreated: (subscriptionId: string, unreadCount: number, tagIds: string[]) => void;
@@ -72,6 +90,7 @@ const initialState = {
   newEntryIds: new Set<string>(),
   subscriptionCountDeltas: {},
   tagCountDeltas: {},
+  savedCountDelta: 0,
   pendingEntries: [],
   hasNewEntries: false,
 };
@@ -86,30 +105,58 @@ export const useRealtimeStore = create<RealtimeStore>()(
 
       /**
        * Mark an entry as read (idempotent).
-       * Decrements the unread count for the subscription and all its tags.
+       * Updates counts based on entryType:
+       * - "saved": updates savedCountDelta
+       * - "web"/"email": updates subscriptionCountDeltas and tagCountDeltas
        */
-      markRead: (entryId: string, subscriptionId: string, tagIds?: string[]) =>
+      markRead: (entryId: string, options: MarkReadOptions) =>
         set((state) => {
+          const { entryType, subscriptionId, tagIds } = options;
+
           // Idempotent: skip if already marked read
           if (state.readIds.has(entryId)) {
-            if (DEBUG) console.log("⏭️  markRead: already read", { entryId });
             return state;
           }
 
-          if (DEBUG) {
-            console.log("📖 markRead:", { entryId, subscriptionId, tagIds });
+          // Validate consistency
+          if (entryType === "saved" && subscriptionId) {
+            console.warn("⚠️  markRead: saved article should not have subscriptionId", {
+              entryId,
+              subscriptionId,
+            });
+          }
+          if ((entryType === "web" || entryType === "email") && !subscriptionId) {
+            console.warn(
+              "⚠️  markRead: web/email entry missing subscriptionId, counts won't update",
+              { entryId, entryType }
+            );
           }
 
-          // Update tag count deltas (decrement for all tags)
-          const newTagCountDeltas = tagIds
-            ? tagIds.reduce(
-                (acc, tagId) => ({
-                  ...acc,
-                  [tagId]: (state.tagCountDeltas[tagId] || 0) - 1,
-                }),
-                { ...state.tagCountDeltas }
-              )
-            : state.tagCountDeltas;
+          // Helper to compute count delta updates
+          const getCountUpdates = (delta: number) => {
+            if (entryType === "saved") {
+              return { savedCountDelta: state.savedCountDelta + delta };
+            }
+            if (subscriptionId) {
+              const newTagCountDeltas = tagIds
+                ? tagIds.reduce(
+                    (acc, tagId) => ({
+                      ...acc,
+                      [tagId]: (state.tagCountDeltas[tagId] || 0) + delta,
+                    }),
+                    { ...state.tagCountDeltas }
+                  )
+                : state.tagCountDeltas;
+              return {
+                subscriptionCountDeltas: {
+                  ...state.subscriptionCountDeltas,
+                  [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + delta,
+                },
+                tagCountDeltas: newTagCountDeltas,
+              };
+            }
+            return {};
+          };
 
           // If we previously marked it unread, undo that instead
           if (state.unreadIds.has(entryId)) {
@@ -117,52 +164,73 @@ export const useRealtimeStore = create<RealtimeStore>()(
             newUnreadIds.delete(entryId);
             return {
               unreadIds: newUnreadIds,
-              subscriptionCountDeltas: {
-                ...state.subscriptionCountDeltas,
-                // Undo the previous +1 by subtracting -1 (not adding +1!)
-                [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) - 1,
-              },
-              // Tag deltas calculated at top already subtract -1, which correctly undoes the +1 from markUnread
-              tagCountDeltas: newTagCountDeltas,
+              ...getCountUpdates(-1),
             };
           }
 
+          // Normal case: marking as read for the first time
+          const newReadIds = new Set(state.readIds);
+          newReadIds.add(entryId);
           return {
-            readIds: new Set([...state.readIds, entryId]),
-            subscriptionCountDeltas: {
-              ...state.subscriptionCountDeltas,
-              [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) - 1,
-            },
-            tagCountDeltas: newTagCountDeltas,
+            readIds: newReadIds,
+            ...getCountUpdates(-1),
           };
         }),
 
       /**
        * Mark an entry as unread (idempotent).
-       * Increments the unread count for the subscription and all its tags.
+       * Updates counts based on entryType:
+       * - "saved": updates savedCountDelta
+       * - "web"/"email": updates subscriptionCountDeltas and tagCountDeltas
        */
-      markUnread: (entryId: string, subscriptionId: string, tagIds?: string[]) =>
+      markUnread: (entryId: string, options: MarkReadOptions) =>
         set((state) => {
+          const { entryType, subscriptionId, tagIds } = options;
+
           // Idempotent: skip if already marked unread
           if (state.unreadIds.has(entryId)) {
-            if (DEBUG) console.log("⏭️  markUnread: already unread", { entryId });
             return state;
           }
 
-          if (DEBUG) {
-            console.log("📕 markUnread:", { entryId, subscriptionId, tagIds });
+          // Validate consistency
+          if (entryType === "saved" && subscriptionId) {
+            console.warn("⚠️  markUnread: saved article should not have subscriptionId", {
+              entryId,
+              subscriptionId,
+            });
+          }
+          if ((entryType === "web" || entryType === "email") && !subscriptionId) {
+            console.warn(
+              "⚠️  markUnread: web/email entry missing subscriptionId, counts won't update",
+              { entryId, entryType }
+            );
           }
 
-          // Update tag count deltas (increment for all tags)
-          const newTagCountDeltas = tagIds
-            ? tagIds.reduce(
-                (acc, tagId) => ({
-                  ...acc,
-                  [tagId]: (state.tagCountDeltas[tagId] || 0) + 1,
-                }),
-                { ...state.tagCountDeltas }
-              )
-            : state.tagCountDeltas;
+          // Helper to compute count delta updates
+          const getCountUpdates = (delta: number) => {
+            if (entryType === "saved") {
+              return { savedCountDelta: state.savedCountDelta + delta };
+            }
+            if (subscriptionId) {
+              const newTagCountDeltas = tagIds
+                ? tagIds.reduce(
+                    (acc, tagId) => ({
+                      ...acc,
+                      [tagId]: (state.tagCountDeltas[tagId] || 0) + delta,
+                    }),
+                    { ...state.tagCountDeltas }
+                  )
+                : state.tagCountDeltas;
+              return {
+                subscriptionCountDeltas: {
+                  ...state.subscriptionCountDeltas,
+                  [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + delta,
+                },
+                tagCountDeltas: newTagCountDeltas,
+              };
+            }
+            return {};
+          };
 
           // If we previously marked it read, undo that instead
           if (state.readIds.has(entryId)) {
@@ -170,21 +238,16 @@ export const useRealtimeStore = create<RealtimeStore>()(
             newReadIds.delete(entryId);
             return {
               readIds: newReadIds,
-              subscriptionCountDeltas: {
-                ...state.subscriptionCountDeltas,
-                [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + 1,
-              },
-              tagCountDeltas: newTagCountDeltas,
+              ...getCountUpdates(+1),
             };
           }
 
+          // Normal case: marking as unread for the first time
+          const newUnreadIds = new Set(state.unreadIds);
+          newUnreadIds.add(entryId);
           return {
-            unreadIds: new Set([...state.unreadIds, entryId]),
-            subscriptionCountDeltas: {
-              ...state.subscriptionCountDeltas,
-              [subscriptionId]: (state.subscriptionCountDeltas[subscriptionId] || 0) + 1,
-            },
-            tagCountDeltas: newTagCountDeltas,
+            unreadIds: newUnreadIds,
+            ...getCountUpdates(+1),
           };
         }),
 
@@ -193,14 +256,9 @@ export const useRealtimeStore = create<RealtimeStore>()(
        */
       toggleStar: (entryId: string, currentlyStarred: boolean) =>
         set((state) => {
-          if (DEBUG) {
-            console.log(currentlyStarred ? "☆ unstar:" : "⭐ star:", { entryId });
-          }
-
           if (currentlyStarred) {
             // Unstarring
             if (state.unstarredIds.has(entryId)) {
-              if (DEBUG) console.log("⏭️  toggleStar: already unstarred", { entryId });
               return state; // Already unstarred
             }
 
@@ -208,7 +266,6 @@ export const useRealtimeStore = create<RealtimeStore>()(
             if (state.starredIds.has(entryId)) {
               const newStarredIds = new Set(state.starredIds);
               newStarredIds.delete(entryId);
-              if (DEBUG) console.log("↩️  toggleStar: undoing previous star", { entryId });
               return { starredIds: newStarredIds };
             }
 
@@ -218,7 +275,6 @@ export const useRealtimeStore = create<RealtimeStore>()(
           } else {
             // Starring
             if (state.starredIds.has(entryId)) {
-              if (DEBUG) console.log("⏭️  toggleStar: already starred", { entryId });
               return state; // Already starred
             }
 
@@ -226,7 +282,6 @@ export const useRealtimeStore = create<RealtimeStore>()(
             if (state.unstarredIds.has(entryId)) {
               const newUnstarredIds = new Set(state.unstarredIds);
               newUnstarredIds.delete(entryId);
-              if (DEBUG) console.log("↩️  toggleStar: undoing previous unstar", { entryId });
               return { unstarredIds: newUnstarredIds };
             }
 

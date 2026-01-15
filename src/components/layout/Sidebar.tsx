@@ -45,6 +45,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   // Get count deltas from Zustand for real-time updates
   const subscriptionCountDeltas = useRealtimeStore((s) => s.subscriptionCountDeltas);
   const tagCountDeltas = useRealtimeStore((s) => s.tagCountDeltas);
+  const savedCountDelta = useRealtimeStore((s) => s.savedCountDelta);
 
   // Apply deltas to subscription counts
   const subscriptionsWithDeltas = useMemo(() => {
@@ -104,10 +105,13 @@ export function Sidebar({ onClose }: SidebarProps) {
     },
   });
 
+  // Calculate saved unread count with delta applied
+  const savedUnreadCount = Math.max(0, (savedCountQuery.data?.unread ?? 0) + savedCountDelta);
+
   // Calculate total unread count (subscriptions + saved articles) using delta-merged data
   const totalUnreadCount =
     (subscriptionsWithDeltas?.reduce((sum, item) => sum + item.unreadCount, 0) ?? 0) +
-    (savedCountQuery.data?.unread ?? 0);
+    savedUnreadCount;
 
   // Hook for managing tag expansion state
   const { isExpanded, toggleExpanded } = useExpandedTags();
@@ -217,9 +221,9 @@ export function Sidebar({ onClose }: SidebarProps) {
             }`}
           >
             <span>Saved</span>
-            {savedCountQuery.data && savedCountQuery.data.unread > 0 && (
+            {savedUnreadCount > 0 && (
               <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
-                ({savedCountQuery.data.unread})
+                ({savedUnreadCount})
               </span>
             )}
           </Link>

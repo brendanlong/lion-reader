@@ -1,153 +1,46 @@
 /**
- * All Entries Client Component
+ * All Entries Page
  *
- * Client-side component for the All Entries page.
- * Contains all the interactive logic for displaying and managing entries.
+ * Displays all entries from all subscriptions.
  */
 
 "use client";
 
-import { Suspense, useCallback, useMemo, useState, useSyncExternalStore } from "react";
-import {
-  EntryList,
-  EntryContent,
-  UnreadToggle,
-  SortToggle,
-  type ExternalQueryState,
-} from "@/components/entries";
+import { Suspense, useState, useSyncExternalStore } from "react";
+import { EntryList, EntryContent, UnreadToggle, SortToggle } from "@/components/entries";
 import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
-import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import {
-  useKeyboardShortcuts,
-  useUrlViewPreferences,
-  useEntryMutations,
-  useEntryUrlState,
-  useEntryListQuery,
-} from "@/lib/hooks";
-import { trpc } from "@/lib/trpc/client";
+import { useEntryPage } from "@/lib/hooks";
 
 function AllEntriesContent() {
-  const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
   const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
 
-  // Returns true on client, false on server - for avoiding hydration mismatches with conditional rendering
+  // Returns true on client, false on server - for avoiding hydration mismatches
   const isClient = useSyncExternalStore(
-    () => () => {}, // No-op subscribe since value never changes
-    () => true, // Client snapshot
-    () => false // Server snapshot
+    () => () => {},
+    () => true,
+    () => false
   );
 
-  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
-    useUrlViewPreferences("all");
-  const utils = trpc.useUtils();
-
-  // Use entry list query that stays mounted while viewing entries
-  // This enables seamless swiping beyond initially loaded entries
-  const entryListQuery = useEntryListQuery({
-    filters: { unreadOnly: showUnreadOnly, sortOrder },
-    openEntryId,
-  });
+  const page = useEntryPage({ viewId: "all" });
 
   // Get total unread count from subscriptions
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
   const totalUnreadCount =
-    subscriptionsQuery.data?.items.reduce((sum, item) => sum + item.unreadCount, 0) ?? 0;
+    page.subscriptions?.items.reduce((sum, item) => sum + item.unreadCount, 0) ?? 0;
 
-  // Entry mutations with optimistic updates
-  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
-    listFilters: { unreadOnly: showUnreadOnly, sortOrder },
-  });
-
-  // Wrapper to look up tags and pass subscriptionId + tagIds to mutations
-  const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => {
-      if (!subscriptionId) {
-        // No subscription - likely a saved article or starred entry from deleted subscription
-        toggleRead(entryId, currentlyRead);
-        return;
-      }
-      // Look up tags for this subscription
-      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
-      const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
-    },
-    [toggleRead, subscriptionsQuery.data]
-  );
-
-  const handleMarkAllRead = useCallback(() => {
-    markAllRead({});
-    setShowMarkAllReadDialog(false);
-  }, [markAllRead]);
-
-  // Keyboard navigation and actions (also provides swipe navigation functions)
-  const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
-    useKeyboardShortcuts({
-      entries: entryListQuery.entries,
-      onOpenEntry: setOpenEntryId,
-      onClose: closeEntry,
-      isEntryOpen: !!openEntryId,
-      enabled: keyboardShortcutsEnabled,
-      onToggleRead: handleToggleRead,
-      onToggleStar: toggleStar,
-      onRefresh: () => {
-        utils.entries.list.invalidate();
-      },
-      onToggleUnreadOnly: toggleShowUnreadOnly,
-    });
-
-  const handleEntryClick = useCallback(
-    (entryId: string) => {
-      setSelectedEntryId(entryId);
-      setOpenEntryId(entryId);
-    },
-    [setSelectedEntryId, setOpenEntryId]
-  );
-
-  const handleBack = useCallback(() => {
-    closeEntry();
-  }, [closeEntry]);
-
-  // Build external query state for EntryList
-  const externalQueryState: ExternalQueryState = useMemo(
-    () => ({
-      isLoading: entryListQuery.isLoading,
-      isError: entryListQuery.isError,
-      errorMessage: entryListQuery.errorMessage,
-      isFetchingNextPage: entryListQuery.isFetchingNextPage,
-      hasNextPage: entryListQuery.hasNextPage,
-      fetchNextPage: entryListQuery.fetchNextPage,
-      refetch: entryListQuery.refetch,
-    }),
-    [entryListQuery]
-  );
-
-  // Render both list and content, hiding the list when viewing an entry.
-  // This preserves scroll position and enables seamless j/k navigation.
   return (
     <>
       {/* Entry content - only rendered when an entry is open */}
-      {openEntryId && (
-        <EntryContent
-          key={openEntryId}
-          entryId={openEntryId}
-          listFilters={{ unreadOnly: showUnreadOnly, sortOrder }}
-          onBack={handleBack}
-          onSwipeNext={goToNextEntry}
-          onSwipePrevious={goToPreviousEntry}
-          nextEntryId={entryListQuery.nextEntryId}
-          previousEntryId={entryListQuery.previousEntryId}
-        />
+      {page.entryContentProps && (
+        <EntryContent key={page.entryContentProps.entryId} {...page.entryContentProps} />
       )}
 
       {/* Entry list - always mounted but hidden when viewing an entry */}
-      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
+      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${page.openEntryId ? "hidden" : ""}`}>
         <div className="mb-4 flex items-center justify-between sm:mb-6">
           <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">
             All Items
           </h1>
           <div className="flex gap-2">
-            {/* Only render on client to avoid SSR/client hydration mismatch */}
             {isClient && totalUnreadCount > 0 && (
               <button
                 type="button"
@@ -173,21 +66,18 @@ function AllEntriesContent() {
                 <span className="ml-1.5 hidden text-sm sm:inline">Mark All Read</span>
               </button>
             )}
-            <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
-            <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+            <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />
+            <UnreadToggle
+              showUnreadOnly={page.showUnreadOnly}
+              onToggle={page.toggleShowUnreadOnly}
+            />
           </div>
         </div>
 
         <EntryList
-          filters={{ unreadOnly: showUnreadOnly, sortOrder }}
-          onEntryClick={handleEntryClick}
-          selectedEntryId={selectedEntryId}
-          onToggleRead={handleToggleRead}
-          onToggleStar={toggleStar}
-          externalEntries={entryListQuery.entries}
-          externalQueryState={externalQueryState}
+          {...page.entryListProps}
           emptyMessage={
-            showUnreadOnly
+            page.showUnreadOnly
               ? "No unread entries. Toggle to show all items."
               : "No entries yet. Subscribe to some feeds to see entries here."
           }
@@ -197,8 +87,11 @@ function AllEntriesContent() {
           isOpen={showMarkAllReadDialog}
           contextDescription="all feeds"
           unreadCount={totalUnreadCount}
-          isLoading={isMarkAllReadPending}
-          onConfirm={handleMarkAllRead}
+          isLoading={page.isMarkAllReadPending}
+          onConfirm={() => {
+            page.handleMarkAllRead({});
+            setShowMarkAllReadDialog(false);
+          }}
           onCancel={() => setShowMarkAllReadDialog(false)}
         />
       </div>

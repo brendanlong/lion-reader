@@ -9,16 +9,15 @@
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { type EntryListData } from "@/lib/hooks";
+import { type EntryListData, useMergedEntries, type EntryType } from "@/lib/hooks";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import {
-  ArticleListEmpty,
-  ArticleListError,
-  ArticleListLoadingMore,
-  ArticleListEnd,
-} from "@/components/articles/ArticleListStates";
-import { useRealtimeStore } from "@/lib/store/realtime";
+  EntryListEmpty,
+  EntryListError,
+  EntryListLoadingMore,
+  EntryListEnd,
+} from "./EntryListStates";
 
 /**
  * Filter options for the entry list.
@@ -53,6 +52,11 @@ interface EntryListFilters {
    * Sort order: "newest" (default) or "oldest".
    */
   sortOrder?: "newest" | "oldest";
+
+  /**
+   * Filter by entry type (web, email, saved).
+   */
+  type?: EntryType;
 }
 
 /**
@@ -144,9 +148,14 @@ interface EntryListProps {
 
   /**
    * Callback when the read status indicator is clicked.
-   * subscriptionId is required (but can be null) to force explicit handling.
+   * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
+  onToggleRead?: (
+    entryId: string,
+    currentlyRead: boolean,
+    entryType: EntryType,
+    subscriptionId: string | null
+  ) => void;
 
   /**
    * Callback when the star indicator is clicked.
@@ -192,6 +201,7 @@ export function EntryList({
       unreadOnly: filters.unreadOnly,
       starredOnly: filters.starredOnly,
       sortOrder: filters.sortOrder,
+      type: filters.type,
       limit: pageSize,
     },
     {
@@ -212,45 +222,11 @@ export function EntryList({
   // Use external entries if provided, otherwise use internal query results
   const serverEntries = useExternalData ? externalEntries : internalEntries;
 
-  // Get Zustand deltas for real-time state updates
-  const readIds = useRealtimeStore((s) => s.readIds);
-  const unreadIds = useRealtimeStore((s) => s.unreadIds);
-  const starredIds = useRealtimeStore((s) => s.starredIds);
-  const unstarredIds = useRealtimeStore((s) => s.unstarredIds);
-
   // Merge server data with Zustand deltas at render time, then filter by view criteria
-  const allEntries = useMemo(() => {
-    return serverEntries
-      .map((entry) => {
-        // Apply read state deltas
-        let read = entry.read;
-        if (readIds.has(entry.id)) {
-          read = true;
-        } else if (unreadIds.has(entry.id)) {
-          read = false;
-        }
-
-        // Apply starred state deltas
-        let starred = entry.starred;
-        if (starredIds.has(entry.id)) {
-          starred = true;
-        } else if (unstarredIds.has(entry.id)) {
-          starred = false;
-        }
-
-        return { ...entry, read, starred };
-      })
-      .filter((entry) => {
-        // Filter out entries that no longer match the view criteria after applying deltas
-        if (filters?.unreadOnly && entry.read) {
-          return false;
-        }
-        if (filters?.starredOnly && !entry.starred) {
-          return false;
-        }
-        return true;
-      });
-  }, [serverEntries, readIds, unreadIds, starredIds, unstarredIds, filters]);
+  const allEntries = useMergedEntries(serverEntries, {
+    unreadOnly: filters?.unreadOnly,
+    starredOnly: filters?.starredOnly,
+  });
 
   // Query state - use external if provided, otherwise use internal
   const isLoading = useExternalData ? externalQueryState.isLoading : internalQuery.isLoading;
@@ -322,7 +298,7 @@ export function EntryList({
   // Error state
   if (isError) {
     return (
-      <ArticleListError
+      <EntryListError
         message={errorMessage ?? "Failed to load entries"}
         onRetry={() => refetch()}
       />
@@ -331,7 +307,7 @@ export function EntryList({
 
   // Empty state
   if (allEntries.length === 0) {
-    return <ArticleListEmpty message={emptyMessage} />;
+    return <EntryListEmpty message={emptyMessage} />;
   }
 
   return (
@@ -351,10 +327,10 @@ export function EntryList({
       <div ref={loadMoreRef} className="h-1" />
 
       {/* Loading indicator */}
-      {isFetchingNextPage && <ArticleListLoadingMore label="Loading more entries..." />}
+      {isFetchingNextPage && <EntryListLoadingMore label="Loading more entries..." />}
 
       {/* End of list indicator */}
-      {!hasNextPage && allEntries.length > 0 && <ArticleListEnd message="No more entries" />}
+      {!hasNextPage && allEntries.length > 0 && <EntryListEnd message="No more entries" />}
     </div>
   );
 }
