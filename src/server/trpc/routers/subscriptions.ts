@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, inArray } from "drizzle-orm";
+import { eq, and, isNull, sql, inArray, desc } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -698,6 +698,50 @@ export const subscriptionsRouter = createTRPCRouter({
       const results = await buildSubscriptionBaseQuery(ctx.db, userId)
         .where(eq(userFeeds.userId, userId))
         .orderBy(userFeeds.title);
+
+      return { items: results.map(formatSubscriptionRow) };
+    }),
+
+  /**
+   * Search subscriptions by title using PostgreSQL full-text search.
+   *
+   * Searches the feed title (custom or original) and returns matching subscriptions
+   * ranked by relevance.
+   *
+   * @param query - The search query text
+   * @returns List of matching subscriptions, ranked by relevance
+   */
+  search: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/subscriptions/search",
+        tags: ["Subscriptions"],
+        summary: "Search subscriptions",
+      },
+    })
+    .input(
+      z.object({
+        query: z.string().min(1, "Search query is required"),
+      })
+    )
+    .output(
+      z.object({
+        items: z.array(subscriptionOutputSchema),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // Build full-text search on the title field (which is COALESCE of customTitle and original)
+      const searchVector = sql`to_tsvector('english', COALESCE(${userFeeds.title}, ''))`;
+      const searchQuery = sql`plainto_tsquery('english', ${input.query})`;
+      const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
+
+      // user_feeds view already filters out unsubscribed, just need user_id filter and search match
+      const results = await buildSubscriptionBaseQuery(ctx.db, userId)
+        .where(and(eq(userFeeds.userId, userId), sql`${searchVector} @@ ${searchQuery}`))
+        .orderBy(desc(rankColumn), userFeeds.title);
 
       return { items: results.map(formatSubscriptionRow) };
     }),
