@@ -75,18 +75,20 @@ async function handleMCPRequest(userId: string, request: MCPRequest): Promise<MC
   try {
     switch (method) {
       case "initialize": {
+        // Log the initialize request for debugging
+        logger.info("MCP initialize request", { userId, params });
+
         return {
           jsonrpc: "2.0",
           id,
           result: {
-            protocolVersion: "0.1.0",
+            protocolVersion: "2024-11-05",
             serverInfo: {
               name: "lion-reader",
-              version: "0.1.0",
+              version: "1.0.0",
             },
             capabilities: {
               tools: {},
-              resources: {},
             },
           },
         };
@@ -94,10 +96,16 @@ async function handleMCPRequest(userId: string, request: MCPRequest): Promise<MC
 
       case "tools/list": {
         const tools = registerTools();
+        // Return only MCP-compatible tool metadata (exclude handler)
+        const toolList = tools.map(({ name, description, inputSchema }) => ({
+          name,
+          description,
+          inputSchema,
+        }));
         return {
           jsonrpc: "2.0",
           id,
-          result: { tools },
+          result: { tools: toolList },
         };
       }
 
@@ -180,14 +188,17 @@ export async function POST(request: NextRequest) {
   // Authenticate request
   const userId = await authenticateRequest(request);
   if (!userId) {
+    logger.warn("MCP request unauthorized");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const mcpRequest = (await request.json()) as MCPRequest;
+    logger.info("MCP request received", { userId, method: mcpRequest.method, id: mcpRequest.id });
 
     // Validate JSON-RPC format
     if (mcpRequest.jsonrpc !== "2.0" || !mcpRequest.method) {
+      logger.warn("Invalid MCP request format", { mcpRequest });
       return NextResponse.json(
         {
           jsonrpc: "2.0",
@@ -203,7 +214,18 @@ export async function POST(request: NextRequest) {
 
     // Handle the request
     const response = await handleMCPRequest(userId, mcpRequest);
-    return NextResponse.json(response);
+    logger.info("MCP response sent", {
+      userId,
+      method: mcpRequest.method,
+      id: mcpRequest.id,
+      hasError: !!response.error,
+    });
+
+    return NextResponse.json(response, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
   } catch (error) {
     logger.error("MCP endpoint error", { userId, error });
     return NextResponse.json(
