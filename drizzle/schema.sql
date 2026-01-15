@@ -66,6 +66,10 @@ CREATE TABLE public.entries (
     list_unsubscribe_https text,
     list_unsubscribe_post boolean,
     last_seen_at timestamp with time zone,
+    full_content_original text,
+    full_content_cleaned text,
+    full_content_fetched_at timestamp with time zone,
+    full_content_error text,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
@@ -141,6 +145,19 @@ CREATE TABLE public.narration_content (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE TABLE public.oauth_access_tokens (
+    id uuid NOT NULL,
+    token_hash text NOT NULL,
+    client_id text NOT NULL,
+    user_id uuid NOT NULL,
+    scopes text[] NOT NULL,
+    resource text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    last_used_at timestamp with time zone
+);
+
 CREATE TABLE public.oauth_accounts (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -151,6 +168,60 @@ CREATE TABLE public.oauth_accounts (
     expires_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     scopes text[]
+);
+
+CREATE TABLE public.oauth_authorization_codes (
+    id uuid NOT NULL,
+    code_hash text NOT NULL,
+    client_id text NOT NULL,
+    user_id uuid NOT NULL,
+    redirect_uri text NOT NULL,
+    scopes text[] NOT NULL,
+    code_challenge text NOT NULL,
+    code_challenge_method text DEFAULT 'S256'::text NOT NULL,
+    resource text,
+    state text,
+    used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT oauth_auth_codes_pkce_s256 CHECK ((code_challenge_method = 'S256'::text))
+);
+
+CREATE TABLE public.oauth_clients (
+    id uuid NOT NULL,
+    client_id text NOT NULL,
+    client_secret_hash text,
+    name text NOT NULL,
+    redirect_uris text[] NOT NULL,
+    grant_types text[] DEFAULT '{authorization_code,refresh_token}'::text[] NOT NULL,
+    scopes text[],
+    is_public boolean DEFAULT true NOT NULL,
+    metadata_url text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.oauth_consent_grants (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    client_id text NOT NULL,
+    scopes text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone
+);
+
+CREATE TABLE public.oauth_refresh_tokens (
+    id uuid NOT NULL,
+    token_hash text NOT NULL,
+    client_id text NOT NULL,
+    user_id uuid NOT NULL,
+    scopes text[] NOT NULL,
+    access_token_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    replaced_by_id uuid
 );
 
 CREATE TABLE public.opml_imports (
@@ -197,7 +268,8 @@ CREATE TABLE public.subscriptions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     previous_feed_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
-    feed_ids uuid[] GENERATED ALWAYS AS ((ARRAY[feed_id] || previous_feed_ids)) STORED
+    feed_ids uuid[] GENERATED ALWAYS AS ((ARRAY[feed_id] || previous_feed_ids)) STORED,
+    fetch_full_content boolean DEFAULT false NOT NULL
 );
 
 CREATE TABLE public.tags (
@@ -223,6 +295,7 @@ CREATE VIEW public.user_feeds AS
     s.feed_id,
     s.feed_ids,
     s.custom_title,
+    s.fetch_full_content,
     f.type,
     COALESCE(s.custom_title, f.title) AS title,
     f.title AS original_title,
@@ -269,6 +342,10 @@ CREATE VIEW public.visible_entries AS
     e.list_unsubscribe_post,
     e.created_at,
     e.updated_at,
+    e.full_content_original,
+    e.full_content_cleaned,
+    e.full_content_fetched_at,
+    e.full_content_error,
     ue.read,
     ue.starred,
     s.id AS subscription_id
@@ -331,8 +408,38 @@ ALTER TABLE ONLY public.narration_content
 ALTER TABLE ONLY public.narration_content
     ADD CONSTRAINT narration_content_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_token_hash_key UNIQUE (token_hash);
+
 ALTER TABLE ONLY public.oauth_accounts
     ADD CONSTRAINT oauth_accounts_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.oauth_authorization_codes
+    ADD CONSTRAINT oauth_authorization_codes_code_hash_key UNIQUE (code_hash);
+
+ALTER TABLE ONLY public.oauth_authorization_codes
+    ADD CONSTRAINT oauth_authorization_codes_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.oauth_clients
+    ADD CONSTRAINT oauth_clients_client_id_key UNIQUE (client_id);
+
+ALTER TABLE ONLY public.oauth_clients
+    ADD CONSTRAINT oauth_clients_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.oauth_consent_grants
+    ADD CONSTRAINT oauth_consent_grants_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.oauth_consent_grants
+    ADD CONSTRAINT oauth_consent_grants_user_id_client_id_key UNIQUE (user_id, client_id);
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_token_hash_key UNIQUE (token_hash);
 
 ALTER TABLE ONLY public.opml_imports
     ADD CONSTRAINT opml_imports_pkey PRIMARY KEY (id);
@@ -423,9 +530,39 @@ CREATE INDEX idx_jobs_polling ON public.jobs USING btree (next_run_at) WHERE (en
 
 CREATE INDEX idx_narration_needs_generation ON public.narration_content USING btree (id);
 
+CREATE INDEX idx_oauth_access_tokens_client ON public.oauth_access_tokens USING btree (client_id);
+
+CREATE INDEX idx_oauth_access_tokens_expires ON public.oauth_access_tokens USING btree (expires_at);
+
+CREATE INDEX idx_oauth_access_tokens_token ON public.oauth_access_tokens USING btree (token_hash);
+
+CREATE INDEX idx_oauth_access_tokens_user ON public.oauth_access_tokens USING btree (user_id);
+
 CREATE INDEX idx_oauth_accounts_scopes ON public.oauth_accounts USING gin (scopes);
 
 CREATE INDEX idx_oauth_accounts_user ON public.oauth_accounts USING btree (user_id);
+
+CREATE INDEX idx_oauth_auth_codes_code ON public.oauth_authorization_codes USING btree (code_hash);
+
+CREATE INDEX idx_oauth_auth_codes_expires ON public.oauth_authorization_codes USING btree (expires_at);
+
+CREATE INDEX idx_oauth_auth_codes_user ON public.oauth_authorization_codes USING btree (user_id);
+
+CREATE INDEX idx_oauth_clients_client_id ON public.oauth_clients USING btree (client_id);
+
+CREATE INDEX idx_oauth_consent_grants_client ON public.oauth_consent_grants USING btree (client_id);
+
+CREATE INDEX idx_oauth_consent_grants_user ON public.oauth_consent_grants USING btree (user_id);
+
+CREATE INDEX idx_oauth_refresh_tokens_access ON public.oauth_refresh_tokens USING btree (access_token_id);
+
+CREATE INDEX idx_oauth_refresh_tokens_client ON public.oauth_refresh_tokens USING btree (client_id);
+
+CREATE INDEX idx_oauth_refresh_tokens_expires ON public.oauth_refresh_tokens USING btree (expires_at);
+
+CREATE INDEX idx_oauth_refresh_tokens_token ON public.oauth_refresh_tokens USING btree (token_hash);
+
+CREATE INDEX idx_oauth_refresh_tokens_user ON public.oauth_refresh_tokens USING btree (user_id);
 
 CREATE INDEX idx_opml_imports_status ON public.opml_imports USING btree (status);
 
@@ -480,8 +617,26 @@ ALTER TABLE ONLY public.feeds
 ALTER TABLE ONLY public.ingest_addresses
     ADD CONSTRAINT ingest_addresses_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.oauth_accounts
     ADD CONSTRAINT oauth_accounts_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.oauth_authorization_codes
+    ADD CONSTRAINT oauth_authorization_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.oauth_consent_grants
+    ADD CONSTRAINT oauth_consent_grants_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_access_token_id_fkey FOREIGN KEY (access_token_id) REFERENCES public.oauth_access_tokens(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.oauth_refresh_tokens(id);
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.opml_imports
     ADD CONSTRAINT opml_imports_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
