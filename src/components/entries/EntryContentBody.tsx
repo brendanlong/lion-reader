@@ -275,6 +275,19 @@ export interface EntryContentBodyProps {
   onSwipeNext?: () => void;
   /** Callback when swiping to previous article */
   onSwipePrevious?: () => void;
+  // Full content fields
+  /** Full content cleaned HTML (fetched from URL) */
+  fullContentCleaned?: string | null;
+  /** Whether full content has been fetched */
+  fullContentFetchedAt?: Date | null;
+  /** Error message if full content fetch failed */
+  fullContentError?: string | null;
+  /** Whether to use full content (subscription setting) */
+  fetchFullContent?: boolean;
+  /** Whether full content is currently being fetched */
+  isFullContentFetching?: boolean;
+  /** Callback to toggle full content setting for subscription */
+  onToggleFetchFullContent?: () => void;
 }
 
 /**
@@ -343,15 +356,38 @@ export function EntryContentBody({
   footerLinkDomain,
   onSwipeNext,
   onSwipePrevious,
+  // Full content props
+  fullContentCleaned,
+  fullContentFetchedAt,
+  fullContentError,
+  fetchFullContent,
+  isFullContentFetching,
+  onToggleFetchFullContent,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Check if both content versions are available for toggle
-  const hasBothVersions = Boolean(contentCleaned && contentOriginal);
+  // Determine if we're showing full content
+  // Full content is shown if:
+  // 1. User has fetchFullContent enabled for the subscription
+  // 2. Full content has been fetched successfully (no error, has content)
+  const hasFullContent = Boolean(fullContentCleaned && fullContentFetchedAt && !fullContentError);
+  const showFullContent = fetchFullContent && hasFullContent;
 
-  // Select content based on toggle state
-  const contentToDisplay = showOriginal ? contentOriginal : (contentCleaned ?? contentOriginal);
+  // Check if both feed content versions are available for toggle
+  // Only show this toggle when NOT showing full content
+  const hasBothVersions = Boolean(contentCleaned && contentOriginal) && !showFullContent;
+
+  // Select content based on state
+  // Priority: full content (if enabled and available) > cleaned feed content > original feed content
+  let contentToDisplay: string | null;
+  if (showFullContent) {
+    contentToDisplay = fullContentCleaned ?? null;
+  } else if (showOriginal) {
+    contentToDisplay = contentOriginal;
+  } else {
+    contentToDisplay = contentCleaned ?? contentOriginal;
+  }
 
   // Set up narration with highlighting support
   const narrationSupported = isNarrationSupported();
@@ -584,7 +620,7 @@ export function EntryContentBody({
             <span className="ml-2">{read ? "Mark Unread" : "Mark Read"}</span>
           </Button>
 
-          {/* Content view toggle - only show when both versions exist */}
+          {/* Content view toggle - only show when both versions exist and not showing full content */}
           {hasBothVersions && (
             <Button
               variant="secondary"
@@ -593,6 +629,56 @@ export function EntryContentBody({
               aria-label={showOriginal ? "Show cleaned content" : "Show original content"}
             >
               <span>{showOriginal ? "Show Cleaned" : "Show Original"}</span>
+            </Button>
+          )}
+
+          {/* Full content toggle - shows when URL exists */}
+          {url && onToggleFetchFullContent && (
+            <Button
+              variant={fetchFullContent ? "primary" : "secondary"}
+              size="sm"
+              onClick={onToggleFetchFullContent}
+              disabled={isFullContentFetching}
+              className={
+                fetchFullContent
+                  ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                  : ""
+              }
+              aria-label={
+                fetchFullContent
+                  ? "Switch to feed content"
+                  : "Fetch and display full article content"
+              }
+            >
+              {isFullContentFetching ? (
+                <>
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  <span className="ml-2">Fetching...</span>
+                </>
+              ) : fetchFullContent ? (
+                <span>Full Content</span>
+              ) : (
+                <span>Fetch Full Content</span>
+              )}
             </Button>
           )}
 

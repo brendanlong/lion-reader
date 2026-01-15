@@ -494,6 +494,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
                   subscribedAt: new Date(data.subscription.subscribedAt),
                   unreadCount: data.subscription.unreadCount,
                   tags: data.subscription.tags,
+                  fetchFullContent: false, // New subscriptions default to false
                 },
               ],
             };
@@ -517,6 +518,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
             subscribedAt: new Date(data.subscription.subscribedAt),
             unreadCount: data.subscription.unreadCount,
             tags: data.subscription.tags,
+            fetchFullContent: false, // New subscriptions default to false
           };
           const newItems = [...oldData.items, newItem];
           newItems.sort((a, b) => {

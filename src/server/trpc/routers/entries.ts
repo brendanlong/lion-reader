@@ -22,7 +22,10 @@ import {
   tags,
   visibleEntries,
   userFeeds,
+  narrationContent,
 } from "@/server/db/schema";
+import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
+import { logger } from "@/lib/logger";
 
 // ============================================================================
 // Constants
@@ -131,6 +134,11 @@ const entryFullSchema = z.object({
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
   siteName: z.string().nullable(),
+  // Full content fields
+  fullContentOriginal: z.string().nullable(),
+  fullContentCleaned: z.string().nullable(),
+  fullContentFetchedAt: z.date().nullable(),
+  fullContentError: z.string().nullable(),
 });
 
 /**
@@ -749,6 +757,10 @@ export const entriesRouter = createTRPCRouter({
           siteName: visibleEntries.siteName,
           feedTitle: feeds.title,
           feedUrl: feeds.url,
+          fullContentOriginal: visibleEntries.fullContentOriginal,
+          fullContentCleaned: visibleEntries.fullContentCleaned,
+          fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+          fullContentError: visibleEntries.fullContentError,
         })
         .from(visibleEntries)
         .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -780,6 +792,10 @@ export const entriesRouter = createTRPCRouter({
           feedTitle: entry.feedTitle,
           feedUrl: entry.feedUrl,
           siteName: entry.siteName,
+          fullContentOriginal: entry.fullContentOriginal,
+          fullContentCleaned: entry.fullContentCleaned,
+          fullContentFetchedAt: entry.fullContentFetchedAt,
+          fullContentError: entry.fullContentError,
         },
       };
     }),
@@ -1232,6 +1248,174 @@ export const entriesRouter = createTRPCRouter({
       return {
         total: result[0]?.total ?? 0,
         unread: result[0]?.unread ?? 0,
+      };
+    }),
+
+  /**
+   * Fetch full article content from URL.
+   *
+   * This mutation fetches the full article from the entry's URL,
+   * processes it through Readability, and stores both the original
+   * and cleaned versions.
+   *
+   * On success, it also invalidates any existing narration content
+   * so that it will be regenerated using the full content.
+   *
+   * @param id - The entry ID to fetch full content for
+   * @returns The updated entry with full content fields
+   */
+  fetchFullContent: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/entries/{id}/fetch-full-content",
+        tags: ["Entries"],
+        summary: "Fetch full article content",
+      },
+    })
+    .input(
+      z.object({
+        id: uuidSchema,
+      })
+    )
+    .output(
+      z.object({
+        success: z.boolean(),
+        entry: entryFullSchema.optional(),
+        error: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // First, verify the entry exists and user has access
+      const existingEntry = await ctx.db
+        .select({
+          id: visibleEntries.id,
+          feedId: visibleEntries.feedId,
+          type: visibleEntries.type,
+          url: visibleEntries.url,
+          title: visibleEntries.title,
+          author: visibleEntries.author,
+          contentOriginal: visibleEntries.contentOriginal,
+          contentCleaned: visibleEntries.contentCleaned,
+          contentHash: visibleEntries.contentHash,
+          summary: visibleEntries.summary,
+          publishedAt: visibleEntries.publishedAt,
+          fetchedAt: visibleEntries.fetchedAt,
+          read: visibleEntries.read,
+          starred: visibleEntries.starred,
+          subscriptionId: visibleEntries.subscriptionId,
+          siteName: visibleEntries.siteName,
+          fullContentOriginal: visibleEntries.fullContentOriginal,
+          fullContentCleaned: visibleEntries.fullContentCleaned,
+          fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+          fullContentError: visibleEntries.fullContentError,
+          feedTitle: feeds.title,
+          feedUrl: feeds.url,
+        })
+        .from(visibleEntries)
+        .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+        .where(and(eq(visibleEntries.id, input.id), eq(visibleEntries.userId, userId)))
+        .limit(1);
+
+      if (existingEntry.length === 0) {
+        throw errors.entryNotFound();
+      }
+
+      const entry = existingEntry[0];
+
+      // Check if entry has a URL to fetch
+      if (!entry.url) {
+        return {
+          success: false,
+          error: "Entry has no URL to fetch content from",
+        };
+      }
+
+      // Fetch the full content
+      logger.info("Fetching full content for entry", {
+        entryId: entry.id,
+        url: entry.url,
+      });
+
+      const result = await fetchFullContentFromUrl(entry.url);
+
+      if (!result.success) {
+        // Update entry with error
+        await ctx.db
+          .update(entries)
+          .set({
+            fullContentError: result.error ?? "Unknown error",
+            fullContentFetchedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(entries.id, input.id));
+
+        logger.warn("Failed to fetch full content", {
+          entryId: entry.id,
+          url: entry.url,
+          error: result.error,
+        });
+
+        return {
+          success: false,
+          error: result.error,
+          entry: {
+            ...entry,
+            fullContentError: result.error ?? "Unknown error",
+            fullContentFetchedAt: new Date(),
+          },
+        };
+      }
+
+      // Update entry with full content
+      const now = new Date();
+      await ctx.db
+        .update(entries)
+        .set({
+          fullContentOriginal: result.contentOriginal ?? null,
+          fullContentCleaned: result.contentCleaned ?? null,
+          fullContentFetchedAt: now,
+          fullContentError: null,
+          updatedAt: now,
+        })
+        .where(eq(entries.id, input.id));
+
+      // Invalidate any existing narration content so it will be regenerated
+      // using the full content next time narration is requested
+      if (entry.contentHash) {
+        await ctx.db
+          .update(narrationContent)
+          .set({
+            contentNarration: null,
+            generatedAt: null,
+            error: null,
+            errorAt: null,
+          })
+          .where(eq(narrationContent.contentHash, entry.contentHash));
+
+        logger.debug("Invalidated narration content for entry", {
+          entryId: entry.id,
+          contentHash: entry.contentHash,
+        });
+      }
+
+      logger.info("Successfully fetched full content for entry", {
+        entryId: entry.id,
+        url: entry.url,
+        contentLength: result.contentCleaned?.length,
+      });
+
+      return {
+        success: true,
+        entry: {
+          ...entry,
+          fullContentOriginal: result.contentOriginal ?? null,
+          fullContentCleaned: result.contentCleaned ?? null,
+          fullContentFetchedAt: now,
+          fullContentError: null,
+        },
       };
     }),
 });
