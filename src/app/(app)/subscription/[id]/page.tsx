@@ -1,33 +1,17 @@
 /**
- * Single Subscription Client Component
+ * Single Subscription Page
  *
- * Client-side component for the Single Subscription page.
- * Contains all the interactive logic for displaying and managing entries from a specific subscription.
+ * Displays entries from a specific subscription.
  */
 
 "use client";
 
-import { Suspense, useState, useCallback, useMemo } from "react";
+import { Suspense, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { trpc } from "@/lib/trpc/client";
-import {
-  EntryList,
-  EntryContent,
-  UnreadToggle,
-  SortToggle,
-  type ExternalQueryState,
-} from "@/components/entries";
+import { EntryList, EntryContent, UnreadToggle, SortToggle } from "@/components/entries";
 import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
-import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import {
-  useKeyboardShortcuts,
-  useUrlViewPreferences,
-  useEntryMutations,
-  useEntryUrlState,
-  useEntryListQuery,
-  useMergedEntries,
-} from "@/lib/hooks";
+import { useEntryPage } from "@/lib/hooks";
 
 /**
  * Loading skeleton for the subscription header.
@@ -92,108 +76,22 @@ function SubscriptionNotFound() {
 function SingleSubscriptionContent() {
   const params = useParams<{ id: string }>();
   const subscriptionId = params.id;
-
-  const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
   const [showMarkAllReadDialog, setShowMarkAllReadDialog] = useState(false);
 
-  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
-    useUrlViewPreferences("subscription", subscriptionId);
-  const utils = trpc.useUtils();
-
-  // Use entry list query that stays mounted while viewing entries
-  const entryListQuery = useEntryListQuery({
-    filters: { subscriptionId, unreadOnly: showUnreadOnly, sortOrder },
-    openEntryId,
+  const page = useEntryPage({
+    viewId: "subscription",
+    viewScopeId: subscriptionId,
+    filters: { subscriptionId },
   });
 
-  // Merge entries with Zustand deltas for consistent state across components
-  const mergedEntries = useMergedEntries(entryListQuery.entries, {
-    unreadOnly: showUnreadOnly,
-  });
-
-  // Fetch subscription info to get title and validate access
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
-
-  // Entry mutations with optimistic updates
-  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
-    listFilters: { subscriptionId, unreadOnly: showUnreadOnly, sortOrder },
-  });
-
-  // Wrapper to look up tags and pass entryType + subscriptionId + tagIds to mutations
-  const handleToggleRead = useCallback(
-    (
-      entryId: string,
-      currentlyRead: boolean,
-      entryType: "web" | "email" | "saved",
-      subId: string | null
-    ) => {
-      const effectiveSubId = subId ?? subscriptionId;
-      if (!effectiveSubId) {
-        toggleRead(entryId, currentlyRead, entryType);
-        return;
-      }
-      // Look up tags for this subscription
-      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === effectiveSubId);
-      const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(entryId, currentlyRead, entryType, effectiveSubId, tagIds);
-    },
-    [toggleRead, subscriptionId, subscriptionsQuery.data]
-  );
-
-  const handleMarkAllRead = useCallback(() => {
-    markAllRead({ subscriptionId });
-    setShowMarkAllReadDialog(false);
-  }, [markAllRead, subscriptionId]);
-
-  // Keyboard navigation and actions (also provides swipe navigation functions)
-  // Uses merged entries so keyboard shortcuts see the same state as the list
-  const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
-    useKeyboardShortcuts({
-      entries: mergedEntries,
-      onOpenEntry: setOpenEntryId,
-      onClose: closeEntry,
-      isEntryOpen: !!openEntryId,
-      enabled: keyboardShortcutsEnabled,
-      onToggleRead: handleToggleRead,
-      onToggleStar: toggleStar,
-      onRefresh: () => {
-        utils.entries.list.invalidate();
-      },
-      onToggleUnreadOnly: toggleShowUnreadOnly,
-    });
-
-  // Find the subscription by ID
-  const subscription = subscriptionsQuery.data?.items.find((item) => item.id === subscriptionId);
-
-  const handleEntryClick = useCallback(
-    (entryId: string) => {
-      setSelectedEntryId(entryId);
-      setOpenEntryId(entryId);
-    },
-    [setSelectedEntryId, setOpenEntryId]
-  );
-
-  const handleBack = useCallback(() => {
-    closeEntry();
-  }, [closeEntry]);
-
-  // Build external query state for EntryList
-  const externalQueryState: ExternalQueryState = useMemo(
-    () => ({
-      isLoading: entryListQuery.isLoading,
-      isError: entryListQuery.isError,
-      errorMessage: entryListQuery.errorMessage,
-      isFetchingNextPage: entryListQuery.isFetchingNextPage,
-      hasNextPage: entryListQuery.hasNextPage,
-      fetchNextPage: entryListQuery.fetchNextPage,
-      refetch: entryListQuery.refetch,
-    }),
-    [entryListQuery]
+  // Find the subscription
+  const subscription = useMemo(
+    () => page.subscriptions?.items.find((item) => item.id === subscriptionId),
+    [page.subscriptions, subscriptionId]
   );
 
   // Show loading state while checking subscription
-  if (subscriptionsQuery.isLoading) {
+  if (page.subscriptionsLoading) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
         <SubscriptionHeaderSkeleton />
@@ -201,34 +99,25 @@ function SingleSubscriptionContent() {
     );
   }
 
-  // Show error if subscription not found (not subscribed)
+  // Show error if subscription not found
   if (!subscription) {
     return <SubscriptionNotFound />;
   }
 
-  const feedTitle = subscription.title ?? subscription.originalTitle ?? "Untitled Feed";
+  const feedTitle =
+    (subscription as { title?: string }).title ??
+    (subscription as { originalTitle?: string }).originalTitle ??
+    "Untitled Feed";
   const unreadCount = subscription.unreadCount;
+  const siteUrl = (subscription as { siteUrl?: string }).siteUrl;
 
-  // Render both list and content, hiding the list when viewing an entry.
-  // This preserves scroll position and enables seamless j/k navigation.
   return (
     <>
-      {/* Entry content - only rendered when an entry is open */}
-      {openEntryId && (
-        <EntryContent
-          key={openEntryId}
-          entryId={openEntryId}
-          listFilters={{ subscriptionId, unreadOnly: showUnreadOnly, sortOrder }}
-          onBack={handleBack}
-          onSwipeNext={goToNextEntry}
-          onSwipePrevious={goToPreviousEntry}
-          nextEntryId={entryListQuery.nextEntryId}
-          previousEntryId={entryListQuery.previousEntryId}
-        />
+      {page.entryContentProps && (
+        <EntryContent key={page.entryContentProps.entryId} {...page.entryContentProps} />
       )}
 
-      {/* Entry list - always mounted but hidden when viewing an entry */}
-      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
+      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${page.openEntryId ? "hidden" : ""}`}>
         <div className="mb-4 sm:mb-6">
           {/* Breadcrumb back link */}
           <Link
@@ -282,34 +171,31 @@ function SingleSubscriptionContent() {
                   </button>
                 </>
               )}
-              <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
-              <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
+              <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />
+              <UnreadToggle
+                showUnreadOnly={page.showUnreadOnly}
+                onToggle={page.toggleShowUnreadOnly}
+              />
             </div>
           </div>
 
           {/* Feed URL if available */}
-          {subscription.siteUrl && (
+          {siteUrl && (
             <a
-              href={subscription.siteUrl}
+              href={siteUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-1 inline-block text-sm text-zinc-500 hover:underline dark:text-zinc-400"
             >
-              {new URL(subscription.siteUrl).hostname}
+              {new URL(siteUrl).hostname}
             </a>
           )}
         </div>
 
         <EntryList
-          filters={{ subscriptionId, unreadOnly: showUnreadOnly, sortOrder }}
-          onEntryClick={handleEntryClick}
-          selectedEntryId={selectedEntryId}
-          onToggleRead={handleToggleRead}
-          onToggleStar={toggleStar}
-          externalEntries={mergedEntries}
-          externalQueryState={externalQueryState}
+          {...page.entryListProps}
           emptyMessage={
-            showUnreadOnly
+            page.showUnreadOnly
               ? "No unread entries in this subscription. Toggle to show all items."
               : "No entries in this subscription yet. Entries will appear here once the feed is fetched."
           }
@@ -319,8 +205,11 @@ function SingleSubscriptionContent() {
           isOpen={showMarkAllReadDialog}
           contextDescription="this subscription"
           unreadCount={unreadCount}
-          isLoading={isMarkAllReadPending}
-          onConfirm={handleMarkAllRead}
+          isLoading={page.isMarkAllReadPending}
+          onConfirm={() => {
+            page.handleMarkAllRead({ subscriptionId });
+            setShowMarkAllReadDialog(false);
+          }}
           onCancel={() => setShowMarkAllReadDialog(false)}
         />
       </div>
