@@ -7,8 +7,9 @@
 
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useCallback } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { toast } from "sonner";
 import {
   useEntryMutations,
   useShowOriginalPreference,
@@ -95,15 +96,19 @@ export function EntryContent({
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
-  // Get subscriptions to look up tags for the entry's subscription
+  // Get subscriptions to look up tags and fetchFullContent setting for the entry's subscription
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
-  const tagIds = useMemo(() => {
+  const subscription = useMemo(() => {
     if (!entry?.subscriptionId || !subscriptionsQuery.data) return undefined;
-    const subscription = subscriptionsQuery.data.items.find(
-      (sub) => sub.id === entry.subscriptionId
-    );
-    return subscription?.tags.map((tag) => tag.id);
+    return subscriptionsQuery.data.items.find((sub) => sub.id === entry.subscriptionId);
   }, [entry, subscriptionsQuery.data]);
+
+  const tagIds = useMemo(() => {
+    return subscription?.tags.map((tag) => tag.id);
+  }, [subscription]);
+
+  // Get fetchFullContent setting from subscription
+  const fetchFullContent = subscription?.fetchFullContent ?? false;
 
   // Entry mutations with subscriptionId and entryType from entry data (bypasses cache lookup)
   // When marking an entry as read, this ensures it gets filtered from the list immediately
@@ -113,6 +118,67 @@ export function EntryContent({
     subscriptionId: entry?.subscriptionId ?? undefined,
     tagIds,
   });
+
+  // Mutation to update subscription's fetchFullContent setting
+  const utils = trpc.useUtils();
+  const updateSubscriptionMutation = trpc.subscriptions.update.useMutation({
+    onSuccess: () => {
+      // Invalidate subscriptions list to reflect the new setting
+      utils.subscriptions.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error("Failed to update subscription setting", {
+        description: error.message,
+      });
+    },
+  });
+
+  // Mutation to fetch full content for the entry
+  const fetchFullContentMutation = trpc.entries.fetchFullContent.useMutation({
+    onSuccess: (result) => {
+      if (result.success) {
+        // Invalidate entry query to get the new content
+        utils.entries.get.invalidate({ id: entryId });
+      } else if (result.error) {
+        toast.error("Failed to fetch full content", {
+          description: result.error,
+        });
+      }
+    },
+    onError: (error) => {
+      toast.error("Failed to fetch full content", {
+        description: error.message,
+      });
+    },
+  });
+
+  // Handle toggling fetchFullContent setting
+  const handleToggleFetchFullContent = useCallback(() => {
+    if (!entry?.subscriptionId) return;
+
+    const newValue = !fetchFullContent;
+    updateSubscriptionMutation.mutate({
+      id: entry.subscriptionId,
+      fetchFullContent: newValue,
+    });
+
+    // If enabling full content and it hasn't been fetched yet, trigger fetch
+    if (newValue && !entry.fullContentFetchedAt) {
+      fetchFullContentMutation.mutate({ id: entryId });
+    }
+  }, [entry, fetchFullContent, entryId, updateSubscriptionMutation, fetchFullContentMutation]);
+
+  // Auto-fetch full content when entry loads and setting is enabled
+  const hasAutoFetchedFullContent = useRef(false);
+  useEffect(() => {
+    if (hasAutoFetchedFullContent.current || !entry) return;
+    if (!fetchFullContent) return;
+    if (entry.fullContentFetchedAt) return; // Already fetched
+    if (fetchFullContentMutation.isPending) return; // Already fetching
+
+    hasAutoFetchedFullContent.current = true;
+    fetchFullContentMutation.mutate({ id: entryId });
+  }, [entry, fetchFullContent, entryId, fetchFullContentMutation]);
 
   // Mark entry as read once when component mounts and entry data loads
   // The ref prevents re-marking if user later toggles read status
@@ -177,6 +243,13 @@ export function EntryContent({
         footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
         onSwipeNext={onSwipeNext}
         onSwipePrevious={onSwipePrevious}
+        // Full content props - only available if entry has a subscription
+        fullContentCleaned={entry.fullContentCleaned}
+        fullContentFetchedAt={entry.fullContentFetchedAt}
+        fullContentError={entry.fullContentError}
+        fetchFullContent={fetchFullContent}
+        isFullContentFetching={fetchFullContentMutation.isPending}
+        onToggleFetchFullContent={entry.subscriptionId ? handleToggleFetchFullContent : undefined}
       />
     );
   }

@@ -271,6 +271,12 @@ export const entries = pgTable(
     // Version tracking
     contentHash: text("content_hash").notNull(), // for detecting updates
 
+    // Full content fetching (on-demand from URL)
+    fullContentOriginal: text("full_content_original"), // Raw HTML from URL
+    fullContentCleaned: text("full_content_cleaned"), // Readability-cleaned HTML
+    fullContentFetchedAt: timestamp("full_content_fetched_at", { withTimezone: true }),
+    fullContentError: text("full_content_error"), // Error message if fetch failed
+
     // Spam tracking (for email entries)
     spamScore: real("spam_score"), // Provider's spam score
     isSpam: boolean("is_spam").notNull().default(false), // Provider's spam verdict
@@ -382,6 +388,7 @@ export const subscriptions = pgTable(
       .generatedAlwaysAs(sql`ARRAY[feed_id] || previous_feed_ids`),
 
     customTitle: text("custom_title"), // user's override for feed title
+    fetchFullContent: boolean("fetch_full_content").notNull().default(false), // fetch full article from URL
 
     subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull().defaultNow(), // critical for visibility
     unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }), // soft delete
@@ -459,6 +466,7 @@ export const userFeeds = pgView("user_feeds", {
   feedId: uuid("feed_id").notNull(), // internal use only
   feedIds: uuid("feed_ids").array().notNull(), // for entry visibility queries
   customTitle: text("custom_title"),
+  fetchFullContent: boolean("fetch_full_content").notNull(), // fetch full article from URL
   type: feedTypeEnum("type").notNull(),
   title: text("title"), // resolved title (custom or original)
   originalTitle: text("original_title"), // feed's original title for rename UI
@@ -501,6 +509,10 @@ export const visibleEntries = pgView("visible_entries", {
   listUnsubscribePost: boolean("list_unsubscribe_post"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  fullContentOriginal: text("full_content_original"),
+  fullContentCleaned: text("full_content_cleaned"),
+  fullContentFetchedAt: timestamp("full_content_fetched_at", { withTimezone: true }),
+  fullContentError: text("full_content_error"),
   read: boolean("read").notNull(),
   starred: boolean("starred").notNull(),
   subscriptionId: uuid("subscription_id"), // nullable - null for orphaned starred entries

@@ -122,6 +122,7 @@ export const narrationRouter = createTRPCRouter({
           contentCleaned: entries.contentCleaned,
           contentOriginal: entries.contentOriginal,
           contentHash: entries.contentHash,
+          fullContentCleaned: entries.fullContentCleaned,
         })
         .from(entries)
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
@@ -133,7 +134,9 @@ export const narrationRouter = createTRPCRouter({
       }
 
       const entry = entryResult[0];
-      const sourceContent = entry.contentCleaned || entry.contentOriginal || "";
+      // Prefer full content (fetched from URL) over feed content for narration
+      const sourceContent =
+        entry.fullContentCleaned || entry.contentCleaned || entry.contentOriginal || "";
       const contentHash = entry.contentHash;
 
       // Handle empty content
