@@ -83,6 +83,7 @@ const subscriptionOutputSchema = z.object({
   subscribedAt: z.date(),
   unreadCount: z.number(),
   tags: z.array(tagOutputSchema),
+  fetchFullContent: z.boolean(), // whether to fetch full article content from URL
 });
 
 // ============================================================================
@@ -122,6 +123,7 @@ function buildSubscriptionBaseQuery(db: typeof import("@/server/db").db, userId:
       id: userFeeds.id,
       subscribedAt: userFeeds.subscribedAt,
       feedId: userFeeds.feedId, // internal use only
+      fetchFullContent: userFeeds.fetchFullContent,
       // From user_feeds view - feed fields (already merged)
       type: userFeeds.type,
       url: userFeeds.url,
@@ -149,6 +151,7 @@ function buildSubscriptionBaseQuery(db: typeof import("@/server/db").db, userId:
       userFeeds.id,
       userFeeds.subscribedAt,
       userFeeds.feedId,
+      userFeeds.fetchFullContent,
       userFeeds.type,
       userFeeds.url,
       userFeeds.title,
@@ -182,6 +185,7 @@ function formatSubscriptionRow(
     subscribedAt: row.subscribedAt,
     unreadCount: row.unreadCount,
     tags: row.tags,
+    fetchFullContent: row.fetchFullContent,
   };
 }
 
@@ -424,6 +428,7 @@ async function subscribeToExistingFeed(
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
     tags: [] as Array<{ id: string; name: string; color: string | null }>,
+    fetchFullContent: false, // default for new subscriptions
   };
 }
 
@@ -603,6 +608,7 @@ async function subscribeToNewOrUnfetchedFeed(
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
     tags: [] as Array<{ id: string; name: string; color: string | null }>,
+    fetchFullContent: false, // default for new subscriptions
   };
 }
 
@@ -782,10 +788,11 @@ export const subscriptionsRouter = createTRPCRouter({
     }),
 
   /**
-   * Update a subscription (custom title).
+   * Update a subscription.
    *
-   * Allows users to set a custom title for their subscription.
-   * Pass null to remove the custom title and use the feed's default.
+   * Allows users to update subscription settings:
+   * - customTitle: Set a custom title (null to use feed's default)
+   * - fetchFullContent: Whether to fetch full article content from URL
    */
   update: protectedProcedure
     .meta({
@@ -800,6 +807,7 @@ export const subscriptionsRouter = createTRPCRouter({
       z.object({
         id: uuidSchema,
         customTitle: customTitleSchema.optional(),
+        fetchFullContent: z.boolean().optional(),
       })
     )
     .output(subscriptionOutputSchema)
@@ -808,12 +816,19 @@ export const subscriptionsRouter = createTRPCRouter({
 
       // Update the subscription and return key fields (WHERE clause ensures ownership)
       const now = new Date();
-      const updateData: { updatedAt: Date; customTitle?: string | null } = {
+      const updateData: {
+        updatedAt: Date;
+        customTitle?: string | null;
+        fetchFullContent?: boolean;
+      } = {
         updatedAt: now,
       };
 
       if (input.customTitle !== undefined) {
         updateData.customTitle = input.customTitle;
+      }
+      if (input.fetchFullContent !== undefined) {
+        updateData.fetchFullContent = input.fetchFullContent;
       }
 
       const updateResult = await ctx.db
@@ -830,6 +845,7 @@ export const subscriptionsRouter = createTRPCRouter({
           id: subscriptions.id,
           feedId: subscriptions.feedId,
           customTitle: subscriptions.customTitle,
+          fetchFullContent: subscriptions.fetchFullContent,
           subscribedAt: subscriptions.subscribedAt,
         });
 
@@ -886,6 +902,7 @@ export const subscriptionsRouter = createTRPCRouter({
         subscribedAt: subscription.subscribedAt,
         unreadCount,
         tags: subscriptionTagsList,
+        fetchFullContent: subscription.fetchFullContent,
       };
     }),
 

@@ -253,6 +253,13 @@
       "when": 1767430000000,
       "tag": "0035_subscription_views",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1767440000000,
+      "tag": "0036_full_content_fetching",
+      "breakpoints": true
     }
   ]
 }
