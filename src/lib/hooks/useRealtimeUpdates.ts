@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { useRealtimeStore } from "@/lib/store/realtime";
 
 /**
  * Connection status for real-time updates.
@@ -372,10 +373,13 @@ function parseEventData(data: string): SSEEventData | null {
 /**
  * Hook to manage real-time updates with SSE primary and polling fallback.
  *
+ * @param initialSyncCursor - Initial sync cursor from server (ISO8601 timestamp)
+ *
  * @example
  * ```tsx
  * function AppLayout({ children }) {
- *   const { status, isConnected, isPolling } = useRealtimeUpdates();
+ *   const initialCursor = new Date().toISOString();
+ *   const { status, isConnected, isPolling } = useRealtimeUpdates(initialCursor);
  *
  *   return (
  *     <div>
@@ -387,7 +391,7 @@ function parseEventData(data: string): SSEEventData | null {
  * }
  * ```
  */
-export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
+export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdatesResult {
   const utils = trpc.useUtils();
 
   // Connection status state
@@ -402,7 +406,8 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const isManuallyClosedRef = useRef(false);
   const shouldConnectRef = useRef(false);
-  const lastSyncedAtRef = useRef<string | null>(null);
+  // Initialize with server-provided cursor (no client-side guessing!)
+  const lastSyncedAtRef = useRef<string>(initialSyncCursor);
 
   // State to trigger reconnection
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
@@ -441,25 +446,36 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
   }, []);
 
   /**
-   * Handles incoming SSE events by invalidating the appropriate queries.
+   * Handles incoming SSE events by updating Zustand delta store and invalidating queries.
+   * Tracks sync cursor from event.lastEventId for reconnection.
    */
   const handleEvent = useCallback(
     (event: MessageEvent) => {
+      // Update sync cursor from SSE event ID (browser automatically tracks this)
+      if (event.lastEventId) {
+        lastSyncedAtRef.current = event.lastEventId;
+      }
+
       const data = parseEventData(event.data);
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Invalidate all entry list queries since new entries affect multiple views
-        // (The feedId-based targeting was removed when we switched to subscription-centric API)
-        utils.entries.list.invalidate();
-
-        // Invalidate subscription list to refresh unread counts
-        // (We can't optimistically update because new_entry event has feedId, not subscriptionId)
-        utils.subscriptions.list.invalidate();
+        // Push to Zustand delta store - UI updates instantly via deltas
+        useRealtimeStore.getState().onNewEntry(data.entryId, data.feedId, data.timestamp);
+        // No invalidation needed - counts updated via Zustand deltas
       } else if (data.type === "entry_updated") {
+        // Push to Zustand
+        useRealtimeStore.getState().onEntryUpdated(data.entryId);
+        // Invalidate the specific entry to refresh content
         utils.entries.get.invalidate({ id: data.entryId });
-        utils.entries.list.invalidate();
       } else if (data.type === "subscription_created") {
+        // Push to Zustand delta store
+        const tagIds = data.subscription.tags.map((t) => t.id);
+        useRealtimeStore
+          .getState()
+          .onSubscriptionCreated(data.subscription.id, data.subscription.unreadCount, tagIds);
+
+        // Also update React Query cache (TODO: remove once Zustand integration complete)
         // Optimistic cache update - insert subscription directly into cache
         utils.subscriptions.list.setData(undefined, (oldData) => {
           if (!oldData) {
@@ -511,48 +527,16 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
           return { items: newItems };
         });
 
-        // Update tags cache with new/updated tag counts
-        if (data.subscription.tags.length > 0) {
-          utils.tags.list.setData(undefined, (oldData) => {
-            if (!oldData) return oldData;
+        // Tag counts updated via Zustand deltas (onSubscriptionCreated already called)
+        // Invalidate tag list only to add newly created tags to the list
+        utils.tags.list.invalidate();
 
-            const updatedTags = [...oldData.items];
-            for (const eventTag of data.subscription.tags) {
-              const existingIndex = updatedTags.findIndex((t) => t.id === eventTag.id);
-
-              if (existingIndex >= 0) {
-                // Increment feedCount and unreadCount for existing tag
-                updatedTags[existingIndex] = {
-                  ...updatedTags[existingIndex],
-                  feedCount: updatedTags[existingIndex].feedCount + 1,
-                  unreadCount:
-                    updatedTags[existingIndex].unreadCount + data.subscription.unreadCount,
-                };
-              } else {
-                // Add new tag (in case it was just created)
-                updatedTags.push({
-                  id: eventTag.id,
-                  name: eventTag.name,
-                  color: eventTag.color,
-                  feedCount: 1,
-                  unreadCount: data.subscription.unreadCount,
-                  createdAt: new Date(),
-                });
-              }
-            }
-
-            return { items: updatedTags };
-          });
-        }
-
-        // For email feeds, also invalidate entries list since new email feeds
-        // always come with an entry. This handles the race condition where the
-        // new_entry event might arrive before we've subscribed to the feed channel.
-        if (data.feed.type === "email") {
-          utils.entries.list.invalidate();
-        }
-        // For non-email feeds, no invalidation needed - cache is already updated!
+        // Note: Entry list doesn't need invalidation - new entries come via new_entry events
       } else if (data.type === "subscription_deleted") {
+        // TODO: Push to Zustand (needs tag IDs from subscription, which event doesn't include)
+        // useRealtimeStore.getState().onSubscriptionDeleted(data.subscriptionId, tagIds);
+
+        // Invalidate React Query cache
         const existingData = utils.subscriptions.list.getData();
         const stillInCache = existingData?.items.some((item) => item.id === data.subscriptionId);
 
@@ -583,9 +567,8 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
   );
 
   /**
-   * Performs a sync and applies changes to the cache.
-   * Uses targeted cache updates to avoid full refetches where possible.
-   * Returns the new syncedAt timestamp.
+   * Performs a sync and applies changes to Zustand delta store and cache.
+   * Used during polling mode and for catch-up sync after SSE reconnection.
    */
   const performSync = useCallback(async () => {
     try {
@@ -606,39 +589,17 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
 
       const hasTagChanges = result.tags.created.length > 0 || result.tags.removed.length > 0;
 
-      // Handle entry changes
+      // Push entry changes to Zustand (same interface as SSE)
+      for (const entry of result.entries.created) {
+        useRealtimeStore
+          .getState()
+          .onNewEntry(entry.id, entry.feedId, entry.fetchedAt.toISOString());
+      }
+
+      // Handle entry changes - invalidate list so new entries appear
+      // Counts are updated via Zustand (onNewEntry calls above)
       if (hasEntryChanges) {
         utils.entries.list.invalidate();
-        utils.entries.count.invalidate();
-
-        // Calculate unread count changes from new entries (they are unread by default)
-        // Group by feedId and count how many new entries per feed
-        const unreadCountChanges = new Map<string, number>();
-        for (const entry of result.entries.created) {
-          if (!entry.read) {
-            unreadCountChanges.set(entry.feedId, (unreadCountChanges.get(entry.feedId) ?? 0) + 1);
-          }
-        }
-
-        // Apply unread count changes to subscriptions if we have any
-        if (unreadCountChanges.size > 0) {
-          utils.subscriptions.list.setData(undefined, (oldData) => {
-            if (!oldData) return oldData;
-            return {
-              ...oldData,
-              items: oldData.items.map((item) => {
-                const delta = unreadCountChanges.get(item.id);
-                if (delta) {
-                  return {
-                    ...item,
-                    unreadCount: item.unreadCount + delta,
-                  };
-                }
-                return item;
-              }),
-            };
-          });
-        }
       }
 
       // Handle subscription changes
@@ -684,10 +645,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
     setIsPollingMode(true);
     setConnectionStatus("polling");
 
-    // Initialize lastSyncedAt to now if not set
-    if (!lastSyncedAtRef.current) {
-      lastSyncedAtRef.current = new Date().toISOString();
-    }
+    // lastSyncedAt already initialized with server-provided cursor
 
     // Start polling interval
     pollIntervalRef.current = setInterval(() => {
@@ -834,6 +792,7 @@ export function useRealtimeUpdates(): UseRealtimeUpdatesResult {
         };
 
         // Handle named events
+        eventSource.addEventListener("connected", handleEvent); // Initial cursor from server
         eventSource.addEventListener("new_entry", handleEvent);
         eventSource.addEventListener("entry_updated", handleEvent);
         eventSource.addEventListener("subscription_created", handleEvent);

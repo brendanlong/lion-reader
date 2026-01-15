@@ -33,6 +33,7 @@ export interface SavedArticleKeyboardData {
   url: string | null;
   read: boolean;
   starred: boolean;
+  subscriptionId: string | null;
 }
 
 /**
@@ -69,9 +70,9 @@ export interface UseSavedArticleKeyboardShortcutsOptions {
 
   /**
    * Callback when read status should be toggled.
-   * Receives the article ID and its current read status.
+   * Receives the article ID, its current read status, and subscriptionId (required but nullable).
    */
-  onToggleRead?: (articleId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (articleId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
 
   /**
    * Callback when star status should be toggled.
@@ -402,7 +403,7 @@ export function useSavedArticleKeyboardShortcuts(
       e.preventDefault();
       const article = getSelectedArticle();
       if (article && onToggleRead) {
-        onToggleRead(article.id, article.read);
+        onToggleRead(article.id, article.read, article.subscriptionId);
       }
     },
     {

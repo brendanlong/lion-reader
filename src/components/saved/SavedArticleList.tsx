@@ -47,6 +47,7 @@ export interface SavedArticleListEntryData {
   url: string | null;
   read: boolean;
   starred: boolean;
+  subscriptionId: string | null;
 }
 
 interface SavedArticleListProps {
@@ -84,8 +85,9 @@ interface SavedArticleListProps {
 
   /**
    * Callback when the read status indicator is clicked.
+   * subscriptionId is required (but can be null) to force explicit handling.
    */
-  onToggleRead?: (articleId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (articleId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
 
   /**
    * Callback when the star indicator is clicked.
@@ -145,6 +147,7 @@ export function SavedArticleList({
         url: article.url,
         read: article.read,
         starred: article.starred,
+        subscriptionId: article.subscriptionId,
       }));
       onArticlesLoaded(articles);
     }

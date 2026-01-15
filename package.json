@@ -45,7 +45,6 @@
     "@aws-sdk/client-s3": "^3.965.0",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@mozilla/readability": "^0.6.0",
-    "@normy/react-query": "^0.21.0",
     "@sentry/nextjs": "^10.32.1",
     "@tanstack/react-query": "^5.90.12",
     "@trpc/client": "^11.8.1",
@@ -79,7 +78,8 @@
     "superjson": "^2.2.6",
     "trpc-to-openapi": "^3.1.0",
     "tsx": "^4.21.0",
-    "zod": "^4.2.1"
+    "zod": "^4.2.1",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

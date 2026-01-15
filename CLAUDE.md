@@ -56,6 +56,70 @@ These views are defined in `drizzle/0035_subscription_views.sql` and have Drizzl
 - **Pagination**: Always cursor-based (never offset); return `{ items: T[], nextCursor?: string }`
 - **tRPC naming**: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
 
+## Frontend State Management
+
+### Zustand Delta-Based Architecture
+
+The app uses Zustand for optimistic updates, storing only **deltas** from the server state (e.g., "entry X is now read"). React Query provides the base data, Zustand applies deltas on top.
+
+### Mutation Hooks: subscriptionId Passthrough Pattern
+
+**CRITICAL**: Entry mutations (markRead, toggleStar) need `subscriptionId` to update unread counts correctly. **Always pass subscriptionId as a parameter** through the callback chain—do NOT use cache lookups.
+
+**Type Safety**: `subscriptionId` is **required (but nullable)** in all callback signatures—TypeScript enforces this at compile time. You cannot accidentally forget to pass it.
+
+#### Implementation Pattern
+
+Page components should create a wrapper that looks up tags and passes both subscriptionId and tagIds:
+
+```typescript
+// In page component: look up subscriptionId's tags and pass to mutation
+const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+
+const handleToggleRead = useCallback(
+  (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => {
+    if (!subscriptionId) {
+      // No subscription - saved article or starred entry from deleted subscription
+      toggleRead(entryId, currentlyRead);
+      return;
+    }
+    // Look up tags for this subscription
+    const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
+    const tagIds = subscription?.tags.map((tag) => tag.id);
+    toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
+  },
+  [toggleRead, subscriptionsQuery.data]
+);
+
+// Pass handleToggleRead to keyboard shortcuts and EntryList
+<EntryList onToggleRead={handleToggleRead} />
+```
+
+#### Component Chain
+
+The callback signature flows through:
+
+1. **Page** → creates `handleToggleRead` wrapper with tag lookup
+2. **EntryList** → passes through to EntryListItem
+3. **EntryListItem** → passes through to ArticleListItem
+4. **ArticleListItem** → calls `onToggleRead(entryId, read, subscriptionId)`
+
+The same pattern applies to:
+
+- **useKeyboardShortcuts**: Gets subscriptionId from entry data, passes to onToggleRead
+- **EntryContent**: Uses `useEntryMutations({ subscriptionId, tagIds })` with known context
+
+#### Why This Matters
+
+- Without subscriptionId: ⚠️ Mutation works but unread counts don't update
+- With subscriptionId: ✅ Zustand correctly updates counts for subscription + all its tags
+- Development mode shows warnings when subscriptionId is missing
+
+#### What NOT to Do
+
+❌ **Don't** try to look up subscriptionId from cache in mutation hooks (fragile, prone to query key mismatches)
+✅ **Do** pass subscriptionId explicitly through callbacks from components that have the data
+
 ## Outgoing HTTP Requests
 
 ```typescript

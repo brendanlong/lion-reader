@@ -16,6 +16,7 @@ import { ArticleListItem } from "@/components/articles/ArticleListItem";
 interface EntryListItemData {
   id: string;
   feedId: string;
+  subscriptionId: string | null;
   url: string | null;
   title: string | null;
   author: string | null;
@@ -36,8 +37,9 @@ interface EntryListItemProps {
   selected?: boolean;
   /**
    * Callback when the read status indicator is clicked.
+   * subscriptionId is required (but can be null) to force explicit handling.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => void;
   /**
    * Callback when the star indicator is clicked.
    */
@@ -68,6 +70,7 @@ export const EntryListItem = memo(function EntryListItem({
       onClick={onClick}
       onToggleRead={onToggleRead}
       onToggleStar={onToggleStar}
+      subscriptionId={entry.subscriptionId}
     />
   );
 });

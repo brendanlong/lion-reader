@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, lte, inArray, notInArray, sql, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -18,7 +18,6 @@ import {
   entries,
   feeds,
   userEntries,
-  subscriptions,
   subscriptionTags,
   tags,
   visibleEntries,
@@ -139,7 +138,7 @@ const entriesListOutputSchema = z.object({
 
 /**
  * Schema for entries returned from mutation operations.
- * Used by normy for automatic cache normalization.
+ * Contains minimal fields needed for optimistic updates.
  */
 const entryMutationResultSchema = z.object({
   id: z.string(),
@@ -148,36 +147,8 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
- * Schema for subscription unread count.
- * Returns the absolute count (not delta) for robustness - self-correcting if counts drift.
- */
-const subscriptionUnreadCountSchema = z.object({
-  subscriptionId: z.string(),
-  unreadCount: z.number(),
-});
-
-/**
- * Schema for tag unread count.
- * Returns the absolute count (not delta) for robustness - self-correcting if counts drift.
- */
-const tagUnreadCountSchema = z.object({
-  tagId: z.string(),
-  unreadCount: z.number(),
-});
-
-/**
- * Output schema for markRead mutation.
- * Includes final unread counts for affected subscriptions and tags to enable targeted cache updates.
- */
-const markReadOutputSchema = z.object({
-  entries: z.array(entryMutationResultSchema),
-  subscriptionUnreadCounts: z.array(subscriptionUnreadCountSchema),
-  tagUnreadCounts: z.array(tagUnreadCountSchema),
-});
-
-/**
  * Output schema for star/unstar mutations.
- * Returns single entry for normy cache normalization.
+ * Returns the updated entry with new starred state.
  */
 const starOutputSchema = z.object({
   entry: entryMutationResultSchema,
@@ -627,11 +598,12 @@ export const entriesRouter = createTRPCRouter({
         read: z.boolean(),
       })
     )
-    .output(markReadOutputSchema)
+    .output(z.object({ success: z.boolean(), count: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Update with RETURNING to get entry state in a single query
+      // Simple update - no expensive count recalculations
+      // Counts are managed client-side via Zustand deltas
       const updatedEntries = await ctx.db
         .update(userEntries)
         .set({
@@ -641,80 +613,9 @@ export const entriesRouter = createTRPCRouter({
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)))
         .returning({
           id: userEntries.entryId,
-          read: userEntries.read,
-          starred: userEntries.starred,
         });
 
-      // Get affected feed IDs from entries being marked
-      const affectedFeedsSubquery = ctx.db
-        .selectDistinct({ feedId: entries.feedId })
-        .from(entries)
-        .where(inArray(entries.id, input.ids))
-        .as("affected_feeds");
-
-      // Find subscriptions that contain the affected feeds and get their unread counts
-      const affectedSubscriptionsSubquery = ctx.db
-        .selectDistinct({ subscriptionId: subscriptions.id })
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt),
-            sql`${subscriptions.feedIds} && ARRAY(SELECT feed_id FROM ${affectedFeedsSubquery})`
-          )
-        )
-        .as("affected_subscriptions");
-
-      const subscriptionUnreadCounts = await ctx.db
-        .select({
-          subscriptionId: affectedSubscriptionsSubquery.subscriptionId,
-          unreadCount: sql<number>`COALESCE(COUNT(*) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
-        })
-        .from(affectedSubscriptionsSubquery)
-        .leftJoin(subscriptions, eq(subscriptions.id, affectedSubscriptionsSubquery.subscriptionId))
-        .leftJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
-        .leftJoin(
-          userEntries,
-          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-        )
-        .groupBy(affectedSubscriptionsSubquery.subscriptionId);
-
-      // Get tag unread counts for tags associated with affected subscriptions
-      const affectedTagsSubquery = ctx.db
-        .selectDistinct({ tagId: subscriptionTags.tagId })
-        .from(subscriptionTags)
-        .where(
-          inArray(
-            subscriptionTags.subscriptionId,
-            sql`(SELECT subscription_id FROM ${affectedSubscriptionsSubquery})`
-          )
-        )
-        .as("affected_tags");
-
-      // Then get unread counts for those tags
-      const tagUnreadCounts = await ctx.db
-        .select({
-          tagId: affectedTagsSubquery.tagId,
-          unreadCount: sql<number>`COALESCE(COUNT(*) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
-        })
-        .from(affectedTagsSubquery)
-        .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, affectedTagsSubquery.tagId))
-        .leftJoin(
-          subscriptions,
-          and(
-            eq(subscriptionTags.subscriptionId, subscriptions.id),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .leftJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
-        .leftJoin(
-          userEntries,
-          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-        )
-        .groupBy(affectedTagsSubquery.tagId);
-
-      return { entries: updatedEntries, subscriptionUnreadCounts, tagUnreadCounts };
+      return { success: true, count: updatedEntries.length };
     }),
 
   /**
