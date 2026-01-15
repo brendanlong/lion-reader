@@ -23,14 +23,19 @@ Model Context Protocol (MCP) server for Lion Reader, exposing feed reader functi
 
 ## Usage
 
-### Running the Server
+### Option 1: Connect to Hosted Lion Reader (Recommended)
 
-```bash
-# Start the MCP server
-pnpm mcp:serve
-```
+Connect to your Lion Reader account at **lionreader.com** (or `localhost:3000` for local development):
 
-### Configuration for Claude Desktop
+#### Step 1: Create an API Token
+
+1. Go to **lionreader.com/settings/api-tokens** (or `localhost:3000/settings/api-tokens`)
+2. Click "Create API Token"
+3. Name it "Claude Desktop" or "MCP"
+4. Select scope: **`mcp`** (full MCP access)
+5. Copy the token (you'll only see it once!)
+
+#### Step 2: Configure Claude Desktop
 
 Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
@@ -38,6 +43,44 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 {
   "mcpServers": {
     "lion-reader": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch", "https://lionreader.com/api/mcp"],
+      "env": {
+        "AUTHORIZATION": "Bearer YOUR_API_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+For **local development**, use `http://localhost:3000/api/mcp` instead.
+
+**Important:** Replace `YOUR_API_TOKEN_HERE` with the API token you created in Step 1.
+
+#### Why This Approach?
+
+- ✅ **No local server needed** - connects directly to lionreader.com
+- ✅ **Secure** - uses OAuth-based API tokens with granular scopes
+- ✅ **Same data** - works with your real Lion Reader account
+- ✅ **Always up-to-date** - no need to keep local code in sync
+
+---
+
+### Option 2: Run Local MCP Server (Development)
+
+For development or offline use, you can run a local MCP server:
+
+```bash
+# Start the MCP server (stdio transport)
+pnpm mcp:serve
+```
+
+Configure Claude Desktop to use the local server:
+
+```json
+{
+  "mcpServers": {
+    "lion-reader-local": {
       "command": "pnpm",
       "args": ["--dir", "/path/to/lion-reader", "mcp:serve"],
       "env": {
@@ -53,9 +96,12 @@ Replace `/path/to/lion-reader` with the actual path to your Lion Reader installa
 
 ## Authentication
 
-Currently, all tools require a `userId` parameter for authentication. In production, this should be replaced with proper MCP authentication mechanisms (API tokens, OAuth, etc.).
+The hosted MCP endpoint (`/api/mcp`) uses **API tokens** with the `mcp` scope:
 
-**Temporary workaround:** Use your user ID from the database directly in tool calls.
+- Tokens are created in your Lion Reader account settings
+- Passed via `Authorization: Bearer <token>` header
+- Same system used by the browser extension
+- Tokens can be revoked anytime from settings
 
 ## Architecture
 
