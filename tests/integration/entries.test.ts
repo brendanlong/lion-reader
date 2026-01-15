@@ -445,8 +445,8 @@ describe("Entries", () => {
 
       const result = await caller.entries.markRead({ ids: [entry1Id, entry2Id], read: true });
 
-      expect(result.entries).toHaveLength(2);
-      expect(result.entries.every((e) => e.read === true)).toBe(true);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
 
       // Verify database state
       const dbEntries = await db.select().from(userEntries).where(eq(userEntries.userId, userId));
@@ -467,14 +467,23 @@ describe("Entries", () => {
 
       const result = await caller.entries.markRead({ ids: [entryId], read: false });
 
-      expect(result.entries).toHaveLength(1);
-      expect(result.entries[0].read).toBe(false);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(1);
+
+      // Verify database state
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].read).toBe(false);
     });
 
-    it("returns unread counts for affected subscriptions", async () => {
+    it("marks multiple entries with success response", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");
-      const subscriptionId = await createTestSubscription(userId, feedId);
+      await createTestSubscription(userId, feedId);
 
       const entry1Id = await createTestEntry(feedId, { title: "Entry 1" });
       const entry2Id = await createTestEntry(feedId, { title: "Entry 2" });
@@ -487,12 +496,20 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      // Mark 2 as read, leaving 1 unread
+      // Mark 2 as read
       const result = await caller.entries.markRead({ ids: [entry1Id, entry2Id], read: true });
 
-      expect(result.subscriptionUnreadCounts).toHaveLength(1);
-      expect(result.subscriptionUnreadCounts[0].subscriptionId).toBe(subscriptionId);
-      expect(result.subscriptionUnreadCounts[0].unreadCount).toBe(1);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
+
+      // Verify database state - 2 read, 1 unread
+      const dbEntries = await db.select().from(userEntries).where(eq(userEntries.userId, userId));
+
+      const readCount = dbEntries.filter((e) => e.read).length;
+      const unreadCount = dbEntries.filter((e) => !e.read).length;
+
+      expect(readCount).toBe(2);
+      expect(unreadCount).toBe(1);
     });
   });
 
