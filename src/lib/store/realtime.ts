@@ -14,9 +14,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
-// Enable debug logging in development
-const DEBUG = process.env.NODE_ENV === "development";
-
 /**
  * Entry type for count delta routing
  */
@@ -118,12 +115,7 @@ export const useRealtimeStore = create<RealtimeStore>()(
 
           // Idempotent: skip if already marked read
           if (state.readIds.has(entryId)) {
-            if (DEBUG) console.log("⏭️  markRead: already read", { entryId });
             return state;
-          }
-
-          if (DEBUG) {
-            console.log("📖 markRead:", { entryId, entryType, subscriptionId, tagIds });
           }
 
           // Validate consistency
@@ -197,12 +189,7 @@ export const useRealtimeStore = create<RealtimeStore>()(
 
           // Idempotent: skip if already marked unread
           if (state.unreadIds.has(entryId)) {
-            if (DEBUG) console.log("⏭️  markUnread: already unread", { entryId });
             return state;
-          }
-
-          if (DEBUG) {
-            console.log("📕 markUnread:", { entryId, entryType, subscriptionId, tagIds });
           }
 
           // Validate consistency
@@ -269,14 +256,9 @@ export const useRealtimeStore = create<RealtimeStore>()(
        */
       toggleStar: (entryId: string, currentlyStarred: boolean) =>
         set((state) => {
-          if (DEBUG) {
-            console.log(currentlyStarred ? "☆ unstar:" : "⭐ star:", { entryId });
-          }
-
           if (currentlyStarred) {
             // Unstarring
             if (state.unstarredIds.has(entryId)) {
-              if (DEBUG) console.log("⏭️  toggleStar: already unstarred", { entryId });
               return state; // Already unstarred
             }
 
@@ -284,7 +266,6 @@ export const useRealtimeStore = create<RealtimeStore>()(
             if (state.starredIds.has(entryId)) {
               const newStarredIds = new Set(state.starredIds);
               newStarredIds.delete(entryId);
-              if (DEBUG) console.log("↩️  toggleStar: undoing previous star", { entryId });
               return { starredIds: newStarredIds };
             }
 
@@ -294,7 +275,6 @@ export const useRealtimeStore = create<RealtimeStore>()(
           } else {
             // Starring
             if (state.starredIds.has(entryId)) {
-              if (DEBUG) console.log("⏭️  toggleStar: already starred", { entryId });
               return state; // Already starred
             }
 
@@ -302,7 +282,6 @@ export const useRealtimeStore = create<RealtimeStore>()(
             if (state.unstarredIds.has(entryId)) {
               const newUnstarredIds = new Set(state.unstarredIds);
               newUnstarredIds.delete(entryId);
-              if (DEBUG) console.log("↩️  toggleStar: undoing previous unstar", { entryId });
               return { unstarredIds: newUnstarredIds };
             }
 
