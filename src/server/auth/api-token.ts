@@ -25,6 +25,8 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 export const API_TOKEN_SCOPES = {
   /** Allows saving articles (POST /api/v1/saved) */
   SAVED_WRITE: "saved:write",
+  /** Allows full MCP (Model Context Protocol) access */
+  MCP: "mcp",
 } as const;
 
 export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[keyof typeof API_TOKEN_SCOPES];

@@ -30,7 +30,8 @@
     "test": "pnpm db:migrate:test && pnpm db:schema:test && dotenv -o -e .env.test -- vitest",
     "test:unit": "dotenv -o -e .env.test -- vitest run tests/unit",
     "test:integration": "pnpm db:migrate:test && pnpm db:schema:test && dotenv -o -e .env.test -- vitest run tests/integration",
-    "worker": "tsx scripts/worker.ts"
+    "worker": "tsx scripts/worker.ts",
+    "mcp:serve": "dotenv -- tsx src/server/mcp/bin.ts"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": [
@@ -44,6 +45,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.965.0",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "@mozilla/readability": "^0.6.0",
     "@sentry/nextjs": "^10.32.1",
     "@tanstack/react-query": "^5.90.12",
