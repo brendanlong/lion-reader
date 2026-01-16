@@ -43,6 +43,8 @@ const uuidSchema = z.string().uuid("Invalid ID");
  */
 const generateInputSchema = z.object({
   entryId: uuidSchema,
+  /** Force regeneration even if a cached summary exists */
+  forceRegenerate: z.boolean().optional().default(false),
 });
 
 // ============================================================================
@@ -148,11 +150,10 @@ export const summarizationRouter = createTRPCRouter({
 
       const summaryRecord = summary[0];
 
-      // Check if summary is stale (different prompt version)
-      const isStale = summaryRecord.promptVersion !== CURRENT_PROMPT_VERSION;
-
-      // Return cached summary if available and not stale
-      if (summaryRecord.summaryText && !isStale) {
+      // Return cached summary if available and not forcing regeneration
+      // Note: We preserve cached summaries even when the model/prompt version changes,
+      // allowing users to manually regenerate via the "Regenerate" button if desired.
+      if (summaryRecord.summaryText && !input.forceRegenerate) {
         return {
           summary: summaryRecord.summaryText,
           cached: true,

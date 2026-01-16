@@ -218,7 +218,7 @@ export function EntryContent({
   // Handle summary regenerate
   const handleSummaryRegenerate = useCallback(() => {
     setSummaryError(null);
-    summarizationMutation.mutate({ entryId });
+    summarizationMutation.mutate({ entryId, forceRegenerate: true });
   }, [summarizationMutation, entryId]);
 
   // Auto-fetch full content when entry loads and setting is enabled
