@@ -238,9 +238,9 @@ export async function POST(request: NextRequest) {
   const redirectUri = formData.get("redirect_uri") as string;
   const scope = formData.get("scope") as string;
   const codeChallenge = formData.get("code_challenge") as string;
-  const state = formData.get("state") as string | undefined;
-  const resource = formData.get("resource") as string | undefined;
-  const action = formData.get("action") as string;
+  const state = (formData.get("state") as string) || undefined;
+  const resource = (formData.get("resource") as string) || undefined;
+  const action = formData.get("user_action") as string;
 
   // Validate required parameters
   if (!clientId || !redirectUri || !codeChallenge) {
