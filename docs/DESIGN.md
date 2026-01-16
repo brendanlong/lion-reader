@@ -124,6 +124,7 @@ The schema is defined in `drizzle/` migrations. Key tables:
 - **websub_subscriptions** - WebSub push subscription state
 - **ingest_addresses** - Per-user email addresses for newsletter ingestion
 - **narration_content** - Cached LLM-processed narration text
+- **entry_summaries** - Cached AI-generated article summaries
 
 ### Database Views
 
@@ -244,6 +245,7 @@ Routers are organized by resource:
 - `entries` - List, read, star, mark read
 - `feeds` - Preview, discover feeds (pre-subscription only)
 - `narration` - Text-to-speech generation
+- `summarization` - AI article summarization
 - `imports` - OPML import/export
 - `admin` - Invite management (invite-only mode)
 
@@ -281,6 +283,7 @@ Business logic is extracted into reusable service functions in `src/server/servi
 | `subscriptions.ts` | `listSubscriptions`, `searchSubscriptions`, `getSubscription`                 |
 | `narration.ts`     | Text-to-speech operations                                                     |
 | `full-content.ts`  | Fetch full article content from URLs                                          |
+| `summarization.ts` | AI-powered article summarization                                              |
 
 **Pattern**: Pure functions accepting `db` and parameters, returning data objects. Shared across tRPC routers, MCP server, and background jobs.
 

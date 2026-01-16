@@ -34,6 +34,7 @@ if (typeof window !== "undefined") {
   });
 }
 import { Button } from "@/components/ui/button";
+import { SummaryCard } from "@/components/summarization";
 import {
   NarrationControls,
   NarrationHighlightStyles,
@@ -288,6 +289,27 @@ export interface EntryContentBodyProps {
   isFullContentFetching?: boolean;
   /** Callback to toggle full content setting for subscription */
   onToggleFetchFullContent?: () => void;
+  // Summarization fields
+  /** Whether AI summarization is available */
+  isSummarizationAvailable?: boolean;
+  /** The generated summary, if any */
+  summary?: {
+    text: string;
+    modelId: string;
+    generatedAt: Date | null;
+  } | null;
+  /** Whether to show the summary card */
+  showSummary?: boolean;
+  /** Error message if summarization failed */
+  summaryError?: string | null;
+  /** Whether summarization is in progress */
+  isSummarizing?: boolean;
+  /** Callback when summarize button is clicked */
+  onSummarize?: () => void;
+  /** Callback when summary close button is clicked */
+  onSummaryClose?: () => void;
+  /** Callback when regenerate summary is clicked */
+  onSummaryRegenerate?: () => void;
 }
 
 /**
@@ -363,6 +385,15 @@ export function EntryContentBody({
   fetchFullContent,
   isFullContentFetching,
   onToggleFetchFullContent,
+  // Summarization props
+  isSummarizationAvailable,
+  summary,
+  showSummary,
+  summaryError,
+  isSummarizing,
+  onSummarize,
+  onSummaryClose,
+  onSummaryRegenerate,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -713,11 +744,102 @@ export function EntryContentBody({
             feedTitle={source}
             narration={narration}
           />
+
+          {/* Summarize button */}
+          {isSummarizationAvailable && onSummarize && (
+            <Button
+              variant={summary ? "primary" : "secondary"}
+              size="sm"
+              onClick={onSummarize}
+              disabled={isSummarizing}
+              className={
+                summary
+                  ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                  : ""
+              }
+              aria-label={summary ? "Toggle summary" : "Generate AI summary"}
+            >
+              {isSummarizing ? (
+                <>
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  <span className="ml-2">Summarizing...</span>
+                </>
+              ) : summary ? (
+                <>
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
+                    />
+                  </svg>
+                  <span className="ml-2">{showSummary ? "Hide Summary" : "Show Summary"}</span>
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
+                    />
+                  </svg>
+                  <span className="ml-2">Summarize</span>
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </header>
 
       {/* Divider */}
       <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
+
+      {/* Summary card - shown above content when available */}
+      {showSummary && (summary || summaryError || isSummarizing) && (
+        <SummaryCard
+          summary={summary?.text ?? ""}
+          modelId={summary?.modelId ?? ""}
+          generatedAt={summary?.generatedAt ?? null}
+          isLoading={isSummarizing}
+          error={summaryError}
+          onClose={onSummaryClose}
+          onRegenerate={onSummaryRegenerate}
+        />
+      )}
 
       {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
       {shouldProcessForHighlighting && (
