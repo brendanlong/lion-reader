@@ -15,6 +15,7 @@ interface SettingsLayoutProps {
 
 const settingsLinks = [
   { href: "/settings", label: "Account" },
+  { href: "/settings/appearance", label: "Appearance" },
   { href: "/settings/sessions", label: "Sessions" },
   { href: "/settings/api-tokens", label: "API Tokens" },
   { href: "/settings/integrations", label: "Integrations" },
