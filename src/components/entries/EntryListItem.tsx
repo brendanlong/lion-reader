@@ -10,6 +10,7 @@
 import { memo } from "react";
 import { formatRelativeTime, calculateReadingTime } from "@/lib/format";
 import { type EntryType } from "@/lib/store/realtime";
+import { ReadingTimeDisplay } from "./ReadingTimeDisplay";
 
 /**
  * Entry data for list display (lightweight, no full content).
@@ -221,12 +222,7 @@ export const EntryListItem = memo(function EntryListItem({
             <time dateTime={date.toISOString()} className="shrink-0">
               {formatRelativeTime(date)}
             </time>
-            {readingTime && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="shrink-0">{readingTime}</span>
-              </>
-            )}
+            <ReadingTimeDisplay readingTime={readingTime} separator="dot" />
           </div>
 
           {/* Preview */}

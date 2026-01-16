@@ -11,6 +11,7 @@ import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
 import { calculateReadingTime } from "@/lib/format";
+import { ReadingTimeDisplay } from "./ReadingTimeDisplay";
 
 // Configure DOMPurify to:
 // 1. Open all external links in new tabs
@@ -596,17 +597,7 @@ export function EntryContentBody({
             {datePrefix ? `${datePrefix} ` : ""}
             {formatDate(date)}
           </time>
-          {readingTime && (
-            <>
-              <span
-                aria-hidden="true"
-                className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
-              >
-                |
-              </span>
-              <span className="basis-full sm:basis-auto">{readingTime}</span>
-            </>
-          )}
+          <ReadingTimeDisplay readingTime={readingTime} separator="pipe" responsiveSeparator />
         </div>
 
         {/* Action buttons */}
