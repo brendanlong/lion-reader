@@ -25,6 +25,7 @@ import {
   narrationContent,
 } from "@/server/db/schema";
 import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
+import { calculateReadingTime } from "@/lib/format";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -111,6 +112,7 @@ const entryListItemSchema = z.object({
   starred: z.boolean(),
   feedTitle: z.string().nullable(),
   siteName: z.string().nullable(),
+  readingTime: z.string().nullable(),
 });
 
 /**
@@ -134,6 +136,7 @@ const entryFullSchema = z.object({
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
   siteName: z.string().nullable(),
+  readingTime: z.string().nullable(),
   // Full content fields
   fullContentOriginal: z.string().nullable(),
   fullContentCleaned: z.string().nullable(),
@@ -488,6 +491,7 @@ export const entriesRouter = createTRPCRouter({
         starred: row.starred,
         feedTitle: row.feedTitle,
         siteName: row.siteName,
+        readingTime: calculateReadingTime(row.summary),
       }));
 
       // Generate next cursor if there are more results
@@ -696,6 +700,7 @@ export const entriesRouter = createTRPCRouter({
         starred: row.starred,
         feedTitle: row.feedTitle,
         siteName: row.siteName,
+        readingTime: calculateReadingTime(row.summary),
       }));
 
       // Generate next cursor if there are more results
@@ -773,6 +778,12 @@ export const entriesRouter = createTRPCRouter({
 
       const entry = result[0];
 
+      // Calculate reading time based on available content
+      // Prefer full content if available, otherwise use feed content
+      const contentForReadingTime =
+        entry.fullContentCleaned ?? entry.contentCleaned ?? entry.contentOriginal ?? null;
+      const readingTime = calculateReadingTime(contentForReadingTime);
+
       return {
         entry: {
           id: entry.id,
@@ -792,6 +803,7 @@ export const entriesRouter = createTRPCRouter({
           feedTitle: entry.feedTitle,
           feedUrl: entry.feedUrl,
           siteName: entry.siteName,
+          readingTime,
           fullContentOriginal: entry.fullContentOriginal,
           fullContentCleaned: entry.fullContentCleaned,
           fullContentFetchedAt: entry.fullContentFetchedAt,
@@ -1358,6 +1370,9 @@ export const entriesRouter = createTRPCRouter({
           error: result.error,
         });
 
+        const errorReadingTime = calculateReadingTime(
+          entry.fullContentCleaned ?? entry.contentCleaned ?? entry.contentOriginal ?? null
+        );
         return {
           success: false,
           error: result.error,
@@ -1365,6 +1380,7 @@ export const entriesRouter = createTRPCRouter({
             ...entry,
             fullContentError: result.error ?? "Unknown error",
             fullContentFetchedAt: new Date(),
+            readingTime: errorReadingTime,
           },
         };
       }
@@ -1407,6 +1423,9 @@ export const entriesRouter = createTRPCRouter({
         contentLength: result.contentCleaned?.length,
       });
 
+      const successReadingTime = calculateReadingTime(
+        result.contentCleaned ?? result.contentOriginal ?? null
+      );
       return {
         success: true,
         entry: {
@@ -1415,6 +1434,7 @@ export const entriesRouter = createTRPCRouter({
           fullContentCleaned: result.contentCleaned ?? null,
           fullContentFetchedAt: now,
           fullContentError: null,
+          readingTime: successReadingTime,
         },
       };
     }),

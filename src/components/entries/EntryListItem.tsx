@@ -8,7 +8,7 @@
 "use client";
 
 import { memo } from "react";
-import { formatRelativeTime, calculateReadingTime } from "@/lib/format";
+import { formatRelativeTime } from "@/lib/format";
 import { type EntryType } from "@/lib/store/realtime";
 import { ReadingTimeDisplay } from "./ReadingTimeDisplay";
 
@@ -29,6 +29,7 @@ export interface EntryListItemData {
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
+  readingTime: string | null;
 }
 
 interface EntryListItemProps {
@@ -97,11 +98,11 @@ export const EntryListItem = memo(function EntryListItem({
     feedTitle,
     publishedAt,
     fetchedAt,
+    readingTime,
   } = entry;
   const displayTitle = title ?? "Untitled";
   const source = feedTitle ?? "Unknown Feed";
   const date = publishedAt ?? fetchedAt;
-  const readingTime = calculateReadingTime(summary);
 
   const handleClick = () => {
     onClick?.(id);

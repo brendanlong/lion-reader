@@ -10,7 +10,6 @@
 import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
-import { calculateReadingTime } from "@/lib/format";
 import { ReadingTimeDisplay } from "./ReadingTimeDisplay";
 
 // Configure DOMPurify to:
@@ -251,6 +250,8 @@ export interface EntryContentBodyProps {
   date: Date;
   /** Optional prefix for the date (e.g., "Saved") */
   datePrefix?: string;
+  /** The estimated reading time (e.g., "5 min read") */
+  readingTime: string | null;
   /** The original HTML content */
   contentOriginal: string | null;
   /** The cleaned HTML content */
@@ -345,6 +346,7 @@ export function EntryContentBody({
   url,
   date,
   datePrefix,
+  readingTime,
   contentOriginal,
   contentCleaned,
   fallbackContent,
@@ -375,13 +377,6 @@ export function EntryContentBody({
   // 2. Full content has been fetched successfully (no error, has content)
   const hasFullContent = Boolean(fullContentCleaned && fullContentFetchedAt && !fullContentError);
   const showFullContent = fetchFullContent && hasFullContent;
-
-  // Calculate reading time based on content being displayed
-  // Prefer full content if available, otherwise use feed content
-  const contentForReadingTime = showFullContent
-    ? (fullContentCleaned ?? null)
-    : (contentCleaned ?? contentOriginal ?? null);
-  const readingTime = calculateReadingTime(contentForReadingTime);
 
   // Check if both feed content versions are available for toggle
   // Only show this toggle when NOT showing full content
