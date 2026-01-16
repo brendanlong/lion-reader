@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, useMemo, useCallback } from "react";
+import { useEffect, useRef, useMemo, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import {
@@ -168,6 +168,59 @@ export function EntryContent({
     }
   }, [entry, fetchFullContent, entryId, updateSubscriptionMutation, fetchFullContentMutation]);
 
+  // Summarization state and mutation
+  const [summary, setSummary] = useState<{
+    text: string;
+    modelId: string;
+    generatedAt: Date | null;
+  } | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  // Check if summarization is available
+  const summarizationAvailableQuery = trpc.summarization.isAvailable.useQuery();
+  const isSummarizationAvailable = summarizationAvailableQuery.data?.available ?? false;
+
+  // Summarization mutation
+  const summarizationMutation = trpc.summarization.generate.useMutation({
+    onSuccess: (result) => {
+      setSummary({
+        text: result.summary,
+        modelId: result.modelId,
+        generatedAt: result.generatedAt,
+      });
+      setSummaryError(null);
+      setShowSummary(true);
+    },
+    onError: (error) => {
+      setSummaryError(error.message);
+      setShowSummary(true);
+    },
+  });
+
+  // Handle summarize button click
+  const handleSummarize = useCallback(() => {
+    if (summary) {
+      // Toggle visibility if we already have a summary
+      setShowSummary(!showSummary);
+    } else {
+      // Generate new summary
+      setSummaryError(null);
+      summarizationMutation.mutate({ entryId });
+    }
+  }, [summary, showSummary, summarizationMutation, entryId]);
+
+  // Handle summary close
+  const handleSummaryClose = useCallback(() => {
+    setShowSummary(false);
+  }, []);
+
+  // Handle summary regenerate
+  const handleSummaryRegenerate = useCallback(() => {
+    setSummaryError(null);
+    summarizationMutation.mutate({ entryId });
+  }, [summarizationMutation, entryId]);
+
   // Auto-fetch full content when entry loads and setting is enabled
   const hasAutoFetchedFullContent = useRef(false);
   useEffect(() => {
@@ -250,6 +303,15 @@ export function EntryContent({
         fetchFullContent={fetchFullContent}
         isFullContentFetching={fetchFullContentMutation.isPending}
         onToggleFetchFullContent={entry.subscriptionId ? handleToggleFetchFullContent : undefined}
+        // Summarization props
+        isSummarizationAvailable={isSummarizationAvailable}
+        summary={summary}
+        showSummary={showSummary}
+        summaryError={summaryError}
+        isSummarizing={summarizationMutation.isPending}
+        onSummarize={handleSummarize}
+        onSummaryClose={handleSummaryClose}
+        onSummaryRegenerate={handleSummaryRegenerate}
       />
     );
   }
