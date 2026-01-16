@@ -1,0 +1,288 @@
+# Backend API Architecture
+# tRPC routers → Services layer → Database
+
+direction: right
+
+title: {
+  label: Backend API Architecture
+  near: top-center
+  shape: text
+  style.font-size: 24
+  style.bold: true
+}
+
+# ==============================================================================
+# Client Layer
+# ==============================================================================
+
+clients: {
+  label: Clients
+  style.fill: "#e3f2fd"
+
+  web: {
+    label: Web App
+    icon: https://icons.terrastruct.com/essentials%2F112-browser.svg
+  }
+
+  android: {
+    label: Android App
+    icon: https://icons.terrastruct.com/tech%2F024-android.svg
+  }
+
+  mcp: {
+    label: MCP Server
+    icon: https://icons.terrastruct.com/essentials%2F123-artificial-intelligence.svg
+    tooltip: "AI assistant integration"
+  }
+}
+
+# ==============================================================================
+# API Layer
+# ==============================================================================
+
+api: {
+  label: API Layer
+  style.fill: "#fff3e0"
+
+  trpc: {
+    label: tRPC Server
+    style.fill: "#ffcc80"
+
+    middleware: {
+      label: Middleware
+
+      auth: {
+        label: Auth
+        tooltip: "Session/API token validation"
+      }
+
+      rate_limit: {
+        label: Rate Limit
+        tooltip: "Token bucket via Redis"
+      }
+    }
+
+    routers: {
+      label: Routers
+      style.fill: "#ffe0b2"
+
+      auth: {
+        label: auth
+        tooltip: "Login, register, OAuth"
+      }
+
+      entries: {
+        label: entries
+        tooltip: "List, get, markRead, star"
+      }
+
+      subscriptions: {
+        label: subscriptions
+        tooltip: "CRUD, import/export"
+      }
+
+      tags: {
+        label: tags
+        tooltip: "Create, update, delete"
+      }
+
+      sync: {
+        label: sync
+        tooltip: "Incremental sync endpoint"
+      }
+
+      narration: {
+        label: narration
+        tooltip: "Text-to-speech"
+      }
+
+      feeds: {
+        label: feeds
+        tooltip: "Preview, discover"
+      }
+
+      saved: {
+        label: saved
+        tooltip: "Read-it-later"
+      }
+
+      admin: {
+        label: admin
+        tooltip: "Invite management"
+      }
+    }
+  }
+
+  rest: {
+    label: REST API
+    style.fill: "#a5d6a7"
+    tooltip: "Generated from tRPC for mobile clients"
+  }
+
+  sse: {
+    label: SSE Endpoint
+    style.fill: "#81d4fa"
+    tooltip: "/api/v1/events"
+  }
+}
+
+# ==============================================================================
+# Services Layer
+# ==============================================================================
+
+services: {
+  label: Services Layer
+  style.fill: "#f3e5f5"
+  tooltip: "Reusable business logic"
+
+  entries_svc: {
+    label: entries
+    shape: hexagon
+
+    methods: |md
+      - listEntries
+      - searchEntries
+      - getEntry
+      - markEntriesRead
+      - countEntries
+    |
+  }
+
+  subscriptions_svc: {
+    label: subscriptions
+    shape: hexagon
+
+    methods: |md
+      - listSubscriptions
+      - searchSubscriptions
+      - getSubscription
+    |
+  }
+
+  narration_svc: {
+    label: narration
+    shape: hexagon
+  }
+
+  full_content_svc: {
+    label: full-content
+    shape: hexagon
+    tooltip: "Fetch article from URL"
+  }
+}
+
+# ==============================================================================
+# Data Layer
+# ==============================================================================
+
+data: {
+  label: Data Layer
+  style.fill: "#e8f5e9"
+
+  postgres: {
+    label: PostgreSQL
+    shape: cylinder
+    style.fill: "#4db6ac"
+
+    tables: |md
+      **Core Tables**
+      - users, sessions
+      - feeds, entries
+      - subscriptions
+      - user_entries
+      - tags
+
+      **Views**
+      - user_feeds
+      - visible_entries
+    |
+  }
+
+  redis: {
+    label: Redis
+    shape: cylinder
+    style.fill: "#ef5350"
+
+    uses: |md
+      - Session cache
+      - Rate limiting
+      - Pub/sub events
+    |
+  }
+}
+
+# ==============================================================================
+# Connections - Client to API
+# ==============================================================================
+
+clients.web -> api.trpc: "tRPC client" {
+  style.stroke: "#1976d2"
+  style.stroke-width: 2
+}
+
+clients.android -> api.rest: "REST API" {
+  style.stroke: "#388e3c"
+  style.stroke-width: 2
+}
+
+clients.mcp -> services: "Direct service calls" {
+  style.stroke: "#7b1fa2"
+  style.stroke-width: 2
+}
+
+clients.web -> api.sse: "SSE stream" {
+  style.stroke: "#0288d1"
+  style.stroke-dash: 3
+}
+
+# ==============================================================================
+# Connections - API to Services
+# ==============================================================================
+
+api.trpc.routers.entries -> services.entries_svc {
+  style.stroke: "#9e9e9e"
+}
+
+api.trpc.routers.subscriptions -> services.subscriptions_svc {
+  style.stroke: "#9e9e9e"
+}
+
+api.trpc.routers.narration -> services.narration_svc {
+  style.stroke: "#9e9e9e"
+}
+
+api.rest -> api.trpc: "Generated from" {
+  style.stroke: "#9e9e9e"
+  style.stroke-dash: 3
+}
+
+# ==============================================================================
+# Connections - Services to Data
+# ==============================================================================
+
+services.entries_svc -> data.postgres {
+  style.stroke: "#4caf50"
+  style.stroke-width: 2
+}
+
+services.subscriptions_svc -> data.postgres {
+  style.stroke: "#4caf50"
+  style.stroke-width: 2
+}
+
+api.sse -> data.redis: "Subscribe to channels" {
+  style.stroke: "#f44336"
+}
+
+api.trpc.middleware.rate_limit -> data.redis: "Check limits" {
+  style.stroke: "#f44336"
+}
+
+api.trpc.middleware.auth -> data.redis: "Session cache" {
+  style.stroke: "#f44336"
+}
+
+api.trpc.middleware.auth -> data.postgres: "Session fallback" {
+  style.stroke: "#4caf50"
+  style.stroke-dash: 3
+}
