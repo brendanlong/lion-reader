@@ -19,6 +19,7 @@ import {
   KeyboardShortcutsSettings,
   TagManagement,
   BookmarkletSettings,
+  IntegrationsSettings,
   NarrationSettings,
   AboutSection,
 } from "@/components/settings";
@@ -165,6 +166,9 @@ function SettingsContent() {
 
       {/* Bookmarklet Section */}
       <BookmarkletSettings />
+
+      {/* AI Integrations Section */}
+      <IntegrationsSettings />
 
       {/* Narration Section */}
       <NarrationSettings />
