@@ -4,7 +4,7 @@
 
 -- Create entry_summaries table
 CREATE TABLE entry_summaries (
-  id uuid PRIMARY KEY DEFAULT gen_uuidv7(),
+  id uuid PRIMARY KEY NOT NULL,
   content_hash text UNIQUE NOT NULL,      -- SHA256 of source content
 
   summary_text text,                      -- null until generated
@@ -24,7 +24,3 @@ CREATE INDEX idx_entry_summaries_prompt_version
   ON entry_summaries (prompt_version)
   WHERE summary_text IS NOT NULL;
 
--- Index for error retry logic
-CREATE INDEX idx_entry_summaries_error_retry
-  ON entry_summaries (id)
-  WHERE summary_text IS NULL AND (error_at IS NULL OR error_at < now() - interval '1 hour');

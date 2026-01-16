@@ -76,6 +76,18 @@ CREATE TABLE public.entries (
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
 );
 
+CREATE TABLE public.entry_summaries (
+    id uuid NOT NULL,
+    content_hash text NOT NULL,
+    summary_text text,
+    model_id text,
+    prompt_version smallint DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    generated_at timestamp with time zone,
+    error text,
+    error_at timestamp with time zone
+);
+
 CREATE TABLE public.feeds (
     id uuid NOT NULL,
     type public.feed_type NOT NULL,
@@ -381,6 +393,12 @@ ALTER TABLE ONLY public.blocked_senders
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.entry_summaries
+    ADD CONSTRAINT entry_summaries_content_hash_key UNIQUE (content_hash);
+
+ALTER TABLE ONLY public.entry_summaries
+    ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_pkey PRIMARY KEY (id);
 
@@ -509,6 +527,8 @@ CREATE INDEX idx_entries_last_seen ON public.entries USING btree (feed_id, last_
 CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 
 CREATE INDEX idx_entries_type ON public.entries USING btree (type);
+
+CREATE INDEX idx_entry_summaries_prompt_version ON public.entry_summaries USING btree (prompt_version) WHERE (summary_text IS NOT NULL);
 
 CREATE INDEX idx_feeds_next_fetch ON public.feeds USING btree (next_fetch_at);
 
