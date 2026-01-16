@@ -17,6 +17,7 @@ import {
   isSummarizationAvailable,
   prepareContentForSummarization,
   CURRENT_PROMPT_VERSION,
+  getSummarizationModelId,
 } from "@/server/services/summarization";
 import { logger } from "@/lib/logger";
 
@@ -57,6 +58,8 @@ const generateOutputSchema = z.object({
   cached: z.boolean(),
   modelId: z.string(),
   generatedAt: z.date().nullable(),
+  /** True if current settings differ from what was used to generate this summary */
+  settingsChanged: z.boolean(),
 });
 
 // ============================================================================
@@ -148,16 +151,21 @@ export const summarizationRouter = createTRPCRouter({
 
       const summaryRecord = summary[0];
 
-      // Check if summary is stale (different prompt version)
-      const isStale = summaryRecord.promptVersion !== CURRENT_PROMPT_VERSION;
+      // Check if settings have changed since this summary was generated
+      const currentModelId = getSummarizationModelId();
+      const promptVersionChanged = summaryRecord.promptVersion !== CURRENT_PROMPT_VERSION;
+      const modelChanged =
+        summaryRecord.modelId !== null && summaryRecord.modelId !== currentModelId;
+      const settingsChanged = promptVersionChanged || modelChanged;
 
-      // Return cached summary if available and not stale
-      if (summaryRecord.summaryText && !isStale) {
+      // Return cached summary if available and not stale (prompt version unchanged)
+      if (summaryRecord.summaryText && !promptVersionChanged) {
         return {
           summary: summaryRecord.summaryText,
           cached: true,
           modelId: summaryRecord.modelId || "unknown",
           generatedAt: summaryRecord.generatedAt,
+          settingsChanged,
         };
       }
 
@@ -196,6 +204,7 @@ export const summarizationRouter = createTRPCRouter({
           cached: false,
           modelId: result.modelId,
           generatedAt: new Date(),
+          settingsChanged: false,
         };
       } catch (error) {
         // Log the error

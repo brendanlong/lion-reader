@@ -173,6 +173,7 @@ export function EntryContent({
     text: string;
     modelId: string;
     generatedAt: Date | null;
+    settingsChanged: boolean;
   } | null>(null);
   const [showSummary, setShowSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -188,6 +189,7 @@ export function EntryContent({
         text: result.summary,
         modelId: result.modelId,
         generatedAt: result.generatedAt,
+        settingsChanged: result.settingsChanged,
       });
       setSummaryError(null);
       setShowSummary(true);
