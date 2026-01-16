@@ -25,6 +25,7 @@ import {
   narrationContent,
 } from "@/server/db/schema";
 import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
+import { stripHtml } from "@/server/html/strip-html";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -1367,6 +1368,41 @@ export const entriesRouter = createTRPCRouter({
             fullContentFetchedAt: new Date(),
           },
         };
+      }
+
+      // Check if full content is shorter than feed content (indicates broken extraction)
+      // Only check if we have feed content to compare against
+      if (entry.contentCleaned && result.textContentLength !== undefined) {
+        const feedTextLength = stripHtml(entry.contentCleaned).length;
+        if (result.textContentLength < feedTextLength) {
+          const errorMessage = "Full content shorter than feed content";
+          logger.warn("Full content extraction appears broken", {
+            entryId: entry.id,
+            url: entry.url,
+            fullContentTextLength: result.textContentLength,
+            feedContentTextLength: feedTextLength,
+          });
+
+          // Update entry with error
+          await ctx.db
+            .update(entries)
+            .set({
+              fullContentError: errorMessage,
+              fullContentFetchedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(entries.id, input.id));
+
+          return {
+            success: false,
+            error: errorMessage,
+            entry: {
+              ...entry,
+              fullContentError: errorMessage,
+              fullContentFetchedAt: new Date(),
+            },
+          };
+        }
       }
 
       // Update entry with full content
