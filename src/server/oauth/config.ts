@@ -28,6 +28,13 @@ export function getTokenEndpoint(): string {
 }
 
 /**
+ * Get the client registration endpoint URL (RFC 7591).
+ */
+export function getRegistrationEndpoint(): string {
+  return `${getIssuer()}/oauth/register`;
+}
+
+/**
  * Get the MCP resource URL.
  * This is the resource identifier for the MCP API.
  */
@@ -46,6 +53,7 @@ export function getAuthorizationServerMetadata() {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
+    registration_endpoint: `${issuer}/oauth/register`,
     scopes_supported: Object.values(OAUTH_SCOPES),
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
