@@ -19,13 +19,15 @@ Lion Reader is a self-hosted feed reader that supports RSS and Atom feeds. It's 
 - **Authentication** - Email/password and OAuth (Google, Apple)
 - **OPML import/export** - Migrate from other readers
 - **Keyboard shortcuts** - Vim-style navigation for power users
+- **Full-text search** - Search entries by title and content
+- **Full content fetching** - Optionally fetch complete article content from URLs
 - **REST API** - Public API for third-party clients
+- **MCP Server** - Expose feeds to AI assistants via Model Context Protocol
 - **Android app** - Native Android client in `android/`
 - **Rate limiting** and **error tracking** with Sentry
 
 ### Planned Features
 
-- Full-text search
 - iOS app
 - Offline/PWA support
 
@@ -363,6 +365,28 @@ Lion Reader provides a REST API for third-party clients. Key endpoints:
 | GET    | `/v1/events`            | SSE stream for real-time updates |
 
 See [MVP Specification](docs/MVP.md) for the complete API reference.
+
+## MCP Server
+
+Lion Reader provides an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server for AI assistant integration. This allows AI tools like Claude to read and manage your feeds.
+
+### Available Tools
+
+| Tool                 | Description                              |
+| -------------------- | ---------------------------------------- |
+| `list_entries`       | List entries with filters and pagination |
+| `search_entries`     | Full-text search across entries          |
+| `get_entry`          | Get entry with full content              |
+| `mark_entries_read`  | Mark entries read/unread                 |
+| `list_subscriptions` | List all subscriptions                   |
+
+### Running
+
+```bash
+pnpm mcp:serve
+```
+
+Configure your AI assistant to use stdio transport with this command.
 
 ## License
 

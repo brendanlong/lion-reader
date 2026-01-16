@@ -9,11 +9,22 @@
 5. [Real-time Updates](#real-time-updates)
 6. [API Design](#api-design)
 7. [Frontend Architecture](#frontend-architecture)
-8. [Infrastructure](#infrastructure)
-9. [Observability](#observability)
-10. [Testing Strategy](#testing-strategy)
+8. [MCP Server](#mcp-server)
+9. [Infrastructure](#infrastructure)
+10. [Observability](#observability)
+11. [Testing Strategy](#testing-strategy)
 
 For detailed feature designs, see the docs in `docs/features/`.
+
+### Architecture Diagrams (D2)
+
+Visual architecture diagrams are available in `docs/diagrams/`:
+
+- **[frontend-data-flow.d2](diagrams/frontend-data-flow.d2)** - Delta-based state management with Zustand and React Query
+- **[backend-api.d2](diagrams/backend-api.d2)** - tRPC routers, services layer, and database
+- **[feed-fetcher.d2](diagrams/feed-fetcher.d2)** - Background job queue and feed processing pipeline
+
+To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playground](https://play.d2lang.com/).
 
 ---
 
@@ -23,8 +34,8 @@ For detailed feature designs, see the docs in `docs/features/`.
 
 ```
                                     ┌──────────────────┐
-                                    │  Email Service   │
-                                    │  (Postmark/SES)  │
+                                    │  Cloudflare      │
+                                    │  Email Worker    │
                                     └────────┬─────────┘
                                              │ webhook
 ┌─────────────────┐                          │
@@ -47,7 +58,7 @@ For detailed feature designs, see the docs in `docs/features/`.
 │  └─────────┘  │     │               │     │               │
 │  ┌─────────┐  │     │               │     │               │
 │  │ Worker  │  │     │               │     │               │
-│  │ threads │  │     │               │     │               │
+│  │ process │  │     │               │     │               │
 │  └─────────┘  │     │               │     │               │
 └───────┬───────┘     └───────┬───────┘     └───────┬───────┘
         │                     │                     │
@@ -61,6 +72,12 @@ For detailed feature designs, see the docs in `docs/features/`.
            │  - job queue│       │  - sessions │
            └─────────────┘       │  - rate lim │
                                  └─────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                      MCP Server (Optional)                   │
+│  Exposes Lion Reader to AI assistants via stdio transport    │
+│  Uses same services layer as tRPC routers                    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Design Principles
@@ -254,6 +271,37 @@ Token bucket via Redis, per-user. Different buckets for different operations (e.
 }
 ```
 
+### Services Layer
+
+Business logic is extracted into reusable service functions in `src/server/services/`:
+
+| Service            | Functions                                                                     |
+| ------------------ | ----------------------------------------------------------------------------- |
+| `entries.ts`       | `listEntries`, `searchEntries`, `getEntry`, `markEntriesRead`, `countEntries` |
+| `subscriptions.ts` | `listSubscriptions`, `searchSubscriptions`, `getSubscription`                 |
+| `narration.ts`     | Text-to-speech operations                                                     |
+| `full-content.ts`  | Fetch full article content from URLs                                          |
+
+**Pattern**: Pure functions accepting `db` and parameters, returning data objects. Shared across tRPC routers, MCP server, and background jobs.
+
+```typescript
+// src/server/services/entries.ts
+export async function listEntries(db, params) {
+  /* ... */
+}
+
+// Usage in tRPC router
+import * as entriesService from "@/server/services/entries";
+export const entriesRouter = createTRPCRouter({
+  list: protectedProcedure.query(({ ctx, input }) => {
+    return entriesService.listEntries(ctx.db, { ...input, userId: ctx.session.user.id });
+  }),
+});
+
+// Usage in MCP server
+const entries = await entriesService.listEntries(db, { userId, ...filters });
+```
+
 ---
 
 ## Frontend Architecture
@@ -268,6 +316,7 @@ app/
     starred/                  # Starred entries
     saved/                    # Saved articles
     subscription/[id]/        # Single subscription entries (uses subscription ID)
+    tag/[id]/                 # Entries filtered by tag
     entry/[id]/               # Full entry view
     settings/                 # User settings
     subscribe/                # Add subscription flow
@@ -283,11 +332,133 @@ app/
 - `components/saved/` - Saved article views
 - `components/ui/` - Generic UI primitives
 
-### State Management
+### State Management: Delta-Based Architecture
 
-- **TanStack Query** for all server state via tRPC
-- **Optimistic updates** for mutations (mark read, star, etc.)
-- **localStorage** for view preferences (sort order, show read items)
+The frontend uses a delta-based state management approach with Zustand and React Query:
+
+```
+Server (React Query)  →  Canonical state from API
+SSE/Polling           →  Incremental updates between fetches
+Zustand               →  Client-side diff layer (optimistic + real-time)
+```
+
+**Key principle**: Zustand stores only **deltas** (changes), not full copies of server data. This enables instant optimistic updates while avoiding complex cache synchronization.
+
+#### Zustand Store (`src/lib/store/realtime.ts`)
+
+```typescript
+// Stores diffs, not full data
+{
+  readIds: Set<string>,           // "these entries are now read"
+  unreadIds: Set<string>,         // "these entries are now unread"
+  starredIds: Set<string>,        // "these entries are now starred"
+  subscriptionCountDeltas: {},    // { [subId]: -2 }  (unread count changes)
+  tagCountDeltas: {},             // { [tagId]: +1 }
+  pendingEntries: [],             // New entries from SSE, not yet in server state
+}
+```
+
+#### Data Merge Pattern
+
+Components merge React Query data with Zustand deltas at render time:
+
+```typescript
+function Sidebar() {
+  const { data } = trpc.subscriptions.list.useQuery();
+  const deltas = useRealtimeStore((s) => s.subscriptionCountDeltas);
+
+  const subscriptions = data?.items.map((sub) => ({
+    ...sub,
+    unreadCount: Math.max(0, sub.unreadCount + (deltas[sub.id] || 0)),
+  }));
+}
+```
+
+#### Key Hooks
+
+| Hook                 | Purpose                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `useEntryMutations`  | Consolidates all entry mutations (markRead, star, etc.) with optimistic updates    |
+| `useEntryDeltas`     | Merges server entry data with Zustand deltas                                       |
+| `useRealtimeUpdates` | Manages SSE connection with polling fallback                                       |
+| `useEntryPage`       | Higher-order hook combining queries, mutations, and view state for page components |
+
+#### Mutation Flow Example
+
+```
+1. User clicks "mark read"
+2. Zustand updates synchronously (instant UI feedback)
+3. tRPC mutation fires to server
+4. On success: React Query cache invalidated
+5. On error: Zustand rollback, user sees error toast
+```
+
+See `docs/zustand-delta-architecture.md` for full design details.
+
+### subscriptionId Passthrough Pattern
+
+Entry mutations need `subscriptionId` and `tagIds` to update unread counts correctly. These are passed explicitly through callback chains (not looked up from cache) to ensure accuracy:
+
+```typescript
+// Page component wraps mutation with tag lookup
+const handleToggleRead = useCallback(
+  (entryId, currentlyRead, subscriptionId) => {
+    const subscription = subscriptionsQuery.data?.items.find((s) => s.id === subscriptionId);
+    const tagIds = subscription?.tags.map((t) => t.id);
+    toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
+  },
+  [toggleRead, subscriptionsQuery.data]
+);
+```
+
+---
+
+## MCP Server
+
+Lion Reader exposes functionality to AI assistants via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
+
+### Architecture
+
+```
+┌─────────────────┐    stdio     ┌─────────────────┐
+│  AI Assistant   │ ←──────────→ │  MCP Server     │
+│  (Claude, etc.) │              │  lion-reader    │
+└─────────────────┘              └────────┬────────┘
+                                          │
+                                          │ uses
+                                          ▼
+                                 ┌─────────────────┐
+                                 │ Services Layer  │
+                                 │ (same as tRPC)  │
+                                 └────────┬────────┘
+                                          │
+                                          ▼
+                                 ┌─────────────────┐
+                                 │   PostgreSQL    │
+                                 └─────────────────┘
+```
+
+### Available Tools
+
+| Tool                   | Description                                   |
+| ---------------------- | --------------------------------------------- |
+| `list_entries`         | List feed entries with filters and pagination |
+| `search_entries`       | Full-text search across entries               |
+| `get_entry`            | Get single entry with full content            |
+| `mark_entries_read`    | Mark entries as read/unread (bulk)            |
+| `star_entries`         | Star/unstar entries                           |
+| `count_entries`        | Get entry counts with filters                 |
+| `list_subscriptions`   | List all active subscriptions                 |
+| `search_subscriptions` | Search subscriptions by title                 |
+| `get_subscription`     | Get subscription details                      |
+
+### Running the MCP Server
+
+```bash
+pnpm mcp:serve
+```
+
+The server uses stdio transport and can be configured in AI assistant tools that support MCP (like Claude Desktop).
 
 ---
 

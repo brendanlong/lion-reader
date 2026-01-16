@@ -1,0 +1,353 @@
+# Background Feed Fetcher Architecture
+# Job queue → Worker → Feed processing → Entry storage
+
+direction: down
+
+title: {
+  label: Background Feed Fetcher
+  near: top-center
+  shape: text
+  style.font-size: 24
+  style.bold: true
+}
+
+# ==============================================================================
+# Job Queue System
+# ==============================================================================
+
+queue: {
+  label: Job Queue (Postgres)
+  style.fill: "#e3f2fd"
+
+  jobs_table: {
+    label: jobs table
+    shape: cylinder
+    style.fill: "#64b5f6"
+
+    schema: |md
+      - id: UUID
+      - type: 'fetch_feed' | 'renew_websub'
+      - payload: { feedId }
+      - enabled: boolean
+      - next_run_at: timestamp
+      - running_since: timestamp
+      - consecutive_failures: int
+    |
+  }
+
+  claim_query: {
+    label: Claim Query
+    shape: rectangle
+    style.fill: "#90caf9"
+
+    sql: |sql
+      SELECT * FROM jobs
+      WHERE enabled = true
+        AND next_run_at <= now()
+        AND running_since IS NULL
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    |
+  }
+}
+
+# ==============================================================================
+# Worker Process
+# ==============================================================================
+
+worker: {
+  label: Worker Process
+  style.fill: "#fff3e0"
+
+  main_loop: {
+    label: Main Loop
+    shape: rectangle
+    style.fill: "#ffcc80"
+
+    description: |md
+      **Event-driven execution**
+      - Up to 5 concurrent jobs
+      - Promise.race() for slot filling
+      - 5s poll when queue empty
+      - Graceful shutdown on SIGTERM
+    |
+  }
+
+  handlers: {
+    label: Job Handlers
+    style.fill: "#ffe0b2"
+
+    fetch_feed: {
+      label: fetch_feed
+      shape: rectangle
+      tooltip: "Fetch and process a feed"
+    }
+
+    renew_websub: {
+      label: renew_websub
+      shape: rectangle
+      tooltip: "Renew WebSub subscriptions"
+    }
+
+    process_import: {
+      label: process_opml_import
+      shape: rectangle
+      tooltip: "Import feeds from OPML"
+    }
+  }
+}
+
+# ==============================================================================
+# Feed Fetching Pipeline
+# ==============================================================================
+
+pipeline: {
+  label: Feed Fetching Pipeline
+  style.fill: "#f3e5f5"
+
+  fetch: {
+    label: 1. HTTP Fetch
+    shape: rectangle
+    style.fill: "#ce93d8"
+
+    details: |md
+      - Conditional GET (ETag, Last-Modified)
+      - 30s timeout
+      - User-Agent with feed ID
+      - Handle redirects (301, 302, 307)
+    |
+  }
+
+  parse: {
+    label: 2. Parse Feed
+    shape: rectangle
+    style.fill: "#ba68c8"
+
+    details: |md
+      - Streaming XML parser
+      - RSS, Atom, JSON Feed
+      - Custom parsers (LessWrong, arXiv)
+    |
+  }
+
+  process: {
+    label: 3. Process Entries
+    shape: rectangle
+    style.fill: "#ab47bc"
+
+    details: |md
+      - Detect new vs updated (content hash)
+      - Derive GUIDs
+      - Generate summaries
+      - Absolutize URLs
+    |
+  }
+
+  store: {
+    label: 4. Store Results
+    shape: rectangle
+    style.fill: "#9c27b0"
+    style.font-color: white
+
+    details: |md
+      - Upsert entries
+      - Update feed state
+      - Calculate next_run_at
+    |
+  }
+}
+
+# ==============================================================================
+# Result Handling
+# ==============================================================================
+
+results: {
+  label: Result Handling
+  style.fill: "#e8f5e9"
+
+  success: {
+    label: Success
+    shape: rectangle
+    style.fill: "#81c784"
+
+    action: |md
+      - next_run_at from Cache-Control
+      - Default: 1 hour
+      - Reset consecutive_failures
+    |
+  }
+
+  not_modified: {
+    label: 304 Not Modified
+    shape: rectangle
+    style.fill: "#aed581"
+
+    action: |md
+      - Keep existing entries
+      - Update next_run_at
+    |
+  }
+
+  error: {
+    label: Error
+    shape: rectangle
+    style.fill: "#ef5350"
+    style.font-color: white
+
+    action: |md
+      - Increment consecutive_failures
+      - Exponential backoff
+      - Max: 7 days
+    |
+  }
+}
+
+# ==============================================================================
+# Real-time Notifications
+# ==============================================================================
+
+notifications: {
+  label: Real-time Notifications
+  style.fill: "#e1f5fe"
+
+  redis: {
+    label: Redis Pub/Sub
+    shape: cylinder
+    style.fill: "#29b6f6"
+
+    events: |md
+      - new_entry
+      - entry_updated
+    |
+  }
+
+  sse: {
+    label: SSE to Clients
+    shape: rectangle
+    style.fill: "#4fc3f7"
+  }
+}
+
+# ==============================================================================
+# Connections - Job Claiming
+# ==============================================================================
+
+queue.jobs_table -> queue.claim_query: "Query due jobs" {
+  style.stroke: "#1976d2"
+}
+
+queue.claim_query -> worker.main_loop: "Claim job (row lock)" {
+  style.stroke: "#1976d2"
+  style.stroke-width: 2
+}
+
+# ==============================================================================
+# Connections - Job Dispatch
+# ==============================================================================
+
+worker.main_loop -> worker.handlers.fetch_feed: "Dispatch" {
+  style.stroke: "#f57c00"
+}
+
+worker.main_loop -> worker.handlers.renew_websub {
+  style.stroke: "#f57c00"
+  style.stroke-dash: 3
+}
+
+worker.main_loop -> worker.handlers.process_import {
+  style.stroke: "#f57c00"
+  style.stroke-dash: 3
+}
+
+# ==============================================================================
+# Connections - Pipeline Flow
+# ==============================================================================
+
+worker.handlers.fetch_feed -> pipeline.fetch {
+  style.stroke: "#7b1fa2"
+  style.stroke-width: 2
+}
+
+pipeline.fetch -> pipeline.parse {
+  style.stroke: "#7b1fa2"
+  style.stroke-width: 2
+}
+
+pipeline.parse -> pipeline.process {
+  style.stroke: "#7b1fa2"
+  style.stroke-width: 2
+}
+
+pipeline.process -> pipeline.store {
+  style.stroke: "#7b1fa2"
+  style.stroke-width: 2
+}
+
+# ==============================================================================
+# Connections - Results
+# ==============================================================================
+
+pipeline.store -> results.success: "200 OK" {
+  style.stroke: "#4caf50"
+}
+
+pipeline.fetch -> results.not_modified: "304" {
+  style.stroke: "#8bc34a"
+  style.stroke-dash: 3
+}
+
+pipeline.fetch -> results.error: "4xx/5xx/timeout" {
+  style.stroke: "#f44336"
+  style.stroke-dash: 3
+}
+
+# ==============================================================================
+# Connections - Update Job
+# ==============================================================================
+
+results.success -> queue.jobs_table: "Update next_run_at" {
+  style.stroke: "#4caf50"
+}
+
+results.not_modified -> queue.jobs_table: "Update next_run_at" {
+  style.stroke: "#8bc34a"
+}
+
+results.error -> queue.jobs_table: "Backoff next_run_at" {
+  style.stroke: "#f44336"
+}
+
+# ==============================================================================
+# Connections - Notifications
+# ==============================================================================
+
+pipeline.process -> notifications.redis: "Publish events" {
+  style.stroke: "#0288d1"
+  style.stroke-width: 2
+}
+
+notifications.redis -> notifications.sse: "Forward to clients" {
+  style.stroke: "#0288d1"
+}
+
+# ==============================================================================
+# Flow Sequence Note
+# ==============================================================================
+
+sequence: {
+  label: Typical Flow
+  near: bottom-center
+  style.fill: "#fafafa"
+  style.stroke: "#e0e0e0"
+
+  steps: |md
+    1. Worker polls for due jobs (SELECT FOR UPDATE SKIP LOCKED)
+    2. Claims job by setting running_since
+    3. Fetches feed URL with conditional GET
+    4. Parses XML/JSON (streaming)
+    5. Processes entries (detect new/updated)
+    6. Stores in Postgres, publishes to Redis
+    7. Updates job with next_run_at
+    8. Releases slot, claims next job
+  |
+}
