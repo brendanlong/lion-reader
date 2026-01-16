@@ -143,12 +143,26 @@ export function EntryContent({
         toast.error("Failed to fetch full content", {
           description: result.error,
         });
+        // Turn off the subscription setting since full content fetch failed
+        if (entry?.subscriptionId && fetchFullContent) {
+          updateSubscriptionMutation.mutate({
+            id: entry.subscriptionId,
+            fetchFullContent: false,
+          });
+        }
       }
     },
     onError: (error) => {
       toast.error("Failed to fetch full content", {
         description: error.message,
       });
+      // Turn off the subscription setting since full content fetch failed
+      if (entry?.subscriptionId && fetchFullContent) {
+        updateSubscriptionMutation.mutate({
+          id: entry.subscriptionId,
+          fetchFullContent: false,
+        });
+      }
     },
   });
 
