@@ -54,6 +54,11 @@ import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/g
 import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated, publishSavedArticleUpdated } from "@/server/redis/pubsub";
+import {
+  processUploadedFile,
+  detectFileType,
+  getSupportedTypesDescription,
+} from "@/server/file/process-upload";
 
 // ============================================================================
 // Validation Schemas
@@ -75,10 +80,11 @@ const urlSchema = z.string().url("Invalid URL");
 
 /**
  * Full saved article output schema for single article view (includes content).
+ * URL is nullable for uploaded files which don't have a source URL.
  */
 const savedArticleFullSchema = z.object({
   id: z.string(),
-  url: z.string(),
+  url: z.string().nullable(),
   title: z.string().nullable(),
   siteName: z.string().nullable(),
   author: z.string().nullable(),
@@ -816,5 +822,160 @@ export const savedRouter = createTRPCRouter({
       await ctx.db.delete(entries).where(eq(entries.id, input.id));
 
       return {};
+    }),
+
+  /**
+   * Upload a file to save for later reading.
+   *
+   * Supports Word documents (.docx), HTML files, and Markdown files.
+   * Files are processed and converted to HTML for consistent rendering:
+   * - .docx: Converted via mammoth, then cleaned with Readability
+   * - .html: Cleaned with Readability
+   * - .md: Rendered to HTML via marked (preserved as-is semantically)
+   *
+   * @param content - Base64-encoded file content
+   * @param filename - Original filename (used for type detection and title)
+   * @param title - Optional title override
+   * @returns The saved article
+   */
+  uploadFile: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/saved/upload",
+        tags: ["Saved Articles"],
+        summary: "Upload file to save for later",
+      },
+    })
+    .input(
+      z.object({
+        content: z.string().min(1, "File content is required"),
+        filename: z.string().min(1, "Filename is required"),
+        title: z.string().optional(),
+      })
+    )
+    .output(z.object({ article: savedArticleFullSchema }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const now = new Date();
+
+      // Validate file type
+      const fileType = detectFileType(input.filename);
+      if (!fileType) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Unsupported file type. ${getSupportedTypesDescription()}`,
+        });
+      }
+
+      // Get or create the user's saved feed
+      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
+
+      // Decode base64 content
+      let fileBuffer: Buffer;
+      try {
+        fileBuffer = Buffer.from(input.content, "base64");
+      } catch {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid file content encoding. Expected base64.",
+        });
+      }
+
+      // Process the file
+      let processed;
+      try {
+        processed = await processUploadedFile(fileBuffer, input.filename);
+      } catch (error) {
+        logger.warn("Failed to process uploaded file", {
+          filename: input.filename,
+          fileType,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Failed to process file: ${error instanceof Error ? error.message : "Unknown error"}`,
+        });
+      }
+
+      // Use provided title or extracted title
+      const finalTitle = input.title || processed.title;
+
+      // Generate a unique guid for uploaded files (no URL to use)
+      // Format: uploaded:{uuid} to distinguish from URL-based saved articles
+      const entryId = generateUuidv7();
+      const guid = `uploaded:${entryId}`;
+
+      // Compute content hash for narration deduplication
+      const contentHash = generateContentHash(finalTitle, processed.contentCleaned);
+
+      // Determine site name based on file type
+      const siteNameMap: Record<string, string> = {
+        docx: "Uploaded Document",
+        html: "Uploaded HTML",
+        markdown: "Uploaded Markdown",
+      };
+      const siteName = siteNameMap[processed.fileType] || "Uploaded File";
+
+      // Create the entry
+      await ctx.db.insert(entries).values({
+        id: entryId,
+        feedId: savedFeedId,
+        type: "saved",
+        guid,
+        url: null, // Uploaded files don't have URLs
+        title: finalTitle,
+        author: null,
+        contentOriginal: processed.contentCleaned, // Store processed content as original too
+        contentCleaned: processed.contentCleaned,
+        summary: processed.excerpt,
+        siteName,
+        imageUrl: null,
+        publishedAt: null,
+        fetchedAt: now,
+        contentHash,
+        spamScore: null,
+        isSpam: false,
+        listUnsubscribeMailto: null,
+        listUnsubscribeHttps: null,
+        listUnsubscribePost: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Create user_entries row
+      await ctx.db.insert(userEntries).values({
+        userId,
+        entryId,
+        read: false,
+        starred: false,
+      });
+
+      // Publish event to notify other browser windows/tabs
+      await publishSavedArticleCreated(userId, entryId);
+
+      logger.info("Uploaded file saved", {
+        entryId,
+        filename: input.filename,
+        fileType: processed.fileType,
+        title: finalTitle,
+      });
+
+      return {
+        article: {
+          id: entryId,
+          url: null, // Uploaded files don't have URLs
+          title: finalTitle,
+          siteName,
+          author: null,
+          imageUrl: null,
+          contentOriginal: processed.contentCleaned,
+          contentCleaned: processed.contentCleaned,
+          excerpt: processed.excerpt,
+          read: false,
+          starred: false,
+          savedAt: now,
+        },
+      };
     }),
 });
