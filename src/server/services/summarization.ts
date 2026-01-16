@@ -18,7 +18,7 @@ export const CURRENT_PROMPT_VERSION = 1;
 /**
  * Default model for summarization.
  */
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "claude-sonnet-4-5";
 
 /**
  * Maximum content length to send to the LLM (in characters).

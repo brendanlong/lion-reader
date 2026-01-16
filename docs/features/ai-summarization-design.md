@@ -54,8 +54,8 @@ The default provider is Anthropic Claude Sonnet. Configuration via environment v
 # Anthropic (default)
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Optional: Override model (default: claude-sonnet-4-20250514)
-SUMMARIZATION_MODEL=claude-sonnet-4-20250514
+# Optional: Override model (default: claude-sonnet-4-5)
+SUMMARIZATION_MODEL=claude-sonnet-4-5
 ```
 
 ### Provider Abstraction
