@@ -13,12 +13,17 @@ import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
  * Current prompt version. Increment this when changing the prompt
  * to invalidate cached summaries.
  */
-export const CURRENT_PROMPT_VERSION = 1;
+export const CURRENT_PROMPT_VERSION = 2;
 
 /**
  * Default model for summarization.
  */
 const DEFAULT_MODEL = "claude-sonnet-4-5";
+
+/**
+ * Default maximum words for summaries.
+ */
+const DEFAULT_MAX_WORDS = 300;
 
 /**
  * Maximum content length to send to the LLM (in characters).
@@ -32,20 +37,64 @@ const MAX_CONTENT_LENGTH = 50000;
 const MAX_OUTPUT_TOKENS = 1024;
 
 /**
- * System prompt for summarization.
+ * Gets the configured max words for summaries.
  */
-const SUMMARIZATION_SYSTEM_PROMPT = `You are an expert summarizer. Create concise, informative summaries of articles.
+function getMaxWords(): number {
+  const envValue = process.env.SUMMARIZATION_MAX_WORDS;
+  if (envValue) {
+    const parsed = parseInt(envValue, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return DEFAULT_MAX_WORDS;
+}
 
-Rules:
-- Write 2-3 short paragraphs summarizing the key points
-- Focus on the main topic, key findings, and important conclusions
-- Be factual and objective - do not add opinions or commentary
-- Write in a direct, informative style
-- Do NOT use phrases like "This article discusses" or "The author argues"
-- Do NOT use bullet points or lists
-- If the content is too short or lacks substance, provide a brief summary of what's there
+/**
+ * Builds the user prompt for summarization.
+ */
+function buildSummarizationPrompt(content: string): string {
+  const maxWords = getMaxWords();
+  return `You will be summarizing content from a blog post or web page for display in an RSS reader app. Your goal is to create a concise, informative summary that captures the main points and helps readers quickly understand what the content is about.
 
-Return ONLY the summary text, nothing else.`;
+Here is the content to summarize:
+
+<content>
+${content}
+</content>
+
+Your summary should be no longer than ${maxWords} words.
+
+Please follow these guidelines when creating your summary:
+
+- Focus on the main topic, key points, and most important takeaways from the content
+- Include any significant conclusions, findings, or recommendations if present
+- Maintain a neutral, informative tone
+- Avoid including minor details, tangential information, or excessive examples
+- Do not include your own opinions or commentary
+- If the content contains multiple distinct sections or topics, briefly mention each main topic
+- Write in clear, straightforward language that is easy to scan quickly
+- Ensure the summary is self-contained and understandable without needing to read the full content
+
+Your summary must not exceed ${maxWords} words. If the content is very short and already concise, your summary may be shorter than the maximum length.
+
+Write your summary inside <summary> tags.`;
+}
+
+/**
+ * Extracts the summary from the LLM response.
+ * Looks for content within <summary> tags, falling back to the full text.
+ */
+function extractSummaryFromResponse(responseText: string): string {
+  // Try to extract content from <summary> tags
+  const summaryMatch = responseText.match(/<summary>([\s\S]*?)<\/summary>/);
+  if (summaryMatch) {
+    return summaryMatch[1].trim();
+  }
+
+  // Fallback: return the full response text (for robustness)
+  return responseText.trim();
+}
 
 /**
  * Anthropic client instance. Only initialized when ANTHROPIC_API_KEY is set.
@@ -123,25 +172,27 @@ export async function generateSummary(content: string): Promise<GenerateSummaryR
     const response = await client.messages.create({
       model: modelId,
       max_tokens: MAX_OUTPUT_TOKENS,
-      system: SUMMARIZATION_SYSTEM_PROMPT,
       messages: [
         {
           role: "user",
-          content: `Please summarize this article:\n\n${content}`,
+          content: buildSummarizationPrompt(content),
         },
       ],
     });
 
     // Extract text from response
     const textContent = response.content.find((block) => block.type === "text");
-    const summary = textContent?.type === "text" ? textContent.text : "";
+    const responseText = textContent?.type === "text" ? textContent.text : "";
 
-    if (!summary) {
+    if (!responseText) {
       throw new Error("Empty response from Anthropic API");
     }
 
+    // Extract summary from <summary> tags
+    const summary = extractSummaryFromResponse(responseText);
+
     return {
-      summary: summary.trim(),
+      summary,
       modelId,
     };
   } catch (error) {
