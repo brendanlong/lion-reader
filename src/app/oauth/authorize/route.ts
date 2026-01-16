@@ -35,6 +35,7 @@ function getSessionToken(request: NextRequest): string | null {
 
 /**
  * Builds an error redirect URL with OAuth error parameters.
+ * Uses 303 See Other for POST→GET redirect pattern.
  */
 function buildErrorRedirect(
   redirectUri: string,
@@ -48,11 +49,13 @@ function buildErrorRedirect(
   if (state) {
     url.searchParams.set("state", state);
   }
-  return NextResponse.redirect(url.toString());
+  // Use 303 for POST→GET redirect (consent form submission → client callback)
+  return NextResponse.redirect(url.toString(), 303);
 }
 
 /**
  * Builds a success redirect URL with authorization code.
+ * Uses 303 See Other for POST→GET redirect pattern.
  */
 function buildSuccessRedirect(redirectUri: string, code: string, state?: string): NextResponse {
   const url = new URL(redirectUri);
@@ -60,7 +63,8 @@ function buildSuccessRedirect(redirectUri: string, code: string, state?: string)
   if (state) {
     url.searchParams.set("state", state);
   }
-  return NextResponse.redirect(url.toString());
+  // Use 303 for POST→GET redirect (consent form submission → client callback)
+  return NextResponse.redirect(url.toString(), 303);
 }
 
 export async function GET(request: NextRequest) {
