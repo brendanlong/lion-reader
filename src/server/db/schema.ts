@@ -164,6 +164,150 @@ export const oauthAccounts = pgTable(
 );
 
 // ============================================================================
+// OAUTH 2.1 AUTHORIZATION SERVER
+// ============================================================================
+
+/**
+ * OAuth clients table - registered OAuth 2.1 clients.
+ * Supports both pre-registered clients and Client ID Metadata Documents (CIMD).
+ */
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: uuid("id").primaryKey(),
+    clientId: text("client_id").unique().notNull(), // URL for CIMD, or custom ID
+    clientSecretHash: text("client_secret_hash"), // NULL for public clients
+    name: text("name").notNull(),
+    redirectUris: text("redirect_uris").array().notNull(), // Allowed redirect URIs
+    grantTypes: text("grant_types")
+      .array()
+      .notNull()
+      .default(sql`'{authorization_code,refresh_token}'`),
+    scopes: text("scopes").array(), // Available scopes for this client
+    isPublic: boolean("is_public").notNull().default(true), // PKCE required for public clients
+    metadataUrl: text("metadata_url"), // For Client ID Metadata Documents
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_oauth_clients_client_id").on(table.clientId)]
+);
+
+/**
+ * OAuth authorization codes table - short-lived codes for OAuth flow.
+ * Codes are single-use and expire after ~10 minutes.
+ * PKCE with S256 is required.
+ */
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    id: uuid("id").primaryKey(),
+    codeHash: text("code_hash").unique().notNull(), // SHA-256 hash of code
+    clientId: text("client_id").notNull(), // References oauth_clients.client_id
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    scopes: text("scopes").array().notNull(),
+    codeChallenge: text("code_challenge").notNull(), // PKCE S256 hash
+    codeChallengeMethod: text("code_challenge_method").notNull().default("S256"),
+    resource: text("resource"), // RFC 8707 resource indicator
+    state: text("state"), // Client-provided state for CSRF
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("idx_oauth_auth_codes_code").on(table.codeHash),
+    index("idx_oauth_auth_codes_user").on(table.userId),
+    index("idx_oauth_auth_codes_expires").on(table.expiresAt),
+    check("oauth_auth_codes_pkce_s256", sql`${table.codeChallengeMethod} = 'S256'`),
+  ]
+);
+
+/**
+ * OAuth access tokens table - short-lived tokens (~1 hour).
+ * Used to authenticate API requests.
+ */
+export const oauthAccessTokens = pgTable(
+  "oauth_access_tokens",
+  {
+    id: uuid("id").primaryKey(),
+    tokenHash: text("token_hash").unique().notNull(), // SHA-256 hash of token
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scopes: text("scopes").array().notNull(),
+    resource: text("resource"), // RFC 8707 audience
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_oauth_access_tokens_token").on(table.tokenHash),
+    index("idx_oauth_access_tokens_user").on(table.userId),
+    index("idx_oauth_access_tokens_client").on(table.clientId),
+    index("idx_oauth_access_tokens_expires").on(table.expiresAt),
+  ]
+);
+
+/**
+ * OAuth refresh tokens table - longer-lived tokens (~30 days).
+ * Supports token rotation for security.
+ */
+export const oauthRefreshTokens = pgTable(
+  "oauth_refresh_tokens",
+  {
+    id: uuid("id").primaryKey(),
+    tokenHash: text("token_hash").unique().notNull(), // SHA-256 hash of token
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scopes: text("scopes").array().notNull(),
+    accessTokenId: uuid("access_token_id").references(() => oauthAccessTokens.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    replacedById: uuid("replaced_by_id"), // Token rotation chain (self-reference added manually)
+  },
+  (table) => [
+    index("idx_oauth_refresh_tokens_token").on(table.tokenHash),
+    index("idx_oauth_refresh_tokens_user").on(table.userId),
+    index("idx_oauth_refresh_tokens_client").on(table.clientId),
+    index("idx_oauth_refresh_tokens_expires").on(table.expiresAt),
+    index("idx_oauth_refresh_tokens_access").on(table.accessTokenId),
+  ]
+);
+
+/**
+ * OAuth consent grants table - tracks user consent for clients.
+ * Avoids re-prompting users who have already authorized a client.
+ */
+export const oauthConsentGrants = pgTable(
+  "oauth_consent_grants",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clientId: text("client_id").notNull(),
+    scopes: text("scopes").array().notNull(), // Approved scopes
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("uq_oauth_consent_user_client").on(table.userId, table.clientId),
+    index("idx_oauth_consent_grants_user").on(table.userId),
+    index("idx_oauth_consent_grants_client").on(table.clientId),
+  ]
+);
+
+// ============================================================================
 // FEEDS (shared canonical data)
 // ============================================================================
 
@@ -812,6 +956,21 @@ export type NewBlockedSender = typeof blockedSenders.$inferInsert;
 
 export type OpmlImport = typeof opmlImports.$inferSelect;
 export type NewOpmlImport = typeof opmlImports.$inferInsert;
+
+export type OAuthClient = typeof oauthClients.$inferSelect;
+export type NewOAuthClient = typeof oauthClients.$inferInsert;
+
+export type OAuthAuthorizationCode = typeof oauthAuthorizationCodes.$inferSelect;
+export type NewOAuthAuthorizationCode = typeof oauthAuthorizationCodes.$inferInsert;
+
+export type OAuthAccessToken = typeof oauthAccessTokens.$inferSelect;
+export type NewOAuthAccessToken = typeof oauthAccessTokens.$inferInsert;
+
+export type OAuthRefreshToken = typeof oauthRefreshTokens.$inferSelect;
+export type NewOAuthRefreshToken = typeof oauthRefreshTokens.$inferInsert;
+
+export type OAuthConsentGrant = typeof oauthConsentGrants.$inferSelect;
+export type NewOAuthConsentGrant = typeof oauthConsentGrants.$inferInsert;
 
 // View types
 export type UserFeed = typeof userFeeds.$inferSelect;
