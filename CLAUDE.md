@@ -1,9 +1,21 @@
 # Lion Reader Development Guidelines
 
-## Documentation
+## Primary documentation
 
-- `docs/` - Design documents and feature specs (may be outdated)
-- `docs/references/` - Reference docs for external tools. Consult before editing related configs.
+Aggressively keep this up-to-date if you notice anything outdated!
+
+- @docs/DESIGN.md - Aggressively keep this up-to-date if you notice anything outdated!
+- @docs/README.md - High-level project info
+- @docs/diagrams/ - Flow diagrams for various systems
+
+ALWAYS read the relevant documentation before working.
+
+## Reference documentation
+
+Read these if you need context on features or specific references.
+
+- @docs/features - Feature specs (may be outdated)
+- @docs/references/ - Reference docs for external tools. Consult before editing related configs.
 
 ## Commands
 
@@ -14,11 +26,12 @@
 - **Types**: Explicit types everywhere; use Zod for runtime validation
 - **Queries**: Avoid N+1 queries; use joins or batch fetching
 - **UI**: Use optimistic updates for responsive UX
+- **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes
 
 ## Git
 
 - Break work into commit-sized chunks; commit when finished
-- Use amend commits when it makes sense
+- Use amend commits when it makes sense (ALWAYS check the current commit before amending)
 - Main branch: `master`
 - Commit `drizzle/schema.sql` changes separately if unrelated to current work
 
@@ -38,10 +51,12 @@ tests/unit/      # Pure logic tests (no mocks, no DB)
 tests/integration/ # Real DB via docker-compose (no mocks)
 ```
 
+See docs/diagrams/ for more detail. These diagrams are very helpful for quickly understanding the codebase.
+
 ## Database Conventions
 
-- **IDs**: UUIDv7 via `gen_uuidv7()` - time-ordered, so `ORDER BY id DESC` = reverse chronological
-- **Timestamps**: Always `timestamptz`, store UTC
+- **IDs**: UUIDv7
+- **Timestamps**: `timestamptz`, store UTC
 - **Soft deletes**: Use `deleted_at`/`unsubscribed_at` patterns
 - **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act
 - **Background jobs**: Postgres-based queue
@@ -58,7 +73,7 @@ These views are defined in `drizzle/0035_subscription_views.sql` and have Drizzl
 
 ## API Conventions
 
-- **Pagination**: Always cursor-based (never offset); return `{ items: T[], nextCursor?: string }`
+- **Pagination**: Always cursor-based (never offset)
 - **tRPC naming**: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
 
 ## Services Layer
@@ -70,115 +85,26 @@ Business logic should be extracted into reusable service functions in `src/serve
 - **Location**: `src/server/services/{domain}.ts` (e.g., `entries.ts`, `subscriptions.ts`)
 - **Naming**: `verbNoun` (e.g., `listEntries`, `searchSubscriptions`, `markEntriesRead`)
 
-**Example:**
-
-```typescript
-// src/server/services/entries.ts
-export async function listEntries(
-  db: typeof dbType,
-  params: ListEntriesParams
-): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
-  // Business logic here
-}
-
-// Usage in tRPC router
-import * as entriesService from "@/server/services/entries";
-export const entriesRouter = createTRPCRouter({
-  list: protectedProcedure.query(({ ctx, input }) => {
-    return entriesService.listEntries(ctx.db, { ...input, userId: ctx.session.user.id });
-  }),
-});
-
-// Usage in MCP server
-import * as entriesService from "@/server/services/entries";
-const entries = await entriesService.listEntries(db, { userId, ...filters });
-```
-
-**When to use services:**
-
-- Operations that might be used by multiple API surfaces (tRPC, MCP, jobs)
-- Complex business logic that benefits from testing in isolation
-- When logic is duplicated across routers
-
-**When NOT to use services:**
-
-- One-off operations specific to a single router
-- Simple pass-through operations with no logic
-- Operations with complex HTTP/external dependencies (keep in router for now)
-
 ## Frontend State Management
 
 ### Zustand Delta-Based Architecture
 
 The app uses Zustand for optimistic updates, storing only **deltas** from the server state (e.g., "entry X is now read"). React Query provides the base data, Zustand applies deltas on top.
 
-### Mutation Hooks: subscriptionId Passthrough Pattern
-
-**CRITICAL**: Entry mutations (markRead, toggleStar) need `subscriptionId` to update unread counts correctly. **Always pass subscriptionId as a parameter** through the callback chain—do NOT use cache lookups.
-
-**Type Safety**: `subscriptionId` is **required (but nullable)** in all callback signatures—TypeScript enforces this at compile time. You cannot accidentally forget to pass it.
-
-#### Implementation Pattern
-
-Page components should create a wrapper that looks up tags and passes both subscriptionId and tagIds:
-
-```typescript
-// In page component: look up subscriptionId's tags and pass to mutation
-const subscriptionsQuery = trpc.subscriptions.list.useQuery();
-
-const handleToggleRead = useCallback(
-  (entryId: string, currentlyRead: boolean, subscriptionId: string | null) => {
-    if (!subscriptionId) {
-      // No subscription - saved article or starred entry from deleted subscription
-      toggleRead(entryId, currentlyRead);
-      return;
-    }
-    // Look up tags for this subscription
-    const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
-    const tagIds = subscription?.tags.map((tag) => tag.id);
-    toggleRead(entryId, currentlyRead, subscriptionId, tagIds);
-  },
-  [toggleRead, subscriptionsQuery.data]
-);
-
-// Pass handleToggleRead to keyboard shortcuts and EntryList
-<EntryList onToggleRead={handleToggleRead} />
-```
-
-#### Component Chain
-
-The callback signature flows through:
-
-1. **Page** → creates `handleToggleRead` wrapper with tag lookup
-2. **EntryList** → passes through to EntryListItem
-3. **EntryListItem** → passes through to ArticleListItem
-4. **ArticleListItem** → calls `onToggleRead(entryId, read, subscriptionId)`
-
-The same pattern applies to:
-
-- **useKeyboardShortcuts**: Gets subscriptionId from entry data, passes to onToggleRead
-- **EntryContent**: Uses `useEntryMutations({ subscriptionId, tagIds })` with known context
-
-#### Why This Matters
-
-- Without subscriptionId: ⚠️ Mutation works but unread counts don't update
-- With subscriptionId: ✅ Zustand correctly updates counts for subscription + all its tags
-- Development mode shows warnings when subscriptionId is missing
-
-#### What NOT to Do
-
-❌ **Don't** try to look up subscriptionId from cache in mutation hooks (fragile, prone to query key mismatches)
-✅ **Do** pass subscriptionId explicitly through callbacks from components that have the data
+Don't try to invalidate the cache or look things up in the cache. Pass data down as props if needed (and add to the backend API if necessary).
 
 ## Outgoing HTTP Requests
+
+Always use our custom user agent.
 
 ```typescript
 import { USER_AGENT, buildUserAgent } from "@/server/http/user-agent";
 headers: { "User-Agent": USER_AGENT }
-// Or with context: buildUserAgent({ context: `feed:${feedId}` })
 ```
 
 ## Parsing
+
+Prefer SAX-style parsing unless the algorithm requires a DOM.
 
 - XML/RSS: `fast-xml-parser` (streaming)
 - HTML extraction: `htmlparser2` (streaming)
