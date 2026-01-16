@@ -771,6 +771,37 @@ export const narrationContent = pgTable(
 );
 
 // ============================================================================
+// AI SUMMARIZATION
+// ============================================================================
+
+/**
+ * Entry summaries table - stores AI-generated article summaries.
+ * Keyed by content hash for deduplication across entries.
+ */
+export const entrySummaries = pgTable(
+  "entry_summaries",
+  {
+    id: uuid("id").primaryKey(), // UUIDv7
+    contentHash: text("content_hash").unique().notNull(), // SHA256 of source content
+
+    summaryText: text("summary_text"), // null until generated
+    modelId: text("model_id"), // e.g., "claude-sonnet-4-20250514"
+    promptVersion: integer("prompt_version").notNull().default(1), // for cache invalidation
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }), // when summary was generated
+
+    // Error tracking for retry logic
+    error: text("error"),
+    errorAt: timestamp("error_at", { withTimezone: true }),
+  },
+  (table) => [
+    // Index for finding stale summaries
+    index("idx_entry_summaries_prompt_version").on(table.promptVersion),
+  ]
+);
+
+// ============================================================================
 // EMAIL SUBSCRIPTIONS
 // ============================================================================
 
@@ -947,6 +978,9 @@ export type NewWebsubSubscription = typeof websubSubscriptions.$inferInsert;
 
 export type NarrationContent = typeof narrationContent.$inferSelect;
 export type NewNarrationContent = typeof narrationContent.$inferInsert;
+
+export type EntrySummary = typeof entrySummaries.$inferSelect;
+export type NewEntrySummary = typeof entrySummaries.$inferInsert;
 
 export type IngestAddress = typeof ingestAddresses.$inferSelect;
 export type NewIngestAddress = typeof ingestAddresses.$inferInsert;
