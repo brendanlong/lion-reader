@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 /**
  * Theme mode options.
@@ -137,11 +137,35 @@ export function saveAppearanceSettings(settings: AppearanceSettings): void {
   }
 }
 
+// Subscribers for settings changes
+const subscribers = new Set<() => void>();
+
+// Notify all subscribers when settings change
+function notifySubscribers() {
+  subscribers.forEach((callback) => callback());
+}
+
+// Subscribe function for useSyncExternalStore
+function subscribe(callback: () => void): () => void {
+  subscribers.add(callback);
+  return () => subscribers.delete(callback);
+}
+
+// Get snapshot for client
+function getSnapshot(): AppearanceSettings {
+  return loadAppearanceSettings();
+}
+
+// Get snapshot for server (always returns defaults)
+function getServerSnapshot(): AppearanceSettings {
+  return DEFAULT_APPEARANCE_SETTINGS;
+}
+
 /**
  * React hook for managing appearance settings.
  *
- * Uses lazy initialization to load settings from localStorage on first render.
- * The returned setter function automatically saves changes to localStorage.
+ * Uses useSyncExternalStore to properly handle SSR/hydration.
+ * Returns defaults on server, loads from localStorage on client.
  *
  * @returns A tuple of [settings, setSettings].
  */
@@ -149,13 +173,12 @@ export function useAppearanceSettings(): [
   AppearanceSettings,
   (settings: AppearanceSettings) => void,
 ] {
-  // Use lazy initialization to load settings from localStorage.
-  const [settings, setSettingsState] = useState<AppearanceSettings>(() => loadAppearanceSettings());
+  const settings = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  // Save and update settings
+  // Save and update settings, then notify subscribers
   const setSettings = useCallback((newSettings: AppearanceSettings) => {
-    setSettingsState(newSettings);
     saveAppearanceSettings(newSettings);
+    notifySubscribers();
   }, []);
 
   return [settings, setSettings];
