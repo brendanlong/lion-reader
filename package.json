@@ -69,6 +69,7 @@
     "ioredis": "^5.8.2",
     "linkedom": "^0.18.12",
     "mammoth": "^1.11.0",
+    "marked": "^17.0.1",
     "next": "16.1.1",
     "onnxruntime-web": "1.18.0",
     "pg": "^8.16.3",
