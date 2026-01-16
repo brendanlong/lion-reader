@@ -7,8 +7,6 @@
 
 "use client";
 
-import { useState } from "react";
-
 interface ScopeInfo {
   name: string;
   description: string;
@@ -35,13 +33,6 @@ export function ConsentForm({
   state,
   resource,
 }: ConsentFormProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = () => {
-    setIsSubmitting(true);
-    // Form will be submitted normally, the action value determines the outcome
-  };
-
   return (
     <div>
       {/* Application info */}
@@ -114,7 +105,6 @@ export function ConsentForm({
 
       {/* Action buttons */}
       <form action="/oauth/authorize" method="POST">
-        {/* Hidden fields */}
         <input type="hidden" name="client_id" value={clientId} />
         <input type="hidden" name="redirect_uri" value={redirectUri} />
         <input type="hidden" name="scope" value={scopeString} />
@@ -125,23 +115,19 @@ export function ConsentForm({
         <div className="flex gap-3">
           <button
             type="submit"
-            name="action"
+            name="user_action"
             value="deny"
-            disabled={isSubmitting}
-            onClick={handleSubmit}
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
           >
             Deny
           </button>
           <button
             type="submit"
-            name="action"
+            name="user_action"
             value="approve"
-            disabled={isSubmitting}
-            onClick={handleSubmit}
-            className="flex-1 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="flex-1 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
-            {isSubmitting ? "Authorizing..." : "Authorize"}
+            Authorize
           </button>
         </div>
       </form>
