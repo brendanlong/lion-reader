@@ -1,7 +1,8 @@
 /**
  * MCP (Model Context Protocol) HTTP Endpoint
  *
- * Serves the MCP server over HTTP with API token authentication.
+ * Serves the MCP server over HTTP with authentication.
+ * Supports both OAuth 2.1 tokens and legacy API tokens.
  * This allows Claude Desktop and other MCP clients to connect to Lion Reader
  * hosted at lionreader.com or localhost:3000.
  *
@@ -12,6 +13,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { registerTools } from "@/server/mcp/tools";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
+import { validateAccessToken } from "@/server/oauth/service";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
+import { getProtectedResourceMetadata } from "@/server/oauth/config";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -19,7 +23,8 @@ import { logger } from "@/lib/logger";
 // ============================================================================
 
 /**
- * Extract and validate API token from request headers.
+ * Extract and validate token from request headers.
+ * Supports both OAuth 2.1 access tokens and legacy API tokens.
  * Returns userId if valid, null otherwise.
  */
 async function authenticateRequest(request: NextRequest): Promise<string | null> {
@@ -29,19 +34,39 @@ async function authenticateRequest(request: NextRequest): Promise<string | null>
   }
 
   const token = authHeader.slice(7); // Remove "Bearer " prefix
-  const tokenData = await validateApiToken(token);
 
-  if (!tokenData) {
-    return null;
+  // Try OAuth access token first (new system)
+  const oauthToken = await validateAccessToken(token);
+  if (oauthToken) {
+    // Check if OAuth token has MCP scope
+    if (!oauthToken.scopes.includes(OAUTH_SCOPES.MCP)) {
+      logger.warn("OAuth token missing MCP scope", { userId: oauthToken.userId });
+      return null;
+    }
+    return oauthToken.userId;
   }
 
-  // Check if token has MCP scope
-  if (!tokenData.token.scopes.includes(API_TOKEN_SCOPES.MCP)) {
-    logger.warn("API token missing MCP scope", { userId: tokenData.user.id });
-    return null;
+  // Fall back to API token (legacy system)
+  const apiTokenData = await validateApiToken(token);
+  if (apiTokenData) {
+    // Check if token has MCP scope
+    if (!apiTokenData.token.scopes.includes(API_TOKEN_SCOPES.MCP)) {
+      logger.warn("API token missing MCP scope", { userId: apiTokenData.user.id });
+      return null;
+    }
+    return apiTokenData.user.id;
   }
 
-  return tokenData.user.id;
+  return null;
+}
+
+/**
+ * Builds WWW-Authenticate header for 401 responses.
+ * Includes resource_metadata URL per MCP specification.
+ */
+function buildWwwAuthenticateHeader(): string {
+  const metadata = getProtectedResourceMetadata();
+  return `Bearer resource_metadata="${metadata.resource}/.well-known/oauth-protected-resource"`;
 }
 
 // ============================================================================
@@ -189,7 +214,15 @@ export async function POST(request: NextRequest) {
   const userId = await authenticateRequest(request);
   if (!userId) {
     logger.warn("MCP request unauthorized");
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      {
+        status: 401,
+        headers: {
+          "WWW-Authenticate": buildWwwAuthenticateHeader(),
+        },
+      }
+    );
   }
 
   try {
