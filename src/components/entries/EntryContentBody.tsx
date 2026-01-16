@@ -562,9 +562,20 @@ export function EntryContentBody({
       {/* Header */}
       <header className="mb-6 sm:mb-8">
         {/* Title */}
-        <h1 className="mb-3 text-xl leading-tight font-bold text-zinc-900 sm:mb-4 sm:text-2xl md:text-3xl dark:text-zinc-100">
-          {title}
-        </h1>
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-3 block text-xl leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:text-blue-600 hover:underline sm:mb-4 sm:text-2xl md:text-3xl dark:text-zinc-100 dark:hover:text-blue-400"
+          >
+            {title}
+          </a>
+        ) : (
+          <h1 className="mb-3 text-xl leading-tight font-bold text-zinc-900 sm:mb-4 sm:text-2xl md:text-3xl dark:text-zinc-100">
+            {title}
+          </h1>
+        )}
 
         {/* Meta row: Source, Author, Date */}
         <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600 sm:mb-6 sm:gap-x-4 sm:gap-y-2 sm:text-sm dark:text-zinc-400">
