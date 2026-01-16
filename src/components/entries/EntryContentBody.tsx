@@ -10,6 +10,7 @@
 import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
+import { ReadingTimeDisplay } from "./ReadingTimeDisplay";
 
 // Configure DOMPurify to:
 // 1. Open all external links in new tabs
@@ -249,6 +250,8 @@ export interface EntryContentBodyProps {
   date: Date;
   /** Optional prefix for the date (e.g., "Saved") */
   datePrefix?: string;
+  /** The estimated reading time (e.g., "5 min read") */
+  readingTime: string | null;
   /** The original HTML content */
   contentOriginal: string | null;
   /** The cleaned HTML content */
@@ -343,6 +346,7 @@ export function EntryContentBody({
   url,
   date,
   datePrefix,
+  readingTime,
   contentOriginal,
   contentCleaned,
   fallbackContent,
@@ -577,7 +581,7 @@ export function EntryContentBody({
           </h1>
         )}
 
-        {/* Meta row: Source, Author, Date */}
+        {/* Meta row: Source, Author, Date, Reading Time */}
         <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600 sm:mb-6 sm:gap-x-4 sm:gap-y-2 sm:text-sm dark:text-zinc-400">
           <span className="font-medium">{source}</span>
           {author && (
@@ -599,6 +603,7 @@ export function EntryContentBody({
             {datePrefix ? `${datePrefix} ` : ""}
             {formatDate(date)}
           </time>
+          <ReadingTimeDisplay readingTime={readingTime} separator="pipe" responsiveSeparator />
         </div>
 
         {/* Action buttons */}

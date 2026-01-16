@@ -10,6 +10,7 @@
 import { memo } from "react";
 import { formatRelativeTime } from "@/lib/format";
 import { type EntryType } from "@/lib/store/realtime";
+import { ReadingTimeDisplay } from "./ReadingTimeDisplay";
 
 /**
  * Entry data for list display (lightweight, no full content).
@@ -28,6 +29,7 @@ export interface EntryListItemData {
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
+  readingTime: string | null;
 }
 
 interface EntryListItemProps {
@@ -96,6 +98,7 @@ export const EntryListItem = memo(function EntryListItem({
     feedTitle,
     publishedAt,
     fetchedAt,
+    readingTime,
   } = entry;
   const displayTitle = title ?? "Untitled";
   const source = feedTitle ?? "Unknown Feed";
@@ -213,13 +216,14 @@ export const EntryListItem = memo(function EntryListItem({
             )}
           </div>
 
-          {/* Meta Row: Source and Date */}
+          {/* Meta Row: Source, Date, and Reading Time */}
           <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             <span className="truncate">{source}</span>
             <span aria-hidden="true">·</span>
             <time dateTime={date.toISOString()} className="shrink-0">
               {formatRelativeTime(date)}
             </time>
+            <ReadingTimeDisplay readingTime={readingTime} separator="dot" />
           </div>
 
           {/* Preview */}

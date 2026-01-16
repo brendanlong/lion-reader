@@ -43,3 +43,29 @@ export function getDomain(url: string): string {
     return url;
   }
 }
+
+/**
+ * Calculate estimated reading time from text content.
+ * Strips HTML tags and counts words at 200 WPM.
+ * Returns a human-readable string like "5 min read" or "< 1 min read".
+ */
+export function calculateReadingTime(content: string | null): string | null {
+  if (!content) return null;
+
+  // Strip HTML tags
+  const textContent = content.replace(/<[^>]*>/g, "");
+
+  // Count words (split by whitespace and filter empty strings)
+  const words = textContent
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0).length;
+
+  // Calculate minutes at 200 words per minute
+  const minutes = Math.ceil(words / 200);
+
+  if (minutes < 1) {
+    return "< 1 min read";
+  }
+  return `${minutes} min read`;
+}

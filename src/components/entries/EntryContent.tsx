@@ -230,6 +230,7 @@ export function EntryContent({
         author={entry.author}
         url={entry.url}
         date={entry.publishedAt ?? entry.fetchedAt}
+        readingTime={entry.readingTime}
         contentOriginal={entry.contentOriginal}
         contentCleaned={entry.contentCleaned}
         fallbackContent={entry.summary}

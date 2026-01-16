@@ -46,6 +46,7 @@ export interface EntryListData {
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
+  readingTime: string | null;
 }
 
 /**
@@ -205,6 +206,7 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
           read: entry.read,
           starred: entry.starred,
           feedTitle: entry.feedTitle,
+          readingTime: entry.readingTime,
         }))
       ) ?? []
     );
