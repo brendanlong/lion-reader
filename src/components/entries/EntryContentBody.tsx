@@ -10,6 +10,7 @@
 import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
+import { calculateReadingTime } from "@/lib/format";
 
 // Configure DOMPurify to:
 // 1. Open all external links in new tabs
@@ -374,6 +375,13 @@ export function EntryContentBody({
   const hasFullContent = Boolean(fullContentCleaned && fullContentFetchedAt && !fullContentError);
   const showFullContent = fetchFullContent && hasFullContent;
 
+  // Calculate reading time based on content being displayed
+  // Prefer full content if available, otherwise use feed content
+  const contentForReadingTime = showFullContent
+    ? (fullContentCleaned ?? null)
+    : (contentCleaned ?? contentOriginal ?? null);
+  const readingTime = calculateReadingTime(contentForReadingTime);
+
   // Check if both feed content versions are available for toggle
   // Only show this toggle when NOT showing full content
   const hasBothVersions = Boolean(contentCleaned && contentOriginal) && !showFullContent;
@@ -566,7 +574,7 @@ export function EntryContentBody({
           {title}
         </h1>
 
-        {/* Meta row: Source, Author, Date */}
+        {/* Meta row: Source, Author, Date, Reading Time */}
         <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600 sm:mb-6 sm:gap-x-4 sm:gap-y-2 sm:text-sm dark:text-zinc-400">
           <span className="font-medium">{source}</span>
           {author && (
@@ -588,6 +596,17 @@ export function EntryContentBody({
             {datePrefix ? `${datePrefix} ` : ""}
             {formatDate(date)}
           </time>
+          {readingTime && (
+            <>
+              <span
+                aria-hidden="true"
+                className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
+              >
+                |
+              </span>
+              <span className="basis-full sm:basis-auto">{readingTime}</span>
+            </>
+          )}
         </div>
 
         {/* Action buttons */}

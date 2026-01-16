@@ -8,7 +8,7 @@
 "use client";
 
 import { memo } from "react";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime, calculateReadingTime } from "@/lib/format";
 import { type EntryType } from "@/lib/store/realtime";
 
 /**
@@ -100,6 +100,7 @@ export const EntryListItem = memo(function EntryListItem({
   const displayTitle = title ?? "Untitled";
   const source = feedTitle ?? "Unknown Feed";
   const date = publishedAt ?? fetchedAt;
+  const readingTime = calculateReadingTime(summary);
 
   const handleClick = () => {
     onClick?.(id);
@@ -213,13 +214,19 @@ export const EntryListItem = memo(function EntryListItem({
             )}
           </div>
 
-          {/* Meta Row: Source and Date */}
+          {/* Meta Row: Source, Date, and Reading Time */}
           <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             <span className="truncate">{source}</span>
             <span aria-hidden="true">·</span>
             <time dateTime={date.toISOString()} className="shrink-0">
               {formatRelativeTime(date)}
             </time>
+            {readingTime && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="shrink-0">{readingTime}</span>
+              </>
+            )}
           </div>
 
           {/* Preview */}
