@@ -43,6 +43,7 @@
     ]
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
     "@aws-sdk/client-s3": "^3.965.0",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.25.2",

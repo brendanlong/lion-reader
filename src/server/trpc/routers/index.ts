@@ -14,6 +14,7 @@ export { feedsRouter } from "./feeds";
 export { tagsRouter } from "./tags";
 export { savedRouter } from "./saved";
 export { narrationRouter } from "./narration";
+export { summarizationRouter } from "./summarization";
 export { ingestAddressesRouter } from "./ingestAddresses";
 export { blockedSendersRouter } from "./blockedSenders";
 export { brokenFeedsRouter } from "./brokenFeeds";
