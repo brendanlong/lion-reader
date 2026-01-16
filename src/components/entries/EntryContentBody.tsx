@@ -297,6 +297,7 @@ export interface EntryContentBodyProps {
     text: string;
     modelId: string;
     generatedAt: Date | null;
+    settingsChanged: boolean;
   } | null;
   /** Whether to show the summary card */
   showSummary?: boolean;
@@ -829,6 +830,7 @@ export function EntryContentBody({
       <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
 
       {/* Summary card - shown above content when available */}
+      {/* Show regenerate button on error (to retry) or when settings have changed */}
       {showSummary && (summary || summaryError || isSummarizing) && (
         <SummaryCard
           summary={summary?.text ?? ""}
@@ -837,7 +839,7 @@ export function EntryContentBody({
           isLoading={isSummarizing}
           error={summaryError}
           onClose={onSummaryClose}
-          onRegenerate={onSummaryRegenerate}
+          onRegenerate={summaryError || summary?.settingsChanged ? onSummaryRegenerate : undefined}
         />
       )}
 
