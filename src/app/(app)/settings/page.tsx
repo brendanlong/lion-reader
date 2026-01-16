@@ -18,8 +18,6 @@ import {
   LinkedAccounts,
   KeyboardShortcutsSettings,
   TagManagement,
-  BookmarkletSettings,
-  IntegrationsSettings,
   NarrationSettings,
   AboutSection,
 } from "@/components/settings";
@@ -163,12 +161,6 @@ function SettingsContent() {
 
       {/* OPML Import/Export Section */}
       <OpmlImportExport />
-
-      {/* Bookmarklet Section */}
-      <BookmarkletSettings />
-
-      {/* AI Integrations Section */}
-      <IntegrationsSettings />
 
       {/* Narration Section */}
       <NarrationSettings />
