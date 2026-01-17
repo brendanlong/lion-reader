@@ -24,7 +24,7 @@
 import { useNarration } from "./useNarration";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
-import { Button } from "@/components/ui/button";
+import { Button, PlayIcon, PauseIcon, SpinnerIcon } from "@/components/ui";
 
 /**
  * Props for the NarrationControls component.
@@ -52,29 +52,8 @@ export interface NarrationControlsProps {
 }
 
 /**
- * Play icon for the play button.
- */
-function PlayIcon() {
-  return (
-    <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M8 5v14l11-7z" />
-    </svg>
-  );
-}
-
-/**
- * Pause icon for the pause button.
- */
-function PauseIcon() {
-  return (
-    <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-    </svg>
-  );
-}
-
-/**
  * Skip backward icon.
+ * Custom icon - not in shared icon set as it's specific to media controls.
  */
 function SkipBackwardIcon() {
   return (
@@ -86,6 +65,7 @@ function SkipBackwardIcon() {
 
 /**
  * Skip forward icon.
+ * Custom icon - not in shared icon set as it's specific to media controls.
  */
 function SkipForwardIcon() {
   return (
@@ -96,29 +76,8 @@ function SkipForwardIcon() {
 }
 
 /**
- * Loading spinner icon.
- */
-function LoadingSpinner() {
-  return (
-    <svg
-      className="h-5 w-5 animate-spin"
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      />
-    </svg>
-  );
-}
-
-/**
  * Audio/narration icon for the button label.
+ * Custom icon - not in shared icon set as it's specific to narration.
  */
 function NarrationIcon() {
   return (
@@ -236,13 +195,13 @@ function NarrationControlsInner({
 
   if (showLoadingState) {
     mainButtonLabel = "Generating...";
-    mainButtonIcon = <LoadingSpinner />;
+    mainButtonIcon = <SpinnerIcon className="h-5 w-5" />;
   } else if (isPlaying) {
     mainButtonLabel = "Pause";
-    mainButtonIcon = <PauseIcon />;
+    mainButtonIcon = <PauseIcon className="h-5 w-5" />;
   } else if (isPaused) {
     mainButtonLabel = "Resume";
-    mainButtonIcon = <PlayIcon />;
+    mainButtonIcon = <PlayIcon className="h-5 w-5" />;
   } else {
     mainButtonLabel = "Listen";
     mainButtonIcon = <NarrationIcon />;

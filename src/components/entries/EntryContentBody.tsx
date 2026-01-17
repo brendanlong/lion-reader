@@ -33,7 +33,18 @@ if (typeof window !== "undefined") {
     }
   });
 }
-import { Button } from "@/components/ui/button";
+import {
+  Button,
+  StarIcon,
+  StarFilledIcon,
+  CircleIcon,
+  CircleFilledIcon,
+  ExternalLinkIcon,
+  ArrowLeftIcon,
+  AlertIcon,
+  SpinnerIcon,
+  SparklesIcon,
+} from "@/components/ui";
 import { SummaryCard } from "@/components/summarization";
 import {
   NarrationControls,
@@ -69,103 +80,6 @@ export function getDomain(url: string): string {
   } catch {
     return url;
   }
-}
-
-/**
- * Star icon component (filled or outline).
- */
-function StarIcon({ filled }: { filled: boolean }) {
-  if (filled) {
-    return (
-      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-      </svg>
-    );
-  }
-  return (
-    <svg
-      className="h-5 w-5"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"
-      />
-    </svg>
-  );
-}
-
-/**
- * Read/Unread indicator icon.
- * Filled circle for unread, empty circle for read.
- */
-function ReadStatusIcon({ read }: { read: boolean }) {
-  if (read) {
-    // Empty circle for read
-    return (
-      <svg
-        className="h-4 w-4"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2}
-        aria-hidden="true"
-      >
-        <circle cx="12" cy="12" r="9" />
-      </svg>
-    );
-  }
-  // Filled circle for unread
-  return (
-    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-    </svg>
-  );
-}
-
-/**
- * External link icon.
- */
-function ExternalLinkIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-      />
-    </svg>
-  );
-}
-
-/**
- * Back arrow icon.
- */
-function BackArrowIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-      aria-hidden="true"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-    </svg>
-  );
 }
 
 /**
@@ -211,20 +125,7 @@ export function EntryContentSkeleton() {
 export function EntryContentError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <svg
-        className="mb-4 h-16 w-16 text-red-400 dark:text-red-500"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        aria-hidden="true"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={1.5}
-          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-        />
-      </svg>
+      <AlertIcon className="mb-4 h-16 w-16 text-red-400 dark:text-red-500" />
       <p className="ui-text-base mb-4 text-zinc-600 dark:text-zinc-400">{message}</p>
       <Button onClick={onRetry} variant="secondary">
         Try again
@@ -598,7 +499,7 @@ export function EntryContentBody({
           onClick={onBack}
           className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
         >
-          <BackArrowIcon />
+          <ArrowLeftIcon className="h-4 w-4" />
           <span>Back to list</span>
         </button>
       )}
@@ -659,7 +560,7 @@ export function EntryContentBody({
             }
             aria-label={starred ? "Remove from starred" : "Add to starred"}
           >
-            <StarIcon filled={starred} />
+            {starred ? <StarFilledIcon className="h-5 w-5" /> : <StarIcon className="h-5 w-5" />}
             <span className="ml-2">{starred ? "Starred" : "Star"}</span>
           </Button>
 
@@ -671,7 +572,7 @@ export function EntryContentBody({
             aria-label={read ? "Mark as unread" : "Mark as read"}
             title="Keyboard shortcut: m"
           >
-            <ReadStatusIcon read={read} />
+            {read ? <CircleIcon className="h-4 w-4" /> : <CircleFilledIcon className="h-4 w-4" />}
             <span className="ml-2">{read ? "Mark Unread" : "Mark Read"}</span>
           </Button>
 
@@ -707,26 +608,7 @@ export function EntryContentBody({
             >
               {isFullContentFetching ? (
                 <>
-                  <svg
-                    className="h-4 w-4 animate-spin"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
+                  <SpinnerIcon className="h-4 w-4" />
                   <span className="ml-2">Fetching...</span>
                 </>
               ) : fetchFullContent ? (
@@ -745,7 +627,7 @@ export function EntryContentBody({
               onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
               aria-label="Open original article in new tab"
             >
-              <ExternalLinkIcon />
+              <ExternalLinkIcon className="h-4 w-4" />
               <span className="ml-2">View Original</span>
             </Button>
           )}
@@ -774,62 +656,17 @@ export function EntryContentBody({
             >
               {isSummarizing ? (
                 <>
-                  <svg
-                    className="h-4 w-4 animate-spin"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
+                  <SpinnerIcon className="h-4 w-4" />
                   <span className="ml-2">Summarizing...</span>
                 </>
               ) : summary ? (
                 <>
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                    aria-hidden="true"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-                    />
-                  </svg>
+                  <SparklesIcon className="h-4 w-4" />
                   <span className="ml-2">{showSummary ? "Hide Summary" : "Show Summary"}</span>
                 </>
               ) : (
                 <>
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                    aria-hidden="true"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-                    />
-                  </svg>
+                  <SparklesIcon className="h-4 w-4" />
                   <span className="ml-2">Summarize</span>
                 </>
               )}
@@ -881,7 +718,7 @@ export function EntryContentBody({
             rel="noopener noreferrer"
             className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
           >
-            <ExternalLinkIcon />
+            <ExternalLinkIcon className="h-4 w-4" />
             Read on {displayFooterDomain}
           </a>
         </footer>
