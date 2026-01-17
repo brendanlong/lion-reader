@@ -6,14 +6,21 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { marked } from "marked";
 import { logger } from "@/lib/logger";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
+
+// Configure marked for safe rendering
+marked.setOptions({
+  gfm: true, // GitHub Flavored Markdown
+  breaks: true, // Convert \n to <br>
+});
 
 /**
  * Current prompt version. Increment this when changing the prompt
  * to invalidate cached summaries.
  */
-export const CURRENT_PROMPT_VERSION = 2;
+export const CURRENT_PROMPT_VERSION = 3;
 
 /**
  * Default model for summarization.
@@ -75,6 +82,7 @@ Please follow these guidelines when creating your summary:
 - If the content contains multiple distinct sections or topics, briefly mention each main topic
 - Write in clear, straightforward language that is easy to scan quickly
 - Ensure the summary is self-contained and understandable without needing to read the full content
+- Format your summary using Markdown for better readability (use bullet points, bold text, etc. where appropriate)
 
 Your summary must not exceed ${maxWords} words. If the content is very short and already concise, your summary may be shorter than the maximum length.
 
@@ -121,7 +129,7 @@ function getAnthropicClient(): Anthropic | null {
  * Result of summary generation.
  */
 export interface GenerateSummaryResult {
-  /** The generated summary text */
+  /** The generated summary as HTML (converted from Markdown) */
   summary: string;
   /** The model used for generation */
   modelId: string;
@@ -188,8 +196,9 @@ export async function generateSummary(content: string): Promise<GenerateSummaryR
       throw new Error("Empty response from Anthropic API");
     }
 
-    // Extract summary from <summary> tags
-    const summary = extractSummaryFromResponse(responseText);
+    // Extract summary from <summary> tags and convert Markdown to HTML
+    const markdownSummary = extractSummaryFromResponse(responseText);
+    const summary = await marked.parse(markdownSummary);
 
     return {
       summary,
