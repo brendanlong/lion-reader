@@ -8,17 +8,19 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   feeds,
   subscriptions,
+  entries,
   opmlImports,
   tags,
   subscriptionTags,
   type Feed,
   type OpmlImportFeedResult,
 } from "../db/schema";
+import { fetchFullContent } from "../services/full-content";
 import {
   fetchFeed,
   parseFeed,
@@ -62,6 +64,127 @@ export interface JobHandlerResult {
   error?: string;
   /** Any additional metadata about the job execution */
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Maximum number of entries to fetch full content for per feed fetch.
+ * This prevents timeout issues for feeds with many new entries.
+ */
+const MAX_FULL_CONTENT_ENTRIES_PER_FETCH = 10;
+
+/**
+ * Fetches full content for new entries if any subscriber has fetchFullContent enabled.
+ *
+ * This is called after processEntries() to fetch the full article content
+ * from the URL for entries that only have a summary in the feed.
+ *
+ * @param feedId - The feed's UUID
+ * @param newEntryIds - Array of new entry IDs to potentially fetch full content for
+ * @returns Number of entries with full content fetched
+ */
+async function fetchFullContentForNewEntries(
+  feedId: string,
+  newEntryIds: string[]
+): Promise<{ fetched: number; failed: number }> {
+  if (newEntryIds.length === 0) {
+    return { fetched: 0, failed: 0 };
+  }
+
+  // Check if any active subscriber has fetchFullContent enabled
+  const subscribersWithFullContent = await db
+    .select({ userId: subscriptions.userId })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.feedId, feedId),
+        isNull(subscriptions.unsubscribedAt),
+        eq(subscriptions.fetchFullContent, true)
+      )
+    )
+    .limit(1);
+
+  if (subscribersWithFullContent.length === 0) {
+    return { fetched: 0, failed: 0 };
+  }
+
+  logger.debug("Full content fetching enabled for feed", {
+    feedId,
+    newEntryCount: newEntryIds.length,
+  });
+
+  // Get entries with URLs (limit to avoid timeout)
+  const entriesToFetch = await db
+    .select({ id: entries.id, url: entries.url })
+    .from(entries)
+    .where(inArray(entries.id, newEntryIds.slice(0, MAX_FULL_CONTENT_ENTRIES_PER_FETCH)));
+
+  const entriesWithUrls = entriesToFetch.filter((e) => e.url !== null);
+
+  if (entriesWithUrls.length === 0) {
+    return { fetched: 0, failed: 0 };
+  }
+
+  let fetched = 0;
+  let failed = 0;
+
+  // Fetch full content for each entry sequentially to avoid overwhelming servers
+  for (const entry of entriesWithUrls) {
+    try {
+      const result = await fetchFullContent(entry.url!);
+      const now = new Date();
+
+      if (result.success) {
+        await db
+          .update(entries)
+          .set({
+            fullContentOriginal: result.contentOriginal ?? null,
+            fullContentCleaned: result.contentCleaned ?? null,
+            fullContentFetchedAt: now,
+            fullContentError: null,
+            updatedAt: now,
+          })
+          .where(eq(entries.id, entry.id));
+        fetched++;
+
+        logger.debug("Fetched full content for entry", {
+          entryId: entry.id,
+          url: entry.url,
+        });
+      } else {
+        await db
+          .update(entries)
+          .set({
+            fullContentError: result.error ?? "Unknown error",
+            fullContentFetchedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(entries.id, entry.id));
+        failed++;
+
+        logger.debug("Failed to fetch full content for entry", {
+          entryId: entry.id,
+          url: entry.url,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      failed++;
+      logger.warn("Error fetching full content for entry", {
+        entryId: entry.id,
+        url: entry.url,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  logger.info("Full content fetching completed", {
+    feedId,
+    fetched,
+    failed,
+    total: entriesWithUrls.length,
+  });
+
+  return { fetched, failed };
 }
 
 /**
@@ -263,6 +386,11 @@ async function processSuccessfulFetch(
     feedUrl: feed.url ?? undefined,
   });
 
+  // Fetch full content for new entries if any subscriber has fetchFullContent enabled
+  // This is done after processEntries so entries exist in the database
+  const newEntryIds = processResult.entries.filter((e) => e.isNew).map((e) => e.id);
+  const fullContentResult = await fetchFullContentForNewEntries(feed.id, newEntryIds);
+
   // Calculate next fetch time based on cache headers and feed hints
   const nextFetch = calculateNextFetch({
     cacheControl: cacheHeaders.cacheControl,
@@ -345,6 +473,15 @@ async function processSuccessfulFetch(
     });
   }
 
+  // Build full content metadata if any were fetched
+  const fullContentMetadata: Record<string, unknown> =
+    fullContentResult.fetched > 0 || fullContentResult.failed > 0
+      ? {
+          fullContentFetched: fullContentResult.fetched,
+          fullContentFailed: fullContentResult.failed,
+        }
+      : {};
+
   return {
     success: true,
     nextRunAt: nextFetch.nextFetchAt,
@@ -355,6 +492,7 @@ async function processSuccessfulFetch(
       disappearedEntries: processResult.disappearedCount,
       nextFetchReason: nextFetch.reason,
       ...websubMetadata,
+      ...fullContentMetadata,
     },
   };
 }
