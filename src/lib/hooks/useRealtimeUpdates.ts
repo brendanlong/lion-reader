@@ -85,7 +85,12 @@ const SSE_RETRY_INTERVAL_MS = 60_000;
 // Event Types
 // ============================================================================
 
-interface FeedEventData {
+/**
+ * Entry events from SSE, transformed to include subscriptionId.
+ * These are published at the feed level internally but transformed
+ * by the SSE endpoint to be subscription-centric for clients.
+ */
+interface SubscriptionEntryEventData {
   type: "new_entry" | "entry_updated";
   subscriptionId: string;
   entryId: string;
@@ -174,7 +179,7 @@ type UserEventData =
   | ImportProgressEventData
   | ImportCompletedEventData;
 
-type SSEEventData = FeedEventData | UserEventData;
+type SSEEventData = SubscriptionEntryEventData | UserEventData;
 
 /**
  * Parses SSE event data from a JSON string.
@@ -462,8 +467,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
       if (data.type === "new_entry") {
         // Push to Zustand delta store - count badges update instantly via deltas
         useRealtimeStore.getState().onNewEntry(data.entryId, data.subscriptionId, data.timestamp);
-        // Invalidate entry list so the new entry appears in the UI
-        utils.entries.list.invalidate();
+        // Entry list insertion will be handled separately via pendingEntries
       } else if (data.type === "entry_updated") {
         // Push to Zustand
         useRealtimeStore.getState().onEntryUpdated(data.entryId);
