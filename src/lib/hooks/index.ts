@@ -10,12 +10,7 @@ export { DEFAULT_PREFERENCES, type ViewType, type ViewPreferences } from "./view
 
 export { useUrlViewPreferences, parseViewPreferencesFromParams } from "./useUrlViewPreferences";
 
-export { useEntryMutations, type EntryListFilters } from "./useEntryMutations";
-
-// Re-export EntryType from the store for convenience
-export { type EntryType } from "@/lib/store/realtime";
-
-export { useEntryWithDeltas, useMergedEntries, type EntryFilterOptions } from "./useEntryDeltas";
+export { useEntryMutations, type EntryListFilters, type EntryType } from "./useEntryMutations";
 
 export { useEntryUrlState } from "./useEntryUrlState";
 

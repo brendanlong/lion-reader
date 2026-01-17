@@ -10,12 +10,7 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
-import {
-  useEntryMutations,
-  useShowOriginalPreference,
-  useEntryWithDeltas,
-  type EntryListFilters,
-} from "@/lib/hooks";
+import { useEntryMutations, useShowOriginalPreference } from "@/lib/hooks";
 import {
   EntryContentBody,
   EntryContentSkeleton,
@@ -31,12 +26,6 @@ interface EntryContentProps {
    * The ID of the entry to display.
    */
   entryId: string;
-
-  /**
-   * Filters for the entry list. Used for optimistic updates when marking
-   * entries as read, so they get filtered from the list immediately.
-   */
-  listFilters?: EntryListFilters;
 
   /**
    * Optional callback when the back button is clicked.
@@ -72,7 +61,6 @@ interface EntryContentProps {
  */
 export function EntryContent({
   entryId,
-  listFilters,
   onBack,
   onSwipeNext,
   onSwipePrevious,
@@ -84,8 +72,8 @@ export function EntryContent({
   // Fetch the entry
   const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
 
-  // Merge server data with Zustand deltas at render time
-  const entry = useEntryWithDeltas(data?.entry ?? null);
+  // Use entry data directly (no delta merging)
+  const entry = data?.entry ?? null;
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
@@ -103,21 +91,11 @@ export function EntryContent({
     return subscriptionsQuery.data.items.find((sub) => sub.id === entry.subscriptionId);
   }, [entry, subscriptionsQuery.data]);
 
-  const tagIds = useMemo(() => {
-    return subscription?.tags.map((tag) => tag.id);
-  }, [subscription]);
-
   // Get fetchFullContent setting from subscription
   const fetchFullContent = subscription?.fetchFullContent ?? false;
 
-  // Entry mutations with subscriptionId and entryType from entry data (bypasses cache lookup)
-  // When marking an entry as read, this ensures it gets filtered from the list immediately
-  const { markRead, star, unstar } = useEntryMutations({
-    listFilters,
-    entryType: entry?.type,
-    subscriptionId: entry?.subscriptionId ?? undefined,
-    tagIds,
-  });
+  // Entry mutations for marking read, starring, etc.
+  const { markRead, star, unstar } = useEntryMutations();
 
   // Mutation to update subscription's fetchFullContent setting
   const utils = trpc.useUtils();

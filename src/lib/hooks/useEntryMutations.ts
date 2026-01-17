@@ -1,8 +1,8 @@
 /**
  * useEntryMutations Hook
  *
- * Provides entry mutations (markRead, star, unstar) with optimistic updates
- * for the entry list. Consolidates mutation logic from page components.
+ * Provides entry mutations (markRead, star, unstar) with cache invalidation.
+ * Consolidates mutation logic from page components.
  */
 
 "use client";
@@ -10,7 +10,11 @@
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { useRealtimeStore, type EntryType } from "@/lib/store/realtime";
+
+/**
+ * Entry type for routing.
+ */
+export type EntryType = "web" | "email" | "saved";
 
 /**
  * Filters for the current entry list.
@@ -115,9 +119,9 @@ export interface MarkAllReadOptions {
 export interface UseEntryMutationsResult {
   /**
    * Mark one or more entries as read or unread.
-   * @param entryType - Entry type for count delta routing
-   * @param subscriptionId - Optional subscription ID for count tracking (web/email only)
-   * @param tagIds - Optional tag IDs for count tracking (web/email only)
+   * @param entryType - Entry type (kept for API compatibility, unused)
+   * @param subscriptionId - Optional subscription ID (kept for API compatibility, unused)
+   * @param tagIds - Optional tag IDs (kept for API compatibility, unused)
    */
   markRead: (
     ids: string[],
@@ -129,9 +133,9 @@ export interface UseEntryMutationsResult {
 
   /**
    * Toggle the read status of an entry.
-   * @param entryType - Entry type for count delta routing
-   * @param subscriptionId - Optional subscription ID for count tracking (web/email only)
-   * @param tagIds - Optional tag IDs for count tracking (web/email only)
+   * @param entryType - Entry type (kept for API compatibility, unused)
+   * @param subscriptionId - Optional subscription ID (kept for API compatibility, unused)
+   * @param tagIds - Optional tag IDs (kept for API compatibility, unused)
    */
   toggleRead: (
     entryId: string,
@@ -183,12 +187,11 @@ export interface UseEntryMutationsResult {
 }
 
 /**
- * Hook that provides entry mutations with optimistic updates.
+ * Hook that provides entry mutations with cache invalidation.
  *
  * Consolidates the mutation logic that was previously duplicated
  * across page components (all, feed, starred, tag).
  *
- * @param options - Options including list filters for optimistic updates
  * @returns Object with mutation functions and pending state
  *
  * @example
@@ -208,25 +211,19 @@ export interface UseEntryMutationsResult {
  * }
  * ```
  */
-export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryMutationsResult {
+export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
-  const knownEntryType = options?.entryType;
-  const knownSubscriptionId = options?.subscriptionId;
-  const knownTagIds = options?.tagIds;
 
-  // markRead mutation - Zustand updates happen synchronously in wrapper functions
-  // This avoids the fragile ref pattern that could race with async onMutate
+  // markRead mutation - invalidate on success
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: () => {
-      // Invalidate starred count since marking read/unread affects starred unread count
-      // We don't track starred count deltas in Zustand, so just refetch
-      utils.entries.count.invalidate({ starredOnly: true });
+      // Invalidate entry lists and counts
+      utils.entries.list.invalidate();
+      utils.entries.count.invalidate();
+      utils.subscriptions.list.invalidate();
+      utils.tags.list.invalidate();
     },
     onError: () => {
-      // On error, reset Zustand and refetch server data
-      useRealtimeStore.getState().reset();
-      utils.entries.list.invalidate();
-      utils.subscriptions.list.invalidate();
       toast.error("Failed to update read status");
     },
   });
@@ -248,108 +245,45 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
     },
   });
 
-  // star mutation with Zustand optimistic updates
+  // star mutation - invalidate on success
   const starMutation = trpc.entries.star.useMutation({
-    onMutate: async (variables) => {
-      // Update Zustand for instant UI feedback
-      useRealtimeStore.getState().toggleStar(variables.id, false);
+    onSuccess: () => {
+      // Invalidate starred entries list and count
+      utils.entries.list.invalidate({ starredOnly: true });
+      utils.entries.count.invalidate({ starredOnly: true });
     },
     onError: () => {
-      // On error, reset Zustand and refetch
-      useRealtimeStore.getState().reset();
-      utils.entries.list.invalidate();
       toast.error("Failed to star entry");
     },
-    onSettled: () => {
+  });
+
+  // unstar mutation - invalidate on success
+  const unstarMutation = trpc.entries.unstar.useMutation({
+    onSuccess: () => {
       // Invalidate starred entries list and count
       utils.entries.list.invalidate({ starredOnly: true });
       utils.entries.count.invalidate({ starredOnly: true });
-    },
-  });
-
-  // unstar mutation with Zustand optimistic updates
-  const unstarMutation = trpc.entries.unstar.useMutation({
-    onMutate: async (variables) => {
-      // Update Zustand for instant UI feedback
-      useRealtimeStore.getState().toggleStar(variables.id, true);
     },
     onError: () => {
-      // On error, reset Zustand and refetch
-      useRealtimeStore.getState().reset();
-      utils.entries.list.invalidate();
       toast.error("Failed to unstar entry");
-    },
-    onSettled: () => {
-      // Invalidate starred entries list and count
-      utils.entries.list.invalidate({ starredOnly: true });
-      utils.entries.count.invalidate({ starredOnly: true });
     },
   });
 
-  // Wrapper functions that perform Zustand updates synchronously before the mutation
-  // This is more reliable than onMutate which can have timing issues with refs
+  // Note: entryType, subscriptionId, tagIds are kept in signature for API
+  // compatibility but are unused since we removed Zustand delta tracking.
+  // Callers may still pass them; we just ignore them.
   const markRead = useCallback(
-    (
-      ids: string[],
-      read: boolean,
-      entryType: EntryType,
-      subscriptionId?: string,
-      tagIds?: string[]
-    ) => {
-      // Use provided values or fall back to hook options
-      const effectiveEntryType = entryType ?? knownEntryType;
-      const effectiveSubscriptionId = subscriptionId ?? knownSubscriptionId;
-      const effectiveTagIds = tagIds ?? knownTagIds;
-
-      // Update Zustand synchronously for instant UI feedback
-      if (effectiveEntryType) {
-        const markFn = read
-          ? useRealtimeStore.getState().markRead
-          : useRealtimeStore.getState().markUnread;
-        for (const id of ids) {
-          markFn(id, {
-            entryType: effectiveEntryType,
-            subscriptionId: effectiveSubscriptionId,
-            tagIds: effectiveTagIds,
-          });
-        }
-      }
-
-      // Trigger server mutation
+    (ids: string[], read: boolean) => {
       markReadMutation.mutate({ ids, read });
     },
-    [markReadMutation, knownEntryType, knownSubscriptionId, knownTagIds]
+    [markReadMutation]
   );
 
   const toggleRead = useCallback(
-    (
-      entryId: string,
-      currentlyRead: boolean,
-      entryType: EntryType,
-      subscriptionId?: string,
-      tagIds?: string[]
-    ) => {
-      // Use provided values or fall back to hook options
-      const effectiveEntryType = entryType ?? knownEntryType;
-      const effectiveSubscriptionId = subscriptionId ?? knownSubscriptionId;
-      const effectiveTagIds = tagIds ?? knownTagIds;
-
-      // Update Zustand synchronously for instant UI feedback
-      if (effectiveEntryType) {
-        const markFn = currentlyRead
-          ? useRealtimeStore.getState().markUnread
-          : useRealtimeStore.getState().markRead;
-        markFn(entryId, {
-          entryType: effectiveEntryType,
-          subscriptionId: effectiveSubscriptionId,
-          tagIds: effectiveTagIds,
-        });
-      }
-
-      // Trigger server mutation
+    (entryId: string, currentlyRead: boolean) => {
       markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
     },
-    [markReadMutation, knownEntryType, knownSubscriptionId, knownTagIds]
+    [markReadMutation]
   );
 
   const markAllRead = useCallback(
@@ -395,8 +329,9 @@ export function useEntryMutations(options?: UseEntryMutationsOptions): UseEntryM
 
   return useMemo(
     () => ({
-      markRead,
-      toggleRead,
+      // Cast to the expected signature - extra args are ignored
+      markRead: markRead as UseEntryMutationsResult["markRead"],
+      toggleRead: toggleRead as UseEntryMutationsResult["toggleRead"],
       markAllRead,
       star,
       unstar,

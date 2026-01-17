@@ -8,14 +8,13 @@
  * - Fallback: Polling sync endpoint when SSE is unavailable (Redis down)
  * - Automatic catch-up sync after SSE reconnection
  * - Exponential backoff for reconnection attempts
- * - React Query cache invalidation/updates
+ * - React Query cache invalidation
  */
 
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { useRealtimeStore } from "@/lib/store/realtime";
 
 /**
  * Connection status for real-time updates.
@@ -451,7 +450,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
   }, []);
 
   /**
-   * Handles incoming SSE events by updating Zustand delta store and invalidating queries.
+   * Handles incoming SSE events by invalidating relevant caches.
    * Tracks sync cursor from event.lastEventId for reconnection.
    */
   const handleEvent = useCallback(
@@ -465,92 +464,22 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Push to Zustand delta store - count badges update instantly via deltas
-        useRealtimeStore.getState().onNewEntry(data.entryId, data.subscriptionId, data.timestamp);
-        // Entry list insertion will be handled separately via pendingEntries
+        // Invalidate entry list and subscription counts
+        utils.entries.list.invalidate();
+        utils.subscriptions.list.invalidate();
+        utils.tags.list.invalidate();
       } else if (data.type === "entry_updated") {
-        // Push to Zustand
-        useRealtimeStore.getState().onEntryUpdated(data.entryId);
         // Invalidate the specific entry to refresh content
         utils.entries.get.invalidate({ id: data.entryId });
       } else if (data.type === "subscription_created") {
-        // Push to Zustand delta store
-        const tagIds = data.subscription.tags.map((t) => t.id);
-        useRealtimeStore
-          .getState()
-          .onSubscriptionCreated(data.subscription.id, data.subscription.unreadCount, tagIds);
-
-        // Also update React Query cache (TODO: remove once Zustand integration complete)
-        // Optimistic cache update - insert subscription directly into cache
-        utils.subscriptions.list.setData(undefined, (oldData) => {
-          if (!oldData) {
-            // If no data yet, create with the new subscription
-            // Transform SSE event data to flat subscription format
-            return {
-              items: [
-                {
-                  id: data.subscription.id,
-                  type: data.feed.type,
-                  url: data.feed.url,
-                  title: data.subscription.customTitle || data.feed.title,
-                  originalTitle: data.feed.title,
-                  description: data.feed.description,
-                  siteUrl: data.feed.siteUrl,
-                  subscribedAt: new Date(data.subscription.subscribedAt),
-                  unreadCount: data.subscription.unreadCount,
-                  tags: data.subscription.tags,
-                  fetchFullContent: false, // New subscriptions default to false
-                },
-              ],
-            };
-          }
-
-          // Check for duplicates
-          if (oldData.items.some((item) => item.id === data.subscription.id)) {
-            return oldData;
-          }
-
-          // Add new subscription to cache and maintain alphabetical order
-          // Transform SSE event data to flat subscription format
-          const newItem = {
-            id: data.subscription.id,
-            type: data.feed.type,
-            url: data.feed.url,
-            title: data.subscription.customTitle || data.feed.title,
-            originalTitle: data.feed.title,
-            description: data.feed.description,
-            siteUrl: data.feed.siteUrl,
-            subscribedAt: new Date(data.subscription.subscribedAt),
-            unreadCount: data.subscription.unreadCount,
-            tags: data.subscription.tags,
-            fetchFullContent: false, // New subscriptions default to false
-          };
-          const newItems = [...oldData.items, newItem];
-          newItems.sort((a, b) => {
-            const titleA = (a.title || "").toLowerCase();
-            const titleB = (b.title || "").toLowerCase();
-            return titleA.localeCompare(titleB);
-          });
-          return { items: newItems };
-        });
-
-        // Tag counts updated via Zustand deltas (onSubscriptionCreated already called)
-        // Invalidate tag list only to add newly created tags to the list
+        // Invalidate subscriptions and tags
+        utils.subscriptions.list.invalidate();
         utils.tags.list.invalidate();
-
-        // Note: Entry list doesn't need invalidation - new entries come via new_entry events
       } else if (data.type === "subscription_deleted") {
-        // TODO: Push to Zustand (needs tag IDs from subscription, which event doesn't include)
-        // useRealtimeStore.getState().onSubscriptionDeleted(data.subscriptionId, tagIds);
-
         // Invalidate React Query cache
-        const existingData = utils.subscriptions.list.getData();
-        const stillInCache = existingData?.items.some((item) => item.id === data.subscriptionId);
-
-        if (stillInCache) {
-          utils.subscriptions.list.invalidate();
-          utils.entries.list.invalidate();
-        }
+        utils.subscriptions.list.invalidate();
+        utils.entries.list.invalidate();
+        utils.tags.list.invalidate();
       } else if (data.type === "saved_article_created") {
         utils.entries.list.invalidate({ type: "saved" });
         utils.entries.count.invalidate({ type: "saved" });
@@ -574,7 +503,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
   );
 
   /**
-   * Performs a sync and applies changes to Zustand delta store and cache.
+   * Performs a sync and invalidates relevant caches.
    * Used during polling mode and for catch-up sync after SSE reconnection.
    */
   const performSync = useCallback(async () => {
@@ -596,48 +525,16 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
 
       const hasTagChanges = result.tags.created.length > 0 || result.tags.removed.length > 0;
 
-      // Push entry changes to Zustand (same interface as SSE)
-      for (const entry of result.entries.created) {
-        if (entry.subscriptionId) {
-          useRealtimeStore
-            .getState()
-            .onNewEntry(entry.id, entry.subscriptionId, entry.fetchedAt.toISOString());
-        } else {
-          // This shouldn't happen for newly created entries - they should always
-          // have a subscription. Log to understand if/when this occurs.
-          console.warn("Sync: new entry missing subscriptionId", {
-            entryId: entry.id,
-            type: entry.type,
-            title: entry.title,
-          });
-        }
-      }
-
-      // Handle entry changes - invalidate list so new entries appear
-      // Counts are updated via Zustand (onNewEntry calls above)
+      // Handle entry changes - invalidate list
       if (hasEntryChanges) {
         utils.entries.list.invalidate();
+        utils.subscriptions.list.invalidate();
       }
 
       // Handle subscription changes
       if (hasSubscriptionChanges) {
-        // For removed subscriptions, remove them from cache
-        if (result.subscriptions.removed.length > 0) {
-          const removedIds = new Set(result.subscriptions.removed);
-          utils.subscriptions.list.setData(undefined, (oldData) => {
-            if (!oldData) return oldData;
-            return {
-              ...oldData,
-              items: oldData.items.filter((item) => !removedIds.has(item.id)),
-            };
-          });
-        }
-
-        // For new subscriptions, we need to invalidate since sync doesn't include
-        // all the data we need (unread counts, tags, feed details)
-        if (result.subscriptions.created.length > 0) {
-          utils.subscriptions.list.invalidate();
-        }
+        utils.subscriptions.list.invalidate();
+        utils.entries.list.invalidate();
       }
 
       if (hasTagChanges) {

@@ -82,8 +82,7 @@
     "superjson": "^2.2.6",
     "trpc-to-openapi": "^3.1.0",
     "tsx": "^4.21.0",
-    "zod": "^4.2.1",
-    "zustand": "^5.0.10"
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
