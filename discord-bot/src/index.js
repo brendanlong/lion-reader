@@ -142,18 +142,15 @@ client.on("messageReactionAdd", async (reaction, user) => {
     return;
   }
 
-  // Save each URL
+  // Save each URL and collect results
+  const results = [];
   for (const url of urls) {
     const result = await saveArticle(token, url);
 
     if (result.success) {
       console.log(`Saved article for ${user.tag}: ${url}`);
-      // React with checkmark to confirm
-      try {
-        await message.react("✅");
-      } catch {
-        // May not have permission to react
-      }
+      const title = result.data?.title || url;
+      results.push({ success: true, title, url });
     } else if (result.error === "unauthorized") {
       // Token may have been revoked
       console.log(`Token invalid for ${user.tag}, removing...`);
@@ -169,10 +166,38 @@ client.on("messageReactionAdd", async (reaction, user) => {
       return;
     } else {
       console.error(`Failed to save article for ${user.tag}: ${url}`, result.error);
+      results.push({ success: false, url, error: result.error });
+    }
+  }
+
+  // DM user with results
+  if (results.length > 0) {
+    const successCount = results.filter((r) => r.success).length;
+    const failCount = results.length - successCount;
+
+    let dmMessage = "";
+    if (successCount > 0) {
+      const saved = results.filter((r) => r.success);
+      if (saved.length === 1) {
+        dmMessage = `Saved to Lion Reader: **${saved[0].title}**`;
+      } else {
+        dmMessage = `Saved ${saved.length} articles to Lion Reader:\n${saved.map((r) => `• ${r.title}`).join("\n")}`;
+      }
+    }
+    if (failCount > 0) {
+      const failed = results.filter((r) => !r.success);
+      if (dmMessage) dmMessage += "\n\n";
+      dmMessage += `Failed to save: ${failed.map((r) => r.url).join(", ")}`;
+    }
+
+    try {
+      await user.send(dmMessage);
+    } catch {
+      // User may have DMs disabled - fall back to reaction
       try {
-        await message.react("❌");
+        await message.react(failCount > 0 ? "❌" : "✅");
       } catch {
-        // May not have permission to react
+        // May not have permission to react either
       }
     }
   }
