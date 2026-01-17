@@ -460,9 +460,10 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Push to Zustand delta store - UI updates instantly via deltas
+        // Push to Zustand delta store - count badges update instantly via deltas
         useRealtimeStore.getState().onNewEntry(data.entryId, data.feedId, data.timestamp);
-        // No invalidation needed - counts updated via Zustand deltas
+        // Invalidate entry list so the new entry appears in the UI
+        utils.entries.list.invalidate();
       } else if (data.type === "entry_updated") {
         // Push to Zustand
         useRealtimeStore.getState().onEntryUpdated(data.entryId);
