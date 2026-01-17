@@ -89,12 +89,6 @@ Business logic should be extracted into reusable service functions in `src/serve
 - **Location**: `src/server/services/{domain}.ts` (e.g., `entries.ts`, `subscriptions.ts`)
 - **Naming**: `verbNoun` (e.g., `listEntries`, `searchSubscriptions`, `markEntriesRead`)
 
-## Frontend State Management
-
-### Zustand Delta-Based Architecture
-
-The app uses Zustand for optimistic updates, storing only **deltas** from the server state (e.g., "entry X is now read"). React Query provides the base data, Zustand applies deltas on top.
-
 Don't try to invalidate the cache or look things up in the cache. Pass data down as props if needed (and add to the backend API if necessary).
 
 ## Outgoing HTTP Requests
