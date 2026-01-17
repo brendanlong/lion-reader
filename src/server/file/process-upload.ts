@@ -12,7 +12,7 @@ import * as mammoth from "mammoth";
 import { marked } from "marked";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { generateSummary } from "@/server/html/strip-html";
-import { stripTitleHeader } from "@/server/html/strip-title-header";
+import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -160,18 +160,10 @@ async function processMarkdown(content: string, filename: string): Promise<Proce
   // Convert markdown to HTML
   const html = await marked.parse(content);
 
-  // Try to extract title from first H1 or use filename
-  let title: string | null = null;
-  const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-  if (h1Match) {
-    title = h1Match[1].trim();
-  }
-
-  const finalTitle = title || titleFromFilename(filename);
-
-  // Strip the first header if it matches the title to avoid duplication
+  // Extract title from first header and strip it from content
   // (the title is displayed separately in the UI)
-  const contentCleaned = stripTitleHeader(html, finalTitle);
+  const { title: extractedTitle, content: contentCleaned } = extractAndStripTitleHeader(html);
+  const title = extractedTitle || titleFromFilename(filename);
 
   // Generate excerpt from the cleaned content (after title is stripped)
   const excerpt = generateSummary(contentCleaned);
@@ -179,7 +171,7 @@ async function processMarkdown(content: string, filename: string): Promise<Proce
   return {
     contentCleaned,
     excerpt: excerpt || null,
-    title: finalTitle,
+    title,
     fileType: "markdown",
   };
 }
