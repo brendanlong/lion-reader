@@ -265,7 +265,7 @@ export const usersRouter = createTRPCRouter({
       z.object({
         accounts: z.array(
           z.object({
-            provider: z.enum(["google", "apple"]),
+            provider: z.enum(["google", "apple", "discord"]),
             linkedAt: z.date(),
           })
         ),
@@ -296,7 +296,7 @@ export const usersRouter = createTRPCRouter({
 
       return {
         accounts: linkedAccounts.map((account) => ({
-          provider: account.provider as "google" | "apple",
+          provider: account.provider as "google" | "apple" | "discord",
           linkedAt: account.linkedAt,
         })),
         hasPassword,

@@ -10,7 +10,7 @@
  * - Self-hosters can omit OAuth config and still use email/password auth
  */
 
-import { Google, Apple } from "arctic";
+import { Google, Apple, Discord } from "arctic";
 
 // ============================================================================
 // Types
@@ -19,7 +19,7 @@ import { Google, Apple } from "arctic";
 /**
  * Supported OAuth provider names
  */
-export type OAuthProviderName = "google" | "apple";
+export type OAuthProviderName = "google" | "apple" | "discord";
 
 /**
  * Configuration for a single OAuth provider
@@ -60,6 +60,12 @@ const APPLE_KEY_ID = process.env.APPLE_KEY_ID;
 const APPLE_PRIVATE_KEY = process.env.APPLE_PRIVATE_KEY;
 
 /**
+ * Discord OAuth environment variables
+ */
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+
+/**
  * Base URL for OAuth callbacks
  */
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -92,11 +98,22 @@ const appleConfig: AppleOAuthConfig = {
 };
 
 /**
+ * Discord OAuth provider configuration
+ * Enabled only if both client ID and client secret are set
+ */
+const discordConfig: OAuthProviderConfig = {
+  enabled: !!(DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET),
+  clientId: DISCORD_CLIENT_ID,
+  clientSecret: DISCORD_CLIENT_SECRET,
+};
+
+/**
  * Map of all OAuth provider configurations
  */
 const oauthProviders: Record<OAuthProviderName, OAuthProviderConfig | AppleOAuthConfig> = {
   google: googleConfig,
   apple: appleConfig,
+  discord: discordConfig,
 };
 
 // ============================================================================
@@ -153,6 +170,22 @@ export function getAppleProvider(): Apple | null {
     appleConfig.keyId,
     privateKeyBytes,
     `${APP_URL}/api/v1/auth/oauth/apple/callback`
+  );
+}
+
+/**
+ * Get Discord OAuth provider instance
+ * Returns null if Discord OAuth is not configured
+ */
+export function getDiscordProvider(): Discord | null {
+  if (!discordConfig.enabled || !discordConfig.clientId || !discordConfig.clientSecret) {
+    return null;
+  }
+
+  return new Discord(
+    discordConfig.clientId,
+    discordConfig.clientSecret,
+    `${APP_URL}/api/v1/auth/oauth/discord/callback`
   );
 }
 

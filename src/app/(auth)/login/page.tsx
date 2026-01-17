@@ -11,7 +11,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
-import { GoogleSignInButton, AppleSignInButton, AuthFooter } from "@/components/auth";
+import {
+  GoogleSignInButton,
+  AppleSignInButton,
+  DiscordSignInButton,
+  AuthFooter,
+} from "@/components/auth";
 import {
   subscribeToOAuthCompletion,
   checkOAuthOnVisibilityChange,
@@ -165,6 +170,10 @@ function LoginForm() {
         />
         <AppleSignInButton
           label="Sign in with Apple"
+          onError={(error) => setErrors({ form: error })}
+        />
+        <DiscordSignInButton
+          label="Sign in with Discord"
           onError={(error) => setErrors({ form: error })}
         />
       </div>

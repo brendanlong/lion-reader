@@ -16,3 +16,6 @@ export {
 
 // Apple OAuth flow exports
 export { createAppleAuthUrl, validateAppleCallback, isAppleOAuthEnabled } from "./apple";
+
+// Discord OAuth flow exports
+export { createDiscordAuthUrl, validateDiscordCallback, isDiscordOAuthEnabled } from "./discord";
