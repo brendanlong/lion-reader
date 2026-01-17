@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui";
 import { useNarrationSettings } from "@/lib/narration/settings";
@@ -26,18 +26,23 @@ const EnhancedVoiceList = dynamic(
   { ssr: false }
 );
 
+// No-op subscribe function for static values (browser capabilities don't change)
+const noopSubscribe = () => () => {};
+
 export function NarrationSettings() {
   const [settings, setSettings] = useNarrationSettings();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  // Use lazy initialization to get support info without triggering cascading renders
-  const [supportInfo] = useState<ReturnType<typeof getNarrationSupportInfo>>(() =>
-    getNarrationSupportInfo()
-  );
-  // Initialize loading state based on whether we need to load voices
-  const [isLoadingVoices, setIsLoadingVoices] = useState(() => supportInfo.supported);
+
+  // Use useSyncExternalStore to handle server/client differences without hydration mismatch
+  // Server returns null, client returns actual support info
+  const supportInfo = useSyncExternalStore(noopSubscribe, getNarrationSupportInfo, () => null);
+
   // Check if running in Firefox (has broken pause/resume)
-  const [isFirefoxBrowser] = useState(() => isFirefox());
+  const isFirefoxBrowser = useSyncExternalStore(noopSubscribe, isFirefox, () => false);
+
+  // Track voice loading state separately (starts true, set false when voices load)
+  const [isLoadingVoices, setIsLoadingVoices] = useState(true);
 
   // Check if AI text processing is available (GROQ_API_KEY configured)
   const { data: aiAvailability } = trpc.narration.isAiTextProcessingAvailable.useQuery();
@@ -45,8 +50,8 @@ export function NarrationSettings() {
 
   // Load voices on mount (only if supported)
   useEffect(() => {
-    // Skip if not supported - isLoadingVoices is already false from initialization
-    if (!supportInfo.supported) {
+    // Skip if we haven't checked support yet, or if not supported
+    if (!supportInfo?.supported) {
       return;
     }
 
@@ -61,7 +66,7 @@ export function NarrationSettings() {
     return () => {
       cancelled = true;
     };
-  }, [supportInfo.supported]);
+  }, [supportInfo?.supported]);
 
   // Get the currently selected voice object
   const selectedVoice = settings.voiceId ? findVoiceByUri(settings.voiceId) : null;
@@ -151,6 +156,24 @@ export function NarrationSettings() {
       setIsPreviewing(false);
     }
   }, []);
+
+  // Show loading skeleton while checking support (avoids hydration mismatch)
+  if (supportInfo === null) {
+    return (
+      <section>
+        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="h-5 w-32 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+              <div className="mt-2 h-4 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+            </div>
+            <div className="h-6 w-11 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-700" />
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   // Show unsupported message if narration is not available
   if (!supportInfo.supported) {
