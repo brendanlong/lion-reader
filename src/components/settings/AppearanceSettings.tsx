@@ -12,6 +12,7 @@
 
 import {
   useAppearance,
+  useEntryTextStyles,
   type ThemeMode,
   type TextSize,
   type TextJustification,
@@ -106,38 +107,17 @@ const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
 
 /**
  * Preview text for demonstrating text appearance settings.
+ * Uses the same styling as actual article content.
  */
 function TextPreview() {
-  const { settings } = useAppearance();
-
-  // Map settings to preview styles
-  const sizeClasses: Record<TextSize, string> = {
-    small: "text-sm",
-    medium: "text-base",
-    large: "text-lg",
-    "x-large": "text-xl",
-  };
-
-  const fontFamilies: Record<FontFamily, string> = {
-    system: "inherit",
-    merriweather: "var(--font-merriweather), Georgia, serif",
-    literata: "var(--font-literata), Georgia, serif",
-    inter: "var(--font-inter), system-ui, sans-serif",
-    "source-sans": "var(--font-source-sans), system-ui, sans-serif",
-  };
+  const { style } = useEntryTextStyles();
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
       <p className="mb-2 text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
         Preview
       </p>
-      <p
-        className={`leading-relaxed text-zinc-700 dark:text-zinc-300 ${sizeClasses[settings.textSize]}`}
-        style={{
-          fontFamily: fontFamilies[settings.fontFamily],
-          textAlign: settings.textJustification === "justify" ? "justify" : "left",
-        }}
-      >
+      <p className="text-zinc-700 dark:text-zinc-300" style={style}>
         The quick brown fox jumps over the lazy dog. This sample text demonstrates how your articles
         will appear with the current settings. Adjusting the text size, font, and justification can
         help improve readability based on your preferences.

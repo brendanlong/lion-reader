@@ -127,6 +127,52 @@ export function useAppearance(): AppearanceContextValue {
 }
 
 /**
+ * Font configuration with normalized sizing.
+ *
+ * Different fonts have different x-heights and metrics, so they appear
+ * different sizes at the same font-size. We apply size adjustments and
+ * tuned line-heights to make them visually consistent.
+ */
+interface FontConfig {
+  family: string;
+  /** Size multiplier to normalize apparent size (1 = baseline) */
+  sizeAdjust: number;
+  /** Line height tuned for this font */
+  lineHeight: number;
+}
+
+const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
+  system: {
+    family: "inherit",
+    sizeAdjust: 1,
+    lineHeight: 1.7,
+  },
+  merriweather: {
+    family: "var(--font-merriweather), Georgia, serif",
+    // Merriweather has a smaller x-height, bump it up slightly
+    sizeAdjust: 1.05,
+    lineHeight: 1.8,
+  },
+  literata: {
+    family: "var(--font-literata), Georgia, serif",
+    sizeAdjust: 1,
+    lineHeight: 1.75,
+  },
+  inter: {
+    family: "var(--font-inter), system-ui, sans-serif",
+    // Inter has a large x-height, reduce slightly
+    sizeAdjust: 0.95,
+    lineHeight: 1.7,
+  },
+  "source-sans": {
+    family: "var(--font-source-sans), system-ui, sans-serif",
+    // Source Sans has a large x-height, reduce slightly
+    sizeAdjust: 0.97,
+    lineHeight: 1.7,
+  },
+};
+
+/**
  * Hook to get text style classes for entry content.
  *
  * Returns Tailwind classes and inline styles for applying text appearance settings.
@@ -138,30 +184,26 @@ export function useEntryTextStyles(): {
   const { settings } = useAppearance();
 
   return useMemo(() => {
-    // Text size class
-    const sizeClasses: Record<TextSize, string> = {
-      small: "prose-sm",
-      medium: "prose-base",
-      large: "prose-lg",
-      "x-large": "prose-xl",
+    // Base font sizes in rem for each size option
+    const baseSizes: Record<TextSize, number> = {
+      small: 0.875, // 14px
+      medium: 1, // 16px
+      large: 1.125, // 18px
+      "x-large": 1.25, // 20px
     };
 
-    // Font family CSS (using CSS variables from next/font)
-    const fontFamilies: Record<FontFamily, string> = {
-      system: "inherit",
-      merriweather: "var(--font-merriweather), Georgia, serif",
-      literata: "var(--font-literata), Georgia, serif",
-      inter: "var(--font-inter), system-ui, sans-serif",
-      "source-sans": "var(--font-source-sans), system-ui, sans-serif",
-    };
-
-    const className = sizeClasses[settings.textSize] || "prose-base";
+    const fontConfig = FONT_CONFIGS[settings.fontFamily] || FONT_CONFIGS.system;
+    const baseSize = baseSizes[settings.textSize] || baseSizes.medium;
+    const adjustedSize = baseSize * fontConfig.sizeAdjust;
 
     const style: React.CSSProperties = {
-      fontFamily: fontFamilies[settings.fontFamily] || "inherit",
+      fontFamily: fontConfig.family,
+      fontSize: `${adjustedSize}rem`,
+      lineHeight: fontConfig.lineHeight,
       textAlign: settings.textJustification === "justify" ? "justify" : "left",
     };
 
-    return { className, style };
+    // Use prose for base styling but override font-size via inline style
+    return { className: "prose prose-zinc dark:prose-invert", style };
   }, [settings.textSize, settings.fontFamily, settings.textJustification]);
 }
