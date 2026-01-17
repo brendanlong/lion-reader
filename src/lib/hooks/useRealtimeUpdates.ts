@@ -85,9 +85,14 @@ const SSE_RETRY_INTERVAL_MS = 60_000;
 // Event Types
 // ============================================================================
 
-interface FeedEventData {
+/**
+ * Entry events from SSE, transformed to include subscriptionId.
+ * These are published at the feed level internally but transformed
+ * by the SSE endpoint to be subscription-centric for clients.
+ */
+interface SubscriptionEntryEventData {
   type: "new_entry" | "entry_updated";
-  feedId: string;
+  subscriptionId: string;
   entryId: string;
   timestamp: string;
 }
@@ -174,7 +179,7 @@ type UserEventData =
   | ImportProgressEventData
   | ImportCompletedEventData;
 
-type SSEEventData = FeedEventData | UserEventData;
+type SSEEventData = SubscriptionEntryEventData | UserEventData;
 
 /**
  * Parses SSE event data from a JSON string.
@@ -189,15 +194,15 @@ function parseEventData(data: string): SSEEventData | null {
 
     const event = parsed as Record<string, unknown>;
 
-    // Handle feed events
+    // Handle feed events (now include subscriptionId instead of feedId)
     if (
       (event.type === "new_entry" || event.type === "entry_updated") &&
-      typeof event.feedId === "string" &&
+      typeof event.subscriptionId === "string" &&
       typeof event.entryId === "string"
     ) {
       return {
         type: event.type,
-        feedId: event.feedId,
+        subscriptionId: event.subscriptionId,
         entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
       };
@@ -460,9 +465,9 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Push to Zustand delta store - UI updates instantly via deltas
-        useRealtimeStore.getState().onNewEntry(data.entryId, data.feedId, data.timestamp);
-        // No invalidation needed - counts updated via Zustand deltas
+        // Push to Zustand delta store - count badges update instantly via deltas
+        useRealtimeStore.getState().onNewEntry(data.entryId, data.subscriptionId, data.timestamp);
+        // Entry list insertion will be handled separately via pendingEntries
       } else if (data.type === "entry_updated") {
         // Push to Zustand
         useRealtimeStore.getState().onEntryUpdated(data.entryId);
@@ -593,9 +598,19 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
 
       // Push entry changes to Zustand (same interface as SSE)
       for (const entry of result.entries.created) {
-        useRealtimeStore
-          .getState()
-          .onNewEntry(entry.id, entry.feedId, entry.fetchedAt.toISOString());
+        if (entry.subscriptionId) {
+          useRealtimeStore
+            .getState()
+            .onNewEntry(entry.id, entry.subscriptionId, entry.fetchedAt.toISOString());
+        } else {
+          // This shouldn't happen for newly created entries - they should always
+          // have a subscription. Log to understand if/when this occurs.
+          console.warn("Sync: new entry missing subscriptionId", {
+            entryId: entry.id,
+            type: entry.type,
+            title: entry.title,
+          });
+        }
       }
 
       // Handle entry changes - invalidate list so new entries appear
