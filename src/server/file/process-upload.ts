@@ -12,6 +12,7 @@ import * as mammoth from "mammoth";
 import { marked } from "marked";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { generateSummary } from "@/server/html/strip-html";
+import { stripTitleHeader } from "@/server/html/strip-title-header";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -169,10 +170,16 @@ async function processMarkdown(content: string, filename: string): Promise<Proce
     title = h1Match[1].trim();
   }
 
+  const finalTitle = title || titleFromFilename(filename);
+
+  // Strip the first header if it matches the title to avoid duplication
+  // (the title is displayed separately in the UI)
+  const contentCleaned = stripTitleHeader(html, finalTitle);
+
   return {
-    contentCleaned: html,
+    contentCleaned,
     excerpt: excerpt || null,
-    title: title || titleFromFilename(filename),
+    title: finalTitle,
     fileType: "markdown",
   };
 }
