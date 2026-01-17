@@ -59,6 +59,7 @@ import {
   detectFileType,
   getSupportedTypesDescription,
 } from "@/server/file/process-upload";
+import { pluginRegistry } from "@/server/plugins";
 
 // ============================================================================
 // Validation Schemas
@@ -309,6 +310,14 @@ export const savedRouter = createTRPCRouter({
       let lessWrongContent: LessWrongContent | null = null;
       // For Google Docs URLs, we may get content from the Google Docs API
       let googleDocsContent: GoogleDocsContent | null = null;
+      // For plugin-handled URLs, we may get content from a plugin
+      let pluginContent: {
+        html: string;
+        title?: string | null;
+        author?: string | null;
+        siteName?: string;
+        publishedAt?: Date | null;
+      } | null = null;
 
       if (input.html) {
         html = input.html;
@@ -530,21 +539,67 @@ export const savedRouter = createTRPCRouter({
           );
         }
       } else {
+        // Check if a plugin can handle this URL
+        let urlObj: URL | null = null;
         try {
-          html = await fetchHtmlPage(input.url);
-        } catch (error) {
-          logger.warn("Failed to fetch URL for saved article", {
+          urlObj = new URL(input.url);
+        } catch {
+          // Invalid URL, continue to normal fetch
+        }
+
+        const plugin = urlObj ? pluginRegistry.findWithCapability(urlObj, "savedArticle") : null;
+
+        if (plugin) {
+          logger.debug("Attempting plugin fetch for saved article", {
             url: input.url,
-            error: error instanceof Error ? error.message : String(error),
+            plugin: plugin.name,
           });
-          // Check if this is a blocked site error (403, 429, etc.)
-          if (error instanceof HttpFetchError && error.isBlocked()) {
-            throw errors.siteBlocked(input.url, error.status);
+
+          try {
+            const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
+            if (content) {
+              pluginContent = {
+                html: content.html,
+                title: content.title,
+                author: content.author,
+                siteName: plugin.capabilities.savedArticle.siteName,
+                publishedAt: content.publishedAt,
+              };
+              // Wrap the content in a basic HTML structure for consistency
+              html = `<!DOCTYPE html><html><head><title>${escapeHtml(content.title ?? "")}</title></head><body>${content.html}</body></html>`;
+              logger.debug("Successfully fetched content via plugin", {
+                url: input.url,
+                plugin: plugin.name,
+                title: content.title,
+              });
+            }
+          } catch (error) {
+            logger.warn("Plugin fetch failed, falling back to normal fetch", {
+              url: input.url,
+              plugin: plugin.name,
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
-          throw errors.savedArticleFetchError(
-            input.url,
-            error instanceof Error ? error.message : "Unknown error"
-          );
+        }
+
+        // Fall back to normal HTML fetch if plugin didn't provide content
+        if (!html) {
+          try {
+            html = await fetchHtmlPage(input.url);
+          } catch (error) {
+            logger.warn("Failed to fetch URL for saved article", {
+              url: input.url,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            // Check if this is a blocked site error (403, 429, etc.)
+            if (error instanceof HttpFetchError && error.isBlocked()) {
+              throw errors.siteBlocked(input.url, error.status);
+            }
+            throw errors.savedArticleFetchError(
+              input.url,
+              error instanceof Error ? error.message : "Unknown error"
+            );
+          }
         }
       }
 
@@ -557,16 +612,20 @@ export const savedRouter = createTRPCRouter({
       const metadata = extractMetadata(html, input.url);
 
       // Run Readability for clean content (also absolutizes URLs internally)
-      // Skip for Google Docs API content - it's already clean and structured
+      // Skip for Google Docs API content and plugin content - already clean and structured
       // For LessWrong, the GraphQL content is already clean, but Readability will still
       // absolutize URLs and provide consistent output format
-      const cleaned = googleDocsContent ? null : cleanContent(html, { url: input.url });
+      const cleaned =
+        googleDocsContent || pluginContent ? null : cleanContent(html, { url: input.url });
 
       // Generate excerpt
       let excerpt: string | null = null;
       if (googleDocsContent) {
         // For Google Docs API content, use generateSummary which properly decodes HTML entities
         excerpt = generateSummary(googleDocsContent.html) || null;
+      } else if (pluginContent) {
+        // For plugin content, use generateSummary
+        excerpt = generateSummary(pluginContent.html) || null;
       } else if (cleaned) {
         excerpt = cleaned.excerpt || cleaned.textContent.slice(0, 300).trim() || null;
         if (excerpt && excerpt.length > 300) {
@@ -592,14 +651,16 @@ export const savedRouter = createTRPCRouter({
       // For Google Docs, prefer API title over browser-provided title (which includes " - Google Docs" suffix)
       const finalTitle =
         googleDocsContent?.title ||
+        pluginContent?.title ||
         input.title ||
         lessWrongTitle ||
         metadata.title ||
         cleaned?.title ||
         null;
-      // For author, prefer API data (Google Docs/LessWrong), then metadata
+      // For author, prefer API data (Google Docs/LessWrong/Plugin), then metadata
       const finalAuthor =
         googleDocsContent?.author ||
+        pluginContent?.author ||
         lessWrongContent?.author ||
         metadata.author ||
         cleaned?.byline ||
@@ -607,14 +668,17 @@ export const savedRouter = createTRPCRouter({
       // For siteName, use appropriate source when content came from API
       const finalSiteName = googleDocsContent
         ? "Google Docs"
-        : lessWrongContent
-          ? "LessWrong"
-          : metadata.siteName;
+        : pluginContent?.siteName
+          ? pluginContent.siteName
+          : lessWrongContent
+            ? "LessWrong"
+            : metadata.siteName;
       // Saved articles don't have a publishedAt - they use fetchedAt (when saved)
       // This ensures consistent sorting by save time in all views
 
-      // For Google Docs API content, use the HTML directly (already clean and structured)
-      const finalContentCleaned = googleDocsContent?.html || cleaned?.content || null;
+      // For API/plugin content, use the HTML directly (already clean and structured)
+      const finalContentCleaned =
+        googleDocsContent?.html || pluginContent?.html || cleaned?.content || null;
 
       // Compute content hash for narration deduplication
       const contentHash = generateContentHash(finalTitle, finalContentCleaned || html);
