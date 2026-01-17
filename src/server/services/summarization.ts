@@ -30,7 +30,7 @@ const DEFAULT_MODEL = "claude-sonnet-4-5";
 /**
  * Default maximum words for summaries.
  */
-const DEFAULT_MAX_WORDS = 300;
+const DEFAULT_MAX_WORDS = 150;
 
 /**
  * Maximum content length to send to the LLM (in characters).
@@ -60,7 +60,7 @@ function getMaxWords(): number {
 /**
  * Builds the user prompt for summarization.
  */
-function buildSummarizationPrompt(content: string): string {
+function buildSummarizationPrompt(content: string, title: string): string {
   const maxWords = getMaxWords();
   return `You will be summarizing content from a blog post or web page for display in an RSS reader app. Your goal is to create a concise, informative summary that captures the main points and helps readers quickly understand what the content is about.
 
@@ -83,6 +83,7 @@ Please follow these guidelines when creating your summary:
 - Write in clear, straightforward language that is easy to scan quickly
 - Ensure the summary is self-contained and understandable without needing to read the full content
 - Format your summary using Markdown for better readability (use bullet points, bold text, etc. where appropriate)
+- Don't include a title (the article already has one: ${title})
 
 Your summary must not exceed ${maxWords} words. If the content is very short and already concise, your summary may be shorter than the maximum length.
 
@@ -166,7 +167,10 @@ export function prepareContentForSummarization(htmlContent: string): string {
  *   console.error('Summarization failed:', error);
  * }
  */
-export async function generateSummary(content: string): Promise<GenerateSummaryResult> {
+export async function generateSummary(
+  content: string,
+  title: string
+): Promise<GenerateSummaryResult> {
   const client = getAnthropicClient();
 
   if (!client) {
@@ -183,7 +187,7 @@ export async function generateSummary(content: string): Promise<GenerateSummaryR
       messages: [
         {
           role: "user",
-          content: buildSummarizationPrompt(content),
+          content: buildSummarizationPrompt(content, title),
         },
       ],
     });
