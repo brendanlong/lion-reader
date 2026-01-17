@@ -396,7 +396,10 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     }
   }
 
-  const summary = generateSummary(contentOriginal);
+  // Generate summary from cleaned content if available, otherwise from original.
+  // This ensures summaries are based on the main content and not email boilerplate.
+  const contentForSummary = contentCleaned ?? contentOriginal;
+  const summary = generateSummary(contentForSummary);
 
   // Parse List-Unsubscribe headers
   const listUnsubscribeMailto = parseListUnsubscribeMailto(email.headers.listUnsubscribe);
