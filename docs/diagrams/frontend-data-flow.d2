@@ -1,5 +1,5 @@
-# Frontend Data Flow - Delta-Based State Management
-# Lion Reader uses Zustand for optimistic updates with React Query as the source of truth
+# Frontend Data Flow - React Query with Direct Cache Updates
+# Lion Reader uses React Query as the source of truth with helper functions for cache updates
 
 direction: down
 
@@ -39,30 +39,31 @@ client: {
   style.fill: "#fff3e0"
 
   react_query: {
-    label: React Query
+    label: React Query Cache
     shape: cylinder
     style.fill: "#ffcc80"
 
     description: |md
-      **Canonical server state**
-      - entries.list
+      **Server state cache**
+      - entries.list (infinite)
+      - entries.get
+      - entries.count
       - subscriptions.list
       - tags.list
     |
   }
 
-  zustand: {
-    label: Zustand Store
-    shape: cylinder
+  cache_helpers: {
+    label: Cache Helpers
+    shape: rectangle
     style.fill: "#a5d6a7"
 
     description: |md
-      **Delta layer (changes only)**
-      - readIds / unreadIds
-      - starredIds
-      - subscriptionCountDeltas
-      - tagCountDeltas
-      - pendingEntries
+      **src/lib/cache/**
+      - adjustSubscriptionUnreadCounts
+      - adjustTagUnreadCounts
+      - addSubscriptionToCache
+      - updateEntriesReadStatus
     |
   }
 }
@@ -81,16 +82,16 @@ hooks: {
     tooltip: "Manages SSE connection with polling fallback"
   }
 
-  useEntryDeltas: {
-    label: useEntryDeltas
-    shape: rectangle
-    tooltip: "Merges server entries with Zustand deltas"
-  }
-
   useEntryMutations: {
     label: useEntryMutations
     shape: rectangle
-    tooltip: "Optimistic mutations (markRead, star)"
+    tooltip: "Mutations with direct cache updates"
+  }
+
+  useEntryListQuery: {
+    label: useEntryListQuery
+    shape: rectangle
+    tooltip: "Infinite query with navigation helpers"
   }
 
   useEntryPage: {
@@ -140,30 +141,40 @@ server.api -> client.react_query: "Initial fetch" {
 # Connections - Real-time Updates
 # ==============================================================================
 
-server.sse -> hooks.useRealtimeUpdates: "SSE events\n(new_entry, entry_updated)" {
+server.sse -> hooks.useRealtimeUpdates: "SSE events\n(new_entry, subscription_*)" {
   style.stroke: "#388e3c"
   style.stroke-width: 2
 }
 
-hooks.useRealtimeUpdates -> client.zustand: "Push deltas" {
+hooks.useRealtimeUpdates -> client.cache_helpers: "subscription_created\nsubscription_deleted" {
   style.stroke: "#388e3c"
 }
 
+hooks.useRealtimeUpdates -> client.react_query: "invalidate (new_entry)" {
+  style.stroke: "#388e3c"
+  style.stroke-dash: 3
+}
+
+client.cache_helpers -> client.react_query: "Direct cache updates" {
+  style.stroke: "#00796b"
+  style.stroke-width: 2
+}
+
 # ==============================================================================
-# Connections - Data Merging
+# Connections - Query Data Flow
 # ==============================================================================
 
-client.react_query -> hooks.useEntryDeltas: "Server entries" {
+client.react_query -> hooks.useEntryListQuery: "Paginated entries" {
   style.stroke: "#7b1fa2"
 }
 
-client.zustand -> hooks.useEntryDeltas: "Delta state" {
-  style.stroke: "#7b1fa2"
-}
-
-hooks.useEntryDeltas -> ui.entry_list: "Merged entries\n(read/starred applied)" {
+hooks.useEntryListQuery -> ui.entry_list: "Entries with\nread/starred state" {
   style.stroke: "#7b1fa2"
   style.stroke-width: 2
+}
+
+client.react_query -> ui.sidebar: "Subscriptions/tags\nwith counts" {
+  style.stroke: "#7b1fa2"
 }
 
 # ==============================================================================
@@ -174,25 +185,23 @@ ui.entry_list -> hooks.useEntryMutations: "User action\n(toggle read)" {
   style.stroke: "#f57c00"
 }
 
-hooks.useEntryMutations -> client.zustand: "1. Optimistic update\n(instant)" {
+hooks.useEntryMutations -> server.api: "1. Server mutation" {
+  style.stroke: "#f57c00"
+}
+
+server.api -> hooks.useEntryMutations: "2. Response with\nsubscription context" {
+  style.stroke: "#f57c00"
+  style.stroke-dash: 3
+}
+
+hooks.useEntryMutations -> client.cache_helpers: "3. Update counts\n(instant)" {
   style.stroke: "#f57c00"
   style.stroke-width: 2
 }
 
-hooks.useEntryMutations -> server.api: "2. Server mutation" {
+hooks.useEntryMutations -> client.react_query: "4. Invalidate\nentry lists" {
   style.stroke: "#f57c00"
-}
-
-# ==============================================================================
-# Connections - Count Updates
-# ==============================================================================
-
-client.zustand -> ui.sidebar: "Count deltas applied" {
-  style.stroke: "#00796b"
-}
-
-client.react_query -> ui.sidebar: "Base counts" {
-  style.stroke: "#00796b"
+  style.stroke-dash: 3
 }
 
 # ==============================================================================
@@ -204,7 +213,7 @@ hooks.useEntryPage -> hooks.useEntryMutations {
   style.stroke-dash: 3
 }
 
-hooks.useEntryPage -> hooks.useEntryDeltas {
+hooks.useEntryPage -> hooks.useEntryListQuery {
   style.stroke: "#9e9e9e"
   style.stroke-dash: 3
 }
@@ -226,6 +235,8 @@ legend: {
 
   initial: "Blue: Initial data fetch"
   realtime: "Green: Real-time updates (SSE)"
-  merge: "Purple: Data merging"
+  query: "Purple: Query data flow"
   mutation: "Orange: User mutations"
+  cache: "Teal: Direct cache updates"
+  dashed: "Dashed: Invalidation"
 }
