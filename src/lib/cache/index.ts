@@ -11,12 +11,7 @@
  * - Avoid full refetches when we have enough info to update directly
  */
 
-export {
-  updateEntriesReadStatus,
-  updateEntryStarredStatus,
-  removeEntryFromStarredLists,
-  type EntryReadUpdate,
-} from "./entry-cache";
+export { updateEntriesReadStatus, updateEntryStarredStatus } from "./entry-cache";
 
 export {
   adjustSubscriptionUnreadCounts,
