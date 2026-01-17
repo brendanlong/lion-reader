@@ -60,11 +60,13 @@ export interface SubscriptionData {
  *
  * Updates:
  * - entries.get cache for each entry
- * - entries.list (invalidated)
  * - subscriptions.list unread counts
  * - tags.list unread counts
  * - entries.count({ starredOnly: true }) for starred entries
  * - entries.count({ type: "saved" }) for saved entries
+ *
+ * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
+ * Lists have refetchOnMount: true, so they'll refetch on next navigation.
  *
  * @param utils - tRPC utils for cache access
  * @param entries - Entries with their context (subscriptionId, starred, type)
@@ -121,8 +123,9 @@ export function handleEntriesMarkedRead(
  *
  * Updates:
  * - entries.get cache
- * - entries.list (invalidated)
  * - entries.count({ starredOnly: true }) - total +1, unread +1 if entry is unread
+ *
+ * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
  *
  * @param utils - tRPC utils for cache access
  * @param entryId - Entry ID being starred
@@ -142,8 +145,9 @@ export function handleEntryStarred(utils: TRPCClientUtils, entryId: string, read
  *
  * Updates:
  * - entries.get cache
- * - entries.list (invalidated)
  * - entries.count({ starredOnly: true }) - total -1, unread -1 if entry is unread
+ *
+ * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
  *
  * @param utils - tRPC utils for cache access
  * @param entryId - Entry ID being unstarred
