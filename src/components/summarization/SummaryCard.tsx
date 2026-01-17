@@ -9,6 +9,8 @@
 
 import { useState } from "react";
 
+import { useEntryTextStyles } from "@/lib/appearance";
+
 /**
  * Sparkles icon for AI indicator.
  */
@@ -111,6 +113,7 @@ export function SummaryCard({
   onClose,
 }: SummaryCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { style } = useEntryTextStyles();
 
   // Show loading state
   if (isLoading) {
@@ -233,7 +236,8 @@ export function SummaryCard({
       {!isCollapsed && (
         <>
           <div
-            className="prose prose-sm prose-blue dark:prose-invert mt-3 max-w-none text-blue-900 dark:text-blue-100 [&_a]:text-blue-700 dark:[&_a]:text-blue-300 [&_li]:my-0 [&_ol]:my-1 [&_ul]:my-1"
+            className="prose prose-blue dark:prose-invert mt-3 max-w-none text-blue-900 dark:text-blue-100 [&_a]:text-blue-700 dark:[&_a]:text-blue-300 [&_li]:my-0 [&_ol]:my-1 [&_ul]:my-1"
+            style={style}
             dangerouslySetInnerHTML={{ __html: summary }}
           />
 
