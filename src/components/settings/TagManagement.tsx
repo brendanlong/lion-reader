@@ -14,7 +14,7 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Input, Alert } from "@/components/ui";
+import { Button, Input, Alert, ChevronDownIcon, EditIcon, TrashIcon } from "@/components/ui";
 
 // ============================================================================
 // Constants
@@ -223,14 +223,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
           <span className="text-zinc-700 dark:text-zinc-300">
             {TAG_COLORS.find((c) => c.value === color)?.name ?? "Select"}
           </span>
-          <svg
-            className="h-4 w-4 text-zinc-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          <ChevronDownIcon className="h-4 w-4 text-zinc-400" />
         </button>
 
         {showColorPicker && (
@@ -430,14 +423,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
       </div>
       <div className="flex gap-2">
         <Button variant="ghost" size="sm" onClick={startEditing} title="Edit tag" className="px-2">
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-            />
-          </svg>
+          <EditIcon className="h-4 w-4" />
         </Button>
         <Button
           variant="ghost"
@@ -446,14 +432,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
           title="Delete tag"
           className="px-2 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/20 dark:hover:text-red-300"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-            />
-          </svg>
+          <TrashIcon className="h-4 w-4" />
         </Button>
       </div>
     </div>
