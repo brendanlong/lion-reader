@@ -12,6 +12,7 @@ import * as mammoth from "mammoth";
 import { marked } from "marked";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { generateSummary } from "@/server/html/strip-html";
+import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -159,20 +160,18 @@ async function processMarkdown(content: string, filename: string): Promise<Proce
   // Convert markdown to HTML
   const html = await marked.parse(content);
 
-  // Generate excerpt from the HTML
-  const excerpt = generateSummary(html);
+  // Extract title from first header and strip it from content
+  // (the title is displayed separately in the UI)
+  const { title: extractedTitle, content: contentCleaned } = extractAndStripTitleHeader(html);
+  const title = extractedTitle || titleFromFilename(filename);
 
-  // Try to extract title from first H1 or use filename
-  let title: string | null = null;
-  const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-  if (h1Match) {
-    title = h1Match[1].trim();
-  }
+  // Generate excerpt from the cleaned content (after title is stripped)
+  const excerpt = generateSummary(contentCleaned);
 
   return {
-    contentCleaned: html,
+    contentCleaned,
     excerpt: excerpt || null,
-    title: title || titleFromFilename(filename),
+    title,
     fileType: "markdown",
   };
 }
