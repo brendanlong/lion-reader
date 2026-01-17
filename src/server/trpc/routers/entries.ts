@@ -838,6 +838,7 @@ export const entriesRouter = createTRPCRouter({
             id: z.string(),
             subscriptionId: z.string().nullable(),
             starred: z.boolean(), // For updating starred unread count
+            type: feedTypeSchema, // For updating saved/email counts
           })
         ),
       })
@@ -861,13 +862,14 @@ export const entriesRouter = createTRPCRouter({
         return { success: true, count: 0, entries: [] };
       }
 
-      // Get subscription IDs and starred status for each entry via visible_entries view
+      // Get subscription IDs, starred status, and type for each entry via visible_entries view
       // This handles the feed -> subscription mapping
       const entrySubscriptions = await ctx.db
         .select({
           id: visibleEntries.id,
           subscriptionId: visibleEntries.subscriptionId,
           starred: visibleEntries.starred,
+          type: visibleEntries.type,
         })
         .from(visibleEntries)
         .where(
@@ -887,6 +889,7 @@ export const entriesRouter = createTRPCRouter({
           id: e.id,
           subscriptionId: e.subscriptionId,
           starred: e.starred,
+          type: e.type,
         })),
       };
     }),
