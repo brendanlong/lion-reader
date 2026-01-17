@@ -103,6 +103,7 @@ export const summarizationRouter = createTRPCRouter({
           contentOriginal: entries.contentOriginal,
           contentHash: entries.contentHash,
           fullContentCleaned: entries.fullContentCleaned,
+          title: entries.title,
         })
         .from(entries)
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
@@ -184,7 +185,7 @@ export const summarizationRouter = createTRPCRouter({
         const preparedContent = prepareContentForSummarization(sourceContent);
 
         // Generate via LLM
-        const result = await generateSummary(preparedContent);
+        const result = await generateSummary(preparedContent, entry.title ?? "");
 
         // Cache in entry_summaries table, clear any previous error
         await ctx.db
