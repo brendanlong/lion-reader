@@ -219,21 +219,37 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     [toggleRead, subscriptionsQuery.data]
   );
 
+  // Navigation callbacks - delegate to useEntryListQuery which owns the list state
+  const goToNextEntry = useCallback(() => {
+    const nextId = entryListQuery.getNextEntryId();
+    if (nextId) {
+      setOpenEntryId(nextId);
+    }
+  }, [entryListQuery, setOpenEntryId]);
+
+  const goToPreviousEntry = useCallback(() => {
+    const prevId = entryListQuery.getPreviousEntryId();
+    if (prevId) {
+      setOpenEntryId(prevId);
+    }
+  }, [entryListQuery, setOpenEntryId]);
+
   // Keyboard shortcuts
-  const { selectedEntryId, setSelectedEntryId, goToNextEntry, goToPreviousEntry } =
-    useKeyboardShortcuts({
-      entries: mergedEntries,
-      onOpenEntry: setOpenEntryId,
-      onClose: closeEntry,
-      isEntryOpen: !!openEntryId,
-      enabled: keyboardShortcutsEnabled,
-      onToggleRead: handleToggleRead,
-      onToggleStar: toggleStar,
-      onRefresh: () => {
-        utils.entries.list.invalidate();
-      },
-      onToggleUnreadOnly: toggleShowUnreadOnly,
-    });
+  const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
+    entries: mergedEntries,
+    onOpenEntry: setOpenEntryId,
+    onClose: closeEntry,
+    isEntryOpen: !!openEntryId,
+    enabled: keyboardShortcutsEnabled,
+    onToggleRead: handleToggleRead,
+    onToggleStar: toggleStar,
+    onRefresh: () => {
+      utils.entries.list.invalidate();
+    },
+    onToggleUnreadOnly: toggleShowUnreadOnly,
+    onNavigateNext: goToNextEntry,
+    onNavigatePrevious: goToPreviousEntry,
+  });
 
   // Entry click handler
   const handleEntryClick = useCallback(
