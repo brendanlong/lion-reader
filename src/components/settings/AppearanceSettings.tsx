@@ -154,9 +154,11 @@ export function AppearanceSettings() {
           <OptionGroup
             label="Color Mode"
             description={
-              settings.themeMode === "auto"
+              settings.themeMode === "auto" && resolvedTheme
                 ? `Following system preference (currently ${resolvedTheme})`
-                : undefined
+                : settings.themeMode === "auto"
+                  ? "Following system preference"
+                  : undefined
             }
             value={settings.themeMode}
             options={THEME_OPTIONS}
