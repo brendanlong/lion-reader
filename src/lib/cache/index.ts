@@ -28,7 +28,11 @@ export {
 } from "./operations";
 
 // Low-level helpers (for special cases)
-export { updateEntriesReadStatus, updateEntryStarredStatus } from "./entry-cache";
+export {
+  updateEntriesReadStatus,
+  updateEntryStarredStatus,
+  updateEntriesInListCache,
+} from "./entry-cache";
 
 export {
   adjustSubscriptionUnreadCounts,
