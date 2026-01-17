@@ -146,11 +146,13 @@ export function useEntryTextStyles(): {
       "x-large": "prose-xl",
     };
 
-    // Font family CSS
+    // Font family CSS (using CSS variables from next/font)
     const fontFamilies: Record<FontFamily, string> = {
       system: "inherit",
-      serif: "Georgia, 'Times New Roman', Times, serif",
-      "sans-serif": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      merriweather: "var(--font-merriweather), Georgia, serif",
+      literata: "var(--font-literata), Georgia, serif",
+      inter: "var(--font-inter), system-ui, sans-serif",
+      "source-sans": "var(--font-source-sans), system-ui, sans-serif",
     };
 
     const className = sizeClasses[settings.textSize] || "prose-base";

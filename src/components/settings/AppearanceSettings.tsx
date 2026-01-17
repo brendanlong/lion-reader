@@ -98,8 +98,10 @@ const JUSTIFICATION_OPTIONS: { value: TextJustification; label: string }[] = [
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
   { value: "system", label: "System" },
-  { value: "serif", label: "Serif" },
-  { value: "sans-serif", label: "Sans-serif" },
+  { value: "merriweather", label: "Merriweather" },
+  { value: "literata", label: "Literata" },
+  { value: "inter", label: "Inter" },
+  { value: "source-sans", label: "Source Sans" },
 ];
 
 /**
@@ -118,8 +120,10 @@ function TextPreview() {
 
   const fontFamilies: Record<FontFamily, string> = {
     system: "inherit",
-    serif: "Georgia, 'Times New Roman', Times, serif",
-    "sans-serif": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    merriweather: "var(--font-merriweather), Georgia, serif",
+    literata: "var(--font-literata), Georgia, serif",
+    inter: "var(--font-inter), system-ui, sans-serif",
+    "source-sans": "var(--font-source-sans), system-ui, sans-serif",
   };
 
   return (
