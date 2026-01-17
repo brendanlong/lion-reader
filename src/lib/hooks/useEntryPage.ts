@@ -11,12 +11,11 @@ import { useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import { type ExternalQueryState } from "@/components/entries";
-import { type EntryType } from "@/lib/store/realtime";
+import { type EntryType } from "./useEntryMutations";
 import { useEntryUrlState } from "./useEntryUrlState";
 import { useUrlViewPreferences } from "./useUrlViewPreferences";
 import { type ViewType } from "./viewPreferences";
 import { useEntryListQuery, type EntryListData } from "./useEntryListQuery";
-import { useMergedEntries } from "./useEntryDeltas";
 import { useEntryMutations, type MarkAllReadOptions } from "./useEntryMutations";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
@@ -76,7 +75,7 @@ export interface UseEntryPageResult {
   toggleShowUnreadOnly: () => void;
   toggleSortOrder: () => void;
 
-  // Merged entries for display
+  // Entries for display
   entries: EntryListData[];
 
   // Query state
@@ -123,7 +122,6 @@ export interface UseEntryPageResult {
 
   entryContentProps: {
     entryId: string;
-    listFilters: EntryPageFilters & { unreadOnly: boolean; sortOrder: "newest" | "oldest" };
     onBack: () => void;
     onSwipeNext: () => void;
     onSwipePrevious: () => void;
@@ -186,19 +184,14 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     openEntryId,
   });
 
-  // Merge entries with Zustand deltas
-  const mergedEntries = useMergedEntries(entryListQuery.entries, {
-    unreadOnly: showUnreadOnly,
-    starredOnly: filters.starredOnly,
-  });
+  // Use entries directly from query (no delta merging)
+  const entries = entryListQuery.entries;
 
   // Subscriptions query for tag lookup
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
   // Entry mutations
-  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations({
-    listFilters: combinedFilters,
-  });
+  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations();
 
   // Wrapper to look up tags and pass to mutations
   const handleToggleRead = useCallback(
@@ -236,7 +229,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
 
   // Keyboard shortcuts
   const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
-    entries: mergedEntries,
+    entries,
     onOpenEntry: setOpenEntryId,
     onClose: closeEntry,
     isEntryOpen: !!openEntryId,
@@ -295,7 +288,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       selectedEntryId,
       onToggleRead: handleToggleRead,
       onToggleStar: toggleStar,
-      externalEntries: mergedEntries,
+      externalEntries: entries,
       externalQueryState,
     }),
     [
@@ -304,7 +297,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       selectedEntryId,
       handleToggleRead,
       toggleStar,
-      mergedEntries,
+      entries,
       externalQueryState,
     ]
   );
@@ -315,7 +308,6 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       openEntryId
         ? {
             entryId: openEntryId,
-            listFilters: combinedFilters,
             onBack: handleBack,
             onSwipeNext: goToNextEntry,
             onSwipePrevious: goToPreviousEntry,
@@ -325,7 +317,6 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
         : null,
     [
       openEntryId,
-      combinedFilters,
       handleBack,
       goToNextEntry,
       goToPreviousEntry,
@@ -345,8 +336,8 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     toggleShowUnreadOnly,
     toggleSortOrder,
 
-    // Merged entries
-    entries: mergedEntries,
+    // Entries
+    entries,
 
     // Query state
     isLoading: entryListQuery.isLoading,
