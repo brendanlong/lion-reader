@@ -45,12 +45,12 @@ export function IntegrationsSettings() {
 
   return (
     <section>
-      <h2 className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="ui-text-xl mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
         AI Integrations
       </h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         {/* Description */}
-        <p className="text-base text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-base text-zinc-600 dark:text-zinc-400">
           Connect Lion Reader to AI assistants via{" "}
           <a
             href="https://modelcontextprotocol.io/"
@@ -65,8 +65,8 @@ export function IntegrationsSettings() {
 
         {/* Claude Code */}
         <div className="mt-6">
-          <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100">Claude Code</h3>
-          <p className="mt-1 text-base text-zinc-600 dark:text-zinc-400">
+          <h3 className="ui-text-base font-medium text-zinc-900 dark:text-zinc-100">Claude Code</h3>
+          <p className="ui-text-base mt-1 text-zinc-600 dark:text-zinc-400">
             Run this command in your terminal:
           </p>
           <div className="relative mt-3">
@@ -85,8 +85,8 @@ export function IntegrationsSettings() {
 
         {/* Claude.ai */}
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100">Claude.ai</h3>
-          <ol className="mt-2 list-inside list-decimal space-y-2 text-base text-zinc-600 dark:text-zinc-400">
+          <h3 className="ui-text-base font-medium text-zinc-900 dark:text-zinc-100">Claude.ai</h3>
+          <ol className="ui-text-base mt-2 list-inside list-decimal space-y-2 text-zinc-600 dark:text-zinc-400">
             <li>Click your name in the bottom-left corner</li>
             <li>
               Go to <strong className="text-zinc-900 dark:text-zinc-200">Settings</strong> &rarr;{" "}
@@ -117,8 +117,10 @@ export function IntegrationsSettings() {
 
         {/* Claude Desktop */}
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100">Claude Desktop</h3>
-          <p className="mt-1 text-base text-zinc-600 dark:text-zinc-400">
+          <h3 className="ui-text-base font-medium text-zinc-900 dark:text-zinc-100">
+            Claude Desktop
+          </h3>
+          <p className="ui-text-base mt-1 text-zinc-600 dark:text-zinc-400">
             Add this to your{" "}
             <code className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
               claude_desktop_config.json
@@ -141,12 +143,12 @@ export function IntegrationsSettings() {
 
         {/* API Tokens Link */}
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          <p className="text-base text-zinc-600 dark:text-zinc-400">
+          <p className="ui-text-base text-zinc-600 dark:text-zinc-400">
             Need to manage API tokens or create custom integrations?
           </p>
           <Link
             href="/settings/api-tokens"
-            className="mt-2 inline-flex items-center gap-1 text-base font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            className="ui-text-base mt-2 inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
             Manage API Tokens
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,7 +159,9 @@ export function IntegrationsSettings() {
 
         {/* Note about MCP URL */}
         {baseUrl && (
-          <p className="mt-4 text-sm text-zinc-400 dark:text-zinc-500">MCP server URL: {mcpUrl}</p>
+          <p className="ui-text-sm mt-4 text-zinc-400 dark:text-zinc-500">
+            MCP server URL: {mcpUrl}
+          </p>
         )}
       </div>
     </section>

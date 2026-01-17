@@ -49,7 +49,7 @@ type ImportState =
 export function OpmlImportExport() {
   return (
     <section>
-      <h2 className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="ui-text-xl mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
         Import / Export
       </h2>
       <div className="space-y-6">
@@ -244,10 +244,10 @@ function ImportSection() {
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <h3 className="mb-2 text-base font-medium text-zinc-900 dark:text-zinc-50">
+      <h3 className="ui-text-base mb-2 font-medium text-zinc-900 dark:text-zinc-50">
         Import from OPML
       </h3>
-      <p className="mb-4 text-base text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-base mb-4 text-zinc-500 dark:text-zinc-400">
         Import your feed subscriptions from another RSS reader by uploading an OPML file.
       </p>
 
@@ -289,11 +289,11 @@ function ImportSection() {
                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
               />
             </svg>
-            <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
+            <p className="ui-text-base mt-2 text-zinc-600 dark:text-zinc-400">
               Drag and drop your OPML file here, or{" "}
               <span className="font-medium text-blue-600 dark:text-blue-400">browse</span>
             </p>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+            <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-500">
               Supports .opml and .xml files up to 5MB
             </p>
           </div>
@@ -318,7 +318,7 @@ function ImportSection() {
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
             />
           </svg>
-          <span className="ml-2 text-base text-zinc-600 dark:text-zinc-400">
+          <span className="ui-text-base ml-2 text-zinc-600 dark:text-zinc-400">
             Parsing OPML file...
           </span>
         </div>
@@ -352,7 +352,7 @@ function ImportSection() {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            <span className="ml-2 text-base font-medium text-zinc-700 dark:text-zinc-300">
+            <span className="ui-text-base ml-2 font-medium text-zinc-700 dark:text-zinc-300">
               Importing feeds...
             </span>
           </div>
@@ -366,7 +366,7 @@ function ImportSection() {
                   }}
                 />
               </div>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
                 {importQuery.data.importedCount +
                   importQuery.data.skippedCount +
                   importQuery.data.failedCount}{" "}
@@ -374,7 +374,7 @@ function ImportSection() {
               </p>
             </div>
           )}
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
             This may take a moment depending on the number of feeds.
           </p>
         </div>
@@ -412,7 +412,7 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <p className="text-base font-medium text-zinc-700 dark:text-zinc-300">
+        <p className="ui-text-base font-medium text-zinc-700 dark:text-zinc-300">
           Found {feeds.length} feed{feeds.length !== 1 ? "s" : ""} to import
         </p>
       </div>
@@ -421,14 +421,14 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
         <ul className="divide-y divide-zinc-200 dark:divide-zinc-700">
           {displayedFeeds.map((feed, index) => (
             <li key={`${feed.xmlUrl}-${index}`} className="px-4 py-3">
-              <p className="text-base font-medium text-zinc-900 dark:text-zinc-50">
+              <p className="ui-text-base font-medium text-zinc-900 dark:text-zinc-50">
                 {feed.title || "Untitled Feed"}
               </p>
-              <p className="mt-0.5 truncate text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-sm mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
                 {feed.xmlUrl}
               </p>
               {feed.category && feed.category.length > 0 && (
-                <p className="mt-1 text-sm text-zinc-400 dark:text-zinc-500">
+                <p className="ui-text-sm mt-1 text-zinc-400 dark:text-zinc-500">
                   Folder: {feed.category.join(" / ")}
                 </p>
               )}
@@ -441,7 +441,7 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className="mb-4 text-base text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          className="ui-text-base mb-4 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
         >
           Show all {feeds.length} feeds
         </button>
@@ -500,7 +500,7 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
           <button
             type="button"
             onClick={() => setShowDetails(!showDetails)}
-            className="text-base text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            className="ui-text-base text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
             {showDetails ? "Hide details" : "Show details"}
           </button>
@@ -512,10 +512,10 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
                   <li key={`${result.url}-${index}`} className="px-4 py-2">
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-base font-medium text-zinc-900 dark:text-zinc-50">
+                        <p className="ui-text-base truncate font-medium text-zinc-900 dark:text-zinc-50">
                           {result.title || "Untitled Feed"}
                         </p>
-                        <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
+                        <p className="ui-text-sm truncate text-zinc-500 dark:text-zinc-400">
                           {result.url}
                         </p>
                         {result.error && (
@@ -592,8 +592,10 @@ function ExportSection() {
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <h3 className="mb-2 text-base font-medium text-zinc-900 dark:text-zinc-50">Export to OPML</h3>
-      <p className="mb-4 text-base text-zinc-500 dark:text-zinc-400">
+      <h3 className="ui-text-base mb-2 font-medium text-zinc-900 dark:text-zinc-50">
+        Export to OPML
+      </h3>
+      <p className="ui-text-base mb-4 text-zinc-500 dark:text-zinc-400">
         Download your subscriptions as an OPML file to import into another RSS reader.
       </p>
 

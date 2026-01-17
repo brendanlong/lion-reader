@@ -7,9 +7,9 @@
 export function AboutSection() {
   return (
     <section>
-      <h2 className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-50">About</h2>
+      <h2 className="ui-text-xl mb-4 font-semibold text-zinc-900 dark:text-zinc-50">About</h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="text-base text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-base text-zinc-600 dark:text-zinc-400">
           Lion Reader was created by{" "}
           <a
             href="https://www.brendanlong.com"
@@ -30,7 +30,7 @@ export function AboutSection() {
           </a>
           .
         </p>
-        <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-base mt-2 text-zinc-600 dark:text-zinc-400">
           View the source code on{" "}
           <a
             href="https://github.com/brendanlong/lion-reader"

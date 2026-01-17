@@ -14,17 +14,17 @@ export function KeyboardShortcutsSettings() {
 
   return (
     <section>
-      <h2 className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="ui-text-xl mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
         Keyboard Shortcuts
       </h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         {/* Enable/Disable Toggle */}
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-50">
+            <h3 className="ui-text-base font-medium text-zinc-900 dark:text-zinc-50">
               Enable keyboard shortcuts
             </h3>
-            <p className="mt-1 text-base text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-base mt-1 text-zinc-500 dark:text-zinc-400">
               Use keyboard shortcuts to navigate entries and perform actions quickly.
             </p>
           </div>
@@ -50,7 +50,7 @@ export function KeyboardShortcutsSettings() {
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
           <button
             onClick={openShortcutsModal}
-            className="inline-flex items-center gap-2 text-base font-medium text-zinc-700 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50"
+            className="ui-text-base inline-flex items-center gap-2 font-medium text-zinc-700 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path

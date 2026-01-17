@@ -7,6 +7,16 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* =================================
+     UI Typography Scale (16px baseline)
+     ================================= */
+  --ui-text-xs: 0.75rem; /* 12px - badges, status indicators */
+  --ui-text-sm: 0.875rem; /* 14px - secondary text, metadata */
+  --ui-text-base: 1rem; /* 16px - primary UI text */
+  --ui-text-lg: 1.125rem; /* 18px - emphasis */
+  --ui-text-xl: 1.25rem; /* 20px - section headers */
+  --ui-text-2xl: 1.5rem; /* 24px - page headers */
 }
 
 @theme inline {
@@ -34,6 +44,43 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* =================================
+   UI Typography Utilities
+
+   Semantic classes for consistent UI text sizing.
+   Change the CSS variables above to rescale the entire UI.
+   ================================= */
+
+@utility ui-text-xs {
+  font-size: var(--ui-text-xs);
+  line-height: 1.5;
+}
+
+@utility ui-text-sm {
+  font-size: var(--ui-text-sm);
+  line-height: 1.5;
+}
+
+@utility ui-text-base {
+  font-size: var(--ui-text-base);
+  line-height: 1.5;
+}
+
+@utility ui-text-lg {
+  font-size: var(--ui-text-lg);
+  line-height: 1.5;
+}
+
+@utility ui-text-xl {
+  font-size: var(--ui-text-xl);
+  line-height: 1.4;
+}
+
+@utility ui-text-2xl {
+  font-size: var(--ui-text-2xl);
+  line-height: 1.3;
 }
 
 /* =================================

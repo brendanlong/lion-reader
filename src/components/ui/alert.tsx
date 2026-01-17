@@ -21,7 +21,10 @@ export function Alert({ variant = "info", children, className = "" }: AlertProps
   };
 
   return (
-    <div role="alert" className={`rounded-md p-3 text-base ${variantStyles[variant]} ${className}`}>
+    <div
+      role="alert"
+      className={`ui-text-base rounded-md p-3 ${variantStyles[variant]} ${className}`}
+    >
       {children}
     </div>
   );

@@ -164,7 +164,7 @@ export const EntryListItem = memo(function EntryListItem({
           {/* Title Row */}
           <div className="flex items-start justify-between gap-2">
             <h3
-              className={`line-clamp-2 text-base ${
+              className={`ui-text-base line-clamp-2 ${
                 read
                   ? "font-normal text-zinc-700 dark:text-zinc-300"
                   : "font-medium text-zinc-900 dark:text-zinc-100"
@@ -214,7 +214,7 @@ export const EntryListItem = memo(function EntryListItem({
           </div>
 
           {/* Meta Row: Source and Date */}
-          <div className="mt-1 flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-sm mt-1 flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
             <span className="truncate">{source}</span>
             <span aria-hidden="true">·</span>
             <time dateTime={date.toISOString()} className="shrink-0">
@@ -224,7 +224,7 @@ export const EntryListItem = memo(function EntryListItem({
 
           {/* Preview */}
           {summary && (
-            <p className="mt-2 line-clamp-2 text-base text-zinc-600 dark:text-zinc-400">
+            <p className="ui-text-base mt-2 line-clamp-2 text-zinc-600 dark:text-zinc-400">
               {summary}
             </p>
           )}

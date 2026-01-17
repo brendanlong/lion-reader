@@ -79,12 +79,12 @@ export function UnsubscribeDialog({
       >
         <h2
           id="unsubscribe-title"
-          className="text-xl font-semibold text-zinc-900 dark:text-zinc-50"
+          className="ui-text-xl font-semibold text-zinc-900 dark:text-zinc-50"
         >
           Unsubscribe from feed?
         </h2>
 
-        <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-base mt-2 text-zinc-600 dark:text-zinc-400">
           Are you sure you want to unsubscribe from{" "}
           <span className="font-medium text-zinc-900 dark:text-zinc-50">{feedTitle}</span>? You can
           always resubscribe later.
