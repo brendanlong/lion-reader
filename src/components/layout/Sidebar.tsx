@@ -16,6 +16,15 @@ import { useExpandedTags } from "@/lib/hooks";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 import { useRealtimeStore } from "@/lib/store/realtime";
+import {
+  NavLink,
+  NavLinkWithIcon,
+  IconButton,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  EditIcon,
+  CloseIcon,
+} from "@/components/ui";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -177,56 +186,32 @@ export function Sidebar({ onClose }: SidebarProps) {
       <nav className="flex h-full flex-col bg-white dark:bg-zinc-900">
         {/* Main Navigation */}
         <div className="space-y-1 p-3">
-          <Link
+          <NavLink
             href="/all"
+            isActive={isActiveLink("/all")}
+            count={totalUnreadCount}
             onClick={handleClose}
-            className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
-              isActiveLink("/all")
-                ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            }`}
           >
-            <span>All Items</span>
-            {totalUnreadCount > 0 && (
-              <span className="ui-text-xs ml-2 text-zinc-500 dark:text-zinc-400">
-                ({totalUnreadCount})
-              </span>
-            )}
-          </Link>
+            All Items
+          </NavLink>
 
-          <Link
+          <NavLink
             href="/starred"
+            isActive={isActiveLink("/starred")}
+            count={starredCountQuery.data?.unread}
             onClick={handleClose}
-            className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
-              isActiveLink("/starred")
-                ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            }`}
           >
-            <span>Starred</span>
-            {starredCountQuery.data && starredCountQuery.data.unread > 0 && (
-              <span className="ui-text-xs ml-2 text-zinc-500 dark:text-zinc-400">
-                ({starredCountQuery.data.unread})
-              </span>
-            )}
-          </Link>
+            Starred
+          </NavLink>
 
-          <Link
+          <NavLink
             href="/saved"
+            isActive={isActiveLink("/saved")}
+            count={savedUnreadCount}
             onClick={handleClose}
-            className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
-              isActiveLink("/saved")
-                ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            }`}
           >
-            <span>Saved</span>
-            {savedUnreadCount > 0 && (
-              <span className="ui-text-xs ml-2 text-zinc-500 dark:text-zinc-400">
-                ({savedUnreadCount})
-              </span>
-            )}
-          </Link>
+            Saved
+          </NavLink>
         </div>
 
         {/* Divider */}
@@ -278,152 +263,51 @@ export function Sidebar({ onClose }: SidebarProps) {
                         className="flex h-6 w-6 shrink-0 items-center justify-center text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
                         aria-label={expanded ? "Collapse" : "Expand"}
                       >
-                        {expanded ? (
-                          <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 9l-7 7-7-7"
-                            />
-                          </svg>
-                        ) : (
-                          <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
-                        )}
+                        {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                       </button>
 
                       {/* Tag link */}
-                      <Link
+                      <NavLinkWithIcon
                         href={tagHref}
+                        isActive={isActive}
+                        icon={
+                          <span
+                            className="inline-block h-3 w-3 rounded-full"
+                            style={{ backgroundColor: tag.color || "#6b7280" }}
+                            aria-hidden="true"
+                          />
+                        }
+                        label={tag.name}
+                        count={tag.unreadCount}
                         onClick={handleClose}
-                        className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
-                          isActive
-                            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                            : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                        }`}
-                      >
-                        <span
-                          className="inline-block h-3 w-3 shrink-0 rounded-full"
-                          style={{ backgroundColor: tag.color || "#6b7280" }}
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{tag.name}</span>
-                        {tag.unreadCount > 0 && (
-                          <span className="ui-text-xs ml-auto shrink-0 text-zinc-500 dark:text-zinc-400">
-                            ({tag.unreadCount})
-                          </span>
-                        )}
-                      </Link>
+                      />
                     </div>
 
                     {/* Nested feeds (when expanded) */}
                     {expanded && (
                       <ul className="mt-1 ml-6 space-y-1">
-                        {tagFeeds.map((sub) => {
-                          const displayTitle = sub.title || "Untitled Feed";
-                          const subHref = `/subscription/${sub.id}`;
-                          const isSubActive = pathname === subHref;
-
-                          return (
-                            <li key={sub.id} className="group relative">
-                              <Link
-                                href={subHref}
-                                onClick={handleClose}
-                                className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
-                                  isSubActive
-                                    ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                                    : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                                }`}
-                              >
-                                <span className="truncate pr-8">{displayTitle}</span>
-                                {sub.unreadCount > 0 && (
-                                  <span className="ui-text-xs shrink-0 text-zinc-500 group-hover:hidden dark:text-zinc-400">
-                                    ({sub.unreadCount})
-                                  </span>
-                                )}
-                              </Link>
-
-                              {/* Action buttons - visible on hover/touch */}
-                              <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                                {/* Edit button */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditTarget({
-                                      id: sub.id,
-                                      title: displayTitle,
-                                      customTitle:
-                                        sub.title !== sub.originalTitle ? sub.title : null,
-                                      tagIds: sub.tags.map((t) => t.id),
-                                    });
-                                  }}
-                                  className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                                  title="Edit subscription"
-                                  aria-label={`Edit ${displayTitle}`}
-                                >
-                                  <svg
-                                    className="h-3.5 w-3.5"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                    />
-                                  </svg>
-                                </button>
-
-                                {/* Unsubscribe button */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setUnsubscribeTarget({
-                                      id: sub.id,
-                                      title: displayTitle,
-                                    });
-                                  }}
-                                  className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                                  title="Unsubscribe"
-                                  aria-label={`Unsubscribe from ${displayTitle}`}
-                                >
-                                  <svg
-                                    className="h-3.5 w-3.5"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M6 18L18 6M6 6l12 12"
-                                    />
-                                  </svg>
-                                </button>
-                              </div>
-                            </li>
-                          );
-                        })}
+                        {tagFeeds.map((sub) => (
+                          <SubscriptionItem
+                            key={sub.id}
+                            subscription={sub}
+                            isActive={pathname === `/subscription/${sub.id}`}
+                            onClose={handleClose}
+                            onEdit={() =>
+                              setEditTarget({
+                                id: sub.id,
+                                title: sub.title || "Untitled Feed",
+                                customTitle: sub.title !== sub.originalTitle ? sub.title : null,
+                                tagIds: sub.tags.map((t) => t.id),
+                              })
+                            }
+                            onUnsubscribe={() =>
+                              setUnsubscribeTarget({
+                                id: sub.id,
+                                title: sub.title || "Untitled Feed",
+                              })
+                            }
+                          />
+                        ))}
                       </ul>
                     )}
                   </li>
@@ -444,151 +328,51 @@ export function Sidebar({ onClose }: SidebarProps) {
                       className="flex h-6 w-6 shrink-0 items-center justify-center text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
                       aria-label={isExpanded("uncategorized") ? "Collapse" : "Expand"}
                     >
-                      {isExpanded("uncategorized") ? (
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
-                          />
-                        </svg>
-                      ) : (
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 5l7 7-7 7"
-                          />
-                        </svg>
-                      )}
+                      {isExpanded("uncategorized") ? <ChevronDownIcon /> : <ChevronRightIcon />}
                     </button>
 
                     {/* Uncategorized link */}
-                    <Link
+                    <NavLinkWithIcon
                       href="/uncategorized"
+                      isActive={isActiveLink("/uncategorized")}
+                      icon={
+                        <span
+                          className="inline-block h-3 w-3 rounded-full"
+                          style={{ backgroundColor: "#6b7280" }}
+                          aria-hidden="true"
+                        />
+                      }
+                      label="Uncategorized"
+                      count={uncategorizedUnreadCount}
                       onClick={handleClose}
-                      className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
-                        isActiveLink("/uncategorized")
-                          ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                          : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                      }`}
-                    >
-                      <span
-                        className="inline-block h-3 w-3 shrink-0 rounded-full"
-                        style={{ backgroundColor: "#6b7280" }}
-                        aria-hidden="true"
-                      />
-                      <span className="truncate">Uncategorized</span>
-                      {uncategorizedUnreadCount > 0 && (
-                        <span className="ui-text-xs ml-auto shrink-0 text-zinc-500 dark:text-zinc-400">
-                          ({uncategorizedUnreadCount})
-                        </span>
-                      )}
-                    </Link>
+                    />
                   </div>
 
                   {/* Nested uncategorized feeds (when expanded) */}
                   {isExpanded("uncategorized") && (
                     <ul className="mt-1 ml-6 space-y-1">
-                      {subscriptionsByTag.uncategorized.map((sub) => {
-                        const displayTitle = sub.title || "Untitled Feed";
-                        const subHref = `/subscription/${sub.id}`;
-                        const isSubActive = pathname === subHref;
-
-                        return (
-                          <li key={sub.id} className="group relative">
-                            <Link
-                              href={subHref}
-                              onClick={handleClose}
-                              className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
-                                isSubActive
-                                  ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                                  : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                              }`}
-                            >
-                              <span className="truncate pr-8">{displayTitle}</span>
-                              {sub.unreadCount > 0 && (
-                                <span className="ui-text-xs shrink-0 text-zinc-500 group-hover:hidden dark:text-zinc-400">
-                                  ({sub.unreadCount})
-                                </span>
-                              )}
-                            </Link>
-
-                            {/* Action buttons - visible on hover/touch */}
-                            <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                              {/* Edit button */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditTarget({
-                                    id: sub.id,
-                                    title: displayTitle,
-                                    customTitle: sub.title !== sub.originalTitle ? sub.title : null,
-                                    tagIds: sub.tags.map((t) => t.id),
-                                  });
-                                }}
-                                className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                                title="Edit subscription"
-                                aria-label={`Edit ${displayTitle}`}
-                              >
-                                <svg
-                                  className="h-3.5 w-3.5"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                  />
-                                </svg>
-                              </button>
-
-                              {/* Unsubscribe button */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setUnsubscribeTarget({
-                                    id: sub.id,
-                                    title: displayTitle,
-                                  });
-                                }}
-                                className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                                title="Unsubscribe"
-                                aria-label={`Unsubscribe from ${displayTitle}`}
-                              >
-                                <svg
-                                  className="h-3.5 w-3.5"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M6 18L18 6M6 6l12 12"
-                                  />
-                                </svg>
-                              </button>
-                            </div>
-                          </li>
-                        );
-                      })}
+                      {subscriptionsByTag.uncategorized.map((sub) => (
+                        <SubscriptionItem
+                          key={sub.id}
+                          subscription={sub}
+                          isActive={pathname === `/subscription/${sub.id}`}
+                          onClose={handleClose}
+                          onEdit={() =>
+                            setEditTarget({
+                              id: sub.id,
+                              title: sub.title || "Untitled Feed",
+                              customTitle: sub.title !== sub.originalTitle ? sub.title : null,
+                              tagIds: sub.tags.map((t) => t.id),
+                            })
+                          }
+                          onUnsubscribe={() =>
+                            setUnsubscribeTarget({
+                              id: sub.id,
+                              title: sub.title || "Untitled Feed",
+                            })
+                          }
+                        />
+                      ))}
                     </ul>
                   )}
                 </li>
@@ -625,5 +409,79 @@ export function Sidebar({ onClose }: SidebarProps) {
         }}
       />
     </>
+  );
+}
+
+// ============================================================================
+// SubscriptionItem Component
+// ============================================================================
+
+interface SubscriptionItemProps {
+  subscription: {
+    id: string;
+    title: string | null;
+    unreadCount: number;
+  };
+  isActive: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onUnsubscribe: () => void;
+}
+
+function SubscriptionItem({
+  subscription,
+  isActive,
+  onClose,
+  onEdit,
+  onUnsubscribe,
+}: SubscriptionItemProps) {
+  const displayTitle = subscription.title || "Untitled Feed";
+  const subHref = `/subscription/${subscription.id}`;
+
+  return (
+    <li className="group relative">
+      <Link
+        href={subHref}
+        onClick={onClose}
+        className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
+          isActive
+            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+            : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        }`}
+      >
+        <span className="truncate pr-8">{displayTitle}</span>
+        {subscription.unreadCount > 0 && (
+          <span className="ui-text-xs shrink-0 text-zinc-500 group-hover:hidden dark:text-zinc-400">
+            ({subscription.unreadCount})
+          </span>
+        )}
+      </Link>
+
+      {/* Action buttons - visible on hover/touch */}
+      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <IconButton
+          icon={<EditIcon />}
+          aria-label={`Edit ${displayTitle}`}
+          title="Edit subscription"
+          size="sm"
+          variant="subtle"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+        />
+        <IconButton
+          icon={<CloseIcon className="h-3.5 w-3.5" />}
+          aria-label={`Unsubscribe from ${displayTitle}`}
+          title="Unsubscribe"
+          size="sm"
+          variant="subtle"
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnsubscribe();
+          }}
+        />
+      </div>
+    </li>
   );
 }
