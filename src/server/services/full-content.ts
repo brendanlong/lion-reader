@@ -43,6 +43,13 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
     // Check if there's a plugin that can handle this URL
     const plugin = pluginRegistry.findWithCapability(urlObj, "entry");
 
+    logger.debug("Checking for plugin", {
+      url,
+      hostname: urlObj.hostname,
+      pathname: urlObj.pathname,
+      foundPlugin: plugin?.name ?? null,
+    });
+
     if (plugin) {
       logger.debug("Using plugin for full content fetch", {
         url,
