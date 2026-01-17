@@ -96,6 +96,18 @@ export interface UseKeyboardShortcutsOptions {
    * Callback to toggle unread-only filter.
    */
   onToggleUnreadOnly?: () => void;
+
+  /**
+   * Callback when user presses j to navigate to next entry (while viewing).
+   * The parent should use useEntryListQuery's getNextEntryId() to compute the next entry.
+   */
+  onNavigateNext?: () => void;
+
+  /**
+   * Callback when user presses k to navigate to previous entry (while viewing).
+   * The parent should use useEntryListQuery's getPreviousEntryId() to compute the previous entry.
+   */
+  onNavigatePrevious?: () => void;
 }
 
 /**
@@ -133,18 +145,6 @@ export interface UseKeyboardShortcutsResult {
    * Clear selection.
    */
   clearSelection: () => void;
-
-  /**
-   * Navigate to and open the next entry.
-   * Used for swipe gestures and keyboard navigation when viewing an entry.
-   */
-  goToNextEntry: () => void;
-
-  /**
-   * Navigate to and open the previous entry.
-   * Used for swipe gestures and keyboard navigation when viewing an entry.
-   */
-  goToPreviousEntry: () => void;
 }
 
 /**
@@ -198,26 +198,10 @@ export function useKeyboardShortcuts(
   const router = useRouter();
   const [selectedEntryId, setSelectedEntryIdInternal] = useState<string | null>(null);
 
-  // Track last known adjacent entries for when the current entry is filtered out
-  // This prevents jumping to the wrong entry when the current entry disappears
-  const lastKnownNextRef = useRef<string | null>(null);
-  const lastKnownPrevRef = useRef<string | null>(null);
-
-  // Wrapper for setSelectedEntryId that also updates the adjacent entry refs
-  const setSelectedEntryId = useCallback(
-    (id: string | null) => {
-      setSelectedEntryIdInternal(id);
-      // When setting a new selected entry, calculate and store its adjacent entries
-      if (id) {
-        const idx = entries.findIndex((e) => e.id === id);
-        if (idx !== -1) {
-          lastKnownNextRef.current = idx < entries.length - 1 ? entries[idx + 1].id : null;
-          lastKnownPrevRef.current = idx > 0 ? entries[idx - 1].id : null;
-        }
-      }
-    },
-    [entries]
-  );
+  // Simple setter - no refs needed, parent handles navigation via callbacks
+  const setSelectedEntryId = useCallback((id: string | null) => {
+    setSelectedEntryIdInternal(id);
+  }, []);
 
   // Track "g" prefix for navigation shortcuts (g+a, g+s)
   const gPrefixTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -259,27 +243,6 @@ export function useKeyboardShortcuts(
     return entryIds.indexOf(selectedEntryId);
   }, [selectedEntryId, entryIds]);
 
-  // Calculate current adjacent entries (either from list position or last known from refs)
-  // Refs are accessed only in this callback, not during render
-  const getAdjacentEntries = useCallback(() => {
-    if (!selectedEntryId) {
-      return { nextId: null, prevId: null, isInList: false };
-    }
-    const idx = entryIds.indexOf(selectedEntryId);
-    if (idx === -1) {
-      // Entry not in list - return last known values from refs
-      return {
-        nextId: lastKnownNextRef.current,
-        prevId: lastKnownPrevRef.current,
-        isInList: false,
-      };
-    }
-    // Entry is in list - calculate adjacent entries
-    const nextId = idx < entryIds.length - 1 ? entryIds[idx + 1] : null;
-    const prevId = idx > 0 ? entryIds[idx - 1] : null;
-    return { nextId, prevId, isInList: true };
-  }, [selectedEntryId, entryIds]);
-
   // Get the selected entry data
   const getSelectedEntry = useCallback((): KeyboardEntryData | null => {
     if (!selectedEntryId) return null;
@@ -317,56 +280,6 @@ export function useKeyboardShortcuts(
     }
     // If already at the first entry, do nothing
   }, [entryIds, getSelectedIndex, setSelectedEntryId]);
-
-  // Navigate to and open the next entry (for use when viewing an entry)
-  const goToNextEntry = useCallback(() => {
-    if (entryIds.length === 0 || !onOpenEntry) return;
-
-    // Use getAdjacentEntries which handles the case where current entry is filtered out
-    const { nextId } = getAdjacentEntries();
-    if (nextId) {
-      // We have a next entry (either from current position or remembered before filtering)
-      setSelectedEntryId(nextId);
-      onOpenEntry(nextId);
-      return;
-    }
-
-    // No next entry known - fall back to index-based navigation
-    const currentIndex = getSelectedIndex();
-
-    if (currentIndex === -1) {
-      // Nothing selected and no remembered next, go to the first entry
-      const firstId = entryIds[0];
-      setSelectedEntryId(firstId);
-      onOpenEntry(firstId);
-    }
-    // If at the last entry (nextId is null), do nothing
-  }, [entryIds, getSelectedIndex, onOpenEntry, getAdjacentEntries, setSelectedEntryId]);
-
-  // Navigate to and open the previous entry (for use when viewing an entry)
-  const goToPreviousEntry = useCallback(() => {
-    if (entryIds.length === 0 || !onOpenEntry) return;
-
-    // Use getAdjacentEntries which handles the case where current entry is filtered out
-    const { prevId } = getAdjacentEntries();
-    if (prevId) {
-      // We have a previous entry (either from current position or remembered before filtering)
-      setSelectedEntryId(prevId);
-      onOpenEntry(prevId);
-      return;
-    }
-
-    // No previous entry known - fall back to index-based navigation
-    const currentIndex = getSelectedIndex();
-
-    if (currentIndex === -1) {
-      // Nothing selected and no remembered previous, go to the last entry
-      const lastId = entryIds[entryIds.length - 1];
-      setSelectedEntryId(lastId);
-      onOpenEntry(lastId);
-    }
-    // If at the first entry (prevId is null), do nothing
-  }, [entryIds, getSelectedIndex, onOpenEntry, getAdjacentEntries, setSelectedEntryId]);
 
   // Open the currently selected entry
   const openSelected = useCallback(() => {
@@ -408,7 +321,9 @@ export function useKeyboardShortcuts(
     (e) => {
       e.preventDefault();
       if (isEntryOpen) {
-        goToNextEntry();
+        if (options.onNavigateNext) {
+          options.onNavigateNext();
+        }
       } else {
         selectNext();
       }
@@ -417,7 +332,7 @@ export function useKeyboardShortcuts(
       enabled: enabled,
       enableOnFormTags: false,
     },
-    [selectNext, goToNextEntry, isEntryOpen, enabled]
+    [selectNext, options.onNavigateNext, isEntryOpen, enabled]
   );
 
   // k - previous entry (select in list, or navigate to previous when viewing)
@@ -426,7 +341,9 @@ export function useKeyboardShortcuts(
     (e) => {
       e.preventDefault();
       if (isEntryOpen) {
-        goToPreviousEntry();
+        if (options.onNavigatePrevious) {
+          options.onNavigatePrevious();
+        }
       } else {
         selectPrevious();
       }
@@ -435,7 +352,7 @@ export function useKeyboardShortcuts(
       enabled: enabled,
       enableOnFormTags: false,
     },
-    [selectPrevious, goToPreviousEntry, isEntryOpen, enabled]
+    [selectPrevious, options.onNavigatePrevious, isEntryOpen, enabled]
   );
 
   // o - open selected entry (only when entry is not open)
@@ -637,7 +554,5 @@ export function useKeyboardShortcuts(
     selectPrevious,
     openSelected,
     clearSelection,
-    goToNextEntry,
-    goToPreviousEntry,
   };
 }
