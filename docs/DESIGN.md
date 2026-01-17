@@ -153,9 +153,21 @@ See `docs/features/subscription-centric-api.md` for design details.
 
 Custom auth using battle-tested primitives:
 
-- **`arctic`**: Lightweight OAuth library for Google/Apple
+- **`arctic`**: Lightweight OAuth library for Google/Apple/Discord
 - **`argon2`**: Password hashing
 - **Custom session management**: Token-based, stored in Postgres with Redis cache
+
+### OAuth Providers
+
+Lion Reader supports multiple OAuth providers for sign-in:
+
+| Provider    | Scopes                       | Notes                                                      |
+| ----------- | ---------------------------- | ---------------------------------------------------------- |
+| **Google**  | `openid`, `email`, `profile` | Optional `documents.readonly` for Google Docs access       |
+| **Apple**   | `name`, `email`              | Uses form_post response mode; may use private relay emails |
+| **Discord** | `identify`, `email`          | Standard OAuth 2.0 flow                                    |
+
+Each provider is enabled by setting its environment variables (client ID and secret). The frontend automatically shows buttons for enabled providers.
 
 ### Session Flow
 
