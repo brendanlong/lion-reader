@@ -43,7 +43,7 @@ const MAX_STATE_UPDATES = 1000;
  */
 const syncEntrySchema = z.object({
   id: z.string(),
-  feedId: z.string(),
+  subscriptionId: z.string().nullable(), // nullable for orphaned starred entries
   type: z.enum(["web", "email", "saved"]),
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -160,7 +160,7 @@ export const syncRouter = createTRPCRouter({
         const newEntryResults = await ctx.db
           .select({
             id: visibleEntries.id,
-            feedId: visibleEntries.feedId,
+            subscriptionId: visibleEntries.subscriptionId,
             type: visibleEntries.type,
             url: visibleEntries.url,
             title: visibleEntries.title,
@@ -187,7 +187,7 @@ export const syncRouter = createTRPCRouter({
 
         createdEntries = newEntryResults.map((row) => ({
           id: row.id,
-          feedId: row.feedId,
+          subscriptionId: row.subscriptionId,
           type: row.type,
           url: row.url,
           title: row.title,
@@ -205,7 +205,7 @@ export const syncRouter = createTRPCRouter({
         const recentEntryResults = await ctx.db
           .select({
             id: visibleEntries.id,
-            feedId: visibleEntries.feedId,
+            subscriptionId: visibleEntries.subscriptionId,
             type: visibleEntries.type,
             url: visibleEntries.url,
             title: visibleEntries.title,
@@ -231,7 +231,7 @@ export const syncRouter = createTRPCRouter({
 
         createdEntries = recentEntryResults.map((row) => ({
           id: row.id,
-          feedId: row.feedId,
+          subscriptionId: row.subscriptionId,
           type: row.type,
           url: row.url,
           title: row.title,

@@ -87,7 +87,7 @@ const SSE_RETRY_INTERVAL_MS = 60_000;
 
 interface FeedEventData {
   type: "new_entry" | "entry_updated";
-  feedId: string;
+  subscriptionId: string;
   entryId: string;
   timestamp: string;
 }
@@ -189,15 +189,15 @@ function parseEventData(data: string): SSEEventData | null {
 
     const event = parsed as Record<string, unknown>;
 
-    // Handle feed events
+    // Handle feed events (now include subscriptionId instead of feedId)
     if (
       (event.type === "new_entry" || event.type === "entry_updated") &&
-      typeof event.feedId === "string" &&
+      typeof event.subscriptionId === "string" &&
       typeof event.entryId === "string"
     ) {
       return {
         type: event.type,
-        feedId: event.feedId,
+        subscriptionId: event.subscriptionId,
         entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
       };
@@ -461,7 +461,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
 
       if (data.type === "new_entry") {
         // Push to Zustand delta store - count badges update instantly via deltas
-        useRealtimeStore.getState().onNewEntry(data.entryId, data.feedId, data.timestamp);
+        useRealtimeStore.getState().onNewEntry(data.entryId, data.subscriptionId, data.timestamp);
         // Invalidate entry list so the new entry appears in the UI
         utils.entries.list.invalidate();
       } else if (data.type === "entry_updated") {
@@ -594,9 +594,12 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
 
       // Push entry changes to Zustand (same interface as SSE)
       for (const entry of result.entries.created) {
-        useRealtimeStore
-          .getState()
-          .onNewEntry(entry.id, entry.feedId, entry.fetchedAt.toISOString());
+        // Only update counts for entries with a subscription (skip orphaned starred)
+        if (entry.subscriptionId) {
+          useRealtimeStore
+            .getState()
+            .onNewEntry(entry.id, entry.subscriptionId, entry.fetchedAt.toISOString());
+        }
       }
 
       // Handle entry changes - invalidate list so new entries appear
