@@ -6,15 +6,16 @@
  * - Server-side prefetching with correct filters
  * - Shareable/bookmarkable filtered views
  * - Browser back/forward navigation through filter changes
+ * - No hydration mismatches (server and client render the same state)
  *
- * Falls back to localStorage defaults when URL params are not present.
+ * Uses DEFAULT_PREFERENCES when URL params are not present.
  */
 
 "use client";
 
 import { useCallback, useMemo } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { getViewPreferences, type ViewType } from "./viewPreferences";
+import { DEFAULT_PREFERENCES } from "./viewPreferences";
 
 /**
  * Result of the useUrlViewPreferences hook.
@@ -43,15 +44,13 @@ export interface UseUrlViewPreferencesResult {
 
 /**
  * Parse view preferences from URL search params.
- * Falls back to localStorage defaults if not specified in URL.
+ * Uses DEFAULT_PREFERENCES when not specified in URL (no localStorage fallback
+ * to avoid hydration mismatches between server and client).
  */
-export function parseViewPreferencesFromParams(
-  searchParams: URLSearchParams | null,
-  viewType: ViewType,
-  viewId?: string
-): { unreadOnly: boolean; sortOrder: "newest" | "oldest" } {
-  const defaults = getViewPreferences(viewType, viewId);
-
+export function parseViewPreferencesFromParams(searchParams: URLSearchParams | null): {
+  unreadOnly: boolean;
+  sortOrder: "newest" | "oldest";
+} {
   // Parse unreadOnly - explicit "false" means show all, anything else uses default
   const unreadOnlyParam = searchParams?.get("unreadOnly");
   const unreadOnly =
@@ -59,12 +58,16 @@ export function parseViewPreferencesFromParams(
       ? false
       : unreadOnlyParam === "true"
         ? true
-        : defaults.showUnreadOnly;
+        : DEFAULT_PREFERENCES.showUnreadOnly;
 
   // Parse sortOrder - explicit "oldest" means oldest first, anything else uses default
   const sortParam = searchParams?.get("sort");
   const sortOrder =
-    sortParam === "oldest" ? "oldest" : sortParam === "newest" ? "newest" : defaults.sortOrder;
+    sortParam === "oldest"
+      ? "oldest"
+      : sortParam === "newest"
+        ? "newest"
+        : DEFAULT_PREFERENCES.sortOrder;
 
   return { unreadOnly, sortOrder };
 }
@@ -72,15 +75,13 @@ export function parseViewPreferencesFromParams(
 /**
  * Hook for managing view preferences synced to URL query params.
  *
- * @param viewType - The type of view (for localStorage fallback defaults)
- * @param viewId - Optional ID for feed or tag views
  * @returns View preferences and toggle functions
  *
  * @example
  * ```tsx
  * function AllEntriesPage() {
  *   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
- *     useUrlViewPreferences('all');
+ *     useUrlViewPreferences();
  *
  *   // URL will update to /all?unreadOnly=false when toggled
  *   return (
@@ -91,18 +92,15 @@ export function parseViewPreferencesFromParams(
  * }
  * ```
  */
-export function useUrlViewPreferences(
-  viewType: ViewType,
-  viewId?: string
-): UseUrlViewPreferencesResult {
+export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Get current values from URL (with localStorage fallback)
+  // Get current values from URL
   const { unreadOnly, sortOrder } = useMemo(
-    () => parseViewPreferencesFromParams(searchParams, viewType, viewId),
-    [searchParams, viewType, viewId]
+    () => parseViewPreferencesFromParams(searchParams),
+    [searchParams]
   );
 
   // Helper to update URL with new params

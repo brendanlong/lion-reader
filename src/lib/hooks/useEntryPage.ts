@@ -156,7 +156,7 @@ export interface UseEntryPageResult {
  * ```
  */
 export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
-  const { viewId, viewScopeId, filters = {} } = options;
+  const { filters = {} } = options;
 
   const utils = trpc.useUtils();
 
@@ -166,9 +166,9 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
   // Keyboard shortcuts context
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
 
-  // View preferences (unread only, sort order)
+  // View preferences (unread only, sort order) - synced to URL query params
   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
-    useUrlViewPreferences(viewId, viewScopeId);
+    useUrlViewPreferences();
 
   // Combined filters including view preferences
   const combinedFilters = useMemo(

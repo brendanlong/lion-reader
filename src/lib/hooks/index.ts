@@ -6,7 +6,7 @@
 
 export { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
-export { getViewPreferences, type ViewType } from "./viewPreferences";
+export { DEFAULT_PREFERENCES, type ViewType, type ViewPreferences } from "./viewPreferences";
 
 export { useUrlViewPreferences, parseViewPreferencesFromParams } from "./useUrlViewPreferences";
 
