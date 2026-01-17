@@ -83,12 +83,12 @@ export function MarkAllReadDialog({
       >
         <h2
           id="mark-all-read-title"
-          className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+          className="text-xl font-semibold text-zinc-900 dark:text-zinc-50"
         >
           Mark all as read?
         </h2>
 
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
           {unreadCount !== undefined && unreadCount > 0 ? (
             <>
               This will mark{" "}

@@ -147,7 +147,7 @@ export function LinkedAccounts() {
   if (isLoading) {
     return (
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        <h2 className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
           Linked Accounts
         </h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
@@ -163,7 +163,7 @@ export function LinkedAccounts() {
   if (queryError) {
     return (
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        <h2 className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
           Linked Accounts
         </h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
@@ -175,11 +175,11 @@ export function LinkedAccounts() {
 
   return (
     <section>
-      <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
         Linked Accounts
       </h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mb-4 text-base text-zinc-500 dark:text-zinc-400">
           Connect your account with third-party providers for easy sign-in.
         </p>
 
@@ -219,14 +219,14 @@ export function LinkedAccounts() {
 
           {/* Show message if no providers available */}
           {enabledProviders.length === 0 && linkedAccounts.length === 0 && (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="text-base text-zinc-500 dark:text-zinc-400">
               No OAuth providers are configured on this server.
             </p>
           )}
         </div>
 
         {!hasPassword && linkedAccounts.length > 0 && (
-          <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
             Tip: Add a password to your account so you can unlink OAuth providers if needed.
           </p>
         )}
@@ -259,8 +259,8 @@ function LinkedAccountItem({ account, canUnlink, isUnlinking, onUnlink }: Linked
       <div className="flex items-center gap-3">
         <ProviderIcon provider={account.provider} />
         <div>
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{providerName}</p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">Linked on {linkedDate}</p>
+          <p className="text-base font-medium text-zinc-900 dark:text-zinc-50">{providerName}</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">Linked on {linkedDate}</p>
         </div>
       </div>
       <Button
@@ -295,8 +295,8 @@ function LinkableProviderItem({ provider, isLinking, onLink }: LinkableProviderI
       <div className="flex items-center gap-3">
         <ProviderIcon provider={provider} muted />
         <div>
-          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">{providerName}</p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-500">Not connected</p>
+          <p className="text-base font-medium text-zinc-600 dark:text-zinc-400">{providerName}</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-500">Not connected</p>
         </div>
       </div>
       <Button

@@ -157,12 +157,12 @@ function EditSubscriptionForm({
     <>
       <h2
         id="edit-subscription-title"
-        className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+        className="mb-4 text-xl font-semibold text-zinc-900 dark:text-zinc-50"
       >
         Edit Subscription
       </h2>
 
-      <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="mb-4 text-base text-zinc-500 dark:text-zinc-400">
         Feed: <span className="font-medium text-zinc-700 dark:text-zinc-300">{currentTitle}</span>
       </p>
 
@@ -186,11 +186,11 @@ function EditSubscriptionForm({
 
       {/* Tags */}
       <div className="mb-6">
-        <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <label className="mb-2 block text-base font-medium text-zinc-700 dark:text-zinc-300">
           Tags
         </label>
         {tags.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-base text-zinc-500 dark:text-zinc-400">
             No tags created yet. Create tags in{" "}
             <a href="/settings" className="text-zinc-900 underline dark:text-zinc-50">
               Settings
@@ -207,7 +207,7 @@ function EditSubscriptionForm({
                   type="button"
                   onClick={() => toggleTag(tag.id)}
                   disabled={isPending}
-                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-base transition-colors ${
                     isSelected
                       ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
                       : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
