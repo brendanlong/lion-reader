@@ -97,12 +97,19 @@ export function isFirefox(): boolean {
   return navigator.userAgent.toLowerCase().includes("firefox");
 }
 
+// Cached result for getNarrationSupportInfo to ensure referential stability
+// (required for useSyncExternalStore to avoid infinite loops)
+let cachedSupportInfo: NarrationSupportInfo | null = null;
+
 /**
  * Gets detailed information about narration support.
  *
  * Use this when you need both the support status and a reason
  * for why narration might not be available (useful for showing
  * helpful error messages to users).
+ *
+ * The result is cached to ensure referential stability when used with
+ * useSyncExternalStore (browser capabilities don't change during a session).
  *
  * @returns Object with support status and optional reason.
  *
@@ -125,8 +132,14 @@ export function isFirefox(): boolean {
  * ```
  */
 export function getNarrationSupportInfo(): NarrationSupportInfo {
+  // Return cached result if available (browser capabilities don't change)
+  if (cachedSupportInfo !== null) {
+    return cachedSupportInfo;
+  }
+
   // Server-side rendering check
   if (typeof window === "undefined") {
+    // Don't cache server-side result since we want to recompute on client
     return {
       supported: false,
       mediaSession: false,
@@ -136,25 +149,28 @@ export function getNarrationSupportInfo(): NarrationSupportInfo {
 
   // Check for speechSynthesis
   if (!("speechSynthesis" in window)) {
-    return {
+    cachedSupportInfo = {
       supported: false,
       mediaSession: isMediaSessionSupported(),
       reason: "Your browser does not support the Web Speech API",
     };
+    return cachedSupportInfo;
   }
 
   // Check for SpeechSynthesisUtterance
   if (!("SpeechSynthesisUtterance" in window)) {
-    return {
+    cachedSupportInfo = {
       supported: false,
       mediaSession: isMediaSessionSupported(),
       reason: "Your browser does not support speech synthesis",
     };
+    return cachedSupportInfo;
   }
 
   // All checks passed
-  return {
+  cachedSupportInfo = {
     supported: true,
     mediaSession: isMediaSessionSupported(),
   };
+  return cachedSupportInfo;
 }
