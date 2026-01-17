@@ -46,13 +46,41 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * Blocking script to apply theme before first paint.
+ *
+ * This runs synchronously in the <head> to prevent flash of wrong theme.
+ * Must be kept in sync with settings.ts storage key and logic.
+ */
+const themeScript = `
+(function() {
+  try {
+    var stored = localStorage.getItem('lion-reader-appearance-settings');
+    var mode = 'auto';
+    if (stored) {
+      var parsed = JSON.parse(stored);
+      if (parsed.themeMode === 'light' || parsed.themeMode === 'dark') {
+        mode = parsed.themeMode;
+      }
+    }
+    var dark = mode === 'dark' || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (dark) {
+      document.documentElement.classList.add('dark');
+    }
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} ${literata.variable} ${inter.variable} ${sourceSans.variable} antialiased`}
       >
