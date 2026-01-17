@@ -25,7 +25,6 @@ import {
   parseFeedEvent,
   parseUserEvent,
   checkRedisHealth,
-  type FeedEvent,
   type UserEvent,
 } from "@/server/redis/pubsub";
 import { eq, and, isNull } from "drizzle-orm";
@@ -77,24 +76,17 @@ function getSessionToken(headers: Headers): string | null {
 }
 
 /**
- * Gets all active feed IDs for a user's subscriptions.
+ * Gets a mapping of feedId -> subscriptionId for a user's active subscriptions.
+ * This allows the SSE endpoint to transform feed events (which use feedId)
+ * into subscription-centric events (which use subscriptionId) for the client.
  */
-async function getUserFeedIds(userId: string): Promise<Set<string>> {
+async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, string>> {
   const userSubscriptions = await db
-    .select({ feedId: subscriptions.feedId })
+    .select({ feedId: subscriptions.feedId, subscriptionId: subscriptions.id })
     .from(subscriptions)
     .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
-  return new Set(userSubscriptions.map((s) => s.feedId));
-}
-
-/**
- * Formats an SSE event message for feed events.
- * Includes an `id` field with server timestamp for client sync cursor tracking.
- */
-function formatSSEFeedEvent(event: FeedEvent): string {
-  const cursor = new Date().toISOString();
-  return `event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(event)}\n\n`;
+  return new Map(userSubscriptions.map((s) => [s.feedId, s.subscriptionId]));
 }
 
 /**
@@ -180,8 +172,8 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
-  // Get user's subscribed feed IDs
-  const feedIds = await getUserFeedIds(userId);
+  // Get user's feed -> subscription mapping
+  const feedToSubscriptionMap = await getUserFeedSubscriptionMap(userId);
 
   // Get the user-specific events channel
   const userEventsChannel = getUserEventsChannel(userId);
@@ -196,6 +188,9 @@ export async function GET(req: Request): Promise<Response> {
 
       // Track which feed channels we're subscribed to
       const subscribedFeedChannels = new Set<string>();
+
+      // Local copy of feed -> subscription mapping (updated on subscription events)
+      const feedSubscriptionMap = new Map(feedToSubscriptionMap);
 
       /**
        * Cleanup function to close Redis subscription and clear heartbeat
@@ -237,23 +232,25 @@ export async function GET(req: Request): Promise<Response> {
       }
 
       /**
-       * Subscribes to a feed's event channel
+       * Subscribes to a feed's event channel and tracks the subscription mapping
        */
-      function subscribeToFeed(feedId: string): void {
+      function subscribeToFeed(feedId: string, subscriptionId: string): void {
         if (isCleanedUp || !subscriber) return;
 
         const channel = getFeedEventsChannel(feedId);
         if (subscribedFeedChannels.has(channel)) return;
 
         subscribedFeedChannels.add(channel);
+        feedSubscriptionMap.set(feedId, subscriptionId);
         subscriber.subscribe(channel).catch((err) => {
           console.error(`Failed to subscribe to feed channel ${feedId}:`, err);
           subscribedFeedChannels.delete(channel);
+          feedSubscriptionMap.delete(feedId);
         });
       }
 
       /**
-       * Unsubscribes from a feed's event channel
+       * Unsubscribes from a feed's event channel and removes the subscription mapping
        */
       function unsubscribeFromFeed(feedId: string): void {
         if (isCleanedUp || !subscriber) return;
@@ -262,6 +259,7 @@ export async function GET(req: Request): Promise<Response> {
         if (!subscribedFeedChannels.has(channel)) return;
 
         subscribedFeedChannels.delete(channel);
+        feedSubscriptionMap.delete(feedId);
         subscriber.unsubscribe(channel).catch((err) => {
           console.error(`Failed to unsubscribe from feed channel ${feedId}:`, err);
         });
@@ -291,7 +289,8 @@ export async function GET(req: Request): Promise<Response> {
         // Build list of channels to subscribe to:
         // - User-specific channel for subscription events
         // - Per-feed channels for each subscribed feed
-        const feedChannels = Array.from(feedIds).map(getFeedEventsChannel);
+        const feedIds = Array.from(feedSubscriptionMap.keys());
+        const feedChannels = feedIds.map(getFeedEventsChannel);
         const allChannels = [userEventsChannel, ...feedChannels];
 
         // Track subscribed feed channels
@@ -320,8 +319,8 @@ export async function GET(req: Request): Promise<Response> {
             if (!event) return;
 
             if (event.type === "subscription_created") {
-              // Subscribe to the new feed's channel
-              subscribeToFeed(event.feedId);
+              // Subscribe to the new feed's channel with subscription mapping
+              subscribeToFeed(event.feedId, event.subscriptionId);
 
               // Forward the event to the client
               send(formatSSEUserEvent(event));
@@ -350,13 +349,31 @@ export async function GET(req: Request): Promise<Response> {
           }
 
           // Handle feed events (new_entry, entry_updated)
-          // Since we only subscribe to channels for feeds we care about,
-          // we don't need to filter here - just forward the event
+          // Transform events to use subscriptionId instead of feedId for client
           if (subscribedFeedChannels.has(channel)) {
             const event = parseFeedEvent(message);
             if (!event) return;
 
-            send(formatSSEFeedEvent(event));
+            // Look up the subscriptionId for this feed
+            const subscriptionId = feedSubscriptionMap.get(event.feedId);
+            if (!subscriptionId) {
+              // This shouldn't happen, but skip if we don't have the mapping
+              console.warn(`No subscription mapping for feedId ${event.feedId}`);
+              return;
+            }
+
+            // Transform event to use subscriptionId instead of feedId
+            const clientEvent = {
+              type: event.type,
+              subscriptionId,
+              entryId: event.entryId,
+              timestamp: event.timestamp,
+            };
+
+            const cursor = new Date().toISOString();
+            send(
+              `event: ${clientEvent.type}\nid: ${cursor}\ndata: ${JSON.stringify(clientEvent)}\n\n`
+            );
             trackSSEEventSent(event.type);
           }
         });
