@@ -44,6 +44,7 @@ import {
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { useNarrationSettings } from "@/lib/narration/settings";
+import { useEntryTextStyles } from "@/lib/appearance";
 
 /**
  * Format a date as a readable string.
@@ -322,18 +323,23 @@ interface EntryContentRendererProps {
   sanitizedContent: string | null;
   fallbackContent: string | null;
   contentRef: React.RefObject<HTMLDivElement | null>;
+  textSizeClass: string;
+  textStyle: React.CSSProperties;
 }
 
 const EntryContentRenderer = React.memo(function EntryContentRenderer({
   sanitizedContent,
   fallbackContent,
   contentRef,
+  textSizeClass,
+  textStyle,
 }: EntryContentRendererProps) {
   if (sanitizedContent) {
     return (
       <div
         ref={contentRef}
-        className="prose prose-zinc prose-sm sm:prose-base dark:prose-invert prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 prose-a:hover:text-blue-700 dark:prose-a:hover:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:overflow-x-auto prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none"
+        className={`${textSizeClass} prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 prose-a:hover:text-blue-700 dark:prose-a:hover:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:overflow-x-auto prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none`}
+        style={textStyle}
         dangerouslySetInnerHTML={{ __html: sanitizedContent }}
       />
     );
@@ -341,7 +347,7 @@ const EntryContentRenderer = React.memo(function EntryContentRenderer({
 
   if (fallbackContent) {
     return (
-      <p className="text-base leading-relaxed text-zinc-700 dark:text-zinc-300">
+      <p className="text-base leading-relaxed text-zinc-700 dark:text-zinc-300" style={textStyle}>
         {fallbackContent}
       </p>
     );
@@ -437,6 +443,9 @@ export function EntryContentBody({
 
   // Get narration settings for auto-scroll preference
   const [narrationSettings] = useNarrationSettings();
+
+  // Get text appearance settings
+  const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
   // Determine if we should process HTML for highlighting
   // We process it whenever narration has been activated (processedHtml exists or state is not idle)
@@ -856,6 +865,8 @@ export function EntryContentBody({
         sanitizedContent={sanitizedContent}
         fallbackContent={fallbackContent}
         contentRef={contentRef}
+        textSizeClass={textSizeClass}
+        textStyle={textStyle}
       />
 
       {/* Footer with original link */}
