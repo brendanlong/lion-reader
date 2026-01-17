@@ -14,7 +14,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Alert } from "@/components/ui";
+import { Button, Alert, UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui";
 import { parseOpml, type OpmlFeed } from "@/server/feed/opml";
 
 // ============================================================================
@@ -276,19 +276,7 @@ function ImportSection() {
             className="absolute inset-0 cursor-pointer opacity-0"
           />
           <div className="pointer-events-none">
-            <svg
-              className="mx-auto h-12 w-12 text-zinc-400 dark:text-zinc-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
+            <UploadIcon className="mx-auto h-12 w-12 text-zinc-400 dark:text-zinc-500" />
             <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
               Drag and drop your OPML file here, or{" "}
               <span className="font-medium text-blue-600 dark:text-blue-400">browse</span>
@@ -302,22 +290,7 @@ function ImportSection() {
 
       {importState.type === "parsing" && (
         <div className="flex items-center justify-center py-8">
-          <svg className="h-6 w-6 animate-spin text-zinc-400" viewBox="0 0 24 24">
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-              fill="none"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
-          </svg>
+          <SpinnerIcon className="h-6 w-6 text-zinc-400" />
           <span className="ui-text-sm ml-2 text-zinc-600 dark:text-zinc-400">
             Parsing OPML file...
           </span>
@@ -336,22 +309,7 @@ function ImportSection() {
       {(importState.type === "queuing" || importState.type === "importing") && (
         <div className="py-4">
           <div className="mb-2 flex items-center">
-            <svg className="h-5 w-5 animate-spin text-blue-500" viewBox="0 0 24 24">
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-                fill="none"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
+            <SpinnerIcon className="h-5 w-5 text-blue-500" />
             <span className="ui-text-sm ml-2 font-medium text-zinc-700 dark:text-zinc-300">
               Importing feeds...
             </span>
@@ -612,14 +570,7 @@ function ExportSection() {
       )}
 
       <Button onClick={handleExport} loading={isExporting} variant="secondary">
-        <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-          />
-        </svg>
+        <DownloadIcon className="mr-2 h-4 w-4" />
         Export subscriptions
       </Button>
     </div>

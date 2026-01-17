@@ -49,3 +49,10 @@ The `ui-text-*` classes are defined in `src/app/globals.css` and provide respons
 - **Watch for patterns** - If you see the same UI pattern 3+ times, consider extracting a component
 - **44px touch targets** - Ensure interactive elements meet WCAG touch target guidelines (handled by UI components)
 - **Dark mode** - All UI components support dark mode via `dark:` Tailwind classes
+
+### When to Keep Icons Local
+
+Some icons should remain as local components in their files:
+
+- **Icons with `suppressHydrationWarning`** - Icons that depend on localStorage state (e.g., UnreadToggle) need this attribute on SVG elements, which shared icons don't support
+- **Single-use custom icons** - Icons specific to one feature (e.g., empty state illustrations, media player skip icons) should stay local with a comment explaining why
