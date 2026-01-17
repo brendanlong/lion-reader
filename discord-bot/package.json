@@ -1,0 +1,15 @@
+{
+  "name": "lion-reader-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot to save articles to Lion Reader",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1"
+  }
+}
