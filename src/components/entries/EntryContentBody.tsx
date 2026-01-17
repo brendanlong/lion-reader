@@ -643,12 +643,12 @@ export function EntryContentBody({
           {/* Summarize button */}
           {isSummarizationAvailable && onSummarize && (
             <Button
-              variant={summary ? "primary" : "secondary"}
+              variant={showSummary && summary ? "primary" : "secondary"}
               size="sm"
               onClick={onSummarize}
               disabled={isSummarizing}
               className={
-                summary
+                showSummary && summary
                   ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
                   : ""
               }
