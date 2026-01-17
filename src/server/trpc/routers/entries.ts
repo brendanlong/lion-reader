@@ -804,10 +804,11 @@ export const entriesRouter = createTRPCRouter({
    * Mark entries as read or unread (bulk operation).
    *
    * Only entries the user has access to (via user_entries) will be updated.
+   * Returns entries with subscription context for client-side cache updates.
    *
    * @param ids - Array of entry IDs to mark
    * @param read - Whether to mark as read (true) or unread (false)
-   * @returns The updated entries with their current state
+   * @returns The updated entries with subscription context for cache updates
    */
   markRead: protectedProcedure
     .meta({
@@ -827,10 +828,23 @@ export const entriesRouter = createTRPCRouter({
         read: z.boolean(),
       })
     )
-    .output(z.object({ success: z.boolean(), count: z.number() }))
+    .output(
+      z.object({
+        success: z.boolean(),
+        count: z.number(),
+        // Entries with subscription context for cache updates
+        entries: z.array(
+          z.object({
+            id: z.string(),
+            subscriptionId: z.string().nullable(),
+          })
+        ),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
+      // Update user_entries and get entry IDs
       const updatedEntries = await ctx.db
         .update(userEntries)
         .set({
@@ -839,10 +853,39 @@ export const entriesRouter = createTRPCRouter({
         })
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)))
         .returning({
-          id: userEntries.entryId,
+          entryId: userEntries.entryId,
         });
 
-      return { success: true, count: updatedEntries.length };
+      if (updatedEntries.length === 0) {
+        return { success: true, count: 0, entries: [] };
+      }
+
+      // Get subscription IDs for each entry via visible_entries view
+      // This handles the feed -> subscription mapping
+      const entrySubscriptions = await ctx.db
+        .select({
+          id: visibleEntries.id,
+          subscriptionId: visibleEntries.subscriptionId,
+        })
+        .from(visibleEntries)
+        .where(
+          and(
+            eq(visibleEntries.userId, userId),
+            inArray(
+              visibleEntries.id,
+              updatedEntries.map((e) => e.entryId)
+            )
+          )
+        );
+
+      return {
+        success: true,
+        count: updatedEntries.length,
+        entries: entrySubscriptions.map((e) => ({
+          id: e.id,
+          subscriptionId: e.subscriptionId,
+        })),
+      };
     }),
 
   /**
