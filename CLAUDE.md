@@ -39,6 +39,14 @@ See @src/components/CLAUDE.md for UI component guidelines, available components,
 - Main branch: `master`
 - Commit `drizzle/schema.sql` changes separately if unrelated to current work
 
+## GitHub Issues
+
+When you mention GitHub issues:
+
+1. **Fetch the issues** - Use the GitHub API to list issues: `https://api.github.com/repos/brendanlong/lion-reader/issues`
+2. **Read relevant issues** - Fetch detailed issue content via the API to understand requirements and discussion
+3. **Reference in commits** - Include issue numbers in commit messages (e.g., "Fix: prevent over-fetching slow feeds (#175)") when applicable
+
 ## Project Structure
 
 ```
