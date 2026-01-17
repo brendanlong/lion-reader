@@ -8,6 +8,7 @@
 import { pluginRegistry } from "./registry";
 import { lessWrongPlugin } from "./lesswrong";
 import { googleDocsPlugin } from "./google-docs";
+import { arxivPlugin } from "./arxiv";
 
 /**
  * Register all available plugins at startup.
@@ -17,6 +18,7 @@ import { googleDocsPlugin } from "./google-docs";
 export function registerPlugins() {
   pluginRegistry.register(lessWrongPlugin);
   pluginRegistry.register(googleDocsPlugin);
+  pluginRegistry.register(arxivPlugin);
 }
 
 // Export registry and types
