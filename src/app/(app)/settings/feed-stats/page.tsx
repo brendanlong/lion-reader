@@ -153,7 +153,7 @@ export default function FeedStatsPage() {
       {/* Page Header */}
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Feed Statistics</h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
           View fetch status and statistics for all your subscribed feeds.
         </p>
       </div>
@@ -217,7 +217,7 @@ function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">{label}</p>
       <p className={`text-2xl font-semibold ${variantClasses[variant]}`}>{value}</p>
     </div>
   );
@@ -245,10 +245,10 @@ function EmptyState() {
           />
         </svg>
       </div>
-      <h3 className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">
+      <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
         No feeds subscribed
       </h3>
-      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
         Subscribe to some feeds to see their statistics here.
       </p>
     </div>
@@ -276,7 +276,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
           <div className="flex items-center gap-2">
             <p className="font-medium text-zinc-900 dark:text-zinc-50">{displayName}</p>
             <span
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge.className}`}
+              className={`ui-text-xs inline-flex items-center rounded-full px-2 py-0.5 font-medium ${statusBadge.className}`}
             >
               {statusBadge.text}
             </span>
@@ -284,13 +284,15 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
 
           {/* Feed URL */}
           {feed.url && (
-            <p className="mt-0.5 truncate text-sm text-zinc-500 dark:text-zinc-400">{feed.url}</p>
+            <p className="ui-text-sm mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
+              {feed.url}
+            </p>
           )}
 
           {/* Error Message (if any) */}
           {feed.lastError && (
             <div className="mt-2 rounded-md bg-red-50 px-3 py-2 dark:bg-red-900/20">
-              <p className="text-sm text-red-700 dark:text-red-300">
+              <p className="ui-text-sm text-red-700 dark:text-red-300">
                 <span className="font-medium">Error:</span> {feed.lastError}
               </p>
             </div>

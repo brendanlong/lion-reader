@@ -154,7 +154,7 @@ export default function ApiTokensPage() {
         )}
       </div>
 
-      <p className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="ui-text-sm mb-6 text-zinc-600 dark:text-zinc-400">
         API tokens allow you to connect third-party applications like Claude Desktop, browser
         extensions, and other integrations. Tokens are only shown once when created.
       </p>
@@ -196,7 +196,7 @@ export default function ApiTokensPage() {
           <div className="space-y-4">
             {/* Token Name */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label className="ui-text-sm mb-1 block font-medium text-zinc-700 dark:text-zinc-300">
                 Token Name
               </label>
               <Input
@@ -205,14 +205,14 @@ export default function ApiTokensPage() {
                 placeholder="e.g., Claude Desktop, Browser Extension"
                 className="w-full"
               />
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
                 A descriptive name to help you identify this token
               </p>
             </div>
 
             {/* Scopes */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label className="ui-text-sm mb-2 block font-medium text-zinc-700 dark:text-zinc-300">
                 Scopes
               </label>
               <div className="space-y-2">
@@ -229,7 +229,7 @@ export default function ApiTokensPage() {
                     />
                     <div className="flex-1">
                       <p className="font-medium text-zinc-900 dark:text-zinc-50">{label}</p>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
+                      <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
                     </div>
                   </label>
                 ))}
@@ -238,7 +238,7 @@ export default function ApiTokensPage() {
 
             {/* Expiration (Optional) */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label className="ui-text-sm mb-1 block font-medium text-zinc-700 dark:text-zinc-300">
                 Expiration (Optional)
               </label>
               <Input
@@ -249,7 +249,7 @@ export default function ApiTokensPage() {
                 className="w-full"
                 min="1"
               />
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
                 Leave empty for a token that never expires
               </p>
             </div>
@@ -282,7 +282,7 @@ export default function ApiTokensPage() {
 
       {/* Active Tokens List */}
       <div className="mb-6">
-        <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <h3 className="ui-text-sm mb-3 font-medium text-zinc-700 dark:text-zinc-300">
           Active Tokens ({activeTokens.length})
         </h3>
         <div className="space-y-3">
@@ -298,7 +298,7 @@ export default function ApiTokensPage() {
           ) : tokensQuery.error ? (
             <Alert variant="error">Failed to load tokens. Please try again.</Alert>
           ) : activeTokens.length === 0 ? (
-            <p className="text-center text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-sm text-center text-zinc-500 dark:text-zinc-400">
               No active tokens. Create one to get started.
             </p>
           ) : (
@@ -335,7 +335,7 @@ export default function ApiTokensPage() {
                           {token.scopes.map((scope) => (
                             <span
                               key={scope}
-                              className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                              className="ui-text-xs inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200"
                             >
                               {scopeLabels[scope]?.label ?? scope}
                             </span>
@@ -344,7 +344,7 @@ export default function ApiTokensPage() {
                       </div>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
                       <span>
                         Created:{" "}
                         {new Date(token.createdAt).toLocaleDateString("en-US", {
@@ -391,7 +391,7 @@ export default function ApiTokensPage() {
       {/* Revoked/Expired Tokens */}
       {inactiveTokens.length > 0 && (
         <div>
-          <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          <h3 className="ui-text-sm mb-3 font-medium text-zinc-700 dark:text-zinc-300">
             Revoked/Expired Tokens ({inactiveTokens.length})
           </h3>
           <div className="space-y-3">
@@ -420,7 +420,7 @@ export default function ApiTokensPage() {
                     <p className="font-medium text-zinc-700 dark:text-zinc-400">
                       {token.name || "Unnamed Token"}
                     </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-500">
+                    <p className="ui-text-xs text-zinc-500 dark:text-zinc-500">
                       {token.revokedAt
                         ? `Revoked ${formatTimeAgo(new Date(token.revokedAt))}`
                         : `Expired ${formatTimeAgo(new Date(token.expiresAt!))}`}

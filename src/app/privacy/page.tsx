@@ -21,14 +21,14 @@ export default function PrivacyPolicyPage() {
         <div className="mb-8">
           <Link
             href="/"
-            className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            className="ui-text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
           >
             &larr; Back to Lion Reader
           </Link>
           <h1 className="mt-4 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             Privacy Policy
           </h1>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="ui-text-sm mt-2 text-zinc-500 dark:text-zinc-400">
             Last updated: December 2025
           </p>
         </div>
@@ -59,9 +59,9 @@ export default function PrivacyPolicyPage() {
                 </h3>
                 <p className="mt-1 text-zinc-600 dark:text-zinc-400">
                   When you create an account, we collect your email address and password. Passwords
-                  are securely hashed using argon2 (industry-standard). If you sign in with Google or
-                  Apple, we receive only your email address and profile ID from those providers—we do
-                  not access any other data from your OAuth accounts.
+                  are securely hashed using argon2 (industry-standard). If you sign in with Google
+                  or Apple, we receive only your email address and profile ID from those
+                  providers—we do not access any other data from your OAuth accounts.
                 </p>
               </div>
               <div>
@@ -78,8 +78,8 @@ export default function PrivacyPolicyPage() {
                 <h3 className="font-medium text-zinc-800 dark:text-zinc-200">Feed Data</h3>
                 <p className="mt-1 text-zinc-600 dark:text-zinc-400">
                   We store the RSS/Atom feeds you subscribe to, articles from those feeds, and your
-                  reading history (read/unread status, starred items, folder organization). This data
-                  is used to provide the core feed reading functionality.
+                  reading history (read/unread status, starred items, folder organization). This
+                  data is used to provide the core feed reading functionality.
                 </p>
               </div>
               <div>
@@ -94,9 +94,9 @@ export default function PrivacyPolicyPage() {
                   Email Newsletter Subscriptions
                 </h3>
                 <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-                  Each account has a unique email address for forwarding newsletters to your feed. If
-                  you use this feature, we receive and store the newsletters sent to that address,
-                  including sender information and email content.
+                  Each account has a unique email address for forwarding newsletters to your feed.
+                  If you use this feature, we receive and store the newsletters sent to that
+                  address, including sender information and email content.
                 </p>
               </div>
             </div>
@@ -175,7 +175,7 @@ export default function PrivacyPolicyPage() {
                     href="https://groq.com/privacy-policy/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                    className="ui-text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                   >
                     View Groq&apos;s Privacy Policy &rarr;
                   </a>
@@ -209,9 +209,10 @@ export default function PrivacyPolicyPage() {
                   Monitoring (Grafana Cloud)
                 </h3>
                 <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-                  We use Grafana Cloud for application metrics and logs to monitor service health and
-                  performance. This includes anonymized usage metrics (e.g., number of API requests)
-                  and system logs. We do not send personal information or article content to Grafana.
+                  We use Grafana Cloud for application metrics and logs to monitor service health
+                  and performance. This includes anonymized usage metrics (e.g., number of API
+                  requests) and system logs. We do not send personal information or article content
+                  to Grafana.
                 </p>
               </div>
 
@@ -220,9 +221,9 @@ export default function PrivacyPolicyPage() {
                   Authentication Providers (Google, Apple)
                 </h3>
                 <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-                  If you choose to sign in with Google or Apple, we use their OAuth services. We only
-                  receive your email address and profile ID—we do not access any other data from
-                  these providers.
+                  If you choose to sign in with Google or Apple, we use their OAuth services. We
+                  only receive your email address and profile ID—we do not access any other data
+                  from these providers.
                 </p>
               </div>
             </div>
@@ -233,13 +234,13 @@ export default function PrivacyPolicyPage() {
               Cookies and Local Storage
             </h2>
             <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-              We use essential cookies for authentication and session management. We also use browser
-              storage to save your preferences and cached data:
+              We use essential cookies for authentication and session management. We also use
+              browser storage to save your preferences and cached data:
             </p>
             <ul className="mt-2 list-disc space-y-1 pl-6 text-zinc-600 dark:text-zinc-400">
               <li>
-                <strong>localStorage:</strong> Narration voice settings, reading preferences (show/hide
-                read items, sort order), and keyboard shortcut preferences
+                <strong>localStorage:</strong> Narration voice settings, reading preferences
+                (show/hide read items, sort order), and keyboard shortcut preferences
               </li>
               <li>
                 <strong>IndexedDB:</strong> Enhanced narration voices (if you download optional
@@ -271,12 +272,12 @@ export default function PrivacyPolicyPage() {
                 storage and never stored in plain text
               </li>
               <li>
-                <strong>Database encryption:</strong> All data at rest is encrypted using Fly.io&apos;s
-                managed PostgreSQL encryption
+                <strong>Database encryption:</strong> All data at rest is encrypted using
+                Fly.io&apos;s managed PostgreSQL encryption
               </li>
               <li>
-                <strong>Regular security updates:</strong> We keep our dependencies and infrastructure
-                up to date with security patches
+                <strong>Regular security updates:</strong> We keep our dependencies and
+                infrastructure up to date with security patches
               </li>
             </ul>
           </section>

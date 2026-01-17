@@ -64,7 +64,7 @@ export default function BlockedSendersPage() {
       {/* Page Header */}
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Blocked Senders</h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
           These senders were blocked when you unsubscribed from their newsletters. Emails from
           blocked senders are automatically rejected.
         </p>
@@ -121,10 +121,10 @@ function EmptyState() {
           />
         </svg>
       </div>
-      <h3 className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">
+      <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
         No blocked senders
       </h3>
-      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
         When you unsubscribe from a newsletter, the sender will be added here to prevent future
         emails.
       </p>
@@ -174,7 +174,7 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
               <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
                 Unblock Sender
               </h3>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+              <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
                 Are you sure you want to unblock{" "}
                 <span className="font-medium">{sender.senderEmail}</span>? Future emails from this
                 sender will be accepted again.
@@ -203,7 +203,7 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
           <p className="font-medium text-zinc-900 dark:text-zinc-50">{sender.senderEmail}</p>
 
           {/* Metadata */}
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-sm mt-1 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
             <span>Blocked {formatRelativeDate(sender.blockedAt)}</span>
             {sender.unsubscribeSentAt && (
               <span className="flex items-center gap-1">

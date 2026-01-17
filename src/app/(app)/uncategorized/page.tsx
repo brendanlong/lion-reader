@@ -53,7 +53,7 @@ function UncategorizedEntriesContent() {
           {/* Breadcrumb back link */}
           <Link
             href="/all"
-            className="mb-2 -ml-2 inline-flex min-h-[36px] items-center rounded-md px-2 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:active:bg-zinc-700"
+            className="ui-text-sm mb-2 -ml-2 inline-flex min-h-[36px] items-center rounded-md px-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:active:bg-zinc-700"
           >
             <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -78,7 +78,7 @@ function UncategorizedEntriesContent() {
                 Uncategorized
               </h1>
               {feedCount > 0 && (
-                <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
+                <span className="ui-text-sm rounded-full bg-zinc-100 px-2.5 py-0.5 text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
                   {feedCount} feed{feedCount !== 1 ? "s" : ""}
                 </span>
               )}

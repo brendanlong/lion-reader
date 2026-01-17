@@ -95,7 +95,7 @@ export function AppleSignInButton({
       type="button"
       onClick={handleClick}
       disabled={isLoading}
-      className="flex min-h-[44px] w-full items-center justify-center gap-3 rounded-md bg-black px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200 dark:focus:ring-zinc-400"
+      className="ui-text-sm flex min-h-[44px] w-full items-center justify-center gap-3 rounded-md bg-black px-4 font-medium text-white transition-colors hover:bg-zinc-800 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200 dark:focus:ring-zinc-400"
     >
       {isLoading ? (
         <svg

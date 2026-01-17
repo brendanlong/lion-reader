@@ -63,7 +63,7 @@ function AllEntriesContent() {
                     d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <span className="ml-1.5 hidden text-sm sm:inline">Mark All Read</span>
+                <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
               </button>
             )}
             <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />

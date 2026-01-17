@@ -123,7 +123,7 @@ function ConsentLayout({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Lion Reader</h1>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Authorization Request</p>
+          <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">Authorization Request</p>
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           {children}
@@ -152,7 +152,7 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
         </svg>
       </div>
       <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
-      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{message}</p>
+      <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">{message}</p>
     </div>
   );
 }

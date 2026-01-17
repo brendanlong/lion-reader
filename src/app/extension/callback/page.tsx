@@ -36,7 +36,7 @@ export default async function ExtensionCallbackPage({ searchParams }: PageProps)
               Article Saved!
             </h1>
             {title && <p className="mb-4 text-zinc-600 dark:text-zinc-400">{title}</p>}
-            <p className="text-sm text-zinc-400 dark:text-zinc-600">
+            <p className="ui-text-sm text-zinc-400 dark:text-zinc-600">
               This tab will close automatically.
               <br />
               If it doesn&apos;t, you can close it manually.
@@ -51,7 +51,7 @@ export default async function ExtensionCallbackPage({ searchParams }: PageProps)
             <p className="mb-4 text-zinc-600 dark:text-zinc-400">
               {error || "Failed to complete the save operation."}
             </p>
-            <p className="text-sm text-zinc-400 dark:text-zinc-600">
+            <p className="ui-text-sm text-zinc-400 dark:text-zinc-600">
               Please close this tab and try again.
             </p>
           </>

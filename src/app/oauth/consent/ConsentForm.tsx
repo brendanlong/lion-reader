@@ -55,14 +55,14 @@ export function ConsentForm({
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
           Authorize {clientName}
         </h2>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
           This application wants to access your Lion Reader account
         </p>
       </div>
 
       {/* Requested permissions */}
       <div className="mb-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-        <h3 className="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+        <h3 className="ui-text-sm mb-3 font-medium text-zinc-900 dark:text-zinc-100">
           This will allow {clientName} to:
         </h3>
         <ul className="space-y-2">
@@ -77,7 +77,9 @@ export function ConsentForm({
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
-              <span className="text-sm text-zinc-700 dark:text-zinc-300">{scope.description}</span>
+              <span className="ui-text-sm text-zinc-700 dark:text-zinc-300">
+                {scope.description}
+              </span>
             </li>
           ))}
         </ul>
@@ -98,7 +100,7 @@ export function ConsentForm({
             d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
           />
         </svg>
-        <p className="text-sm text-amber-800 dark:text-amber-200">
+        <p className="ui-text-sm text-amber-800 dark:text-amber-200">
           Only authorize applications you trust. You can revoke access at any time in Settings.
         </p>
       </div>
@@ -117,7 +119,7 @@ export function ConsentForm({
             type="submit"
             name="user_action"
             value="deny"
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            className="ui-text-sm flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
           >
             Deny
           </button>
@@ -125,7 +127,7 @@ export function ConsentForm({
             type="submit"
             name="user_action"
             value="approve"
-            className="flex-1 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="ui-text-sm flex-1 rounded-lg bg-zinc-900 px-4 py-2.5 font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             Authorize
           </button>

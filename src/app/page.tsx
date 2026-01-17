@@ -43,7 +43,7 @@ export default function HomePage() {
             <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               Fast & Efficient
             </h3>
-            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
               Stay up to date with all your feeds in one place. We fetch and organize content
               automatically.
             </p>
@@ -52,13 +52,13 @@ export default function HomePage() {
             <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               RSS & Atom Support
             </h3>
-            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
               Subscribe to any RSS or Atom feed. We handle the parsing so you can focus on reading.
             </p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
             <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Open API</h3>
-            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
               Use our REST API to build your own clients or integrate with other tools.
             </p>
           </div>

@@ -133,7 +133,7 @@ function RegisterForm() {
           This instance requires an invite to sign up. Please contact an administrator to request an
           invite.
         </Alert>
-        <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm mt-6 text-center text-zinc-600 dark:text-zinc-400">
           Already have an account?{" "}
           <Link
             href="/login"
@@ -228,14 +228,14 @@ function RegisterForm() {
         </Button>
       </form>
 
-      <p className="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-xs mt-4 text-center text-zinc-500 dark:text-zinc-400">
         By creating an account, you agree to our{" "}
         <Link href="/privacy" className="underline hover:text-zinc-700 dark:hover:text-zinc-300">
           Privacy Policy
         </Link>
       </p>
 
-      <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="ui-text-sm mt-6 text-center text-zinc-600 dark:text-zinc-400">
         Already have an account?{" "}
         <Link href="/login" className="font-medium text-zinc-900 hover:underline dark:text-zinc-50">
           Sign in

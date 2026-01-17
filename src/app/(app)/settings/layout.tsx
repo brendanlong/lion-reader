@@ -34,7 +34,7 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
       <div className="mb-8">
         <Link
           href="/all"
-          className="mb-4 inline-flex items-center text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="ui-text-sm mb-4 inline-flex items-center text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
         >
           <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -59,7 +59,7 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className={`block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`ui-text-sm block rounded-md px-3 py-2 font-medium transition-colors ${
                       isActive
                         ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                         : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
