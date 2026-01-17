@@ -6,14 +6,21 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { marked } from "marked";
 import { logger } from "@/lib/logger";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
+
+// Configure marked for safe rendering
+marked.setOptions({
+  gfm: true, // GitHub Flavored Markdown
+  breaks: true, // Convert \n to <br>
+});
 
 /**
  * Current prompt version. Increment this when changing the prompt
  * to invalidate cached summaries.
  */
-export const CURRENT_PROMPT_VERSION = 2;
+export const CURRENT_PROMPT_VERSION = 3;
 
 /**
  * Default model for summarization.
@@ -23,7 +30,7 @@ const DEFAULT_MODEL = "claude-sonnet-4-5";
 /**
  * Default maximum words for summaries.
  */
-const DEFAULT_MAX_WORDS = 300;
+const DEFAULT_MAX_WORDS = 150;
 
 /**
  * Maximum content length to send to the LLM (in characters).
@@ -53,7 +60,7 @@ function getMaxWords(): number {
 /**
  * Builds the user prompt for summarization.
  */
-function buildSummarizationPrompt(content: string): string {
+function buildSummarizationPrompt(content: string, title: string): string {
   const maxWords = getMaxWords();
   return `You will be summarizing content from a blog post or web page for display in an RSS reader app. Your goal is to create a concise, informative summary that captures the main points and helps readers quickly understand what the content is about.
 
@@ -75,6 +82,8 @@ Please follow these guidelines when creating your summary:
 - If the content contains multiple distinct sections or topics, briefly mention each main topic
 - Write in clear, straightforward language that is easy to scan quickly
 - Ensure the summary is self-contained and understandable without needing to read the full content
+- Format your summary using Markdown for better readability (use bullet points, bold text, etc. where appropriate)
+- Don't include a title (the article already has one: ${title})
 
 Your summary must not exceed ${maxWords} words. If the content is very short and already concise, your summary may be shorter than the maximum length.
 
@@ -121,7 +130,7 @@ function getAnthropicClient(): Anthropic | null {
  * Result of summary generation.
  */
 export interface GenerateSummaryResult {
-  /** The generated summary text */
+  /** The generated summary as HTML (converted from Markdown) */
   summary: string;
   /** The model used for generation */
   modelId: string;
@@ -158,7 +167,10 @@ export function prepareContentForSummarization(htmlContent: string): string {
  *   console.error('Summarization failed:', error);
  * }
  */
-export async function generateSummary(content: string): Promise<GenerateSummaryResult> {
+export async function generateSummary(
+  content: string,
+  title: string
+): Promise<GenerateSummaryResult> {
   const client = getAnthropicClient();
 
   if (!client) {
@@ -175,7 +187,7 @@ export async function generateSummary(content: string): Promise<GenerateSummaryR
       messages: [
         {
           role: "user",
-          content: buildSummarizationPrompt(content),
+          content: buildSummarizationPrompt(content, title),
         },
       ],
     });
@@ -188,8 +200,9 @@ export async function generateSummary(content: string): Promise<GenerateSummaryR
       throw new Error("Empty response from Anthropic API");
     }
 
-    // Extract summary from <summary> tags
-    const summary = extractSummaryFromResponse(responseText);
+    // Extract summary from <summary> tags and convert Markdown to HTML
+    const markdownSummary = extractSummaryFromResponse(responseText);
+    const summary = await marked.parse(markdownSummary);
 
     return {
       summary,
