@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
-import { GoogleSignInButton, AppleSignInButton, AuthFooter } from "@/components/auth";
+import { OAuthButtons, AuthFooter } from "@/components/auth";
 
 export default function RegisterPage() {
   return (
@@ -161,18 +161,11 @@ function RegisterForm() {
       )}
 
       {/* OAuth Sign-up Options */}
-      <div className="space-y-3">
-        <GoogleSignInButton
-          label="Continue with Google"
-          onError={(error) => setErrors({ form: error })}
-          inviteToken={inviteToken ?? undefined}
-        />
-        <AppleSignInButton
-          label="Continue with Apple"
-          onError={(error) => setErrors({ form: error })}
-          inviteToken={inviteToken ?? undefined}
-        />
-      </div>
+      <OAuthButtons
+        mode="signup"
+        onError={(error) => setErrors({ form: error })}
+        inviteToken={inviteToken ?? undefined}
+      />
 
       {/* Divider */}
       <div className="relative my-6">
