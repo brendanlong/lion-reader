@@ -144,30 +144,32 @@ interface FontConfig {
 const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
   system: {
     family: "inherit",
+    // Varies by platform (San Francisco, Segoe UI, Roboto, etc.)
     sizeAdjust: 1,
     lineHeight: 1.7,
   },
   merriweather: {
     family: "var(--font-merriweather), Georgia, serif",
-    // Merriweather has a smaller x-height, bump it up slightly
-    sizeAdjust: 1.05,
+    // Smaller x-height, scale up to match Literata baseline
+    sizeAdjust: 0.929,
     lineHeight: 1.8,
   },
   literata: {
     family: "var(--font-literata), Georgia, serif",
+    // Baseline reference font
     sizeAdjust: 1,
     lineHeight: 1.75,
   },
   inter: {
     family: "var(--font-inter), system-ui, sans-serif",
-    // Inter has a large x-height, reduce slightly
-    sizeAdjust: 0.95,
+    // Slightly smaller x-height than Literata
+    sizeAdjust: 0.945,
     lineHeight: 1.7,
   },
   "source-sans": {
     family: "var(--font-source-sans), system-ui, sans-serif",
-    // Source Sans has a large x-height, reduce slightly
-    sizeAdjust: 0.97,
+    // Larger x-height, scale down to match
+    sizeAdjust: 1.061,
     lineHeight: 1.7,
   },
 };

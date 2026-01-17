@@ -60,9 +60,6 @@ function OptionGroup<T extends string>({
   return (
     <div>
       <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50">{label}</label>
-      {description && (
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>
-      )}
       <div className="mt-2 flex flex-wrap gap-2">
         {options.map((option) => (
           <OptionButton
@@ -75,6 +72,9 @@ function OptionGroup<T extends string>({
           </OptionButton>
         ))}
       </div>
+      {description && (
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>
+      )}
     </div>
   );
 }
