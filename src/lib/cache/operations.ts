@@ -10,6 +10,7 @@
  * - Marking a starred entry read affects the starred unread count
  */
 
+import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   updateEntriesReadStatus,
@@ -60,28 +61,34 @@ export interface SubscriptionData {
  *
  * Updates:
  * - entries.get cache for each entry
- * - entries.list (invalidated)
+ * - entries.list cache (updates in place, no refetch)
  * - subscriptions.list unread counts
  * - tags.list unread counts
  * - entries.count({ starredOnly: true }) for starred entries
  * - entries.count({ type: "saved" }) for saved entries
  *
+ * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
+ * Lists have refetchOnMount: true, so they'll refetch on next navigation.
+ *
  * @param utils - tRPC utils for cache access
  * @param entries - Entries with their context (subscriptionId, starred, type)
  * @param read - New read status
+ * @param queryClient - React Query client (optional, for list cache updates)
  */
 export function handleEntriesMarkedRead(
   utils: TRPCClientUtils,
   entries: EntryWithContext[],
-  read: boolean
+  read: boolean,
+  queryClient?: QueryClient
 ): void {
   if (entries.length === 0) return;
 
-  // 1. Update entry read status in entries.get cache + invalidate lists
+  // 1. Update entry read status in entries.get cache and entries.list cache
   updateEntriesReadStatus(
     utils,
     entries.map((e) => e.id),
-    read
+    read,
+    queryClient
   );
 
   // 2. Calculate subscription deltas
@@ -121,16 +128,24 @@ export function handleEntriesMarkedRead(
  *
  * Updates:
  * - entries.get cache
- * - entries.list (invalidated)
+ * - entries.list cache (updates in place, no refetch)
  * - entries.count({ starredOnly: true }) - total +1, unread +1 if entry is unread
+ *
+ * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
  *
  * @param utils - tRPC utils for cache access
  * @param entryId - Entry ID being starred
  * @param read - Whether the entry is read (from server response)
+ * @param queryClient - React Query client (optional, for list cache updates)
  */
-export function handleEntryStarred(utils: TRPCClientUtils, entryId: string, read: boolean): void {
+export function handleEntryStarred(
+  utils: TRPCClientUtils,
+  entryId: string,
+  read: boolean,
+  queryClient?: QueryClient
+): void {
   // 1. Update entry starred status
-  updateEntryStarredStatus(utils, entryId, true);
+  updateEntryStarredStatus(utils, entryId, true, queryClient);
 
   // 2. Update starred count
   // Total always +1, unread +1 only if entry is unread
@@ -142,16 +157,24 @@ export function handleEntryStarred(utils: TRPCClientUtils, entryId: string, read
  *
  * Updates:
  * - entries.get cache
- * - entries.list (invalidated)
+ * - entries.list cache (updates in place, no refetch)
  * - entries.count({ starredOnly: true }) - total -1, unread -1 if entry is unread
+ *
+ * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
  *
  * @param utils - tRPC utils for cache access
  * @param entryId - Entry ID being unstarred
  * @param read - Whether the entry is read (from server response)
+ * @param queryClient - React Query client (optional, for list cache updates)
  */
-export function handleEntryUnstarred(utils: TRPCClientUtils, entryId: string, read: boolean): void {
+export function handleEntryUnstarred(
+  utils: TRPCClientUtils,
+  entryId: string,
+  read: boolean,
+  queryClient?: QueryClient
+): void {
   // 1. Update entry starred status
-  updateEntryStarredStatus(utils, entryId, false);
+  updateEntryStarredStatus(utils, entryId, false, queryClient);
 
   // 2. Update starred count
   // Total always -1, unread -1 only if entry was unread
