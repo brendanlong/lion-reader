@@ -8,6 +8,7 @@
 
 import { Suspense } from "react";
 import { EntryList, EntryContent, UnreadToggle, SortToggle } from "@/components/entries";
+import { FileUploadButton } from "@/components/saved";
 import { useEntryPage } from "@/lib/hooks";
 
 function SavedArticlesContent() {
@@ -26,6 +27,7 @@ function SavedArticlesContent() {
         <div className="mb-4 flex items-center justify-between sm:mb-6">
           <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Saved</h1>
           <div className="flex gap-2">
+            <FileUploadButton />
             <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />
             <UnreadToggle
               showUnreadOnly={page.showUnreadOnly}
