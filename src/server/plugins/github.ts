@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { githubConfig } from "@/server/config/env";
 import { marked } from "marked";
+import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 
 // ============================================================================
 // Types
@@ -295,10 +296,13 @@ function isMarkdownLanguage(language: string | null): boolean {
 }
 
 /**
- * Convert Markdown content to HTML.
+ * Convert Markdown content to HTML and extract title from first header.
+ * Returns both the cleaned HTML (with title header stripped) and the extracted title.
  */
-function markdownToHtml(content: string): string {
-  return marked.parse(content, { async: false }) as string;
+function processMarkdownContent(content: string): { html: string; title: string | null } {
+  const html = marked.parse(content, { async: false }) as string;
+  const { title, content: cleanedHtml } = extractAndStripTitleHeader(html);
+  return { html: cleanedHtml, title };
 }
 
 /**
@@ -313,18 +317,24 @@ function codeToHtml(content: string, language?: string): string {
 
 /**
  * Process a single file's content into HTML.
+ * For markdown files, also extracts the title from the first header.
  */
-function processFileContent(content: string, filename: string, language: string | null): string {
+function processFileContent(
+  content: string,
+  filename: string,
+  language: string | null
+): { html: string; extractedTitle: string | null } {
   if (isMarkdownFile(filename) || isMarkdownLanguage(language)) {
-    return markdownToHtml(content);
+    const { html, title } = processMarkdownContent(content);
+    return { html, extractedTitle: title };
   }
 
   if (isHtmlFile(filename)) {
-    return content;
+    return { html: content, extractedTitle: null };
   }
 
   // For other files, wrap in code block
-  return codeToHtml(content, language ?? undefined);
+  return { html: codeToHtml(content, language ?? undefined), extractedTitle: null };
 }
 
 /**
@@ -350,27 +360,30 @@ function buildGistHtml(
     );
 
     if (matchedFile) {
-      const html = processFileContent(
+      const { html, extractedTitle } = processFileContent(
         matchedFile.content,
         matchedFile.filename,
         matchedFile.language
       );
-      return { html, title: matchedFile.filename };
+      // Use extracted title from markdown, fall back to filename
+      return { html, title: extractedTitle || matchedFile.filename };
     }
   }
 
   // Single file: return it directly
   if (files.length === 1) {
     const file = files[0];
-    const html = processFileContent(file.content, file.filename, file.language);
-    return { html, title: file.filename };
+    const { html, extractedTitle } = processFileContent(file.content, file.filename, file.language);
+    // Use extracted title from markdown, fall back to filename
+    return { html, title: extractedTitle || file.filename };
   }
 
   // Multiple files: concatenate with headers
   const parts: string[] = [];
   for (const file of files) {
     parts.push(`<h2>${escapeHtml(file.filename)}</h2>`);
-    parts.push(processFileContent(file.content, file.filename, file.language));
+    const { html } = processFileContent(file.content, file.filename, file.language);
+    parts.push(html);
   }
 
   return { html: parts.join("\n"), title: null };
@@ -427,13 +440,12 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
         return null;
       }
 
-      const html = isMarkdownFile(readme.filename)
-        ? markdownToHtml(readme.content)
-        : readme.content;
+      const { html, extractedTitle } = processFileContent(readme.content, readme.filename, null);
 
       return {
         html,
-        title: `${parsed.owner}/${parsed.repo}`,
+        // Use extracted title from README, fall back to repo name
+        title: extractedTitle || `${parsed.owner}/${parsed.repo}`,
         author: parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}`,
@@ -442,6 +454,8 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
 
     case "blob": {
       const contents = await fetchRepoContents(parsed.owner, parsed.repo, parsed.path, parsed.ref);
+      const filename = parsed.path.split("/").pop() ?? parsed.path;
+
       if (!contents?.content || contents.encoding !== "base64") {
         // Try raw URL as fallback
         const rawUrl = `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${parsed.ref}/${parsed.path}`;
@@ -450,10 +464,10 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
           return null;
         }
 
-        const html = processFileContent(rawContent, parsed.path, null);
+        const { html, extractedTitle } = processFileContent(rawContent, parsed.path, null);
         return {
           html,
-          title: parsed.path.split("/").pop() ?? parsed.path,
+          title: extractedTitle || filename,
           author: parsed.owner,
           publishedAt: null,
           canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
@@ -461,11 +475,11 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       const content = Buffer.from(contents.content, "base64").toString("utf-8");
-      const html = processFileContent(content, parsed.path, null);
+      const { html, extractedTitle } = processFileContent(content, parsed.path, null);
 
       return {
         html,
-        title: parsed.path.split("/").pop() ?? parsed.path,
+        title: extractedTitle || filename,
         author: parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
@@ -479,11 +493,12 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
         return null;
       }
 
-      const html = processFileContent(content, parsed.path, null);
+      const filename = parsed.path.split("/").pop() ?? parsed.path;
+      const { html, extractedTitle } = processFileContent(content, parsed.path, null);
 
       return {
         html,
-        title: parsed.path.split("/").pop() ?? parsed.path,
+        title: extractedTitle || filename,
         author: parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,

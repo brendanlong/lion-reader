@@ -4,7 +4,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { isGoogleDocsUrl, extractDocId, stripTitleHeader } from "../../src/server/google/docs";
+import { isGoogleDocsUrl, extractDocId } from "../../src/server/google/docs";
+import { stripTitleHeader } from "../../src/server/html/strip-title-header";
 
 describe("Google Docs URL detection", () => {
   describe("isGoogleDocsUrl", () => {
