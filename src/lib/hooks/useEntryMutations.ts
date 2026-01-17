@@ -18,7 +18,6 @@ import { trpc } from "@/lib/trpc/client";
 import {
   updateEntriesReadStatus,
   updateEntryStarredStatus,
-  removeEntryFromStarredLists,
   adjustSubscriptionUnreadCounts,
   adjustTagUnreadCounts,
   adjustEntriesCount,
@@ -314,11 +313,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
       // 1. Update entry starred status in all caches
       updateEntryStarredStatus(utils, entryId, false);
 
-      // 2. Remove from starred-only lists (entry disappears from starred view)
-      // Note: This is currently a no-op since we invalidate all lists above
-      removeEntryFromStarredLists();
-
-      // 3. Update starred count (total -1)
+      // 2. Update starred count (total -1)
       adjustEntriesCount(utils, { starredOnly: true }, 0, -1);
     },
     onError: () => {

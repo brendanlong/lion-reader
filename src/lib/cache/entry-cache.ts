@@ -12,17 +12,6 @@
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 
 /**
- * Entry with subscription context for cache updates.
- * Server returns this so we can update counts correctly.
- */
-export interface EntryReadUpdate {
-  /** Entry ID */
-  id: string;
-  /** Subscription ID (for count updates). Null for orphaned starred entries. */
-  subscriptionId: string | null;
-}
-
-/**
  * Updates read status for entries in the single entry cache (entries.get).
  * Also invalidates entry lists since they have too many filter combinations.
  *
@@ -78,13 +67,4 @@ export function updateEntryStarredStatus(
 
   // Invalidate entry lists - starred/unstarred entries need list updates
   utils.entries.list.invalidate();
-}
-
-/**
- * Removes an entry from starred lists when unstarring.
- * This function is now a no-op since we invalidate all lists in updateEntryStarredStatus.
- * Kept for API compatibility - callers can remove this call if desired.
- */
-export function removeEntryFromStarredLists(): void {
-  // No-op - entry lists are invalidated by updateEntryStarredStatus
 }
