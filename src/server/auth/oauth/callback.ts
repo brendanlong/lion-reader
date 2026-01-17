@@ -20,7 +20,7 @@ import { createUser } from "@/server/auth/signup";
 /**
  * OAuth provider type
  */
-type OAuthProvider = "google" | "apple";
+type OAuthProvider = "google" | "apple" | "discord";
 
 /**
  * Parameters for processing an OAuth callback

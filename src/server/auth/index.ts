@@ -35,6 +35,10 @@ export {
   createAppleAuthUrl,
   validateAppleCallback,
   isAppleOAuthEnabled,
+  // Discord OAuth flow
+  createDiscordAuthUrl,
+  validateDiscordCallback,
+  isDiscordOAuthEnabled,
 } from "./oauth";
 
 // Signup helper

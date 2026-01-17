@@ -15,13 +15,13 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Alert, GoogleIcon, AppleIcon } from "@/components/ui";
+import { Button, Alert, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type Provider = "google" | "apple";
+type Provider = "google" | "apple" | "discord";
 
 interface LinkedAccount {
   provider: Provider;
@@ -61,10 +61,15 @@ export function LinkedAccounts() {
     enabled: false,
   });
 
+  // Get Discord auth URL for linking
+  const discordAuthUrlQuery = trpc.auth.discordAuthUrl.useQuery(undefined, {
+    enabled: false,
+  });
+
   // Unlink mutation
   const unlinkMutation = trpc.auth.unlinkProvider.useMutation({
     onSuccess: (_, variables) => {
-      const providerName = variables.provider === "google" ? "Google" : "Apple";
+      const providerName = getProviderName(variables.provider);
       setSuccessMessage(`${providerName} account unlinked successfully`);
       setError(null);
       setUnlinkingProvider(null);
@@ -97,7 +102,12 @@ export function LinkedAccounts() {
       setSuccessMessage(null);
 
       try {
-        const query = provider === "google" ? googleAuthUrlQuery : appleAuthUrlQuery;
+        const query =
+          provider === "google"
+            ? googleAuthUrlQuery
+            : provider === "apple"
+              ? appleAuthUrlQuery
+              : discordAuthUrlQuery;
         const result = await query.refetch();
 
         if (result.error) {
@@ -123,7 +133,7 @@ export function LinkedAccounts() {
         setLinkingProvider(null);
       }
     },
-    [googleAuthUrlQuery, appleAuthUrlQuery]
+    [googleAuthUrlQuery, appleAuthUrlQuery, discordAuthUrlQuery]
   );
 
   const handleUnlinkProvider = useCallback(
@@ -247,7 +257,7 @@ interface LinkedAccountItemProps {
 }
 
 function LinkedAccountItem({ account, canUnlink, isUnlinking, onUnlink }: LinkedAccountItemProps) {
-  const providerName = account.provider === "google" ? "Google" : "Apple";
+  const providerName = getProviderName(account.provider);
   const linkedDate = new Date(account.linkedAt).toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
@@ -288,7 +298,7 @@ interface LinkableProviderItemProps {
 }
 
 function LinkableProviderItem({ provider, isLinking, onLink }: LinkableProviderItemProps) {
-  const providerName = provider === "google" ? "Google" : "Apple";
+  const providerName = getProviderName(provider);
 
   return (
     <div className="flex items-center justify-between rounded-md border border-dashed border-zinc-300 p-4 dark:border-zinc-600">
@@ -313,6 +323,21 @@ function LinkableProviderItem({ provider, isLinking, onLink }: LinkableProviderI
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+function getProviderName(provider: Provider): string {
+  switch (provider) {
+    case "google":
+      return "Google";
+    case "apple":
+      return "Apple";
+    case "discord":
+      return "Discord";
+  }
+}
+
+// ============================================================================
 // Provider Icon Component
 // ============================================================================
 
@@ -322,8 +347,12 @@ interface ProviderIconProps {
 }
 
 function ProviderIcon({ provider, muted = false }: ProviderIconProps) {
-  if (provider === "google") {
-    return <GoogleIcon muted={muted} />;
+  switch (provider) {
+    case "google":
+      return <GoogleIcon muted={muted} />;
+    case "apple":
+      return <AppleIcon muted={muted} />;
+    case "discord":
+      return <DiscordIcon muted={muted} />;
   }
-  return <AppleIcon muted={muted} />;
 }
