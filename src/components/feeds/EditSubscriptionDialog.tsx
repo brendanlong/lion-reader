@@ -2,6 +2,7 @@
  * EditSubscriptionDialog Component
  *
  * Dialog for editing subscription settings including custom title and tags.
+ * Uses the reusable Dialog component.
  */
 
 "use client";
@@ -9,7 +10,16 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Input, Alert } from "@/components/ui";
+import {
+  Dialog,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+  Button,
+  Input,
+  Alert,
+  CheckIcon,
+} from "@/components/ui";
 
 // ============================================================================
 // Types
@@ -59,33 +69,21 @@ export function EditSubscriptionDialog({
   if (!isOpen) return null;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/50 transition-opacity"
-        onClick={onClose}
-        aria-hidden="true"
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Subscription"
+      titleId="edit-subscription-title"
+    >
+      <EditSubscriptionForm
+        key={subscriptionId}
+        subscriptionId={subscriptionId}
+        currentTitle={currentTitle}
+        currentCustomTitle={currentCustomTitle}
+        currentTagIds={currentTagIds}
+        onClose={onClose}
       />
-
-      {/* Dialog */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div
-          className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-subscription-title"
-        >
-          <EditSubscriptionForm
-            key={subscriptionId}
-            subscriptionId={subscriptionId}
-            currentTitle={currentTitle}
-            currentCustomTitle={currentCustomTitle}
-            currentTagIds={currentTagIds}
-            onClose={onClose}
-          />
-        </div>
-      </div>
-    </>
+    </Dialog>
   );
 }
 
@@ -155,101 +153,83 @@ function EditSubscriptionForm({
 
   return (
     <>
-      <h2
-        id="edit-subscription-title"
-        className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50"
-      >
-        Edit Subscription
-      </h2>
+      <DialogTitle id="edit-subscription-title">Edit Subscription</DialogTitle>
 
-      <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
-        Feed: <span className="font-medium text-zinc-700 dark:text-zinc-300">{currentTitle}</span>
-      </p>
+      <DialogBody>
+        <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
+          Feed: <span className="font-medium text-zinc-700 dark:text-zinc-300">{currentTitle}</span>
+        </p>
 
-      {error && (
-        <Alert variant="error" className="mb-4">
-          {error}
-        </Alert>
-      )}
-
-      {/* Custom Title */}
-      <div className="mb-4">
-        <Input
-          id="custom-title"
-          label="Custom Title (optional)"
-          placeholder="Leave empty to use feed's default title"
-          value={customTitle}
-          onChange={(e) => setCustomTitle(e.target.value)}
-          disabled={isPending}
-        />
-      </div>
-
-      {/* Tags */}
-      <div className="mb-6">
-        <label className="ui-text-sm mb-2 block font-medium text-zinc-700 dark:text-zinc-300">
-          Tags
-        </label>
-        {tags.length === 0 ? (
-          <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-            No tags created yet. Create tags in{" "}
-            <a href="/settings" className="text-zinc-900 underline dark:text-zinc-50">
-              Settings
-            </a>
-            .
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => {
-              const isSelected = selectedTagIds.includes(tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  type="button"
-                  onClick={() => toggleTag(tag.id)}
-                  disabled={isPending}
-                  className={`ui-text-sm flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors ${
-                    isSelected
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                      : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
-                  }`}
-                >
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: tag.color || "#6b7280" }}
-                    aria-hidden="true"
-                  />
-                  <span>{tag.name}</span>
-                  {isSelected && (
-                    <svg
-                      className="h-3.5 w-3.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+        {error && (
+          <Alert variant="error" className="mb-4">
+            {error}
+          </Alert>
         )}
-      </div>
 
-      {/* Actions */}
-      <div className="flex justify-end gap-3">
+        {/* Custom Title */}
+        <div className="mb-4">
+          <Input
+            id="custom-title"
+            label="Custom Title (optional)"
+            placeholder="Leave empty to use feed's default title"
+            value={customTitle}
+            onChange={(e) => setCustomTitle(e.target.value)}
+            disabled={isPending}
+          />
+        </div>
+
+        {/* Tags */}
+        <div className="mb-2">
+          <label className="ui-text-sm mb-2 block font-medium text-zinc-700 dark:text-zinc-300">
+            Tags
+          </label>
+          {tags.length === 0 ? (
+            <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+              No tags created yet. Create tags in{" "}
+              <a href="/settings" className="text-zinc-900 underline dark:text-zinc-50">
+                Settings
+              </a>
+              .
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {tags.map((tag) => {
+                const isSelected = selectedTagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.id)}
+                    disabled={isPending}
+                    className={`ui-text-sm flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors ${
+                      isSelected
+                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                        : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+                    }`}
+                  >
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: tag.color || "#6b7280" }}
+                      aria-hidden="true"
+                    />
+                    <span>{tag.name}</span>
+                    {isSelected && <CheckIcon className="h-3.5 w-3.5" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </DialogBody>
+
+      <DialogFooter>
         <Button variant="secondary" onClick={onClose} disabled={isPending}>
           Cancel
         </Button>
         <Button onClick={handleSave} loading={isPending}>
           Save Changes
         </Button>
-      </div>
+      </DialogFooter>
     </>
   );
 }

@@ -30,26 +30,37 @@ Read these if you need context on features or specific references.
 
 ## UI Components
 
-Reusable UI primitives are in `src/components/ui/`. **Always check for existing components before creating new ones.** Import via `import { Button, Dialog, NavLink } from "@/components/ui";`
+Reusable UI primitives are in `src/components/ui/`. **Always check for existing components before creating new ones.** Import via `import { Button, Dialog, Card, NavLink } from "@/components/ui";`
 
 ### Available Components
 
-| Component      | Purpose                                                  |
-| -------------- | -------------------------------------------------------- |
-| **Button**     | Primary, secondary, ghost variants with loading state    |
-| **Input**      | Text input with label and error handling                 |
-| **Alert**      | Status messages (error, success, warning, info)          |
-| **Dialog**     | Modal dialogs with backdrop, focus trap, escape handling |
-| **NavLink**    | Sidebar navigation links with active state and counts    |
-| **IconButton** | Small icon-only action buttons (edit, close, etc.)       |
+| Component      | Purpose                                                   |
+| -------------- | --------------------------------------------------------- |
+| **Button**     | Primary, secondary, ghost variants with loading state     |
+| **Input**      | Text input with label and error handling                  |
+| **Alert**      | Status messages (error, success, warning, info)           |
+| **Dialog**     | Modal dialogs with backdrop, focus trap, escape handling  |
+| **Card**       | Container with border, background, and consistent padding |
+| **StatusCard** | Colored card for info/success/warning/error states        |
+| **NavLink**    | Sidebar navigation links with active state and counts     |
+| **IconButton** | Small icon-only action buttons (edit, close, etc.)        |
 
 ### Common Icons
 
-Icons are exported from `@/components/ui`: `CloseIcon`, `EditIcon`, `ChevronDownIcon`, `ChevronRightIcon`, `CheckIcon`. Use these instead of duplicating SVGs.
+Icons are exported from `@/components/ui`. Use these instead of duplicating SVGs:
+
+- **Navigation**: `CloseIcon`, `ChevronDownIcon`, `ChevronUpIcon`, `ChevronLeftIcon`, `ChevronRightIcon`, `ArrowLeftIcon`
+- **Actions**: `EditIcon`, `TrashIcon`, `CheckIcon`, `PlusIcon`
+- **Status**: `StarIcon`, `StarFilledIcon`, `CircleIcon`, `CircleFilledIcon`, `AlertIcon`, `SparklesIcon`
+- **Media**: `PlayIcon`, `PauseIcon`
+- **Visibility**: `EyeIcon`, `EyeSlashIcon`
+- **Files**: `UploadIcon`, `DownloadIcon`, `ExternalLinkIcon`
+- **Loading**: `SpinnerIcon` (animated)
 
 ### Guidelines
 
-- **Use existing components** - Don't reimplement dialogs, buttons, or navigation links
+- **Use existing components** - Don't reimplement dialogs, buttons, cards, or navigation links
+- **Use existing icons** - Check the icon list above before adding inline SVGs
 - **Watch for patterns** - If you see the same UI pattern 3+ times, consider extracting a component
 - **44px touch targets** - Ensure interactive elements meet WCAG touch target guidelines (handled by UI components)
 - **Dark mode** - All UI components support dark mode via `dark:` Tailwind classes
