@@ -273,7 +273,7 @@ function SummaryCard({ summary, modelId, generatedAt, isLoading, onRegenerate }:
 
       {!isCollapsed && (
         <>
-          <div className="prose prose-sm dark:prose-invert">
+          <div className="prose dark:prose-invert">
             {summary}
           </div>
           <div className="mt-2 ui-text-xs text-blue-600 dark:text-blue-400">
