@@ -70,6 +70,7 @@ export {
   // Brand icons
   GoogleIcon,
   AppleIcon,
+  DiscordIcon,
   // Network icons
   WifiOffIcon,
   WifiOnIcon,

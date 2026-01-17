@@ -30,6 +30,9 @@ import {
   createAppleAuthUrl,
   validateAppleCallback,
   isAppleOAuthEnabled,
+  createDiscordAuthUrl,
+  validateDiscordCallback,
+  isDiscordOAuthEnabled,
   GOOGLE_DOCS_READONLY_SCOPE,
   createUser,
   processOAuthCallback,
@@ -267,7 +270,7 @@ export const authRouter = createTRPCRouter({
     .input(z.object({}).optional())
     .output(
       z.object({
-        providers: z.array(z.enum(["google", "apple"])),
+        providers: z.array(z.enum(["google", "apple", "discord"])),
       })
     )
     .query(() => {
@@ -577,6 +580,154 @@ export const authRouter = createTRPCRouter({
         provider: "apple",
         providerAccountId: userInfo.sub,
         email,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        inviteToken,
+      });
+
+      // Get client info from headers
+      const userAgent = ctx.headers.get("user-agent") ?? undefined;
+      const ipAddress =
+        ctx.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+        ctx.headers.get("x-real-ip") ??
+        undefined;
+
+      // Create session
+      const { token } = await createSession(ctx.db, {
+        userId: oauthResult.userId,
+        userAgent,
+        ipAddress,
+      });
+
+      return {
+        user: {
+          id: oauthResult.userId,
+          email: oauthResult.email,
+          createdAt: oauthResult.createdAt,
+        },
+        sessionToken: token,
+        isNewUser: oauthResult.isNewUser,
+      };
+    }),
+
+  /**
+   * Generate Discord OAuth authorization URL.
+   *
+   * Returns a URL to redirect the user to for Discord OAuth login.
+   * The state parameter should be stored by the client to verify the callback.
+   *
+   * Flow:
+   * 1. Client calls this endpoint
+   * 2. Client stores the returned state (e.g., in localStorage)
+   * 3. Client redirects user to the URL
+   * 4. After Discord auth, user is redirected to callback URL
+   * 5. Client sends code and state to discordCallback endpoint
+   */
+  discordAuthUrl: publicProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/auth/oauth/discord",
+        tags: ["Auth"],
+        summary: "Get Discord OAuth authorization URL",
+      },
+    })
+    .input(
+      z
+        .object({
+          inviteToken: z.string().optional(),
+        })
+        .optional()
+    )
+    .output(
+      z.object({
+        url: z.string(),
+        state: z.string(),
+      })
+    )
+    .query(async ({ input }) => {
+      if (!isDiscordOAuthEnabled()) {
+        throw errors.oauthProviderNotConfigured("Discord");
+      }
+
+      const result = await createDiscordAuthUrl(input?.inviteToken);
+
+      return {
+        url: result.url,
+        state: result.state,
+      };
+    }),
+
+  /**
+   * Handle Discord OAuth callback.
+   *
+   * Exchanges the authorization code for tokens, retrieves user info,
+   * and creates or links a user account.
+   *
+   * Account Linking Logic:
+   * 1. If OAuth account exists: log in as that user
+   * 2. If email matches existing user: link OAuth to that account
+   * 3. Otherwise: create new user and OAuth account
+   *
+   * @param code - The authorization code from Discord
+   * @param state - The state parameter (must match the one from discordAuthUrl)
+   * @returns The user and session token
+   */
+  discordCallback: expensivePublicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/auth/oauth/discord/callback",
+        tags: ["Auth"],
+        summary: "Handle Discord OAuth callback",
+      },
+    })
+    .input(
+      z.object({
+        code: z.string().min(1, "Authorization code is required"),
+        state: z.string().min(1, "State parameter is required"),
+      })
+    )
+    .output(
+      z.object({
+        user: z.object({
+          id: z.string(),
+          email: z.string(),
+          createdAt: z.date(),
+        }),
+        sessionToken: z.string(),
+        isNewUser: z.boolean(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { code, state } = input;
+
+      if (!isDiscordOAuthEnabled()) {
+        throw errors.oauthProviderNotConfigured("Discord");
+      }
+
+      // Validate the OAuth callback
+      let discordResult;
+      try {
+        discordResult = await validateDiscordCallback(code, state);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message.includes("Invalid or expired OAuth state")) {
+            throw errors.oauthStateInvalid();
+          }
+          throw errors.oauthCallbackFailed(error.message);
+        }
+        throw errors.oauthCallbackFailed("Unknown error");
+      }
+
+      const { userInfo, tokens, inviteToken } = discordResult;
+
+      // Process OAuth callback - handles existing accounts, linking, and new user creation
+      const oauthResult = await processOAuthCallback({
+        provider: "discord",
+        providerAccountId: userInfo.id,
+        email: userInfo.email,
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         expiresAt: tokens.expiresAt,
@@ -925,12 +1076,106 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
+   * Link Discord OAuth to existing account.
+   *
+   * Similar to discordCallback but requires the user to be authenticated
+   * and links the OAuth account to the current user rather than creating
+   * a new account or finding an existing one.
+   *
+   * @param code - The authorization code from Discord
+   * @param state - The state parameter (must match the one from discordAuthUrl)
+   * @returns Success status
+   */
+  linkDiscord: expensiveProtectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/auth/link/discord",
+        tags: ["Auth"],
+        summary: "Link Discord OAuth to existing account",
+      },
+    })
+    .input(
+      z.object({
+        code: z.string().min(1, "Authorization code is required"),
+        state: z.string().min(1, "State parameter is required"),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { code, state } = input;
+      const userId = ctx.session.user.id;
+
+      if (!isDiscordOAuthEnabled()) {
+        throw errors.oauthProviderNotConfigured("Discord");
+      }
+
+      // Check if user already has a Discord account linked
+      const existingLink = await ctx.db
+        .select({ id: oauthAccounts.id })
+        .from(oauthAccounts)
+        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "discord")))
+        .limit(1);
+
+      if (existingLink.length > 0) {
+        throw errors.oauthAlreadyLinked("Discord");
+      }
+
+      // Validate the OAuth callback
+      let discordResult;
+      try {
+        discordResult = await validateDiscordCallback(code, state);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message.includes("Invalid or expired OAuth state")) {
+            throw errors.oauthStateInvalid();
+          }
+          throw errors.oauthCallbackFailed(error.message);
+        }
+        throw errors.oauthCallbackFailed("Unknown error");
+      }
+
+      const { userInfo, tokens } = discordResult;
+      const now = new Date();
+
+      // Check if this Discord account is already linked to another user
+      const existingOAuthAccount = await ctx.db
+        .select({ userId: oauthAccounts.userId })
+        .from(oauthAccounts)
+        .where(
+          and(
+            eq(oauthAccounts.provider, "discord"),
+            eq(oauthAccounts.providerAccountId, userInfo.id)
+          )
+        )
+        .limit(1);
+
+      if (existingOAuthAccount.length > 0) {
+        throw errors.oauthCallbackFailed("This Discord account is already linked to another user");
+      }
+
+      // Link the OAuth account to the current user
+      await ctx.db.insert(oauthAccounts).values({
+        id: generateUuidv7(),
+        userId,
+        provider: "discord",
+        providerAccountId: userInfo.id,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken ?? null,
+        expiresAt: tokens.expiresAt ?? null,
+        createdAt: now,
+      });
+
+      return { success: true };
+    }),
+
+  /**
    * Unlink OAuth provider from account.
    *
    * Removes the OAuth account link from the current user.
    * Will fail if it's the only authentication method (no password set).
    *
-   * @param provider - The provider to unlink ('google' or 'apple')
+   * @param provider - The provider to unlink ('google', 'apple', or 'discord')
    * @returns Success status
    */
   unlinkProvider: protectedProcedure
@@ -944,7 +1189,7 @@ export const authRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        provider: z.enum(["google", "apple"]),
+        provider: z.enum(["google", "apple", "discord"]),
       })
     )
     .output(z.object({ success: z.boolean() }))
