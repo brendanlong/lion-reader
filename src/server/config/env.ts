@@ -88,6 +88,25 @@ export const googleConfig = {
  * 3. Set STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY
  * 4. Set STORAGE_ENDPOINT to your S3 region endpoint (optional for AWS)
  */
+/**
+ * GitHub API configuration.
+ * Optional token improves rate limits from 60/hour to 5,000/hour.
+ */
+export const githubConfig = {
+  /**
+   * GitHub API token for improved rate limits (optional).
+   *
+   * Without token: 60 requests/hour
+   * With token: 5,000 requests/hour
+   *
+   * Create a fine-grained token at: https://github.com/settings/tokens?type=beta
+   * No permissions/scopes needed for public repos and gists.
+   *
+   * If not set, the GitHub plugin will still work but with lower rate limits.
+   */
+  apiToken: process.env.GITHUB_API_TOKEN,
+};
+
 export const storageConfig = {
   /** S3 bucket name for storing images */
   bucket: process.env.STORAGE_BUCKET,
