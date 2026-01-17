@@ -11,6 +11,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { handleEntriesMarkedRead, handleEntryStarred, handleEntryUnstarred } from "@/lib/cache";
@@ -104,11 +105,12 @@ export interface UseEntryMutationsResult {
  */
 export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   // markRead mutation - uses handleEntriesMarkedRead for all cache updates
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: (data, variables) => {
-      handleEntriesMarkedRead(utils, data.entries, variables.read);
+      handleEntriesMarkedRead(utils, data.entries, variables.read, queryClient);
     },
     onError: () => {
       toast.error("Failed to update read status");
@@ -131,7 +133,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
   // star mutation - uses handleEntryStarred for all cache updates
   const starMutation = trpc.entries.star.useMutation({
     onSuccess: (data) => {
-      handleEntryStarred(utils, data.entry.id, data.entry.read);
+      handleEntryStarred(utils, data.entry.id, data.entry.read, queryClient);
     },
     onError: () => {
       toast.error("Failed to star entry");
@@ -141,7 +143,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
   // unstar mutation - uses handleEntryUnstarred for all cache updates
   const unstarMutation = trpc.entries.unstar.useMutation({
     onSuccess: (data) => {
-      handleEntryUnstarred(utils, data.entry.id, data.entry.read);
+      handleEntryUnstarred(utils, data.entry.id, data.entry.read, queryClient);
     },
     onError: () => {
       toast.error("Failed to unstar entry");
