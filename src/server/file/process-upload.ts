@@ -160,9 +160,6 @@ async function processMarkdown(content: string, filename: string): Promise<Proce
   // Convert markdown to HTML
   const html = await marked.parse(content);
 
-  // Generate excerpt from the HTML
-  const excerpt = generateSummary(html);
-
   // Try to extract title from first H1 or use filename
   let title: string | null = null;
   const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
@@ -175,6 +172,9 @@ async function processMarkdown(content: string, filename: string): Promise<Proce
   // Strip the first header if it matches the title to avoid duplication
   // (the title is displayed separately in the UI)
   const contentCleaned = stripTitleHeader(html, finalTitle);
+
+  // Generate excerpt from the cleaned content (after title is stripped)
+  const excerpt = generateSummary(contentCleaned);
 
   return {
     contentCleaned,
