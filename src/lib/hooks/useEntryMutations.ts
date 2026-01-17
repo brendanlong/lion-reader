@@ -1,8 +1,11 @@
 /**
  * useEntryMutations Hook
  *
- * Provides entry mutations (markRead, star, unstar) with cache invalidation.
+ * Provides entry mutations (markRead, star, unstar) with direct cache updates.
  * Consolidates mutation logic from page components.
+ *
+ * Uses high-level cache operations that handle all interactions correctly
+ * (e.g., starring an unread entry updates the starred unread count).
  */
 
 "use client";
@@ -10,6 +13,7 @@
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { handleEntriesMarkedRead, handleEntryStarred, handleEntryUnstarred } from "@/lib/cache";
 
 /**
  * Entry type for routing.
@@ -17,99 +21,12 @@ import { trpc } from "@/lib/trpc/client";
 export type EntryType = "web" | "email" | "saved";
 
 /**
- * Filters for the current entry list.
- * Used to target optimistic updates to the correct cache entry.
- */
-export interface EntryListFilters {
-  /**
-   * Filter by specific subscription ID.
-   */
-  subscriptionId?: string;
-
-  /**
-   * Filter by specific tag ID.
-   */
-  tagId?: string;
-
-  /**
-   * Show only entries from uncategorized feeds (feeds with no tags).
-   */
-  uncategorized?: boolean;
-
-  /**
-   * Show only unread entries.
-   */
-  unreadOnly?: boolean;
-
-  /**
-   * Show only starred entries.
-   */
-  starredOnly?: boolean;
-
-  /**
-   * Sort order for entries.
-   */
-  sortOrder?: "newest" | "oldest";
-
-  /**
-   * Filter by entry type (web, email, saved).
-   */
-  type?: EntryType;
-}
-
-/**
- * Options for the useEntryMutations hook.
- */
-export interface UseEntryMutationsOptions {
-  /**
-   * Query filters for optimistic updates to the current list.
-   * If not provided, mutations will work but without list optimistic updates.
-   */
-  listFilters?: EntryListFilters;
-
-  /**
-   * Entry type for the current entry/view context.
-   * When provided, bypasses per-entry type lookup.
-   * Used in detail views or saved article views where type is known.
-   */
-  entryType?: EntryType;
-
-  /**
-   * Optional subscription ID for the current entry.
-   * When provided, bypasses cache lookup for subscription tracking.
-   * Used in detail views where we already have the entry data.
-   */
-  subscriptionId?: string;
-
-  /**
-   * Optional tag IDs for the current entry's subscription.
-   * When provided along with subscriptionId, bypasses tag lookup.
-   */
-  tagIds?: string[];
-}
-
-/**
  * Options for the markAllRead mutation.
  */
 export interface MarkAllReadOptions {
-  /**
-   * Filter by specific subscription ID.
-   */
   subscriptionId?: string;
-
-  /**
-   * Filter by specific tag ID.
-   */
   tagId?: string;
-
-  /**
-   * Mark only entries from uncategorized feeds (feeds with no tags).
-   */
   uncategorized?: boolean;
-
-  /**
-   * Mark only starred entries.
-   */
   starredOnly?: boolean;
 }
 
@@ -119,31 +36,13 @@ export interface MarkAllReadOptions {
 export interface UseEntryMutationsResult {
   /**
    * Mark one or more entries as read or unread.
-   * @param entryType - Entry type (kept for API compatibility, unused)
-   * @param subscriptionId - Optional subscription ID (kept for API compatibility, unused)
-   * @param tagIds - Optional tag IDs (kept for API compatibility, unused)
    */
-  markRead: (
-    ids: string[],
-    read: boolean,
-    entryType: EntryType,
-    subscriptionId?: string,
-    tagIds?: string[]
-  ) => void;
+  markRead: (ids: string[], read: boolean) => void;
 
   /**
    * Toggle the read status of an entry.
-   * @param entryType - Entry type (kept for API compatibility, unused)
-   * @param subscriptionId - Optional subscription ID (kept for API compatibility, unused)
-   * @param tagIds - Optional tag IDs (kept for API compatibility, unused)
    */
-  toggleRead: (
-    entryId: string,
-    currentlyRead: boolean,
-    entryType: EntryType,
-    subscriptionId?: string,
-    tagIds?: string[]
-  ) => void;
+  toggleRead: (entryId: string, currentlyRead: boolean) => void;
 
   /**
    * Mark all entries as read with optional filters.
@@ -187,23 +86,15 @@ export interface UseEntryMutationsResult {
 }
 
 /**
- * Hook that provides entry mutations with cache invalidation.
- *
- * Consolidates the mutation logic that was previously duplicated
- * across page components (all, feed, starred, tag).
- *
- * @returns Object with mutation functions and pending state
+ * Hook that provides entry mutations with direct cache updates.
  *
  * @example
  * ```tsx
- * function AllEntriesPage() {
- *   const { showUnreadOnly, sortOrder } = useViewPreferences('all');
- *   const { markRead, toggleRead, toggleStar } = useEntryMutations({
- *     listFilters: { unreadOnly: showUnreadOnly, sortOrder },
- *   });
+ * function EntryList() {
+ *   const { toggleRead, toggleStar } = useEntryMutations();
  *
  *   return (
- *     <EntryList
+ *     <Entry
  *       onToggleRead={(id, read) => toggleRead(id, read)}
  *       onToggleStar={(id, starred) => toggleStar(id, starred)}
  *     />
@@ -214,30 +105,22 @@ export interface UseEntryMutationsResult {
 export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
 
-  // markRead mutation - invalidate on success
+  // markRead mutation - uses handleEntriesMarkedRead for all cache updates
   const markReadMutation = trpc.entries.markRead.useMutation({
-    onSuccess: () => {
-      // Invalidate entry lists and counts
-      utils.entries.list.invalidate();
-      utils.entries.count.invalidate();
-      utils.subscriptions.list.invalidate();
-      utils.tags.list.invalidate();
+    onSuccess: (data, variables) => {
+      handleEntriesMarkedRead(utils, data.entries, variables.read);
     },
     onError: () => {
       toast.error("Failed to update read status");
     },
   });
 
-  // markAllRead mutation - marks all entries matching filters as read
+  // markAllRead mutation - invalidates all caches (unknown which entries affected)
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
     onSuccess: () => {
-      // Invalidate all entry lists to refetch with updated read status
       utils.entries.list.invalidate();
-      // Invalidate subscription counts as they need server data
       utils.subscriptions.list.invalidate();
-      // Invalidate tag unread counts
       utils.tags.list.invalidate();
-      // Invalidate starred count as it may have changed
       utils.entries.count.invalidate({ starredOnly: true });
     },
     onError: () => {
@@ -245,33 +128,26 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // star mutation - invalidate on success
+  // star mutation - uses handleEntryStarred for all cache updates
   const starMutation = trpc.entries.star.useMutation({
-    onSuccess: () => {
-      // Invalidate starred entries list and count
-      utils.entries.list.invalidate({ starredOnly: true });
-      utils.entries.count.invalidate({ starredOnly: true });
+    onSuccess: (data) => {
+      handleEntryStarred(utils, data.entry.id, data.entry.read);
     },
     onError: () => {
       toast.error("Failed to star entry");
     },
   });
 
-  // unstar mutation - invalidate on success
+  // unstar mutation - uses handleEntryUnstarred for all cache updates
   const unstarMutation = trpc.entries.unstar.useMutation({
-    onSuccess: () => {
-      // Invalidate starred entries list and count
-      utils.entries.list.invalidate({ starredOnly: true });
-      utils.entries.count.invalidate({ starredOnly: true });
+    onSuccess: (data) => {
+      handleEntryUnstarred(utils, data.entry.id, data.entry.read);
     },
     onError: () => {
       toast.error("Failed to unstar entry");
     },
   });
 
-  // Note: entryType, subscriptionId, tagIds are kept in signature for API
-  // compatibility but are unused since we removed Zustand delta tracking.
-  // Callers may still pass them; we just ignore them.
   const markRead = useCallback(
     (ids: string[], read: boolean) => {
       markReadMutation.mutate({ ids, read });
@@ -323,23 +199,19 @@ export function useEntryMutations(): UseEntryMutationsResult {
     markAllReadMutation.isPending ||
     starMutation.isPending ||
     unstarMutation.isPending;
-  const isMarkReadPending = markReadMutation.isPending;
-  const isMarkAllReadPending = markAllReadMutation.isPending;
-  const isStarPending = starMutation.isPending || unstarMutation.isPending;
 
   return useMemo(
     () => ({
-      // Cast to the expected signature - extra args are ignored
-      markRead: markRead as UseEntryMutationsResult["markRead"],
-      toggleRead: toggleRead as UseEntryMutationsResult["toggleRead"],
+      markRead,
+      toggleRead,
       markAllRead,
       star,
       unstar,
       toggleStar,
       isPending,
-      isMarkReadPending,
-      isMarkAllReadPending,
-      isStarPending,
+      isMarkReadPending: markReadMutation.isPending,
+      isMarkAllReadPending: markAllReadMutation.isPending,
+      isStarPending: starMutation.isPending || unstarMutation.isPending,
     }),
     [
       markRead,
@@ -349,9 +221,10 @@ export function useEntryMutations(): UseEntryMutationsResult {
       unstar,
       toggleStar,
       isPending,
-      isMarkReadPending,
-      isMarkAllReadPending,
-      isStarPending,
+      markReadMutation.isPending,
+      markAllReadMutation.isPending,
+      starMutation.isPending,
+      unstarMutation.isPending,
     ]
   );
 }

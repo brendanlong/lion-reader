@@ -85,12 +85,7 @@ export interface UseEntryPageResult {
 
   // Callbacks for EntryList
   handleEntryClick: (entryId: string) => void;
-  handleToggleRead: (
-    entryId: string,
-    currentlyRead: boolean,
-    entryType: EntryType,
-    subscriptionId: string | null
-  ) => void;
+  handleToggleRead: (entryId: string, currentlyRead: boolean) => void;
   handleToggleStar: (entryId: string, currentlyStarred: boolean) => void;
 
   // Callbacks for EntryContent
@@ -109,12 +104,7 @@ export interface UseEntryPageResult {
     filters: EntryPageFilters & { unreadOnly: boolean; sortOrder: "newest" | "oldest" };
     onEntryClick: (entryId: string) => void;
     selectedEntryId: string | null;
-    onToggleRead: (
-      entryId: string,
-      currentlyRead: boolean,
-      entryType: EntryType,
-      subscriptionId: string | null
-    ) => void;
+    onToggleRead: (entryId: string, currentlyRead: boolean) => void;
     onToggleStar: (entryId: string, currentlyStarred: boolean) => void;
     externalEntries: EntryListData[];
     externalQueryState: ExternalQueryState;
@@ -190,27 +180,13 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
   // Subscriptions query for tag lookup
   const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
-  // Entry mutations
-  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations();
-
-  // Wrapper to look up tags and pass to mutations
-  const handleToggleRead = useCallback(
-    (
-      entryId: string,
-      currentlyRead: boolean,
-      entryType: EntryType,
-      subscriptionId: string | null
-    ) => {
-      if (!subscriptionId) {
-        toggleRead(entryId, currentlyRead, entryType);
-        return;
-      }
-      const subscription = subscriptionsQuery.data?.items.find((sub) => sub.id === subscriptionId);
-      const tagIds = subscription?.tags.map((tag) => tag.id);
-      toggleRead(entryId, currentlyRead, entryType, subscriptionId, tagIds);
-    },
-    [toggleRead, subscriptionsQuery.data]
-  );
+  // Entry mutations - cache operations handle all updates internally
+  const {
+    toggleRead: handleToggleRead,
+    toggleStar,
+    markAllRead,
+    isMarkAllReadPending,
+  } = useEntryMutations();
 
   // Navigation callbacks - delegate to useEntryListQuery which owns the list state
   const goToNextEntry = useCallback(() => {

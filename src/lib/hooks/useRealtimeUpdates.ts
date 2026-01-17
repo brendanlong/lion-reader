@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { handleSubscriptionCreated, handleSubscriptionDeleted } from "@/lib/cache";
 
 /**
  * Connection status for real-time updates.
@@ -450,7 +451,8 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
   }, []);
 
   /**
-   * Handles incoming SSE events by invalidating relevant caches.
+   * Handles incoming SSE events by updating or invalidating relevant caches.
+   * Uses direct cache updates where possible to avoid full refetches.
    * Tracks sync cursor from event.lastEventId for reconnection.
    */
   const handleEvent = useCallback(
@@ -465,6 +467,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
 
       if (data.type === "new_entry") {
         // Invalidate entry list and subscription counts
+        // Direct cache update not feasible - we don't have full entry data
         utils.entries.list.invalidate();
         utils.subscriptions.list.invalidate();
         utils.tags.list.invalidate();
@@ -472,14 +475,31 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
         // Invalidate the specific entry to refresh content
         utils.entries.get.invalidate({ id: data.entryId });
       } else if (data.type === "subscription_created") {
-        // Invalidate subscriptions and tags
-        utils.subscriptions.list.invalidate();
-        utils.tags.list.invalidate();
+        // Use high-level operation - handles cache add + tag invalidation
+        const { subscription, feed } = data;
+        handleSubscriptionCreated(utils, {
+          id: subscription.id,
+          type: feed.type,
+          url: feed.url,
+          title: subscription.customTitle ?? feed.title,
+          originalTitle: feed.title,
+          description: feed.description,
+          siteUrl: feed.siteUrl,
+          subscribedAt: new Date(subscription.subscribedAt),
+          unreadCount: subscription.unreadCount,
+          tags: subscription.tags,
+          fetchFullContent: false,
+        });
       } else if (data.type === "subscription_deleted") {
-        // Invalidate React Query cache
-        utils.subscriptions.list.invalidate();
-        utils.entries.list.invalidate();
-        utils.tags.list.invalidate();
+        // Check if already removed (optimistic update from same tab)
+        const currentData = utils.subscriptions.list.getData();
+        const alreadyRemoved =
+          currentData && !currentData.items.some((s) => s.id === data.subscriptionId);
+
+        if (!alreadyRemoved) {
+          // Use high-level operation - handles cache remove + invalidations
+          handleSubscriptionDeleted(utils, data.subscriptionId);
+        }
       } else if (data.type === "saved_article_created") {
         utils.entries.list.invalidate({ type: "saved" });
         utils.entries.count.invalidate({ type: "saved" });
@@ -499,7 +519,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
         utils.entries.list.invalidate();
       }
     },
-    [utils.entries, utils.subscriptions, utils.imports, utils.tags]
+    [utils]
   );
 
   /**
