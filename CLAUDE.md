@@ -28,6 +28,32 @@ Read these if you need context on features or specific references.
 - **UI**: Use optimistic updates for responsive UX
 - **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes
 
+## UI Components
+
+Reusable UI primitives are in `src/components/ui/`. **Always check for existing components before creating new ones.** Import via `import { Button, Dialog, NavLink } from "@/components/ui";`
+
+### Available Components
+
+| Component      | Purpose                                                  |
+| -------------- | -------------------------------------------------------- |
+| **Button**     | Primary, secondary, ghost variants with loading state    |
+| **Input**      | Text input with label and error handling                 |
+| **Alert**      | Status messages (error, success, warning, info)          |
+| **Dialog**     | Modal dialogs with backdrop, focus trap, escape handling |
+| **NavLink**    | Sidebar navigation links with active state and counts    |
+| **IconButton** | Small icon-only action buttons (edit, close, etc.)       |
+
+### Common Icons
+
+Icons are exported from `@/components/ui`: `CloseIcon`, `EditIcon`, `ChevronDownIcon`, `ChevronRightIcon`, `CheckIcon`. Use these instead of duplicating SVGs.
+
+### Guidelines
+
+- **Use existing components** - Don't reimplement dialogs, buttons, or navigation links
+- **Watch for patterns** - If you see the same UI pattern 3+ times, consider extracting a component
+- **44px touch targets** - Ensure interactive elements meet WCAG touch target guidelines (handled by UI components)
+- **Dark mode** - All UI components support dark mode via `dark:` Tailwind classes
+
 ## Git
 
 - Break work into commit-sized chunks; commit when finished
