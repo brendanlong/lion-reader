@@ -82,7 +82,7 @@ function formatDate(date: Date): string {
  * Props for the SummaryCard component.
  */
 export interface SummaryCardProps {
-  /** The summary text to display */
+  /** The summary HTML to display (already converted from Markdown on server) */
   summary: string;
   /** The model ID used for generation */
   modelId: string;
@@ -230,11 +230,10 @@ export function SummaryCard({
       {/* Content */}
       {!isCollapsed && (
         <>
-          <div className="mt-3 space-y-2 text-sm leading-relaxed text-blue-900 dark:text-blue-100">
-            {summary.split("\n\n").map((paragraph, index) => (
-              <p key={index}>{paragraph}</p>
-            ))}
-          </div>
+          <div
+            className="prose prose-sm prose-blue dark:prose-invert mt-3 max-w-none text-blue-900 dark:text-blue-100 [&_a]:text-blue-700 dark:[&_a]:text-blue-300 [&_li]:my-0 [&_ol]:my-1 [&_ul]:my-1"
+            dangerouslySetInnerHTML={{ __html: summary }}
+          />
 
           {/* Footer */}
           <div className="mt-3 flex items-center justify-between text-xs text-blue-600 dark:text-blue-400">
