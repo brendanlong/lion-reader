@@ -140,8 +140,13 @@ export function saveAppearanceSettings(settings: AppearanceSettings): void {
 // Subscribers for settings changes
 const subscribers = new Set<() => void>();
 
+// Cached snapshot for useSyncExternalStore (must return same reference if unchanged)
+let cachedSnapshot: AppearanceSettings | null = null;
+
 // Notify all subscribers when settings change
 function notifySubscribers() {
+  // Invalidate cache so next getSnapshot reads fresh data
+  cachedSnapshot = null;
   subscribers.forEach((callback) => callback());
 }
 
@@ -151,9 +156,12 @@ function subscribe(callback: () => void): () => void {
   return () => subscribers.delete(callback);
 }
 
-// Get snapshot for client
+// Get snapshot for client (cached to avoid infinite loop)
 function getSnapshot(): AppearanceSettings {
-  return loadAppearanceSettings();
+  if (cachedSnapshot === null) {
+    cachedSnapshot = loadAppearanceSettings();
+  }
+  return cachedSnapshot;
 }
 
 // Get snapshot for server (always returns defaults)
