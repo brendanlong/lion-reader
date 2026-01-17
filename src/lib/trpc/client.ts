@@ -21,3 +21,9 @@ import type { AppRouter } from "@/server/trpc/root";
  * ```
  */
 export const trpc = createTRPCReact<AppRouter>();
+
+/**
+ * Type for tRPC utils returned by trpc.useUtils().
+ * Used by cache helper functions.
+ */
+export type TRPCClientUtils = ReturnType<typeof trpc.useUtils>;

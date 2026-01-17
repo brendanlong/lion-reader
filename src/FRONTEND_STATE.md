@@ -1,14 +1,47 @@
 # Frontend State Management
 
-This document describes the queries, mutations, and cache invalidation patterns used in the frontend. Keep this document updated when modifying queries/mutations to ensure cache consistency.
+This document describes the queries, mutations, and cache update patterns used in the frontend. Keep this document updated when modifying queries/mutations to ensure cache consistency.
 
 ## Architecture Overview
 
-The frontend uses React Query (via tRPC) for server state management with cache invalidation for data synchronization:
+The frontend uses React Query (via tRPC) for server state management with a hybrid cache update strategy:
 
 - **Queries**: Fetch data from the server
-- **Mutations**: Modify data on the server, then invalidate relevant caches
-- **SSE/Polling**: Real-time updates trigger cache invalidations via `useRealtimeUpdates`
+- **Mutations**: Modify data on the server, then update caches (direct updates where possible, invalidation otherwise)
+- **SSE/Polling**: Real-time updates via `useRealtimeUpdates` (direct cache updates for subscriptions)
+- **Cache Helpers**: Centralized functions in `src/lib/cache/` for consistent cache updates
+
+### Cache Update Strategy
+
+| Update Type             | Strategy                   | Rationale                                       |
+| ----------------------- | -------------------------- | ----------------------------------------------- |
+| Subscription/tag counts | Direct update              | Instant sidebar updates without flicker         |
+| Entry lists             | Invalidation               | Too many filter combinations to update directly |
+| Single entry            | Direct update              | Keyed by ID, easy to target                     |
+| Subscription list       | Direct update (add/remove) | Full data available, avoids refetch             |
+
+## Cache Helper Functions
+
+Centralized helpers in `src/lib/cache/` ensure consistent updates across the codebase:
+
+### Entry Cache (`entry-cache.ts`)
+
+| Function                      | Purpose                                                  |
+| ----------------------------- | -------------------------------------------------------- |
+| `updateEntriesReadStatus`     | Updates `entries.get` cache + invalidates `entries.list` |
+| `updateEntryStarredStatus`    | Updates `entries.get` cache + invalidates `entries.list` |
+| `removeEntryFromStarredLists` | No-op (kept for API compatibility)                       |
+
+### Count Cache (`count-cache.ts`)
+
+| Function                              | Purpose                                                |
+| ------------------------------------- | ------------------------------------------------------ |
+| `adjustSubscriptionUnreadCounts`      | Directly updates unread counts in `subscriptions.list` |
+| `adjustTagUnreadCounts`               | Directly updates unread counts in `tags.list`          |
+| `adjustEntriesCount`                  | Directly updates `entries.count` cache                 |
+| `addSubscriptionToCache`              | Adds new subscription to `subscriptions.list`          |
+| `removeSubscriptionFromCache`         | Removes subscription from `subscriptions.list`         |
+| `calculateTagDeltasFromSubscriptions` | Calculates tag deltas from subscription deltas         |
 
 ## Queries
 
@@ -74,23 +107,23 @@ The frontend uses React Query (via tRPC) for server state management with cache 
 
 ### Entry Mutations
 
-| Mutation                   | Used In             | Invalidates                                                                               |
-| -------------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
-| `entries.markRead`         | `useEntryMutations` | `entries.list`, `entries.count`, `subscriptions.list`, `tags.list`                        |
-| `entries.markAllRead`      | `useEntryMutations` | `entries.list`, `subscriptions.list`, `tags.list`, `entries.count({ starredOnly: true })` |
-| `entries.star`             | `useEntryMutations` | `entries.list({ starredOnly: true })`, `entries.count({ starredOnly: true })`             |
-| `entries.unstar`           | `useEntryMutations` | `entries.list({ starredOnly: true })`, `entries.count({ starredOnly: true })`             |
-| `entries.fetchFullContent` | `EntryContent`      | `entries.get({ id })`                                                                     |
+| Mutation                   | Used In             | Cache Updates                                                                                                                         |
+| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `subscriptions.list` counts, `tags.list` counts. Invalidate: `entries.list`                                    |
+| `entries.markAllRead`      | `useEntryMutations` | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count({ starredOnly: true })` (bulk operation, count unknown) |
+| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.count({ starredOnly: true })`. Invalidate: `entries.list`                                             |
+| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.count({ starredOnly: true })`. Invalidate: `entries.list`                                             |
+| `entries.fetchFullContent` | `EntryContent`      | Invalidate: `entries.get({ id })`                                                                                                     |
 
 ### Subscription Mutations
 
-| Mutation                | Used In                                  | Invalidates                                                   |
-| ----------------------- | ---------------------------------------- | ------------------------------------------------------------- |
-| `subscriptions.create`  | Subscribe page                           | Manual cache update via `setData`                             |
-| `subscriptions.update`  | `EntryContent`, `EditSubscriptionDialog` | `subscriptions.list`                                          |
-| `subscriptions.delete`  | `Sidebar`, Broken feeds                  | Optimistic update, then `entries.list`, `tags.list` on settle |
-| `subscriptions.setTags` | `EditSubscriptionDialog`                 | (handled by dialog close)                                     |
-| `subscriptions.import`  | `OpmlImportExport`                       | Toast + navigate on success                                   |
+| Mutation                | Used In                                  | Cache Updates                                                                         |
+| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| `subscriptions.create`  | Subscribe page                           | Direct cache update via `setData`                                                     |
+| `subscriptions.update`  | `EntryContent`, `EditSubscriptionDialog` | Invalidate: `subscriptions.list`                                                      |
+| `subscriptions.delete`  | `Sidebar`, Broken feeds                  | Optimistic: remove from `subscriptions.list`. Invalidate: `entries.list`, `tags.list` |
+| `subscriptions.setTags` | `EditSubscriptionDialog`                 | (handled by dialog close)                                                             |
+| `subscriptions.import`  | `OpmlImportExport`                       | Toast + navigate on success                                                           |
 
 ### Tag Mutations
 
@@ -127,18 +160,18 @@ The frontend uses React Query (via tRPC) for server state management with cache 
 
 ## Real-Time Updates
 
-The `useRealtimeUpdates` hook manages SSE connections and triggers cache invalidations:
+The `useRealtimeUpdates` hook manages SSE connections and updates caches:
 
-| SSE Event               | Invalidates                                                           |
-| ----------------------- | --------------------------------------------------------------------- |
-| `new_entry`             | `entries.list`, `subscriptions.list`, `tags.list`                     |
-| `entry_updated`         | `entries.get({ id })`                                                 |
-| `subscription_created`  | `subscriptions.list`, `tags.list`                                     |
-| `subscription_deleted`  | `subscriptions.list`, `entries.list`, `tags.list`                     |
-| `saved_article_created` | `entries.list({ type: "saved" })`, `entries.count({ type: "saved" })` |
-| `saved_article_updated` | `entries.get({ id })`, `entries.list({ type: "saved" })`              |
-| `import_progress`       | `imports.get({ id })`, `imports.list`                                 |
-| `import_completed`      | `imports.get({ id })`, `imports.list`, `entries.list`                 |
+| SSE Event               | Cache Updates                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `new_entry`             | Invalidate: `entries.list`, `subscriptions.list`, `tags.list` (full entry data not in event)               |
+| `entry_updated`         | Invalidate: `entries.get({ id })`                                                                          |
+| `subscription_created`  | Direct: add to `subscriptions.list`. Invalidate: `tags.list`                                               |
+| `subscription_deleted`  | Direct: remove from `subscriptions.list` (if not already removed). Invalidate: `entries.list`, `tags.list` |
+| `saved_article_created` | Invalidate: `entries.list({ type: "saved" })`, `entries.count({ type: "saved" })`                          |
+| `saved_article_updated` | Invalidate: `entries.get({ id })`, `entries.list({ type: "saved" })`                                       |
+| `import_progress`       | Invalidate: `imports.get({ id })`, `imports.list`                                                          |
+| `import_completed`      | Invalidate: `imports.get({ id })`, `imports.list`, `entries.list`                                          |
 
 ## Optimistic Updates
 
@@ -181,12 +214,40 @@ onSuccess: (data) => {
 };
 ```
 
+## Server Response Enhancements
+
+Some mutations return additional context for cache updates:
+
+### entries.markRead
+
+Returns entries with subscription context so client can update counts:
+
+```typescript
+// Response
+{
+  success: boolean;
+  count: number;
+  entries: Array<{
+    id: string;
+    subscriptionId: string | null; // For count updates
+  }>;
+}
+```
+
+The client uses `subscriptionId` to:
+
+1. Calculate subscription unread count deltas
+2. Look up tags from cached `subscriptions.list` for tag count deltas
+
 ## Key Files
 
 | File                                      | Purpose                                          |
 | ----------------------------------------- | ------------------------------------------------ |
-| `src/lib/hooks/useEntryMutations.ts`      | Entry mutations with invalidation                |
-| `src/lib/hooks/useRealtimeUpdates.ts`     | SSE connection and cache invalidation            |
+| `src/lib/cache/index.ts`                  | Cache helper exports                             |
+| `src/lib/cache/entry-cache.ts`            | Entry cache update helpers                       |
+| `src/lib/cache/count-cache.ts`            | Subscription/tag count update helpers            |
+| `src/lib/hooks/useEntryMutations.ts`      | Entry mutations with cache updates               |
+| `src/lib/hooks/useRealtimeUpdates.ts`     | SSE connection and cache updates                 |
 | `src/lib/hooks/useEntryListQuery.ts`      | Infinite query with navigation                   |
 | `src/lib/hooks/useEntryPage.ts`           | Higher-order hook combining all entry page logic |
 | `src/components/layout/Sidebar.tsx`       | Subscription delete with optimistic update       |
@@ -195,20 +256,22 @@ onSuccess: (data) => {
 
 ## Adding New Cache Updates
 
-When adding direct cache updates (without full refetch), ensure:
+When adding cache updates, follow this decision tree:
 
-1. **Update this document** with the new invalidation pattern
-2. **Consider all affected queries** - a change to entries may affect subscription counts
-3. **Handle race conditions** - SSE may deliver the same update
-4. **Implement rollback** for optimistic updates
-5. **Test offline/error scenarios** to ensure cache consistency
+1. **Can we update directly?** (full data available, simple key)
+   - Yes → Use cache helpers in `src/lib/cache/`
+   - No → Invalidate the query
 
-## Future Improvements
+2. **What caches are affected?**
+   - Entry lists: Invalidate (too many filter combinations)
+   - Entry counts: Direct update via `adjustEntriesCount`
+   - Subscription counts: Direct update via `adjustSubscriptionUnreadCounts`
+   - Tag counts: Direct update via `adjustTagUnreadCounts` + `calculateTagDeltasFromSubscriptions`
+   - Single entry: Direct update via `setData`
 
-The current architecture uses simple cache invalidation. For better perceived performance, consider:
+3. **Handle race conditions:**
+   - Check if data already exists before adding
+   - Check if data already removed before removing
+   - SSE may deliver the same update as the mutation response
 
-1. **Direct cache updates** on mutations (update cached data directly instead of invalidating)
-2. **Optimistic updates** for more operations (star, read status)
-3. **Granular invalidation** (only invalidate specific cache entries)
-
-When implementing these, this document should be updated to reflect the new patterns.
+4. **Update this document** with the new pattern
