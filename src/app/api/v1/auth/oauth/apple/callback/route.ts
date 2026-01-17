@@ -14,10 +14,17 @@
  * Note: This is NOT the tRPC endpoint - this handles the browser redirect from Apple
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { validateAppleCallback, isAppleOAuthEnabled } from "@/server/auth/oauth/apple";
-import { createSession, processOAuthCallback } from "@/server/auth";
-import { db } from "@/server/db";
+import { processOAuthCallback } from "@/server/auth";
+import {
+  createSessionResponse,
+  createErrorRedirect,
+  handleInviteError,
+} from "@/server/auth/oauth/callback-helpers";
+
+// Apple uses POST with form_post response mode, so we need 303 status to convert POST to GET
+const REDIRECT_STATUS = 303;
 
 /**
  * Handle Apple OAuth form_post callback
@@ -34,8 +41,7 @@ export async function POST(request: NextRequest) {
   try {
     // Check if Apple OAuth is enabled
     if (!isAppleOAuthEnabled()) {
-      // Use 303 to convert POST to GET for the redirect
-      return NextResponse.redirect(`${appUrl}/login?error=provider_not_configured`, 303);
+      return createErrorRedirect(appUrl, "provider_not_configured", REDIRECT_STATUS);
     }
 
     // Parse the form data
@@ -45,12 +51,8 @@ export async function POST(request: NextRequest) {
     const userDataRaw = formData.get("user") as string | null;
 
     // Validate required fields
-    if (!code) {
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, 303);
-    }
-
-    if (!state) {
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, 303);
+    if (!code || !state) {
+      return createErrorRedirect(appUrl, "callback_failed", REDIRECT_STATUS);
     }
 
     // Parse user data if provided (only on first auth)
@@ -68,13 +70,11 @@ export async function POST(request: NextRequest) {
     try {
       appleResult = await validateAppleCallback(code, state, userData);
     } catch (error) {
-      if (error instanceof Error) {
-        if (error.message.includes("Invalid or expired OAuth state")) {
-          return NextResponse.redirect(`${appUrl}/login?error=invalid_state`, 303);
-        }
+      if (error instanceof Error && error.message.includes("Invalid or expired OAuth state")) {
+        return createErrorRedirect(appUrl, "invalid_state", REDIRECT_STATUS);
       }
       console.error("Apple OAuth callback validation failed:", error);
-      return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, 303);
+      return createErrorRedirect(appUrl, "callback_failed", REDIRECT_STATUS);
     }
 
     const { userInfo, firstAuthData, tokens } = appleResult;
@@ -95,55 +95,16 @@ export async function POST(request: NextRequest) {
       inviteToken: appleResult.inviteToken,
     });
 
-    // Get client info from headers
-    const userAgent = request.headers.get("user-agent") ?? undefined;
-    const ipAddress =
-      request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-      request.headers.get("x-real-ip") ??
-      undefined;
-
-    // Create session
-    const { token } = await createSession(db, {
-      userId: oauthResult.userId,
-      userAgent,
-      ipAddress,
-    });
-
-    // Redirect through OAuth completion page to broadcast success for PWAs
-    // Use 303 to convert POST to GET for the redirect
-    const response = NextResponse.redirect(`${appUrl}/auth/oauth/complete?redirect=/all`, 303);
-
-    // Set session cookie (30 days)
-    response.cookies.set("session", token, {
-      path: "/",
-      maxAge: 30 * 24 * 60 * 60,
-      sameSite: "lax",
-      httpOnly: false, // Allow JS access for client-side session management
-    });
-
-    return response;
+    return createSessionResponse(oauthResult.userId, request, appUrl, REDIRECT_STATUS);
   } catch (error) {
     console.error("Apple OAuth callback error:", error);
 
-    // Check for invite-related errors and provide specific error codes
-    const cause =
-      error instanceof Error && "cause" in error ? (error.cause as { code?: string }) : null;
-    const errorCode = cause?.code;
-
-    // Use 303 to convert POST to GET for all redirects
-    if (errorCode === "INVITE_REQUIRED") {
-      return NextResponse.redirect(`${appUrl}/login?error=invite_required`, 303);
-    }
-    if (errorCode === "INVITE_INVALID") {
-      return NextResponse.redirect(`${appUrl}/login?error=invite_invalid`, 303);
-    }
-    if (errorCode === "INVITE_EXPIRED") {
-      return NextResponse.redirect(`${appUrl}/login?error=invite_expired`, 303);
-    }
-    if (errorCode === "INVITE_ALREADY_USED") {
-      return NextResponse.redirect(`${appUrl}/login?error=invite_already_used`, 303);
+    // Check for invite-related errors
+    const inviteErrorResponse = handleInviteError(error, appUrl, REDIRECT_STATUS);
+    if (inviteErrorResponse) {
+      return inviteErrorResponse;
     }
 
-    return NextResponse.redirect(`${appUrl}/login?error=callback_failed`, 303);
+    return createErrorRedirect(appUrl, "callback_failed", REDIRECT_STATUS);
   }
 }
