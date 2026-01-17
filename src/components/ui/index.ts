@@ -51,6 +51,9 @@ export {
   // Media icons
   PlayIcon,
   PauseIcon,
+  SkipBackwardIcon,
+  SkipForwardIcon,
+  NarrationIcon,
   // Visibility icons
   EyeIcon,
   EyeSlashIcon,
@@ -58,6 +61,18 @@ export {
   UploadIcon,
   DownloadIcon,
   ExternalLinkIcon,
+  DocumentIcon,
+  // Sort icons
+  SortDescendingIcon,
+  SortAscendingIcon,
+  // Empty state icons
+  DefaultEmptyIcon,
+  // Brand icons
+  GoogleIcon,
+  AppleIcon,
+  // Network icons
+  WifiOffIcon,
+  WifiOnIcon,
   // Loading
   SpinnerIcon,
 } from "./icon-button";

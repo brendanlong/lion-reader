@@ -24,7 +24,15 @@
 import { useNarration } from "./useNarration";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
-import { Button, PlayIcon, PauseIcon, SpinnerIcon } from "@/components/ui";
+import {
+  Button,
+  PlayIcon,
+  PauseIcon,
+  SpinnerIcon,
+  SkipBackwardIcon,
+  SkipForwardIcon,
+  NarrationIcon,
+} from "@/components/ui";
 
 /**
  * Props for the NarrationControls component.
@@ -49,53 +57,6 @@ export interface NarrationControlsProps {
    * This is used when the parent needs access to narration state (e.g., for highlighting).
    */
   narration?: ReturnType<typeof useNarration>;
-}
-
-/**
- * Skip backward icon.
- * Custom icon - not in shared icon set as it's specific to media controls.
- */
-function SkipBackwardIcon() {
-  return (
-    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" />
-    </svg>
-  );
-}
-
-/**
- * Skip forward icon.
- * Custom icon - not in shared icon set as it's specific to media controls.
- */
-function SkipForwardIcon() {
-  return (
-    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M16 6h2v12h-2V6zm-10 0l8.5 6L6 18V6z" />
-    </svg>
-  );
-}
-
-/**
- * Audio/narration icon for the button label.
- * Custom icon - not in shared icon set as it's specific to narration.
- */
-function NarrationIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-      />
-    </svg>
-  );
 }
 
 /**
