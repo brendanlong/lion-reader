@@ -12,7 +12,7 @@
 
 import { useMemo, useCallback, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { type EntryType } from "@/lib/store/realtime";
+import { type EntryType } from "./useEntryMutations";
 
 /**
  * Filter options for the entry list query.

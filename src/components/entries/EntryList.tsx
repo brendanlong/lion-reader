@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { type EntryListData, useMergedEntries, type EntryType } from "@/lib/hooks";
+import { type EntryListData, type EntryType } from "@/lib/hooks";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import {
@@ -220,13 +220,7 @@ export function EntryList({
   );
 
   // Use external entries if provided, otherwise use internal query results
-  const serverEntries = useExternalData ? externalEntries : internalEntries;
-
-  // Merge server data with Zustand deltas at render time, then filter by view criteria
-  const allEntries = useMergedEntries(serverEntries, {
-    unreadOnly: filters?.unreadOnly,
-    starredOnly: filters?.starredOnly,
-  });
+  const allEntries = useExternalData ? externalEntries : internalEntries;
 
   // Query state - use external if provided, otherwise use internal
   const isLoading = useExternalData ? externalQueryState.isLoading : internalQuery.isLoading;
@@ -246,7 +240,6 @@ export function EntryList({
   const refetch = useExternalData ? externalQueryState.refetch : internalQuery.refetch;
 
   // Notify parent of entry data for keyboard navigation and actions
-  // Use delta-merged entries to include optimistic updates
   useEffect(() => {
     if (onEntriesLoaded && !useExternalData) {
       const entries: EntryListEntryData[] = allEntries.map((entry) => ({

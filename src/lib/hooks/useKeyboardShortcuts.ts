@@ -24,7 +24,7 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRouter } from "next/navigation";
-import { type EntryType } from "@/lib/store/realtime";
+import { type EntryType } from "./useEntryMutations";
 
 /**
  * Entry data needed for keyboard actions.

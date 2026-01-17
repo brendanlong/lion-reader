@@ -831,8 +831,6 @@ export const entriesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Simple update - no expensive count recalculations
-      // Counts are managed client-side via Zustand deltas
       const updatedEntries = await ctx.db
         .update(userEntries)
         .set({

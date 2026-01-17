@@ -9,7 +9,7 @@
 
 import { memo } from "react";
 import { formatRelativeTime } from "@/lib/format";
-import { type EntryType } from "@/lib/store/realtime";
+import { type EntryType } from "@/lib/hooks";
 import { StarIcon, StarFilledIcon } from "@/components/ui";
 
 /**
