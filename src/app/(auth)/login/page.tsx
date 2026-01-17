@@ -135,7 +135,7 @@ function LoginForm() {
 
   return (
     <div>
-      <h2 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
         Sign in to your account
       </h2>
 
@@ -174,7 +174,7 @@ function LoginForm() {
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-zinc-300 dark:border-zinc-700" />
         </div>
-        <div className="relative flex justify-center text-sm">
+        <div className="ui-text-sm relative flex justify-center">
           <span className="bg-white px-2 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
             Or continue with email
           </span>
@@ -212,7 +212,7 @@ function LoginForm() {
       </form>
 
       {!signupConfigData?.requiresInvite && (
-        <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm mt-6 text-center text-zinc-600 dark:text-zinc-400">
           Don&apos;t have an account?{" "}
           <Link
             href="/register"

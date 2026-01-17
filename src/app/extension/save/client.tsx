@@ -29,13 +29,15 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
       <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-900">
         <div className="max-w-md p-8 text-center">
           <div className="mb-4 text-5xl text-red-500">!</div>
-          <h1 className="mb-2 text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+          <h1 className="ui-text-xl mb-2 font-semibold text-zinc-900 dark:text-zinc-100">
             Failed to Save
           </h1>
           <p className="mb-4 text-zinc-600 dark:text-zinc-400">
             {error || "An error occurred while saving the article."}
           </p>
-          {url && <p className="mb-4 text-sm break-all text-zinc-500 dark:text-zinc-500">{url}</p>}
+          {url && (
+            <p className="ui-text-sm mb-4 break-all text-zinc-500 dark:text-zinc-500">{url}</p>
+          )}
           {canRetry && url && (
             <a
               href={`/extension/save?url=${encodeURIComponent(url)}`}
@@ -44,7 +46,7 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
               Try Again
             </a>
           )}
-          <p className="mt-6 text-sm text-zinc-400 dark:text-zinc-600">
+          <p className="ui-text-sm mt-6 text-zinc-400 dark:text-zinc-600">
             You can close this tab and try again from the extension.
           </p>
         </div>

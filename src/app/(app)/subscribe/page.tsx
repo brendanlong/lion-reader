@@ -216,13 +216,13 @@ export default function SubscribePage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:p-6">
-      <h1 className="mb-4 text-xl font-bold text-zinc-900 sm:mb-6 sm:text-2xl dark:text-zinc-50">
+      <h1 className="ui-text-xl sm:ui-text-2xl mb-4 font-bold text-zinc-900 sm:mb-6 dark:text-zinc-50">
         Subscribe to Feed
       </h1>
 
       {step === "input" && (
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
             Enter the URL of an RSS or Atom feed, or a website that has a feed. We&apos;ll
             automatically discover the feed if possible.
           </p>
@@ -296,13 +296,13 @@ export default function SubscribePage() {
                   d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
                 We found {discoveredFeeds.length} feed{discoveredFeeds.length !== 1 ? "s" : ""} on
                 this site
               </h2>
             </div>
 
-            <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
               Select a feed to preview and subscribe:
             </p>
 
@@ -333,11 +333,11 @@ export default function SubscribePage() {
                         <p className="font-medium text-zinc-900 dark:text-zinc-50">
                           {feed.title || "Untitled Feed"}
                         </p>
-                        <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
+                        <span className="ui-text-xs inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
                           {getFeedTypeLabel(feed.type)}
                         </span>
                       </div>
-                      <p className="mt-1 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                      <p className="ui-text-xs mt-1 truncate font-mono text-zinc-500 dark:text-zinc-400">
                         {feed.url}
                       </p>
                     </div>
@@ -397,7 +397,7 @@ export default function SubscribePage() {
           <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="mb-4 flex items-start justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+                <h2 className="ui-text-xl font-semibold text-zinc-900 dark:text-zinc-50">
                   {previewQuery.data?.feed.title ?? "Untitled Feed"}
                 </h2>
                 {previewQuery.data?.feed.siteUrl && (
@@ -405,7 +405,7 @@ export default function SubscribePage() {
                     href={previewQuery.data.feed.siteUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"
+                    className="ui-text-sm text-zinc-500 hover:underline dark:text-zinc-400"
                   >
                     {new URL(previewQuery.data.feed.siteUrl).hostname}
                   </a>
@@ -414,12 +414,12 @@ export default function SubscribePage() {
             </div>
 
             {previewQuery.data?.feed.description && (
-              <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+              <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
                 {previewQuery.data.feed.description}
               </p>
             )}
 
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
               Feed URL: <span className="font-mono">{previewQuery.data?.feed.url}</span>
             </p>
           </div>
@@ -428,7 +428,7 @@ export default function SubscribePage() {
           {previewQuery.data?.feed.sampleEntries &&
             previewQuery.data.feed.sampleEntries.length > 0 && (
               <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-                <h3 className="border-b border-zinc-200 px-4 py-3 text-sm font-medium text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
+                <h3 className="ui-text-sm border-b border-zinc-200 px-4 py-3 font-medium text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
                   Recent Entries
                 </h3>
                 <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -440,13 +440,13 @@ export default function SubscribePage() {
                             {entry.title ?? "Untitled"}
                           </p>
                           {entry.summary && (
-                            <p className="mt-1 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">
+                            <p className="ui-text-sm mt-1 line-clamp-2 text-zinc-600 dark:text-zinc-400">
                               {entry.summary}
                             </p>
                           )}
                         </div>
                         {entry.pubDate && (
-                          <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                          <span className="ui-text-xs shrink-0 text-zinc-500 dark:text-zinc-400">
                             {formatDate(entry.pubDate)}
                           </span>
                         )}

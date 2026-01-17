@@ -113,7 +113,7 @@ function RegisterForm() {
   if (isLoadingConfig) {
     return (
       <div>
-        <h2 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+        <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
           Create your account
         </h2>
         <div className="text-center text-zinc-600 dark:text-zinc-400">Loading...</div>
@@ -126,14 +126,14 @@ function RegisterForm() {
   if (requiresInvite && !inviteToken) {
     return (
       <div>
-        <h2 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+        <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
           Invite Required
         </h2>
         <Alert variant="error" className="mb-4">
           This instance requires an invite to sign up. Please contact an administrator to request an
           invite.
         </Alert>
-        <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm mt-6 text-center text-zinc-600 dark:text-zinc-400">
           Already have an account?{" "}
           <Link
             href="/login"
@@ -150,7 +150,7 @@ function RegisterForm() {
 
   return (
     <div>
-      <h2 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
         Create your account
       </h2>
 
@@ -179,7 +179,7 @@ function RegisterForm() {
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-zinc-300 dark:border-zinc-700" />
         </div>
-        <div className="relative flex justify-center text-sm">
+        <div className="ui-text-sm relative flex justify-center">
           <span className="bg-white px-2 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
             Or continue with email
           </span>
@@ -228,14 +228,14 @@ function RegisterForm() {
         </Button>
       </form>
 
-      <p className="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-xs mt-4 text-center text-zinc-500 dark:text-zinc-400">
         By creating an account, you agree to our{" "}
         <Link href="/privacy" className="underline hover:text-zinc-700 dark:hover:text-zinc-300">
           Privacy Policy
         </Link>
       </p>
 
-      <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="ui-text-sm mt-6 text-center text-zinc-600 dark:text-zinc-400">
         Already have an account?{" "}
         <Link href="/login" className="font-medium text-zinc-900 hover:underline dark:text-zinc-50">
           Sign in

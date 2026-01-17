@@ -128,7 +128,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
         <div className="mb-6 flex items-center justify-between">
           <h2
             id="shortcuts-title"
-            className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+            className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50"
           >
             Keyboard Shortcuts
           </h2>
@@ -153,7 +153,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
         <div className="space-y-6">
           {SHORTCUT_SECTIONS.map((section) => (
             <div key={section.title}>
-              <h3 className="mb-3 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              <h3 className="ui-text-sm mb-3 font-medium text-zinc-500 dark:text-zinc-400">
                 {section.title}
               </h3>
               <div className="space-y-2">
@@ -162,16 +162,18 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
                     key={shortcut.description}
                     className="flex items-center justify-between py-1"
                   >
-                    <span className="text-sm text-zinc-700 dark:text-zinc-300">
+                    <span className="ui-text-sm text-zinc-700 dark:text-zinc-300">
                       {shortcut.description}
                     </span>
                     <div className="flex items-center gap-1">
                       {shortcut.keys.map((key, index) => (
                         <span key={index} className="flex items-center gap-1">
                           {index > 0 && (
-                            <span className="text-xs text-zinc-400 dark:text-zinc-500">then</span>
+                            <span className="ui-text-xs text-zinc-400 dark:text-zinc-500">
+                              then
+                            </span>
                           )}
-                          <kbd className="inline-flex min-w-[24px] items-center justify-center rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-mono text-xs font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                          <kbd className="ui-text-xs inline-flex min-w-[24px] items-center justify-center rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-mono font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                             {key}
                           </kbd>
                         </span>
@@ -186,7 +188,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
 
         {/* Footer */}
         <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
             Keyboard shortcuts can be disabled in Settings.
           </p>
           <div className="mt-4 flex justify-end">

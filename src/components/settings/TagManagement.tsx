@@ -90,7 +90,7 @@ export function TagManagement() {
   if (isLoading) {
     return (
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
+        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="space-y-4">
             <div className="h-10 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
@@ -105,7 +105,7 @@ export function TagManagement() {
   if (queryError) {
     return (
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
+        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           <Alert variant="error">Failed to load tags</Alert>
         </div>
@@ -115,9 +115,9 @@ export function TagManagement() {
 
   return (
     <section>
-      <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
+      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
           Create and manage tags to organize your feed subscriptions.
         </p>
 
@@ -139,7 +139,7 @@ export function TagManagement() {
         {/* Tag list */}
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
           {tags.length === 0 ? (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
               No tags created yet. Create your first tag above.
             </p>
           ) : (
@@ -210,13 +210,13 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
       </div>
 
       <div className="relative">
-        <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <label className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300">
           Color
         </label>
         <button
           type="button"
           onClick={() => setShowColorPicker(!showColorPicker)}
-          className="flex h-[38px] items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+          className="ui-text-sm flex h-[38px] items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
           disabled={createMutation.isPending}
         >
           <ColorDot color={color} size="md" />
@@ -336,10 +336,10 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
         <div className="flex items-center gap-3">
           <ColorDot color={tag.color} size="lg" />
           <div>
-            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
               Delete &quot;{tag.name}&quot;?
             </p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
               This will remove the tag from all {tag.feedCount} subscription
               {tag.feedCount !== 1 ? "s" : ""}.
             </p>
@@ -395,7 +395,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             type="text"
             value={editingValues.name}
             onChange={(e) => setEditingValues({ ...editingValues, name: e.target.value })}
-            className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            className="ui-text-sm flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             disabled={updateMutation.isPending}
             autoFocus
           />
@@ -422,8 +422,8 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
       <div className="flex items-center gap-3">
         <ColorDot color={tag.color} size="lg" />
         <div>
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{tag.name}</p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">{tag.name}</p>
+          <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
             {tag.feedCount} feed{tag.feedCount !== 1 ? "s" : ""}
           </p>
         </div>

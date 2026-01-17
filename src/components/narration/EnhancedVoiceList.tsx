@@ -57,7 +57,7 @@ function ProgressBar({ progress, size }: { progress: number; size: number }) {
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
         {percent}% ({downloadedMB} MB / {totalMB} MB)
       </p>
     </div>
@@ -149,10 +149,10 @@ function VoiceItem({
           {/* Voice info */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <span className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
                 {voice.displayName}
               </span>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="ui-text-xs text-zinc-500 dark:text-zinc-400">
                 - {voice.description}
               </span>
             </div>
@@ -161,7 +161,7 @@ function VoiceItem({
             {isDownloading ? (
               <ProgressBar progress={progress} size={voice.sizeBytes} />
             ) : isDownloaded ? (
-              <div className="mt-1 flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+              <div className="ui-text-xs mt-1 flex items-center gap-1 text-green-600 dark:text-green-400">
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
@@ -174,7 +174,7 @@ function VoiceItem({
               </div>
             ) : hasError ? (
               <div className="mt-1 space-y-1">
-                <div className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                <div className="ui-text-xs flex items-center gap-1 text-red-600 dark:text-red-400">
                   <svg
                     className="h-3.5 w-3.5"
                     fill="none"
@@ -191,11 +191,13 @@ function VoiceItem({
                   {errorInfo.message}
                 </div>
                 {errorInfo.suggestion && (
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">{errorInfo.suggestion}</p>
+                  <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                    {errorInfo.suggestion}
+                  </p>
                 )}
               </div>
             ) : (
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
                 {formatSize(voice.sizeBytes)}
               </p>
             )}
@@ -206,7 +208,7 @@ function VoiceItem({
         <div className="flex flex-shrink-0 items-center gap-2">
           {isDownloading ? (
             // Cancel button during download (optional - just showing spinner for now)
-            <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="ui-text-xs flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
               <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle
                   className="opacity-25"
@@ -444,7 +446,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
           />
         </svg>
-        <span className="ml-2 text-sm text-zinc-500 dark:text-zinc-400">Loading voices...</span>
+        <span className="ui-text-sm ml-2 text-zinc-500 dark:text-zinc-400">Loading voices...</span>
       </div>
     );
   }
@@ -454,7 +456,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       {/* Error message */}
       {error && (
         <div className="rounded-md bg-red-50 p-3 dark:bg-red-900/20">
-          <div className="flex items-start gap-2 text-xs text-red-800 dark:text-red-200">
+          <div className="ui-text-xs flex items-start gap-2 text-red-800 dark:text-red-200">
             <svg
               className="mt-0.5 h-4 w-4 flex-shrink-0"
               fill="none"
@@ -505,7 +507,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
 
       {/* Storage limit warning */}
       {isStorageLimitExceeded && (
-        <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+        <div className="ui-text-xs flex items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
           <svg
             className="mt-0.5 h-4 w-4 flex-shrink-0"
             fill="none"
@@ -545,7 +547,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       {/* Storage info section */}
       {downloadedCount > 0 && (
         <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
-          <span className="text-xs text-zinc-600 dark:text-zinc-400">
+          <span className="ui-text-xs text-zinc-600 dark:text-zinc-400">
             Storage used: {formatStorageSize(storageUsed)} ({downloadedCount}{" "}
             {downloadedCount === 1 ? "voice" : "voices"})
           </span>
@@ -553,7 +555,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
             <button
               type="button"
               onClick={handleDeleteAllVoices}
-              className="text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="ui-text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
             >
               Delete All
             </button>
@@ -562,7 +564,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       )}
 
       {/* Info text */}
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
         Enhanced voices run entirely in your browser. Once downloaded, they work offline.
       </p>
     </div>

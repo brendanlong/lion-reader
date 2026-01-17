@@ -19,8 +19,8 @@ export function AuthLayoutContent({ children }: AuthLayoutContentProps) {
       <div className="w-full max-w-md">
         {/* Logo / Brand */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Lion Reader</h1>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">A modern feed reader</p>
+          <h1 className="ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">Lion Reader</h1>
+          <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">A modern feed reader</p>
         </div>
 
         {/* Auth card */}

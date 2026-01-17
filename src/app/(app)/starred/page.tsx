@@ -32,7 +32,9 @@ function StarredEntriesContent() {
 
       <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${page.openEntryId ? "hidden" : ""}`}>
         <div className="mb-4 flex items-center justify-between sm:mb-6">
-          <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">Starred</h1>
+          <h1 className="ui-text-xl sm:ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+            Starred
+          </h1>
           <div className="flex gap-2">
             {unreadStarredCount > 0 && (
               <button
@@ -56,7 +58,7 @@ function StarredEntriesContent() {
                     d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <span className="ml-1.5 hidden text-sm sm:inline">Mark All Read</span>
+                <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
               </button>
             )}
             <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />

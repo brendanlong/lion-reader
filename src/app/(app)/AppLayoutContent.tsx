@@ -68,7 +68,10 @@ export function AppLayoutContent({ children, initialSyncCursor }: AppLayoutConte
             >
               {/* Sidebar header */}
               <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-4 dark:border-zinc-800">
-                <Link href="/all" className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                <Link
+                  href="/all"
+                  className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+                >
                   Lion Reader
                 </Link>
                 <button
@@ -121,7 +124,7 @@ export function AppLayoutContent({ children, initialSyncCursor }: AppLayoutConte
                   {/* Subscribe button */}
                   <Link
                     href="/subscribe"
-                    className="inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white transition-colors hover:bg-zinc-800 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:active:bg-zinc-300"
+                    className="ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-900 px-3 font-medium text-white transition-colors hover:bg-zinc-800 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:active:bg-zinc-300"
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
@@ -138,7 +141,7 @@ export function AppLayoutContent({ children, initialSyncCursor }: AppLayoutConte
                   <div className="relative">
                     <button
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="flex min-h-[40px] items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                      className="ui-text-sm flex min-h-[40px] items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-zinc-700 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                       aria-expanded={userMenuOpen}
                       aria-haspopup="true"
                     >
@@ -186,14 +189,14 @@ export function AppLayoutContent({ children, initialSyncCursor }: AppLayoutConte
                           <Link
                             href="/settings"
                             onClick={() => setUserMenuOpen(false)}
-                            className="flex min-h-[44px] items-center px-4 text-sm text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm flex min-h-[44px] items-center px-4 text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                           >
                             Settings
                           </Link>
                           <Link
                             href="/settings/sessions"
                             onClick={() => setUserMenuOpen(false)}
-                            className="flex min-h-[44px] items-center px-4 text-sm text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm flex min-h-[44px] items-center px-4 text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                           >
                             Sessions
                           </Link>
@@ -204,7 +207,7 @@ export function AppLayoutContent({ children, initialSyncCursor }: AppLayoutConte
                               handleLogout();
                             }}
                             disabled={logoutMutation.isPending}
-                            className="flex min-h-[44px] w-full items-center px-4 text-left text-sm text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm flex min-h-[44px] w-full items-center px-4 text-left text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                           >
                             {logoutMutation.isPending ? "Signing out..." : "Sign out"}
                           </button>

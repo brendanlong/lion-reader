@@ -7,7 +7,7 @@
 export function AuthFooter() {
   return (
     <footer className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-      <p className="text-center text-xs text-zinc-500 dark:text-zinc-500">
+      <p className="ui-text-xs text-center text-zinc-500 dark:text-zinc-500">
         Created by{" "}
         <a
           href="https://www.brendanlong.com"

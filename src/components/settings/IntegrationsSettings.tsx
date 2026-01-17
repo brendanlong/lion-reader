@@ -45,12 +45,12 @@ export function IntegrationsSettings() {
 
   return (
     <section>
-      <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
         AI Integrations
       </h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         {/* Description */}
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
           Connect Lion Reader to AI assistants via{" "}
           <a
             href="https://modelcontextprotocol.io/"
@@ -65,18 +65,18 @@ export function IntegrationsSettings() {
 
         {/* Claude Code */}
         <div className="mt-6">
-          <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude Code</h3>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude Code</h3>
+          <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
             Run this command in your terminal:
           </p>
           <div className="relative mt-3">
-            <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-100 p-3 pr-20 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+            <pre className="ui-text-xs overflow-x-auto rounded-md border border-zinc-200 bg-zinc-100 p-3 pr-20 font-mono text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
               <code>{claudeCodeCommand}</code>
             </pre>
             <button
               type="button"
               onClick={() => copyToClipboard(claudeCodeCommand, "claude-code")}
-              className="absolute top-2 right-2 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
+              className="ui-text-xs absolute top-2 right-2 rounded border border-zinc-300 bg-white px-2 py-1 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
             >
               {copiedSection === "claude-code" ? "Copied!" : "Copy"}
             </button>
@@ -85,8 +85,8 @@ export function IntegrationsSettings() {
 
         {/* Claude.ai */}
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude.ai</h3>
-          <ol className="mt-2 list-inside list-decimal space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude.ai</h3>
+          <ol className="ui-text-sm mt-2 list-inside list-decimal space-y-2 text-zinc-600 dark:text-zinc-400">
             <li>Click your name in the bottom-left corner</li>
             <li>
               Go to <strong className="text-zinc-900 dark:text-zinc-200">Settings</strong> &rarr;{" "}
@@ -101,13 +101,13 @@ export function IntegrationsSettings() {
             </li>
             <li>
               Enter Remote MCP server URL:{" "}
-              <code className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
+              <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
                 {mcpUrl}
               </code>
               <button
                 type="button"
                 onClick={() => copyToClipboard(mcpUrl, "claude-ai-url")}
-                className="ml-2 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
+                className="ui-text-xs ml-2 rounded border border-zinc-300 bg-white px-1.5 py-0.5 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
               >
                 {copiedSection === "claude-ai-url" ? "Copied!" : "Copy"}
               </button>
@@ -117,22 +117,24 @@ export function IntegrationsSettings() {
 
         {/* Claude Desktop */}
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude Desktop</h3>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            Claude Desktop
+          </h3>
+          <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
             Add this to your{" "}
-            <code className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
+            <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
               claude_desktop_config.json
             </code>
             :
           </p>
           <div className="relative mt-3">
-            <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-100 p-3 pr-20 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+            <pre className="ui-text-xs overflow-x-auto rounded-md border border-zinc-200 bg-zinc-100 p-3 pr-20 font-mono text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
               <code>{claudeDesktopConfig}</code>
             </pre>
             <button
               type="button"
               onClick={() => copyToClipboard(claudeDesktopConfig, "claude-desktop")}
-              className="absolute top-2 right-2 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
+              className="ui-text-xs absolute top-2 right-2 rounded border border-zinc-300 bg-white px-2 py-1 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
             >
               {copiedSection === "claude-desktop" ? "Copied!" : "Copy"}
             </button>
@@ -141,12 +143,12 @@ export function IntegrationsSettings() {
 
         {/* API Tokens Link */}
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
             Need to manage API tokens or create custom integrations?
           </p>
           <Link
             href="/settings/api-tokens"
-            className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            className="ui-text-sm mt-2 inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
             Manage API Tokens
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,7 +159,9 @@ export function IntegrationsSettings() {
 
         {/* Note about MCP URL */}
         {baseUrl && (
-          <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-500">MCP server URL: {mcpUrl}</p>
+          <p className="ui-text-xs mt-4 text-zinc-400 dark:text-zinc-500">
+            MCP server URL: {mcpUrl}
+          </p>
         )}
       </div>
     </section>
