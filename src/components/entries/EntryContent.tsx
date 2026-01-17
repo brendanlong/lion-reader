@@ -220,7 +220,7 @@ export function EntryContent({
     if (hasAutoMarkedRead.current || !entry) return;
     hasAutoMarkedRead.current = true;
     if (!entry.read) {
-      markRead([entryId], true, entry.type);
+      markRead([entryId], true);
     }
   }, [entry, entryId, markRead]);
 
@@ -238,7 +238,7 @@ export function EntryContent({
   // Handle read toggle - use local mutation for consistent loading state
   const handleReadToggle = () => {
     if (!entry) return;
-    markRead([entryId], !entry.read, entry.type);
+    markRead([entryId], !entry.read);
   };
 
   // Determine content based on loading/error/success state

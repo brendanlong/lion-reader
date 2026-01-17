@@ -215,11 +215,11 @@ onSuccess: (data) => {
 
 ## Server Response Enhancements
 
-Some mutations return additional context for cache updates:
+Mutations return context needed for cache updates. The server provides all necessary state so the client doesn't need to look up data from the cache (which would be fragile).
 
 ### entries.markRead
 
-Returns entries with subscription context so client can update counts:
+Returns entries with subscription context and starred status:
 
 ```typescript
 // Response
@@ -228,23 +228,35 @@ Returns entries with subscription context so client can update counts:
   count: number;
   entries: Array<{
     id: string;
-    subscriptionId: string | null; // For count updates
+    subscriptionId: string | null; // For subscription/tag count updates
+    starred: boolean; // For starred unread count updates
   }>;
 }
 ```
 
-The client uses `subscriptionId` to:
+### entries.star / entries.unstar
 
-1. Calculate subscription unread count deltas
-2. Look up tags from cached `subscriptions.list` for tag count deltas
+Returns the updated entry with read status:
+
+```typescript
+// Response
+{
+  entry: {
+    id: string;
+    read: boolean; // For starred unread count updates
+    starred: boolean;
+  }
+}
+```
 
 ## Key Files
 
 | File                                      | Purpose                                          |
 | ----------------------------------------- | ------------------------------------------------ |
 | `src/lib/cache/index.ts`                  | Cache helper exports                             |
-| `src/lib/cache/entry-cache.ts`            | Entry cache update helpers                       |
-| `src/lib/cache/count-cache.ts`            | Subscription/tag count update helpers            |
+| `src/lib/cache/operations.ts`             | High-level cache operations (primary API)        |
+| `src/lib/cache/entry-cache.ts`            | Low-level entry cache update helpers             |
+| `src/lib/cache/count-cache.ts`            | Low-level subscription/tag count update helpers  |
 | `src/lib/hooks/useEntryMutations.ts`      | Entry mutations with cache updates               |
 | `src/lib/hooks/useRealtimeUpdates.ts`     | SSE connection and cache updates                 |
 | `src/lib/hooks/useEntryListQuery.ts`      | Infinite query with navigation                   |

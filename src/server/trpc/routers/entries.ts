@@ -832,11 +832,12 @@ export const entriesRouter = createTRPCRouter({
       z.object({
         success: z.boolean(),
         count: z.number(),
-        // Entries with subscription context for cache updates
+        // Entries with context for cache updates
         entries: z.array(
           z.object({
             id: z.string(),
             subscriptionId: z.string().nullable(),
+            starred: z.boolean(), // For updating starred unread count
           })
         ),
       })
@@ -860,12 +861,13 @@ export const entriesRouter = createTRPCRouter({
         return { success: true, count: 0, entries: [] };
       }
 
-      // Get subscription IDs for each entry via visible_entries view
+      // Get subscription IDs and starred status for each entry via visible_entries view
       // This handles the feed -> subscription mapping
       const entrySubscriptions = await ctx.db
         .select({
           id: visibleEntries.id,
           subscriptionId: visibleEntries.subscriptionId,
+          starred: visibleEntries.starred,
         })
         .from(visibleEntries)
         .where(
@@ -884,6 +886,7 @@ export const entriesRouter = createTRPCRouter({
         entries: entrySubscriptions.map((e) => ({
           id: e.id,
           subscriptionId: e.subscriptionId,
+          starred: e.starred,
         })),
       };
     }),

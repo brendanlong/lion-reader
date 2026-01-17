@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { addSubscriptionToCache, removeSubscriptionFromCache } from "@/lib/cache";
+import { handleSubscriptionCreated, handleSubscriptionDeleted } from "@/lib/cache";
 
 /**
  * Connection status for real-time updates.
@@ -475,10 +475,9 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
         // Invalidate the specific entry to refresh content
         utils.entries.get.invalidate({ id: data.entryId });
       } else if (data.type === "subscription_created") {
-        // Direct cache update: add subscription to the list
-        // Event includes full subscription and feed data
+        // Use high-level operation - handles cache add + tag invalidation
         const { subscription, feed } = data;
-        addSubscriptionToCache(utils, {
+        handleSubscriptionCreated(utils, {
           id: subscription.id,
           type: feed.type,
           url: feed.url,
@@ -489,26 +488,18 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
           subscribedAt: new Date(subscription.subscribedAt),
           unreadCount: subscription.unreadCount,
           tags: subscription.tags,
-          fetchFullContent: false, // Default for new subscriptions
+          fetchFullContent: false,
         });
-        // Tags may need updating if new subscriptions use existing tags
-        utils.tags.list.invalidate();
       } else if (data.type === "subscription_deleted") {
-        // Direct cache update: remove subscription from the list
-        // Check if it's already removed (optimistic update from same tab)
+        // Check if already removed (optimistic update from same tab)
         const currentData = utils.subscriptions.list.getData();
         const alreadyRemoved =
           currentData && !currentData.items.some((s) => s.id === data.subscriptionId);
 
         if (!alreadyRemoved) {
-          removeSubscriptionFromCache(utils, data.subscriptionId);
+          // Use high-level operation - handles cache remove + invalidations
+          handleSubscriptionDeleted(utils, data.subscriptionId);
         }
-
-        // Invalidate entry lists since entries from this subscription
-        // may need to be filtered out
-        utils.entries.list.invalidate();
-        // Tags need updating for unread counts
-        utils.tags.list.invalidate();
       } else if (data.type === "saved_article_created") {
         utils.entries.list.invalidate({ type: "saved" });
         utils.entries.count.invalidate({ type: "saved" });
