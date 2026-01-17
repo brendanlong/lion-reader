@@ -14,9 +14,8 @@ export async function register() {
     // Import the server Sentry config
     await import("./sentry.server.config");
 
-    // Initialize plugins
-    const { registerPlugins } = await import("./src/server/plugins");
-    registerPlugins();
+    // Initialize plugins (happens at module import time)
+    await import("./src/server/plugins");
 
     const { logger } = await import("./src/lib/logger");
 

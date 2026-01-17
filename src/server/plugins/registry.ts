@@ -7,20 +7,12 @@ export class PluginRegistry {
   private hostIndex = new Map<string, UrlPlugin[]>();
 
   register(plugin: UrlPlugin): void {
-    console.log(`[PluginRegistry] Registering plugin: ${plugin.name}`, {
-      hosts: plugin.hosts,
-      capabilities: Object.keys(plugin.capabilities),
-    });
     for (const host of plugin.hosts) {
       const normalized = host.toLowerCase();
       const existing = this.hostIndex.get(normalized) ?? [];
       existing.push(plugin);
       this.hostIndex.set(normalized, existing);
     }
-    console.log(`[PluginRegistry] Registry state after registration:`, {
-      totalHosts: this.hostIndex.size,
-      hosts: Array.from(this.hostIndex.keys()),
-    });
   }
 
   /**
@@ -37,27 +29,12 @@ export class PluginRegistry {
     const hostname = url.hostname.toLowerCase();
     const plugins = this.hostIndex.get(hostname);
 
-    console.log(`[PluginRegistry] Looking for plugin for ${hostname}`, {
-      registrySize: this.hostIndex.size,
-      availableHosts: Array.from(this.hostIndex.keys()),
-      pluginsForHost: plugins?.length ?? 0,
-      capability,
-    });
-
     if (!plugins) {
       return null;
     }
 
     for (const plugin of plugins) {
-      const matches = plugin.matchUrl(url);
-      const hasCapability = !!plugin.capabilities[capability];
-
-      console.log(`[PluginRegistry] Checking ${plugin.name}:`, {
-        matches,
-        hasCapability,
-      });
-
-      if (matches && hasCapability) {
+      if (plugin.matchUrl(url) && plugin.capabilities[capability]) {
         return plugin as UrlPlugin & {
           capabilities: Required<Pick<PluginCapabilities, K>>;
         };
