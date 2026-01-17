@@ -16,7 +16,7 @@ Lion Reader is a self-hosted feed reader that supports RSS and Atom feeds. It's 
 - **Saved articles** - Read-it-later functionality for any URL
 - **Audio narration** - Listen to articles with on-device text-to-speech
 - **Multi-user** - Per-user privacy (entries visible only after subscription)
-- **Authentication** - Email/password and OAuth (Google, Apple)
+- **Authentication** - Email/password and OAuth (Google, Apple, Discord)
 - **OPML import/export** - Migrate from other readers
 - **Keyboard shortcuts** - Vim-style navigation for power users
 - **Full-text search** - Search entries by title and content
