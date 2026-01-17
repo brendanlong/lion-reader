@@ -2,11 +2,13 @@
  * Full Content Fetching Service
  *
  * Fetches and extracts full article content from URLs using Readability.
- * Reuses patterns from saved articles for content fetching and cleaning.
+ * Attempts to use plugins (LessWrong GraphQL, Google Docs API, etc.) first,
+ * then falls back to standard HTML fetching and Readability.
  */
 
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
+import { pluginRegistry } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 
 /**
@@ -27,8 +29,8 @@ export interface FetchFullContentResult {
  * Fetches full article content from a URL.
  *
  * This function:
- * 1. Fetches the HTML from the URL
- * 2. Runs it through Readability to extract the article content
+ * 1. Checks if there's a plugin that can handle the URL (LessWrong GraphQL, etc.)
+ * 2. Falls back to standard HTML fetching + Readability if no plugin matches
  * 3. Returns both the original HTML and the cleaned content
  *
  * @param url - The article URL to fetch
@@ -36,7 +38,44 @@ export interface FetchFullContentResult {
  */
 export async function fetchFullContent(url: string): Promise<FetchFullContentResult> {
   try {
-    // Fetch the HTML page
+    const urlObj = new URL(url);
+
+    // Check if there's a plugin that can handle this URL
+    const plugin = pluginRegistry.findWithCapability(urlObj, "entry");
+
+    if (plugin) {
+      logger.debug("Using plugin for full content fetch", {
+        url,
+        plugin: plugin.name,
+      });
+
+      try {
+        const pluginContent = await plugin.capabilities.entry?.fetchFullContent?.(urlObj);
+
+        if (pluginContent) {
+          logger.debug("Plugin successfully fetched content", {
+            url,
+            plugin: plugin.name,
+          });
+
+          return {
+            success: true,
+            contentOriginal: pluginContent.html,
+            contentCleaned: pluginContent.html,
+          };
+        }
+      } catch (error) {
+        logger.warn("Plugin fetch failed, falling back to standard fetching", {
+          url,
+          plugin: plugin.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // Fall back to standard HTML fetching + Readability
+    logger.debug("Fetching full content using standard method", { url });
+
     const html = await fetchHtmlPage(url);
 
     // Absolutize URLs in the original HTML
