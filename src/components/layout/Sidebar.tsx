@@ -180,7 +180,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/all"
             onClick={handleClose}
-            className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
               isActiveLink("/all")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                 : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -188,7 +188,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           >
             <span>All Items</span>
             {totalUnreadCount > 0 && (
-              <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="ui-text-xs ml-2 text-zinc-500 dark:text-zinc-400">
                 ({totalUnreadCount})
               </span>
             )}
@@ -197,7 +197,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/starred"
             onClick={handleClose}
-            className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
               isActiveLink("/starred")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                 : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -205,7 +205,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           >
             <span>Starred</span>
             {starredCountQuery.data && starredCountQuery.data.unread > 0 && (
-              <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="ui-text-xs ml-2 text-zinc-500 dark:text-zinc-400">
                 ({starredCountQuery.data.unread})
               </span>
             )}
@@ -214,7 +214,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Link
             href="/saved"
             onClick={handleClose}
-            className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
               isActiveLink("/saved")
                 ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                 : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -222,7 +222,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           >
             <span>Saved</span>
             {savedUnreadCount > 0 && (
-              <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="ui-text-xs ml-2 text-zinc-500 dark:text-zinc-400">
                 ({savedUnreadCount})
               </span>
             )}
@@ -244,9 +244,9 @@ export function Sidebar({ onClose }: SidebarProps) {
               ))}
             </div>
           ) : subscriptionsQuery.error ? (
-            <p className="px-3 text-sm text-red-600 dark:text-red-400">Failed to load feeds</p>
+            <p className="ui-text-sm px-3 text-red-600 dark:text-red-400">Failed to load feeds</p>
           ) : subscriptionsQuery.data?.items.length === 0 ? (
-            <p className="px-3 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-sm px-3 text-zinc-500 dark:text-zinc-400">
               No subscriptions yet.{" "}
               <Link
                 href="/subscribe"
@@ -313,7 +313,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                       <Link
                         href={tagHref}
                         onClick={handleClose}
-                        className={`flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                        className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
                           isActive
                             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                             : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -326,7 +326,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                         />
                         <span className="truncate">{tag.name}</span>
                         {tag.unreadCount > 0 && (
-                          <span className="ml-auto shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                          <span className="ui-text-xs ml-auto shrink-0 text-zinc-500 dark:text-zinc-400">
                             ({tag.unreadCount})
                           </span>
                         )}
@@ -346,7 +346,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                               <Link
                                 href={subHref}
                                 onClick={handleClose}
-                                className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
+                                className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
                                   isSubActive
                                     ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                                     : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -354,7 +354,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                               >
                                 <span className="truncate pr-8">{displayTitle}</span>
                                 {sub.unreadCount > 0 && (
-                                  <span className="shrink-0 text-xs text-zinc-500 group-hover:hidden dark:text-zinc-400">
+                                  <span className="ui-text-xs shrink-0 text-zinc-500 group-hover:hidden dark:text-zinc-400">
                                     ({sub.unreadCount})
                                   </span>
                                 )}
@@ -479,7 +479,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                     <Link
                       href="/uncategorized"
                       onClick={handleClose}
-                      className={`flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                      className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
                         isActiveLink("/uncategorized")
                           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                           : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -492,7 +492,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                       />
                       <span className="truncate">Uncategorized</span>
                       {uncategorizedUnreadCount > 0 && (
-                        <span className="ml-auto shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                        <span className="ui-text-xs ml-auto shrink-0 text-zinc-500 dark:text-zinc-400">
                           ({uncategorizedUnreadCount})
                         </span>
                       )}
@@ -512,7 +512,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                             <Link
                               href={subHref}
                               onClick={handleClose}
-                              className={`flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
+                              className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
                                 isSubActive
                                   ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                                   : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -520,7 +520,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                             >
                               <span className="truncate pr-8">{displayTitle}</span>
                               {sub.unreadCount > 0 && (
-                                <span className="shrink-0 text-xs text-zinc-500 group-hover:hidden dark:text-zinc-400">
+                                <span className="ui-text-xs shrink-0 text-zinc-500 group-hover:hidden dark:text-zinc-400">
                                   ({sub.unreadCount})
                                 </span>
                               )}

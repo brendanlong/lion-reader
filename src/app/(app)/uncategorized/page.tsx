@@ -53,7 +53,7 @@ function UncategorizedEntriesContent() {
           {/* Breadcrumb back link */}
           <Link
             href="/all"
-            className="mb-2 -ml-2 inline-flex min-h-[36px] items-center rounded-md px-2 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:active:bg-zinc-700"
+            className="ui-text-sm mb-2 -ml-2 inline-flex min-h-[36px] items-center rounded-md px-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:active:bg-zinc-700"
           >
             <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -74,11 +74,11 @@ function UncategorizedEntriesContent() {
                 style={{ backgroundColor: "#6b7280" }}
                 aria-hidden="true"
               />
-              <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-50">
+              <h1 className="ui-text-xl sm:ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">
                 Uncategorized
               </h1>
               {feedCount > 0 && (
-                <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
+                <span className="ui-text-sm rounded-full bg-zinc-100 px-2.5 py-0.5 text-zinc-600 sm:px-3 sm:py-1 dark:bg-zinc-800 dark:text-zinc-400">
                   {feedCount} feed{feedCount !== 1 ? "s" : ""}
                 </span>
               )}
@@ -106,7 +106,7 @@ function UncategorizedEntriesContent() {
                       d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
                   </svg>
-                  <span className="ml-1.5 hidden text-sm sm:inline">Mark All Read</span>
+                  <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
                 </button>
               )}
               <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />

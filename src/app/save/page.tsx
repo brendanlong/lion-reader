@@ -122,7 +122,7 @@ function SaveContent() {
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="text-center">
-            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            <h1 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               Save to Lion Reader
             </h1>
             <Alert variant="error" className="mt-4">
@@ -141,7 +141,7 @@ function SaveContent() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
       <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div className="text-center">
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+          <h1 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
             Save to Lion Reader
           </h1>
 
@@ -170,8 +170,10 @@ function SaveContent() {
                   />
                 </svg>
               </div>
-              <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">Saving article...</p>
-              <p className="mt-2 truncate text-xs text-zinc-500 dark:text-zinc-500">{urlToSave}</p>
+              <p className="ui-text-sm mt-3 text-zinc-600 dark:text-zinc-400">Saving article...</p>
+              <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
+                {urlToSave}
+              </p>
             </div>
           )}
 
@@ -189,15 +191,15 @@ function SaveContent() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <p className="mt-3 text-sm font-medium text-green-700 dark:text-green-400">
+              <p className="ui-text-sm mt-3 font-medium text-green-700 dark:text-green-400">
                 Saved successfully!
               </p>
               {articleTitle && (
-                <p className="mt-2 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">
+                <p className="ui-text-sm mt-2 line-clamp-2 text-zinc-600 dark:text-zinc-400">
                   {articleTitle}
                 </p>
               )}
-              <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-500">
+              <p className="ui-text-xs mt-4 text-zinc-500 dark:text-zinc-500">
                 Closing in {countdown}...
               </p>
               <Button variant="secondary" className="mt-3 w-full" onClick={handleClose}>
@@ -234,7 +236,7 @@ function SaveContent() {
                         ? "Your Google account session has expired. Please reconnect to access private Google Docs."
                         : "This is a private Google Doc. You need to sign in with Google to save it."}
                   </Alert>
-                  <p className="mt-2 truncate text-xs text-zinc-500 dark:text-zinc-500">
+                  <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
                     {urlToSave}
                   </p>
                   <div className="mt-4 flex gap-2">
@@ -257,7 +259,7 @@ function SaveContent() {
                     </Button>
                   </div>
                   {requestGoogleDocsAccessMutation.isError && (
-                    <Alert variant="error" className="mt-2 text-left text-sm">
+                    <Alert variant="error" className="ui-text-sm mt-2 text-left">
                       {requestGoogleDocsAccessMutation.error?.message ||
                         "Failed to request permission"}
                     </Alert>
@@ -280,7 +282,7 @@ function SaveContent() {
                   <Alert variant="error" className="mt-4 text-left">
                     {saveMutation.error?.message || "Failed to save article"}
                   </Alert>
-                  <p className="mt-2 truncate text-xs text-zinc-500 dark:text-zinc-500">
+                  <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
                     {urlToSave}
                   </p>
                   <div className="mt-4 flex gap-2">

@@ -214,7 +214,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
         aria-label="Upload file"
       >
         <UploadIcon className="h-5 w-5" />
-        <span className="ml-1.5 hidden text-sm sm:inline">Upload</span>
+        <span className="ui-text-sm ml-1.5 hidden sm:inline">Upload</span>
       </button>
 
       {/* Upload Dialog */}
@@ -237,12 +237,12 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             >
               <h2
                 id="upload-dialog-title"
-                className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+                className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50"
               >
                 Upload File
               </h2>
 
-              <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
                 Upload a document to save for later reading. Supported formats: Word (.docx), HTML,
                 and Markdown (.md).
               </p>
@@ -281,10 +281,10 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
                     <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-50">
                       {selectedFile.name}
                     </p>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
                       {formatFileSize(selectedFile.size)}
                     </p>
-                    <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
+                    <p className="ui-text-xs mt-2 text-zinc-400 dark:text-zinc-500">
                       Click or drop a different file to replace
                     </p>
                   </div>
@@ -294,7 +294,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
                     <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-50">
                       Drop file here or click to browse
                     </p>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
                       .docx, .html, .md up to 10MB
                     </p>
                   </div>

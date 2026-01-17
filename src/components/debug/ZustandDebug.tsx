@@ -27,7 +27,7 @@ export function ZustandDebug() {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed right-4 bottom-4 z-50 rounded bg-blue-600 px-4 py-2 text-sm text-white shadow-lg hover:bg-blue-700"
+        className="ui-text-sm fixed right-4 bottom-4 z-50 rounded bg-blue-600 px-4 py-2 text-white shadow-lg hover:bg-blue-700"
       >
         🐛 Show Zustand Debug
       </button>
@@ -35,12 +35,12 @@ export function ZustandDebug() {
   }
 
   return (
-    <div className="fixed right-4 bottom-4 z-50 max-h-[80vh] w-[600px] overflow-auto rounded-lg border border-gray-300 bg-white p-4 font-mono text-xs shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+    <div className="ui-text-xs fixed right-4 bottom-4 z-50 max-h-[80vh] w-[600px] overflow-auto rounded-lg border border-gray-300 bg-white p-4 font-mono shadow-2xl dark:border-gray-700 dark:bg-gray-900">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-bold">🔄 Zustand Realtime Store</h3>
+        <h3 className="ui-text-sm font-bold">🔄 Zustand Realtime Store</h3>
         <button
           onClick={() => setIsOpen(false)}
-          className="rounded px-2 py-1 text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+          className="ui-text-xs rounded px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
         >
           ✕
         </button>
@@ -190,8 +190,8 @@ export function ZustandDebug() {
         </Section>
 
         <div className="pt-2 text-center text-gray-500">
-          <p className="text-xs">Updates automatically as state changes</p>
-          <p className="text-xs">
+          <p className="ui-text-xs">Updates automatically as state changes</p>
+          <p className="ui-text-xs">
             Open Redux DevTools for detailed action history →{" "}
             <a
               href="https://chromewebstore.google.com/detail/redux-devtools/lmhkpmbekcpmknklioeibfkpmmfibljd"

@@ -225,7 +225,7 @@ export function EntryContentError({ message, onRetry }: { message: string; onRet
           d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
         />
       </svg>
-      <p className="mb-4 text-base text-zinc-600 dark:text-zinc-400">{message}</p>
+      <p className="ui-text-base mb-4 text-zinc-600 dark:text-zinc-400">{message}</p>
       <Button onClick={onRetry} variant="secondary">
         Try again
       </Button>
@@ -347,7 +347,10 @@ const EntryContentRenderer = React.memo(function EntryContentRenderer({
 
   if (fallbackContent) {
     return (
-      <p className="text-base leading-relaxed text-zinc-700 dark:text-zinc-300" style={textStyle}>
+      <p
+        className="ui-text-base leading-relaxed text-zinc-700 dark:text-zinc-300"
+        style={textStyle}
+      >
         {fallbackContent}
       </p>
     );
@@ -593,7 +596,7 @@ export function EntryContentBody({
       {onBack && (
         <button
           onClick={onBack}
-          className="mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
+          className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
         >
           <BackArrowIcon />
           <span>Back to list</span>
@@ -608,18 +611,18 @@ export function EntryContentBody({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="mb-3 block text-xl leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:text-blue-600 hover:underline sm:mb-4 sm:text-2xl md:text-3xl dark:text-zinc-100 dark:hover:text-blue-400"
+            className="ui-text-xl sm:ui-text-2xl mb-3 block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:text-blue-600 hover:underline sm:mb-4 md:text-3xl dark:text-zinc-100 dark:hover:text-blue-400"
           >
             {title}
           </a>
         ) : (
-          <h1 className="mb-3 text-xl leading-tight font-bold text-zinc-900 sm:mb-4 sm:text-2xl md:text-3xl dark:text-zinc-100">
+          <h1 className="ui-text-xl sm:ui-text-2xl mb-3 leading-tight font-bold text-zinc-900 sm:mb-4 md:text-3xl dark:text-zinc-100">
             {title}
           </h1>
         )}
 
         {/* Meta row: Source, Author, Date */}
-        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600 sm:mb-6 sm:gap-x-4 sm:gap-y-2 sm:text-sm dark:text-zinc-400">
+        <div className="ui-text-xs sm:ui-text-sm mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:mb-6 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
           <span className="font-medium">{source}</span>
           {author && (
             <>
@@ -876,7 +879,7 @@ export function EntryContentBody({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-[44px] items-center gap-2 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
+            className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
           >
             <ExternalLinkIcon />
             Read on {displayFooterDomain}

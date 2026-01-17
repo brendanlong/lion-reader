@@ -36,7 +36,7 @@ export function ConnectionStatusIndicator({ status, onReconnect }: ConnectionSta
 
   return (
     <div
-      className="fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm shadow-lg ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-700"
+      className="ui-text-sm fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-full bg-white px-3 py-2 shadow-lg ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-700"
       role="status"
       aria-live="polite"
     >

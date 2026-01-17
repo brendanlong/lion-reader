@@ -144,8 +144,8 @@ export default function BrokenFeedsPage() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Broken Feeds</h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">Broken Feeds</h2>
+        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
           These feeds have failed to fetch recently. You can retry fetching immediately or wait for
           the next scheduled attempt.
         </p>
@@ -210,10 +210,10 @@ function EmptyState() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       </div>
-      <h3 className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">
+      <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
         All feeds are working
       </h3>
-      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
         None of your subscribed feeds have fetch errors.
       </p>
     </div>
@@ -266,20 +266,22 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
 
           {/* Feed URL */}
           {feed.url && feed.title && (
-            <p className="mt-0.5 truncate text-sm text-zinc-500 dark:text-zinc-400">{feed.url}</p>
+            <p className="ui-text-sm mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
+              {feed.url}
+            </p>
           )}
 
           {/* Error Message */}
           {feed.lastError && (
             <div className="mt-2 rounded-md bg-red-50 px-3 py-2 dark:bg-red-900/20">
-              <p className="text-sm text-red-700 dark:text-red-300">
+              <p className="ui-text-sm text-red-700 dark:text-red-300">
                 <span className="font-medium">Error:</span> {feed.lastError}
               </p>
             </div>
           )}
 
           {/* Metadata */}
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-sm mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
             <span className="flex items-center gap-1">
               <svg
                 className="h-4 w-4 text-red-500"

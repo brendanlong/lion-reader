@@ -109,13 +109,15 @@ export default function SessionsPage() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Active Sessions</h2>
-        <span className="text-sm text-zinc-500 dark:text-zinc-400">
+        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+          Active Sessions
+        </h2>
+        <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">
           {sessionsQuery.data?.sessions.length ?? 0} active
         </span>
       </div>
 
-      <p className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="ui-text-sm mb-6 text-zinc-600 dark:text-zinc-400">
         These are the devices that are currently logged into your account. You can revoke any
         session that you do not recognize.
       </p>
@@ -145,7 +147,9 @@ export default function SessionsPage() {
         ) : sessionsQuery.error ? (
           <Alert variant="error">Failed to load sessions. Please try again.</Alert>
         ) : sessionsQuery.data?.sessions.length === 0 ? (
-          <p className="text-center text-sm text-zinc-500 dark:text-zinc-400">No active sessions</p>
+          <p className="ui-text-sm text-center text-zinc-500 dark:text-zinc-400">
+            No active sessions
+          </p>
         ) : (
           sessionsQuery.data?.sessions.map((session) => {
             const { browser, platform } = parseUserAgent(session.userAgent);
@@ -201,17 +205,17 @@ export default function SessionsPage() {
                           {browser} on {platform}
                         </p>
                         {session.isCurrent && (
-                          <span className="mt-0.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                          <span className="ui-text-xs mt-0.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
                             Current session
                           </span>
                         )}
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                        <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
                           {session.ipAddress || "Unknown IP"}
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
                       <span>Last active: {formatTimeAgo(lastActive)}</span>
                       <span>
                         Created:{" "}

@@ -34,10 +34,10 @@ export default function EmailSettingsPage() {
     <div className="space-y-8">
       {/* Page Header */}
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
           Email Subscriptions
         </h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
           Create ingest addresses to subscribe to email newsletters. Emails sent to these addresses
           will appear as entries in your feeds.
         </p>
@@ -94,8 +94,8 @@ function IngestAddressesSection() {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Ingest Addresses</h3>
-        <span className="text-sm text-zinc-500 dark:text-zinc-400">{addresses.length} / 5</span>
+        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">Ingest Addresses</h3>
+        <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">{addresses.length} / 5</span>
       </div>
 
       <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -115,7 +115,7 @@ function IngestAddressesSection() {
           </div>
         ) : addresses.length === 0 && !isCreating ? (
           <div className="p-6 text-center">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
               No ingest addresses yet. Create one to start receiving newsletter emails.
             </p>
           </div>
@@ -257,10 +257,10 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              <h3 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
                 Delete Ingest Address
               </h3>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+              <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
                 Are you sure you want to delete this address? Future emails sent to{" "}
                 <span className="font-medium">{address.email}</span> will be rejected. Existing
                 feeds and entries will not be affected.
@@ -291,7 +291,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
         <div className="min-w-0 flex-1">
           {/* Email Address */}
           <div className="flex items-center gap-2">
-            <code className="rounded bg-zinc-100 px-2 py-1 text-sm break-all text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+            <code className="ui-text-sm rounded bg-zinc-100 px-2 py-1 break-all text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
               {address.email}
             </code>
             <button
@@ -353,9 +353,9 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
           ) : (
             <div className="mt-1 flex items-center gap-2">
               {address.label ? (
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">{address.label}</span>
+                <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">{address.label}</span>
               ) : (
-                <span className="text-sm text-zinc-400 dark:text-zinc-500">No label</span>
+                <span className="ui-text-sm text-zinc-400 dark:text-zinc-500">No label</span>
               )}
               <button
                 type="button"
@@ -376,7 +376,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
           )}
 
           {/* Created Date */}
-          <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+          <p className="ui-text-xs mt-1 text-zinc-400 dark:text-zinc-500">
             Created{" "}
             {new Date(address.createdAt).toLocaleDateString("en-US", {
               month: "short",
@@ -449,14 +449,14 @@ function SpamPreferenceSection() {
 
   return (
     <section>
-      <h3 className="mb-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">Preferences</h3>
+      <h3 className="ui-text-sm mb-4 font-medium text-zinc-900 dark:text-zinc-50">Preferences</h3>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            <h4 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
               Show spam entries
             </h4>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
               Display entries that were flagged as spam by our email provider.
             </p>
           </div>

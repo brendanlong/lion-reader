@@ -146,7 +146,7 @@ export const OfflineBanner = memo(function OfflineBanner({ className = "" }: Off
     return (
       <div
         role="alert"
-        className={`flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-medium text-white ${className}`}
+        className={`ui-text-sm flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 font-medium text-white ${className}`}
       >
         <svg
           className="h-4 w-4"
@@ -171,7 +171,7 @@ export const OfflineBanner = memo(function OfflineBanner({ className = "" }: Off
   return (
     <div
       role="status"
-      className={`flex items-center justify-center gap-2 bg-green-500 px-4 py-2 text-sm font-medium text-white ${className}`}
+      className={`ui-text-sm flex items-center justify-center gap-2 bg-green-500 px-4 py-2 font-medium text-white ${className}`}
     >
       <svg
         className="h-4 w-4"

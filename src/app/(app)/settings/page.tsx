@@ -83,7 +83,7 @@ function SettingsContent() {
 
       {/* Account Information Section */}
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
           Account Information
         </h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
@@ -93,22 +93,22 @@ function SettingsContent() {
               <div className="h-5 w-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
             </div>
           ) : userQuery.error ? (
-            <p className="text-sm text-red-600 dark:text-red-400">
+            <p className="ui-text-sm text-red-600 dark:text-red-400">
               Failed to load account information
             </p>
           ) : (
             <dl className="space-y-4">
               <div>
-                <dt className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Email</dt>
-                <dd className="mt-1 text-sm text-zinc-900 dark:text-zinc-50">
+                <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">Email</dt>
+                <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
                   {userQuery.data?.user.email}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">
                   Member since
                 </dt>
-                <dd className="mt-1 text-sm text-zinc-900 dark:text-zinc-50">
+                <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
                   {userQuery.data?.user.createdAt
                     ? new Date(userQuery.data.user.createdAt).toLocaleDateString("en-US", {
                         year: "numeric",
@@ -119,10 +119,10 @@ function SettingsContent() {
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">
                   Email verified
                 </dt>
-                <dd className="mt-1 text-sm text-zinc-900 dark:text-zinc-50">
+                <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
                   {userQuery.data?.user.emailVerifiedAt ? (
                     <span className="inline-flex items-center text-green-600 dark:text-green-400">
                       <svg
@@ -170,17 +170,17 @@ function SettingsContent() {
 
       {/* Privacy & Legal Section */}
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
           Privacy & Legal
         </h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
             Learn more about how we collect, use, and protect your data.
           </p>
           <div className="mt-4">
             <Link
               href="/privacy"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              className="ui-text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
               View Privacy Policy &rarr;
             </Link>
@@ -201,7 +201,7 @@ function PasswordSection() {
   if (linkedAccountsQuery.isLoading) {
     return (
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Password</h2>
+        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Password</h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="h-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
         </div>
@@ -307,12 +307,12 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
 
   return (
     <section>
-      <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
         {isSetMode ? "Set Password" : "Change Password"}
       </h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         {isSetMode && (
-          <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
             Your account was created with OAuth. Set a password to also log in with your email and
             password.
           </p>

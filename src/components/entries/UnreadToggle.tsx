@@ -113,7 +113,7 @@ export function UnreadToggle({ showUnreadOnly, onToggle, className = "" }: Unrea
       suppressHydrationWarning
     >
       <Icon className="h-5 w-5" />
-      <span className="ml-1.5 hidden text-sm sm:inline">
+      <span className="ui-text-sm ml-1.5 hidden sm:inline">
         {showUnreadOnly ? "Unread only" : "Show all"}
       </span>
     </button>
