@@ -30,7 +30,7 @@ export type TextJustification = "left" | "justify";
 /**
  * Font family options for entry content.
  */
-export type FontFamily = "system" | "serif" | "sans-serif";
+export type FontFamily = "system" | "merriweather" | "literata" | "inter" | "source-sans";
 
 /**
  * User preferences for appearance.
@@ -98,7 +98,13 @@ export function loadAppearanceSettings(): AppearanceSettings {
     const validThemeModes: ThemeMode[] = ["auto", "light", "dark"];
     const validTextSizes: TextSize[] = ["small", "medium", "large", "x-large"];
     const validJustifications: TextJustification[] = ["left", "justify"];
-    const validFontFamilies: FontFamily[] = ["system", "serif", "sans-serif"];
+    const validFontFamilies: FontFamily[] = [
+      "system",
+      "merriweather",
+      "literata",
+      "inter",
+      "source-sans",
+    ];
 
     return {
       themeMode: validThemeModes.includes(parsed.themeMode as ThemeMode)
