@@ -598,11 +598,18 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
 
       // Push entry changes to Zustand (same interface as SSE)
       for (const entry of result.entries.created) {
-        // Only update counts for entries with a subscription (skip orphaned starred)
         if (entry.subscriptionId) {
           useRealtimeStore
             .getState()
             .onNewEntry(entry.id, entry.subscriptionId, entry.fetchedAt.toISOString());
+        } else {
+          // This shouldn't happen for newly created entries - they should always
+          // have a subscription. Log to understand if/when this occurs.
+          console.warn("Sync: new entry missing subscriptionId", {
+            entryId: entry.id,
+            type: entry.type,
+            title: entry.title,
+          });
         }
       }
 
