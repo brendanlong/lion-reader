@@ -398,3 +398,234 @@ export function CircleFilledIcon({ className = "h-4 w-4" }: IconProps) {
     </svg>
   );
 }
+
+/**
+ * Sort descending icon (newest first) - bars from tall to short
+ */
+export function SortDescendingIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 4.5h14.25M3 9h9.75M3 13.5h9.75m4.5-4.5v12m0 0l-3.75-3.75M17.25 21L21 17.25"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Sort ascending icon (oldest first) - bars from short to tall
+ */
+export function SortAscendingIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 4.5h14.25M3 9h9.75M3 13.5h5.25m5.25-.75L17.25 9m0 0L21 12.75M17.25 9v12"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Default empty state icon (newspaper/document)
+ */
+export function DefaultEmptyIcon({ className = "h-12 w-12" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Skip backward icon (media player control)
+ */
+export function SkipBackwardIcon({ className = "h-4 w-4" }: IconProps) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" />
+    </svg>
+  );
+}
+
+/**
+ * Skip forward icon (media player control)
+ */
+export function SkipForwardIcon({ className = "h-4 w-4" }: IconProps) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M16 6h2v12h-2V6zm-10 0l8.5 6L6 18V6z" />
+    </svg>
+  );
+}
+
+/**
+ * Narration/audio icon (speaker with sound waves)
+ */
+export function NarrationIcon({ className = "h-4 w-4" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Document icon (for file uploads)
+ */
+export function DocumentIcon({ className = "h-4 w-4" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Google logo icon
+ */
+export function GoogleIcon({
+  className = "h-6 w-6",
+  muted = false,
+}: IconProps & { muted?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`${className} ${muted ? "opacity-40" : ""}`}
+    >
+      <path
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+        fill="#34A853"
+      />
+      <path
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+        fill="#EA4335"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Apple logo icon
+ */
+export function AppleIcon({
+  className = "h-6 w-6",
+  muted = false,
+}: IconProps & { muted?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`${className} ${muted ? "opacity-40" : ""}`}
+    >
+      <path
+        d="M17.569 12.6254C17.597 15.6529 20.2179 16.6664 20.25 16.6804C20.2269 16.7524 19.8318 18.1419 18.8424 19.5749C17.9814 20.8234 17.0879 22.0654 15.6889 22.0924C14.3144 22.1189 13.8759 21.2894 12.3019 21.2894C10.7284 21.2894 10.2394 22.0654 8.93942 22.1189C7.58992 22.1724 6.55792 20.7694 5.68992 19.5274C3.91792 17.0004 2.55692 12.3654 4.37192 9.26839C5.27192 7.73289 6.87892 6.76039 8.61792 6.73389C9.94292 6.70739 11.1934 7.61239 12.0089 7.61239C12.8239 7.61239 14.3369 6.52239 15.9404 6.68489C16.6284 6.71439 18.4849 6.95989 19.6939 8.68489C19.5999 8.74239 17.5469 9.94739 17.569 12.6254ZM14.9069 4.63539C15.6219 3.77889 16.1079 2.58939 15.9729 1.40039C14.9484 1.44239 13.7029 2.09039 12.9634 2.94639C12.3014 3.70689 11.7134 4.92339 11.8724 6.08439C13.0109 6.17239 14.1919 5.49239 14.9069 4.63539Z"
+        fill="currentColor"
+        className="text-zinc-900 dark:text-zinc-100"
+      />
+    </svg>
+  );
+}
+
+/**
+ * WiFi off icon (for offline status)
+ */
+export function WifiOffIcon({ className = "h-4 w-4" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414"
+      />
+    </svg>
+  );
+}
+
+/**
+ * WiFi on icon (for online/reconnected status)
+ */
+export function WifiOnIcon({ className = "h-4 w-4" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
+      />
+    </svg>
+  );
+}
