@@ -5,7 +5,8 @@
  *
  * Strategy:
  * - For individual entry views (entries.get): update directly
- * - For entry lists (entries.list): invalidate (too many filter combinations to update all)
+ * - For entry lists (entries.list): don't invalidate - entries stay visible until navigation
+ *   (lists have refetchOnMount: true, so they'll refetch on next navigation)
  * - For counts (subscriptions, tags): update directly via count-cache helpers
  */
 
@@ -13,7 +14,7 @@ import type { TRPCClientUtils } from "@/lib/trpc/client";
 
 /**
  * Updates read status for entries in the single entry cache (entries.get).
- * Also invalidates entry lists since they have too many filter combinations.
+ * Does NOT invalidate entry lists - entries stay visible until navigation.
  *
  * Note: Call adjustSubscriptionUnreadCounts and adjustTagUnreadCounts separately
  * for count updates - those update directly without invalidation.
@@ -38,14 +39,13 @@ export function updateEntriesReadStatus(
     });
   }
 
-  // Invalidate entry lists - they'll refetch with the new read status
-  // This is simpler than trying to update all possible filter combinations
-  utils.entries.list.invalidate();
+  // Don't invalidate entry lists - entries stay visible until navigation.
+  // Lists have refetchOnMount: true, so they'll refetch on next navigation.
 }
 
 /**
  * Updates starred status for an entry in the single entry cache.
- * Also invalidates entry lists.
+ * Does NOT invalidate entry lists - entries stay visible until navigation.
  *
  * @param utils - tRPC utils for cache access
  * @param entryId - Entry ID to update
@@ -65,6 +65,6 @@ export function updateEntryStarredStatus(
     };
   });
 
-  // Invalidate entry lists - starred/unstarred entries need list updates
-  utils.entries.list.invalidate();
+  // Don't invalidate entry lists - entries stay visible until navigation.
+  // Lists have refetchOnMount: true, so they'll refetch on next navigation.
 }
