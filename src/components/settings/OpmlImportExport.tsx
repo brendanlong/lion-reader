@@ -483,15 +483,15 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
       <div className="mb-4 grid grid-cols-3 gap-4">
         <div className="rounded-md bg-green-50 p-3 dark:bg-green-950/20">
           <p className="text-2xl font-bold text-green-600 dark:text-green-400">{imported}</p>
-          <p className="text-sm text-green-600 dark:text-green-400">Imported</p>
+          <p className="ui-text-sm text-green-600 dark:text-green-400">Imported</p>
         </div>
         <div className="rounded-md bg-yellow-50 p-3 dark:bg-yellow-950/20">
           <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{skipped}</p>
-          <p className="text-sm text-yellow-600 dark:text-yellow-400">Skipped</p>
+          <p className="ui-text-sm text-yellow-600 dark:text-yellow-400">Skipped</p>
         </div>
         <div className="rounded-md bg-red-50 p-3 dark:bg-red-950/20">
           <p className="text-2xl font-bold text-red-600 dark:text-red-400">{failed}</p>
-          <p className="text-sm text-red-600 dark:text-red-400">Failed</p>
+          <p className="ui-text-sm text-red-600 dark:text-red-400">Failed</p>
         </div>
       </div>
 
@@ -519,7 +519,7 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
                           {result.url}
                         </p>
                         {result.error && (
-                          <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                          <p className="ui-text-sm mt-1 text-red-600 dark:text-red-400">
                             {result.error}
                           </p>
                         )}

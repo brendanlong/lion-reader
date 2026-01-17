@@ -116,7 +116,7 @@ function TextPreview() {
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-      <p className="mb-2 text-sm font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+      <p className="ui-text-sm mb-2 font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
         Preview
       </p>
       <p className="text-zinc-700 dark:text-zinc-300" style={style}>

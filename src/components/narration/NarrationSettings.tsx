@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui";
 import { useNarrationSettings } from "@/lib/narration/settings";
@@ -26,27 +26,38 @@ const EnhancedVoiceList = dynamic(
   { ssr: false }
 );
 
+// Hydration-safe hook to detect client-side rendering
+// Returns false during SSR and first render, true after hydration
+const subscribe = () => () => {};
+const getSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function NarrationSettings() {
   const [settings, setSettings] = useNarrationSettings();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  // Use lazy initialization to get support info without triggering cascading renders
-  const [supportInfo] = useState<ReturnType<typeof getNarrationSupportInfo>>(() =>
-    getNarrationSupportInfo()
-  );
-  // Initialize loading state based on whether we need to load voices
-  const [isLoadingVoices, setIsLoadingVoices] = useState(() => supportInfo.supported);
-  // Check if running in Firefox (has broken pause/resume)
-  const [isFirefoxBrowser] = useState(() => isFirefox());
+  // Track if voices have finished loading (null = not started, true = done, false = failed/not supported)
+  const [voicesLoaded, setVoicesLoaded] = useState<boolean | null>(null);
+
+  // Use useSyncExternalStore to safely detect client-side rendering
+  // This avoids hydration mismatch by returning false on server and first client render
+  const hasMounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   // Check if AI text processing is available (GROQ_API_KEY configured)
   const { data: aiAvailability } = trpc.narration.isAiTextProcessingAvailable.useQuery();
   const isAiTextProcessingAvailable = aiAvailability?.available ?? false;
 
+  // Get support info only after mounting (avoids hydration mismatch)
+  const supportInfo = hasMounted ? getNarrationSupportInfo() : null;
+  const isFirefoxBrowser = hasMounted ? isFirefox() : false;
+
+  // Derive loading state: loading if mounted, supported, but voices not yet loaded
+  const isLoadingVoices = hasMounted && supportInfo?.supported && voicesLoaded === null;
+
   // Load voices on mount (only if supported)
   useEffect(() => {
-    // Skip if not supported - isLoadingVoices is already false from initialization
-    if (!supportInfo.supported) {
+    // Skip if not yet mounted or not supported
+    if (!hasMounted || !supportInfo?.supported) {
       return;
     }
 
@@ -55,13 +66,13 @@ export function NarrationSettings() {
       if (cancelled) return;
       const ranked = rankVoices(availableVoices);
       setVoices(ranked);
-      setIsLoadingVoices(false);
+      setVoicesLoaded(true);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [supportInfo.supported]);
+  }, [hasMounted, supportInfo?.supported]);
 
   // Get the currently selected voice object
   const selectedVoice = settings.voiceId ? findVoiceByUri(settings.voiceId) : null;
@@ -152,11 +163,32 @@ export function NarrationSettings() {
     }
   }, []);
 
+  // Show loading state while checking support (prevents hydration mismatch)
+  if (supportInfo === null) {
+    return (
+      <section>
+        <h2 className="ui-text-xl mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="ui-text-base font-medium text-zinc-900 dark:text-zinc-50">
+                Enable narration
+              </h3>
+              <p className="ui-text-base mt-1 text-zinc-500 dark:text-zinc-400">
+                Checking browser support...
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   // Show unsupported message if narration is not available
   if (!supportInfo.supported) {
     return (
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
+        <h2 className="ui-text-xl mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-start gap-3">
             <svg
@@ -173,11 +205,13 @@ export function NarrationSettings() {
               />
             </svg>
             <div>
-              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <p className="ui-text-base font-medium text-zinc-900 dark:text-zinc-100">
                 Narration Unavailable
               </p>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{supportInfo.reason}</p>
-              <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
+              <p className="ui-text-base mt-1 text-zinc-500 dark:text-zinc-400">
+                {supportInfo.reason}
+              </p>
+              <p className="ui-text-sm mt-2 text-zinc-400 dark:text-zinc-500">
                 Try using Chrome, Safari, or Edge for the best narration experience.
               </p>
             </div>
@@ -189,15 +223,15 @@ export function NarrationSettings() {
 
   return (
     <section>
-      <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
+      <h2 className="ui-text-xl mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
       <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         {/* Enable/Disable Toggle */}
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            <h3 className="ui-text-base font-medium text-zinc-900 dark:text-zinc-50">
               Enable narration
             </h3>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-base mt-1 text-zinc-500 dark:text-zinc-400">
               Listen to articles using text-to-speech.
             </p>
           </div>
@@ -224,7 +258,7 @@ export function NarrationSettings() {
           <div className="mt-6 space-y-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
             {/* Voice Provider Selection */}
             <div>
-              <h3 className="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              <h3 className="ui-text-base mb-3 font-medium text-zinc-900 dark:text-zinc-50">
                 Voice Provider
               </h3>
               <div className="space-y-3">
@@ -257,10 +291,10 @@ export function NarrationSettings() {
                       )}
                     </div>
                     <div>
-                      <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      <span className="ui-text-base block font-medium text-zinc-900 dark:text-zinc-100">
                         Browser Voices
                       </span>
-                      <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+                      <span className="ui-text-sm mt-0.5 block text-zinc-500 dark:text-zinc-400">
                         Uses your browser&apos;s built-in text-to-speech
                       </span>
                     </div>
@@ -296,10 +330,10 @@ export function NarrationSettings() {
                       )}
                     </div>
                     <div>
-                      <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      <span className="ui-text-base block font-medium text-zinc-900 dark:text-zinc-100">
                         Enhanced Voices
                       </span>
-                      <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+                      <span className="ui-text-sm mt-0.5 block text-zinc-500 dark:text-zinc-400">
                         Higher quality voices (requires download)
                       </span>
                     </div>
@@ -313,7 +347,7 @@ export function NarrationSettings() {
               <div>
                 <label
                   htmlFor="narration-voice"
-                  className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                  className="ui-text-base mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
                 >
                   Voice
                 </label>
@@ -323,7 +357,7 @@ export function NarrationSettings() {
                     value={settings.voiceId || ""}
                     onChange={handleVoiceChange}
                     disabled={isLoadingVoices}
-                    className="block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                    className="ui-text-base block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
                   >
                     {isLoadingVoices ? (
                       <option value="">Loading voices...</option>
@@ -350,7 +384,7 @@ export function NarrationSettings() {
                     {isPreviewing ? "Stop" : "Preview"}
                   </Button>
                 </div>
-                <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <p className="ui-text-sm mt-1.5 text-zinc-500 dark:text-zinc-400">
                   Voices are provided by your browser. Chrome and Safari typically offer higher
                   quality voices.
                 </p>
@@ -361,7 +395,7 @@ export function NarrationSettings() {
             {settings.provider === "piper" && (
               <div className="space-y-4">
                 <div>
-                  <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label className="ui-text-base mb-3 block font-medium text-zinc-700 dark:text-zinc-300">
                     Select Voice
                   </label>
                   <EnhancedVoiceList settings={settings} setSettings={setSettings} />
@@ -374,7 +408,7 @@ export function NarrationSettings() {
             <div>
               <label
                 htmlFor="narration-rate"
-                className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                className="ui-text-base mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
               >
                 Speed: {settings.rate.toFixed(1)}x
               </label>
@@ -388,7 +422,7 @@ export function NarrationSettings() {
                 onChange={handleRateChange}
                 className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
               />
-              <div className="mt-1 flex justify-between text-xs text-zinc-400 dark:text-zinc-500">
+              <div className="ui-text-sm mt-1 flex justify-between text-zinc-400 dark:text-zinc-500">
                 <span>0.5x</span>
                 <span>1.0x</span>
                 <span>1.5x</span>
@@ -401,7 +435,7 @@ export function NarrationSettings() {
               <div>
                 <label
                   htmlFor="narration-pitch"
-                  className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                  className="ui-text-base mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
                 >
                   Pitch: {settings.pitch.toFixed(1)}x
                 </label>
@@ -415,7 +449,7 @@ export function NarrationSettings() {
                   onChange={handlePitchChange}
                   className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
                 />
-                <div className="mt-1 flex justify-between text-xs text-zinc-400 dark:text-zinc-500">
+                <div className="ui-text-sm mt-1 flex justify-between text-zinc-400 dark:text-zinc-500">
                   <span>0.5x</span>
                   <span>1.0x</span>
                   <span>1.5x</span>
@@ -427,15 +461,17 @@ export function NarrationSettings() {
             {/* Processing Settings - only shown if AI text processing is available */}
             {isAiTextProcessingAvailable && (
               <div className="space-y-4">
-                <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Processing</h3>
+                <h3 className="ui-text-base font-medium text-zinc-900 dark:text-zinc-50">
+                  Processing
+                </h3>
 
                 {/* LLM Normalization Toggle */}
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                    <p className="ui-text-base text-zinc-700 dark:text-zinc-300">
                       Use AI text processing
                     </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
                       Improves narration quality by expanding abbreviations and formatting content
                     </p>
                   </div>
@@ -468,15 +504,17 @@ export function NarrationSettings() {
 
             {/* Highlighting Settings */}
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Highlighting</h3>
+              <h3 className="ui-text-base font-medium text-zinc-900 dark:text-zinc-50">
+                Highlighting
+              </h3>
 
               {/* Highlight Current Paragraph Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                  <p className="ui-text-base text-zinc-700 dark:text-zinc-300">
                     Highlight current paragraph
                   </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
                     Visually highlight the paragraph being read
                   </p>
                 </div>
@@ -505,10 +543,10 @@ export function NarrationSettings() {
               {/* Auto-scroll to Current Paragraph Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                  <p className="ui-text-base text-zinc-700 dark:text-zinc-300">
                     Auto-scroll to current paragraph
                   </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
                     Automatically scroll the page to keep the current paragraph visible
                   </p>
                 </div>
@@ -537,7 +575,7 @@ export function NarrationSettings() {
 
             {/* Firefox Warning */}
             {isFirefoxBrowser && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+              <div className="ui-text-sm flex items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
                 <svg
                   className="mt-0.5 h-4 w-4 flex-shrink-0"
                   fill="none"
@@ -563,7 +601,7 @@ export function NarrationSettings() {
         {/* Media Session Info */}
         {settings.enabled && supportInfo.mediaSession && (
           <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-            <div className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="ui-text-sm flex items-start gap-2 text-zinc-500 dark:text-zinc-400">
               <svg
                 className="mt-0.5 h-4 w-4 flex-shrink-0"
                 fill="none"
