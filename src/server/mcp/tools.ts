@@ -8,6 +8,7 @@
 import type { db as dbType } from "@/server/db";
 import * as entriesService from "@/server/services/entries";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import * as savedService from "@/server/services/saved";
 
 // ============================================================================
 // Types
@@ -191,6 +192,51 @@ export function registerTools(): Tool[] {
           ...params,
           showSpam: false,
         });
+      },
+    },
+
+    // ========================================================================
+    // Saved Articles Tools
+    // ========================================================================
+
+    {
+      name: "save_article",
+      description:
+        "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article if already saved.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "The URL to save" },
+          title: {
+            type: "string",
+            description: "Optional title override (useful if page title is poor)",
+          },
+        },
+        required: ["url"],
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (db, args: any) => {
+        return savedService.saveArticle(db, args.userId, {
+          url: args.url,
+          title: args.title,
+        });
+      },
+    },
+
+    {
+      name: "delete_saved_article",
+      description: "Delete a saved article. Returns success status.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          articleId: { type: "string", description: "The saved article ID to delete" },
+        },
+        required: ["articleId"],
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (db, args: any) => {
+        const deleted = await savedService.deleteSavedArticle(db, args.userId, args.articleId);
+        return { deleted };
       },
     },
 

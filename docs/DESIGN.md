@@ -451,6 +451,8 @@ Lion Reader exposes functionality to AI assistants via the [Model Context Protoc
 | `mark_entries_read`    | Mark entries as read/unread (bulk)            |
 | `star_entries`         | Star/unstar entries                           |
 | `count_entries`        | Get entry counts with filters                 |
+| `save_article`         | Save a URL for later reading                  |
+| `delete_saved_article` | Delete a saved article                        |
 | `list_subscriptions`   | List all active subscriptions                 |
 | `search_subscriptions` | Search subscriptions by title                 |
 | `get_subscription`     | Get subscription details                      |
