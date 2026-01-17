@@ -29,10 +29,15 @@ export class PluginRegistry {
     const hostname = url.hostname.toLowerCase();
     const plugins = this.hostIndex.get(hostname);
 
-    if (!plugins) return null;
+    if (!plugins) {
+      return null;
+    }
 
     for (const plugin of plugins) {
-      if (plugin.matchUrl(url) && plugin.capabilities[capability]) {
+      const matches = plugin.matchUrl(url);
+      const hasCapability = !!plugin.capabilities[capability];
+
+      if (matches && hasCapability) {
         return plugin as UrlPlugin & {
           capabilities: Required<Pick<PluginCapabilities, K>>;
         };
