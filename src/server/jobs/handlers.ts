@@ -1142,75 +1142,95 @@ export async function migrateSubscriptionsToExistingFeed(
   });
 
   const now = new Date();
+  const userIds = activeSubscriptions.map((s) => s.userId);
+  const oldSubIds = activeSubscriptions.map((s) => s.id);
+
+  // Batch query: Get all existing subscriptions to the new feed for affected users
+  const existingNewSubs = await db
+    .select({
+      id: subscriptions.id,
+      userId: subscriptions.userId,
+      previousFeedIds: subscriptions.previousFeedIds,
+      unsubscribedAt: subscriptions.unsubscribedAt,
+    })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.feedId, newFeed.id), inArray(subscriptions.userId, userIds)));
+
+  // Build lookup map: userId -> existing subscription to new feed
+  const existingSubByUser = new Map(existingNewSubs.map((s) => [s.userId, s]));
+
+  // Separate users into those with and without existing subscriptions to new feed
+  const usersWithExisting: Array<{
+    userId: string;
+    existingSubId: string;
+    previousFeedIds: string[];
+    wasUnsubscribed: boolean;
+  }> = [];
+  const usersWithoutExisting: string[] = [];
 
   for (const sub of activeSubscriptions) {
-    try {
-      // Check if user already has subscription to new feed
-      const existingNewSub = await db
-        .select({
-          id: subscriptions.id,
-          previousFeedIds: subscriptions.previousFeedIds,
-          unsubscribedAt: subscriptions.unsubscribedAt,
-        })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, sub.userId), eq(subscriptions.feedId, newFeed.id)))
-        .limit(1);
-
-      if (existingNewSub.length > 0) {
-        const existing = existingNewSub[0];
-        // User has subscription to new feed - append old feed to previousFeedIds
-        const newPreviousFeedIds = [...existing.previousFeedIds, oldFeed.id];
-
-        await db
-          .update(subscriptions)
-          .set({
-            previousFeedIds: newPreviousFeedIds,
-            // Reactivate if previously unsubscribed
-            unsubscribedAt: null,
-            subscribedAt: existing.unsubscribedAt ? now : undefined,
-            updatedAt: now,
-          })
-          .where(eq(subscriptions.id, existing.id));
-      } else {
-        // Create new subscription to new feed with old feed in previousFeedIds
-        await db.insert(subscriptions).values({
-          id: generateUuidv7(),
-          userId: sub.userId,
-          feedId: newFeed.id,
-          previousFeedIds: [oldFeed.id],
-          subscribedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        // Enable the job for the new feed
-        await enableFeedJob(newFeed.id);
-      }
-
-      // Unsubscribe from old feed (but keep the entries and user_entries)
-      await db
-        .update(subscriptions)
-        .set({
-          unsubscribedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(subscriptions.id, sub.id));
-
-      logger.debug("Migrated subscription", {
+    const existing = existingSubByUser.get(sub.userId);
+    if (existing) {
+      usersWithExisting.push({
         userId: sub.userId,
-        oldFeedId: oldFeed.id,
-        newFeedId: newFeed.id,
+        existingSubId: existing.id,
+        previousFeedIds: existing.previousFeedIds,
+        wasUnsubscribed: existing.unsubscribedAt !== null,
       });
-    } catch (error) {
-      // Log error but continue with other subscriptions
-      logger.error("Failed to migrate subscription", {
-        userId: sub.userId,
-        oldFeedId: oldFeed.id,
-        newFeedId: newFeed.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    } else {
+      usersWithoutExisting.push(sub.userId);
     }
   }
+
+  // Batch update: For users with existing subscriptions, add old feed to previousFeedIds
+  // Note: Each subscription may have different previousFeedIds, so we need individual updates
+  // But we can at least avoid the N SELECT queries we were doing before
+  for (const user of usersWithExisting) {
+    const newPreviousFeedIds = [...user.previousFeedIds, oldFeed.id];
+    await db
+      .update(subscriptions)
+      .set({
+        previousFeedIds: newPreviousFeedIds,
+        unsubscribedAt: null,
+        subscribedAt: user.wasUnsubscribed ? now : undefined,
+        updatedAt: now,
+      })
+      .where(eq(subscriptions.id, user.existingSubId));
+  }
+
+  // Batch insert: For users without existing subscriptions, create new ones
+  if (usersWithoutExisting.length > 0) {
+    const newSubscriptions = usersWithoutExisting.map((userId) => ({
+      id: generateUuidv7(),
+      userId,
+      feedId: newFeed.id,
+      previousFeedIds: [oldFeed.id],
+      subscribedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    await db.insert(subscriptions).values(newSubscriptions);
+
+    // Enable the job for the new feed (only once, not per-user)
+    await enableFeedJob(newFeed.id);
+  }
+
+  // Batch update: Unsubscribe all old subscriptions at once
+  await db
+    .update(subscriptions)
+    .set({
+      unsubscribedAt: now,
+      updatedAt: now,
+    })
+    .where(inArray(subscriptions.id, oldSubIds));
+
+  logger.debug("Migrated subscriptions", {
+    oldFeedId: oldFeed.id,
+    newFeedId: newFeed.id,
+    withExisting: usersWithExisting.length,
+    newSubscriptions: usersWithoutExisting.length,
+  });
 
   // Sync the old feed's job - it will be disabled since it has no subscribers now
   await syncFeedJobEnabled(oldFeed.id);
@@ -1429,20 +1449,27 @@ export async function handleProcessOpmlImport(
         }
       }
 
-      // Create tags that don't exist
+      // Batch create tags that don't exist (avoids N+1 queries)
       const now = new Date();
-      for (const tagName of tagNames) {
-        if (!tagNameToInfo.has(tagName)) {
-          const tagId = generateUuidv7();
-          await db.insert(tags).values({
-            id: tagId,
-            userId,
-            name: tagName,
-            createdAt: now,
-          });
-          tagNameToInfo.set(tagName, { id: tagId, name: tagName, color: null });
-          logger.debug("OPML import: created tag", { tagName, tagId, userId });
+      const tagsToCreate = Array.from(tagNames)
+        .filter((tagName) => !tagNameToInfo.has(tagName))
+        .map((tagName) => ({
+          id: generateUuidv7(),
+          userId,
+          name: tagName,
+          createdAt: now,
+        }));
+
+      if (tagsToCreate.length > 0) {
+        await db.insert(tags).values(tagsToCreate);
+        for (const tag of tagsToCreate) {
+          tagNameToInfo.set(tag.name, { id: tag.id, name: tag.name, color: null });
         }
+        logger.debug("OPML import: created tags", {
+          count: tagsToCreate.length,
+          tagNames: tagsToCreate.map((t) => t.name),
+          userId,
+        });
       }
     }
 
