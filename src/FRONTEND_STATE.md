@@ -219,7 +219,7 @@ Mutations return context needed for cache updates. The server provides all neces
 
 ### entries.markRead
 
-Returns entries with subscription context and starred status:
+Returns entries with all context needed for cache updates:
 
 ```typescript
 // Response
@@ -230,6 +230,7 @@ Returns entries with subscription context and starred status:
     id: string;
     subscriptionId: string | null; // For subscription/tag count updates
     starred: boolean; // For starred unread count updates
+    type: "web" | "email" | "saved"; // For saved count updates
   }>;
 }
 ```

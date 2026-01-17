@@ -23,13 +23,19 @@ import {
 } from "./index";
 
 /**
+ * Entry type (matches feed type schema).
+ */
+export type EntryType = "web" | "email" | "saved";
+
+/**
  * Entry with context, as returned by markRead mutation.
- * Includes starred status for updating starred unread count.
+ * Includes all state needed for cache updates.
  */
 export interface EntryWithContext {
   id: string;
   subscriptionId: string | null;
   starred: boolean;
+  type: EntryType;
 }
 
 /**
@@ -58,9 +64,10 @@ export interface SubscriptionData {
  * - subscriptions.list unread counts
  * - tags.list unread counts
  * - entries.count({ starredOnly: true }) for starred entries
+ * - entries.count({ type: "saved" }) for saved entries
  *
  * @param utils - tRPC utils for cache access
- * @param entries - Entries with their subscription context and starred status
+ * @param entries - Entries with their context (subscriptionId, starred, type)
  * @param read - New read status
  */
 export function handleEntriesMarkedRead(
@@ -97,10 +104,15 @@ export function handleEntriesMarkedRead(
   adjustTagUnreadCounts(utils, tagDeltas);
 
   // 5. Update starred unread count - only for entries that are starred
-  // Server provides starred status, so we count directly from the entries
   const starredCount = entries.filter((e) => e.starred).length;
   if (starredCount > 0) {
     adjustEntriesCount(utils, { starredOnly: true }, delta * starredCount);
+  }
+
+  // 6. Update saved unread count - only for saved entries
+  const savedCount = entries.filter((e) => e.type === "saved").length;
+  if (savedCount > 0) {
+    adjustEntriesCount(utils, { type: "saved" }, delta * savedCount);
   }
 }
 
