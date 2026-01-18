@@ -403,13 +403,23 @@ async function handleSaveReaction(
 }
 
 /**
- * Find an emoji in the guild by name.
- * For custom emojis like "salutinglionreader", we need to look them up in the guild.
+ * Find an emoji by name, checking application emojis first, then guild emojis.
+ * Application emojis are custom emojis uploaded to the Discord bot itself,
+ * which can be used anywhere the bot can send messages.
  */
-function findGuildEmoji(message: Message, emojiName: string): string | null {
+function findEmoji(message: Message, emojiName: string): string | null {
+  // First, check application emojis (custom emojis on the bot itself)
+  if (client?.application) {
+    const appEmoji = client.application.emojis.cache.find((e) => e.name === emojiName);
+    if (appEmoji) {
+      return appEmoji.id;
+    }
+  }
+
+  // Fall back to guild emojis
   if (!message.guild) return null;
-  const emoji = message.guild.emojis.cache.find((e) => e.name === emojiName);
-  return emoji ? emoji.id : null;
+  const guildEmoji = message.guild.emojis.cache.find((e) => e.name === emojiName);
+  return guildEmoji ? guildEmoji.id : null;
 }
 
 /**
@@ -427,12 +437,12 @@ async function addResultReaction(
       // Check if it's a custom emoji (alphanumeric) or unicode
       const isCustom = /^[a-zA-Z0-9_]+$/.test(DISCORD_SUCCESS_EMOJI);
       if (isCustom) {
-        const emojiId = findGuildEmoji(message, DISCORD_SUCCESS_EMOJI);
+        const emojiId = findEmoji(message, DISCORD_SUCCESS_EMOJI);
         if (emojiId) {
           await message.react(emojiId);
         } else {
-          // Custom emoji not found in guild, log warning
-          logger.warn("Success emoji not found in guild", {
+          // Custom emoji not found in app or guild
+          logger.warn("Success emoji not found", {
             emoji: DISCORD_SUCCESS_EMOJI,
             guildId: message.guild?.id,
           });
@@ -450,11 +460,11 @@ async function addResultReaction(
     try {
       const isCustom = /^[a-zA-Z0-9_]+$/.test(DISCORD_ERROR_EMOJI);
       if (isCustom) {
-        const emojiId = findGuildEmoji(message, DISCORD_ERROR_EMOJI);
+        const emojiId = findEmoji(message, DISCORD_ERROR_EMOJI);
         if (emojiId) {
           await message.react(emojiId);
         } else {
-          logger.warn("Error emoji not found in guild", {
+          logger.warn("Error emoji not found", {
             emoji: DISCORD_ERROR_EMOJI,
             guildId: message.guild?.id,
           });
