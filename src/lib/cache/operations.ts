@@ -56,6 +56,26 @@ export interface SubscriptionData {
   fetchFullContent: boolean;
 }
 
+// ============================================================================
+// Private Helpers (shared logic to avoid duplication)
+// ============================================================================
+
+/**
+ * Updates subscription and tag unread counts based on deltas.
+ * Shared logic used by multiple operations to ensure consistent behavior.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param subscriptionDeltas - Map of subscriptionId -> unread count delta
+ */
+function updateSubscriptionAndTagCounts(
+  utils: TRPCClientUtils,
+  subscriptionDeltas: Map<string, number>
+): void {
+  adjustSubscriptionUnreadCounts(utils, subscriptionDeltas);
+  const tagDeltas = calculateTagDeltasFromSubscriptions(utils, subscriptionDeltas);
+  adjustTagUnreadCounts(utils, tagDeltas);
+}
+
 /**
  * Handles entries being marked as read or unread.
  *
@@ -103,14 +123,10 @@ export function handleEntriesMarkedRead(
     }
   }
 
-  // 3. Update subscription unread counts
-  adjustSubscriptionUnreadCounts(utils, subscriptionDeltas);
+  // 3. Update subscription and tag unread counts
+  updateSubscriptionAndTagCounts(utils, subscriptionDeltas);
 
-  // 4. Calculate and update tag unread counts
-  const tagDeltas = calculateTagDeltasFromSubscriptions(utils, subscriptionDeltas);
-  adjustTagUnreadCounts(utils, tagDeltas);
-
-  // 5. Update starred unread count - only for entries that are starred
+  // 4. Update starred unread count - only for entries that are starred
   const starredCount = entries.filter((e) => e.starred).length;
   if (starredCount > 0) {
     adjustEntriesCount(utils, { starredOnly: true }, delta * starredCount);
@@ -226,28 +242,25 @@ export function handleSubscriptionDeleted(utils: TRPCClientUtils, subscriptionId
  * - entries.count({ type: "saved" }) if entry is saved
  *
  * Does NOT invalidate entries.list - new entries appear on next navigation.
+ * Note: We don't have full entry data from SSE events, so we can't update
+ * entries.get or entries.list caches. That's OK - entries will be fetched
+ * when user navigates to that view (refetchOnMount: true).
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionId - Subscription the entry belongs to
- * @param entryId - The new entry ID
  * @param feedType - Type of feed (web, email, saved)
  */
 export function handleNewEntry(
   utils: TRPCClientUtils,
   subscriptionId: string,
-  entryId: string,
   feedType: "web" | "email" | "saved"
 ): void {
   // New entries are always unread (read: false, starred: false)
   const subscriptionDeltas = new Map<string, number>();
   subscriptionDeltas.set(subscriptionId, 1); // +1 unread
 
-  // Update subscription unread counts
-  adjustSubscriptionUnreadCounts(utils, subscriptionDeltas);
-
-  // Update tag unread counts
-  const tagDeltas = calculateTagDeltasFromSubscriptions(utils, subscriptionDeltas);
-  adjustTagUnreadCounts(utils, tagDeltas);
+  // Update subscription and tag unread counts
+  updateSubscriptionAndTagCounts(utils, subscriptionDeltas);
 
   // Update saved unread count if it's a saved entry
   if (feedType === "saved") {
