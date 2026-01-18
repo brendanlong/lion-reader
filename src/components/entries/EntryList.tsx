@@ -10,6 +10,7 @@
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { type EntryListData, type EntryType } from "@/lib/hooks";
+import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import {
@@ -193,6 +194,7 @@ export function EntryList({
   rootMargin = "100px",
 }: EntryListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useScrollContainer();
   const useExternalData = externalEntries !== undefined && externalQueryState !== undefined;
 
   // Use infinite query for cursor-based pagination (only when not using external data)
@@ -268,8 +270,11 @@ export function EntryList({
   );
 
   useEffect(() => {
+    // Use the scroll container as the root if available, otherwise fall back to viewport
+    const root = scrollContainerRef?.current ?? null;
+
     const observer = new IntersectionObserver(handleObserver, {
-      root: null,
+      root,
       rootMargin,
       threshold: 0,
     });
@@ -284,7 +289,7 @@ export function EntryList({
         observer.unobserve(currentRef);
       }
     };
-  }, [handleObserver, rootMargin]);
+  }, [handleObserver, rootMargin, scrollContainerRef]);
 
   // Initial loading state
   if (isLoading) {
