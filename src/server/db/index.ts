@@ -13,6 +13,8 @@ if (!connectionString) {
 
 export const pool = new Pool({
   connectionString,
+  // Close idle connections before Fly.io's 60s proxy timeout to avoid "server conn crashed?" errors
+  idleTimeoutMillis: 30000,
 });
 
 // Handle unexpected errors on idle clients in the pool.
