@@ -1,20 +1,5 @@
 import { useEffect } from "react";
-
-/**
- * Find the nearest scrollable ancestor of an element.
- */
-function findScrollableAncestor(element: HTMLElement): HTMLElement | null {
-  let current = element.parentElement;
-  while (current) {
-    const style = getComputedStyle(current);
-    const overflowY = style.overflowY;
-    if (overflowY === "auto" || overflowY === "scroll") {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return null;
-}
+import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 
 /**
  * Prefetch images before they scroll into view.
@@ -32,6 +17,9 @@ export function useImagePrefetch(
   content: string | null,
   rootMargin = "50%"
 ) {
+  // Get scroll container from context (provided by ScrollContainerProvider)
+  const scrollContainerRef = useScrollContainer();
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -39,9 +27,6 @@ export function useImagePrefetch(
     // Find all lazy-loaded images in the container
     const images = container.querySelectorAll<HTMLImageElement>('img[loading="lazy"]');
     if (images.length === 0) return;
-
-    // Find the scrollable ancestor to use as the intersection root
-    const scrollableRoot = findScrollableAncestor(container);
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -58,8 +43,8 @@ export function useImagePrefetch(
         }
       },
       {
-        // Use the scrollable ancestor as root (null = viewport)
-        root: scrollableRoot,
+        // Use scroll container from context, or viewport if not available
+        root: scrollContainerRef?.current ?? null,
         // Start observing when images are within rootMargin
         rootMargin,
         // Trigger as soon as any part enters the margin
@@ -77,5 +62,5 @@ export function useImagePrefetch(
     return () => {
       observer.disconnect();
     };
-  }, [containerRef, content, rootMargin]);
+  }, [containerRef, content, rootMargin, scrollContainerRef]);
 }

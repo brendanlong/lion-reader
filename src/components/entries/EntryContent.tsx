@@ -11,6 +11,7 @@ import { useEffect, useRef, useMemo, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations, useShowOriginalPreference } from "@/lib/hooks";
+import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import {
   EntryContentBody,
   EntryContentSkeleton,
@@ -297,5 +298,6 @@ export function EntryContent({
   }
 
   // Wrap in scroll container - each entry gets its own container that starts at scroll 0
-  return <div className="h-full overflow-y-auto">{content}</div>;
+  // ScrollContainer provides context so useImagePrefetch can observe this container
+  return <ScrollContainer className="h-full overflow-y-auto">{content}</ScrollContainer>;
 }

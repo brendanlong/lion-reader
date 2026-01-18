@@ -39,13 +39,13 @@ export default async function TagEntriesPage({ params, searchParams }: TagEntrie
           uncategorized: true as const,
           unreadOnly,
           sortOrder,
-          limit: 20,
+          limit: 10,
         }
       : {
           tagId,
           unreadOnly,
           sortOrder,
-          limit: 20,
+          limit: 10,
         };
 
     await queryClient.prefetchInfiniteQuery({

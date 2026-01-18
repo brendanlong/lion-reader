@@ -38,7 +38,7 @@ export default async function SingleSubscriptionPage({
       subscriptionId,
       unreadOnly,
       sortOrder,
-      limit: 20,
+      limit: 10,
     };
 
     await queryClient.prefetchInfiniteQuery({
