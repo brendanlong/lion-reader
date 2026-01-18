@@ -22,6 +22,8 @@ export interface FetchFeedOptions {
   maxRedirects?: number;
   /** Feed ID for debugging (included in User-Agent) */
   feedId?: string;
+  /** Number of active subscribers (included in User-Agent for publishers) */
+  subscriberCount?: number;
 }
 
 /**
@@ -313,11 +315,17 @@ export async function fetchFeed(
     userAgent,
     maxRedirects = DEFAULT_MAX_REDIRECTS,
     feedId,
+    subscriberCount,
   } = options;
 
   // Build request headers
   const headers: Record<string, string> = {
-    "User-Agent": userAgent ?? buildUserAgent(feedId ? { context: `feed:${feedId}` } : undefined),
+    "User-Agent":
+      userAgent ??
+      buildUserAgent({
+        context: feedId ? `feed:${feedId}` : undefined,
+        subscriberCount,
+      }),
     Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
   };
 
