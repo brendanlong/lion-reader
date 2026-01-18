@@ -6,11 +6,17 @@
  *
  * This hook keeps the query mounted even when viewing an entry, enabling
  * seamless swiping/navigation beyond the initially loaded entries.
+ *
+ * Refetch strategy: Instead of refetchOnMount (which triggers on any mount,
+ * including query param changes), we track pathname changes and only refetch
+ * when navigating to a different view (sidebar click), not when opening/closing
+ * entries (which only changes query params).
  */
 
 "use client";
 
 import { useMemo, useCallback, useRef, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { type EntryType } from "./useEntryMutations";
 
@@ -152,6 +158,10 @@ export interface UseEntryListQueryResult {
 export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryListQueryResult {
   const { filters, pageSize = 20, openEntryId, prefetchThreshold = 3 } = options;
 
+  // Track pathname to detect real navigation (sidebar click) vs query param changes (back button)
+  const pathname = usePathname();
+  const prevPathnameRef = useRef<string | null>(null);
+
   // Track if we've triggered a fetch to avoid duplicate calls
   const fetchingRef = useRef(false);
 
@@ -161,6 +171,7 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
   const lastKnownPrevRef = useRef<string | undefined>(undefined);
 
   // Use infinite query for cursor-based pagination
+  // Note: refetchOnMount is false - we handle refetch on pathname change via effect below
   const {
     data,
     isLoading,
@@ -183,9 +194,25 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
-      refetchOnMount: true,
+      // Don't refetch on mount - we handle refetch on pathname change via effect below
+      // This prevents unwanted refetches when navigating back from entry view
+      refetchOnMount: false,
+      // Don't refetch on window focus - we want to preserve the list state while viewing entries
+      // The list will refetch on pathname change (sidebar navigation) instead
+      refetchOnWindowFocus: false,
     }
   );
+
+  // Refetch when pathname changes (navigation to different view)
+  // This replaces refetchOnMount: true, which was too aggressive and triggered
+  // on query param changes too (e.g., when closing an entry via back button)
+  useEffect(() => {
+    if (prevPathnameRef.current !== null && prevPathnameRef.current !== pathname) {
+      // Pathname changed - this is a navigation (sidebar click), refetch to apply filters
+      refetch();
+    }
+    prevPathnameRef.current = pathname;
+  }, [pathname, refetch]);
 
   // Flatten all pages into a single array of entries
   const entries: EntryListData[] = useMemo(() => {
