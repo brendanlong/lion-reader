@@ -8,7 +8,7 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, inArray, count } from "drizzle-orm";
 import { db } from "../db";
 import {
   feeds,
@@ -232,11 +232,18 @@ export async function handleFetchFeed(
     };
   }
 
+  // Count active subscribers for the user agent (useful for publishers)
+  const [{ subscriberCount }] = await db
+    .select({ subscriberCount: count() })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.feedId, feedId), isNull(subscriptions.unsubscribedAt)));
+
   // Fetch the feed with conditional GET headers
   const fetchResult = await fetchFeed(feed.url, {
     etag: feed.etag ?? undefined,
     lastModified: feed.lastModifiedHeader ?? undefined,
     feedId,
+    subscriberCount,
   });
 
   // Process the result based on status
