@@ -430,7 +430,7 @@ async function sendResultsDM(
     await user.send(dmMessage);
   } catch {
     // User may have DMs disabled
-    logger.debug("Could not DM Discord user", { userId: user.id });
+    logger.warn("Could not DM Discord user", { userId: user.id });
   }
 }
 
