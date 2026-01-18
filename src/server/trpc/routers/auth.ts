@@ -42,6 +42,8 @@ import {
   DISCORD_BOT_ENABLED,
   DISCORD_BOT_INVITE_URL,
   DISCORD_SAVE_EMOJI,
+  DISCORD_SUCCESS_EMOJI,
+  DISCORD_ERROR_EMOJI,
 } from "@/server/discord/config";
 
 // ============================================================================
@@ -785,6 +787,8 @@ export const authRouter = createTRPCRouter({
         enabled: z.boolean(),
         inviteUrl: z.string().nullable(),
         saveEmoji: z.string().nullable(),
+        successEmoji: z.string().nullable(),
+        errorEmoji: z.string().nullable(),
       })
     )
     .query(() => {
@@ -792,6 +796,8 @@ export const authRouter = createTRPCRouter({
         enabled: DISCORD_BOT_ENABLED,
         inviteUrl: DISCORD_BOT_INVITE_URL,
         saveEmoji: DISCORD_BOT_ENABLED ? DISCORD_SAVE_EMOJI : null,
+        successEmoji: DISCORD_BOT_ENABLED ? DISCORD_SUCCESS_EMOJI : null,
+        errorEmoji: DISCORD_BOT_ENABLED ? DISCORD_ERROR_EMOJI : null,
       };
     }),
 
