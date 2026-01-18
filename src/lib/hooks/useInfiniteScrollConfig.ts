@@ -60,8 +60,8 @@ export interface UseInfiniteScrollConfigOptions {
 
   /**
    * Multiplier for rootMargin relative to viewport height.
-   * E.g., 1 means trigger loading when 1 viewport height away from bottom.
-   * @default 1
+   * E.g., 0.5 means trigger loading when half a viewport away from bottom.
+   * @default 0.5
    */
   rootMarginMultiplier?: number;
 
@@ -115,7 +115,7 @@ export function useInfiniteScrollConfig(
     estimatedEntryHeight = 100,
     defaultPageSize = 10,
     pageSizeMultiplier = 2,
-    rootMarginMultiplier = 1,
+    rootMarginMultiplier = 0.5,
     minPageSize = 5,
     maxPageSize = 50,
   } = options;
@@ -142,7 +142,7 @@ export function useInfiniteScrollConfig(
     if (!isClient || viewportHeight === 0) {
       return {
         pageSize: defaultPageSize,
-        rootMargin: "200px", // Reasonable default before viewport is known
+        rootMargin: "400px", // ~50% of typical viewport before actual measurement
         isConfigured: false,
       };
     }
