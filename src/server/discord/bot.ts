@@ -26,14 +26,7 @@ import { saveArticle } from "@/server/services/saved";
 import { validateApiToken } from "@/server/auth/api-token";
 import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
-
-// ============================================================================
-// Configuration
-// ============================================================================
-
-const SAVE_EMOJI = process.env.DISCORD_SAVE_EMOJI || "🦁";
-const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+import { DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, DISCORD_SAVE_EMOJI } from "./config";
 
 // Redis key prefix for storing Discord user -> API token mappings
 const REDIS_KEY_PREFIX = "discord:token:";
@@ -155,7 +148,7 @@ async function resolveUser(discordId: string): Promise<ResolvedUser | null> {
 let client: Client | null = null;
 
 export async function startDiscordBot(): Promise<void> {
-  if (!DISCORD_TOKEN) {
+  if (!DISCORD_BOT_TOKEN) {
     logger.info("Discord bot disabled (DISCORD_BOT_TOKEN not set)");
     return;
   }
@@ -198,7 +191,7 @@ export async function startDiscordBot(): Promise<void> {
     if (user.bot) return;
 
     const emoji = reaction.emoji.name;
-    if (emoji !== SAVE_EMOJI) return;
+    if (emoji !== DISCORD_SAVE_EMOJI) return;
 
     await handleSaveReaction(reaction.message, user);
   });
@@ -206,15 +199,15 @@ export async function startDiscordBot(): Promise<void> {
   client.once("ready", () => {
     logger.info("Discord bot started", {
       tag: client?.user?.tag,
-      saveEmoji: SAVE_EMOJI,
+      saveEmoji: DISCORD_SAVE_EMOJI,
     });
   });
 
-  await client.login(DISCORD_TOKEN);
+  await client.login(DISCORD_BOT_TOKEN);
 }
 
 async function registerCommands(): Promise<void> {
-  if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) return;
+  if (!DISCORD_BOT_TOKEN || !DISCORD_CLIENT_ID) return;
 
   const commands = [
     new SlashCommandBuilder()
@@ -234,7 +227,7 @@ async function registerCommands(): Promise<void> {
       .setDescription("Check if your Discord account is linked to Lion Reader"),
   ].map((command) => command.toJSON());
 
-  const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
+  const rest = new REST({ version: "10" }).setToken(DISCORD_BOT_TOKEN);
 
   try {
     logger.info("Registering Discord slash commands...");
@@ -274,7 +267,7 @@ async function handleLinkCommand(
   await interaction.reply({
     content:
       `Your Lion Reader account is now linked via API token. ` +
-      `React to any message containing a URL with ${SAVE_EMOJI} to save it.`,
+      `React to any message containing a URL with ${DISCORD_SAVE_EMOJI} to save it.`,
     ephemeral: true,
   });
 
@@ -326,7 +319,7 @@ async function handleStatusCommand(
   if (resolved) {
     const methodText = resolved.method === "oauth" ? "Discord OAuth" : "API token";
     await interaction.reply({
-      content: `Your account is linked via ${methodText}. React to messages with ${SAVE_EMOJI} to save articles.`,
+      content: `Your account is linked via ${methodText}. React to messages with ${DISCORD_SAVE_EMOJI} to save articles.`,
       ephemeral: true,
     });
   } else {
