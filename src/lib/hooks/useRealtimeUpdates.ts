@@ -15,8 +15,14 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "@/lib/cache";
+import {
+  handleSubscriptionCreated,
+  handleSubscriptionDeleted,
+  handleNewEntry,
+  updateEntriesInListCache,
+} from "@/lib/cache";
 
 /**
  * Granular sync cursors for each entity type.
@@ -417,6 +423,7 @@ function parseEventData(data: string): SSEEventData | null {
  */
 export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpdatesResult {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   // Connection status state
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
@@ -543,9 +550,13 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   );
 
   /**
-   * Performs a sync and invalidates relevant caches.
+   * Performs a sync and updates caches appropriately.
    * Uses granular cursors to ensure no changes are missed between syncs.
    * Used during polling mode and for catch-up sync after SSE reconnection.
+   *
+   * Entry state changes (read/starred) are applied directly to the cache to avoid
+   * unnecessary refetches - this prevents the list from refreshing when we've
+   * already updated the cache optimistically via mutations.
    */
   const performSync = useCallback(async () => {
     try {
@@ -564,18 +575,30 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       // Update cursors from the response (derived from actual query results)
       cursorsRef.current = result.cursors;
 
-      const hasEntryChanges =
-        result.entries.created.length > 0 ||
-        result.entries.updated.length > 0 ||
-        result.entries.removed.length > 0;
+      // Handle entry state updates (read/starred changes) by updating cache directly
+      // This avoids refetching the list when we've already applied optimistic updates
+      if (result.entries.updated.length > 0) {
+        // Group updates by their state for efficient batch updates
+        for (const entry of result.entries.updated) {
+          updateEntriesInListCache(queryClient, [entry.id], {
+            read: entry.read,
+            starred: entry.starred,
+          });
+        }
+      }
+
+      // Only invalidate entries.list for actual structural changes (new/removed entries)
+      // NOT for read/starred state updates which we handle above
+      const hasStructuralEntryChanges =
+        result.entries.created.length > 0 || result.entries.removed.length > 0;
 
       const hasSubscriptionChanges =
         result.subscriptions.created.length > 0 || result.subscriptions.removed.length > 0;
 
       const hasTagChanges = result.tags.created.length > 0 || result.tags.removed.length > 0;
 
-      // Handle entry changes - invalidate list
-      if (hasEntryChanges) {
+      // Handle structural entry changes - invalidate list
+      if (hasStructuralEntryChanges) {
         utils.entries.list.invalidate();
         utils.subscriptions.list.invalidate();
       }
@@ -595,7 +618,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       console.error("Sync failed:", error);
       return null;
     }
-  }, [utils.client.sync.changes, utils.entries, utils.subscriptions, utils.tags]);
+  }, [utils.client.sync.changes, utils.entries, utils.subscriptions, utils.tags, queryClient]);
 
   /**
    * Starts polling mode when SSE is unavailable.
