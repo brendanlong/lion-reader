@@ -202,7 +202,19 @@ export async function startDiscordBot(): Promise<void> {
     await handleSaveReaction(reaction.message, user);
   });
 
-  client.once("clientReady", () => {
+  client.once("clientReady", async () => {
+    // Fetch application emojis to populate the cache
+    if (client?.application) {
+      try {
+        await client.application.emojis.fetch();
+        logger.info("Fetched application emojis", {
+          count: client.application.emojis.cache.size,
+        });
+      } catch (error) {
+        logger.warn("Failed to fetch application emojis", { error });
+      }
+    }
+
     logger.info("Discord bot started", {
       tag: client?.user?.tag,
       saveEmoji: DISCORD_SAVE_EMOJI,
