@@ -65,7 +65,7 @@ export interface UseEntryListQueryOptions {
 
   /**
    * Number of entries per page.
-   * @default 20
+   * @default 10
    */
   pageSize?: number;
 
@@ -156,7 +156,7 @@ export interface UseEntryListQueryResult {
  * navigation beyond initially loaded entries.
  */
 export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryListQueryResult {
-  const { filters, pageSize = 20, openEntryId, prefetchThreshold = 3 } = options;
+  const { filters, pageSize = 10, openEntryId, prefetchThreshold = 3 } = options;
 
   // Track pathname to detect real navigation (sidebar click) vs query param changes (back button)
   const pathname = usePathname();

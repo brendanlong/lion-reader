@@ -32,7 +32,7 @@ export default async function SavedArticlesPage({ searchParams }: SavedArticlesP
       type: "saved" as const,
       unreadOnly,
       sortOrder,
-      limit: 20,
+      limit: 10,
     };
 
     await queryClient.prefetchInfiniteQuery({

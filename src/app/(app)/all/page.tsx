@@ -31,7 +31,7 @@ export default async function AllEntriesPage({ searchParams }: AllEntriesPagePro
     const input = {
       unreadOnly,
       sortOrder,
-      limit: 20,
+      limit: 10,
     };
 
     await queryClient.prefetchInfiniteQuery({

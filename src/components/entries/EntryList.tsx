@@ -125,7 +125,7 @@ interface EntryListProps {
 
   /**
    * Number of entries to fetch per page.
-   * @default 20
+   * @default 10
    */
   pageSize?: number;
 
@@ -166,6 +166,14 @@ interface EntryListProps {
    * External query state when using externalEntries.
    */
   externalQueryState?: ExternalQueryState;
+
+  /**
+   * CSS value for IntersectionObserver rootMargin.
+   * Controls how far from the viewport edge to trigger loading more entries.
+   * Larger values trigger earlier loading for smoother scrolling.
+   * @default "100px"
+   */
+  rootMargin?: string;
 }
 
 /**
@@ -174,7 +182,7 @@ interface EntryListProps {
 export function EntryList({
   filters = {},
   onEntryClick,
-  pageSize = 20,
+  pageSize = 10,
   emptyMessage = "No entries to display",
   selectedEntryId,
   onEntriesLoaded,
@@ -182,6 +190,7 @@ export function EntryList({
   onToggleStar,
   externalEntries,
   externalQueryState,
+  rootMargin = "100px",
 }: EntryListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const useExternalData = externalEntries !== undefined && externalQueryState !== undefined;
@@ -261,7 +270,7 @@ export function EntryList({
   useEffect(() => {
     const observer = new IntersectionObserver(handleObserver, {
       root: null,
-      rootMargin: "100px",
+      rootMargin,
       threshold: 0,
     });
 
@@ -275,7 +284,7 @@ export function EntryList({
         observer.unobserve(currentRef);
       }
     };
-  }, [handleObserver]);
+  }, [handleObserver, rootMargin]);
 
   // Initial loading state
   if (isLoading) {

@@ -23,3 +23,9 @@ export { useShowOriginalPreference } from "./useShowOriginalPreference";
 export { useEntryPage, type UseEntryPageOptions, type UseEntryPageResult } from "./useEntryPage";
 
 export { useImagePrefetch } from "./useImagePrefetch";
+
+export {
+  useInfiniteScrollConfig,
+  type InfiniteScrollConfig,
+  type UseInfiniteScrollConfigOptions,
+} from "./useInfiniteScrollConfig";
