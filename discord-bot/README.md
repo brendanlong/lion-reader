@@ -6,23 +6,30 @@ A Discord bot that saves articles to Lion Reader when you react to messages with
 
 1. React to any message containing a URL with the 🦁 emoji (configurable)
 2. The bot extracts the URL and saves it to your Lion Reader account
-3. A ✅ reaction confirms the save succeeded
+3. You receive a private DM confirming the save with the article title
 
 ## Setup
 
-### 1. Create a Discord Application
+### 1. Use the Same Discord Application as Lion Reader
+
+The bot should use the **same Discord application** as Lion Reader's "Sign in with Discord" feature. This way users see a unified app identity.
+
+If you already have Discord OAuth configured for Lion Reader:
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click "New Application" and give it a name
-3. Go to the "Bot" section and click "Add Bot"
+2. Select your existing Lion Reader application
+3. Go to the "Bot" section and click "Add Bot" (if not already added)
 4. Under "Privileged Gateway Intents", enable:
    - **Message Content Intent** (required to read message content)
 5. Copy the bot token for later
+6. Use the same `DISCORD_CLIENT_ID` as in your Lion Reader `.env`
+
+If you don't have a Discord application yet, create one first and configure both the bot and OAuth together.
 
 ### 2. Get the Client ID
 
 1. In the Discord Developer Portal, go to "OAuth2" > "General"
-2. Copy the "Client ID"
+2. Copy the "Client ID" (should match Lion Reader's `DISCORD_CLIENT_ID`)
 
 ### 3. Invite the Bot to Your Server
 
