@@ -7,7 +7,7 @@
 
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { createServerCaller, createServerQueryClient, isAuthenticated } from "@/lib/trpc/server";
-import { parseViewPreferencesFromParams } from "@/lib/hooks/useUrlViewPreferences";
+import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
 import { SingleSubscriptionContent } from "./SingleSubscriptionContent";
 
 interface SingleSubscriptionPageProps {

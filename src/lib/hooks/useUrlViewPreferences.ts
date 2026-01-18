@@ -15,7 +15,10 @@
 
 import { useCallback, useMemo } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { DEFAULT_PREFERENCES } from "./viewPreferences";
+import { parseViewPreferencesFromParams } from "./viewPreferences";
+
+// Re-export for backwards compatibility
+export { parseViewPreferencesFromParams } from "./viewPreferences";
 
 /**
  * Result of the useUrlViewPreferences hook.
@@ -40,36 +43,6 @@ export interface UseUrlViewPreferencesResult {
    * Toggle the sortOrder preference (updates URL).
    */
   toggleSortOrder: () => void;
-}
-
-/**
- * Parse view preferences from URL search params.
- * Uses DEFAULT_PREFERENCES when not specified in URL (no localStorage fallback
- * to avoid hydration mismatches between server and client).
- */
-export function parseViewPreferencesFromParams(searchParams: URLSearchParams | null): {
-  unreadOnly: boolean;
-  sortOrder: "newest" | "oldest";
-} {
-  // Parse unreadOnly - explicit "false" means show all, anything else uses default
-  const unreadOnlyParam = searchParams?.get("unreadOnly");
-  const unreadOnly =
-    unreadOnlyParam === "false"
-      ? false
-      : unreadOnlyParam === "true"
-        ? true
-        : DEFAULT_PREFERENCES.showUnreadOnly;
-
-  // Parse sortOrder - explicit "oldest" means oldest first, anything else uses default
-  const sortParam = searchParams?.get("sort");
-  const sortOrder =
-    sortParam === "oldest"
-      ? "oldest"
-      : sortParam === "newest"
-        ? "newest"
-        : DEFAULT_PREFERENCES.sortOrder;
-
-  return { unreadOnly, sortOrder };
 }
 
 /**
