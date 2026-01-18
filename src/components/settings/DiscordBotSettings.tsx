@@ -53,6 +53,8 @@ export function DiscordBotSettings() {
   }
 
   const emoji = botConfig.saveEmoji ? formatEmoji(botConfig.saveEmoji) : null;
+  const successEmoji = botConfig.successEmoji ? formatEmoji(botConfig.successEmoji) : null;
+  const errorEmoji = botConfig.errorEmoji ? formatEmoji(botConfig.errorEmoji) : null;
 
   return (
     <section>
@@ -121,6 +123,38 @@ export function DiscordBotSettings() {
                 </>
               ) : (
                 "Add the configured emoji reaction to any message containing a URL"
+              )}
+            </li>
+            <li>
+              <strong className="text-zinc-900 dark:text-zinc-200">Look for the reaction</strong> -{" "}
+              {successEmoji ? (
+                <>
+                  The bot will react with{" "}
+                  {successEmoji.isCustom ? (
+                    <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
+                      {successEmoji.text}
+                    </code>
+                  ) : (
+                    <span className="text-base">{successEmoji.text}</span>
+                  )}{" "}
+                  on success
+                  {errorEmoji && (
+                    <>
+                      {" "}
+                      or{" "}
+                      {errorEmoji.isCustom ? (
+                        <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
+                          {errorEmoji.text}
+                        </code>
+                      ) : (
+                        <span className="text-base">{errorEmoji.text}</span>
+                      )}{" "}
+                      on failure
+                    </>
+                  )}
+                </>
+              ) : (
+                "The bot will react to confirm the save succeeded or failed"
               )}
             </li>
             <li>

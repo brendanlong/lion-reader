@@ -26,7 +26,13 @@ import { saveArticle } from "@/server/services/saved";
 import { validateApiToken } from "@/server/auth/api-token";
 import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
-import { DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, DISCORD_SAVE_EMOJI } from "./config";
+import {
+  DISCORD_BOT_TOKEN,
+  DISCORD_CLIENT_ID,
+  DISCORD_SAVE_EMOJI,
+  DISCORD_SUCCESS_EMOJI,
+  DISCORD_ERROR_EMOJI,
+} from "./config";
 
 // Redis key prefix for storing Discord user -> API token mappings
 const REDIS_KEY_PREFIX = "discord:token:";
@@ -366,7 +372,8 @@ async function handleSaveReaction(
   if (urls.length === 0) return;
 
   // Save each URL
-  const results: Array<{ success: boolean; title?: string; url: string; error?: string }> = [];
+  let hasSuccess = false;
+  let hasFailure = false;
 
   for (const url of urls) {
     try {
@@ -378,7 +385,7 @@ async function handleSaveReaction(
         url,
         title: saved.title,
       });
-      results.push({ success: true, title: saved.title ?? url, url });
+      hasSuccess = true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       logger.error("Failed to save article via Discord", {
@@ -387,43 +394,77 @@ async function handleSaveReaction(
         url,
         error: errorMessage,
       });
-      results.push({ success: false, url, error: errorMessage });
+      hasFailure = true;
     }
   }
 
-  // DM user with results
-  await sendResultsDM(user, results);
+  // React with success/error emoji
+  await addResultReaction(message, hasSuccess, hasFailure);
 }
 
-async function sendResultsDM(
-  user: User | PartialUser,
-  results: Array<{ success: boolean; title?: string; url: string; error?: string }>
+/**
+ * Find an emoji in the guild by name.
+ * For custom emojis like "salutinglionreader", we need to look them up in the guild.
+ */
+function findGuildEmoji(message: Message, emojiName: string): string | null {
+  if (!message.guild) return null;
+  const emoji = message.guild.emojis.cache.find((e) => e.name === emojiName);
+  return emoji ? emoji.id : null;
+}
+
+/**
+ * React to a message with the appropriate emoji based on save results.
+ * Uses success emoji if any URLs saved successfully, error emoji if any failed.
+ */
+async function addResultReaction(
+  message: Message,
+  hasSuccess: boolean,
+  hasFailure: boolean
 ): Promise<void> {
-  if (results.length === 0) return;
-
-  const successCount = results.filter((r) => r.success).length;
-  const failCount = results.length - successCount;
-
-  let dmMessage = "";
-  if (successCount > 0) {
-    const saved = results.filter((r) => r.success);
-    if (saved.length === 1) {
-      dmMessage = `Saved to Lion Reader: **${saved[0].title}**`;
-    } else {
-      dmMessage = `Saved ${saved.length} articles to Lion Reader:\n${saved.map((r) => `• ${r.title}`).join("\n")}`;
+  // React with success emoji if anything succeeded
+  if (hasSuccess) {
+    try {
+      // Check if it's a custom emoji (alphanumeric) or unicode
+      const isCustom = /^[a-zA-Z0-9_]+$/.test(DISCORD_SUCCESS_EMOJI);
+      if (isCustom) {
+        const emojiId = findGuildEmoji(message, DISCORD_SUCCESS_EMOJI);
+        if (emojiId) {
+          await message.react(emojiId);
+        } else {
+          // Custom emoji not found in guild, log warning
+          logger.warn("Success emoji not found in guild", {
+            emoji: DISCORD_SUCCESS_EMOJI,
+            guildId: message.guild?.id,
+          });
+        }
+      } else {
+        await message.react(DISCORD_SUCCESS_EMOJI);
+      }
+    } catch (error) {
+      logger.warn("Failed to add success reaction", { error });
     }
   }
-  if (failCount > 0) {
-    const failed = results.filter((r) => !r.success);
-    if (dmMessage) dmMessage += "\n\n";
-    dmMessage += `Failed to save: ${failed.map((r) => r.url).join(", ")}`;
-  }
 
-  try {
-    await user.send(dmMessage);
-  } catch {
-    // User may have DMs disabled
-    logger.warn("Could not DM Discord user", { userId: user.id });
+  // React with error emoji if anything failed
+  if (hasFailure) {
+    try {
+      const isCustom = /^[a-zA-Z0-9_]+$/.test(DISCORD_ERROR_EMOJI);
+      if (isCustom) {
+        const emojiId = findGuildEmoji(message, DISCORD_ERROR_EMOJI);
+        if (emojiId) {
+          await message.react(emojiId);
+        } else {
+          logger.warn("Error emoji not found in guild", {
+            emoji: DISCORD_ERROR_EMOJI,
+            guildId: message.guild?.id,
+          });
+        }
+      } else {
+        await message.react(DISCORD_ERROR_EMOJI);
+      }
+    } catch (error) {
+      logger.warn("Failed to add error reaction", { error });
+    }
   }
 }
 
