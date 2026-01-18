@@ -14,12 +14,11 @@ export function BookmarkletSettings() {
   const bookmarkletRef = useRef<HTMLAnchorElement>(null);
 
   // Generate the bookmarklet URL using the app's base URL
+  // Check env var first (available on both server and client), then fall back to window.location.origin
   const { bookmarkletHref, appUrl } = useMemo(() => {
-    // Use NEXT_PUBLIC_APP_URL if available, otherwise use window.location.origin
     const baseUrl =
-      typeof window !== "undefined"
-        ? process.env.NEXT_PUBLIC_APP_URL || window.location.origin
-        : "";
+      process.env.NEXT_PUBLIC_APP_URL ||
+      (typeof window !== "undefined" ? window.location.origin : "");
 
     // The bookmarklet JavaScript - opens the save page in a popup window
     const bookmarkletCode = `javascript:(function(){window.open('${baseUrl}/save?url='+encodeURIComponent(location.href),'save','width=400,height=300')})();`;
