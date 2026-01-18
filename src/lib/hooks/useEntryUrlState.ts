@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 
 export interface UseEntryUrlStateResult {
@@ -44,6 +44,10 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Track whether we pushed to history when opening an entry
+  // This allows us to use history.back() when closing, which preserves React state
+  const pushedToHistoryRef = useRef(false);
+
   // Get the current entry ID from the URL
   const openEntryId = useMemo(() => {
     return searchParams.get("entry");
@@ -69,6 +73,7 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
       // Use replace when navigating between entries to avoid history bloat
       if (entryId && !currentEntryId) {
         // Opening an entry from list view - add to history
+        pushedToHistoryRef.current = true;
         router.push(newUrl, { scroll: false });
       } else {
         // Navigating between entries or closing - replace to avoid history bloat
@@ -78,9 +83,15 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
     [searchParams, pathname, router]
   );
 
-  // Convenience function to close the entry
+  // Close the entry - uses history.back() if we pushed when opening, to preserve React state
+  // This makes "Back to list" behave identically to the browser back button
   const closeEntry = useCallback(() => {
-    setOpenEntryId(null);
+    if (pushedToHistoryRef.current && typeof window !== "undefined") {
+      pushedToHistoryRef.current = false;
+      window.history.back();
+    } else {
+      setOpenEntryId(null);
+    }
   }, [setOpenEntryId]);
 
   return {
