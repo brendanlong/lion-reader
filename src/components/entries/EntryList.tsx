@@ -187,6 +187,8 @@ export function EntryList({
   const useExternalData = externalEntries !== undefined && externalQueryState !== undefined;
 
   // Use infinite query for cursor-based pagination (only when not using external data)
+  // Note: refetchOnMount is intentionally not set (defaults to smart behavior based on staleTime)
+  // When using external data from useEntryListQuery, that hook handles pathname-based refetching
   const internalQuery = trpc.entries.list.useInfiniteQuery(
     {
       subscriptionId: filters.subscriptionId,
@@ -200,8 +202,6 @@ export function EntryList({
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
-      // Refetch when filters change
-      refetchOnMount: true,
       // Disable when using external data
       enabled: !useExternalData,
     }
