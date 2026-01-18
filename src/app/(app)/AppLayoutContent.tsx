@@ -18,13 +18,14 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { KeyboardShortcutsProvider } from "@/components/keyboard";
 import { trpc } from "@/lib/trpc/client";
 import { AppearanceProvider } from "@/lib/appearance";
+import { type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
 
 interface AppLayoutContentProps {
   children: React.ReactNode;
-  initialSyncCursor: string;
+  initialCursors: SyncCursors;
 }
 
-export function AppLayoutContent({ children, initialSyncCursor }: AppLayoutContentProps) {
+export function AppLayoutContent({ children, initialCursors }: AppLayoutContentProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -48,7 +49,7 @@ export function AppLayoutContent({ children, initialSyncCursor }: AppLayoutConte
 
   return (
     <AppearanceProvider>
-      <RealtimeProvider initialSyncCursor={initialSyncCursor}>
+      <RealtimeProvider initialCursors={initialCursors}>
         <KeyboardShortcutsProvider>
           <Toaster position="bottom-right" richColors closeButton />
           <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950">

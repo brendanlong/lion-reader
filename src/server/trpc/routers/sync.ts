@@ -89,6 +89,24 @@ const syncTagSchema = z.object({
 });
 
 /**
+ * Granular cursor schema for each query type.
+ * Each cursor is derived from the actual last item in its respective query result,
+ * ensuring no data is missed between syncs.
+ */
+const syncCursorsSchema = z.object({
+  /** Cursor for new entries (based on entries.createdAt) */
+  entries: z.string().datetime().nullable(),
+  /** Cursor for entry state updates (based on userEntries.updatedAt) */
+  entryStates: z.string().datetime().nullable(),
+  /** Cursor for new subscriptions (based on subscriptions.createdAt) */
+  subscriptions: z.string().datetime().nullable(),
+  /** Cursor for removed subscriptions (based on subscriptions.unsubscribedAt) */
+  removedSubscriptions: z.string().datetime().nullable(),
+  /** Cursor for new tags (based on tags.createdAt) */
+  tags: z.string().datetime().nullable(),
+});
+
+/**
  * Full sync response schema.
  */
 const syncChangesOutputSchema = z.object({
@@ -105,6 +123,9 @@ const syncChangesOutputSchema = z.object({
     created: z.array(syncTagSchema),
     removed: z.array(z.string()),
   }),
+  /** Granular cursors for each query type (for correct incremental sync) */
+  cursors: syncCursorsSchema,
+  /** @deprecated Use `cursors` instead. Kept for backward compatibility. */
   syncedAt: z.string(),
   hasMore: z.boolean(),
 });
@@ -135,16 +156,47 @@ export const syncRouter = createTRPCRouter({
     })
     .input(
       z.object({
+        /** @deprecated Use `cursors` for correct incremental sync */
         since: z.string().datetime().optional(),
+        /** Granular cursors for each query type */
+        cursors: z
+          .object({
+            entries: z.string().datetime().optional(),
+            entryStates: z.string().datetime().optional(),
+            subscriptions: z.string().datetime().optional(),
+            removedSubscriptions: z.string().datetime().optional(),
+            tags: z.string().datetime().optional(),
+          })
+          .optional(),
       })
     )
     .output(syncChangesOutputSchema)
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const syncedAt = new Date();
 
-      // Parse the since timestamp if provided
-      const sinceDate = input.since ? new Date(input.since) : null;
+      // For backward compatibility, if cursors is not provided, use `since` for all queries
+      // If neither is provided, this is an initial sync
+      const legacySince = input.since ? new Date(input.since) : null;
+
+      // Parse granular cursors (prefer granular over legacy)
+      const entriesCursor = input.cursors?.entries ? new Date(input.cursors.entries) : legacySince;
+      const entryStatesCursor = input.cursors?.entryStates
+        ? new Date(input.cursors.entryStates)
+        : legacySince;
+      const subscriptionsCursor = input.cursors?.subscriptions
+        ? new Date(input.cursors.subscriptions)
+        : legacySince;
+      const removedSubscriptionsCursor = input.cursors?.removedSubscriptions
+        ? new Date(input.cursors.removedSubscriptions)
+        : legacySince;
+      const tagsCursor = input.cursors?.tags ? new Date(input.cursors.tags) : legacySince;
+
+      // Track output cursors - derived from actual query results
+      let outputEntriesCursor: Date | null = entriesCursor;
+      let outputEntryStatesCursor: Date | null = entryStatesCursor;
+      let outputSubscriptionsCursor: Date | null = subscriptionsCursor;
+      let outputRemovedSubscriptionsCursor: Date | null = removedSubscriptionsCursor;
+      let outputTagsCursor: Date | null = tagsCursor;
 
       // Track if we have more data than we're returning
       let hasMore = false;
@@ -155,8 +207,8 @@ export const syncRouter = createTRPCRouter({
       // ========================================================================
       let createdEntries: z.infer<typeof syncEntrySchema>[] = [];
 
-      if (sinceDate) {
-        // Get entries created since the timestamp that are visible to this user
+      if (entriesCursor) {
+        // Get entries created since the cursor that are visible to this user
         const newEntryResults = await ctx.db
           .select({
             id: visibleEntries.id,
@@ -176,13 +228,21 @@ export const syncRouter = createTRPCRouter({
           })
           .from(visibleEntries)
           .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-          .where(and(eq(visibleEntries.userId, userId), gt(visibleEntries.createdAt, sinceDate)))
+          .where(
+            and(eq(visibleEntries.userId, userId), gt(visibleEntries.createdAt, entriesCursor))
+          )
           .orderBy(visibleEntries.createdAt)
           .limit(MAX_ENTRIES + 1);
 
         if (newEntryResults.length > MAX_ENTRIES) {
           hasMore = true;
           newEntryResults.pop();
+        }
+
+        // Update cursor to the last entry's createdAt
+        if (newEntryResults.length > 0) {
+          const lastEntry = newEntryResults[newEntryResults.length - 1];
+          outputEntriesCursor = lastEntry.createdAt;
         }
 
         createdEntries = newEntryResults.map((row) => ({
@@ -201,7 +261,7 @@ export const syncRouter = createTRPCRouter({
           siteName: row.siteName,
         }));
       } else {
-        // Initial sync: get recent entries
+        // Initial sync: get recent entries and establish initial cursor
         const recentEntryResults = await ctx.db
           .select({
             id: visibleEntries.id,
@@ -216,6 +276,7 @@ export const syncRouter = createTRPCRouter({
             read: visibleEntries.read,
             starred: visibleEntries.starred,
             siteName: visibleEntries.siteName,
+            createdAt: visibleEntries.createdAt,
             feedTitle: feeds.title,
           })
           .from(visibleEntries)
@@ -227,6 +288,15 @@ export const syncRouter = createTRPCRouter({
         if (recentEntryResults.length > MAX_ENTRIES) {
           hasMore = true;
           recentEntryResults.pop();
+        }
+
+        // For initial sync, set cursor to the max createdAt of returned entries
+        // This establishes the baseline for future incremental syncs
+        if (recentEntryResults.length > 0) {
+          outputEntriesCursor = recentEntryResults.reduce(
+            (max, row) => (row.createdAt > max ? row.createdAt : max),
+            recentEntryResults[0].createdAt
+          );
         }
 
         createdEntries = recentEntryResults.map((row) => ({
@@ -251,8 +321,8 @@ export const syncRouter = createTRPCRouter({
       // ========================================================================
       let updatedEntryStates: z.infer<typeof syncEntryStateSchema>[] = [];
 
-      if (sinceDate) {
-        // Get entry state changes since the timestamp
+      if (entryStatesCursor) {
+        // Get entry state changes since the cursor
         // Exclude entries that were just created (they're already in createdEntries)
         const createdEntryIds = new Set(createdEntries.map((e) => e.id));
 
@@ -261,18 +331,26 @@ export const syncRouter = createTRPCRouter({
             entryId: userEntries.entryId,
             read: userEntries.read,
             starred: userEntries.starred,
+            updatedAt: userEntries.updatedAt,
           })
           .from(userEntries)
           .innerJoin(entries, eq(entries.id, userEntries.entryId))
           .where(
             and(
               eq(userEntries.userId, userId),
-              gt(userEntries.updatedAt, sinceDate),
+              gt(userEntries.updatedAt, entryStatesCursor),
               // Exclude newly created entries (already in created list)
-              sql`${entries.createdAt} <= ${sinceDate}`
+              sql`${entries.createdAt} <= ${entriesCursor ?? entryStatesCursor}`
             )
           )
+          .orderBy(userEntries.updatedAt)
           .limit(MAX_STATE_UPDATES);
+
+        // Update cursor to the last state update's updatedAt
+        if (stateUpdates.length > 0) {
+          const lastUpdate = stateUpdates[stateUpdates.length - 1];
+          outputEntryStatesCursor = lastUpdate.updatedAt;
+        }
 
         updatedEntryStates = stateUpdates
           .filter((u) => !createdEntryIds.has(u.entryId))
@@ -288,7 +366,7 @@ export const syncRouter = createTRPCRouter({
       // ========================================================================
       let createdSubscriptions: z.infer<typeof syncSubscriptionSchema>[] = [];
 
-      if (sinceDate) {
+      if (subscriptionsCursor) {
         // For incremental sync, need raw subscriptions table to filter by createdAt
         const newSubscriptionResults = await ctx.db
           .select({
@@ -301,9 +379,16 @@ export const syncRouter = createTRPCRouter({
             and(
               eq(subscriptions.userId, userId),
               isNull(subscriptions.unsubscribedAt),
-              gt(subscriptions.createdAt, sinceDate)
+              gt(subscriptions.createdAt, subscriptionsCursor)
             )
-          );
+          )
+          .orderBy(subscriptions.createdAt);
+
+        // Update cursor to the last subscription's createdAt
+        if (newSubscriptionResults.length > 0) {
+          const lastSub = newSubscriptionResults[newSubscriptionResults.length - 1];
+          outputSubscriptionsCursor = lastSub.subscription.createdAt;
+        }
 
         createdSubscriptions = newSubscriptionResults.map(({ subscription, feed }) => ({
           id: subscription.id,
@@ -325,9 +410,18 @@ export const syncRouter = createTRPCRouter({
             feedType: userFeeds.type,
             customTitle: userFeeds.customTitle,
             subscribedAt: userFeeds.subscribedAt,
+            createdAt: userFeeds.createdAt,
           })
           .from(userFeeds)
           .where(eq(userFeeds.userId, userId));
+
+        // For initial sync, set cursor to the max createdAt of returned subscriptions
+        if (allSubscriptionResults.length > 0) {
+          outputSubscriptionsCursor = allSubscriptionResults.reduce(
+            (max, row) => (row.createdAt > max ? row.createdAt : max),
+            allSubscriptionResults[0].createdAt
+          );
+        }
 
         createdSubscriptions = allSubscriptionResults.map((row) => ({
           id: row.id,
@@ -345,15 +439,26 @@ export const syncRouter = createTRPCRouter({
       // ========================================================================
       let removedSubscriptionIds: string[] = [];
 
-      if (sinceDate) {
+      if (removedSubscriptionsCursor) {
         const unsubscribedResults = await ctx.db
           .select({
             id: subscriptions.id,
+            unsubscribedAt: subscriptions.unsubscribedAt,
           })
           .from(subscriptions)
           .where(
-            and(eq(subscriptions.userId, userId), gt(subscriptions.unsubscribedAt, sinceDate))
-          );
+            and(
+              eq(subscriptions.userId, userId),
+              gt(subscriptions.unsubscribedAt, removedSubscriptionsCursor)
+            )
+          )
+          .orderBy(subscriptions.unsubscribedAt);
+
+        // Update cursor to the last unsubscribedAt
+        if (unsubscribedResults.length > 0) {
+          const lastRemoved = unsubscribedResults[unsubscribedResults.length - 1];
+          outputRemovedSubscriptionsCursor = lastRemoved.unsubscribedAt;
+        }
 
         removedSubscriptionIds = unsubscribedResults.map((s) => s.id);
       }
@@ -363,17 +468,29 @@ export const syncRouter = createTRPCRouter({
       // ========================================================================
       let createdTags: z.infer<typeof syncTagSchema>[] = [];
 
-      if (sinceDate) {
+      if (tagsCursor) {
         const newTagResults = await ctx.db
           .select({
             id: tags.id,
             name: tags.name,
             color: tags.color,
+            createdAt: tags.createdAt,
           })
           .from(tags)
-          .where(and(eq(tags.userId, userId), gt(tags.createdAt, sinceDate)));
+          .where(and(eq(tags.userId, userId), gt(tags.createdAt, tagsCursor)))
+          .orderBy(tags.createdAt);
 
-        createdTags = newTagResults;
+        // Update cursor to the last tag's createdAt
+        if (newTagResults.length > 0) {
+          const lastTag = newTagResults[newTagResults.length - 1];
+          outputTagsCursor = lastTag.createdAt;
+        }
+
+        createdTags = newTagResults.map((row) => ({
+          id: row.id,
+          name: row.name,
+          color: row.color,
+        }));
       } else {
         // Initial sync: get all tags
         const allTagResults = await ctx.db
@@ -381,11 +498,24 @@ export const syncRouter = createTRPCRouter({
             id: tags.id,
             name: tags.name,
             color: tags.color,
+            createdAt: tags.createdAt,
           })
           .from(tags)
           .where(eq(tags.userId, userId));
 
-        createdTags = allTagResults;
+        // For initial sync, set cursor to the max createdAt of returned tags
+        if (allTagResults.length > 0) {
+          outputTagsCursor = allTagResults.reduce(
+            (max, row) => (row.createdAt > max ? row.createdAt : max),
+            allTagResults[0].createdAt
+          );
+        }
+
+        createdTags = allTagResults.map((row) => ({
+          id: row.id,
+          name: row.name,
+          color: row.color,
+        }));
       }
 
       // ========================================================================
@@ -393,7 +523,8 @@ export const syncRouter = createTRPCRouter({
       // ========================================================================
       let removedEntryIds: string[] = [];
 
-      if (sinceDate && removedSubscriptionIds.length > 0) {
+      // Only process if this is an incremental sync and we have removed subscriptions
+      if (removedSubscriptionsCursor && removedSubscriptionIds.length > 0) {
         // Get feed IDs for the removed subscriptions
         const removedFeedIds = await ctx.db
           .select({ feedId: subscriptions.feedId })
@@ -425,6 +556,20 @@ export const syncRouter = createTRPCRouter({
       // For now, clients can detect removed tags by comparing with previous sync
       const removedTagIds: string[] = [];
 
+      // Compute syncedAt as the max of all output cursors for backward compatibility
+      const allCursors = [
+        outputEntriesCursor,
+        outputEntryStatesCursor,
+        outputSubscriptionsCursor,
+        outputRemovedSubscriptionsCursor,
+        outputTagsCursor,
+      ].filter((c): c is Date => c !== null);
+
+      const syncedAt =
+        allCursors.length > 0
+          ? new Date(Math.max(...allCursors.map((c) => c.getTime())))
+          : new Date();
+
       return {
         entries: {
           created: createdEntries,
@@ -438,6 +583,13 @@ export const syncRouter = createTRPCRouter({
         tags: {
           created: createdTags,
           removed: removedTagIds,
+        },
+        cursors: {
+          entries: outputEntriesCursor?.toISOString() ?? null,
+          entryStates: outputEntryStatesCursor?.toISOString() ?? null,
+          subscriptions: outputSubscriptionsCursor?.toISOString() ?? null,
+          removedSubscriptions: outputRemovedSubscriptionsCursor?.toISOString() ?? null,
+          tags: outputTagsCursor?.toISOString() ?? null,
         },
         syncedAt: syncedAt.toISOString(),
         hasMore,
