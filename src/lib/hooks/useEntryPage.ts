@@ -18,6 +18,7 @@ import { type ViewType } from "./viewPreferences";
 import { useEntryListQuery, type EntryListData } from "./useEntryListQuery";
 import { useEntryMutations, type MarkAllReadOptions } from "./useEntryMutations";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { useInfiniteScrollConfig } from "./useInfiniteScrollConfig";
 
 /**
  * Filter options for the entry page.
@@ -108,6 +109,7 @@ export interface UseEntryPageResult {
     onToggleStar: (entryId: string, currentlyStarred: boolean) => void;
     externalEntries: EntryListData[];
     externalQueryState: ExternalQueryState;
+    rootMargin: string;
   };
 
   entryContentProps: {
@@ -147,6 +149,9 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
   const { filters = {} } = options;
 
   const utils = trpc.useUtils();
+
+  // Viewport-based infinite scroll config
+  const scrollConfig = useInfiniteScrollConfig();
 
   // URL state for open entry
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
@@ -266,6 +271,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       onToggleStar: toggleStar,
       externalEntries: entries,
       externalQueryState,
+      rootMargin: scrollConfig.rootMargin,
     }),
     [
       combinedFilters,
@@ -275,6 +281,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       toggleStar,
       entries,
       externalQueryState,
+      scrollConfig.rootMargin,
     ]
   );
 

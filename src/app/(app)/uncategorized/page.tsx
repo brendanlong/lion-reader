@@ -34,7 +34,7 @@ export default async function UncategorizedEntriesPage({
       uncategorized: true as const,
       unreadOnly,
       sortOrder,
-      limit: 20,
+      limit: 10,
     };
 
     await queryClient.prefetchInfiniteQuery({
