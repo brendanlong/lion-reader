@@ -31,7 +31,8 @@
     "test:unit": "dotenv -o -e .env.test -- vitest run tests/unit",
     "test:integration": "pnpm db:migrate:test && pnpm db:schema:test && dotenv -o -e .env.test -- vitest run tests/integration",
     "worker": "tsx scripts/worker.ts",
-    "mcp:serve": "dotenv -- tsx src/server/mcp/bin.ts"
+    "mcp:serve": "dotenv -- tsx src/server/mcp/bin.ts",
+    "discord-bot": "dotenv -- tsx scripts/discord-bot.ts"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": [
@@ -44,6 +45,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "discord.js": "^14.14.1",
     "@aws-sdk/client-s3": "^3.965.0",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.25.2",
