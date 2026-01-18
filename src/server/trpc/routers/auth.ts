@@ -38,6 +38,11 @@ import {
   processOAuthCallback,
 } from "@/server/auth";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
+import {
+  DISCORD_BOT_ENABLED,
+  DISCORD_BOT_INVITE_URL,
+  DISCORD_SAVE_EMOJI,
+} from "@/server/discord/config";
 
 // ============================================================================
 // Validation Schemas
@@ -756,6 +761,37 @@ export const authRouter = createTRPCRouter({
         },
         sessionToken: token,
         isNewUser: oauthResult.isNewUser,
+      };
+    }),
+
+  /**
+   * Get Discord bot configuration.
+   *
+   * Returns whether the Discord bot is enabled and the invite URL.
+   * Used by the settings page to show the bot invite link.
+   */
+  discordBotConfig: publicProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/auth/discord-bot-config",
+        tags: ["Auth"],
+        summary: "Get Discord bot configuration",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        enabled: z.boolean(),
+        inviteUrl: z.string().nullable(),
+        saveEmoji: z.string().nullable(),
+      })
+    )
+    .query(() => {
+      return {
+        enabled: DISCORD_BOT_ENABLED,
+        inviteUrl: DISCORD_BOT_INVITE_URL,
+        saveEmoji: DISCORD_BOT_ENABLED ? DISCORD_SAVE_EMOJI : null,
       };
     }),
 
