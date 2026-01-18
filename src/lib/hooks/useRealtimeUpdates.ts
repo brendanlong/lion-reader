@@ -16,7 +16,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionCreated, handleSubscriptionDeleted } from "@/lib/cache";
+import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "@/lib/cache";
 
 /**
  * Granular sync cursors for each entity type.
@@ -108,6 +108,7 @@ interface SubscriptionEntryEventData {
   subscriptionId: string;
   entryId: string;
   timestamp: string;
+  feedType?: "web" | "email" | "saved"; // Included for new_entry to enable cache updates
 }
 
 interface SubscriptionCreatedEventSubscription {
@@ -218,6 +219,10 @@ function parseEventData(data: string): SSEEventData | null {
         subscriptionId: event.subscriptionId,
         entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        feedType:
+          typeof event.feedType === "string" && ["web", "email", "saved"].includes(event.feedType)
+            ? (event.feedType as "web" | "email" | "saved")
+            : undefined,
       };
     }
 
@@ -480,11 +485,12 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       if (!data) return;
 
       if (data.type === "new_entry") {
-        // Invalidate entry list and subscription counts
-        // Direct cache update not feasible - we don't have full entry data
-        utils.entries.list.invalidate();
-        utils.subscriptions.list.invalidate();
-        utils.tags.list.invalidate();
+        // Update unread counts surgically without invalidating entries.list
+        // This allows smooth scrolling while keeping counts fresh
+        // New entries appear when user navigates to that feed/view
+        if (data.feedType) {
+          handleNewEntry(utils, data.subscriptionId, data.entryId, data.feedType);
+        }
       } else if (data.type === "entry_updated") {
         // Invalidate the specific entry to refresh content
         utils.entries.get.invalidate({ id: data.entryId });
