@@ -607,6 +607,7 @@ export const userFeeds = pgView("user_feeds", {
   id: uuid("id").notNull(),
   userId: uuid("user_id").notNull(),
   subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(), // for sync cursor tracking
   feedId: uuid("feed_id").notNull(), // internal use only
   feedIds: uuid("feed_ids").array().notNull(), // for entry visibility queries
   customTitle: text("custom_title"),

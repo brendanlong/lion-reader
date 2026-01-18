@@ -9,6 +9,7 @@
  * - Automatic catch-up sync after SSE reconnection
  * - Exponential backoff for reconnection attempts
  * - React Query cache invalidation
+ * - Granular cursor tracking for each entity type (entries, subscriptions, tags, etc.)
  */
 
 "use client";
@@ -16,6 +17,18 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { handleSubscriptionCreated, handleSubscriptionDeleted } from "@/lib/cache";
+
+/**
+ * Granular sync cursors for each entity type.
+ * Each cursor is an ISO8601 timestamp derived from the actual last item in its query result.
+ */
+export interface SyncCursors {
+  entries: string | null;
+  entryStates: string | null;
+  subscriptions: string | null;
+  removedSubscriptions: string | null;
+  tags: string | null;
+}
 
 /**
  * Connection status for real-time updates.
@@ -378,13 +391,14 @@ function parseEventData(data: string): SSEEventData | null {
 /**
  * Hook to manage real-time updates with SSE primary and polling fallback.
  *
- * @param initialSyncCursor - Initial sync cursor from server (ISO8601 timestamp)
+ * @param initialCursors - Initial sync cursors from server (one per entity type)
  *
  * @example
  * ```tsx
  * function AppLayout({ children }) {
- *   const initialCursor = new Date().toISOString();
- *   const { status, isConnected, isPolling } = useRealtimeUpdates(initialCursor);
+ *   // Get initial cursors from server or use null for initial sync
+ *   const initialCursors: SyncCursors = { entries: null, entryStates: null, subscriptions: null, removedSubscriptions: null, tags: null };
+ *   const { status, isConnected, isPolling } = useRealtimeUpdates(initialCursors);
  *
  *   return (
  *     <div>
@@ -396,7 +410,7 @@ function parseEventData(data: string): SSEEventData | null {
  * }
  * ```
  */
-export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdatesResult {
+export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpdatesResult {
   const utils = trpc.useUtils();
 
   // Connection status state
@@ -411,8 +425,8 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const isManuallyClosedRef = useRef(false);
   const shouldConnectRef = useRef(false);
-  // Initialize with server-provided cursor (no client-side guessing!)
-  const lastSyncedAtRef = useRef<string>(initialSyncCursor);
+  // Initialize with server-provided cursors (granular tracking per entity type)
+  const cursorsRef = useRef<SyncCursors>(initialCursors);
 
   // State to trigger reconnection
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
@@ -453,14 +467,14 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
   /**
    * Handles incoming SSE events by updating or invalidating relevant caches.
    * Uses direct cache updates where possible to avoid full refetches.
-   * Tracks sync cursor from event.lastEventId for reconnection.
+   *
+   * Note: SSE events provide real-time updates, so we don't need to update cursors here.
+   * The cursors are updated via performSync() after reconnection or during polling.
    */
   const handleEvent = useCallback(
     (event: MessageEvent) => {
-      // Update sync cursor from SSE event ID (browser automatically tracks this)
-      if (event.lastEventId) {
-        lastSyncedAtRef.current = event.lastEventId;
-      }
+      // SSE lastEventId is still tracked by the browser for reconnection,
+      // but we don't update cursorsRef here - that happens in performSync()
 
       const data = parseEventData(event.data);
       if (!data) return;
@@ -524,16 +538,25 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
 
   /**
    * Performs a sync and invalidates relevant caches.
+   * Uses granular cursors to ensure no changes are missed between syncs.
    * Used during polling mode and for catch-up sync after SSE reconnection.
    */
   const performSync = useCallback(async () => {
     try {
+      const currentCursors = cursorsRef.current;
       const result = await utils.client.sync.changes.query({
-        since: lastSyncedAtRef.current ?? undefined,
+        // Use granular cursors for correct incremental sync
+        cursors: {
+          entries: currentCursors.entries ?? undefined,
+          entryStates: currentCursors.entryStates ?? undefined,
+          subscriptions: currentCursors.subscriptions ?? undefined,
+          removedSubscriptions: currentCursors.removedSubscriptions ?? undefined,
+          tags: currentCursors.tags ?? undefined,
+        },
       });
 
-      // Update last synced timestamp
-      lastSyncedAtRef.current = result.syncedAt;
+      // Update cursors from the response (derived from actual query results)
+      cursorsRef.current = result.cursors;
 
       const hasEntryChanges =
         result.entries.created.length > 0 ||
@@ -561,7 +584,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
         utils.tags.list.invalidate();
       }
 
-      return result.syncedAt;
+      return result.cursors;
     } catch (error) {
       console.error("Sync failed:", error);
       return null;
@@ -579,7 +602,7 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
     setIsPollingMode(true);
     setConnectionStatus("polling");
 
-    // lastSyncedAt already initialized with server-provided cursor
+    // cursorsRef already initialized with server-provided cursors
 
     // Start polling interval
     pollIntervalRef.current = setInterval(() => {
@@ -719,10 +742,9 @@ export function useRealtimeUpdates(initialSyncCursor: string): UseRealtimeUpdate
             sseRetryTimeoutRef.current = null;
           }
 
-          // Perform a catch-up sync if we have a lastSyncedAt
-          if (lastSyncedAtRef.current) {
-            performSync();
-          }
+          // Perform a catch-up sync to get any changes we might have missed
+          // The cursorsRef is already initialized, so performSync will work correctly
+          performSync();
         };
 
         // Handle named events
