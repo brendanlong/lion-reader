@@ -11,7 +11,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { useRealtimeUpdates } from "@/lib/hooks/useRealtimeUpdates";
+import { useRealtimeUpdates, type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
 import { ConnectionStatusIndicator } from "./ConnectionStatusIndicator";
 
 interface RealtimeProviderProps {
@@ -21,10 +21,10 @@ interface RealtimeProviderProps {
   children: ReactNode;
 
   /**
-   * Initial sync cursor from server (ISO8601 timestamp).
+   * Initial sync cursors from server (one per entity type).
    * Used for SSE reconnection and polling mode to avoid missing events.
    */
-  initialSyncCursor: string;
+  initialCursors: SyncCursors;
 
   /**
    * Whether to show the connection status indicator.
@@ -45,9 +45,13 @@ interface RealtimeProviderProps {
  * ```tsx
  * // In your app layout:
  * export default function AppLayout({ children }) {
- *   const initialSyncCursor = new Date().toISOString();
+ *   // Initial cursors - null values for fresh sync
+ *   const initialCursors: SyncCursors = {
+ *     entries: null, entryStates: null, subscriptions: null,
+ *     removedSubscriptions: null, tags: null
+ *   };
  *   return (
- *     <RealtimeProvider initialSyncCursor={initialSyncCursor}>
+ *     <RealtimeProvider initialCursors={initialCursors}>
  *       {children}
  *     </RealtimeProvider>
  *   );
@@ -56,10 +60,10 @@ interface RealtimeProviderProps {
  */
 export function RealtimeProvider({
   children,
-  initialSyncCursor,
+  initialCursors,
   showStatusIndicator = true,
 }: RealtimeProviderProps) {
-  const { status, reconnect } = useRealtimeUpdates(initialSyncCursor);
+  const { status, reconnect } = useRealtimeUpdates(initialCursors);
 
   return (
     <>

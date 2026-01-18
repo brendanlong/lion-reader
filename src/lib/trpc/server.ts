@@ -100,11 +100,17 @@ export function createServerQueryClient(): QueryClient {
 export interface PrefetchResult {
   queryClient: QueryClient;
   /**
-   * Server timestamp for SSE sync cursor.
-   * Should be captured after all prefetches complete to ensure
-   * no events are missed between prefetch and SSE connection.
+   * Initial sync cursors for each entity type.
+   * Null values indicate an initial sync that will fetch all recent data
+   * and establish baseline cursors for subsequent incremental syncs.
    */
-  initialSyncCursor: string;
+  initialCursors: {
+    entries: string | null;
+    entryStates: string | null;
+    subscriptions: string | null;
+    removedSubscriptions: string | null;
+    tags: string | null;
+  };
 }
 
 /**
