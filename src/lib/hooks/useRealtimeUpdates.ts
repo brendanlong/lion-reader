@@ -489,7 +489,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         // This allows smooth scrolling while keeping counts fresh
         // New entries appear when user navigates to that feed/view
         if (data.feedType) {
-          handleNewEntry(utils, data.subscriptionId, data.entryId, data.feedType);
+          handleNewEntry(utils, data.subscriptionId, data.feedType);
         }
       } else if (data.type === "entry_updated") {
         // Invalidate the specific entry to refresh content
