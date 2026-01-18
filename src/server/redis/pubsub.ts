@@ -22,6 +22,7 @@ interface BaseFeedEvent {
   feedId: string;
   entryId: string;
   timestamp: string;
+  feedType?: "web" | "email" | "saved"; // Added to new_entry for cache updates
 }
 
 /**
@@ -270,12 +271,17 @@ async function publishFeedEvent(event: FeedEvent): Promise<number> {
  * @param entryId - The ID of the newly created entry
  * @returns The number of subscribers that received the message
  */
-export async function publishNewEntry(feedId: string, entryId: string): Promise<number> {
+export async function publishNewEntry(
+  feedId: string,
+  entryId: string,
+  feedType?: "web" | "email" | "saved"
+): Promise<number> {
   const event: NewEntryEvent = {
     type: "new_entry",
     feedId,
     entryId,
     timestamp: new Date().toISOString(),
+    feedType,
   };
   return publishFeedEvent(event);
 }
