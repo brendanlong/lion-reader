@@ -2,12 +2,26 @@
  * Landing Page
  *
  * Shows a landing page for unauthenticated users.
- * Authenticated users are redirected to /all by middleware.
+ * Authenticated users are redirected to /all.
  */
 
+import { cookies } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { validateSession } from "@/server/auth/session";
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Check if user is already authenticated
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get("session")?.value;
+
+  if (sessionToken) {
+    const session = await validateSession(sessionToken);
+    if (session) {
+      // User is already signed in, redirect to the app
+      redirect("/all");
+    }
+  }
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
       <main className="w-full max-w-2xl text-center">
