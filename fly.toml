@@ -43,6 +43,8 @@ primary_region = "lax"
 
   # The emoji to trigger saving links
   DISCORD_SAVE_EMOJI='savetolionreader'
+  DISCORD_SUCCESS_EMOJI='salutinglionreader'
+  DISCORD_ERROR_EMOJI='cryinglionreader'
 
   # Object storage
   STORAGE_BUCKET = "lion-reader-prod"
