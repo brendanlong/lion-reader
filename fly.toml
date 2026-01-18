@@ -55,6 +55,9 @@ primary_region = "lax"
   # Newsletters
   INGEST_EMAIL_DOMAIN = "in.app.lionreader.com"
 
+  # Prometheus metrics
+  METRICS_ENABLED = "true"
+
 [http_service]
   internal_port = 3000
   force_https = true
@@ -80,3 +83,9 @@ primary_region = "lax"
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 2
+
+# Prometheus metrics scraping
+# Metrics are served from the main app at /api/metrics
+[metrics]
+port = 3000
+path = "/api/metrics"
