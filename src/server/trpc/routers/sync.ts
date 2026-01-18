@@ -146,14 +146,7 @@ export const syncRouter = createTRPCRouter({
    * @returns Changes grouped by entity type with a new syncedAt timestamp
    */
   changes: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/sync",
-        tags: ["Sync"],
-        summary: "Get changes since timestamp",
-      },
-    })
+    // Note: No OpenAPI metadata - complex nested input (cursors) not supported in GET query params
     .input(
       z.object({
         /** @deprecated Use `cursors` for correct incremental sync */
