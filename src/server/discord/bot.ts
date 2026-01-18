@@ -202,7 +202,7 @@ export async function startDiscordBot(): Promise<void> {
     await handleSaveReaction(reaction.message, user);
   });
 
-  client.once("ready", () => {
+  client.once("clientReady", () => {
     logger.info("Discord bot started", {
       tag: client?.user?.tag,
       saveEmoji: DISCORD_SAVE_EMOJI,
