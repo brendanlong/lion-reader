@@ -216,3 +216,41 @@ export function handleSubscriptionDeleted(utils: TRPCClientUtils, subscriptionId
   utils.entries.list.invalidate();
   utils.tags.list.invalidate();
 }
+
+/**
+ * Handles a new entry being created in a subscription.
+ *
+ * Updates:
+ * - subscriptions.list unread counts (+1)
+ * - tags.list unread counts (+1)
+ * - entries.count({ type: "saved" }) if entry is saved
+ *
+ * Does NOT invalidate entries.list - new entries appear on next navigation.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param subscriptionId - Subscription the entry belongs to
+ * @param entryId - The new entry ID
+ * @param feedType - Type of feed (web, email, saved)
+ */
+export function handleNewEntry(
+  utils: TRPCClientUtils,
+  subscriptionId: string,
+  entryId: string,
+  feedType: "web" | "email" | "saved"
+): void {
+  // New entries are always unread (read: false, starred: false)
+  const subscriptionDeltas = new Map<string, number>();
+  subscriptionDeltas.set(subscriptionId, 1); // +1 unread
+
+  // Update subscription unread counts
+  adjustSubscriptionUnreadCounts(utils, subscriptionDeltas);
+
+  // Update tag unread counts
+  const tagDeltas = calculateTagDeltasFromSubscriptions(utils, subscriptionDeltas);
+  adjustTagUnreadCounts(utils, tagDeltas);
+
+  // Update saved unread count if it's a saved entry
+  if (feedType === "saved") {
+    adjustEntriesCount(utils, { type: "saved" }, 1);
+  }
+}
