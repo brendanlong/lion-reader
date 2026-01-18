@@ -56,6 +56,7 @@ import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance";
+import { useImagePrefetch } from "@/lib/hooks";
 
 /**
  * Format a date as a readable string.
@@ -389,6 +390,10 @@ export function EntryContentBody({
 
     return sanitized;
   }, [contentToDisplay, shouldProcessForHighlighting, narration.processedHtml]);
+
+  // Prefetch images before they scroll into view
+  // This prevents the flash that occurs with native loading="lazy"
+  useImagePrefetch(contentRef, sanitizedContent);
 
   // Auto-scroll to highlighted paragraph when playing
   // Note: Highlighting is now handled via CSS by NarrationHighlightStyles component

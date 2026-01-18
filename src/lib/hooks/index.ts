@@ -21,3 +21,5 @@ export { useEntryListQuery, type EntryListData } from "./useEntryListQuery";
 export { useShowOriginalPreference } from "./useShowOriginalPreference";
 
 export { useEntryPage, type UseEntryPageOptions, type UseEntryPageResult } from "./useEntryPage";
+
+export { useImagePrefetch } from "./useImagePrefetch";
