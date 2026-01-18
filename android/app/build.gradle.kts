@@ -51,9 +51,16 @@ android {
     }
 
     signingConfigs {
-        // Debug signing config - uses default debug keystore
+        // Debug signing config - uses custom keystore if DEBUG_KEYSTORE_PATH is set, otherwise default
         getByName("debug") {
-            // Uses default debug keystore automatically
+            val debugKeystorePath = System.getenv("DEBUG_KEYSTORE_PATH")
+            if (debugKeystorePath != null) {
+                storeFile = file(debugKeystorePath)
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+            // If DEBUG_KEYSTORE_PATH is not set, uses default debug keystore automatically
         }
 
         // Release signing config - reads from environment variables or local.properties
