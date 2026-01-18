@@ -85,7 +85,8 @@ primary_region = "lax"
   cpus = 2
 
 # Prometheus metrics scraping
-# Metrics are served from the main app at /api/metrics
+# Served on internal port 9091 (not exposed via http_service)
+# The worker process runs this server in-process
 [metrics]
-port = 3000
-path = "/api/metrics"
+port = 9091
+path = "/metrics"
