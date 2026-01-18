@@ -448,7 +448,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
 
   // 9. Publish real-time event via Redis
   // Fire and forget - we don't want publishing failures to affect email processing
-  publishNewEntry(feed.id, entryId).catch((err) => {
+  publishNewEntry(feed.id, entryId, "email").catch((err) => {
     logger.error("Failed to publish new_entry event for email", {
       feedId: feed.id,
       entryId,

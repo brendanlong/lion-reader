@@ -368,6 +368,7 @@ export async function GET(req: Request): Promise<Response> {
               subscriptionId,
               entryId: event.entryId,
               timestamp: event.timestamp,
+              feedType: event.feedType,
             };
 
             const cursor = new Date().toISOString();

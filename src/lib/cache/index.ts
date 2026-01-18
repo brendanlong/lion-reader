@@ -9,6 +9,7 @@
  * - `handleEntriesMarkedRead` - When entries are marked read/unread
  * - `handleEntryStarred` / `handleEntryUnstarred` - When entries are starred/unstarred
  * - `handleSubscriptionCreated` / `handleSubscriptionDeleted` - For subscription changes
+ * - `handleNewEntry` - When a new entry is created (from SSE events)
  *
  * These operations handle all the cache interactions correctly (e.g., starring
  * an unread entry updates the starred unread count).
@@ -23,6 +24,7 @@ export {
   handleEntryUnstarred,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
+  handleNewEntry,
   type EntryWithContext,
   type SubscriptionData,
 } from "./operations";
