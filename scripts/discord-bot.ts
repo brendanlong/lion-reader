@@ -1,0 +1,42 @@
+/**
+ * Discord bot process.
+ *
+ * This script runs the Discord bot that allows users to save articles
+ * by reacting to messages with a configured emoji.
+ *
+ * Usage:
+ *   pnpm discord-bot
+ *
+ * Environment variables:
+ *   DISCORD_BOT_TOKEN - Bot token from Discord Developer Portal
+ *   DISCORD_CLIENT_ID - Application client ID (same as OAuth)
+ *   DISCORD_SAVE_EMOJI - Emoji to trigger saving (default: 🦁)
+ */
+
+import { startDiscordBot } from "../src/server/discord";
+import { logger } from "../src/lib/logger";
+
+logger.info("Starting Discord bot", {
+  pid: process.pid,
+  saveEmoji: process.env.DISCORD_SAVE_EMOJI || "🦁",
+});
+
+// Handle graceful shutdown
+process.on("SIGINT", () => {
+  logger.info("Received SIGINT, shutting down Discord bot...");
+  process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+  logger.info("Received SIGTERM, shutting down Discord bot...");
+  process.exit(0);
+});
+
+startDiscordBot()
+  .then(() => {
+    logger.info("Discord bot started successfully");
+  })
+  .catch((error) => {
+    logger.error("Failed to start Discord bot", { error });
+    process.exit(1);
+  });

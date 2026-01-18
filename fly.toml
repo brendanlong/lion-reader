@@ -41,6 +41,9 @@ primary_region = "lax"
   # Sign in with Discord
   DISCORD_CLIENT_ID = "1462188750439448769"
 
+  # The emoji to trigger saving links
+  DISCORD_SAVE_EMOJI='savetolionreader'
+
   # Object storage
   STORAGE_BUCKET = "lion-reader-prod"
   STORAGE_ENDPOINT = "https://t3.storage.dev"
