@@ -12,6 +12,8 @@
 export const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 export const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 export const DISCORD_SAVE_EMOJI = process.env.DISCORD_SAVE_EMOJI || "🦁";
+export const DISCORD_SUCCESS_EMOJI = process.env.DISCORD_SUCCESS_EMOJI || "salutinglionreader";
+export const DISCORD_ERROR_EMOJI = process.env.DISCORD_ERROR_EMOJI || "😿";
 
 // ============================================================================
 // Derived Configuration
