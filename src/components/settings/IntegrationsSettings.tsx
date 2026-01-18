@@ -13,9 +13,12 @@ import Link from "next/link";
 export function IntegrationsSettings() {
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
 
+  // Check env var first (available on both server and client), then fall back to window.location.origin
   const baseUrl = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+    return (
+      process.env.NEXT_PUBLIC_APP_URL ||
+      (typeof window !== "undefined" ? window.location.origin : "")
+    );
   }, []);
 
   const mcpUrl = `${baseUrl}/mcp`;
