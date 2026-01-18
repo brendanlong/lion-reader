@@ -114,6 +114,14 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/master' }}
 
+      - name: Setup debug keystore
+        if: ${{ env.DEBUG_KEYSTORE_BASE64 != '' }}
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > ${{ runner.temp }}/debug.keystore
+          echo "DEBUG_KEYSTORE_PATH=${{ runner.temp }}/debug.keystore" >> $GITHUB_ENV
+
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
@@ -154,6 +162,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/master' }}
+
+      - name: Setup debug keystore
+        if: ${{ env.DEBUG_KEYSTORE_BASE64 != '' }}
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > ${{ runner.temp }}/debug.keystore
+          echo "DEBUG_KEYSTORE_PATH=${{ runner.temp }}/debug.keystore" >> $GITHUB_ENV
 
       - name: AVD cache
         uses: actions/cache@v4
