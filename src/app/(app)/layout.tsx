@@ -10,15 +10,15 @@
  * - tags.list (sidebar tag list)
  * - entries.count (starred/saved counts)
  *
- * The initial sync cursor is generated BEFORE prefetching to ensure no events
- * are missed. If an event occurs during prefetch, SSE will replay it and the
- * client's duplicate detection will handle it gracefully.
+ * Initial sync uses null cursors to get all recent data, which then establishes
+ * the baseline cursors for subsequent incremental syncs.
  */
 
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { createServerCaller, createServerQueryClient, isAuthenticated } from "@/lib/trpc/server";
 import { AppLayoutContent } from "./AppLayoutContent";
+import { type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -27,10 +27,16 @@ interface AppLayoutProps {
 export default async function AppLayout({ children }: AppLayoutProps) {
   const queryClient = createServerQueryClient();
 
-  // Generate initial sync cursor BEFORE prefetching to avoid race conditions.
-  // If an event occurs during prefetch, SSE will replay it (cursor is earlier
-  // than the event), and the client's duplicate detection handles it.
-  const initialSyncCursor = new Date().toISOString();
+  // Initial sync uses null cursors to fetch all recent data.
+  // The sync endpoint will return proper cursors derived from the actual data,
+  // which the client then uses for subsequent incremental syncs.
+  const initialCursors: SyncCursors = {
+    entries: null,
+    entryStates: null,
+    subscriptions: null,
+    removedSubscriptions: null,
+    tags: null,
+  };
 
   // Only prefetch if user is authenticated
   if (await isAuthenticated()) {
@@ -70,7 +76,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   return (
     <TRPCProvider>
       <HydrationBoundary state={dehydrate(queryClient)}>
-        <AppLayoutContent initialSyncCursor={initialSyncCursor}>{children}</AppLayoutContent>
+        <AppLayoutContent initialCursors={initialCursors}>{children}</AppLayoutContent>
       </HydrationBoundary>
     </TRPCProvider>
   );
