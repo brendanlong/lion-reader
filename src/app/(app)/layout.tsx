@@ -10,8 +10,9 @@
  * - tags.list (sidebar tag list)
  * - entries.count (starred/saved counts)
  *
- * The initial sync cursor is generated after prefetching to ensure
- * no events are missed between prefetch and SSE connection.
+ * The initial sync cursor is generated BEFORE prefetching to ensure no events
+ * are missed. If an event occurs during prefetch, SSE will replay it and the
+ * client's duplicate detection will handle it gracefully.
  */
 
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
@@ -25,6 +26,11 @@ interface AppLayoutProps {
 
 export default async function AppLayout({ children }: AppLayoutProps) {
   const queryClient = createServerQueryClient();
+
+  // Generate initial sync cursor BEFORE prefetching to avoid race conditions.
+  // If an event occurs during prefetch, SSE will replay it (cursor is earlier
+  // than the event), and the client's duplicate detection handles it.
+  const initialSyncCursor = new Date().toISOString();
 
   // Only prefetch if user is authenticated
   if (await isAuthenticated()) {
@@ -60,10 +66,6 @@ export default async function AppLayout({ children }: AppLayoutProps) {
       }),
     ]);
   }
-
-  // Generate initial sync cursor AFTER prefetching completes
-  // This ensures no events are missed between prefetch and SSE connection
-  const initialSyncCursor = new Date().toISOString();
 
   return (
     <TRPCProvider>
