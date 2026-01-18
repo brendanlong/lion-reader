@@ -32,3 +32,36 @@ export const DEFAULT_PREFERENCES: ViewPreferences = {
   showUnreadOnly: true,
   sortOrder: "newest",
 };
+
+/**
+ * Parse view preferences from URL search params.
+ * Uses DEFAULT_PREFERENCES when not specified in URL (no localStorage fallback
+ * to avoid hydration mismatches between server and client).
+ *
+ * This function is kept in a non-"use client" file so it can be used
+ * for server-side prefetching as well as client-side rendering.
+ */
+export function parseViewPreferencesFromParams(searchParams: URLSearchParams | null): {
+  unreadOnly: boolean;
+  sortOrder: "newest" | "oldest";
+} {
+  // Parse unreadOnly - explicit "false" means show all, anything else uses default
+  const unreadOnlyParam = searchParams?.get("unreadOnly");
+  const unreadOnly =
+    unreadOnlyParam === "false"
+      ? false
+      : unreadOnlyParam === "true"
+        ? true
+        : DEFAULT_PREFERENCES.showUnreadOnly;
+
+  // Parse sortOrder - explicit "oldest" means oldest first, anything else uses default
+  const sortParam = searchParams?.get("sort");
+  const sortOrder =
+    sortParam === "oldest"
+      ? "oldest"
+      : sortParam === "newest"
+        ? "newest"
+        : DEFAULT_PREFERENCES.sortOrder;
+
+  return { unreadOnly, sortOrder };
+}
