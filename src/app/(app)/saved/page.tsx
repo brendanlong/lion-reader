@@ -28,10 +28,16 @@ export default async function SavedArticlesPage({ searchParams }: SavedArticlesP
     const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams);
 
     // Prefetch saved entries with the same params as client
+    // IMPORTANT: Include ALL fields (even undefined) to match the query key structure
+    // that tRPC generates on the client side
     const input = {
-      type: "saved" as const,
+      subscriptionId: undefined,
+      tagId: undefined,
+      uncategorized: undefined,
       unreadOnly,
+      starredOnly: undefined,
       sortOrder,
+      type: "saved" as const,
       limit: 10,
     };
 

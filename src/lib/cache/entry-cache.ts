@@ -475,9 +475,6 @@ export function findParentListPlaceholderData(
   filters: EntryListFilters,
   subscriptions?: SubscriptionInfo[]
 ): TypedInfiniteData | undefined {
-  // Saved entries are a separate data source, can't use parent list
-  if (filters.type === "saved") return undefined;
-
   const queries = queryClient.getQueriesData<InfiniteData>({
     queryKey: [["entries", "list"]],
   });
