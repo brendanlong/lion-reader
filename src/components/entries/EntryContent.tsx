@@ -71,10 +71,18 @@ export function EntryContent({
   const hasAutoMarkedRead = useRef(false);
 
   // Fetch the entry
-  const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
+  const { data, isLoading, isFetching, isError, error, refetch } = trpc.entries.get.useQuery({
+    id: entryId,
+  });
 
   // Use entry data directly (no delta merging)
   const entry = data?.entry ?? null;
+
+  // Check if we have partial data (seeded from list) but content is still loading
+  // Content is considered missing if all content fields are null
+  const hasContent =
+    entry?.contentOriginal !== null || entry?.contentCleaned !== null || entry?.summary !== null;
+  const isContentLoading = entry !== null && !hasContent && isFetching;
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
@@ -243,10 +251,13 @@ export function EntryContent({
   };
 
   // Determine content based on loading/error/success state
+  // Progressive rendering: show header immediately if we have entry data (even if seeded from list)
   let content: React.ReactNode;
-  if (isLoading) {
+  if (isLoading && !entry) {
+    // No cached data at all - show full skeleton
     content = <EntryContentSkeleton />;
-  } else if (isError) {
+  } else if (isError && !entry) {
+    // Error with no cached data to show
     content = (
       <EntryContentError
         message={error?.message ?? "Failed to load entry"}
@@ -256,6 +267,7 @@ export function EntryContent({
   } else if (!entry) {
     content = <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
   } else {
+    // Have entry data (full or seeded from list) - render progressively
     content = (
       <EntryContentBody
         articleId={entryId}
@@ -293,6 +305,8 @@ export function EntryContent({
         onSummarize={handleSummarize}
         onSummaryClose={handleSummaryClose}
         onSummaryRegenerate={handleSummaryRegenerate}
+        // Progressive loading - show content skeleton while fetching full data
+        isContentLoading={isContentLoading}
       />
     );
   }
