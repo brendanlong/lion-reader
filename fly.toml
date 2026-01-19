@@ -76,7 +76,7 @@ primary_region = "lax"
 
 [[http_service.checks]]
   grace_period = "30s"
-  interval = "15s"
+  interval = "5s"
   timeout = "5s"
   method = "GET"
   path = "/api/health"
