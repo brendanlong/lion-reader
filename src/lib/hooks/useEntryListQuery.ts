@@ -17,7 +17,9 @@
 
 import { useMemo, useCallback, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
+import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
 import { type EntryType } from "./useEntryMutations";
 
 /**
@@ -55,6 +57,14 @@ export interface EntryListData {
 }
 
 /**
+ * Subscription info for tag filtering in placeholder data.
+ */
+interface SubscriptionForPlaceholder {
+  id: string;
+  tags: Array<{ id: string }>;
+}
+
+/**
  * Options for the useEntryListQuery hook.
  */
 export interface UseEntryListQueryOptions {
@@ -79,6 +89,13 @@ export interface UseEntryListQueryOptions {
    * @default 3
    */
   prefetchThreshold?: number;
+
+  /**
+   * Subscription data for tag filtering in placeholder data.
+   * Pass the result of subscriptions.list query to enable placeholder data
+   * for tag-filtered and uncategorized views.
+   */
+  subscriptions?: SubscriptionForPlaceholder[];
 }
 
 /**
@@ -156,7 +173,10 @@ export interface UseEntryListQueryResult {
  * navigation beyond initially loaded entries.
  */
 export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryListQueryResult {
-  const { filters, pageSize = 10, openEntryId, prefetchThreshold = 3 } = options;
+  const { filters, pageSize = 10, openEntryId, prefetchThreshold = 3, subscriptions } = options;
+
+  // Get query client for placeholder data lookup
+  const queryClient = useQueryClient();
 
   // Track pathname to detect real navigation (sidebar click) vs query param changes (back button)
   const pathname = usePathname();
@@ -200,6 +220,9 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
       // Don't refetch on window focus - we want to preserve the list state while viewing entries
       // The list will refetch on pathname change (sidebar navigation) instead
       refetchOnWindowFocus: false,
+      // Use parent list as placeholder data for immediate display while fetching
+      // This provides entries from a broader cached list (e.g., "All" list for subscription view)
+      placeholderData: () => findParentListPlaceholderData(queryClient, filters, subscriptions),
     }
   );
 

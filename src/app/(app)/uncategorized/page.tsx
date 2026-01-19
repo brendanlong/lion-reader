@@ -30,10 +30,16 @@ export default async function UncategorizedEntriesPage({
     const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams);
 
     // Prefetch uncategorized entries with the same params as client
+    // IMPORTANT: Include ALL fields (even undefined) to match the query key structure
+    // that tRPC generates on the client side
     const input = {
+      subscriptionId: undefined,
+      tagId: undefined,
       uncategorized: true as const,
       unreadOnly,
+      starredOnly: undefined,
       sortOrder,
+      type: undefined,
       limit: 10,
     };
 

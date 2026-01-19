@@ -223,3 +223,317 @@ export function listItemToPlaceholderEntry(listItem: EntryListItem): {
     },
   };
 }
+
+/**
+ * Filter options for entry list queries.
+ */
+export interface EntryListFilters {
+  subscriptionId?: string;
+  tagId?: string;
+  uncategorized?: boolean;
+  unreadOnly?: boolean;
+  starredOnly?: boolean;
+  sortOrder?: "newest" | "oldest";
+  type?: "web" | "email" | "saved";
+}
+
+/**
+ * Subscription info needed for tag filtering.
+ */
+interface SubscriptionInfo {
+  id: string;
+  tags: Array<{ id: string }>;
+}
+
+/**
+ * Query key structure for tRPC infinite queries.
+ * The key is [["entries", "list"], { input: {...}, type: "infinite" }]
+ */
+interface TRPCQueryKey {
+  input?: EntryListFilters & { limit?: number; cursor?: string };
+  type?: string;
+}
+
+/**
+ * Checks if a parent query's filters are compatible for use as placeholder data.
+ * A parent is compatible if it's a superset of the requested filters.
+ *
+ * @param parentFilters - Filters from the parent query
+ * @param requestedFilters - Filters being requested
+ * @returns true if parent can provide placeholder data for the request
+ */
+function areFiltersCompatible(
+  parentFilters: EntryListFilters,
+  requestedFilters: EntryListFilters
+): boolean {
+  // Sort order must match (we can't reorder entries client-side)
+  const parentSort = parentFilters.sortOrder ?? "newest";
+  const requestedSort = requestedFilters.sortOrder ?? "newest";
+  if (parentSort !== requestedSort) return false;
+
+  // If parent has starredOnly=true, we can only use it for starred requests
+  if (parentFilters.starredOnly && !requestedFilters.starredOnly) return false;
+
+  // If parent has unreadOnly=true, we can only use it for unread requests
+  if (parentFilters.unreadOnly && !requestedFilters.unreadOnly) return false;
+
+  // If parent has a type filter, it must match (or be omitted)
+  if (parentFilters.type && parentFilters.type !== requestedFilters.type) return false;
+
+  // If parent has subscriptionId, it must match
+  if (
+    parentFilters.subscriptionId &&
+    parentFilters.subscriptionId !== requestedFilters.subscriptionId
+  )
+    return false;
+
+  // If parent has tagId, it must match
+  if (parentFilters.tagId && parentFilters.tagId !== requestedFilters.tagId) return false;
+
+  // If parent has uncategorized, it must match
+  if (parentFilters.uncategorized && !requestedFilters.uncategorized) return false;
+
+  return true;
+}
+
+/**
+ * Filters entries from a parent list to match the requested filters.
+ *
+ * @param entries - Entries from the parent list
+ * @param filters - Requested filters to apply
+ * @param subscriptions - Subscription data for tag filtering
+ * @returns Filtered entries
+ */
+function filterEntries(
+  entries: CachedListEntry[],
+  filters: EntryListFilters,
+  subscriptions?: SubscriptionInfo[]
+): CachedListEntry[] {
+  let result = entries;
+
+  // Filter by subscriptionId
+  if (filters.subscriptionId) {
+    result = result.filter((e) => e.subscriptionId === filters.subscriptionId);
+  }
+
+  // Filter by tagId (need subscriptions data to know which subscriptions have this tag)
+  if (filters.tagId && subscriptions) {
+    const subscriptionIdsInTag = new Set(
+      subscriptions
+        .filter((sub) => sub.tags.some((tag) => tag.id === filters.tagId))
+        .map((sub) => sub.id)
+    );
+    result = result.filter(
+      (e) => e.subscriptionId && subscriptionIdsInTag.has(e.subscriptionId as string)
+    );
+  }
+
+  // Filter by uncategorized (subscriptions with no tags)
+  if (filters.uncategorized && subscriptions) {
+    const uncategorizedSubscriptionIds = new Set(
+      subscriptions.filter((sub) => sub.tags.length === 0).map((sub) => sub.id)
+    );
+    result = result.filter(
+      (e) => e.subscriptionId && uncategorizedSubscriptionIds.has(e.subscriptionId as string)
+    );
+  }
+
+  // Filter by starredOnly
+  if (filters.starredOnly) {
+    result = result.filter((e) => e.starred);
+  }
+
+  // Filter by unreadOnly
+  if (filters.unreadOnly) {
+    result = result.filter((e) => !e.read);
+  }
+
+  // Filter by type
+  if (filters.type) {
+    result = result.filter((e) => e.type === filters.type);
+  }
+
+  return result;
+}
+
+/**
+ * Entry list item structure for placeholder data.
+ * Matches the schema returned by entries.list tRPC procedure.
+ */
+interface EntryListItemForPlaceholder {
+  id: string;
+  subscriptionId: string | null;
+  feedId: string;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  read: boolean;
+  starred: boolean;
+  feedTitle: string | null;
+  siteName: string | null;
+}
+
+/**
+ * Page structure for typed placeholder data.
+ */
+interface TypedPage {
+  items: EntryListItemForPlaceholder[];
+  nextCursor?: string;
+}
+
+/**
+ * Typed infinite data for placeholder.
+ */
+interface TypedInfiniteData {
+  pages: TypedPage[];
+  pageParams: (string | undefined)[];
+}
+
+/**
+ * Finds a cached query matching specific filters.
+ */
+function findCachedQuery(
+  queries: [readonly unknown[], InfiniteData | undefined][],
+  matchFilters: (parentFilters: EntryListFilters) => boolean
+): InfiniteData | undefined {
+  for (const [queryKey, data] of queries) {
+    if (!data?.pages?.length) continue;
+
+    const keyMeta = queryKey[1] as TRPCQueryKey | undefined;
+    const parentFilters: EntryListFilters = keyMeta?.input ?? {};
+
+    if (matchFilters(parentFilters)) {
+      return data;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Finds a cached query with preference for exact unreadOnly/starredOnly match.
+ * First tries exact match, then falls back to any compatible query.
+ */
+function findCachedQueryWithPreference(
+  queries: [readonly unknown[], InfiniteData | undefined][],
+  baseMatch: (pf: EntryListFilters) => boolean,
+  filters: EntryListFilters
+): InfiniteData | undefined {
+  // First try exact match (same unreadOnly/starredOnly)
+  let result = findCachedQuery(
+    queries,
+    (pf) =>
+      baseMatch(pf) &&
+      !!pf.unreadOnly === !!filters.unreadOnly &&
+      !!pf.starredOnly === !!filters.starredOnly &&
+      areFiltersCompatible(pf, filters)
+  );
+
+  // Fall back to any compatible match
+  if (!result) {
+    result = findCachedQuery(queries, (pf) => baseMatch(pf) && areFiltersCompatible(pf, filters));
+  }
+
+  return result;
+}
+
+/**
+ * Checks if two filter sets are exactly equal (for self-cache lookup).
+ */
+function filtersEqual(a: EntryListFilters, b: EntryListFilters): boolean {
+  return (
+    a.subscriptionId === b.subscriptionId &&
+    a.tagId === b.tagId &&
+    !!a.uncategorized === !!b.uncategorized &&
+    a.type === b.type &&
+    !!a.unreadOnly === !!b.unreadOnly &&
+    !!a.starredOnly === !!b.starredOnly &&
+    (a.sortOrder ?? "newest") === (b.sortOrder ?? "newest")
+  );
+}
+
+/**
+ * Finds placeholder data from a parent list cache that can be used while the actual query loads.
+ * Walks up the hierarchy looking for cached data:
+ *
+ * 1. Self-cache: exact same query already cached (e.g., "All" returning to "All")
+ * 2. For subscriptions: tag list (if subscription is in a tag) → "All" list
+ * 3. For tags/starred/other: "All" list
+ *
+ * Within each level, prefers exact unreadOnly/starredOnly match, then falls back to compatible.
+ *
+ * @param queryClient - React Query client for cache access
+ * @param filters - Requested filters for the entry list
+ * @param subscriptions - Subscription data for tag filtering
+ * @returns Placeholder data in infinite query format, or undefined if no suitable parent found
+ */
+export function findParentListPlaceholderData(
+  queryClient: QueryClient,
+  filters: EntryListFilters,
+  subscriptions?: SubscriptionInfo[]
+): TypedInfiniteData | undefined {
+  const queries = queryClient.getQueriesData<InfiniteData>({
+    queryKey: [["entries", "list"]],
+  });
+
+  // 1. Check for exact match first (self-cache)
+  // This handles "All" using its own cache when navigating back, etc.
+  const exactMatch = findCachedQuery(queries, (pf) => filtersEqual(pf, filters));
+  if (exactMatch) {
+    // Return cached data directly, no filtering needed
+    return {
+      pages: exactMatch.pages.map((p) => ({
+        items: p.items as unknown as EntryListItemForPlaceholder[],
+        nextCursor: p.nextCursor,
+      })),
+      pageParams: exactMatch.pageParams as (string | undefined)[],
+    };
+  }
+
+  let parentData: InfiniteData | undefined;
+
+  // 2. For subscription pages, try the subscription's tag list
+  if (filters.subscriptionId && subscriptions) {
+    const subscription = subscriptions.find((s) => s.id === filters.subscriptionId);
+    const tagIds = subscription?.tags.map((t) => t.id) ?? [];
+
+    for (const tagId of tagIds) {
+      parentData = findCachedQueryWithPreference(
+        queries,
+        (pf) => pf.tagId === tagId && !pf.subscriptionId,
+        filters
+      );
+      if (parentData) break;
+    }
+  }
+
+  // 3. Fall back to "All" list (no subscription/tag/uncategorized filters)
+  if (!parentData) {
+    parentData = findCachedQueryWithPreference(
+      queries,
+      (pf) => !pf.subscriptionId && !pf.tagId && !pf.uncategorized,
+      filters
+    );
+  }
+
+  if (!parentData) return undefined;
+
+  // Filter the parent's entries to match the requested filters
+  const allEntries = parentData.pages.flatMap((page) => page.items);
+  const filteredEntries = filterEntries(allEntries, filters, subscriptions);
+
+  // No matching entries found
+  if (filteredEntries.length === 0) return undefined;
+
+  // Return in infinite query format (single page, no cursor for placeholder)
+  // Cast is safe because the cache contains the full entry data
+  return {
+    pages: [
+      { items: filteredEntries as unknown as EntryListItemForPlaceholder[], nextCursor: undefined },
+    ],
+    pageParams: [undefined],
+  };
+}

@@ -173,17 +173,19 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     [filters, showUnreadOnly, sortOrder]
   );
 
+  // Subscriptions query for tag lookup and placeholder data
+  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+
   // Entry list query
   const entryListQuery = useEntryListQuery({
     filters: combinedFilters,
     openEntryId,
+    // Pass subscriptions for tag filtering in placeholder data
+    subscriptions: subscriptionsQuery.data?.items,
   });
 
   // Use entries directly from query (no delta merging)
   const entries = entryListQuery.entries;
-
-  // Subscriptions query for tag lookup
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
 
   // Entry mutations - cache operations handle all updates internally
   const {
