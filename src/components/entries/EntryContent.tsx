@@ -8,10 +8,12 @@
 "use client";
 
 import { useEffect, useRef, useMemo, useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations, useShowOriginalPreference } from "@/lib/hooks";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
+import { findEntryInListCache, listItemToPlaceholderEntry } from "@/lib/cache/entry-cache";
 import {
   EntryContentBody,
   EntryContentSkeleton,
@@ -69,12 +71,28 @@ export function EntryContent({
   previousEntryId,
 }: EntryContentProps) {
   const hasAutoMarkedRead = useRef(false);
+  const queryClient = useQueryClient();
 
-  // Fetch the entry
-  const { data, isLoading, isError, error, refetch } = trpc.entries.get.useQuery({ id: entryId });
+  // Fetch the entry with placeholderData from list cache for progressive rendering
+  // This shows the header immediately while full content loads
+  const { data, isLoading, isPlaceholderData, isError, error, refetch } = trpc.entries.get.useQuery(
+    { id: entryId },
+    {
+      placeholderData: () => {
+        const listItem = findEntryInListCache(queryClient, entryId);
+        if (listItem) {
+          return listItemToPlaceholderEntry(listItem);
+        }
+        return undefined;
+      },
+    }
+  );
 
   // Use entry data directly (no delta merging)
   const entry = data?.entry ?? null;
+
+  // Show content skeleton while using placeholder data (header visible, content loading)
+  const isContentLoading = isPlaceholderData;
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
@@ -243,10 +261,13 @@ export function EntryContent({
   };
 
   // Determine content based on loading/error/success state
+  // Progressive rendering: show header immediately if we have entry data (even if seeded from list)
   let content: React.ReactNode;
-  if (isLoading) {
+  if (isLoading && !entry) {
+    // No cached data at all - show full skeleton
     content = <EntryContentSkeleton />;
-  } else if (isError) {
+  } else if (isError && !entry) {
+    // Error with no cached data to show
     content = (
       <EntryContentError
         message={error?.message ?? "Failed to load entry"}
@@ -256,6 +277,7 @@ export function EntryContent({
   } else if (!entry) {
     content = <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
   } else {
+    // Have entry data (full or seeded from list) - render progressively
     content = (
       <EntryContentBody
         articleId={entryId}
@@ -293,6 +315,8 @@ export function EntryContent({
         onSummarize={handleSummarize}
         onSummaryClose={handleSummaryClose}
         onSummaryRegenerate={handleSummaryRegenerate}
+        // Progressive loading - show content skeleton while fetching full data
+        isContentLoading={isContentLoading}
       />
     );
   }
