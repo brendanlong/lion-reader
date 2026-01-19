@@ -41,3 +41,5 @@ export {
 } from "./metrics";
 
 export { collectAllMetrics } from "./collect";
+
+export { startMetricsServer, stopMetricsServer } from "./server";
