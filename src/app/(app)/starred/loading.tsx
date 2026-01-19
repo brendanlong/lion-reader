@@ -1,22 +1,19 @@
 /**
  * Starred Entries Loading State
  *
- * Shows immediately during client-side navigation while the server
- * component runs.
+ * Renders the actual content component during navigation, allowing it to
+ * use cached data from React Query while the server prefetch runs.
+ *
+ * This enables instant navigation with cached/placeholder data, and when
+ * the server component completes, the prefetched data merges seamlessly.
+ *
+ * Trade-off: Initial page load (no cache) shows the component's loading
+ * state briefly before server data arrives.
  */
 
-import { EntryListSkeleton } from "@/components/entries/EntryListSkeleton";
+import { StarredEntriesContent } from "./StarredEntriesContent";
 
 export default function StarredEntriesLoading() {
-  return (
-    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      <div className="mb-4 flex items-center justify-between sm:mb-6">
-        <div className="h-8 w-32 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="flex gap-2">
-          <div className="h-9 w-9 animate-pulse rounded-md bg-zinc-200 dark:bg-zinc-700" />
-        </div>
-      </div>
-      <EntryListSkeleton count={10} />
-    </div>
-  );
+  // Render the actual content component - it will use cached data if available
+  return <StarredEntriesContent />;
 }
