@@ -414,12 +414,56 @@ function findCachedQuery(
 }
 
 /**
+ * Finds a cached query with preference for exact unreadOnly/starredOnly match.
+ * First tries exact match, then falls back to any compatible query.
+ */
+function findCachedQueryWithPreference(
+  queries: [readonly unknown[], InfiniteData | undefined][],
+  baseMatch: (pf: EntryListFilters) => boolean,
+  filters: EntryListFilters
+): InfiniteData | undefined {
+  // First try exact match (same unreadOnly/starredOnly)
+  let result = findCachedQuery(
+    queries,
+    (pf) =>
+      baseMatch(pf) &&
+      !!pf.unreadOnly === !!filters.unreadOnly &&
+      !!pf.starredOnly === !!filters.starredOnly &&
+      areFiltersCompatible(pf, filters)
+  );
+
+  // Fall back to any compatible match
+  if (!result) {
+    result = findCachedQuery(queries, (pf) => baseMatch(pf) && areFiltersCompatible(pf, filters));
+  }
+
+  return result;
+}
+
+/**
+ * Checks if two filter sets are exactly equal (for self-cache lookup).
+ */
+function filtersEqual(a: EntryListFilters, b: EntryListFilters): boolean {
+  return (
+    a.subscriptionId === b.subscriptionId &&
+    a.tagId === b.tagId &&
+    !!a.uncategorized === !!b.uncategorized &&
+    a.type === b.type &&
+    !!a.unreadOnly === !!b.unreadOnly &&
+    !!a.starredOnly === !!b.starredOnly &&
+    (a.sortOrder ?? "newest") === (b.sortOrder ?? "newest")
+  );
+}
+
+/**
  * Finds placeholder data from a parent list cache that can be used while the actual query loads.
- * Walks up the hierarchy looking for the closest parent with cached data:
+ * Walks up the hierarchy looking for cached data:
  *
- * For subscriptions: tag list (if subscription is in a tag) → "All" list
- * For tags: "All" list
- * For starred/other filters: "All" list
+ * 1. Self-cache: exact same query already cached (e.g., "All" returning to "All")
+ * 2. For subscriptions: tag list (if subscription is in a tag) → "All" list
+ * 3. For tags/starred/other: "All" list
+ *
+ * Within each level, prefers exact unreadOnly/starredOnly match, then falls back to compatible.
  *
  * @param queryClient - React Query client for cache access
  * @param filters - Requested filters for the entry list
@@ -438,29 +482,43 @@ export function findParentListPlaceholderData(
     queryKey: [["entries", "list"]],
   });
 
+  // 1. Check for exact match first (self-cache)
+  // This handles "All" using its own cache when navigating back, etc.
+  const exactMatch = findCachedQuery(queries, (pf) => filtersEqual(pf, filters));
+  if (exactMatch) {
+    // Return cached data directly, no filtering needed
+    return {
+      pages: exactMatch.pages.map((p) => ({
+        items: p.items as unknown as EntryListItemForPlaceholder[],
+        nextCursor: p.nextCursor,
+      })),
+      pageParams: exactMatch.pageParams as (string | undefined)[],
+    };
+  }
+
   let parentData: InfiniteData | undefined;
 
-  // For subscription pages, first try to find the subscription's tag list
+  // 2. For subscription pages, try the subscription's tag list
   if (filters.subscriptionId && subscriptions) {
     const subscription = subscriptions.find((s) => s.id === filters.subscriptionId);
     const tagIds = subscription?.tags.map((t) => t.id) ?? [];
 
-    // Try each tag the subscription belongs to
     for (const tagId of tagIds) {
-      parentData = findCachedQuery(
+      parentData = findCachedQueryWithPreference(
         queries,
-        (pf) => pf.tagId === tagId && !pf.subscriptionId && areFiltersCompatible(pf, filters)
+        (pf) => pf.tagId === tagId && !pf.subscriptionId,
+        filters
       );
       if (parentData) break;
     }
   }
 
-  // Fall back to "All" list (no subscription/tag/uncategorized filters)
+  // 3. Fall back to "All" list (no subscription/tag/uncategorized filters)
   if (!parentData) {
-    parentData = findCachedQuery(
+    parentData = findCachedQueryWithPreference(
       queries,
-      (pf) =>
-        !pf.subscriptionId && !pf.tagId && !pf.uncategorized && areFiltersCompatible(pf, filters)
+      (pf) => !pf.subscriptionId && !pf.tagId && !pf.uncategorized,
+      filters
     );
   }
 
