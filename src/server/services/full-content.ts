@@ -21,6 +21,8 @@ export interface FetchFullContentResult {
   contentOriginal?: string;
   /** The Readability-cleaned HTML content */
   contentCleaned?: string;
+  /** The length of the extracted text content (for quality comparison) */
+  textContentLength?: number;
   /** Error message if the fetch failed */
   error?: string;
 }
@@ -95,6 +97,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
       success: true,
       contentOriginal,
       contentCleaned: cleaned.content,
+      textContentLength: cleaned.textContent.length,
     };
   } catch (error) {
     const errorMessage = getErrorMessage(error);
