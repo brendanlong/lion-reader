@@ -19,6 +19,11 @@ export async function register() {
 
     const { logger } = await import("./src/lib/logger");
 
+    // Start internal metrics server for Prometheus scraping
+    // Runs on port 9091 (not exposed via Fly.io http_service)
+    const { startMetricsServer, stopMetricsServer } = await import("./src/server/metrics/server");
+    startMetricsServer();
+
     // Handle graceful shutdown to close DB/Redis connections
     let shuttingDown = false;
     const shutdown = async () => {
@@ -27,6 +32,9 @@ export async function register() {
       logger.info("Shutting down Next.js server...");
 
       try {
+        // Stop metrics server
+        await stopMetricsServer();
+
         // Close Redis connection
         const { redis } = await import("./src/server/redis");
         await redis.quit();

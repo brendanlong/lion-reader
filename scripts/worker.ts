@@ -15,7 +15,6 @@
  */
 
 import { startWorkerWithSignalHandling } from "../src/server/jobs/worker";
-import { startMetricsServer } from "../src/server/metrics/server";
 import { logger } from "../src/lib/logger";
 
 const pollIntervalMs = parseInt(process.env.WORKER_POLL_INTERVAL_MS ?? "5000", 10);
@@ -26,9 +25,6 @@ logger.info("Starting standalone worker", {
   concurrency,
   pid: process.pid,
 });
-
-// Start the internal metrics server (for Prometheus scraping on internal port)
-startMetricsServer();
 
 startWorkerWithSignalHandling({
   pollIntervalMs,
