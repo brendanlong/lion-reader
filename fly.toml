@@ -90,9 +90,9 @@ primary_region = "lax"
 
 # Background worker: 1x 512MB 2 CPU
 [[vm]]
-  memory = "512mb"
+  memory = "256mb"
   cpu_kind = "shared"
-  cpus = 2
+  cpus = 1
   processes = ["worker"]
 
 # Discord bot: 1x 256MB 1 CPU (lightweight, single connection)
