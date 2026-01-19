@@ -19,10 +19,10 @@ export async function register() {
 
     const { logger } = await import("./src/lib/logger");
 
-    // Start internal metrics server for Prometheus scraping
-    // Runs on port 9091 (not exposed via Fly.io http_service)
+    // Start internal metrics server for Prometheus scraping on port 9091
+    // Worker uses 9092, Discord bot uses 9093 (not exposed via Fly.io http_service)
     const { startMetricsServer, stopMetricsServer } = await import("./src/server/metrics/server");
-    startMetricsServer();
+    startMetricsServer(9091);
 
     // Handle graceful shutdown to close DB/Redis connections
     let shuttingDown = false;

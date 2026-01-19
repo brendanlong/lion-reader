@@ -14,12 +14,16 @@
  */
 
 import { startDiscordBot } from "../src/server/discord";
+import { startMetricsServer } from "../src/server/metrics/server";
 import { logger } from "../src/lib/logger";
 
 logger.info("Starting Discord bot", {
   pid: process.pid,
   saveEmoji: process.env.DISCORD_SAVE_EMOJI || "🦁",
 });
+
+// Start internal metrics server on port 9093 (separate from Next.js/worker)
+startMetricsServer(9093);
 
 // Handle graceful shutdown
 process.on("SIGINT", () => {
