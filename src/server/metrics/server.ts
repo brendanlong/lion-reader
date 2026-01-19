@@ -11,8 +11,6 @@ import { metricsEnabled, registry } from "./metrics";
 import { collectAllMetrics } from "./collect";
 import { logger } from "@/lib/logger";
 
-const METRICS_PORT = parseInt(process.env.METRICS_PORT ?? "9091", 10);
-
 let server: Server | null = null;
 
 /**
@@ -21,9 +19,10 @@ let server: Server | null = null;
  * The server responds to GET /metrics with Prometheus-formatted metrics.
  * All other requests return 404.
  *
+ * @param port - Port to listen on (default: 9091)
  * @returns The server instance, or null if metrics are disabled
  */
-export function startMetricsServer(): Server | null {
+export function startMetricsServer(port = 9091): Server | null {
   if (!metricsEnabled) {
     logger.info("Metrics disabled, skipping internal metrics server");
     return null;
@@ -56,8 +55,8 @@ export function startMetricsServer(): Server | null {
     }
   });
 
-  server.listen(METRICS_PORT, () => {
-    logger.info("Internal metrics server started", { port: METRICS_PORT });
+  server.listen(port, () => {
+    logger.info("Internal metrics server started", { port });
   });
 
   return server;

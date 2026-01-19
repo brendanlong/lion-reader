@@ -85,8 +85,19 @@ primary_region = "lax"
   cpus = 2
 
 # Prometheus metrics scraping
-# Served on internal port 9091 (not exposed via http_service)
-# The worker process runs this server in-process
-[metrics]
+# Each process serves metrics on its own internal port (not exposed via http_service)
+# - Next.js API: 9091 (HTTP metrics, SSE connections, business metrics)
+# - Worker: 9092 (job processing metrics, feed fetch metrics)
+# - Discord bot: 9093 (only when DISCORD_BOT_TOKEN is set)
+
+[[metrics]]
 port = 9091
+path = "/metrics"
+
+[[metrics]]
+port = 9092
+path = "/metrics"
+
+[[metrics]]
+port = 9093
 path = "/metrics"
