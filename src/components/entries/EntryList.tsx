@@ -291,8 +291,9 @@ export function EntryList({
     };
   }, [handleObserver, rootMargin, scrollContainerRef]);
 
-  // Initial loading state
-  if (isLoading) {
+  // Initial loading state - only show skeleton if we have no entries to display
+  // (placeholder data from parent lists provides entries even while loading)
+  if (isLoading && allEntries.length === 0) {
     return <EntryListSkeleton count={pageSize > 10 ? 10 : pageSize} />;
   }
 
@@ -306,8 +307,8 @@ export function EntryList({
     );
   }
 
-  // Empty state
-  if (allEntries.length === 0) {
+  // Empty state - only show when not loading (loading with 0 entries shows skeleton above)
+  if (!isLoading && allEntries.length === 0) {
     return <EntryListEmpty message={emptyMessage} />;
   }
 
