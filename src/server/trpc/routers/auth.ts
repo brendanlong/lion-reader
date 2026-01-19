@@ -871,8 +871,12 @@ export const authRouter = createTRPCRouter({
    *
    * Revokes the current session token, invalidating it for future requests.
    * Also clears the session from Redis cache.
+   *
+   * This is a public procedure so that logout works even if the session is
+   * already expired or invalid. If there's no valid session, this just
+   * returns success (the user is already logged out from the server's perspective).
    */
-  logout: protectedProcedure
+  logout: publicProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -885,6 +889,7 @@ export const authRouter = createTRPCRouter({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx }) => {
       // Revoke the current session using the token from context
+      // If there's no valid session token, we're already logged out
       if (ctx.sessionToken) {
         await revokeSessionByToken(ctx.sessionToken);
       }
