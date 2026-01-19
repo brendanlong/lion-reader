@@ -28,9 +28,16 @@ export default async function AllEntriesPage({ searchParams }: AllEntriesPagePro
     const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams);
 
     // Prefetch entries with the same params as client
+    // IMPORTANT: Include ALL fields (even undefined) to match the query key structure
+    // that tRPC generates on the client side
     const input = {
+      subscriptionId: undefined,
+      tagId: undefined,
+      uncategorized: undefined,
       unreadOnly,
+      starredOnly: undefined,
       sortOrder,
+      type: undefined,
       limit: 10,
     };
 
