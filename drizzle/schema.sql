@@ -304,6 +304,7 @@ CREATE VIEW public.user_feeds AS
  SELECT s.id,
     s.user_id,
     s.subscribed_at,
+    s.created_at,
     s.feed_id,
     s.feed_ids,
     s.custom_title,
