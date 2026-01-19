@@ -79,9 +79,8 @@ export function EntryContent({
   const entry = data?.entry ?? null;
 
   // Check if we have partial data (seeded from list) but content is still loading
-  // Content is considered missing if all content fields are null
-  const hasContent =
-    entry?.contentOriginal !== null || entry?.contentCleaned !== null || entry?.summary !== null;
+  // Only check actual content fields - summary is fallback content from the list, not main content
+  const hasContent = entry?.contentOriginal !== null || entry?.contentCleaned !== null;
   const isContentLoading = entry !== null && !hasContent && isFetching;
 
   // Show original preference is stored per-feed in localStorage
