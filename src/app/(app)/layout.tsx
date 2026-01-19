@@ -14,6 +14,7 @@
  * the baseline cursors for subsequent incremental syncs.
  */
 
+import { redirect } from "next/navigation";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { createServerCaller, createServerQueryClient, isAuthenticated } from "@/lib/trpc/server";
@@ -25,6 +26,11 @@ interface AppLayoutProps {
 }
 
 export default async function AppLayout({ children }: AppLayoutProps) {
+  // Redirect unauthenticated users to login
+  if (!(await isAuthenticated())) {
+    redirect("/login");
+  }
+
   const queryClient = createServerQueryClient();
 
   // Initial sync uses null cursors to fetch all recent data.
@@ -38,40 +44,36 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     tags: null,
   };
 
-  // Only prefetch if user is authenticated
-  if (await isAuthenticated()) {
-    const trpc = await createServerCaller();
-
-    // Prefetch common data used in sidebar and header
-    // These are independent queries so we can run them in parallel
-    await Promise.all([
-      // User info for header
-      queryClient.prefetchQuery({
-        queryKey: [["auth", "me"], { type: "query" }],
-        queryFn: () => trpc.auth.me(),
-      }),
-      // Subscriptions for sidebar
-      queryClient.prefetchQuery({
-        queryKey: [["subscriptions", "list"], { type: "query" }],
-        queryFn: () => trpc.subscriptions.list(),
-      }),
-      // Tags for sidebar
-      queryClient.prefetchQuery({
-        queryKey: [["tags", "list"], { type: "query" }],
-        queryFn: () => trpc.tags.list(),
-      }),
-      // Saved count for sidebar
-      queryClient.prefetchQuery({
-        queryKey: [["entries", "count"], { input: { type: "saved" }, type: "query" }],
-        queryFn: () => trpc.entries.count({ type: "saved" }),
-      }),
-      // Starred count for sidebar
-      queryClient.prefetchQuery({
-        queryKey: [["entries", "count"], { input: { starredOnly: true }, type: "query" }],
-        queryFn: () => trpc.entries.count({ starredOnly: true }),
-      }),
-    ]);
-  }
+  // Prefetch common data used in sidebar and header
+  // These are independent queries so we can run them in parallel
+  const trpc = await createServerCaller();
+  await Promise.all([
+    // User info for header
+    queryClient.prefetchQuery({
+      queryKey: [["auth", "me"], { type: "query" }],
+      queryFn: () => trpc.auth.me(),
+    }),
+    // Subscriptions for sidebar
+    queryClient.prefetchQuery({
+      queryKey: [["subscriptions", "list"], { type: "query" }],
+      queryFn: () => trpc.subscriptions.list(),
+    }),
+    // Tags for sidebar
+    queryClient.prefetchQuery({
+      queryKey: [["tags", "list"], { type: "query" }],
+      queryFn: () => trpc.tags.list(),
+    }),
+    // Saved count for sidebar
+    queryClient.prefetchQuery({
+      queryKey: [["entries", "count"], { input: { type: "saved" }, type: "query" }],
+      queryFn: () => trpc.entries.count({ type: "saved" }),
+    }),
+    // Starred count for sidebar
+    queryClient.prefetchQuery({
+      queryKey: [["entries", "count"], { input: { starredOnly: true }, type: "query" }],
+      queryFn: () => trpc.entries.count({ starredOnly: true }),
+    }),
+  ]);
 
   return (
     <TRPCProvider>
