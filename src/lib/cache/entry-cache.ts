@@ -139,3 +139,87 @@ export function updateEntryStarredStatus(
     updateEntriesInListCache(queryClient, [entryId], { starred });
   }
 }
+
+/**
+ * Entry data from the list (lightweight, no content).
+ */
+export interface EntryListItem {
+  id: string;
+  feedId: string;
+  subscriptionId: string | null;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  read: boolean;
+  starred: boolean;
+  feedTitle: string | null;
+}
+
+/**
+ * Finds an entry in the cached entry lists by ID.
+ * Searches through all cached infinite query pages.
+ *
+ * @param queryClient - React Query client for cache access
+ * @param entryId - Entry ID to find
+ * @returns The entry if found, undefined otherwise
+ */
+export function findEntryInListCache(
+  queryClient: QueryClient,
+  entryId: string
+): EntryListItem | undefined {
+  // Get all cached entry list queries
+  const queries = queryClient.getQueriesData<InfiniteData>({
+    queryKey: [["entries", "list"]],
+  });
+
+  for (const [, data] of queries) {
+    if (!data?.pages) continue;
+    for (const page of data.pages) {
+      const entry = page.items.find((e) => e.id === entryId);
+      if (entry) {
+        // The cache contains full EntryListItem data, but TypeScript only sees CachedListEntry
+        return entry as unknown as EntryListItem;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Converts a list item to the full entry response format for use as placeholder data.
+ * Content fields are set to null since they're not available in list data.
+ *
+ * @param listItem - Entry data from the list
+ * @returns Object matching the entries.get response shape
+ */
+export function listItemToPlaceholderEntry(listItem: EntryListItem): {
+  entry: EntryListItem & {
+    contentOriginal: null;
+    contentCleaned: null;
+    feedUrl: null;
+    siteName: null;
+    fullContentOriginal: null;
+    fullContentCleaned: null;
+    fullContentFetchedAt: null;
+    fullContentError: null;
+  };
+} {
+  return {
+    entry: {
+      ...listItem,
+      contentOriginal: null,
+      contentCleaned: null,
+      feedUrl: null,
+      siteName: null,
+      fullContentOriginal: null,
+      fullContentCleaned: null,
+      fullContentFetchedAt: null,
+      fullContentError: null,
+    },
+  };
+}
