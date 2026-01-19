@@ -8,10 +8,12 @@
 "use client";
 
 import { useEffect, useRef, useMemo, useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations, useShowOriginalPreference } from "@/lib/hooks";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
+import { findEntryInListCache, listItemToPlaceholderEntry } from "@/lib/cache/entry-cache";
 import {
   EntryContentBody,
   EntryContentSkeleton,
@@ -69,27 +71,28 @@ export function EntryContent({
   previousEntryId,
 }: EntryContentProps) {
   const hasAutoMarkedRead = useRef(false);
+  const queryClient = useQueryClient();
 
-  // Fetch the entry
-  const { data, isLoading, isFetching, isError, error, refetch } = trpc.entries.get.useQuery({
-    id: entryId,
-  });
+  // Fetch the entry with placeholderData from list cache for progressive rendering
+  // This shows the header immediately while full content loads
+  const { data, isLoading, isPlaceholderData, isError, error, refetch } = trpc.entries.get.useQuery(
+    { id: entryId },
+    {
+      placeholderData: () => {
+        const listItem = findEntryInListCache(queryClient, entryId);
+        if (listItem) {
+          return listItemToPlaceholderEntry(listItem);
+        }
+        return undefined;
+      },
+    }
+  );
 
   // Use entry data directly (no delta merging)
   const entry = data?.entry ?? null;
 
-  // Check if we have partial data (seeded from list) but content is still loading
-  // Only check actual content fields - summary is fallback content from the list, not main content
-  const hasContent = entry?.contentOriginal !== null || entry?.contentCleaned !== null;
-  const isContentLoading = entry !== null && !hasContent && isFetching;
-
-  // If we have seeded/partial data (entry exists but no content), trigger a refetch
-  // This is needed because setData marks data as "fresh", preventing automatic refetch
-  useEffect(() => {
-    if (entry && !hasContent && !isFetching) {
-      refetch();
-    }
-  }, [entry, hasContent, isFetching, refetch]);
+  // Show content skeleton while using placeholder data (header visible, content loading)
+  const isContentLoading = isPlaceholderData;
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);

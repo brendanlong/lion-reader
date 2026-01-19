@@ -9,7 +9,6 @@
 
 import { useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { seedEntryCacheFromList } from "@/lib/cache/entry-cache";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import { type ExternalQueryState } from "@/components/entries";
 import { type EntryType } from "./useEntryMutations";
@@ -198,26 +197,16 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
   const goToNextEntry = useCallback(() => {
     const nextId = entryListQuery.getNextEntryId();
     if (nextId) {
-      // Seed cache for progressive rendering
-      const listItem = entries.find((e) => e.id === nextId);
-      if (listItem) {
-        seedEntryCacheFromList(utils, listItem);
-      }
       setOpenEntryId(nextId);
     }
-  }, [entryListQuery, entries, utils, setOpenEntryId]);
+  }, [entryListQuery, setOpenEntryId]);
 
   const goToPreviousEntry = useCallback(() => {
     const prevId = entryListQuery.getPreviousEntryId();
     if (prevId) {
-      // Seed cache for progressive rendering
-      const listItem = entries.find((e) => e.id === prevId);
-      if (listItem) {
-        seedEntryCacheFromList(utils, listItem);
-      }
       setOpenEntryId(prevId);
     }
-  }, [entryListQuery, entries, utils, setOpenEntryId]);
+  }, [entryListQuery, setOpenEntryId]);
 
   // Keyboard shortcuts
   const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
@@ -236,18 +225,13 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     onNavigatePrevious: goToPreviousEntry,
   });
 
-  // Entry click handler - seeds cache for progressive rendering
+  // Entry click handler
   const handleEntryClick = useCallback(
     (entryId: string) => {
-      // Find the entry in the list and seed the cache for progressive rendering
-      const listItem = entries.find((e) => e.id === entryId);
-      if (listItem) {
-        seedEntryCacheFromList(utils, listItem);
-      }
       setSelectedEntryId(entryId);
       setOpenEntryId(entryId);
     },
-    [entries, utils, setSelectedEntryId, setOpenEntryId]
+    [setSelectedEntryId, setOpenEntryId]
   );
 
   // Back handler
