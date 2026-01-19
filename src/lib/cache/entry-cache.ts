@@ -394,30 +394,36 @@ interface TypedInfiniteData {
 }
 
 /**
- * Checks if a subscription belongs to a specific tag.
+ * Finds a cached query matching specific filters.
  */
-function subscriptionHasTag(
-  subscriptionId: string,
-  tagId: string,
-  subscriptions?: SubscriptionInfo[]
-): boolean {
-  if (!subscriptions) return false;
-  const sub = subscriptions.find((s) => s.id === subscriptionId);
-  return sub?.tags.some((t) => t.id === tagId) ?? false;
+function findCachedQuery(
+  queries: [readonly unknown[], InfiniteData | undefined][],
+  matchFilters: (parentFilters: EntryListFilters) => boolean
+): InfiniteData | undefined {
+  for (const [queryKey, data] of queries) {
+    if (!data?.pages?.length) continue;
+
+    const keyMeta = queryKey[1] as TRPCQueryKey | undefined;
+    const parentFilters: EntryListFilters = keyMeta?.input ?? {};
+
+    if (matchFilters(parentFilters)) {
+      return data;
+    }
+  }
+  return undefined;
 }
 
 /**
  * Finds placeholder data from a parent list cache that can be used while the actual query loads.
- * Uses hierarchical parent-child relationships:
- * - Tag list can provide placeholders for subscriptions within that tag (preferred)
- * - "All" list (no filters) can provide placeholders for any filtered list (fallback)
+ * Walks up the hierarchy looking for the closest parent with cached data:
  *
- * The returned data is filtered client-side to match the requested filters.
- * Only returns data if a compatible parent list is found in the cache.
+ * For subscriptions: tag list (if subscription is in a tag) → "All" list
+ * For tags: "All" list
+ * For starred/other filters: "All" list
  *
  * @param queryClient - React Query client for cache access
  * @param filters - Requested filters for the entry list
- * @param subscriptions - Subscription data for tag filtering (required for tagId/uncategorized filters)
+ * @param subscriptions - Subscription data for tag filtering
  * @returns Placeholder data in infinite query format, or undefined if no suitable parent found
  */
 export function findParentListPlaceholderData(
@@ -428,61 +434,40 @@ export function findParentListPlaceholderData(
   // Saved entries are a separate data source, can't use parent list
   if (filters.type === "saved") return undefined;
 
-  // Get all cached entry list queries
   const queries = queryClient.getQueriesData<InfiniteData>({
     queryKey: [["entries", "list"]],
   });
 
-  // Find the best parent query
-  // Priority: direct parent (tag containing subscription) > broader lists
-  let bestParent: { data: InfiniteData; filters: EntryListFilters } | undefined;
-  let bestScore = -1;
+  let parentData: InfiniteData | undefined;
 
-  for (const [queryKey, data] of queries) {
-    if (!data?.pages?.length) continue;
+  // For subscription pages, first try to find the subscription's tag list
+  if (filters.subscriptionId && subscriptions) {
+    const subscription = subscriptions.find((s) => s.id === filters.subscriptionId);
+    const tagIds = subscription?.tags.map((t) => t.id) ?? [];
 
-    // Extract input filters from query key
-    // tRPC query key is: [["entries", "list"], { input: {...}, type: "infinite" }]
-    const keyMeta = queryKey[1] as TRPCQueryKey | undefined;
-    const parentFilters: EntryListFilters = keyMeta?.input ?? {};
-
-    // Check if this parent is compatible
-    if (!areFiltersCompatible(parentFilters, filters)) continue;
-
-    // Calculate score based on hierarchy and data availability
-    const entryCount = data.pages.reduce((acc, page) => acc + page.items.length, 0);
-    let score = entryCount;
-
-    // For subscription pages, strongly prefer tag lists that contain this subscription
-    // This gives more relevant placeholder data from the same category
-    if (filters.subscriptionId && parentFilters.tagId) {
-      if (subscriptionHasTag(filters.subscriptionId, parentFilters.tagId, subscriptions)) {
-        // Direct parent tag - give significant bonus
-        score += 10000;
-      }
-    }
-
-    // Slight preference for broader lists when no direct parent relationship exists
-    // (more entries to filter from)
-    const filterCount =
-      (parentFilters.subscriptionId ? 1 : 0) +
-      (parentFilters.tagId ? 1 : 0) +
-      (parentFilters.uncategorized ? 1 : 0) +
-      (parentFilters.starredOnly ? 1 : 0) +
-      (parentFilters.unreadOnly ? 1 : 0) +
-      (parentFilters.type ? 1 : 0);
-    score -= filterCount * 10;
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestParent = { data, filters: parentFilters };
+    // Try each tag the subscription belongs to
+    for (const tagId of tagIds) {
+      parentData = findCachedQuery(
+        queries,
+        (pf) => pf.tagId === tagId && !pf.subscriptionId && areFiltersCompatible(pf, filters)
+      );
+      if (parentData) break;
     }
   }
 
-  if (!bestParent) return undefined;
+  // Fall back to "All" list (no subscription/tag/uncategorized filters)
+  if (!parentData) {
+    parentData = findCachedQuery(
+      queries,
+      (pf) =>
+        !pf.subscriptionId && !pf.tagId && !pf.uncategorized && areFiltersCompatible(pf, filters)
+    );
+  }
+
+  if (!parentData) return undefined;
 
   // Filter the parent's entries to match the requested filters
-  const allEntries = bestParent.data.pages.flatMap((page) => page.items);
+  const allEntries = parentData.pages.flatMap((page) => page.items);
   const filteredEntries = filterEntries(allEntries, filters, subscriptions);
 
   // No matching entries found
