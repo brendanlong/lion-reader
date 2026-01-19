@@ -13,10 +13,16 @@ dist/
 # Tests - not needed in production
 tests/
 
-# Documentation
+# Non-web apps
+android/
+extension/
+
+# Source assets (originals, not public/)
+assets/
+
+# Documentation and notes
 docs/
 *.md
-!README.md
 
 # Docker files (prevent recursive context)
 Dockerfile
@@ -54,6 +60,11 @@ fly.toml
 .prettierrc
 .prettierignore
 eslint.config.mjs
+
+# Dev-only configs
+knip.json
+vitest.config.ts
+package-lock.json
 
 # Coverage and test reports
 coverage/
