@@ -214,6 +214,8 @@ export interface EntryContentBodyProps {
   onSummaryClose?: () => void;
   /** Callback when regenerate summary is clicked */
   onSummaryRegenerate?: () => void;
+  /** Whether the main content is still loading (for progressive rendering) */
+  isContentLoading?: boolean;
 }
 
 /**
@@ -227,6 +229,24 @@ interface EntryContentRendererProps {
   contentRef: React.RefObject<HTMLDivElement | null>;
   textSizeClass: string;
   textStyle: React.CSSProperties;
+}
+
+/**
+ * Skeleton for the content area only (used during progressive loading).
+ * Shows a loading skeleton in the content area while header is already visible.
+ */
+function ContentSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4">
+      <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="h-4 w-5/6 rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="h-4 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="h-4 w-4/5 rounded bg-zinc-200 dark:bg-zinc-700" />
+    </div>
+  );
 }
 
 const EntryContentRenderer = React.memo(function EntryContentRenderer({
@@ -306,6 +326,8 @@ export function EntryContentBody({
   onSummarize,
   onSummaryClose,
   onSummaryRegenerate,
+  // Progressive loading
+  isContentLoading,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -705,14 +727,18 @@ export function EntryContentBody({
         />
       )}
 
-      {/* Content - memoized to prevent image flashing on read/star changes */}
-      <EntryContentRenderer
-        sanitizedContent={sanitizedContent}
-        fallbackContent={fallbackContent}
-        contentRef={contentRef}
-        textSizeClass={textSizeClass}
-        textStyle={textStyle}
-      />
+      {/* Content - show skeleton during progressive loading, otherwise render content */}
+      {isContentLoading ? (
+        <ContentSkeleton />
+      ) : (
+        <EntryContentRenderer
+          sanitizedContent={sanitizedContent}
+          fallbackContent={fallbackContent}
+          contentRef={contentRef}
+          textSizeClass={textSizeClass}
+          textStyle={textStyle}
+        />
+      )}
 
       {/* Footer with original link */}
       {url && (

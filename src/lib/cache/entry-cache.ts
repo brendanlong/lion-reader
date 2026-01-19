@@ -139,3 +139,56 @@ export function updateEntryStarredStatus(
     updateEntriesInListCache(queryClient, [entryId], { starred });
   }
 }
+
+/**
+ * Entry data from the list (lightweight, no content).
+ */
+interface EntryListItem {
+  id: string;
+  feedId: string;
+  subscriptionId: string | null;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  read: boolean;
+  starred: boolean;
+  feedTitle: string | null;
+}
+
+/**
+ * Seeds the entries.get cache with data from a list item for progressive rendering.
+ * This allows the entry detail page to render the header immediately while
+ * the full content loads.
+ *
+ * Only seeds if no data exists yet - won't overwrite existing full data.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param listItem - Entry data from the list
+ */
+export function seedEntryCacheFromList(utils: TRPCClientUtils, listItem: EntryListItem): void {
+  utils.entries.get.setData({ id: listItem.id }, (existingData) => {
+    // Already have data? Don't overwrite it
+    if (existingData?.entry) {
+      return existingData;
+    }
+    // No data yet - seed with list item (content fields set to null)
+    return {
+      entry: {
+        ...listItem,
+        // Fields not in list item - set to null
+        contentOriginal: null,
+        contentCleaned: null,
+        feedUrl: null,
+        siteName: null,
+        fullContentOriginal: null,
+        fullContentCleaned: null,
+        fullContentFetchedAt: null,
+        fullContentError: null,
+      },
+    };
+  });
+}
