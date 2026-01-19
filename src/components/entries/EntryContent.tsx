@@ -83,6 +83,14 @@ export function EntryContent({
   const hasContent = entry?.contentOriginal !== null || entry?.contentCleaned !== null;
   const isContentLoading = entry !== null && !hasContent && isFetching;
 
+  // If we have seeded/partial data (entry exists but no content), trigger a refetch
+  // This is needed because setData marks data as "fresh", preventing automatic refetch
+  useEffect(() => {
+    if (entry && !hasContent && !isFetching) {
+      refetch();
+    }
+  }, [entry, hasContent, isFetching, refetch]);
+
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
 
