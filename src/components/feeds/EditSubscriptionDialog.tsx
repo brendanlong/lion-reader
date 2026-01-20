@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { type Tag } from "@/lib/types";
 import {
   Dialog,
   DialogTitle,
@@ -19,6 +20,7 @@ import {
   Input,
   Alert,
   CheckIcon,
+  ColorDot,
 } from "@/components/ui";
 
 // ============================================================================
@@ -32,14 +34,6 @@ interface EditSubscriptionDialogProps {
   currentCustomTitle: string | null;
   currentTagIds: string[];
   onClose: () => void;
-}
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string | null;
-  feedCount: number;
-  createdAt: Date;
 }
 
 interface EditSubscriptionFormProps {
@@ -207,11 +201,7 @@ function EditSubscriptionForm({
                         : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
                     }`}
                   >
-                    <span
-                      className="inline-block h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: tag.color || "#6b7280" }}
-                      aria-hidden="true"
-                    />
+                    <ColorDot color={tag.color} size="sm" />
                     <span>{tag.name}</span>
                     {isSelected && <CheckIcon className="h-3.5 w-3.5" />}
                   </button>
