@@ -18,12 +18,11 @@ import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialo
 import {
   NavLink,
   NavLinkWithIcon,
-  IconButton,
   ChevronDownIcon,
   ChevronRightIcon,
-  EditIcon,
-  CloseIcon,
+  ColorDot,
 } from "@/components/ui";
+import { SubscriptionItem } from "./SubscriptionItem";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -253,13 +252,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                       <NavLinkWithIcon
                         href={tagHref}
                         isActive={isActive}
-                        icon={
-                          <span
-                            className="inline-block h-3 w-3 rounded-full"
-                            style={{ backgroundColor: tag.color || "#6b7280" }}
-                            aria-hidden="true"
-                          />
-                        }
+                        icon={<ColorDot color={tag.color} size="sm" />}
                         label={tag.name}
                         count={tag.unreadCount}
                         onClick={handleClose}
@@ -318,13 +311,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                     <NavLinkWithIcon
                       href="/uncategorized"
                       isActive={isActiveLink("/uncategorized")}
-                      icon={
-                        <span
-                          className="inline-block h-3 w-3 rounded-full"
-                          style={{ backgroundColor: "#6b7280" }}
-                          aria-hidden="true"
-                        />
-                      }
+                      icon={<ColorDot color={null} size="sm" />}
                       label="Uncategorized"
                       count={uncategorizedUnreadCount}
                       onClick={handleClose}
@@ -392,79 +379,5 @@ export function Sidebar({ onClose }: SidebarProps) {
         }}
       />
     </>
-  );
-}
-
-// ============================================================================
-// SubscriptionItem Component
-// ============================================================================
-
-interface SubscriptionItemProps {
-  subscription: {
-    id: string;
-    title: string | null;
-    unreadCount: number;
-  };
-  isActive: boolean;
-  onClose: () => void;
-  onEdit: () => void;
-  onUnsubscribe: () => void;
-}
-
-function SubscriptionItem({
-  subscription,
-  isActive,
-  onClose,
-  onEdit,
-  onUnsubscribe,
-}: SubscriptionItemProps) {
-  const displayTitle = subscription.title || "Untitled Feed";
-  const subHref = `/subscription/${subscription.id}`;
-
-  return (
-    <li className="group relative">
-      <Link
-        href={subHref}
-        onClick={onClose}
-        className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
-          isActive
-            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-            : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        }`}
-      >
-        <span className="truncate pr-8">{displayTitle}</span>
-        {subscription.unreadCount > 0 && (
-          <span className="ui-text-xs shrink-0 text-zinc-500 group-hover:hidden dark:text-zinc-400">
-            ({subscription.unreadCount})
-          </span>
-        )}
-      </Link>
-
-      {/* Action buttons - visible on hover/touch */}
-      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        <IconButton
-          icon={<EditIcon />}
-          aria-label={`Edit ${displayTitle}`}
-          title="Edit subscription"
-          size="sm"
-          variant="subtle"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-        />
-        <IconButton
-          icon={<CloseIcon className="h-3.5 w-3.5" />}
-          aria-label={`Unsubscribe from ${displayTitle}`}
-          title="Unsubscribe"
-          size="sm"
-          variant="subtle"
-          onClick={(e) => {
-            e.stopPropagation();
-            onUnsubscribe();
-          }}
-        />
-      </div>
-    </li>
   );
 }
