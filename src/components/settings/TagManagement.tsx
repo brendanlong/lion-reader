@@ -11,50 +11,25 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Input, Alert, ChevronDownIcon, EditIcon, TrashIcon } from "@/components/ui";
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Predefined colors for tag selection
- */
-const TAG_COLORS = [
-  { name: "Red", value: "#ef4444" },
-  { name: "Orange", value: "#f97316" },
-  { name: "Amber", value: "#f59e0b" },
-  { name: "Yellow", value: "#eab308" },
-  { name: "Lime", value: "#84cc16" },
-  { name: "Green", value: "#22c55e" },
-  { name: "Emerald", value: "#10b981" },
-  { name: "Teal", value: "#14b8a6" },
-  { name: "Cyan", value: "#06b6d4" },
-  { name: "Sky", value: "#0ea5e9" },
-  { name: "Blue", value: "#3b82f6" },
-  { name: "Indigo", value: "#6366f1" },
-  { name: "Violet", value: "#8b5cf6" },
-  { name: "Purple", value: "#a855f7" },
-  { name: "Fuchsia", value: "#d946ef" },
-  { name: "Pink", value: "#ec4899" },
-  { name: "Rose", value: "#f43f5e" },
-  { name: "Gray", value: "#6b7280" },
-] as const;
+import { useFormMessages } from "@/lib/hooks";
+import { type Tag, TAG_COLORS, DEFAULT_TAG_COLOR } from "@/lib/types";
+import {
+  Button,
+  Input,
+  ChevronDownIcon,
+  EditIcon,
+  TrashIcon,
+  ColorPicker,
+  ColorDot,
+} from "@/components/ui";
+import { SettingsSection } from "./SettingsSection";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string | null;
-  feedCount: number;
-  createdAt: Date;
-}
 
 interface EditingTag {
   id: string;
@@ -67,91 +42,48 @@ interface EditingTag {
 // ============================================================================
 
 export function TagManagement() {
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const { error, success, showError, showSuccess } = useFormMessages();
 
   // Fetch tags
   const { data: tagsData, isLoading, error: queryError } = trpc.tags.list.useQuery();
 
   const tags = tagsData?.items ?? [];
 
-  // Clear messages after timeout
-  const showSuccess = useCallback((message: string) => {
-    setSuccessMessage(message);
-    setError(null);
-    setTimeout(() => setSuccessMessage(null), 3000);
-  }, []);
-
-  const showError = useCallback((message: string) => {
-    setError(message);
-    setSuccessMessage(null);
-  }, []);
-
-  if (isLoading) {
-    return (
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="space-y-4">
-            <div className="h-10 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-            <div className="h-10 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-            <div className="h-10 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   if (queryError) {
     return (
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <Alert variant="error">Failed to load tags</Alert>
-        </div>
-      </section>
+      <SettingsSection title="Tags" error="Failed to load tags">
+        <div />
+      </SettingsSection>
     );
   }
 
   return (
-    <section>
-      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Tags</h2>
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
-          Create and manage tags to organize your feed subscriptions.
-        </p>
+    <SettingsSection
+      title="Tags"
+      description="Create and manage tags to organize your feed subscriptions."
+      isLoading={isLoading}
+      skeletonRows={3}
+      error={error}
+      success={success}
+    >
+      {/* Create new tag form */}
+      <CreateTagForm onSuccess={showSuccess} onError={showError} />
 
-        {error && (
-          <Alert variant="error" className="mb-4">
-            {error}
-          </Alert>
+      {/* Tag list */}
+      <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+        {tags.length === 0 ? (
+          <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+            No tags created yet. Create your first tag above.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {tags.map((tag) => (
+              <TagItem key={tag.id} tag={tag} onSuccess={showSuccess} onError={showError} />
+            ))}
+          </div>
         )}
-
-        {successMessage && (
-          <Alert variant="success" className="mb-4">
-            {successMessage}
-          </Alert>
-        )}
-
-        {/* Create new tag form */}
-        <CreateTagForm onSuccess={showSuccess} onError={showError} />
-
-        {/* Tag list */}
-        <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          {tags.length === 0 ? (
-            <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-              No tags created yet. Create your first tag above.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {tags.map((tag) => (
-                <TagItem key={tag.id} tag={tag} onSuccess={showSuccess} onError={showError} />
-              ))}
-            </div>
-          )}
-        </div>
       </div>
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -166,7 +98,7 @@ interface CreateTagFormProps {
 
 function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
   const [name, setName] = useState("");
-  const [color, setColor] = useState<string | null>(TAG_COLORS[10].value); // Default to blue
+  const [color, setColor] = useState<string | null>(DEFAULT_TAG_COLOR);
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   const utils = trpc.useUtils();
@@ -175,7 +107,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
     onSuccess: () => {
       onSuccess("Tag created successfully");
       setName("");
-      setColor(TAG_COLORS[10].value);
+      setColor(DEFAULT_TAG_COLOR);
       setShowColorPicker(false);
       utils.tags.list.invalidate();
     },
@@ -436,75 +368,5 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
         </Button>
       </div>
     </div>
-  );
-}
-
-// ============================================================================
-// ColorDot Component
-// ============================================================================
-
-interface ColorDotProps {
-  color: string | null;
-  size?: "sm" | "md" | "lg";
-}
-
-function ColorDot({ color, size = "md" }: ColorDotProps) {
-  const sizeClasses = {
-    sm: "h-3 w-3",
-    md: "h-4 w-4",
-    lg: "h-5 w-5",
-  };
-
-  const displayColor = color ?? "#6b7280"; // Default to gray if no color
-
-  return (
-    <span
-      className={`inline-block rounded-full ${sizeClasses[size]}`}
-      style={{ backgroundColor: displayColor }}
-      aria-hidden="true"
-    />
-  );
-}
-
-// ============================================================================
-// ColorPicker Component
-// ============================================================================
-
-interface ColorPickerProps {
-  selectedColor: string | null;
-  onSelect: (color: string) => void;
-  onClose: () => void;
-}
-
-function ColorPicker({ selectedColor, onSelect, onClose }: ColorPickerProps) {
-  return (
-    <>
-      {/* Backdrop to close picker */}
-      <div className="fixed inset-0 z-10" onClick={onClose} aria-hidden="true" />
-
-      {/* Color picker dropdown */}
-      <div className="absolute top-full left-0 z-20 mt-1 w-48 rounded-md border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-        <div className="grid grid-cols-6 gap-1">
-          {TAG_COLORS.map((colorOption) => (
-            <button
-              key={colorOption.value}
-              type="button"
-              onClick={() => onSelect(colorOption.value)}
-              className={`flex h-7 w-7 items-center justify-center rounded-md transition-transform hover:scale-110 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-1 focus:outline-none dark:focus:ring-zinc-400 ${
-                selectedColor === colorOption.value
-                  ? "ring-2 ring-zinc-900 ring-offset-1 dark:ring-zinc-400"
-                  : ""
-              }`}
-              title={colorOption.name}
-            >
-              <span
-                className="h-5 w-5 rounded-full"
-                style={{ backgroundColor: colorOption.value }}
-              />
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
   );
 }

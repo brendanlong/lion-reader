@@ -7,7 +7,7 @@
 
 "use client";
 
-import React, { useEffect, useRef, useMemo, useCallback } from "react";
+import { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "dompurify";
 
@@ -41,7 +41,6 @@ import {
   CircleFilledIcon,
   ExternalLinkIcon,
   ArrowLeftIcon,
-  AlertIcon,
   SpinnerIcon,
   SparklesIcon,
 } from "@/components/ui";
@@ -57,83 +56,13 @@ import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance";
 import { useImagePrefetch } from "@/lib/hooks";
+import { formatDate, getDomain, SWIPE_CONFIG } from "./EntryContentHelpers";
+import { ContentSkeleton } from "./EntryContentStates";
+import { EntryContentRenderer } from "./EntryContentRenderer";
 
-/**
- * Format a date as a readable string.
- */
-function formatDate(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-/**
- * Extract domain from URL for display.
- */
-export function getDomain(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-}
-
-/**
- * Loading skeleton for entry content.
- */
-export function EntryContentSkeleton() {
-  return (
-    <div className="mx-auto max-w-3xl animate-pulse px-4 py-6 sm:py-8">
-      {/* Back button placeholder */}
-      <div className="mb-6 h-8 w-20 rounded bg-zinc-200 dark:bg-zinc-700" />
-
-      {/* Title placeholder */}
-      <div className="mb-2 h-8 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="mb-4 h-8 w-1/2 rounded bg-zinc-200 dark:bg-zinc-700" />
-
-      {/* Meta row placeholder */}
-      <div className="mb-6 flex items-center gap-4">
-        <div className="h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
-      </div>
-
-      {/* Action buttons placeholder */}
-      <div className="mb-8 flex gap-3">
-        <div className="h-10 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-10 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
-      </div>
-
-      {/* Content placeholders */}
-      <div className="space-y-4">
-        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-5/6 rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
-      </div>
-    </div>
-  );
-}
-
-/**
- * Error state component for entry content.
- */
-export function EntryContentError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <AlertIcon className="mb-4 h-16 w-16 text-red-400 dark:text-red-500" />
-      <p className="ui-text-base mb-4 text-zinc-600 dark:text-zinc-400">{message}</p>
-      <Button onClick={onRetry} variant="secondary">
-        Try again
-      </Button>
-    </div>
-  );
-}
+// Re-export components and helpers for backwards compatibility
+export { EntryContentSkeleton, EntryContentError } from "./EntryContentStates";
+export { getDomain } from "./EntryContentHelpers";
 
 /**
  * Props for the EntryContentBody component.
@@ -219,76 +148,9 @@ export interface EntryContentBodyProps {
 }
 
 /**
- * Memoized component for rendering the entry content HTML.
- * Extracted to prevent image flashing when read/starred status changes.
- * Only re-renders when the actual content changes.
- */
-interface EntryContentRendererProps {
-  sanitizedContent: string | null;
-  fallbackContent: string | null;
-  contentRef: React.RefObject<HTMLDivElement | null>;
-  textSizeClass: string;
-  textStyle: React.CSSProperties;
-}
-
-/**
- * Skeleton for the content area only (used during progressive loading).
- * Shows a loading skeleton in the content area while header is already visible.
- */
-function ContentSkeleton() {
-  return (
-    <div className="animate-pulse space-y-4">
-      <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="h-4 w-5/6 rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="h-4 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="h-4 w-4/5 rounded bg-zinc-200 dark:bg-zinc-700" />
-    </div>
-  );
-}
-
-const EntryContentRenderer = React.memo(function EntryContentRenderer({
-  sanitizedContent,
-  fallbackContent,
-  contentRef,
-  textSizeClass,
-  textStyle,
-}: EntryContentRendererProps) {
-  if (sanitizedContent) {
-    return (
-      <div
-        ref={contentRef}
-        className={`${textSizeClass} prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline-offset-2 prose-a:hover:text-blue-700 dark:prose-a:hover:text-blue-300 prose-img:rounded-lg prose-img:shadow-md prose-pre:overflow-x-auto prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none`}
-        style={textStyle}
-        dangerouslySetInnerHTML={{ __html: sanitizedContent }}
-      />
-    );
-  }
-
-  if (fallbackContent) {
-    return (
-      <p
-        className="ui-text-base leading-relaxed text-zinc-700 dark:text-zinc-300"
-        style={textStyle}
-      >
-        {fallbackContent}
-      </p>
-    );
-  }
-
-  return <p className="text-zinc-500 italic dark:text-zinc-400">No content available.</p>;
-});
-
-/**
  * Shared component for rendering entry content with narration highlighting.
  * Used by EntryContent for all entry types.
  */
-// Swipe gesture configuration
-const SWIPE_THRESHOLD = 50; // Minimum horizontal distance for swipe
-const MAX_VERTICAL_DISTANCE = 100; // Maximum vertical movement allowed
-
 export function EntryContentBody({
   articleId,
   title,
@@ -477,12 +339,12 @@ export function EntryContentBody({
       touchStartRef.current = null;
 
       // Check if vertical movement is too large (user is scrolling, not swiping)
-      if (Math.abs(deltaY) > MAX_VERTICAL_DISTANCE) {
+      if (Math.abs(deltaY) > SWIPE_CONFIG.MAX_VERTICAL_DISTANCE) {
         return;
       }
 
       // Check if horizontal movement meets threshold
-      if (Math.abs(deltaX) < SWIPE_THRESHOLD) {
+      if (Math.abs(deltaX) < SWIPE_CONFIG.SWIPE_THRESHOLD) {
         return;
       }
 
