@@ -15,7 +15,9 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Alert, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui";
+import { useFormMessages } from "@/lib/hooks";
+import { Button, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui";
+import { SettingsSection } from "./SettingsSection";
 
 // ============================================================================
 // Types
@@ -33,8 +35,7 @@ interface LinkedAccount {
 // ============================================================================
 
 export function LinkedAccounts() {
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const { error, success, showError, showSuccess, clearMessages } = useFormMessages();
   const [linkingProvider, setLinkingProvider] = useState<Provider | null>(null);
   const [unlinkingProvider, setUnlinkingProvider] = useState<Provider | null>(null);
 
@@ -70,16 +71,12 @@ export function LinkedAccounts() {
   const unlinkMutation = trpc.auth.unlinkProvider.useMutation({
     onSuccess: (_, variables) => {
       const providerName = getProviderName(variables.provider);
-      setSuccessMessage(`${providerName} account unlinked successfully`);
-      setError(null);
+      showSuccess(`${providerName} account unlinked successfully`);
       setUnlinkingProvider(null);
       utils.users["me.linkedAccounts"].invalidate();
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccessMessage(null), 3000);
     },
     onError: (err) => {
-      setError(err.message || "Failed to unlink account");
-      setSuccessMessage(null);
+      showError(err.message || "Failed to unlink account");
       setUnlinkingProvider(null);
       toast.error("Failed to unlink account");
     },
@@ -98,8 +95,7 @@ export function LinkedAccounts() {
   const handleLinkProvider = useCallback(
     async (provider: Provider) => {
       setLinkingProvider(provider);
-      setError(null);
-      setSuccessMessage(null);
+      clearMessages();
 
       try {
         const query =
@@ -111,7 +107,7 @@ export function LinkedAccounts() {
         const result = await query.refetch();
 
         if (result.error) {
-          setError(result.error.message || `Failed to start ${provider} linking`);
+          showError(result.error.message || `Failed to start ${provider} linking`);
           setLinkingProvider(null);
           return;
         }
@@ -129,119 +125,82 @@ export function LinkedAccounts() {
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : `Failed to start ${provider} linking`;
-        setError(errorMessage);
+        showError(errorMessage);
         setLinkingProvider(null);
       }
     },
-    [googleAuthUrlQuery, appleAuthUrlQuery, discordAuthUrlQuery]
+    [googleAuthUrlQuery, appleAuthUrlQuery, discordAuthUrlQuery, clearMessages, showError]
   );
 
   const handleUnlinkProvider = useCallback(
     (provider: Provider) => {
       if (!canUnlink) {
-        setError(
+        showError(
           "Cannot unlink this account because it is your only authentication method. Add a password first."
         );
         return;
       }
 
       setUnlinkingProvider(provider);
-      setError(null);
-      setSuccessMessage(null);
+      clearMessages();
 
       unlinkMutation.mutate({ provider });
     },
-    [canUnlink, unlinkMutation]
+    [canUnlink, unlinkMutation, clearMessages, showError]
   );
-
-  if (isLoading) {
-    return (
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-          Linked Accounts
-        </h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="space-y-4">
-            <div className="h-12 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-            <div className="h-12 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-          </div>
-        </div>
-      </section>
-    );
-  }
 
   if (queryError) {
     return (
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-          Linked Accounts
-        </h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <Alert variant="error">Failed to load linked accounts</Alert>
-        </div>
-      </section>
+      <SettingsSection title="Linked Accounts" error="Failed to load linked accounts">
+        <div />
+      </SettingsSection>
     );
   }
 
   return (
-    <section>
-      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-        Linked Accounts
-      </h2>
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
-          Connect your account with third-party providers for easy sign-in.
-        </p>
+    <SettingsSection
+      title="Linked Accounts"
+      description="Connect your account with third-party providers for easy sign-in."
+      isLoading={isLoading}
+      error={error}
+      success={success}
+    >
+      <div className="space-y-3">
+        {/* Show linked accounts */}
+        {linkedAccounts.map((account) => (
+          <LinkedAccountItem
+            key={account.provider}
+            account={account}
+            canUnlink={canUnlink}
+            isUnlinking={unlinkingProvider === account.provider}
+            onUnlink={() => handleUnlinkProvider(account.provider)}
+          />
+        ))}
 
-        {error && (
-          <Alert variant="error" className="mb-4">
-            {error}
-          </Alert>
-        )}
+        {/* Show linkable providers */}
+        {linkableProviders.map((provider) => (
+          <LinkableProviderItem
+            key={provider}
+            provider={provider}
+            isLinking={linkingProvider === provider}
+            onLink={() => handleLinkProvider(provider)}
+          />
+        ))}
 
-        {successMessage && (
-          <Alert variant="success" className="mb-4">
-            {successMessage}
-          </Alert>
-        )}
-
-        <div className="space-y-3">
-          {/* Show linked accounts */}
-          {linkedAccounts.map((account) => (
-            <LinkedAccountItem
-              key={account.provider}
-              account={account}
-              canUnlink={canUnlink}
-              isUnlinking={unlinkingProvider === account.provider}
-              onUnlink={() => handleUnlinkProvider(account.provider)}
-            />
-          ))}
-
-          {/* Show linkable providers */}
-          {linkableProviders.map((provider) => (
-            <LinkableProviderItem
-              key={provider}
-              provider={provider}
-              isLinking={linkingProvider === provider}
-              onLink={() => handleLinkProvider(provider)}
-            />
-          ))}
-
-          {/* Show message if no providers available */}
-          {enabledProviders.length === 0 && linkedAccounts.length === 0 && (
-            <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-              No OAuth providers are configured on this server.
-            </p>
-          )}
-        </div>
-
-        {!hasPassword && linkedAccounts.length > 0 && (
-          <p className="ui-text-xs mt-4 text-zinc-500 dark:text-zinc-400">
-            Tip: Add a password to your account so you can unlink OAuth providers if needed.
+        {/* Show message if no providers available */}
+        {enabledProviders.length === 0 && linkedAccounts.length === 0 && (
+          <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+            No OAuth providers are configured on this server.
           </p>
         )}
       </div>
-    </section>
+
+      {!hasPassword && linkedAccounts.length > 0 && (
+        <p className="ui-text-xs mt-4 text-zinc-500 dark:text-zinc-400">
+          Tip: Add a password to your account so you can unlink OAuth providers if needed.
+        </p>
+      )}
+    </SettingsSection>
   );
 }
 
