@@ -216,10 +216,18 @@ export function saveNarrationSettings(settings: NarrationSettings): void {
 }
 
 /**
+ * Type for the setSettings function - supports both direct value and functional updates.
+ */
+export type SetNarrationSettings = (
+  settingsOrUpdater: NarrationSettings | ((prev: NarrationSettings) => NarrationSettings)
+) => void;
+
+/**
  * React hook for managing narration settings.
  *
  * Uses lazy initialization to load settings from localStorage on first render.
  * The returned setter function automatically saves changes to localStorage.
+ * Supports both direct value and functional updates (like React's useState).
  *
  * @returns A tuple of [settings, setSettings].
  *
@@ -228,33 +236,33 @@ export function saveNarrationSettings(settings: NarrationSettings): void {
  * function NarrationControls() {
  *   const [settings, setSettings] = useNarrationSettings();
  *
- *   return (
- *     <select
- *       value={settings.voiceUri || ''}
- *       onChange={(e) => setSettings({ ...settings, voiceUri: e.target.value })}
- *     >
- *       {voices.map(voice => (
- *         <option key={voice.voiceURI} value={voice.voiceURI}>
- *           {voice.name}
- *         </option>
- *       ))}
- *     </select>
- *   );
+ *   // Direct update
+ *   setSettings({ ...settings, voiceId: 'some-voice' });
+ *
+ *   // Functional update (preferred for callbacks to avoid stale closures)
+ *   setSettings((prev) => ({ ...prev, voiceId: 'some-voice' }));
  * }
  * ```
  */
-export function useNarrationSettings(): [NarrationSettings, (settings: NarrationSettings) => void] {
+export function useNarrationSettings(): [NarrationSettings, SetNarrationSettings] {
   // Use lazy initialization to load settings from localStorage.
   // This runs only once on first render and avoids cascading renders from useEffect.
   // Note: This may cause a hydration mismatch if server/client localStorage differs,
   // but for user preferences this is acceptable behavior.
   const [settings, setSettingsState] = useState<NarrationSettings>(() => loadNarrationSettings());
 
-  // Save and update settings
-  const setSettings = useCallback((newSettings: NarrationSettings) => {
-    setSettingsState(newSettings);
-    saveNarrationSettings(newSettings);
-  }, []);
+  // Save and update settings - supports both direct value and functional updates
+  const setSettings: SetNarrationSettings = useCallback(
+    (settingsOrUpdater: NarrationSettings | ((prev: NarrationSettings) => NarrationSettings)) => {
+      setSettingsState((prev) => {
+        const newSettings =
+          typeof settingsOrUpdater === "function" ? settingsOrUpdater(prev) : settingsOrUpdater;
+        saveNarrationSettings(newSettings);
+        return newSettings;
+      });
+    },
+    []
+  );
 
   return [settings, setSettings];
 }
