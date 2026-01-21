@@ -25,6 +25,7 @@ import {
   narrationContent,
 } from "@/server/db/schema";
 import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
+import { countEntries } from "@/server/services/entries";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -1201,101 +1202,17 @@ export const entriesRouter = createTRPCRouter({
       })
     )
     .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Build the base query conditions using visible_entries view
-      // The view already enforces visibility (active subscription OR starred)
-      const conditions = [eq(visibleEntries.userId, userId)];
-
-      // Filter by subscriptionId
-      if (input?.subscriptionId) {
-        const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
-        if (subFeedIds === null) {
-          return { total: 0, unread: 0 };
-        }
-        conditions.push(inArray(visibleEntries.feedId, subFeedIds));
-      }
-
-      // Filter by tagId if specified
-      if (input?.tagId) {
-        // First verify the tag belongs to the user
-        const tagExists = await ctx.db
-          .select({ id: tags.id })
-          .from(tags)
-          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId)))
-          .limit(1);
-
-        if (tagExists.length === 0) {
-          // Tag not found or doesn't belong to user, return zero counts
-          return { total: 0, unread: 0 };
-        }
-
-        // Get feed IDs for subscriptions with this tag using user_feeds view
-        const taggedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-          .from(subscriptionTags)
-          .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
-          .where(eq(subscriptionTags.tagId, input.tagId));
-        conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
-      }
-
-      // Filter by uncategorized if specified
-      if (input?.uncategorized) {
-        // Get subscription IDs that have tags
-        const taggedSubscriptionIds = ctx.db
-          .select({ subscriptionId: subscriptionTags.subscriptionId })
-          .from(subscriptionTags);
-
-        // Get feed IDs for subscriptions with no tags using user_feeds view
-        const uncategorizedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-          .from(userFeeds)
-          .where(
-            and(eq(userFeeds.userId, userId), notInArray(userFeeds.id, taggedSubscriptionIds))
-          );
-
-        conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
-      }
-
-      // Apply unreadOnly filter
-      if (input?.unreadOnly) {
-        conditions.push(eq(visibleEntries.read, false));
-      }
-
-      // Apply starredOnly filter
-      if (input?.starredOnly) {
-        conditions.push(eq(visibleEntries.starred, true));
-      }
-
-      // Apply type filter if specified
-      if (input?.type) {
-        conditions.push(eq(visibleEntries.type, input.type));
-      }
-
-      // Apply excludeTypes filter if specified
-      if (input?.excludeTypes && input.excludeTypes.length > 0) {
-        conditions.push(notInArray(visibleEntries.type, input.excludeTypes));
-      }
-
-      // Apply spam filter: exclude spam entries unless user has showSpam enabled
-      const showSpam = ctx.session.user.showSpam;
-      if (!showSpam) {
-        conditions.push(eq(visibleEntries.isSpam, false));
-      }
-
-      // Get total and unread counts in a single query using conditional aggregation
-      const result = await ctx.db
-        .select({
-          total: sql<number>`count(*)::int`,
-          unread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.read} = false)::int`,
-        })
-        .from(visibleEntries)
-        .where(and(...conditions));
-
-      return {
-        total: result[0]?.total ?? 0,
-        unread: result[0]?.unread ?? 0,
-      };
+      // Use the shared countEntries service function
+      return countEntries(ctx.db, ctx.session.user.id, {
+        subscriptionId: input?.subscriptionId,
+        tagId: input?.tagId,
+        uncategorized: input?.uncategorized,
+        type: input?.type,
+        excludeTypes: input?.excludeTypes,
+        unreadOnly: input?.unreadOnly,
+        starredOnly: input?.starredOnly,
+        showSpam: ctx.session.user.showSpam,
+      });
     }),
 
   /**
