@@ -12,11 +12,10 @@ import {
   userEntries,
   subscriptions,
   subscriptionTags,
-  tags,
   visibleEntries,
-  userFeeds,
 } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
+import { buildEntryFeedFilter } from "./entry-filters";
 
 // ============================================================================
 // Types
@@ -147,44 +146,6 @@ function encodeCursor(ts: Date, entryId: string): string {
 }
 
 // ============================================================================
-// Helper Functions
-// ============================================================================
-
-async function getSubscriptionFeedIds(
-  db: typeof dbType,
-  subscriptionId: string,
-  userId: string
-): Promise<string[] | null> {
-  const result = await db
-    .select({ feedIds: userFeeds.feedIds })
-    .from(userFeeds)
-    .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
-    .limit(1);
-
-  return result.length > 0 ? result[0].feedIds : null;
-}
-
-/**
- * Gets feed IDs for subscriptions with a specific tag.
- * Returns an empty array if the tag doesn't exist or belongs to another user.
- * The join with tags table ensures the tag belongs to the user.
- */
-async function getTaggedFeedIds(
-  db: typeof dbType,
-  tagId: string,
-  userId: string
-): Promise<string[]> {
-  const result = await db
-    .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-    .from(subscriptionTags)
-    .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
-    .innerJoin(tags, and(eq(subscriptionTags.tagId, tags.id), eq(tags.userId, userId)))
-    .where(eq(subscriptionTags.tagId, tagId));
-
-  return result.map((r) => r.feedId);
-}
-
-// ============================================================================
 // Service Functions
 // ============================================================================
 
@@ -200,38 +161,23 @@ export async function listEntries(
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
-  // Filter by subscriptionId
-  if (params.subscriptionId) {
-    const feedIds = await getSubscriptionFeedIds(db, params.subscriptionId, params.userId);
-    if (feedIds === null) {
-      return { items: [], nextCursor: undefined };
-    }
-    conditions.push(inArray(visibleEntries.feedId, feedIds));
+  // Apply feed filters (subscriptionId, tagId, uncategorized)
+  const feedFilter = await buildEntryFeedFilter(
+    db,
+    {
+      subscriptionId: params.subscriptionId,
+      tagId: params.tagId,
+      uncategorized: params.uncategorized,
+    },
+    params.userId
+  );
+
+  if (feedFilter.isEmpty) {
+    return { items: [], nextCursor: undefined };
   }
 
-  // Filter by tagId
-  if (params.tagId) {
-    const taggedFeedIds = await getTaggedFeedIds(db, params.tagId, params.userId);
-    if (taggedFeedIds.length === 0) {
-      return { items: [], nextCursor: undefined };
-    }
-    conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
-  }
-
-  // Filter by uncategorized
-  if (params.uncategorized) {
-    const taggedSubscriptionIds = db
-      .select({ subscriptionId: subscriptionTags.subscriptionId })
-      .from(subscriptionTags);
-
-    const uncategorizedFeedIds = db
-      .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-      .from(userFeeds)
-      .where(
-        and(eq(userFeeds.userId, params.userId), notInArray(userFeeds.id, taggedSubscriptionIds))
-      );
-
-    conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
+  if (feedFilter.feedIdsCondition !== null) {
+    conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
   }
 
   // Apply filters
@@ -360,36 +306,23 @@ export async function searchEntries(
 
   const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
 
-  // Apply same filters as list
-  if (params.subscriptionId) {
-    const feedIds = await getSubscriptionFeedIds(db, params.subscriptionId, params.userId);
-    if (feedIds === null) {
-      return { items: [], nextCursor: undefined };
-    }
-    conditions.push(inArray(visibleEntries.feedId, feedIds));
+  // Apply feed filters (subscriptionId, tagId, uncategorized)
+  const feedFilter = await buildEntryFeedFilter(
+    db,
+    {
+      subscriptionId: params.subscriptionId,
+      tagId: params.tagId,
+      uncategorized: params.uncategorized,
+    },
+    params.userId
+  );
+
+  if (feedFilter.isEmpty) {
+    return { items: [], nextCursor: undefined };
   }
 
-  if (params.tagId) {
-    const taggedFeedIds = await getTaggedFeedIds(db, params.tagId, params.userId);
-    if (taggedFeedIds.length === 0) {
-      return { items: [], nextCursor: undefined };
-    }
-    conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
-  }
-
-  if (params.uncategorized) {
-    const taggedSubscriptionIds = db
-      .select({ subscriptionId: subscriptionTags.subscriptionId })
-      .from(subscriptionTags);
-
-    const uncategorizedFeedIds = db
-      .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-      .from(userFeeds)
-      .where(
-        and(eq(userFeeds.userId, params.userId), notInArray(userFeeds.id, taggedSubscriptionIds))
-      );
-
-    conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
+  if (feedFilter.feedIdsCondition !== null) {
+    conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
   }
 
   if (params.unreadOnly) {
@@ -658,33 +591,23 @@ export async function countEntries(
 ): Promise<{ total: number; unread: number }> {
   const conditions = [eq(visibleEntries.userId, userId)];
 
-  if (params.subscriptionId) {
-    const subFeedIds = await getSubscriptionFeedIds(db, params.subscriptionId, userId);
-    if (subFeedIds === null) {
-      return { total: 0, unread: 0 };
-    }
-    conditions.push(inArray(visibleEntries.feedId, subFeedIds));
+  // Apply feed filters (subscriptionId, tagId, uncategorized)
+  const feedFilter = await buildEntryFeedFilter(
+    db,
+    {
+      subscriptionId: params.subscriptionId,
+      tagId: params.tagId,
+      uncategorized: params.uncategorized,
+    },
+    userId
+  );
+
+  if (feedFilter.isEmpty) {
+    return { total: 0, unread: 0 };
   }
 
-  if (params.tagId) {
-    const taggedFeedIds = await getTaggedFeedIds(db, params.tagId, userId);
-    if (taggedFeedIds.length === 0) {
-      return { total: 0, unread: 0 };
-    }
-    conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
-  }
-
-  if (params.uncategorized) {
-    const taggedSubscriptionIds = db
-      .select({ subscriptionId: subscriptionTags.subscriptionId })
-      .from(subscriptionTags);
-
-    const uncategorizedFeedIds = db
-      .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-      .from(userFeeds)
-      .where(and(eq(userFeeds.userId, userId), notInArray(userFeeds.id, taggedSubscriptionIds)));
-
-    conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
+  if (feedFilter.feedIdsCondition !== null) {
+    conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
   }
 
   if (params.unreadOnly) {

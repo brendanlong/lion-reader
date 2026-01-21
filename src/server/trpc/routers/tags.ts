@@ -87,6 +87,8 @@ export const tagsRouter = createTRPCRouter({
 
       // Get all tags for the user with feed counts and unread counts in a single query
       // Uses subqueries to avoid incorrect counts from JOIN multiplication
+      // Note: We use "tags"."id" explicitly because ${tags.id} resolves to just "id"
+      // which becomes ambiguous in subqueries with multiple tables that have id columns
       const userTags = await ctx.db
         .select({
           id: tags.id,
@@ -96,7 +98,7 @@ export const tagsRouter = createTRPCRouter({
           feedCount: sql<number>`(
             SELECT COUNT(*)::int
             FROM ${subscriptionTags}
-            WHERE ${subscriptionTags.tagId} = ${tags.id}
+            WHERE ${subscriptionTags.tagId} = "tags"."id"
           )`,
           unreadCount: sql<number>`(
             SELECT COUNT(*)::int
@@ -110,7 +112,7 @@ export const tagsRouter = createTRPCRouter({
               ON ue.entry_id = e.id
               AND ue.user_id = ${userId}
               AND ue.read = false
-            WHERE st.tag_id = ${tags.id}
+            WHERE st.tag_id = "tags"."id"
           )`,
         })
         .from(tags)
