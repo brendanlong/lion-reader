@@ -20,7 +20,6 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { Parser } from "htmlparser2";
-import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, protectedProcedure, scopedProtectedProcedure } from "../trpc";
@@ -60,6 +59,7 @@ import {
   getSupportedTypesDescription,
 } from "@/server/file/process-upload";
 import { pluginRegistry } from "@/server/plugins";
+import { generateContentHash, createUploadedArticle } from "@/server/services/saved";
 
 // ============================================================================
 // Validation Schemas
@@ -191,17 +191,6 @@ function extractMetadata(html: string, url: string): PageMetadata {
   }
 
   return result;
-}
-
-/**
- * Generates a SHA-256 content hash for saved article.
- * Used for narration deduplication.
- */
-function generateContentHash(title: string | null, content: string | null): string {
-  const titleStr = title ?? "";
-  const contentStr = content ?? "";
-  const hashInput = `${titleStr}\n${contentStr}`;
-  return createHash("sha256").update(hashInput, "utf8").digest("hex");
 }
 
 // ============================================================================
@@ -921,7 +910,6 @@ export const savedRouter = createTRPCRouter({
     .output(z.object({ article: savedArticleFullSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const now = new Date();
 
       // Validate file type
       const fileType = detectFileType(input.filename);
@@ -931,9 +919,6 @@ export const savedRouter = createTRPCRouter({
           message: `Unsupported file type. ${getSupportedTypesDescription()}`,
         });
       }
-
-      // Get or create the user's saved feed
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
 
       // Decode base64 content
       let fileBuffer: Buffer;
@@ -962,17 +947,6 @@ export const savedRouter = createTRPCRouter({
         });
       }
 
-      // Use provided title or extracted title
-      const finalTitle = input.title || processed.title;
-
-      // Generate a unique guid for uploaded files (no URL to use)
-      // Format: uploaded:{uuid} to distinguish from URL-based saved articles
-      const entryId = generateUuidv7();
-      const guid = `uploaded:${entryId}`;
-
-      // Compute content hash for narration deduplication
-      const contentHash = generateContentHash(finalTitle, processed.contentCleaned);
-
       // Determine site name based on file type
       const siteNameMap: Record<string, string> = {
         docx: "Uploaded Document",
@@ -981,45 +955,19 @@ export const savedRouter = createTRPCRouter({
       };
       const siteName = siteNameMap[processed.fileType] || "Uploaded File";
 
-      // Create the entry
-      await ctx.db.insert(entries).values({
-        id: entryId,
-        feedId: savedFeedId,
-        type: "saved",
-        guid,
-        url: null, // Uploaded files don't have URLs
+      // Use provided title or extracted title
+      const finalTitle = input.title || processed.title;
+
+      // Create the uploaded article using the shared service
+      const article = await createUploadedArticle(ctx.db, userId, {
+        contentHtml: processed.contentCleaned,
         title: finalTitle,
-        author: null,
-        contentOriginal: processed.contentCleaned, // Store processed content as original too
-        contentCleaned: processed.contentCleaned,
-        summary: processed.excerpt,
+        excerpt: processed.excerpt,
         siteName,
-        imageUrl: null,
-        publishedAt: null,
-        fetchedAt: now,
-        contentHash,
-        spamScore: null,
-        isSpam: false,
-        listUnsubscribeMailto: null,
-        listUnsubscribeHttps: null,
-        listUnsubscribePost: null,
-        createdAt: now,
-        updatedAt: now,
       });
-
-      // Create user_entries row
-      await ctx.db.insert(userEntries).values({
-        userId,
-        entryId,
-        read: false,
-        starred: false,
-      });
-
-      // Publish event to notify other browser windows/tabs
-      await publishSavedArticleCreated(userId, entryId);
 
       logger.info("Uploaded file saved", {
-        entryId,
+        entryId: article.id,
         filename: input.filename,
         fileType: processed.fileType,
         title: finalTitle,
@@ -1027,18 +975,18 @@ export const savedRouter = createTRPCRouter({
 
       return {
         article: {
-          id: entryId,
-          url: null, // Uploaded files don't have URLs
-          title: finalTitle,
-          siteName,
-          author: null,
-          imageUrl: null,
-          contentOriginal: processed.contentCleaned,
-          contentCleaned: processed.contentCleaned,
-          excerpt: processed.excerpt,
-          read: false,
-          starred: false,
-          savedAt: now,
+          id: article.id,
+          url: article.url,
+          title: article.title,
+          siteName: article.siteName,
+          author: article.author,
+          imageUrl: article.imageUrl,
+          contentOriginal: article.contentCleaned, // Same as cleaned for uploads
+          contentCleaned: article.contentCleaned,
+          excerpt: article.excerpt,
+          read: article.read,
+          starred: article.starred,
+          savedAt: article.savedAt,
         },
       };
     }),
