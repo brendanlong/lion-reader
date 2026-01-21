@@ -5,7 +5,7 @@
  * Includes common icon presets for convenience.
  */
 
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Icon content (SVG or component) */
@@ -16,6 +16,7 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   size?: "sm" | "md";
   /** Visual variant */
   variant?: "ghost" | "subtle";
+  ref?: Ref<HTMLButtonElement>;
 }
 
 /**
@@ -31,35 +32,39 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
  * />
  * ```
  */
-export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
-  ({ icon, size = "md", variant = "ghost", className = "", disabled, ...props }, ref) => {
-    const sizeStyles = {
-      sm: "h-7 w-7",
-      md: "h-8 w-8",
-    };
+export function IconButton({
+  icon,
+  size = "md",
+  variant = "ghost",
+  className = "",
+  disabled,
+  ref,
+  ...props
+}: IconButtonProps) {
+  const sizeStyles = {
+    sm: "h-7 w-7",
+    md: "h-8 w-8",
+  };
 
-    const variantStyles = {
-      ghost:
-        "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300 dark:active:bg-zinc-700",
-      subtle:
-        "text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300",
-    };
+  const variantStyles = {
+    ghost:
+      "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300 dark:active:bg-zinc-700",
+    subtle:
+      "text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300",
+  };
 
-    return (
-      <button
-        ref={ref}
-        type="button"
-        disabled={disabled}
-        className={`flex items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${sizeStyles[size]} ${variantStyles[variant]} ${className}`}
-        {...props}
-      >
-        {icon}
-      </button>
-    );
-  }
-);
-
-IconButton.displayName = "IconButton";
+  return (
+    <button
+      ref={ref}
+      type="button"
+      disabled={disabled}
+      className={`flex items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${sizeStyles[size]} ${variantStyles[variant]} ${className}`}
+      {...props}
+    >
+      {icon}
+    </button>
+  );
+}
 
 // ============================================================================
 // Common Icons
