@@ -7,6 +7,7 @@
 
 import { eq, and } from "drizzle-orm";
 import { Parser } from "htmlparser2";
+import { marked } from "marked";
 import { createHash } from "crypto";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
@@ -17,6 +18,7 @@ import { escapeHtml } from "@/server/http/html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
+import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated } from "@/server/redis/pubsub";
 import { errors } from "@/server/trpc/errors";
@@ -32,9 +34,28 @@ export interface SaveArticleParams {
   title?: string;
 }
 
+export interface UploadArticleParams {
+  /** Article content in Markdown format */
+  content: string;
+  /** Article title */
+  title: string;
+}
+
+export interface CreateUploadedArticleParams {
+  /** HTML content (already processed/cleaned) */
+  contentHtml: string;
+  /** Article title */
+  title: string | null;
+  /** Excerpt/summary (optional, will be generated from content if not provided) */
+  excerpt?: string | null;
+  /** Site name to display (e.g., "Uploaded Document", "Uploaded Markdown") */
+  siteName: string;
+}
+
 export interface SavedArticle {
   id: string;
-  url: string;
+  /** URL of the article (null for uploaded content) */
+  url: string | null;
   title: string | null;
   siteName: string | null;
   author: string | null;
@@ -141,7 +162,7 @@ function extractMetadata(html: string, url: string): PageMetadata {
  * Generates a SHA-256 content hash for saved article.
  * Used for narration deduplication.
  */
-function generateContentHash(title: string | null, content: string | null): string {
+export function generateContentHash(title: string | null, content: string | null): string {
   const titleStr = title ?? "";
   const contentStr = content ?? "";
   const hashInput = `${titleStr}\n${contentStr}`;
@@ -400,4 +421,124 @@ export async function deleteSavedArticle(
   await db.delete(entries).where(eq(entries.id, articleId));
 
   return true;
+}
+
+/**
+ * Create a saved article from pre-processed HTML content.
+ *
+ * This is the core function for creating uploaded articles. It accepts
+ * already-processed HTML content and handles the database insertion.
+ * Used by both the MCP uploadArticle and tRPC uploadFile endpoints.
+ */
+export async function createUploadedArticle(
+  db: typeof dbType,
+  userId: string,
+  params: CreateUploadedArticleParams
+): Promise<SavedArticle> {
+  const now = new Date();
+
+  // Get or create the user's saved feed
+  const savedFeedId = await getOrCreateSavedFeed(db, userId);
+
+  // Generate excerpt if not provided
+  const excerpt = params.excerpt ?? generateSummary(params.contentHtml) ?? null;
+
+  // Generate a unique guid for uploaded articles (no URL)
+  // Format: uploaded:{uuid} to distinguish from URL-based saved articles
+  const entryId = generateUuidv7();
+  const guid = `uploaded:${entryId}`;
+
+  // Compute content hash for narration deduplication
+  const contentHash = generateContentHash(params.title, params.contentHtml);
+
+  // Create the entry
+  await db.insert(entries).values({
+    id: entryId,
+    feedId: savedFeedId,
+    type: "saved",
+    guid,
+    url: null, // Uploaded articles don't have URLs
+    title: params.title,
+    author: null,
+    contentOriginal: params.contentHtml, // Store processed content as original too
+    contentCleaned: params.contentHtml,
+    summary: excerpt,
+    siteName: params.siteName,
+    imageUrl: null,
+    publishedAt: null,
+    fetchedAt: now,
+    contentHash,
+    spamScore: null,
+    isSpam: false,
+    listUnsubscribeMailto: null,
+    listUnsubscribeHttps: null,
+    listUnsubscribePost: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // Create user_entries row
+  await db.insert(userEntries).values({
+    userId,
+    entryId,
+    read: false,
+    starred: false,
+  });
+
+  // Publish event to notify other browser windows/tabs
+  await publishSavedArticleCreated(userId, entryId);
+
+  logger.info("Created uploaded article", {
+    entryId,
+    title: params.title,
+    siteName: params.siteName,
+  });
+
+  return {
+    id: entryId,
+    url: null,
+    title: params.title,
+    siteName: params.siteName,
+    author: null,
+    imageUrl: null,
+    contentCleaned: params.contentHtml,
+    excerpt,
+    read: false,
+    starred: false,
+    savedAt: now,
+  };
+}
+
+/**
+ * Upload an article with Markdown content.
+ *
+ * Creates a saved article from Markdown content without requiring a URL.
+ * Useful for AI assistants uploading content directly.
+ */
+export async function uploadArticle(
+  db: typeof dbType,
+  userId: string,
+  params: UploadArticleParams
+): Promise<SavedArticle> {
+  // Configure marked for safe rendering
+  marked.setOptions({
+    gfm: true, // GitHub Flavored Markdown
+    breaks: true, // Convert \n to <br>
+  });
+
+  // Convert markdown to HTML
+  const html = await marked.parse(params.content);
+
+  // Extract title from first header and strip it from content
+  // (the title is displayed separately in the UI)
+  const { title: extractedTitle, content: contentCleaned } = extractAndStripTitleHeader(html);
+
+  // Use provided title, falling back to extracted title
+  const finalTitle = params.title || extractedTitle;
+
+  return createUploadedArticle(db, userId, {
+    contentHtml: contentCleaned,
+    title: finalTitle,
+    siteName: "Uploaded Article",
+  });
 }
