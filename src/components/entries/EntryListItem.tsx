@@ -57,7 +57,7 @@ interface EntryListItemProps {
 /**
  * Get the appropriate CSS classes for the entry item based on read and selected state.
  */
-function getItemClasses(read: boolean, selected: boolean): string {
+export function getItemClasses(read: boolean, selected: boolean): string {
   const baseClasses =
     "group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4";
 
