@@ -75,49 +75,49 @@ export function NarrationSettings() {
   const handleVoiceChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const value = e.target.value;
-      setSettings({
-        ...settings,
+      setSettings((prev) => ({
+        ...prev,
         voiceId: value || null,
-      });
+      }));
     },
-    [settings, setSettings]
+    [setSettings]
   );
 
   // Handle rate change
   const handleRateChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = parseFloat(e.target.value);
-      setSettings({
-        ...settings,
+      setSettings((prev) => ({
+        ...prev,
         rate: value,
-      });
+      }));
     },
-    [settings, setSettings]
+    [setSettings]
   );
 
   // Handle pitch change
   const handlePitchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = parseFloat(e.target.value);
-      setSettings({
-        ...settings,
+      setSettings((prev) => ({
+        ...prev,
         pitch: value,
-      });
+      }));
     },
-    [settings, setSettings]
+    [setSettings]
   );
 
   // Handle provider change
   const handleProviderChange = useCallback(
     (provider: TTSProviderId) => {
       // When switching providers, reset voiceId since voice IDs are provider-specific
-      setSettings({
-        ...settings,
+      setSettings((prev) => ({
+        ...prev,
         provider,
         voiceId: null,
-      });
+      }));
     },
-    [settings, setSettings]
+    [setSettings]
   );
 
   // Preview voice with current settings
@@ -230,7 +230,7 @@ export function NarrationSettings() {
             type="button"
             role="switch"
             aria-checked={settings.enabled}
-            onClick={() => setSettings({ ...settings, enabled: !settings.enabled })}
+            onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
             className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
               settings.enabled ? "bg-zinc-900 dark:bg-zinc-50" : "bg-zinc-200 dark:bg-zinc-700"
             }`}
@@ -471,10 +471,10 @@ export function NarrationSettings() {
                     role="switch"
                     aria-checked={settings.useLlmNormalization}
                     onClick={() =>
-                      setSettings({
-                        ...settings,
-                        useLlmNormalization: !settings.useLlmNormalization,
-                      })
+                      setSettings((prev) => ({
+                        ...prev,
+                        useLlmNormalization: !prev.useLlmNormalization,
+                      }))
                     }
                     className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
                       settings.useLlmNormalization
@@ -514,7 +514,7 @@ export function NarrationSettings() {
                   role="switch"
                   aria-checked={settings.highlightEnabled}
                   onClick={() =>
-                    setSettings({ ...settings, highlightEnabled: !settings.highlightEnabled })
+                    setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
                   }
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
                     settings.highlightEnabled
@@ -546,7 +546,7 @@ export function NarrationSettings() {
                   role="switch"
                   aria-checked={settings.autoScrollEnabled}
                   onClick={() =>
-                    setSettings({ ...settings, autoScrollEnabled: !settings.autoScrollEnabled })
+                    setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
                   }
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
                     settings.autoScrollEnabled
