@@ -11,13 +11,13 @@ import { afterEach } from "vitest";
 // This check works because jsdom sets up a window object
 if (typeof window !== "undefined") {
   // Import jest-dom matchers for DOM assertions
-  import("@testing-library/jest-dom/vitest");
+  // Using top-level await to ensure matchers are registered before tests run
+  await import("@testing-library/jest-dom/vitest");
 
   // Import cleanup and set it up
-  import("@testing-library/react").then(({ cleanup }) => {
-    // Cleanup after each test to prevent memory leaks and test pollution
-    afterEach(() => {
-      cleanup();
-    });
+  const { cleanup } = await import("@testing-library/react");
+  // Cleanup after each test to prevent memory leaks and test pollution
+  afterEach(() => {
+    cleanup();
   });
 }
