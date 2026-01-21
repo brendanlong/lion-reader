@@ -603,10 +603,12 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         utils.subscriptions.list.invalidate();
       }
 
-      // Handle subscription changes
+      // Handle subscription changes - only invalidate subscriptions.list, not entries.list
+      // Subscription creates/deletes don't affect which entries are visible in the current view.
+      // New entries from new subscriptions will appear when the user navigates to that feed.
+      // Removed subscriptions won't have their entries shown after navigation away.
       if (hasSubscriptionChanges) {
         utils.subscriptions.list.invalidate();
-        utils.entries.list.invalidate();
       }
 
       if (hasTagChanges) {
