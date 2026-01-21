@@ -164,6 +164,26 @@ async function getSubscriptionFeedIds(
   return result.length > 0 ? result[0].feedIds : null;
 }
 
+/**
+ * Gets feed IDs for subscriptions with a specific tag.
+ * Returns an empty array if the tag doesn't exist or belongs to another user.
+ * The join with tags table ensures the tag belongs to the user.
+ */
+async function getTaggedFeedIds(
+  db: typeof dbType,
+  tagId: string,
+  userId: string
+): Promise<string[]> {
+  const result = await db
+    .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+    .from(subscriptionTags)
+    .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
+    .innerJoin(tags, and(eq(subscriptionTags.tagId, tags.id), eq(tags.userId, userId)))
+    .where(eq(subscriptionTags.tagId, tagId));
+
+  return result.map((r) => r.feedId);
+}
+
 // ============================================================================
 // Service Functions
 // ============================================================================
@@ -191,21 +211,10 @@ export async function listEntries(
 
   // Filter by tagId
   if (params.tagId) {
-    const tagExists = await db
-      .select({ id: tags.id })
-      .from(tags)
-      .where(and(eq(tags.id, params.tagId), eq(tags.userId, params.userId)))
-      .limit(1);
-
-    if (tagExists.length === 0) {
+    const taggedFeedIds = await getTaggedFeedIds(db, params.tagId, params.userId);
+    if (taggedFeedIds.length === 0) {
       return { items: [], nextCursor: undefined };
     }
-
-    const taggedFeedIds = db
-      .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-      .from(subscriptionTags)
-      .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
-      .where(eq(subscriptionTags.tagId, params.tagId));
     conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
   }
 
@@ -361,21 +370,10 @@ export async function searchEntries(
   }
 
   if (params.tagId) {
-    const tagExists = await db
-      .select({ id: tags.id })
-      .from(tags)
-      .where(and(eq(tags.id, params.tagId), eq(tags.userId, params.userId)))
-      .limit(1);
-
-    if (tagExists.length === 0) {
+    const taggedFeedIds = await getTaggedFeedIds(db, params.tagId, params.userId);
+    if (taggedFeedIds.length === 0) {
       return { items: [], nextCursor: undefined };
     }
-
-    const taggedFeedIds = db
-      .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-      .from(subscriptionTags)
-      .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
-      .where(eq(subscriptionTags.tagId, params.tagId));
     conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
   }
 
@@ -669,21 +667,10 @@ export async function countEntries(
   }
 
   if (params.tagId) {
-    const tagExists = await db
-      .select({ id: tags.id })
-      .from(tags)
-      .where(and(eq(tags.id, params.tagId), eq(tags.userId, userId)))
-      .limit(1);
-
-    if (tagExists.length === 0) {
+    const taggedFeedIds = await getTaggedFeedIds(db, params.tagId, userId);
+    if (taggedFeedIds.length === 0) {
       return { total: 0, unread: 0 };
     }
-
-    const taggedFeedIds = db
-      .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-      .from(subscriptionTags)
-      .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
-      .where(eq(subscriptionTags.tagId, params.tagId));
     conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
   }
 
