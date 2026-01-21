@@ -132,7 +132,7 @@ export function handleEntriesMarkedRead(
     adjustEntriesCount(utils, { starredOnly: true }, delta * starredCount);
   }
 
-  // 6. Update saved unread count - only for saved entries
+  // 5. Update saved unread count - only for saved entries
   const savedCount = entries.filter((e) => e.type === "saved").length;
   if (savedCount > 0) {
     adjustEntriesCount(utils, { type: "saved" }, delta * savedCount);
