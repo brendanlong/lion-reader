@@ -7,7 +7,7 @@
 
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
@@ -72,13 +72,16 @@ export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProvide
     [enabled, isLoading, isModalOpen, openShortcutsModal]
   );
 
-  const contextValue: KeyboardShortcutsContextValue = {
-    enabled,
-    setEnabled,
-    openShortcutsModal,
-    closeShortcutsModal,
-    isModalOpen,
-  };
+  const contextValue = useMemo<KeyboardShortcutsContextValue>(
+    () => ({
+      enabled,
+      setEnabled,
+      openShortcutsModal,
+      closeShortcutsModal,
+      isModalOpen,
+    }),
+    [enabled, setEnabled, openShortcutsModal, closeShortcutsModal, isModalOpen]
+  );
 
   return (
     <KeyboardShortcutsContext.Provider value={contextValue}>
