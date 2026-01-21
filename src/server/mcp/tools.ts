@@ -240,6 +240,33 @@ export function registerTools(): Tool[] {
       },
     },
 
+    {
+      name: "upload_article",
+      description:
+        "Upload an article with Markdown content directly, without a URL. Useful for saving content you've written or collected.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          content: {
+            type: "string",
+            description: "Article content in Markdown format (GitHub Flavored Markdown supported)",
+          },
+          title: {
+            type: "string",
+            description: "Article title",
+          },
+        },
+        required: ["content", "title"],
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (db, args: any) => {
+        return savedService.uploadArticle(db, args.userId, {
+          content: args.content,
+          title: args.title,
+        });
+      },
+    },
+
     // ========================================================================
     // Subscriptions Tools
     // ========================================================================
