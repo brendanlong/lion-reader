@@ -14,5 +14,9 @@ export default defineConfig({
     // This prevents race conditions where one test's beforeEach cleanup
     // deletes data that another test is using.
     fileParallelism: false,
+    // Setup file for test matchers (jest-dom for jsdom tests)
+    setupFiles: ["./tests/setup.ts"],
+    // Note: Frontend tests use @vitest-environment jsdom comment at the top of files
+    // to specify jsdom environment. This keeps backend tests in node environment.
   },
 });
