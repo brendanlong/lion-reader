@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, sql, isNull, inArray } from "drizzle-orm";
+import { eq, and, sql, isNull } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -64,7 +64,7 @@ export const tagsRouter = createTRPCRouter({
   /**
    * List all tags for the current user.
    *
-   * Returns tags with their associated feed counts.
+   * Returns tags with their associated feed counts and unread counts.
    * Tags are ordered by name (ascending).
    */
   list: protectedProcedure
@@ -85,55 +85,37 @@ export const tagsRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
-      // Get all tags for the user with feed counts
+      // Get all tags for the user with feed counts and unread counts in a single query
+      // Uses subqueries to avoid incorrect counts from JOIN multiplication
       const userTags = await ctx.db
         .select({
           id: tags.id,
           name: tags.name,
           color: tags.color,
           createdAt: tags.createdAt,
-          feedCount: sql<number>`count(${subscriptionTags.subscriptionId})::int`,
+          feedCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM ${subscriptionTags}
+            WHERE ${subscriptionTags.tagId} = ${tags.id}
+          )`,
+          unreadCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM ${subscriptionTags} st
+            INNER JOIN ${subscriptions} s
+              ON st.subscription_id = s.id
+              AND s.unsubscribed_at IS NULL
+            INNER JOIN ${entries} e
+              ON e.feed_id = ANY(s.feed_ids)
+            INNER JOIN ${userEntries} ue
+              ON ue.entry_id = e.id
+              AND ue.user_id = ${userId}
+              AND ue.read = false
+            WHERE st.tag_id = ${tags.id}
+          )`,
         })
         .from(tags)
-        .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
         .where(eq(tags.userId, userId))
-        .groupBy(tags.id)
         .orderBy(tags.name);
-
-      // Get unread entry counts per tag
-      // Join: tags -> subscription_tags -> subscriptions -> entries -> user_entries
-      const unreadCounts = await ctx.db
-        .select({
-          tagId: subscriptionTags.tagId,
-          unreadCount: sql<number>`count(*)::int`,
-        })
-        .from(subscriptionTags)
-        .innerJoin(
-          subscriptions,
-          and(
-            eq(subscriptionTags.subscriptionId, subscriptions.id),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .innerJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
-        .innerJoin(
-          userEntries,
-          and(
-            eq(userEntries.entryId, entries.id),
-            eq(userEntries.userId, userId),
-            eq(userEntries.read, false)
-          )
-        )
-        .where(
-          inArray(
-            subscriptionTags.tagId,
-            userTags.map((t) => t.id)
-          )
-        )
-        .groupBy(subscriptionTags.tagId);
-
-      // Create a map for quick lookup
-      const unreadCountMap = new Map(unreadCounts.map((c) => [c.tagId, c.unreadCount]));
 
       return {
         items: userTags.map((tag) => ({
@@ -141,7 +123,7 @@ export const tagsRouter = createTRPCRouter({
           name: tag.name,
           color: tag.color,
           feedCount: tag.feedCount,
-          unreadCount: unreadCountMap.get(tag.id) ?? 0,
+          unreadCount: tag.unreadCount,
           createdAt: tag.createdAt,
         })),
       };
