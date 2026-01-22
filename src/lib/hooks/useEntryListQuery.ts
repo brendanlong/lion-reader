@@ -209,10 +209,11 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
-      // Never automatically refetch - the Sidebar invalidates on navigation
-      // This prevents read entries from disappearing while browsing
+      // Never automatically mark as stale - sidebar navigation explicitly marks queries stale
+      // This prevents read entries from disappearing while browsing within a view
       staleTime: Infinity,
-      refetchOnMount: false,
+      // Refetch on mount if data is stale (sidebar marks stale on navigation)
+      refetchOnMount: true,
       refetchOnWindowFocus: false,
       // Use parent list as placeholder data for immediate display while fetching
       // This provides entries from a broader cached list (e.g., "All" list for subscription view)
