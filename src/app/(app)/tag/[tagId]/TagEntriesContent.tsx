@@ -141,31 +141,29 @@ function TagContent({ tagId }: { tagId: string }) {
                 )}
               </div>
               <div className="flex gap-2">
-                {tag && tag.unreadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowMarkAllReadDialog(true)}
-                    className="inline-flex items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:focus:ring-zinc-400"
-                    title="Mark all as read"
-                    aria-label="Mark all as read"
+                <button
+                  type="button"
+                  onClick={() => setShowMarkAllReadDialog(true)}
+                  className="inline-flex items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:focus:ring-zinc-400"
+                  title="Mark all as read"
+                  aria-label="Mark all as read"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
                   >
-                    <svg
-                      className="h-5 w-5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                      aria-hidden="true"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
-                  </button>
-                )}
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
+                </button>
                 <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />
                 <UnreadToggle
                   showUnreadOnly={page.showUnreadOnly}
@@ -189,7 +187,6 @@ function TagContent({ tagId }: { tagId: string }) {
         <MarkAllReadDialog
           isOpen={showMarkAllReadDialog}
           contextDescription={`the "${tag?.name}" tag`}
-          unreadCount={tag?.unreadCount ?? 0}
           isLoading={page.isMarkAllReadPending}
           onConfirm={() => {
             page.handleMarkAllRead({ tagId });
@@ -219,9 +216,6 @@ function UncategorizedContent() {
   }, [page.subscriptions?.items]);
 
   const feedCount = uncategorizedFeeds.length;
-  const unreadCount = useMemo(() => {
-    return uncategorizedFeeds.reduce((sum, item) => sum + item.unreadCount, 0);
-  }, [uncategorizedFeeds]);
 
   return (
     <>
@@ -269,31 +263,29 @@ function UncategorizedContent() {
                 )}
               </div>
               <div className="flex gap-2">
-                {unreadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowMarkAllReadDialog(true)}
-                    className="inline-flex items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:focus:ring-zinc-400"
-                    title="Mark all as read"
-                    aria-label="Mark all as read"
+                <button
+                  type="button"
+                  onClick={() => setShowMarkAllReadDialog(true)}
+                  className="inline-flex items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:focus:ring-zinc-400"
+                  title="Mark all as read"
+                  aria-label="Mark all as read"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
                   >
-                    <svg
-                      className="h-5 w-5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                      aria-hidden="true"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
-                  </button>
-                )}
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
+                </button>
                 <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />
                 <UnreadToggle
                   showUnreadOnly={page.showUnreadOnly}
@@ -317,7 +309,6 @@ function UncategorizedContent() {
         <MarkAllReadDialog
           isOpen={showMarkAllReadDialog}
           contextDescription="uncategorized feeds"
-          unreadCount={unreadCount}
           isLoading={page.isMarkAllReadPending}
           onConfirm={() => {
             page.handleMarkAllRead({ uncategorized: true });

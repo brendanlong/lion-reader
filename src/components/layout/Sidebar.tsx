@@ -160,6 +160,9 @@ export function Sidebar({ onClose }: SidebarProps) {
   };
 
   const handleClose = () => {
+    // Invalidate entry list to fetch fresh data for the new view
+    // The query uses staleTime: Infinity so this is the only way it refreshes
+    utils.entries.list.invalidate();
     onClose?.();
   };
 

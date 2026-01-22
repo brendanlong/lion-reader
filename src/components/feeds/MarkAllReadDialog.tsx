@@ -14,8 +14,6 @@ interface MarkAllReadDialogProps {
   isOpen: boolean;
   /** Description of what will be marked as read (e.g., "this feed", "all items", "this tag") */
   contextDescription: string;
-  /** Number of unread entries that will be marked as read */
-  unreadCount?: number;
   isLoading: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -24,7 +22,6 @@ interface MarkAllReadDialogProps {
 export function MarkAllReadDialog({
   isOpen,
   contextDescription,
-  unreadCount,
   isLoading,
   onConfirm,
   onCancel,
@@ -48,17 +45,7 @@ export function MarkAllReadDialog({
       <DialogTitle id="mark-all-read-title">Mark all as read?</DialogTitle>
 
       <DialogDescription>
-        {unreadCount !== undefined && unreadCount > 0 ? (
-          <>
-            This will mark{" "}
-            <span className="font-medium text-zinc-900 dark:text-zinc-50">
-              {unreadCount} {unreadCount === 1 ? "entry" : "entries"}
-            </span>{" "}
-            in {contextDescription} as read.
-          </>
-        ) : (
-          <>This will mark all unread entries in {contextDescription} as read.</>
-        )}
+        This will mark all unread entries in {contextDescription} as read.
       </DialogDescription>
 
       <DialogFooter>
