@@ -919,6 +919,7 @@ export const entriesRouter = createTRPCRouter({
         tagId: uuidSchema.optional(),
         uncategorized: z.boolean().optional(),
         starredOnly: z.boolean().optional(),
+        type: feedTypeSchema.optional(),
         before: z.coerce.date().optional(),
       })
     )
@@ -1058,6 +1059,27 @@ export const entriesRouter = createTRPCRouter({
       // If starredOnly is true, filter to only starred entries
       if (input.starredOnly) {
         conditions.push(eq(userEntries.starred, true));
+      }
+
+      // If type is provided, filter entries by feed type
+      if (input.type) {
+        // Get entry IDs from feeds of this type
+        const typeEntryIds = await ctx.db
+          .select({ id: entries.id })
+          .from(entries)
+          .innerJoin(feeds, eq(entries.feedId, feeds.id))
+          .where(eq(feeds.type, input.type));
+
+        if (typeEntryIds.length === 0) {
+          return { count: 0 };
+        }
+
+        conditions.push(
+          inArray(
+            userEntries.entryId,
+            typeEntryIds.map((e) => e.id)
+          )
+        );
       }
 
       // If before date is provided, filter entries by fetchedAt

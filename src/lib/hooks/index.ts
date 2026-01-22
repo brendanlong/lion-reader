@@ -10,7 +10,7 @@ export { DEFAULT_PREFERENCES, type ViewType, type ViewPreferences } from "./view
 
 export { useUrlViewPreferences, parseViewPreferencesFromParams } from "./useUrlViewPreferences";
 
-export { useEntryMutations, type EntryType } from "./useEntryMutations";
+export { useEntryMutations, type EntryType, type MarkAllReadOptions } from "./useEntryMutations";
 
 export { useEntryUrlState } from "./useEntryUrlState";
 
