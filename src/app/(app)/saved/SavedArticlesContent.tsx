@@ -8,8 +8,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { EntryList, EntryContent, UnreadToggle, SortToggle } from "@/components/entries";
-import { FileUploadButton } from "@/components/saved";
+import { EntryPageLayout } from "@/components/entries";
 import { useEntryPage } from "@/lib/hooks";
 
 function SavedArticlesContentInner() {
@@ -19,36 +18,15 @@ function SavedArticlesContentInner() {
   });
 
   return (
-    <>
-      {page.entryContentProps && (
-        <EntryContent key={page.entryContentProps.entryId} {...page.entryContentProps} />
-      )}
-
-      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${page.openEntryId ? "hidden" : ""}`}>
-        <div className="mb-4 flex items-center justify-between sm:mb-6">
-          <h1 className="ui-text-xl sm:ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-            Saved
-          </h1>
-          <div className="flex gap-2">
-            <FileUploadButton />
-            <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />
-            <UnreadToggle
-              showUnreadOnly={page.showUnreadOnly}
-              onToggle={page.toggleShowUnreadOnly}
-            />
-          </div>
-        </div>
-
-        <EntryList
-          {...page.entryListProps}
-          emptyMessage={
-            page.showUnreadOnly
-              ? "No unread saved articles. Toggle to show all items."
-              : "No saved articles yet. Save articles to read them later."
-          }
-        />
-      </div>
-    </>
+    <EntryPageLayout
+      page={page}
+      title="Saved"
+      emptyMessageUnread="No unread saved articles. Toggle to show all items."
+      emptyMessageAll="No saved articles yet. Save articles to read them later."
+      markAllReadDescription="saved articles"
+      markAllReadOptions={{ type: "saved" }}
+      showUploadButton
+    />
   );
 }
 

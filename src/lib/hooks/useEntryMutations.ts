@@ -29,6 +29,7 @@ export interface MarkAllReadOptions {
   tagId?: string;
   uncategorized?: boolean;
   starredOnly?: boolean;
+  type?: EntryType;
 }
 
 /**
