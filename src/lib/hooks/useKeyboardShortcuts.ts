@@ -65,6 +65,14 @@ export interface UseKeyboardShortcutsOptions {
   isEntryOpen?: boolean;
 
   /**
+   * The currently open entry ID (when viewing content).
+   * Used to sync selectedEntryId with the viewed entry so that when
+   * navigating with j/k or swiping while viewing, the list selection
+   * stays in sync with the currently viewed entry.
+   */
+  openEntryId?: string | null;
+
+  /**
    * Whether keyboard shortcuts are enabled.
    * @default true
    */
@@ -183,6 +191,7 @@ export function useKeyboardShortcuts(
     onOpenEntry,
     onClose,
     isEntryOpen = false,
+    openEntryId,
     enabled = true,
     onToggleRead,
     onToggleStar,
@@ -191,11 +200,21 @@ export function useKeyboardShortcuts(
   } = options;
 
   const router = useRouter();
-  const [selectedEntryId, setSelectedEntryIdInternal] = useState<string | null>(null);
 
-  // Simple setter - no refs needed, parent handles navigation via callbacks
+  // When an entry is open, sync selectedEntryId to openEntryId
+  // This ensures the list selection follows j/k navigation and swipes while viewing
+  // We derive this during render rather than using an effect to avoid cascading renders
+  const derivedSelectedEntryId = isEntryOpen && openEntryId ? openEntryId : null;
+
+  // Internal state for selection when not viewing an entry
+  const [internalSelectedEntryId, setInternalSelectedEntryId] = useState<string | null>(null);
+
+  // Use derived value when viewing, internal state otherwise
+  const selectedEntryId = derivedSelectedEntryId ?? internalSelectedEntryId;
+
+  // Simple setter - updates internal state
   const setSelectedEntryId = useCallback((id: string | null) => {
-    setSelectedEntryIdInternal(id);
+    setInternalSelectedEntryId(id);
   }, []);
 
   // Track "g" prefix for navigation shortcuts (g+a, g+s)
@@ -293,18 +312,23 @@ export function useKeyboardShortcuts(
   const isSelectedEntryValid = selectedEntryId === null || entryIds.includes(selectedEntryId);
   const effectiveSelectedEntryId = isSelectedEntryValid ? selectedEntryId : null;
 
-  // Scroll selected entry into view using useLayoutEffect to ensure DOM is ready
-  // Only scroll when list is visible (not hidden). This handles both:
-  // 1. Selection changes while viewing the list
-  // 2. Returning to list view after viewing an entry
+  // Scroll selected entry into view when returning from entry view, but only if
+  // the entry isn't already visible. This handles the case where the user navigated
+  // with j/k while viewing entries, so the list needs to scroll to match.
+  // When selecting from the list directly, the entry is already visible so no scroll occurs.
   useLayoutEffect(() => {
     if (effectiveSelectedEntryId && !isEntryOpen) {
       const element = document.querySelector(`[data-entry-id="${effectiveSelectedEntryId}"]`);
       if (element) {
-        element.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        });
+        const rect = element.getBoundingClientRect();
+        const isInView = rect.top >= 0 && rect.bottom <= window.innerHeight;
+
+        if (!isInView) {
+          element.scrollIntoView({
+            behavior: "instant",
+            block: "center",
+          });
+        }
       }
     }
   }, [effectiveSelectedEntryId, isEntryOpen]);

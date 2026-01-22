@@ -216,6 +216,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     onOpenEntry: setOpenEntryId,
     onClose: closeEntry,
     isEntryOpen: !!openEntryId,
+    openEntryId,
     enabled: keyboardShortcutsEnabled,
     onToggleRead: handleToggleRead,
     onToggleStar: toggleStar,
