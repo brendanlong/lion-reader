@@ -46,6 +46,10 @@ function handleUnauthorizedError() {
   // This prevents login errors from causing a redirect/refresh
   if (!hasSessionCookie()) return;
 
+  // Skip auto-redirect for /save page - it has its own auth error handling
+  // that provides a better UX for the bookmarklet popup
+  if (window.location.pathname === "/save") return;
+
   isLoggingOut = true;
 
   // Clear the session cookie
