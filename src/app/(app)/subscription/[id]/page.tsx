@@ -2,12 +2,9 @@
  * Single Subscription Page
  *
  * Displays entries from a specific subscription.
- * Prefetches entries on the server for faster initial load.
  */
 
-import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
-import { createServerCaller, createServerQueryClient, isAuthenticated } from "@/lib/trpc/server";
-import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
+import { EntryListPage } from "@/components/entries/EntryListPage";
 import { SingleSubscriptionContent } from "./SingleSubscriptionContent";
 
 interface SingleSubscriptionPageProps {
@@ -19,44 +16,11 @@ export default async function SingleSubscriptionPage({
   params,
   searchParams,
 }: SingleSubscriptionPageProps) {
-  const queryClient = createServerQueryClient();
-
-  if (await isAuthenticated()) {
-    const trpc = await createServerCaller();
-    const { id: subscriptionId } = await params;
-    const searchParamsResolved = await searchParams;
-
-    // Parse view preferences from URL (same logic as client hook)
-    const urlParams = new URLSearchParams();
-    if (searchParamsResolved.unreadOnly)
-      urlParams.set("unreadOnly", String(searchParamsResolved.unreadOnly));
-    if (searchParamsResolved.sort) urlParams.set("sort", String(searchParamsResolved.sort));
-    const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams);
-
-    // Prefetch entries for this subscription with the same params as client
-    // IMPORTANT: Include ALL fields (even undefined) to match the query key structure
-    // that tRPC generates on the client side
-    const input = {
-      subscriptionId,
-      tagId: undefined,
-      uncategorized: undefined,
-      unreadOnly,
-      starredOnly: undefined,
-      sortOrder,
-      type: undefined,
-      limit: 10,
-    };
-
-    await queryClient.prefetchInfiniteQuery({
-      queryKey: [["entries", "list"], { input, type: "infinite" }],
-      queryFn: () => trpc.entries.list(input),
-      initialPageParam: undefined as string | undefined,
-    });
-  }
+  const { id: subscriptionId } = await params;
 
   return (
-    <HydrationBoundary state={dehydrate(queryClient)}>
+    <EntryListPage filters={{ subscriptionId }} searchParams={searchParams}>
       <SingleSubscriptionContent />
-    </HydrationBoundary>
+    </EntryListPage>
   );
 }

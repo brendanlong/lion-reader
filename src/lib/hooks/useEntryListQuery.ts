@@ -7,16 +7,15 @@
  * This hook keeps the query mounted even when viewing an entry, enabling
  * seamless swiping/navigation beyond the initially loaded entries.
  *
- * Refetch strategy: Instead of refetchOnMount (which triggers on any mount,
- * including query param changes), we track pathname changes and only refetch
- * when navigating to a different view (sidebar click), not when opening/closing
- * entries (which only changes query params).
+ * Refetch strategy: The query uses staleTime: Infinity so it never automatically
+ * refetches. The Sidebar explicitly invalidates entries.list when the user clicks
+ * a navigation link. This prevents read entries from disappearing while browsing,
+ * and ensures fresh data when intentionally navigating to a view.
  */
 
 "use client";
 
 import { useMemo, useCallback, useRef, useEffect } from "react";
-import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
@@ -178,10 +177,6 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
   // Get query client for placeholder data lookup
   const queryClient = useQueryClient();
 
-  // Track pathname to detect real navigation (sidebar click) vs query param changes (back button)
-  const pathname = usePathname();
-  const prevPathnameRef = useRef<string | null>(null);
-
   // Track if we've triggered a fetch to avoid duplicate calls
   const fetchingRef = useRef(false);
 
@@ -214,28 +209,16 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
-      // Don't refetch on mount - we handle refetch on pathname change via effect below
-      // This prevents unwanted refetches when navigating back from entry view
+      // Never automatically refetch - the Sidebar invalidates on navigation
+      // This prevents read entries from disappearing while browsing
+      staleTime: Infinity,
       refetchOnMount: false,
-      // Don't refetch on window focus - we want to preserve the list state while viewing entries
-      // The list will refetch on pathname change (sidebar navigation) instead
       refetchOnWindowFocus: false,
       // Use parent list as placeholder data for immediate display while fetching
       // This provides entries from a broader cached list (e.g., "All" list for subscription view)
       placeholderData: () => findParentListPlaceholderData(queryClient, filters, subscriptions),
     }
   );
-
-  // Refetch when pathname changes (navigation to different view)
-  // This replaces refetchOnMount: true, which was too aggressive and triggered
-  // on query param changes too (e.g., when closing an entry via back button)
-  useEffect(() => {
-    if (prevPathnameRef.current !== null && prevPathnameRef.current !== pathname) {
-      // Pathname changed - this is a navigation (sidebar click), refetch to apply filters
-      refetch();
-    }
-    prevPathnameRef.current = pathname;
-  }, [pathname, refetch]);
 
   // Flatten all pages into a single array of entries
   const entries: EntryListData[] = useMemo(() => {
