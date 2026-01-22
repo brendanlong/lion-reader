@@ -10,6 +10,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks";
@@ -30,6 +31,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname();
+  const queryClient = useQueryClient();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
@@ -160,9 +162,13 @@ export function Sidebar({ onClose }: SidebarProps) {
   };
 
   const handleClose = () => {
-    // Invalidate entry list to fetch fresh data for the new view
-    // The query uses staleTime: Infinity so this is the only way it refreshes
-    utils.entries.list.invalidate();
+    // Mark entry list queries as stale so they refetch when mounted
+    // Use refetchType: 'none' to avoid refetching the current (soon-to-be-unmounted) query
+    // The new view's query will refetch on mount because it's now stale
+    queryClient.invalidateQueries({
+      queryKey: [["entries", "list"]],
+      refetchType: "none",
+    });
     onClose?.();
   };
 
