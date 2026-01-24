@@ -119,3 +119,36 @@ primary_region = "lax"
   port = 9093
   path = "/metrics"
   processes = ["discord"]
+
+# Restart policy: always restart with exponential backoff
+# This ensures the worker never permanently dies from repeated crashes
+[[restart]]
+  policy = "always"
+  processes = ["worker"]
+
+[[restart]]
+  policy = "always"
+  processes = ["discord"]
+
+# Health checks for non-HTTP processes
+# These use the internal metrics server health endpoint
+[checks]
+  [checks.worker_health]
+    type = "http"
+    port = 9092
+    grace_period = "30s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+    processes = ["worker"]
+
+  [checks.discord_health]
+    type = "http"
+    port = 9093
+    grace_period = "30s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+    processes = ["discord"]
