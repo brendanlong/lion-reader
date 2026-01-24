@@ -7,8 +7,8 @@ import {
   findPermanentRedirectUrl,
   isHttpToHttpsUpgrade,
   REDIRECT_WAIT_PERIOD_MS,
-} from "../../src/server/jobs/handlers";
-import type { RedirectInfo } from "../../src/server/feed/fetcher";
+} from "@/server/feed/redirect-utils";
+import type { RedirectInfo } from "@/server/feed/fetcher";
 
 describe("findPermanentRedirectUrl", () => {
   it("returns null when there are no redirects", () => {

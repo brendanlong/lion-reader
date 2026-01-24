@@ -10,7 +10,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { feeds, subscriptions, users, jobs } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/jobs/handlers";
+import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
 import { createOrEnableFeedJob, getJobPayload, listJobs } from "../../src/server/jobs";
 
 describe("Redirect Tracking", () => {
