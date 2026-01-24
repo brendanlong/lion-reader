@@ -20,19 +20,13 @@ import {
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
-
-/**
- * Function type for claiming a job from the queue.
- */
-type ClaimJobFn = (options?: { types?: JobType[] }) => Promise<Job | null>;
-
-/**
- * Function type for processing a claimed job.
- */
-type ProcessJobFn = (job: Job) => Promise<void>;
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
 import { trackJobProcessed } from "../metrics/metrics";
+import { createWorkerCore, type WorkerLogger, type Worker } from "./worker-core";
+
+// Re-export types for backwards compatibility
+export type { WorkerLogger, Worker, WorkerStats } from "./worker-core";
 
 /**
  * Worker configuration options.
@@ -50,22 +44,13 @@ export interface WorkerConfig {
    * Override for claiming jobs (for testing).
    * @internal
    */
-  _claimJob?: ClaimJobFn;
+  _claimJob?: (options?: { types?: JobType[] }) => Promise<Job | null>;
   /**
    * Override for processing jobs (for testing).
    * When provided, bypasses the default job handler dispatch.
    * @internal
    */
-  _processJob?: ProcessJobFn;
-}
-
-/**
- * Logger interface for worker events.
- */
-export interface WorkerLogger {
-  info: (message: string, meta?: Record<string, unknown>) => void;
-  warn: (message: string, meta?: Record<string, unknown>) => void;
-  error: (message: string, meta?: Record<string, unknown>) => void;
+  _processJob?: (job: Job) => Promise<void>;
 }
 
 /**
@@ -76,66 +61,6 @@ const defaultLogger: WorkerLogger = {
   warn: (message, meta) => appLogger.warn(message, { component: "worker", ...meta }),
   error: (message, meta) => appLogger.error(message, { component: "worker", ...meta }),
 };
-
-/**
- * Worker state.
- */
-interface WorkerState {
-  /** Whether the worker is running */
-  running: boolean;
-  /** Whether a shutdown has been requested */
-  shuttingDown: boolean;
-  /** Currently executing job promises */
-  currentlyExecuting: Set<Promise<void>>;
-  /** Promise for the main run loop */
-  runLoopPromise: Promise<void> | null;
-}
-
-/**
- * Sleep for a given number of milliseconds.
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Background job worker.
- *
- * Usage:
- * ```typescript
- * const worker = createWorker({ concurrency: 3 });
- * await worker.start();
- *
- * // Later, to stop gracefully:
- * await worker.stop();
- * ```
- */
-export interface Worker {
-  /** Start the worker */
-  start: () => Promise<void>;
-  /** Stop the worker gracefully */
-  stop: () => Promise<void>;
-  /** Check if the worker is running */
-  isRunning: () => boolean;
-  /** Get current worker stats */
-  getStats: () => WorkerStats;
-}
-
-/**
- * Worker statistics.
- */
-export interface WorkerStats {
-  /** Whether the worker is running */
-  running: boolean;
-  /** Number of jobs currently being processed */
-  activeJobs: number;
-  /** Total jobs processed since start */
-  totalProcessed: number;
-  /** Total jobs that succeeded */
-  totalSucceeded: number;
-  /** Total jobs that failed */
-  totalFailed: number;
-}
 
 /**
  * Creates a new background worker.
@@ -149,25 +74,28 @@ export function createWorker(config: WorkerConfig = {}): Worker {
     concurrency = 5,
     jobTypes,
     logger = defaultLogger,
-    _claimJob: claimJob = defaultClaimJob,
+    _claimJob: claimJobOverride,
     _processJob: processJobOverride,
   } = config;
 
-  // Worker state
-  const state: WorkerState = {
-    running: false,
-    shuttingDown: false,
-    currentlyExecuting: new Set(),
-    runLoopPromise: null,
-  };
+  // Use the core worker if we're in test mode (both overrides provided)
+  if (processJobOverride) {
+    const claimJob = claimJobOverride ?? defaultClaimJob;
+    return createWorkerCore({
+      pollIntervalMs,
+      concurrency,
+      jobTypes,
+      logger,
+      claimJob,
+      processJob: processJobOverride,
+    });
+  }
 
-  // Stats
-  let totalProcessed = 0;
-  let totalSucceeded = 0;
-  let totalFailed = 0;
+  // Default claim function with types
+  const claimJob = claimJobOverride ?? defaultClaimJob;
 
   /**
-   * Processes a single job.
+   * Processes a single job using the real handlers.
    */
   async function processJob(job: Job): Promise<void> {
     const startTime = Date.now();
@@ -216,7 +144,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       });
 
       if (result.success) {
-        totalSucceeded++;
         trackJobProcessed(job.type, "success", duration);
 
         logger.info(`Job ${job.id} completed`, {
@@ -226,7 +153,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
           metadata: result.metadata,
         });
       } else {
-        totalFailed++;
         trackJobProcessed(job.type, "failure", duration);
 
         logger.warn(`Job ${job.id} failed`, {
@@ -259,7 +185,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         });
       }
 
-      totalFailed++;
       trackJobProcessed(job.type, "failure", duration);
 
       logger.error(`Job ${job.id} threw exception`, {
@@ -278,149 +203,27 @@ export function createWorker(config: WorkerConfig = {}): Worker {
           durationMs: duration,
         },
       });
-    } finally {
-      totalProcessed++;
+
+      // Re-throw to let the core worker count it as a failure
+      throw error;
     }
   }
 
-  // Use override if provided, otherwise use default processJob
-  const executeJob = processJobOverride ?? processJob;
-
-  /**
-   * Main run loop - claims and processes jobs continuously.
-   */
-  async function runLoop(): Promise<void> {
-    while (!state.shuttingDown) {
-      // Fill up to capacity
-      while (state.currentlyExecuting.size < concurrency && !state.shuttingDown) {
-        const job = await claimJob({ types: jobTypes });
-        if (job === null) break;
-
-        // Wrap executeJob with .catch() to ensure no unhandled rejections escape
-        // into Promise.race()/Promise.all(). The error is already logged and
-        // reported to Sentry inside processJob, so we just need to prevent
-        // the rejection from propagating.
-        const promise = executeJob(job)
-          .catch((error) => {
-            // This should rarely happen since processJob has its own try/catch,
-            // but handle it defensively
-            logger.error("Unexpected error in job execution", {
-              jobId: job.id,
-              error: error instanceof Error ? error.message : "Unknown error",
-            });
-            Sentry.captureException(error, {
-              tags: { jobType: job.type, context: "executeJob-unhandled" },
-              extra: { jobId: job.id },
-            });
-          })
-          .finally(() => {
-            state.currentlyExecuting.delete(promise);
-          });
-        state.currentlyExecuting.add(promise);
-      }
-
-      if (state.shuttingDown) break;
-
-      if (state.currentlyExecuting.size >= concurrency) {
-        // At capacity — wait for a slot to free up
-        await Promise.race(state.currentlyExecuting);
-      } else if (state.currentlyExecuting.size > 0) {
-        // Have some jobs but queue is empty — wait for either:
-        // - A job to complete (might spawn follow-up work)
-        // - Poll timeout (new jobs might have arrived)
-        await Promise.race([Promise.race(state.currentlyExecuting), sleep(pollIntervalMs)]);
-      } else {
-        // No jobs at all — poll after delay
-        await sleep(pollIntervalMs);
-      }
-    }
-
-    // Graceful shutdown: wait for in-flight jobs
-    if (state.currentlyExecuting.size > 0) {
-      logger.info(`Waiting for ${state.currentlyExecuting.size} active jobs to complete...`);
-      await Promise.all(state.currentlyExecuting);
-    }
-  }
-
-  /**
-   * Starts the worker.
-   */
-  async function start(): Promise<void> {
-    if (state.running) {
-      logger.warn("Worker is already running");
-      return;
-    }
-
-    state.running = true;
-    state.shuttingDown = false;
-
-    logger.info("Worker starting", {
-      pollIntervalMs,
-      concurrency,
-      jobTypes: jobTypes ?? "all",
-    });
-
-    // Start the run loop (don't await - runs in background)
-    state.runLoopPromise = runLoop();
-
-    logger.info("Worker started");
-  }
-
-  /**
-   * Stops the worker gracefully.
-   */
-  async function stop(): Promise<void> {
-    if (!state.running) {
-      logger.warn("Worker is not running");
-      return;
-    }
-
-    logger.info("Worker stopping...");
-
-    state.shuttingDown = true;
-
-    // Wait for run loop to complete (it will drain in-flight jobs)
-    if (state.runLoopPromise) {
-      await state.runLoopPromise;
-      state.runLoopPromise = null;
-    }
-
-    state.running = false;
-    state.shuttingDown = false;
-
-    logger.info("Worker stopped", {
-      totalProcessed,
-      totalSucceeded,
-      totalFailed,
-    });
-  }
-
-  /**
-   * Checks if the worker is running.
-   */
-  function isRunning(): boolean {
-    return state.running;
-  }
-
-  /**
-   * Gets current worker stats.
-   */
-  function getStats(): WorkerStats {
-    return {
-      running: state.running,
-      activeJobs: state.currentlyExecuting.size,
-      totalProcessed,
-      totalSucceeded,
-      totalFailed,
-    };
-  }
-
-  return {
-    start,
-    stop,
-    isRunning,
-    getStats,
-  };
+  // Create the worker with the real processJob
+  return createWorkerCore({
+    pollIntervalMs,
+    concurrency,
+    jobTypes,
+    logger,
+    claimJob,
+    processJob,
+    onJobError: (job, error) => {
+      Sentry.captureException(error, {
+        tags: { jobType: job.type, context: "executeJob-unhandled" },
+        extra: { jobId: job.id },
+      });
+    },
+  });
 }
 
 /**
