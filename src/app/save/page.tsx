@@ -110,11 +110,26 @@ function SaveContent() {
     requestGoogleDocsAccessMutation.mutate({});
   };
 
+  // Check if error is an auth error (session expired, revoked, etc.)
+  const isAuthError = saveMutation.error?.data?.code === "UNAUTHORIZED";
+
   // Check if error is a Google Docs permission error
   const errorMessage = saveMutation.error?.message || "";
   const needsDocsPermission = errorMessage === "NEEDS_DOCS_PERMISSION";
   const needsGoogleSignin = errorMessage === "NEEDS_GOOGLE_SIGNIN";
   const needsGoogleReauth = errorMessage === "NEEDS_GOOGLE_REAUTH";
+
+  // Handle sign in - clears any stale session and redirects to login
+  const handleSignIn = () => {
+    // Clear any existing session cookie (it's invalid anyway)
+    document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    // Store the URL to save after login
+    if (urlToSave) {
+      sessionStorage.setItem("pendingSaveUrl", urlToSave);
+    }
+    // Redirect to login, which will redirect back to /save after auth
+    window.location.href = `/login?redirect=${encodeURIComponent("/save")}`;
+  };
 
   // No URL provided
   if (!urlToSave) {
@@ -211,8 +226,41 @@ function SaveContent() {
           {/* Error State */}
           {saveMutation.isError && (
             <div className="mt-6">
-              {/* Google Docs Permission Required */}
-              {needsDocsPermission || needsGoogleSignin || needsGoogleReauth ? (
+              {/* Authentication Required */}
+              {isAuthError ? (
+                <>
+                  <div className="flex justify-center">
+                    <svg
+                      className="h-8 w-8 text-amber-600 dark:text-amber-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                      />
+                    </svg>
+                  </div>
+                  <Alert variant="warning" className="mt-4 text-left">
+                    Your session has expired. Please sign in again to save this article.
+                  </Alert>
+                  <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
+                    {urlToSave}
+                  </p>
+                  <div className="mt-4 flex gap-2">
+                    <Button variant="secondary" className="flex-1" onClick={handleClose}>
+                      Close
+                    </Button>
+                    <Button variant="primary" className="flex-1" onClick={handleSignIn}>
+                      Sign In
+                    </Button>
+                  </div>
+                </>
+              ) : /* Google Docs Permission Required */
+              needsDocsPermission || needsGoogleSignin || needsGoogleReauth ? (
                 <>
                   <div className="flex justify-center">
                     <svg
