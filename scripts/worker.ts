@@ -16,6 +16,7 @@
 
 import { startWorkerWithSignalHandling } from "../src/server/jobs/worker";
 import { startMetricsServer } from "../src/server/metrics/server";
+import { notifyWorkerStarted } from "../src/server/notifications/discord-webhook";
 import { logger } from "../src/lib/logger";
 
 const pollIntervalMs = parseInt(process.env.WORKER_POLL_INTERVAL_MS ?? "5000", 10);
@@ -29,6 +30,12 @@ logger.info("Starting standalone worker", {
 
 // Start internal metrics server on port 9092 (separate from Next.js on 9091)
 startMetricsServer(9092);
+
+// Notify about worker start (helps detect crash loops)
+notifyWorkerStarted({ processType: "worker" }).catch((error) => {
+  // Don't let notification failures prevent worker from starting
+  logger.warn("Failed to send worker start notification", { error });
+});
 
 startWorkerWithSignalHandling({
   pollIntervalMs,
