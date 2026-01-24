@@ -3,10 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  parseFromAddress,
-  stripEmailNameQuotes,
-} from "../../src/app/api/webhooks/email/mailgun/route";
+import { parseFromAddress, stripEmailNameQuotes } from "@/server/email/parse-utils";
 
 describe("stripEmailNameQuotes", () => {
   it("strips surrounding double quotes", () => {

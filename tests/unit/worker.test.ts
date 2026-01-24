@@ -6,8 +6,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { createWorker, type WorkerLogger } from "../../src/server/jobs/worker";
+import { createWorkerCore, type WorkerLogger } from "../../src/server/jobs/worker-core";
 import type { Job } from "../../src/server/db/schema";
+
+// Use the core worker directly to avoid importing handlers.ts which requires DATABASE_URL
+const createWorker = createWorkerCore;
 
 /**
  * Creates a mock job for testing.
@@ -83,13 +86,13 @@ describe("Worker", () => {
         concurrency,
         pollIntervalMs: 10,
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           if (jobIndex < jobs.length) {
             return jobs[jobIndex++];
           }
           return null;
         },
-        _processJob: async () => {
+        processJob: async () => {
           currentlyRunning++;
           maxConcurrentJobs = Math.max(maxConcurrentJobs, currentlyRunning);
 
@@ -147,13 +150,13 @@ describe("Worker", () => {
         concurrency: 7,
         pollIntervalMs: 10,
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           if (jobIndex < jobs.length) {
             return jobs[jobIndex++];
           }
           return null;
         },
-        _processJob: async () => {
+        processJob: async () => {
           currentlyRunning++;
           maxConcurrentJobs = Math.max(maxConcurrentJobs, currentlyRunning);
 
@@ -194,14 +197,14 @@ describe("Worker", () => {
         concurrency: 1,
         pollIntervalMs: 10,
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           if (jobsClaimed === 0) {
             jobsClaimed++;
             return createMockJob("1");
           }
           return null;
         },
-        _processJob: async () => {
+        processJob: async () => {
           await jobDeferred.promise;
           jobCompleted = true;
         },
@@ -239,11 +242,11 @@ describe("Worker", () => {
         concurrency: 2,
         pollIntervalMs: 10,
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           claimCount++;
           return createMockJob(`${claimCount}`);
         },
-        _processJob: async () => {
+        processJob: async () => {
           const deferred = createDeferred();
           jobDeferreds.push(deferred);
           await deferred.promise;
@@ -283,13 +286,13 @@ describe("Worker", () => {
         concurrency: 2,
         pollIntervalMs: 10, // Use short interval - test verifies immediate claiming via job completion
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           if (jobIndex < jobs.length) {
             return jobs[jobIndex++];
           }
           return null;
         },
-        _processJob: async () => {
+        processJob: async () => {
           const deferred = createDeferred();
           jobDeferreds.push(deferred);
           await deferred.promise;
@@ -340,11 +343,11 @@ describe("Worker", () => {
         concurrency: 2,
         pollIntervalMs: 50,
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           claimCount++;
           return null; // Queue is always empty
         },
-        _processJob: async () => {},
+        processJob: async () => {},
       });
 
       await worker.start();
@@ -373,7 +376,7 @@ describe("Worker", () => {
         concurrency: 2,
         pollIntervalMs: 100,
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           claimCount++;
           if (jobsReturned < 1) {
             jobsReturned++;
@@ -381,7 +384,7 @@ describe("Worker", () => {
           }
           return null;
         },
-        _processJob: async () => {
+        processJob: async () => {
           await jobDeferred.promise;
         },
       });
@@ -421,13 +424,13 @@ describe("Worker", () => {
         concurrency: 5,
         pollIntervalMs: 10,
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           if (jobIndex < jobs.length) {
             return jobs[jobIndex++];
           }
           return null;
         },
-        _processJob: async () => {
+        processJob: async () => {
           const deferred = createDeferred();
           jobDeferreds.push(deferred);
           await deferred.promise;
@@ -469,11 +472,11 @@ describe("Worker", () => {
         concurrency: 1,
         pollIntervalMs: 10,
         logger: silentLogger,
-        _claimJob: async () => {
+        claimJob: async () => {
           claimCount++;
           return null;
         },
-        _processJob: async () => {},
+        processJob: async () => {},
       });
 
       // First start/stop cycle
@@ -508,8 +511,8 @@ describe("Worker", () => {
         concurrency: 1,
         pollIntervalMs: 10,
         logger: testLogger,
-        _claimJob: async () => null,
-        _processJob: async () => {},
+        claimJob: async () => null,
+        processJob: async () => {},
       });
 
       await worker.start();
@@ -532,8 +535,8 @@ describe("Worker", () => {
         concurrency: 1,
         pollIntervalMs: 10,
         logger: testLogger,
-        _claimJob: async () => null,
-        _processJob: async () => {},
+        claimJob: async () => null,
+        processJob: async () => {},
       });
 
       await worker.stop(); // Should warn, not error

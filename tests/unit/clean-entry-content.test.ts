@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { cleanEntryContent } from "@/server/feed/entry-processor";
+import { cleanEntryContent } from "@/server/feed/content-utils";
 import type { ParsedEntry } from "@/server/feed/types";
 
 describe("cleanEntryContent", () => {
