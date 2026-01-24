@@ -15,6 +15,7 @@
 
 import { startDiscordBot } from "../src/server/discord";
 import { startMetricsServer } from "../src/server/metrics/server";
+import { notifyWorkerStarted } from "../src/server/notifications/discord-webhook";
 import { logger } from "../src/lib/logger";
 
 logger.info("Starting Discord bot", {
@@ -24,6 +25,12 @@ logger.info("Starting Discord bot", {
 
 // Start internal metrics server on port 9093 (separate from Next.js/worker)
 startMetricsServer(9093);
+
+// Notify about discord bot start (helps detect crash loops)
+notifyWorkerStarted({ processType: "discord" }).catch((error) => {
+  // Don't let notification failures prevent bot from starting
+  logger.warn("Failed to send discord bot start notification", { error });
+});
 
 // Handle graceful shutdown
 process.on("SIGINT", () => {

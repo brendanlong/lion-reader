@@ -49,6 +49,10 @@ export function startMetricsServer(port = 9091): Server | null {
         res.writeHead(500, { "Content-Type": "text/plain" });
         res.end("Internal Server Error");
       }
+    } else if (req.method === "GET" && req.url === "/health") {
+      // Simple health check for Fly.io - just confirms the process is running
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "healthy" }));
     } else {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");
