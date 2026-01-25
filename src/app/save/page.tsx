@@ -1,8 +1,10 @@
 /**
- * Save Page (Bookmarklet Target)
+ * Save Page (Bookmarklet & Share Target)
  *
- * Minimal popup UI for saving URLs via the bookmarklet.
- * - Extracts `url` query parameter
+ * Minimal popup UI for saving URLs via:
+ * - Bookmarklet: passes URL as query parameter
+ * - PWA Share Target: service worker extracts URL and redirects here with ?url=...
+ *
  * - Calls saved.save API
  * - Shows loading, success, or error state
  * - Auto-closes on success after a delay
@@ -26,6 +28,7 @@ export default function SavePage() {
 function SaveContent() {
   const searchParams = useSearchParams();
   const urlToSave = searchParams.get("url");
+  const shareError = searchParams.get("error");
 
   const [articleTitle, setArticleTitle] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
@@ -131,8 +134,13 @@ function SaveContent() {
     window.location.href = `/login?redirect=${encodeURIComponent("/save")}`;
   };
 
-  // No URL provided
+  // Share error or no URL provided
   if (!urlToSave) {
+    const errorMessages: Record<string, string> = {
+      no_url: "No URL was found in the shared content.",
+      share_failed: "Failed to process the shared content.",
+    };
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -141,7 +149,9 @@ function SaveContent() {
               Save to Lion Reader
             </h1>
             <Alert variant="error" className="mt-4">
-              No URL provided. Use the bookmarklet to save pages.
+              {shareError
+                ? errorMessages[shareError] || "An error occurred."
+                : "No URL provided. Use the bookmarklet or share from another app."}
             </Alert>
             <Button variant="secondary" className="mt-4 w-full" onClick={handleClose}>
               Close
