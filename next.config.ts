@@ -1,5 +1,6 @@
 import { execSync } from "child_process";
 import type { NextConfig } from "next";
+import withPWA from "@ducanh2912/next-pwa";
 import { withSentryConfig } from "@sentry/nextjs";
 
 // Get git commit SHA at build time
@@ -15,6 +16,64 @@ function getGitCommitSha(): string | undefined {
     return undefined;
   }
 }
+
+// PWA configuration - wraps the Next.js config to enable service worker precaching
+const withPWAConfig = withPWA({
+  dest: "public",
+  // Disable PWA in development for faster builds
+  disable: process.env.NODE_ENV === "development",
+  // Custom worker source for share target handling
+  customWorkerSrc: "worker",
+  // Workbox configuration for caching strategies
+  workboxOptions: {
+    // Skip waiting to activate new service workers immediately
+    skipWaiting: true,
+    clientsClaim: true,
+    // Runtime caching configuration for Next.js static assets
+    // Note: next-pwa automatically precaches _next/static/* during build
+    runtimeCaching: [
+      // Cache Google Fonts stylesheets
+      {
+        urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+        handler: "StaleWhileRevalidate",
+        options: {
+          cacheName: "google-fonts-stylesheets",
+          expiration: {
+            maxEntries: 10,
+            maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+          },
+        },
+      },
+      // Cache Google Fonts webfont files
+      {
+        urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+        handler: "CacheFirst",
+        options: {
+          cacheName: "google-fonts-webfonts",
+          expiration: {
+            maxEntries: 20,
+            maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+          },
+          cacheableResponse: {
+            statuses: [0, 200],
+          },
+        },
+      },
+      // Cache images with stale-while-revalidate
+      {
+        urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
+        handler: "StaleWhileRevalidate",
+        options: {
+          cacheName: "static-images",
+          expiration: {
+            maxEntries: 100,
+            maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+          },
+        },
+      },
+    ],
+  },
+});
 
 const nextConfig: NextConfig = {
   env: {
@@ -99,9 +158,12 @@ const sentryWebpackPluginOptions = {
   disableLogger: true,
 };
 
+// Wrap with PWA first, then Sentry if configured
+const pwaConfig = withPWAConfig(nextConfig);
+
 // Only wrap with Sentry if DSN is configured
 const exportedConfig = process.env.SENTRY_DSN
-  ? withSentryConfig(nextConfig, sentryWebpackPluginOptions)
-  : nextConfig;
+  ? withSentryConfig(pwaConfig, sentryWebpackPluginOptions)
+  : pwaConfig;
 
 export default exportedConfig;
