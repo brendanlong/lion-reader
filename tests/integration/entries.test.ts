@@ -451,7 +451,10 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.markRead({ ids: [entry1Id, entry2Id], read: true });
+      const result = await caller.entries.markRead({
+        entries: [{ id: entry1Id }, { id: entry2Id }],
+        read: true,
+      });
 
       expect(result.success).toBe(true);
       expect(result.count).toBe(2);
@@ -473,7 +476,7 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.markRead({ ids: [entryId], read: false });
+      const result = await caller.entries.markRead({ entries: [{ id: entryId }], read: false });
 
       expect(result.success).toBe(true);
       expect(result.count).toBe(1);
@@ -505,7 +508,10 @@ describe("Entries", () => {
       const caller = createCaller(ctx);
 
       // Mark 2 as read
-      const result = await caller.entries.markRead({ ids: [entry1Id, entry2Id], read: true });
+      const result = await caller.entries.markRead({
+        entries: [{ id: entry1Id }, { id: entry2Id }],
+        read: true,
+      });
 
       expect(result.success).toBe(true);
       expect(result.count).toBe(2);
@@ -654,9 +660,8 @@ describe("Entries", () => {
 
       // Update with newer timestamp should succeed
       const result = await caller.entries.markRead({
-        ids: [entryId],
+        entries: [{ id: entryId, changedAt: newTimestamp }],
         read: true,
-        changedAt: newTimestamp,
       });
 
       expect(result.success).toBe(true);
@@ -688,9 +693,8 @@ describe("Entries", () => {
 
       // Update with older timestamp should be rejected (no-op)
       await caller.entries.markRead({
-        ids: [entryId],
+        entries: [{ id: entryId, changedAt: olderTimestamp }],
         read: false,
-        changedAt: olderTimestamp,
       });
 
       // Verify database state is unchanged
@@ -719,9 +723,8 @@ describe("Entries", () => {
 
       // Same timestamp, different value - should be rejected because timestamp is not newer
       await caller.entries.markRead({
-        ids: [entryId],
+        entries: [{ id: entryId, changedAt: timestamp }],
         read: false,
-        changedAt: timestamp,
       });
 
       // Verify database state is unchanged
@@ -755,9 +758,8 @@ describe("Entries", () => {
 
       // Update read state
       await caller.entries.markRead({
-        ids: [entryId],
+        entries: [{ id: entryId, changedAt: newTimestamp }],
         read: true,
-        changedAt: newTimestamp,
       });
 
       // Verify starred timestamp is unchanged
@@ -794,9 +796,11 @@ describe("Entries", () => {
       const caller = createCaller(ctx);
 
       const result = await caller.entries.markRead({
-        ids: [entry1Id, entry2Id],
+        entries: [
+          { id: entry1Id, changedAt: requestTimestamp },
+          { id: entry2Id, changedAt: requestTimestamp },
+        ],
         read: true,
-        changedAt: requestTimestamp,
       });
 
       // Should return final state for both entries

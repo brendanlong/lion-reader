@@ -33,23 +33,31 @@ ALTER TABLE user_entries
 
 ### Input
 
-Add optional `changedAt` to mutation inputs:
+Add per-entry timestamps for bulk operations and single timestamp for batch operations:
 
 ```typescript
-// entries.markRead
+// entries.markRead - supports per-entry timestamps for offline sync
 {
-  entryIds: string[];
+  entries: Array<{ id: string; changedAt?: Date }>;  // Per-entry timestamps
   read: boolean;
-  changedAt?: Date;  // When user initiated the action
 }
 
-// entries.star
+// entries.star/unstar - single entry
 {
-  entryId: string;
-  starred: boolean;
+  id: string;
+  changedAt?: Date;
+}
+
+// entries.markAllRead - single timestamp for all (user is online, acting now)
+{
+  // ... existing filters
   changedAt?: Date;
 }
 ```
+
+For `markRead`, each entry can have its own timestamp. This supports offline sync where the user marked entry A as read at 10:00 AM and entry B at 10:05 AM - each should use its original timestamp when syncing back online.
+
+If `changedAt` is omitted for an entry, it defaults to the current server time.
 
 ### Update Logic
 

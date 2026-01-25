@@ -448,7 +448,10 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.markRead({ ids: [id1, id2], read: true });
+      const result = await caller.entries.markRead({
+        entries: [{ id: id1 }, { id: id2 }],
+        read: true,
+      });
       expect(result.success).toBe(true);
       expect(result.count).toBe(2);
 
@@ -468,7 +471,10 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.markRead({ ids: [id1, id2], read: false });
+      const result = await caller.entries.markRead({
+        entries: [{ id: id1 }, { id: id2 }],
+        read: false,
+      });
       expect(result.success).toBe(true);
       expect(result.count).toBe(2);
 
@@ -489,7 +495,7 @@ describe("Saved Articles API", () => {
 
       // Should not throw, just ignore invalid ID
       const result = await caller.entries.markRead({
-        ids: [validId, generateUuidv7()],
+        entries: [{ id: validId }, { id: generateUuidv7() }],
         read: true,
       });
       // Only the valid article is counted
@@ -515,7 +521,10 @@ describe("Saved Articles API", () => {
       const ctx = createAuthContext(userId1);
       const caller = createCaller(ctx);
 
-      await caller.entries.markRead({ ids: [myArticle, otherArticle], read: true });
+      await caller.entries.markRead({
+        entries: [{ id: myArticle }, { id: otherArticle }],
+        read: true,
+      });
 
       // My article should be updated in user_entries
       const myResult = await db
@@ -540,7 +549,7 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       const result = await caller.entries.markRead({
-        ids: [generateUuidv7()],
+        entries: [{ id: generateUuidv7() }],
         read: true,
       });
       expect(result.success).toBe(true);
@@ -685,7 +694,7 @@ describe("Saved Articles API", () => {
       const caller = createCaller(ctx);
 
       await expect(
-        caller.entries.markRead({ ids: [generateUuidv7()], read: true })
+        caller.entries.markRead({ entries: [{ id: generateUuidv7() }], read: true })
       ).rejects.toThrow("You must be logged in");
     });
 
