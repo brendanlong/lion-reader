@@ -40,7 +40,7 @@ interface FeedbinEntry {
   feed_id: number;
   title: string | null;
   author: string | null;
-  url: string;
+  url: string | null;
   content: string | null;
   summary: string | null;
   published: string;
@@ -116,14 +116,32 @@ class FeedbinClient {
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
     }
 
-    const response = await fetch(url.toString(), {
+    const urlStr = url.toString();
+    console.error(`[Feedbin API] GET ${urlStr}`);
+    const startTime = Date.now();
+
+    const response = await fetch(urlStr, {
       headers: {
         Authorization: `Basic ${this.auth}`,
         "Content-Type": "application/json",
       },
     });
 
+    const elapsed = Date.now() - startTime;
+    console.error(
+      `[Feedbin API] Response: ${response.status} ${response.statusText} (${elapsed}ms)`
+    );
+
+    // Log rate limit headers if present
+    const rateLimit = response.headers.get("X-RateLimit-Limit");
+    const rateRemaining = response.headers.get("X-RateLimit-Remaining");
+    if (rateLimit || rateRemaining) {
+      console.error(`[Feedbin API] Rate limit: ${rateRemaining}/${rateLimit} remaining`);
+    }
+
     if (!response.ok) {
+      const body = await response.text();
+      console.error(`[Feedbin API] Error body: ${body}`);
       throw new Error(`Feedbin API error: ${response.status} ${response.statusText}`);
     }
 
@@ -138,12 +156,19 @@ class FeedbinClient {
     let page = 1;
     const perPage = "100";
 
+    console.error(`[Feedbin API] Starting paginated fetch for ${endpoint}`);
+
     while (true) {
       const pageParams = { ...params, page: String(page), per_page: perPage };
+      console.error(`[Feedbin API] Fetching page ${page}...`);
       const items = await this.fetch<T[]>(endpoint, pageParams);
       allItems.push(...items);
+      console.error(
+        `[Feedbin API] Page ${page}: received ${items.length} items (total: ${allItems.length})`
+      );
 
       if (items.length < 100) {
+        console.error(`[Feedbin API] Pagination complete: ${allItems.length} total items`);
         break;
       }
       page++;
@@ -153,36 +178,15 @@ class FeedbinClient {
   }
 
   async getSubscriptions(): Promise<FeedbinSubscription[]> {
-    return this.fetchAllPages<FeedbinSubscription>("/subscriptions.json");
+    // Subscriptions endpoint returns all subscriptions without pagination
+    return this.fetch<FeedbinSubscription[]>("/subscriptions.json");
   }
 
-  async getUnreadEntryIds(): Promise<number[]> {
-    return this.fetch<number[]>("/unread_entries.json");
-  }
-
-  async getEntries(entryIds: number[]): Promise<FeedbinEntry[]> {
-    if (entryIds.length === 0) return [];
-
-    // Feedbin allows fetching up to 100 entries at a time by ID
-    const allEntries: FeedbinEntry[] = [];
-    const chunkSize = 100;
-
-    for (let i = 0; i < entryIds.length; i += chunkSize) {
-      const chunk = entryIds.slice(i, i + chunkSize);
-      const entries = await this.fetch<FeedbinEntry[]>("/entries.json", {
-        ids: chunk.join(","),
-      });
-      allEntries.push(...entries);
-      console.error(
-        `  Fetched entries ${i + 1}-${Math.min(i + chunkSize, entryIds.length)} of ${entryIds.length}`
-      );
-    }
-
-    return allEntries;
+  async getUnreadEntries(): Promise<FeedbinEntry[]> {
+    return this.fetchAllPages<FeedbinEntry>("/entries.json", { read: "false" });
   }
 
   async getAllEntries(): Promise<FeedbinEntry[]> {
-    console.error("Fetching all entries (this may take a while)...");
     return this.fetchAllPages<FeedbinEntry>("/entries.json");
   }
 }
@@ -315,9 +319,9 @@ function generateContentHash(title: string | null, content: string | null): stri
 
 /**
  * Derives a GUID for an entry, matching Lion Reader's logic.
+ * Returns null for entries without URLs (which should be skipped).
  */
-function deriveGuid(entry: FeedbinEntry): string {
-  // Feedbin entries always have a URL
+function deriveGuid(entry: FeedbinEntry): string | null {
   return entry.url;
 }
 
@@ -353,6 +357,7 @@ interface GeneratedSQL {
     totalEntries: number;
     newEntries: number;
     existingEntries: number;
+    skippedEntries: number;
   };
 }
 
@@ -402,12 +407,18 @@ async function generateSQL(
   const userEntriesSQL: string[] = [];
   let newEntries = 0;
   let existingEntriesCount = 0;
+  let skippedEntries = 0;
 
   for (const entry of entries) {
     const lrSub = feedMap.get(entry.feed_id);
     if (!lrSub) continue; // Entry from unmatched feed
 
     const guid = deriveGuid(entry);
+    if (!guid) {
+      // Skip entries without URLs (e.g., email/newsletter entries)
+      skippedEntries++;
+      continue;
+    }
     const existingEntryId = existingByFeedAndGuid.get(`${lrSub.feedId}:${guid}`);
 
     if (existingEntryId) {
@@ -469,6 +480,7 @@ async function generateSQL(
       totalEntries: entries.length,
       newEntries,
       existingEntries: existingEntriesCount,
+      skippedEntries,
     },
   };
 }
@@ -499,11 +511,6 @@ async function main() {
       console.error(`  - ${sub.title}`);
       console.error(`    URL: ${sub.feed_url}`);
     }
-
-    // Fetch unread count
-    console.error("\nFetching unread entry IDs...");
-    const unreadIds = await feedbin.getUnreadEntryIds();
-    console.error(`  Found ${unreadIds.length} unread entries`);
 
     console.error("\nTo generate import SQL, run without --dry-run and provide --user-id");
     return;
@@ -553,12 +560,8 @@ async function main() {
     console.error("Fetching all entries...");
     entries = await feedbin.getAllEntries();
   } else {
-    console.error("Fetching unread entry IDs...");
-    const unreadIds = await feedbin.getUnreadEntryIds();
-    console.error(`  Found ${unreadIds.length} unread entries`);
-
-    console.error("\nFetching entry details...");
-    entries = await feedbin.getEntries(unreadIds);
+    console.error("Fetching unread entries...");
+    entries = await feedbin.getUnreadEntries();
   }
   console.error(`  Fetched ${entries.length} entries\n`);
 
@@ -582,6 +585,9 @@ async function main() {
 
   console.error(`  New entries: ${stats.newEntries}`);
   console.error(`  Existing entries (adding visibility): ${stats.existingEntries}`);
+  if (stats.skippedEntries > 0) {
+    console.error(`  Skipped entries (no URL): ${stats.skippedEntries}`);
+  }
   console.error("");
 
   // Output SQL
@@ -591,6 +597,7 @@ async function main() {
     `-- User ID: ${config.userId}`,
     `-- New entries: ${stats.newEntries}`,
     `-- Existing entries: ${stats.existingEntries}`,
+    `-- Skipped entries (no URL): ${stats.skippedEntries}`,
     "",
     "BEGIN;",
     "",
