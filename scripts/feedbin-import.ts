@@ -318,14 +318,6 @@ function generateContentHash(title: string | null, content: string | null): stri
 }
 
 /**
- * Derives a GUID for an entry, matching Lion Reader's logic.
- * Returns null for entries without URLs (which should be skipped).
- */
-function deriveGuid(entry: FeedbinEntry): string | null {
-  return entry.url;
-}
-
-/**
  * Escapes a string for SQL.
  */
 function sqlEscape(value: string | null): string {
@@ -380,19 +372,23 @@ async function generateSQL(
   // Get feed IDs we're importing into
   const feedIds = [...new Set(matchedFeeds.map((m) => m.lionReaderSubscription.feedId))];
 
-  // Fetch existing entries by GUID for these feeds
+  // Fetch existing entries by URL for these feeds
+  // We match by URL (not GUID) because Lion Reader's feed parser may extract
+  // a different GUID from the feed than what Feedbin uses
   const existingEntries = await db
     .select({
       id: entriesTable.id,
       feedId: entriesTable.feedId,
-      guid: entriesTable.guid,
+      url: entriesTable.url,
     })
     .from(entriesTable)
     .where(inArray(entriesTable.feedId, feedIds));
 
-  const existingByFeedAndGuid = new Map<string, string>();
+  const existingByFeedAndUrl = new Map<string, string>();
   for (const e of existingEntries) {
-    existingByFeedAndGuid.set(`${e.feedId}:${e.guid}`, e.id);
+    if (e.url) {
+      existingByFeedAndUrl.set(`${e.feedId}:${e.url}`, e.id);
+    }
   }
 
   // Fetch existing user_entries to avoid duplicates
@@ -413,13 +409,13 @@ async function generateSQL(
     const lrSub = feedMap.get(entry.feed_id);
     if (!lrSub) continue; // Entry from unmatched feed
 
-    const guid = deriveGuid(entry);
-    if (!guid) {
+    const entryUrl = entry.url;
+    if (!entryUrl) {
       // Skip entries without URLs (e.g., email/newsletter entries)
       skippedEntries++;
       continue;
     }
-    const existingEntryId = existingByFeedAndGuid.get(`${lrSub.feedId}:${guid}`);
+    const existingEntryId = existingByFeedAndUrl.get(`${lrSub.feedId}:${entryUrl}`);
 
     if (existingEntryId) {
       // Entry already exists, just add user_entry if needed
@@ -447,8 +443,8 @@ async function generateSQL(
           `${sqlEscape(entryId)}, ` +
           `${sqlEscape(lrSub.feedId)}, ` +
           `'web', ` +
-          `${sqlEscape(guid)}, ` +
-          `${sqlEscape(entry.url)}, ` +
+          `${sqlEscape(entryUrl)}, ` + // Use URL as GUID (Feedbin doesn't provide original GUIDs)
+          `${sqlEscape(entryUrl)}, ` +
           `${sqlEscape(entry.title)}, ` +
           `${sqlEscape(entry.author)}, ` +
           `${sqlEscape(entry.content)}, ` +
@@ -468,7 +464,7 @@ async function generateSQL(
       );
 
       // Track so we don't create duplicates within this import
-      existingByFeedAndGuid.set(`${lrSub.feedId}:${guid}`, entryId);
+      existingByFeedAndUrl.set(`${lrSub.feedId}:${entryUrl}`, entryId);
       existingUserEntryIds.add(entryId);
     }
   }
