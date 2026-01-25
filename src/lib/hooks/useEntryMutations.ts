@@ -151,47 +151,49 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
+  // Generate timestamp at action time for idempotent updates
   const markRead = useCallback(
     (ids: string[], read: boolean) => {
-      markReadMutation.mutate({ ids, read });
+      markReadMutation.mutate({ ids, read, changedAt: new Date() });
     },
     [markReadMutation]
   );
 
   const toggleRead = useCallback(
     (entryId: string, currentlyRead: boolean) => {
-      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead });
+      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead, changedAt: new Date() });
     },
     [markReadMutation]
   );
 
   const markAllRead = useCallback(
     (options?: MarkAllReadOptions) => {
-      markAllReadMutation.mutate(options ?? {});
+      markAllReadMutation.mutate({ ...options, changedAt: new Date() });
     },
     [markAllReadMutation]
   );
 
   const star = useCallback(
     (entryId: string) => {
-      starMutation.mutate({ id: entryId });
+      starMutation.mutate({ id: entryId, changedAt: new Date() });
     },
     [starMutation]
   );
 
   const unstar = useCallback(
     (entryId: string) => {
-      unstarMutation.mutate({ id: entryId });
+      unstarMutation.mutate({ id: entryId, changedAt: new Date() });
     },
     [unstarMutation]
   );
 
   const toggleStar = useCallback(
     (entryId: string, currentlyStarred: boolean) => {
+      const changedAt = new Date();
       if (currentlyStarred) {
-        unstarMutation.mutate({ id: entryId });
+        unstarMutation.mutate({ id: entryId, changedAt });
       } else {
-        starMutation.mutate({ id: entryId });
+        starMutation.mutate({ id: entryId, changedAt });
       }
     },
     [starMutation, unstarMutation]
