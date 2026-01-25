@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, lte, lt, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, and, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -281,7 +281,7 @@ async function updateEntryStarred(
       and(
         eq(userEntries.userId, userId),
         eq(userEntries.entryId, entryId),
-        lt(userEntries.starredChangedAt, changedAt)
+        lte(userEntries.starredChangedAt, changedAt)
       )
     );
 
@@ -895,7 +895,7 @@ export const entriesRouter = createTRPCRouter({
             and(
               eq(userEntries.userId, userId),
               inArray(userEntries.entryId, entryIds),
-              lt(userEntries.readChangedAt, changedAt)
+              lte(userEntries.readChangedAt, changedAt)
             )
           );
       }
@@ -959,11 +959,11 @@ export const entriesRouter = createTRPCRouter({
       const changedAt = input.changedAt ?? new Date();
 
       // Build conditions for the update
-      // Note: We also require readChangedAt < changedAt for idempotency
+      // Note: We also require readChangedAt <= changedAt for idempotency
       const conditions = [
         eq(userEntries.userId, userId),
         eq(userEntries.read, false),
-        lt(userEntries.readChangedAt, changedAt),
+        lte(userEntries.readChangedAt, changedAt),
       ];
 
       // Filter by subscriptionId
