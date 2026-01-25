@@ -12,7 +12,13 @@
  * See docs/job-queue-design.md for the overall architecture.
  */
 
-import { claimJob as defaultClaimJob, finishJob, getJobPayload, type JobType } from "./queue";
+import {
+  claimJob as defaultClaimJob,
+  claimSingletonJob,
+  finishJob,
+  getJobPayload,
+  type JobType,
+} from "./queue";
 import {
   handleFetchFeed,
   handleRenewWebsub,
@@ -91,8 +97,27 @@ export function createWorker(config: WorkerConfig = {}): Worker {
     });
   }
 
-  // Default claim function with types
-  const claimJob = claimJobOverride ?? defaultClaimJob;
+  // Default claim function - tries regular jobs first, then singleton jobs
+  const baseClaimJob = claimJobOverride ?? defaultClaimJob;
+
+  async function claimJob(options?: { types?: JobType[] }): Promise<Job | null> {
+    // First try to claim a regular job
+    const regularJob = await baseClaimJob(options);
+    if (regularJob) {
+      return regularJob;
+    }
+
+    // No regular jobs - try singleton jobs (only if not filtered by type)
+    // Singleton jobs self-create if they don't exist
+    if (!options?.types || options.types.includes("renew_websub")) {
+      const singletonJob = await claimSingletonJob("renew_websub");
+      if (singletonJob) {
+        return singletonJob;
+      }
+    }
+
+    return null;
+  }
 
   /**
    * Processes a single job using the real handlers.
@@ -234,11 +259,11 @@ export function createWorker(config: WorkerConfig = {}): Worker {
  * @returns The worker instance
  */
 export async function startWorkerWithSignalHandling(config: WorkerConfig = {}): Promise<Worker> {
+  const logger = config.logger ?? defaultLogger;
   const worker = createWorker(config);
 
   // Handle graceful shutdown
   const shutdown = async (signal: string) => {
-    const logger = config.logger ?? defaultLogger;
     logger.info(`Received ${signal}, initiating graceful shutdown...`);
 
     await worker.stop();
