@@ -34,6 +34,21 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Service worker must be served with no-cache to ensure updates
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate",
+          },
+          {
+            // Allow service worker to control the entire origin
+            key: "Service-Worker-Allowed",
+            value: "/",
+          },
+        ],
+      },
     ];
   },
   // Packages that should be loaded from node_modules at runtime, not bundled
