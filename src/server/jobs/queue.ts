@@ -425,3 +425,88 @@ export async function listJobs(
 
   return query;
 }
+
+/**
+ * Singleton job types that have exactly one instance and self-create on first run.
+ */
+const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub"];
+
+/**
+ * Tries to claim a singleton job for processing.
+ *
+ * Singleton jobs (like renew_websub) have exactly one row. If no row exists,
+ * that means "run now" - the row is created on first run and tracks next_run_at.
+ *
+ * @param type - The singleton job type to claim
+ * @returns The claimed job, or null if not due or already running
+ */
+export async function claimSingletonJob(type: JobType): Promise<Job | null> {
+  if (!SINGLETON_JOB_TYPES.includes(type)) {
+    throw new Error(`${type} is not a singleton job type`);
+  }
+
+  const now = new Date();
+  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
+
+  // First, try to claim an existing job
+  const claimResult = await db.execute<RawJobRow>(sql`
+    UPDATE ${jobs}
+    SET
+      running_since = ${now},
+      updated_at = ${now}
+    WHERE type = ${type}
+      AND next_run_at <= ${now}
+      AND (running_since IS NULL OR running_since < ${staleThreshold})
+    RETURNING *
+  `);
+
+  if (claimResult.rows.length > 0) {
+    return rowToJob(claimResult.rows[0]);
+  }
+
+  // No claimable job - check if a job exists at all
+  const [existingJob] = await db.select().from(jobs).where(eq(jobs.type, type)).limit(1);
+
+  if (existingJob) {
+    // Job exists but isn't due or is currently running
+    return null;
+  }
+
+  // No job exists - create one and claim it immediately
+  // Use a transaction to handle race conditions (two workers both see no row)
+  try {
+    const [newJob] = await db
+      .insert(jobs)
+      .values({
+        id: generateUuidv7(),
+        type,
+        payload: {},
+        enabled: true,
+        nextRunAt: now,
+        runningSince: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    return newJob;
+  } catch {
+    // Another worker likely created the job - try to claim it
+    const retryResult = await db.execute<RawJobRow>(sql`
+      UPDATE ${jobs}
+      SET
+        running_since = ${now},
+        updated_at = ${now}
+      WHERE type = ${type}
+        AND (running_since IS NULL OR running_since < ${staleThreshold})
+      RETURNING *
+    `);
+
+    if (retryResult.rows.length > 0) {
+      return rowToJob(retryResult.rows[0]);
+    }
+
+    // Job exists and is running - that's fine
+    return null;
+  }
+}
