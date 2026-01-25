@@ -118,6 +118,12 @@ export async function POST(
 ): Promise<Response> {
   const { feedId } = await params;
 
+  logger.info("WebSub notification received", {
+    feedId,
+    contentType: request.headers.get("content-type"),
+    hasSignature: !!request.headers.get("x-hub-signature"),
+  });
+
   // Validate feedId format
   if (!isValidUuid(feedId)) {
     logger.warn("WebSub notification with invalid feedId", { feedId });
