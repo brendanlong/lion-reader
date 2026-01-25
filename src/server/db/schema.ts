@@ -580,6 +580,13 @@ export const userEntries = pgTable(
     read: boolean("read").notNull().default(false),
     starred: boolean("starred").notNull().default(false),
 
+    // Timestamps for idempotent updates - tracks when each field was last set
+    // Used for conditional updates: only apply if incoming timestamp is newer
+    readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull().defaultNow(),
+    starredChangedAt: timestamp("starred_changed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
     // Timestamp for tracking state changes (for sync endpoint)
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

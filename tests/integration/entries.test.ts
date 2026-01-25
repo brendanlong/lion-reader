@@ -144,14 +144,22 @@ async function createTestEntry(
 async function createUserEntry(
   userId: string,
   entryId: string,
-  options: { read?: boolean; starred?: boolean } = {}
+  options: {
+    read?: boolean;
+    starred?: boolean;
+    readChangedAt?: Date;
+    starredChangedAt?: Date;
+  } = {}
 ): Promise<void> {
+  const now = new Date();
   await db.insert(userEntries).values({
     userId,
     entryId,
     read: options.read ?? false,
     starred: options.starred ?? false,
-    updatedAt: new Date(),
+    readChangedAt: options.readChangedAt ?? now,
+    starredChangedAt: options.starredChangedAt ?? now,
+    updatedAt: now,
   });
 }
 
@@ -626,6 +634,247 @@ describe("Entries", () => {
 
       expect(result.total).toBe(2);
       expect(result.unread).toBe(2);
+    });
+  });
+
+  describe("idempotency", () => {
+    it("applies update when changedAt is newer than stored timestamp", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const oldTimestamp = new Date("2024-01-01T00:00:00Z");
+      const newTimestamp = new Date("2024-01-02T00:00:00Z");
+
+      const entryId = await createTestEntry(feedId, { title: "Entry" });
+      await createUserEntry(userId, entryId, { read: false, readChangedAt: oldTimestamp });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Update with newer timestamp should succeed
+      const result = await caller.entries.markRead({
+        ids: [entryId],
+        read: true,
+        changedAt: newTimestamp,
+      });
+
+      expect(result.success).toBe(true);
+
+      // Verify database state
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].read).toBe(true);
+      expect(dbEntry[0].readChangedAt?.toISOString()).toBe(newTimestamp.toISOString());
+    });
+
+    it("rejects update when changedAt is older than stored timestamp", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const newerTimestamp = new Date("2024-01-02T00:00:00Z");
+      const olderTimestamp = new Date("2024-01-01T00:00:00Z");
+
+      const entryId = await createTestEntry(feedId, { title: "Entry" });
+      await createUserEntry(userId, entryId, { read: true, readChangedAt: newerTimestamp });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Update with older timestamp should be rejected (no-op)
+      await caller.entries.markRead({
+        ids: [entryId],
+        read: false,
+        changedAt: olderTimestamp,
+      });
+
+      // Verify database state is unchanged
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].read).toBe(true); // Still true, not changed to false
+      expect(dbEntry[0].readChangedAt?.toISOString()).toBe(newerTimestamp.toISOString());
+    });
+
+    it("same timestamp update is a no-op (idempotent)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const timestamp = new Date("2024-01-01T00:00:00Z");
+
+      const entryId = await createTestEntry(feedId, { title: "Entry" });
+      await createUserEntry(userId, entryId, { read: true, readChangedAt: timestamp });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Same timestamp, different value - should be rejected because timestamp is not newer
+      await caller.entries.markRead({
+        ids: [entryId],
+        read: false,
+        changedAt: timestamp,
+      });
+
+      // Verify database state is unchanged
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].read).toBe(true); // Unchanged
+    });
+
+    it("changing read state does not affect starred timestamp", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const initialTimestamp = new Date("2024-01-01T00:00:00Z");
+      const newTimestamp = new Date("2024-01-02T00:00:00Z");
+
+      const entryId = await createTestEntry(feedId, { title: "Entry" });
+      await createUserEntry(userId, entryId, {
+        read: false,
+        starred: true,
+        readChangedAt: initialTimestamp,
+        starredChangedAt: initialTimestamp,
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Update read state
+      await caller.entries.markRead({
+        ids: [entryId],
+        read: true,
+        changedAt: newTimestamp,
+      });
+
+      // Verify starred timestamp is unchanged
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].read).toBe(true);
+      expect(dbEntry[0].readChangedAt?.toISOString()).toBe(newTimestamp.toISOString());
+      expect(dbEntry[0].starred).toBe(true);
+      expect(dbEntry[0].starredChangedAt?.toISOString()).toBe(initialTimestamp.toISOString());
+    });
+
+    it("bulk update returns final state for all entries even when some are skipped", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const oldTimestamp = new Date("2024-01-01T00:00:00Z");
+      const newerTimestamp = new Date("2024-01-02T00:00:00Z");
+      const requestTimestamp = new Date("2024-01-01T12:00:00Z"); // Between old and newer
+
+      const entry1Id = await createTestEntry(feedId, { title: "Entry 1" });
+      const entry2Id = await createTestEntry(feedId, { title: "Entry 2" });
+
+      // Entry 1 has old timestamp - should be updated
+      await createUserEntry(userId, entry1Id, { read: false, readChangedAt: oldTimestamp });
+      // Entry 2 has newer timestamp - should NOT be updated
+      await createUserEntry(userId, entry2Id, { read: true, readChangedAt: newerTimestamp });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.markRead({
+        ids: [entry1Id, entry2Id],
+        read: true,
+        changedAt: requestTimestamp,
+      });
+
+      // Should return final state for both entries
+      expect(result.entries).toHaveLength(2);
+      expect(result.entries.find((e) => e.id === entry1Id)).toBeDefined();
+      expect(result.entries.find((e) => e.id === entry2Id)).toBeDefined();
+
+      // Verify database state
+      const dbEntries = await db.select().from(userEntries).where(eq(userEntries.userId, userId));
+
+      const entry1 = dbEntries.find((e) => e.entryId === entry1Id);
+      const entry2 = dbEntries.find((e) => e.entryId === entry2Id);
+
+      expect(entry1?.read).toBe(true); // Updated
+      expect(entry1?.readChangedAt?.toISOString()).toBe(requestTimestamp.toISOString());
+      expect(entry2?.read).toBe(true); // Unchanged (was already true)
+      expect(entry2?.readChangedAt?.toISOString()).toBe(newerTimestamp.toISOString()); // Timestamp not changed
+    });
+
+    it("star idempotency - newer timestamp wins", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const oldTimestamp = new Date("2024-01-01T00:00:00Z");
+      const newTimestamp = new Date("2024-01-02T00:00:00Z");
+
+      const entryId = await createTestEntry(feedId, { title: "Entry" });
+      await createUserEntry(userId, entryId, { starred: false, starredChangedAt: oldTimestamp });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Star with newer timestamp should succeed
+      const result = await caller.entries.star({ id: entryId, changedAt: newTimestamp });
+
+      expect(result.entry.starred).toBe(true);
+
+      // Verify database state
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].starred).toBe(true);
+      expect(dbEntry[0].starredChangedAt?.toISOString()).toBe(newTimestamp.toISOString());
+    });
+
+    it("star idempotency - older timestamp rejected", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const newerTimestamp = new Date("2024-01-02T00:00:00Z");
+      const olderTimestamp = new Date("2024-01-01T00:00:00Z");
+
+      const entryId = await createTestEntry(feedId, { title: "Entry" });
+      await createUserEntry(userId, entryId, { starred: true, starredChangedAt: newerTimestamp });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Unstar with older timestamp should be rejected
+      const result = await caller.entries.unstar({ id: entryId, changedAt: olderTimestamp });
+
+      // Returns final state (still starred)
+      expect(result.entry.starred).toBe(true);
+
+      // Verify database state is unchanged
+      const dbEntry = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntry[0].starred).toBe(true);
+      expect(dbEntry[0].starredChangedAt?.toISOString()).toBe(newerTimestamp.toISOString());
     });
   });
 });

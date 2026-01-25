@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, and, desc, asc, lte, lt, inArray, notInArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -252,33 +252,48 @@ async function getSubscriptionFeedIds(
 
 /**
  * Updates the starred status of an entry for a user.
- * Uses UPDATE with RETURNING for efficiency (single query instead of SELECT-UPDATE-SELECT).
+ * Uses idempotent conditional updates: only applies if changedAt is newer than stored timestamp.
  *
  * @param ctx - Database context
  * @param userId - The user ID
  * @param entryId - The entry ID
  * @param starred - Whether to star (true) or unstar (false)
- * @returns The updated entry state
+ * @param changedAt - When the user initiated the action. Defaults to now.
+ * @returns The final entry state (may differ from requested if a newer change exists)
  * @throws entryNotFound if entry doesn't exist or user doesn't have access
  */
 async function updateEntryStarred(
   ctx: DbContext,
   userId: string,
   entryId: string,
-  starred: boolean
+  starred: boolean,
+  changedAt: Date = new Date()
 ): Promise<{ id: string; read: boolean; starred: boolean }> {
-  const result = await ctx.db
+  // Conditional update: only apply if incoming timestamp is newer
+  await ctx.db
     .update(userEntries)
     .set({
       starred,
+      starredChangedAt: changedAt,
       updatedAt: new Date(),
     })
-    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)))
-    .returning({
+    .where(
+      and(
+        eq(userEntries.userId, userId),
+        eq(userEntries.entryId, entryId),
+        lt(userEntries.starredChangedAt, changedAt)
+      )
+    );
+
+  // Always return final state
+  const result = await ctx.db
+    .select({
       id: userEntries.entryId,
       read: userEntries.read,
       starred: userEntries.starred,
-    });
+    })
+    .from(userEntries)
+    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 
   if (result.length === 0) {
     throw errors.entryNotFound();
@@ -827,6 +842,7 @@ export const entriesRouter = createTRPCRouter({
           .min(1, "At least one entry ID is required")
           .max(1000, "Maximum 1000 entries per request"),
         read: z.boolean(),
+        changedAt: z.coerce.date().optional(),
       })
     )
     .output(
@@ -846,25 +862,25 @@ export const entriesRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const changedAt = input.changedAt ?? new Date();
 
-      // Update user_entries and get entry IDs
-      const updatedEntries = await ctx.db
+      // Conditional update: only apply if incoming timestamp is newer
+      await ctx.db
         .update(userEntries)
         .set({
           read: input.read,
+          readChangedAt: changedAt,
           updatedAt: new Date(),
         })
-        .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, input.ids)))
-        .returning({
-          entryId: userEntries.entryId,
-        });
+        .where(
+          and(
+            eq(userEntries.userId, userId),
+            inArray(userEntries.entryId, input.ids),
+            lt(userEntries.readChangedAt, changedAt)
+          )
+        );
 
-      if (updatedEntries.length === 0) {
-        return { success: true, count: 0, entries: [] };
-      }
-
-      // Get subscription IDs, starred status, and type for each entry via visible_entries view
-      // This handles the feed -> subscription mapping
+      // Always return final state for all requested entries
       const entrySubscriptions = await ctx.db
         .select({
           id: visibleEntries.id,
@@ -873,19 +889,11 @@ export const entriesRouter = createTRPCRouter({
           type: visibleEntries.type,
         })
         .from(visibleEntries)
-        .where(
-          and(
-            eq(visibleEntries.userId, userId),
-            inArray(
-              visibleEntries.id,
-              updatedEntries.map((e) => e.entryId)
-            )
-          )
-        );
+        .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, input.ids)));
 
       return {
         success: true,
-        count: updatedEntries.length,
+        count: entrySubscriptions.length,
         entries: entrySubscriptions.map((e) => ({
           id: e.id,
           subscriptionId: e.subscriptionId,
@@ -921,14 +929,21 @@ export const entriesRouter = createTRPCRouter({
         starredOnly: z.boolean().optional(),
         type: feedTypeSchema.optional(),
         before: z.coerce.date().optional(),
+        changedAt: z.coerce.date().optional(),
       })
     )
     .output(z.object({ count: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const changedAt = input.changedAt ?? new Date();
 
       // Build conditions for the update
-      const conditions = [eq(userEntries.userId, userId), eq(userEntries.read, false)];
+      // Note: We also require readChangedAt < changedAt for idempotency
+      const conditions = [
+        eq(userEntries.userId, userId),
+        eq(userEntries.read, false),
+        lt(userEntries.readChangedAt, changedAt),
+      ];
 
       // Filter by subscriptionId
       if (input.subscriptionId) {
@@ -1117,6 +1132,7 @@ export const entriesRouter = createTRPCRouter({
         .update(userEntries)
         .set({
           read: true,
+          readChangedAt: changedAt,
           updatedAt: new Date(),
         })
         .where(and(...conditions));
@@ -1144,11 +1160,18 @@ export const entriesRouter = createTRPCRouter({
     .input(
       z.object({
         id: uuidSchema,
+        changedAt: z.coerce.date().optional(),
       })
     )
     .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const entry = await updateEntryStarred(ctx, ctx.session.user.id, input.id, true);
+      const entry = await updateEntryStarred(
+        ctx,
+        ctx.session.user.id,
+        input.id,
+        true,
+        input.changedAt ?? new Date()
+      );
       return { entry };
     }),
 
@@ -1172,11 +1195,18 @@ export const entriesRouter = createTRPCRouter({
     .input(
       z.object({
         id: uuidSchema,
+        changedAt: z.coerce.date().optional(),
       })
     )
     .output(starOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const entry = await updateEntryStarred(ctx, ctx.session.user.id, input.id, false);
+      const entry = await updateEntryStarred(
+        ctx,
+        ctx.session.user.id,
+        input.id,
+        false,
+        input.changedAt ?? new Date()
+      );
       return { entry };
     }),
 
