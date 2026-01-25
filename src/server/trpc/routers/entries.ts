@@ -958,36 +958,28 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const changedAt = input.changedAt ?? new Date();
 
-      // Build conditions for the update
+      // Build conditions for the update using subqueries to avoid sequential queries
       // Note: We also require readChangedAt <= changedAt for idempotency
-      const conditions = [
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const conditions: any[] = [
         eq(userEntries.userId, userId),
         eq(userEntries.read, false),
         lte(userEntries.readChangedAt, changedAt),
       ];
 
-      // Filter by subscriptionId
+      // Filter by subscriptionId - need to look up feed IDs first for validation
       if (input.subscriptionId) {
         const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
         if (subFeedIds === null) {
           return { count: 0 };
         }
-        // Get entry IDs for these feeds
-        const feedEntryIds = await ctx.db
+        // Use subquery to filter entries by feed IDs instead of fetching all IDs
+        const entryIdsSubquery = ctx.db
           .select({ id: entries.id })
           .from(entries)
           .where(inArray(entries.feedId, subFeedIds));
 
-        if (feedEntryIds.length === 0) {
-          return { count: 0 };
-        }
-
-        conditions.push(
-          inArray(
-            userEntries.entryId,
-            feedEntryIds.map((e) => e.id)
-          )
-        );
+        conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
       }
 
       // If tagId is provided, filter entries by feeds with this tag
@@ -1004,92 +996,48 @@ export const entriesRouter = createTRPCRouter({
           return { count: 0 };
         }
 
-        // Get feed IDs for subscriptions with this tag using user_feeds view
-        const taggedSubscriptions = await ctx.db
-          .select({ feedIds: userFeeds.feedIds })
+        // Subquery for feed IDs of subscriptions with this tag
+        // Uses unnest to expand the feed_ids array since Drizzle doesn't support array unnest directly
+        const taggedFeedIdsSubquery = ctx.db
+          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
           .from(subscriptionTags)
           .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
           .where(eq(subscriptionTags.tagId, input.tagId));
 
-        if (taggedSubscriptions.length === 0) {
-          return { count: 0 };
-        }
-
-        const taggedFeedIds = taggedSubscriptions.flatMap((s) => s.feedIds);
-
-        // Get entry IDs for these feeds
-        const taggedEntryIds = await ctx.db
+        // Subquery for entry IDs from tagged feeds
+        const taggedEntryIdsSubquery = ctx.db
           .select({ id: entries.id })
           .from(entries)
-          .where(inArray(entries.feedId, taggedFeedIds));
+          .where(inArray(entries.feedId, taggedFeedIdsSubquery));
 
-        if (taggedEntryIds.length === 0) {
-          return { count: 0 };
-        }
-
-        conditions.push(
-          inArray(
-            userEntries.entryId,
-            taggedEntryIds.map((e) => e.id)
-          )
-        );
+        conditions.push(inArray(userEntries.entryId, taggedEntryIdsSubquery));
       }
 
       // If uncategorized is true, filter entries by feeds with no tags
       if (input.uncategorized) {
-        // Get subscription IDs that have tags
-        const taggedSubscriptionIds = await ctx.db
+        // Subquery for subscription IDs that have tags
+        const taggedSubscriptionIdsSubquery = ctx.db
           .select({ subscriptionId: subscriptionTags.subscriptionId })
           .from(subscriptionTags);
 
-        // Get feed IDs for subscriptions with no tags using user_feeds view
-        let uncategorizedFeedIds: string[];
-        if (taggedSubscriptionIds.length === 0) {
-          // No tagged subscriptions, all active subscriptions are uncategorized
-          const allSubscriptions = await ctx.db
-            .select({ feedIds: userFeeds.feedIds })
-            .from(userFeeds)
-            .where(eq(userFeeds.userId, userId));
+        // Subquery for feed IDs from uncategorized subscriptions (no tags)
+        const uncategorizedFeedIdsSubquery = ctx.db
+          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+          .from(userFeeds)
+          .where(
+            and(
+              eq(userFeeds.userId, userId),
+              notInArray(userFeeds.id, taggedSubscriptionIdsSubquery)
+            )
+          );
 
-          uncategorizedFeedIds = allSubscriptions.flatMap((s) => s.feedIds);
-        } else {
-          // Get subscriptions that are not in the tagged list
-          const uncategorizedSubscriptions = await ctx.db
-            .select({ feedIds: userFeeds.feedIds })
-            .from(userFeeds)
-            .where(
-              and(
-                eq(userFeeds.userId, userId),
-                notInArray(
-                  userFeeds.id,
-                  taggedSubscriptionIds.map((s) => s.subscriptionId)
-                )
-              )
-            );
-
-          uncategorizedFeedIds = uncategorizedSubscriptions.flatMap((s) => s.feedIds);
-        }
-
-        if (uncategorizedFeedIds.length === 0) {
-          return { count: 0 };
-        }
-
-        // Get entry IDs for these feeds
-        const uncategorizedEntryIds = await ctx.db
+        // Subquery for entry IDs from uncategorized feeds
+        const uncategorizedEntryIdsSubquery = ctx.db
           .select({ id: entries.id })
           .from(entries)
-          .where(inArray(entries.feedId, uncategorizedFeedIds));
+          .where(inArray(entries.feedId, uncategorizedFeedIdsSubquery));
 
-        if (uncategorizedEntryIds.length === 0) {
-          return { count: 0 };
-        }
-
-        conditions.push(
-          inArray(
-            userEntries.entryId,
-            uncategorizedEntryIds.map((e) => e.id)
-          )
-        );
+        conditions.push(inArray(userEntries.entryId, uncategorizedEntryIdsSubquery));
       }
 
       // If starredOnly is true, filter to only starred entries
@@ -1097,68 +1045,39 @@ export const entriesRouter = createTRPCRouter({
         conditions.push(eq(userEntries.starred, true));
       }
 
-      // If type is provided, filter entries by feed type
+      // If type is provided, filter entries by feed type using subquery
       if (input.type) {
-        // Get entry IDs from feeds of this type
-        const typeEntryIds = await ctx.db
+        const typeEntryIdsSubquery = ctx.db
           .select({ id: entries.id })
           .from(entries)
           .innerJoin(feeds, eq(entries.feedId, feeds.id))
           .where(eq(feeds.type, input.type));
 
-        if (typeEntryIds.length === 0) {
-          return { count: 0 };
-        }
-
-        conditions.push(
-          inArray(
-            userEntries.entryId,
-            typeEntryIds.map((e) => e.id)
-          )
-        );
+        conditions.push(inArray(userEntries.entryId, typeEntryIdsSubquery));
       }
 
-      // If before date is provided, filter entries by fetchedAt
+      // If before date is provided, filter entries by fetchedAt using subquery
       if (input.before) {
-        // Get entry IDs fetched before the specified date
-        const beforeEntryIds = await ctx.db
+        const beforeEntryIdsSubquery = ctx.db
           .select({ id: entries.id })
           .from(entries)
           .where(lte(entries.fetchedAt, input.before));
 
-        if (beforeEntryIds.length === 0) {
-          return { count: 0 };
-        }
-
-        conditions.push(
-          inArray(
-            userEntries.entryId,
-            beforeEntryIds.map((e) => e.id)
-          )
-        );
+        conditions.push(inArray(userEntries.entryId, beforeEntryIdsSubquery));
       }
 
-      // Get count of entries to be marked as read
-      const entriesToMark = await ctx.db
-        .select({ entryId: userEntries.entryId })
-        .from(userEntries)
-        .where(and(...conditions));
-
-      if (entriesToMark.length === 0) {
-        return { count: 0 };
-      }
-
-      // Update all matching user_entries to read
-      await ctx.db
+      // Use a single query with RETURNING to both update and count
+      const result = await ctx.db
         .update(userEntries)
         .set({
           read: true,
           readChangedAt: changedAt,
           updatedAt: new Date(),
         })
-        .where(and(...conditions));
+        .where(and(...conditions))
+        .returning({ entryId: userEntries.entryId });
 
-      return { count: entriesToMark.length };
+      return { count: result.length };
     }),
 
   /**
