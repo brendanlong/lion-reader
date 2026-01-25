@@ -118,13 +118,21 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // markAllRead mutation - invalidates all caches (unknown which entries affected)
+  // markAllRead mutation - invalidates caches based on what could be affected
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       utils.entries.list.invalidate();
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
+
+      // Starred count is always affected since starred entries can exist in any view
       utils.entries.count.invalidate({ starredOnly: true });
+
+      // Invalidate saved count if saved entries could be affected
+      // (either type: "saved" was set, or no type filter means all including saved)
+      if (variables.type === "saved" || !variables.type) {
+        utils.entries.count.invalidate({ type: "saved" });
+      }
     },
     onError: () => {
       toast.error("Failed to mark all as read");
