@@ -708,7 +708,7 @@ describe("Entries", () => {
       expect(dbEntry[0].readChangedAt?.toISOString()).toBe(newerTimestamp.toISOString());
     });
 
-    it("same timestamp update is a no-op (idempotent)", async () => {
+    it("same timestamp update succeeds (last-write-wins)", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");
       await createTestSubscription(userId, feedId);
@@ -721,20 +721,20 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      // Same timestamp, different value - should be rejected because timestamp is not newer
+      // Same timestamp, different value - should succeed with >= comparison
       await caller.entries.markRead({
         entries: [{ id: entryId, changedAt: timestamp }],
         read: false,
       });
 
-      // Verify database state is unchanged
+      // Verify database state is updated
       const dbEntry = await db
         .select()
         .from(userEntries)
         .where(eq(userEntries.entryId, entryId))
         .limit(1);
 
-      expect(dbEntry[0].read).toBe(true); // Unchanged
+      expect(dbEntry[0].read).toBe(false); // Updated
     });
 
     it("changing read state does not affect starred timestamp", async () => {

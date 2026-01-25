@@ -152,11 +152,15 @@ async function createTestSavedArticle(
   });
 
   // Create the user_entries row
+  // Set timestamps slightly in the past to ensure API calls (with current time) can always update them
+  const pastTime = new Date(Date.now() - 1000);
   await db.insert(userEntries).values({
     userId,
     entryId: articleId,
     read: options.read ?? false,
     starred: options.starred ?? false,
+    readChangedAt: pastTime,
+    starredChangedAt: pastTime,
   });
 
   return articleId;

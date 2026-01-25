@@ -4,7 +4,7 @@
  * Business logic for entry operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, desc, asc, inArray, notInArray, sql, isNull, lt } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, notInArray, sql, isNull, lte } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   entries,
@@ -471,7 +471,7 @@ export async function markEntriesRead(
     throw errors.validation("Maximum 1000 entries per request");
   }
 
-  // Conditional update: only apply if incoming timestamp is newer
+  // Conditional update: only apply if incoming timestamp is newer or equal
   await db
     .update(userEntries)
     .set({
@@ -483,7 +483,7 @@ export async function markEntriesRead(
       and(
         eq(userEntries.userId, userId),
         inArray(userEntries.entryId, entryIds),
-        lt(userEntries.readChangedAt, changedAt)
+        lte(userEntries.readChangedAt, changedAt)
       )
     );
 
@@ -577,7 +577,7 @@ export async function updateEntryStarred(
   starred: boolean,
   changedAt: Date = new Date()
 ): Promise<EntryState> {
-  // Conditional update: only apply if incoming timestamp is newer
+  // Conditional update: only apply if incoming timestamp is newer or equal
   await db
     .update(userEntries)
     .set({
@@ -589,7 +589,7 @@ export async function updateEntryStarred(
       and(
         eq(userEntries.userId, userId),
         eq(userEntries.entryId, entryId),
-        lt(userEntries.starredChangedAt, changedAt)
+        lte(userEntries.starredChangedAt, changedAt)
       )
     );
 
