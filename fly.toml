@@ -60,6 +60,9 @@ primary_region = "lax"
   # Prometheus metrics
   METRICS_ENABLED = "true"
 
+  # Disabled until we fix https://github.com/brendanlong/lion-reader/issues/402
+  WEBSUB_ENABLED = "false"
+
 [http_service]
   internal_port = 3000
   force_https = true
