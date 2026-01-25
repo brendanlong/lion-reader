@@ -60,9 +60,9 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   const uploadMutation = trpc.saved.uploadFile.useMutation({
     onSuccess: () => {
       toast.success("File uploaded successfully");
-      // Invalidate queries to refresh the list
-      utils.entries.list.invalidate();
-      utils.entries.count.invalidate();
+      // Invalidate queries to refresh the saved list and count
+      utils.entries.list.invalidate({ type: "saved" });
+      utils.entries.count.invalidate({ type: "saved" });
       onSuccess?.();
       handleClose();
     },
