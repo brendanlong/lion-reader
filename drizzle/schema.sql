@@ -297,7 +297,9 @@ CREATE TABLE public.user_entries (
     entry_id uuid NOT NULL,
     read boolean DEFAULT false NOT NULL,
     starred boolean DEFAULT false NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    read_changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    starred_changed_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE VIEW public.user_feeds AS

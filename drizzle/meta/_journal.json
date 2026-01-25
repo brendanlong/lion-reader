@@ -281,6 +281,13 @@
       "when": 1767470000000,
       "tag": "0039_user_feeds_created_at",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1767480000000,
+      "tag": "0040_entry_state_idempotency",
+      "breakpoints": true
     }
   ]
 }

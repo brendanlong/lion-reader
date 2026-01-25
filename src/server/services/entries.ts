@@ -4,7 +4,7 @@
  * Business logic for entry operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, desc, asc, inArray, notInArray, sql, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, notInArray, sql, isNull, lte } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   entries,
@@ -450,12 +450,18 @@ export async function getEntry(
 
 /**
  * Marks entries as read or unread.
+ *
+ * Uses idempotent updates: only applies if changedAt is newer than the stored
+ * read_changed_at timestamp. This prevents stale updates from overwriting newer state.
+ *
+ * @param changedAt - When the user initiated the action. Defaults to now.
  */
 export async function markEntriesRead(
   db: typeof dbType,
   userId: string,
   entryIds: string[],
-  read: boolean
+  read: boolean,
+  changedAt: Date = new Date()
 ): Promise<MarkReadResult> {
   if (entryIds.length === 0) {
     return { entries: [], subscriptionUnreadCounts: [], tagUnreadCounts: [] };
@@ -465,18 +471,31 @@ export async function markEntriesRead(
     throw errors.validation("Maximum 1000 entries per request");
   }
 
-  const updatedEntries = await db
+  // Conditional update: only apply if incoming timestamp is newer or equal
+  await db
     .update(userEntries)
     .set({
       read,
+      readChangedAt: changedAt,
       updatedAt: new Date(),
     })
-    .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)))
-    .returning({
+    .where(
+      and(
+        eq(userEntries.userId, userId),
+        inArray(userEntries.entryId, entryIds),
+        lte(userEntries.readChangedAt, changedAt)
+      )
+    );
+
+  // Always return final state for all requested entries
+  const finalEntries = await db
+    .select({
       id: userEntries.entryId,
       read: userEntries.read,
       starred: userEntries.starred,
-    });
+    })
+    .from(userEntries)
+    .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
 
   // Get affected feed IDs
   const affectedFeedsSubquery = db
@@ -540,30 +559,49 @@ export async function markEntriesRead(
     .leftJoin(userEntries, and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId)))
     .groupBy(affectedTagsSubquery.tagId);
 
-  return { entries: updatedEntries, subscriptionUnreadCounts, tagUnreadCounts };
+  return { entries: finalEntries, subscriptionUnreadCounts, tagUnreadCounts };
 }
 
 /**
  * Stars or unstars an entry.
+ *
+ * Uses idempotent updates: only applies if changedAt is newer than the stored
+ * starred_changed_at timestamp. This prevents stale updates from overwriting newer state.
+ *
+ * @param changedAt - When the user initiated the action. Defaults to now.
  */
 export async function updateEntryStarred(
   db: typeof dbType,
   userId: string,
   entryId: string,
-  starred: boolean
+  starred: boolean,
+  changedAt: Date = new Date()
 ): Promise<EntryState> {
-  const result = await db
+  // Conditional update: only apply if incoming timestamp is newer or equal
+  await db
     .update(userEntries)
     .set({
       starred,
+      starredChangedAt: changedAt,
       updatedAt: new Date(),
     })
-    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)))
-    .returning({
+    .where(
+      and(
+        eq(userEntries.userId, userId),
+        eq(userEntries.entryId, entryId),
+        lte(userEntries.starredChangedAt, changedAt)
+      )
+    );
+
+  // Always return final state
+  const result = await db
+    .select({
       id: userEntries.entryId,
       read: userEntries.read,
       starred: userEntries.starred,
-    });
+    })
+    .from(userEntries)
+    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 
   if (result.length === 0) {
     throw errors.entryNotFound();
