@@ -71,6 +71,23 @@ const themeScript = `
 })();
 `;
 
+/**
+ * Service worker registration script.
+ *
+ * Registers the service worker for PWA support including:
+ * - Share Target API (receiving shares from other apps)
+ * - Basic caching for offline resilience
+ */
+const swScript = `
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js').catch(function(err) {
+      console.log('ServiceWorker registration failed:', err);
+    });
+  });
+}
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -80,6 +97,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: swScript }} />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} ${literata.variable} ${inter.variable} ${sourceSans.variable} antialiased`}
