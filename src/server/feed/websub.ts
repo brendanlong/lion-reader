@@ -266,6 +266,7 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
         "hub.topic": topicUrl,
         "hub.callback": callbackUrl,
         "hub.secret": secret,
+        "hub.verify": "async",
       }).toString(),
     });
 
