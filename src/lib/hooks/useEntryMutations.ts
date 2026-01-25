@@ -154,14 +154,21 @@ export function useEntryMutations(): UseEntryMutationsResult {
   // Generate timestamp at action time for idempotent updates
   const markRead = useCallback(
     (ids: string[], read: boolean) => {
-      markReadMutation.mutate({ ids, read, changedAt: new Date() });
+      const changedAt = new Date();
+      markReadMutation.mutate({
+        entries: ids.map((id) => ({ id, changedAt })),
+        read,
+      });
     },
     [markReadMutation]
   );
 
   const toggleRead = useCallback(
     (entryId: string, currentlyRead: boolean) => {
-      markReadMutation.mutate({ ids: [entryId], read: !currentlyRead, changedAt: new Date() });
+      markReadMutation.mutate({
+        entries: [{ id: entryId, changedAt: new Date() }],
+        read: !currentlyRead,
+      });
     },
     [markReadMutation]
   );

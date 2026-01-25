@@ -822,7 +822,10 @@ export const entriesRouter = createTRPCRouter({
    * Only entries the user has access to (via user_entries) will be updated.
    * Returns entries with subscription context for client-side cache updates.
    *
-   * @param ids - Array of entry IDs to mark
+   * Supports per-entry timestamps for offline sync scenarios where each entry
+   * was marked at a different time.
+   *
+   * @param entries - Array of entry IDs with optional per-entry timestamps
    * @param read - Whether to mark as read (true) or unread (false)
    * @returns The updated entries with subscription context for cache updates
    */
@@ -837,12 +840,16 @@ export const entriesRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        ids: z
-          .array(uuidSchema)
-          .min(1, "At least one entry ID is required")
+        entries: z
+          .array(
+            z.object({
+              id: uuidSchema,
+              changedAt: z.coerce.date().optional(),
+            })
+          )
+          .min(1, "At least one entry is required")
           .max(1000, "Maximum 1000 entries per request"),
         read: z.boolean(),
-        changedAt: z.coerce.date().optional(),
       })
     )
     .output(
@@ -862,25 +869,39 @@ export const entriesRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const changedAt = input.changedAt ?? new Date();
+      const now = new Date();
 
-      // Conditional update: only apply if incoming timestamp is newer
-      await ctx.db
-        .update(userEntries)
-        .set({
-          read: input.read,
-          readChangedAt: changedAt,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(userEntries.userId, userId),
-            inArray(userEntries.entryId, input.ids),
-            lt(userEntries.readChangedAt, changedAt)
-          )
-        );
+      // Group entries by timestamp for efficient batch updates
+      // Most cases (interactive use) will have all entries with same/no timestamp
+      const entriesByTimestamp = new Map<string, string[]>();
+      for (const entry of input.entries) {
+        const ts = (entry.changedAt ?? now).toISOString();
+        const existing = entriesByTimestamp.get(ts) ?? [];
+        existing.push(entry.id);
+        entriesByTimestamp.set(ts, existing);
+      }
+
+      // Batch update for each timestamp group
+      for (const [tsIso, entryIds] of entriesByTimestamp) {
+        const changedAt = new Date(tsIso);
+        await ctx.db
+          .update(userEntries)
+          .set({
+            read: input.read,
+            readChangedAt: changedAt,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(userEntries.userId, userId),
+              inArray(userEntries.entryId, entryIds),
+              lt(userEntries.readChangedAt, changedAt)
+            )
+          );
+      }
 
       // Always return final state for all requested entries
+      const allEntryIds = input.entries.map((e) => e.id);
       const entrySubscriptions = await ctx.db
         .select({
           id: visibleEntries.id,
@@ -889,7 +910,7 @@ export const entriesRouter = createTRPCRouter({
           type: visibleEntries.type,
         })
         .from(visibleEntries)
-        .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, input.ids)));
+        .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
 
       return {
         success: true,
