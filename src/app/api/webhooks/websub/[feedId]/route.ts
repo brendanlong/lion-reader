@@ -47,6 +47,18 @@ export async function GET(
 ): Promise<Response> {
   const { feedId } = await params;
 
+  // Enhanced logging for debugging
+  const headers: Record<string, string> = {};
+  request.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+
+  logger.info("WebSub GET request received (verification)", {
+    feedId,
+    url: request.url,
+    headers,
+  });
+
   // Validate feedId format
   if (!isValidUuid(feedId)) {
     logger.warn("WebSub verification with invalid feedId", { feedId });
@@ -60,11 +72,11 @@ export async function GET(
   const challenge = url.searchParams.get("hub.challenge");
   const leaseSeconds = url.searchParams.get("hub.lease_seconds");
 
-  logger.debug("WebSub verification request received", {
+  logger.info("WebSub verification request params", {
     feedId,
     mode,
     topic,
-    challenge: challenge ? "[present]" : "[missing]",
+    challenge: challenge ? `[${challenge.length} chars]` : "[missing]",
     leaseSeconds,
   });
 
@@ -118,10 +130,16 @@ export async function POST(
 ): Promise<Response> {
   const { feedId } = await params;
 
-  logger.info("WebSub notification received", {
+  // Enhanced logging for debugging
+  const headers: Record<string, string> = {};
+  request.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+
+  logger.info("WebSub POST request received (notification)", {
     feedId,
-    contentType: request.headers.get("content-type"),
-    hasSignature: !!request.headers.get("x-hub-signature"),
+    url: request.url,
+    headers,
   });
 
   // Validate feedId format

@@ -103,8 +103,12 @@ export function canUseWebSub(): boolean {
     const url = new URL(baseUrl);
 
     // Don't attempt WebSub for private/local hostnames
+    // Unless WEBSUB_ALLOW_LOCALHOST is set (for testing)
     if (isPrivateHostname(url.hostname)) {
-      return false;
+      if (process.env.WEBSUB_ALLOW_LOCALHOST !== "true") {
+        return false;
+      }
+      logger.info("WebSub: Allowing localhost for testing", { hostname: url.hostname });
     }
 
     // Must be HTTPS in production (hubs may reject HTTP callbacks)
@@ -396,6 +400,14 @@ export async function handleVerificationChallenge(
     .from(websubSubscriptions)
     .where(eq(websubSubscriptions.feedId, feedId))
     .limit(1);
+
+  logger.info("WebSub verification: looking up subscription", {
+    feedId,
+    topic,
+    found: !!subscription,
+    subscriptionState: subscription?.state,
+    subscriptionTopicUrl: subscription?.topicUrl,
+  });
 
   if (!subscription) {
     logger.warn("WebSub verification for unknown subscription", { feedId, topic });

@@ -1,0 +1,14 @@
+{
+  "name": "websub-test",
+  "version": "1.0.0",
+  "description": "WebSub testing environment for Lion Reader",
+  "type": "module",
+  "scripts": {
+    "hub": "node hub.js",
+    "feed": "node feed-server.js",
+    "test": "node test-websub.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
