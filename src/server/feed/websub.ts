@@ -87,6 +87,11 @@ function isPrivateHostname(hostname: string): boolean {
  * }
  */
 export function canUseWebSub(): boolean {
+  // Allow explicit disable via environment variable
+  if (process.env.WEBSUB_ENABLED === "false") {
+    return false;
+  }
+
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
 
   // WebSub requires a configured base URL
