@@ -10,14 +10,14 @@
 import { useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { type ExternalQueryState } from "@/components/entries";
+import { type ExternalQueryState, type EntryListItemData } from "@/components/entries";
 import { type EntryType } from "./useEntryMutations";
 import { useEntryUrlState } from "./useEntryUrlState";
 import { useUrlViewPreferences } from "./useUrlViewPreferences";
 import { type ViewType } from "./viewPreferences";
 import { useEntryListQuery, type EntryListData } from "./useEntryListQuery";
 import { useEntryMutations, type MarkAllReadOptions } from "./useEntryMutations";
-import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { useKeyboardShortcuts, type KeyboardEntryData } from "./useKeyboardShortcuts";
 import { useInfiniteScrollConfig } from "./useInfiniteScrollConfig";
 
 /**
@@ -86,8 +86,8 @@ export interface UseEntryPageResult {
 
   // Callbacks for EntryList
   handleEntryClick: (entryId: string) => void;
-  handleToggleRead: (entryId: string, currentlyRead: boolean) => void;
-  handleToggleStar: (entryId: string, currentlyStarred: boolean) => void;
+  handleToggleRead: (entry: EntryListItemData) => void;
+  handleToggleStar: (entry: EntryListItemData) => void;
 
   // Callbacks for EntryContent
   handleBack: () => void;
@@ -105,8 +105,8 @@ export interface UseEntryPageResult {
     filters: EntryPageFilters & { unreadOnly: boolean; sortOrder: "newest" | "oldest" };
     onEntryClick: (entryId: string) => void;
     selectedEntryId: string | null;
-    onToggleRead: (entryId: string, currentlyRead: boolean) => void;
-    onToggleStar: (entryId: string, currentlyStarred: boolean) => void;
+    onToggleRead: (entry: EntryListItemData) => void;
+    onToggleStar: (entry: EntryListItemData) => void;
     externalEntries: EntryListData[];
     externalQueryState: ExternalQueryState;
     rootMargin: string;
@@ -188,12 +188,47 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
   const entries = entryListQuery.entries;
 
   // Entry mutations - cache operations handle all updates internally
-  const {
-    toggleRead: handleToggleRead,
-    toggleStar,
-    markAllRead,
-    isMarkAllReadPending,
-  } = useEntryMutations();
+  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations();
+
+  // Entry toggle handlers - accept any object with the required fields
+  // Works with both KeyboardEntryData and EntryListItemData
+  const handleToggleRead = useCallback(
+    (entry: {
+      id: string;
+      subscriptionId: string | null;
+      starred: boolean;
+      read: boolean;
+      type: EntryType;
+    }) => {
+      toggleRead({
+        id: entry.id,
+        subscriptionId: entry.subscriptionId,
+        starred: entry.starred,
+        read: entry.read,
+        type: entry.type,
+      });
+    },
+    [toggleRead]
+  );
+
+  const handleToggleStar = useCallback(
+    (entry: {
+      id: string;
+      subscriptionId: string | null;
+      starred: boolean;
+      read: boolean;
+      type: EntryType;
+    }) => {
+      toggleStar({
+        id: entry.id,
+        subscriptionId: entry.subscriptionId,
+        starred: entry.starred,
+        read: entry.read,
+        type: entry.type,
+      });
+    },
+    [toggleStar]
+  );
 
   // Navigation callbacks - delegate to useEntryListQuery which owns the list state
   const goToNextEntry = useCallback(() => {
@@ -210,16 +245,30 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     }
   }, [entryListQuery, setOpenEntryId]);
 
+  // Map entries to keyboard shortcut format
+  const keyboardEntries: KeyboardEntryData[] = useMemo(
+    () =>
+      entries.map((e) => ({
+        id: e.id,
+        url: e.url,
+        read: e.read,
+        starred: e.starred,
+        subscriptionId: e.subscriptionId,
+        type: e.type,
+      })),
+    [entries]
+  );
+
   // Keyboard shortcuts
   const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
-    entries,
+    entries: keyboardEntries,
     onOpenEntry: setOpenEntryId,
     onClose: closeEntry,
     isEntryOpen: !!openEntryId,
     openEntryId,
     enabled: keyboardShortcutsEnabled,
     onToggleRead: handleToggleRead,
-    onToggleStar: toggleStar,
+    onToggleStar: handleToggleStar,
     onRefresh: () => {
       utils.entries.list.invalidate();
     },
@@ -271,7 +320,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       onEntryClick: handleEntryClick,
       selectedEntryId,
       onToggleRead: handleToggleRead,
-      onToggleStar: toggleStar,
+      onToggleStar: handleToggleStar,
       externalEntries: entries,
       externalQueryState,
       rootMargin: scrollConfig.rootMargin,
@@ -281,7 +330,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       handleEntryClick,
       selectedEntryId,
       handleToggleRead,
-      toggleStar,
+      handleToggleStar,
       entries,
       externalQueryState,
       scrollConfig.rootMargin,
@@ -333,7 +382,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     // Callbacks
     handleEntryClick,
     handleToggleRead,
-    handleToggleStar: toggleStar,
+    handleToggleStar,
     handleBack,
     goToNextEntry,
     goToPreviousEntry,

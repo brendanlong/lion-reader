@@ -1,25 +1,31 @@
 /**
  * useEntryMutations Hook
  *
- * Provides entry mutations (markRead, star, unstar) with direct cache updates.
- * Consolidates mutation logic from page components.
+ * Provides entry mutations (markRead, star, unstar) with offline-capable queue support.
+ * Mutations are queued and synced via the service worker's Background Sync.
  *
- * Uses high-level cache operations that handle all interactions correctly
- * (e.g., starring an unread entry updates the starred unread count).
+ * Uses idempotent timestamps (#401) so offline mutations are properly merged when
+ * syncing back online, even if another client made changes in the meantime.
  */
 
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleEntriesMarkedRead, handleEntryStarred, handleEntryUnstarred } from "@/lib/cache";
+import { useMutationQueue } from "./useMutationQueue";
+import type { EntryContext as MutationQueueEntryContext } from "@/lib/mutation-queue";
 
 /**
  * Entry type for routing.
  */
 export type EntryType = "web" | "email" | "saved";
+
+/**
+ * Entry context for mutations.
+ * Re-exported from mutation-queue for convenience.
+ */
+export type EntryContext = MutationQueueEntryContext;
 
 /**
  * Options for the markAllRead mutation.
@@ -37,14 +43,17 @@ export interface MarkAllReadOptions {
  */
 export interface UseEntryMutationsResult {
   /**
-   * Mark one or more entries as read or unread.
+   * Mark an entry as read or unread.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
+   * @param read - Whether to mark as read (true) or unread (false)
    */
-  markRead: (ids: string[], read: boolean) => void;
+  markRead: (entry: EntryContext, read: boolean) => void;
 
   /**
    * Toggle the read status of an entry.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
    */
-  toggleRead: (entryId: string, currentlyRead: boolean) => void;
+  toggleRead: (entry: EntryContext) => void;
 
   /**
    * Mark all entries as read with optional filters.
@@ -53,18 +62,21 @@ export interface UseEntryMutationsResult {
 
   /**
    * Star an entry.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
    */
-  star: (entryId: string) => void;
+  star: (entry: EntryContext) => void;
 
   /**
    * Unstar an entry.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
    */
-  unstar: (entryId: string) => void;
+  unstar: (entry: EntryContext) => void;
 
   /**
    * Toggle the starred status of an entry.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
    */
-  toggleStar: (entryId: string, currentlyStarred: boolean) => void;
+  toggleStar: (entry: EntryContext) => void;
 
   /**
    * Whether any mutation is currently in progress.
@@ -85,40 +97,60 @@ export interface UseEntryMutationsResult {
    * Whether the star/unstar mutation is pending.
    */
   isStarPending: boolean;
+
+  /**
+   * Whether we're currently online.
+   */
+  isOnline: boolean;
+
+  /**
+   * Number of pending mutations in the offline queue.
+   */
+  pendingMutationCount: number;
 }
 
 /**
- * Hook that provides entry mutations with direct cache updates.
+ * Hook that provides entry mutations with offline-capable queue support.
  *
  * @example
  * ```tsx
- * function EntryList() {
- *   const { toggleRead, toggleStar } = useEntryMutations();
+ * function EntryList({ entries }) {
+ *   const { toggleRead, toggleStar, isOnline, pendingMutationCount } = useEntryMutations();
  *
  *   return (
- *     <Entry
- *       onToggleRead={(id, read) => toggleRead(id, read)}
- *       onToggleStar={(id, starred) => toggleStar(id, starred)}
- *     />
+ *     <>
+ *       {!isOnline && pendingMutationCount > 0 && (
+ *         <div>Offline - {pendingMutationCount} changes pending</div>
+ *       )}
+ *       {entries.map(entry => (
+ *         <Entry
+ *           key={entry.id}
+ *           entry={entry}
+ *           onToggleRead={() => toggleRead(entry)}
+ *           onToggleStar={() => toggleStar(entry)}
+ *         />
+ *       ))}
+ *     </>
  *   );
  * }
  * ```
  */
 export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
 
-  // markRead mutation - uses handleEntriesMarkedRead for all cache updates
-  const markReadMutation = trpc.entries.markRead.useMutation({
-    onSuccess: (data, variables) => {
-      handleEntriesMarkedRead(utils, data.entries, variables.read, queryClient);
-    },
-    onError: () => {
-      toast.error("Failed to update read status");
-    },
-  });
+  // Mutation queue for offline support
+  const {
+    queueMarkRead,
+    queueStar,
+    queueUnstar,
+    isOnline,
+    pendingCount: pendingMutationCount,
+    isSyncing,
+  } = useMutationQueue();
 
-  // markAllRead mutation - invalidates caches based on what could be affected
+  // markAllRead mutation - uses direct tRPC (not queued, requires online)
+  // This is intentional: marking all read is a bulk operation that's less common
+  // and harder to handle correctly offline (what if new entries arrive?)
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
     onSuccess: (_data, variables) => {
       utils.entries.list.invalidate();
@@ -139,86 +171,61 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // star mutation - uses handleEntryStarred for all cache updates
-  const starMutation = trpc.entries.star.useMutation({
-    onSuccess: (data) => {
-      handleEntryStarred(utils, data.entry.id, data.entry.read, queryClient);
-    },
-    onError: () => {
-      toast.error("Failed to star entry");
-    },
-  });
-
-  // unstar mutation - uses handleEntryUnstarred for all cache updates
-  const unstarMutation = trpc.entries.unstar.useMutation({
-    onSuccess: (data) => {
-      handleEntryUnstarred(utils, data.entry.id, data.entry.read, queryClient);
-    },
-    onError: () => {
-      toast.error("Failed to unstar entry");
-    },
-  });
-
-  // Generate timestamp at action time for idempotent updates
+  // Queue a markRead mutation
   const markRead = useCallback(
-    (ids: string[], read: boolean) => {
-      const changedAt = new Date();
-      markReadMutation.mutate({
-        entries: ids.map((id) => ({ id, changedAt })),
-        read,
-      });
+    (entry: EntryContext, read: boolean) => {
+      queueMarkRead(entry.id, read, entry);
     },
-    [markReadMutation]
+    [queueMarkRead]
   );
 
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => {
-      markReadMutation.mutate({
-        entries: [{ id: entryId, changedAt: new Date() }],
-        read: !currentlyRead,
-      });
+    (entry: EntryContext) => {
+      markRead(entry, !entry.read);
     },
-    [markReadMutation]
+    [markRead]
   );
 
   const markAllRead = useCallback(
     (options?: MarkAllReadOptions) => {
+      if (!isOnline) {
+        toast.error("Cannot mark all as read while offline");
+        return;
+      }
       markAllReadMutation.mutate({ ...options, changedAt: new Date() });
     },
-    [markAllReadMutation]
+    [markAllReadMutation, isOnline]
   );
 
+  // Queue star mutation
   const star = useCallback(
-    (entryId: string) => {
-      starMutation.mutate({ id: entryId, changedAt: new Date() });
+    (entry: EntryContext) => {
+      queueStar(entry.id, entry);
     },
-    [starMutation]
+    [queueStar]
   );
 
+  // Queue unstar mutation
   const unstar = useCallback(
-    (entryId: string) => {
-      unstarMutation.mutate({ id: entryId, changedAt: new Date() });
+    (entry: EntryContext) => {
+      queueUnstar(entry.id, entry);
     },
-    [unstarMutation]
+    [queueUnstar]
   );
 
   const toggleStar = useCallback(
-    (entryId: string, currentlyStarred: boolean) => {
-      const changedAt = new Date();
-      if (currentlyStarred) {
-        unstarMutation.mutate({ id: entryId, changedAt });
+    (entry: EntryContext) => {
+      if (entry.starred) {
+        unstar(entry);
       } else {
-        starMutation.mutate({ id: entryId, changedAt });
+        star(entry);
       }
     },
-    [starMutation, unstarMutation]
+    [star, unstar]
   );
 
-  const isPending =
-    markReadMutation.isPending ||
-    markAllReadMutation.isPending ||
-    starMutation.isPending ||
-    unstarMutation.isPending;
+  // isPending reflects both local pending state and sync state
+  const isPending = markAllReadMutation.isPending || isSyncing;
 
   return useMemo(
     () => ({
@@ -229,9 +236,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
       unstar,
       toggleStar,
       isPending,
-      isMarkReadPending: markReadMutation.isPending,
+      isMarkReadPending: isSyncing,
       isMarkAllReadPending: markAllReadMutation.isPending,
-      isStarPending: starMutation.isPending || unstarMutation.isPending,
+      isStarPending: isSyncing,
+      isOnline,
+      pendingMutationCount,
     }),
     [
       markRead,
@@ -241,10 +250,10 @@ export function useEntryMutations(): UseEntryMutationsResult {
       unstar,
       toggleStar,
       isPending,
-      markReadMutation.isPending,
+      isSyncing,
       markAllReadMutation.isPending,
-      starMutation.isPending,
-      unstarMutation.isPending,
+      isOnline,
+      pendingMutationCount,
     ]
   );
 }

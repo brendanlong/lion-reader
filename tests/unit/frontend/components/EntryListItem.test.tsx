@@ -224,7 +224,7 @@ describe("EntryListItem", () => {
       expect(onClick).toHaveBeenCalledWith("entry-123");
     });
 
-    it("calls onToggleRead with correct parameters when read indicator clicked", () => {
+    it("calls onToggleRead with entry when read indicator clicked", () => {
       const entry = createMockEntry({
         id: "entry-123",
         read: false,
@@ -235,16 +235,16 @@ describe("EntryListItem", () => {
       render(<EntryListItem entry={entry} onToggleRead={onToggleRead} />);
 
       fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));
-      expect(onToggleRead).toHaveBeenCalledWith("entry-123", false, "web", "sub-456");
+      expect(onToggleRead).toHaveBeenCalledWith(entry);
     });
 
-    it("calls onToggleStar with correct parameters when star clicked", () => {
+    it("calls onToggleStar with entry when star clicked", () => {
       const entry = createMockEntry({ id: "entry-123", starred: false });
       const onToggleStar = vi.fn();
       render(<EntryListItem entry={entry} onToggleStar={onToggleStar} />);
 
       fireEvent.click(screen.getByRole("button", { name: "Add to starred" }));
-      expect(onToggleStar).toHaveBeenCalledWith("entry-123", false);
+      expect(onToggleStar).toHaveBeenCalledWith(entry);
     });
 
     it("stops propagation when read indicator is clicked", () => {

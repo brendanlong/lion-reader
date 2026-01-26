@@ -5,6 +5,7 @@
  */
 
 export { EntryList, type ExternalQueryState } from "./EntryList";
+export { type EntryListItemData } from "./EntryListItem";
 export { EntryContent } from "./EntryContent";
 export { UnreadToggle } from "./UnreadToggle";
 export { SortToggle } from "./SortToggle";

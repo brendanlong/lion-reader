@@ -62,6 +62,8 @@ describe("useEntryMutations", () => {
         isMarkReadPending: false,
         isMarkAllReadPending: false,
         isStarPending: false,
+        isOnline: true,
+        pendingMutationCount: 0,
       };
 
       expect(mockResult.markRead).toBeDefined();
@@ -74,6 +76,8 @@ describe("useEntryMutations", () => {
       expect(typeof mockResult.isMarkReadPending).toBe("boolean");
       expect(typeof mockResult.isMarkAllReadPending).toBe("boolean");
       expect(typeof mockResult.isStarPending).toBe("boolean");
+      expect(typeof mockResult.isOnline).toBe("boolean");
+      expect(typeof mockResult.pendingMutationCount).toBe("number");
     });
   });
 

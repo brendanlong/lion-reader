@@ -34,7 +34,7 @@ export interface KeyboardEntryData {
   url: string | null;
   read: boolean;
   starred: boolean;
-  subscriptionId?: string | null;
+  subscriptionId: string | null;
   type: EntryType;
 }
 
@@ -80,15 +80,15 @@ export interface UseKeyboardShortcutsOptions {
 
   /**
    * Callback when read status should be toggled.
-   * Receives the entry ID and its current read status.
+   * Receives the full entry data for context.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (entry: KeyboardEntryData) => void;
 
   /**
    * Callback when star status should be toggled.
-   * Receives the entry ID and its current starred status.
+   * Receives the full entry data for context.
    */
-  onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
+  onToggleStar?: (entry: KeyboardEntryData) => void;
 
   /**
    * Callback to refresh the current view.
@@ -157,6 +157,7 @@ export interface UseKeyboardShortcutsResult {
  * ```tsx
  * function EntryListPage() {
  *   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
+ *   const { toggleRead, toggleStar } = useEntryMutations();
  *
  *   const {
  *     selectedEntryId,
@@ -166,8 +167,8 @@ export interface UseKeyboardShortcutsResult {
  *     onOpenEntry: setOpenEntryId,
  *     onClose: () => setOpenEntryId(null),
  *     isEntryOpen: !!openEntryId,
- *     onToggleRead: (id, read) => markReadMutation.mutate({ ids: [id], read: !read }),
- *     onToggleStar: (id, starred) => starred ? unstarMutation.mutate({ id }) : starMutation.mutate({ id }),
+ *     onToggleRead: toggleRead,
+ *     onToggleStar: toggleStar,
  *     onRefresh: () => utils.entries.list.invalidate(),
  *   });
  *
@@ -427,7 +428,7 @@ export function useKeyboardShortcuts(
       e.preventDefault();
       const entry = getSelectedEntry();
       if (entry && onToggleRead) {
-        onToggleRead(entry.id, entry.read);
+        onToggleRead(entry);
       }
     },
     {
@@ -452,7 +453,7 @@ export function useKeyboardShortcuts(
       e.preventDefault();
       const entry = getSelectedEntry();
       if (entry && onToggleStar) {
-        onToggleStar(entry.id, entry.starred);
+        onToggleStar(entry);
       }
     },
     {
