@@ -8,7 +8,7 @@
     "dev:next": "next dev --turbopack",
     "dev:worker": "tsx watch --clear-screen=false scripts/worker.ts",
     "dev:discord-bot": "tsx watch --clear-screen=false scripts/discord-bot.ts",
-    "build": "next build",
+    "build": "next build --webpack",
     "build:worker": "node scripts/build-worker.mjs",
     "build:discord-bot": "node scripts/build-discord-bot.mjs",
     "build:migrate": "node scripts/build-migrate.mjs",
