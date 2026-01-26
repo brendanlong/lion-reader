@@ -97,6 +97,26 @@ export function isFirefox(): boolean {
   return navigator.userAgent.toLowerCase().includes("firefox");
 }
 
+/**
+ * Checks if background audio playback is supported.
+ *
+ * Background audio playback requires:
+ * - WebCodecs API (AudioEncoder) for encoding PCM to Opus
+ * - HTMLAudioElement for playback
+ *
+ * This enables playback to continue when the app is in the background
+ * on mobile devices, and shows media controls in the notification area.
+ *
+ * @returns true if background audio is supported, false otherwise.
+ */
+export function isBackgroundAudioSupported(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof HTMLAudioElement !== "undefined" &&
+    typeof AudioEncoder !== "undefined"
+  );
+}
+
 // Cached result for getNarrationSupportInfo to ensure referential stability
 // (required for useSyncExternalStore to avoid infinite loops)
 let cachedSupportInfo: NarrationSupportInfo | null = null;
