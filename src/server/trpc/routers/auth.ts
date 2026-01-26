@@ -106,14 +106,6 @@ export const authRouter = createTRPCRouter({
    * to prevent abuse.
    */
   register: expensivePublicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/register",
-        tags: ["Auth"],
-        summary: "Register a new account",
-      },
-    })
     .input(registerInputSchema)
     .output(
       z.object({
@@ -190,14 +182,6 @@ export const authRouter = createTRPCRouter({
    * to prevent brute force attacks.
    */
   login: expensivePublicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/login",
-        tags: ["Auth"],
-        summary: "Login with email and password",
-      },
-    })
     .input(loginInputSchema)
     .output(
       z.object({
@@ -266,14 +250,6 @@ export const authRouter = createTRPCRouter({
    * If no OAuth providers are configured, returns empty array.
    */
   providers: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/providers",
-        tags: ["Auth"],
-        summary: "Get enabled OAuth providers",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -302,14 +278,6 @@ export const authRouter = createTRPCRouter({
    * 5. Client sends code and state to googleCallback endpoint
    */
   googleAuthUrl: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/oauth/google",
-        tags: ["Auth"],
-        summary: "Get Google OAuth authorization URL",
-      },
-    })
     .input(
       z
         .object({
@@ -357,14 +325,6 @@ export const authRouter = createTRPCRouter({
    * @returns The user and session token
    */
   googleCallback: expensivePublicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/oauth/google/callback",
-        tags: ["Auth"],
-        summary: "Handle Google OAuth callback",
-      },
-    })
     .input(
       z.object({
         code: z.string().min(1, "Authorization code is required"),
@@ -458,14 +418,6 @@ export const authRouter = createTRPCRouter({
    * Note: Apple uses form_post response mode, so the callback comes as a POST
    */
   appleAuthUrl: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/oauth/apple",
-        tags: ["Auth"],
-        summary: "Get Apple OAuth authorization URL",
-      },
-    })
     .input(
       z
         .object({
@@ -515,14 +467,6 @@ export const authRouter = createTRPCRouter({
    * @returns The user and session token
    */
   appleCallback: expensivePublicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/oauth/apple/callback",
-        tags: ["Auth"],
-        summary: "Handle Apple OAuth callback",
-      },
-    })
     .input(
       z.object({
         code: z.string().min(1, "Authorization code is required"),
@@ -632,14 +576,6 @@ export const authRouter = createTRPCRouter({
    * 5. Client sends code and state to discordCallback endpoint
    */
   discordAuthUrl: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/oauth/discord",
-        tags: ["Auth"],
-        summary: "Get Discord OAuth authorization URL",
-      },
-    })
     .input(
       z
         .object({
@@ -682,14 +618,6 @@ export const authRouter = createTRPCRouter({
    * @returns The user and session token
    */
   discordCallback: expensivePublicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/oauth/discord/callback",
-        tags: ["Auth"],
-        summary: "Handle Discord OAuth callback",
-      },
-    })
     .input(
       z.object({
         code: z.string().min(1, "Authorization code is required"),
@@ -773,14 +701,6 @@ export const authRouter = createTRPCRouter({
    * Used by the settings page to show the bot invite link.
    */
   discordBotConfig: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/discord-bot-config",
-        tags: ["Auth"],
-        summary: "Get Discord bot configuration",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -808,14 +728,6 @@ export const authRouter = createTRPCRouter({
    * UI uses this to show/hide signup links and display appropriate messages.
    */
   signupConfig: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/signup-config",
-        tags: ["Auth"],
-        summary: "Get signup configuration",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -834,14 +746,6 @@ export const authRouter = createTRPCRouter({
    * Returns the user profile for the currently authenticated session.
    */
   me: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/me",
-        tags: ["Auth"],
-        summary: "Get current user",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -877,14 +781,6 @@ export const authRouter = createTRPCRouter({
    * returns success (the user is already logged out from the server's perspective).
    */
   logout: publicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/logout",
-        tags: ["Auth"],
-        summary: "Logout current session",
-      },
-    })
     .input(z.object({}).optional())
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx }) => {
@@ -909,14 +805,6 @@ export const authRouter = createTRPCRouter({
    * @returns Success status
    */
   linkGoogle: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/link/google",
-        tags: ["Auth"],
-        summary: "Link Google OAuth to existing account",
-      },
-    })
     .input(
       z.object({
         code: z.string().min(1, "Authorization code is required"),
@@ -1026,14 +914,6 @@ export const authRouter = createTRPCRouter({
    * @returns Success status
    */
   linkApple: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/link/apple",
-        tags: ["Auth"],
-        summary: "Link Apple OAuth to existing account",
-      },
-    })
     .input(
       z.object({
         code: z.string().min(1, "Authorization code is required"),
@@ -1134,14 +1014,6 @@ export const authRouter = createTRPCRouter({
    * @returns Success status
    */
   linkDiscord: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/link/discord",
-        tags: ["Auth"],
-        summary: "Link Discord OAuth to existing account",
-      },
-    })
     .input(
       z.object({
         code: z.string().min(1, "Authorization code is required"),
@@ -1226,14 +1098,6 @@ export const authRouter = createTRPCRouter({
    * @returns Success status
    */
   unlinkProvider: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/auth/link/{provider}",
-        tags: ["Auth"],
-        summary: "Unlink OAuth provider from account",
-      },
-    })
     .input(
       z.object({
         provider: z.enum(["google", "apple", "discord"]),
@@ -1302,14 +1166,6 @@ export const authRouter = createTRPCRouter({
    * @throws If user doesn't have Google OAuth account linked
    */
   requestGoogleDocsAccess: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/request-google-docs-access",
-        protect: true,
-        summary: "Request Google Docs access",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({

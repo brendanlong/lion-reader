@@ -214,14 +214,6 @@ export const savedRouter = createTRPCRouter({
    * @returns The saved article
    */
   save: scopedProtectedProcedure(API_TOKEN_SCOPES.SAVED_WRITE)
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/saved",
-        tags: ["Saved Articles"],
-        summary: "Save URL for later",
-      },
-    })
     .input(
       z.object({
         url: urlSchema,
@@ -833,14 +825,6 @@ export const savedRouter = createTRPCRouter({
    * @returns Empty object on success
    */
   delete: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/saved/{id}",
-        tags: ["Saved Articles"],
-        summary: "Delete saved article",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -892,14 +876,6 @@ export const savedRouter = createTRPCRouter({
    * @returns The saved article
    */
   uploadFile: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/saved/upload",
-        tags: ["Saved Articles"],
-        summary: "Upload file to save for later",
-      },
-    })
     .input(
       z.object({
         content: z.string().min(1, "File content is required"),

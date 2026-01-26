@@ -323,14 +323,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns Paginated list of entries
    */
   list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/entries",
-        tags: ["Entries"],
-        summary: "List entries",
-      },
-    })
     .input(
       z.object({
         subscriptionId: uuidSchema.optional(),
@@ -533,14 +525,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns Paginated list of matching entries, ranked by relevance
    */
   search: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/entries/search",
-        tags: ["Entries"],
-        summary: "Search entries",
-      },
-    })
     .input(
       z.object({
         query: z.string().min(1, "Search query is required"),
@@ -735,14 +719,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns The full entry with content
    */
   get: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/entries/{id}",
-        tags: ["Entries"],
-        summary: "Get entry",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -830,14 +806,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns The updated entries with subscription context for cache updates
    */
   markRead: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/entries/mark-read",
-        tags: ["Entries"],
-        summary: "Mark entries read/unread",
-      },
-    })
     .input(
       z.object({
         entries: z
@@ -934,14 +902,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns The count of entries marked as read
    */
   markAllRead: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/entries/mark-all-read",
-        tags: ["Entries"],
-        summary: "Mark all entries read",
-      },
-    })
     .input(
       z.object({
         subscriptionId: uuidSchema.optional(),
@@ -1089,14 +1049,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns The updated entry with current state
    */
   star: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/entries/{id}/star",
-        tags: ["Entries"],
-        summary: "Star entry",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -1124,14 +1076,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns The updated entry with current state
    */
   unstar: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/entries/{id}/star",
-        tags: ["Entries"],
-        summary: "Unstar entry",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -1166,14 +1110,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns Count of total and unread entries
    */
   count: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/entries/count",
-        tags: ["Entries"],
-        summary: "Get entries count",
-      },
-    })
     .input(
       z
         .object({
@@ -1221,14 +1157,6 @@ export const entriesRouter = createTRPCRouter({
    * @returns The updated entry with full content fields
    */
   fetchFullContent: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/entries/{id}/fetch-full-content",
-        tags: ["Entries"],
-        summary: "Fetch full article content",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,

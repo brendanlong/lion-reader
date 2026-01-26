@@ -48,14 +48,6 @@ export const feedStatsRouter = createTRPCRouter({
    * Ordered by title alphabetically.
    */
   list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/feed-stats",
-        tags: ["Feed Stats"],
-        summary: "List feed statistics",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({

@@ -97,14 +97,6 @@ export const ingestAddressesRouter = createTRPCRouter({
    * Addresses are ordered by creation time (newest first).
    */
   list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/ingest-addresses",
-        tags: ["Ingest Addresses"],
-        summary: "List ingest addresses",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -145,14 +137,6 @@ export const ingestAddressesRouter = createTRPCRouter({
    * to prevent abuse.
    */
   create: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/ingest-addresses",
-        tags: ["Ingest Addresses"],
-        summary: "Create an ingest address",
-      },
-    })
     .input(
       z.object({
         label: labelSchema.optional(),
@@ -214,14 +198,6 @@ export const ingestAddressesRouter = createTRPCRouter({
    * @returns The updated ingest address
    */
   update: protectedProcedure
-    .meta({
-      openapi: {
-        method: "PATCH",
-        path: "/ingest-addresses/{id}",
-        tags: ["Ingest Addresses"],
-        summary: "Update an ingest address",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -293,14 +269,6 @@ export const ingestAddressesRouter = createTRPCRouter({
    * @returns Success status
    */
   delete: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/ingest-addresses/{id}",
-        tags: ["Ingest Addresses"],
-        summary: "Delete an ingest address",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,

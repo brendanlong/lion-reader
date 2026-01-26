@@ -79,14 +79,6 @@ export const importsRouter = createTRPCRouter({
    * Returns the full import record including all results.
    */
   get: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/imports/{id}",
-        tags: ["Imports"],
-        summary: "Get import details",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -127,14 +119,6 @@ export const importsRouter = createTRPCRouter({
    * Does not include full results to keep response size small.
    */
   list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/imports",
-        tags: ["Imports"],
-        summary: "List imports",
-      },
-    })
     .input(
       z
         .object({
