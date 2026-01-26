@@ -951,7 +951,7 @@ export const savedRouter = createTRPCRouter({
       const siteNameMap: Record<string, string> = {
         docx: "Uploaded Document",
         html: "Uploaded HTML",
-        markdown: "Uploaded Markdown",
+        markdown: "Uploaded Text",
       };
       const siteName = siteNameMap[processed.fileType] || "Uploaded File";
 

@@ -21,17 +21,28 @@ export default function manifest(): MetadataRoute.Manifest {
         type: "image/png",
       },
     ],
-    // Share Target API: allows other Android apps to share URLs to Lion Reader
-    // When a user shares a URL, the service worker intercepts the POST request,
+    // Share Target API: allows other Android apps to share URLs and files to Lion Reader
+    // When a user shares content, the service worker intercepts the POST request,
     // stores the data in IndexedDB, and redirects to /save which reads it
     share_target: {
       action: "/api/share",
       method: "POST" as const,
-      enctype: "application/x-www-form-urlencoded" as const,
+      enctype: "multipart/form-data" as const,
       params: {
         title: "title",
         text: "text",
         url: "url",
+        files: [
+          {
+            name: "file",
+            accept: [
+              "text/plain",
+              "text/markdown",
+              "text/html",
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ],
+          },
+        ],
       },
     },
   };
