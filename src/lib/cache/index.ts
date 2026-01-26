@@ -34,6 +34,7 @@ export {
   updateEntriesReadStatus,
   updateEntryStarredStatus,
   updateEntriesInListCache,
+  findEntryInListCache,
 } from "./entry-cache";
 
 export {
