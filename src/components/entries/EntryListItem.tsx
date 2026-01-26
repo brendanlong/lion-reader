@@ -40,18 +40,14 @@ interface EntryListItemProps {
   selected?: boolean;
   /**
    * Callback when the read status indicator is clicked.
-   * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling.
+   * Receives the full entry for context needed for mutations.
    */
-  onToggleRead?: (
-    entryId: string,
-    currentlyRead: boolean,
-    entryType: EntryType,
-    subscriptionId: string | null
-  ) => void;
+  onToggleRead?: (entry: EntryListItemData) => void;
   /**
    * Callback when the star indicator is clicked.
+   * Receives the full entry for context needed for mutations.
    */
-  onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
+  onToggleStar?: (entry: EntryListItemData) => void;
 }
 
 /**
@@ -86,18 +82,7 @@ export const EntryListItem = memo(function EntryListItem({
   onToggleRead,
   onToggleStar,
 }: EntryListItemProps) {
-  const {
-    id,
-    title,
-    summary,
-    read,
-    starred,
-    type,
-    subscriptionId,
-    feedTitle,
-    publishedAt,
-    fetchedAt,
-  } = entry;
+  const { id, title, summary, read, starred, feedTitle, publishedAt, fetchedAt } = entry;
   const displayTitle = title ?? "Untitled";
   const source = feedTitle ?? "Unknown Feed";
   const date = publishedAt ?? fetchedAt;
@@ -115,13 +100,12 @@ export const EntryListItem = memo(function EntryListItem({
 
   const handleToggleRead = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Always pass entryType and subscriptionId so page components must handle them explicitly
-    onToggleRead?.(id, read, type, subscriptionId);
+    onToggleRead?.(entry);
   };
 
   const handleToggleStar = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onToggleStar?.(id, starred);
+    onToggleStar?.(entry);
   };
 
   return (

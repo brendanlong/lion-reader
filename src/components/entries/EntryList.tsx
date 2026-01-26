@@ -11,7 +11,7 @@ import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { type EntryListData, type EntryType } from "@/lib/hooks";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
-import { EntryListItem } from "./EntryListItem";
+import { EntryListItem, type EntryListItemData } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import {
   EntryListEmpty,
@@ -149,13 +149,15 @@ interface EntryListProps {
 
   /**
    * Callback when the read status indicator is clicked.
+   * Receives the full entry for context needed for mutations.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  onToggleRead?: (entry: EntryListItemData) => void;
 
   /**
    * Callback when the star indicator is clicked.
+   * Receives the full entry for context needed for mutations.
    */
-  onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
+  onToggleStar?: (entry: EntryListItemData) => void;
 
   /**
    * External entries provided by parent (e.g., from useEntryListQuery).

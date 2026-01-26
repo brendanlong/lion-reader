@@ -10,8 +10,8 @@
 import { useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
-import { type ExternalQueryState } from "@/components/entries";
-import { type EntryType, type EntryContext } from "./useEntryMutations";
+import { type ExternalQueryState, type EntryListItemData } from "@/components/entries";
+import { type EntryType } from "./useEntryMutations";
 import { useEntryUrlState } from "./useEntryUrlState";
 import { useUrlViewPreferences } from "./useUrlViewPreferences";
 import { type ViewType } from "./viewPreferences";
@@ -86,8 +86,8 @@ export interface UseEntryPageResult {
 
   // Callbacks for EntryList
   handleEntryClick: (entryId: string) => void;
-  handleToggleRead: (entryId: string, currentlyRead: boolean) => void;
-  handleToggleStar: (entryId: string, currentlyStarred: boolean) => void;
+  handleToggleRead: (entry: EntryListItemData) => void;
+  handleToggleStar: (entry: EntryListItemData) => void;
 
   // Callbacks for EntryContent
   handleBack: () => void;
@@ -105,8 +105,8 @@ export interface UseEntryPageResult {
     filters: EntryPageFilters & { unreadOnly: boolean; sortOrder: "newest" | "oldest" };
     onEntryClick: (entryId: string) => void;
     selectedEntryId: string | null;
-    onToggleRead: (entryId: string, currentlyRead: boolean) => void;
-    onToggleStar: (entryId: string, currentlyStarred: boolean) => void;
+    onToggleRead: (entry: EntryListItemData) => void;
+    onToggleStar: (entry: EntryListItemData) => void;
     externalEntries: EntryListData[];
     externalQueryState: ExternalQueryState;
     rootMargin: string;
@@ -188,53 +188,46 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
   const entries = entryListQuery.entries;
 
   // Entry mutations - cache operations handle all updates internally
-  const {
-    toggleRead,
-    toggleStar: toggleStarMutation,
-    markAllRead,
-    isMarkAllReadPending,
-  } = useEntryMutations();
+  const { toggleRead, toggleStar, markAllRead, isMarkAllReadPending } = useEntryMutations();
 
-  // Helper to find entry by ID and build entry context
-  const getEntryContext = useCallback(
-    (entryId: string): EntryContext | null => {
-      const entry = entries.find((e) => e.id === entryId);
-      if (!entry) return null;
-      return {
+  // Entry toggle handlers - accept any object with the required fields
+  // Works with both KeyboardEntryData and EntryListItemData
+  const handleToggleRead = useCallback(
+    (entry: {
+      id: string;
+      subscriptionId: string | null;
+      starred: boolean;
+      read: boolean;
+      type: EntryType;
+    }) => {
+      toggleRead({
         id: entry.id,
-        subscriptionId: entry.subscriptionId ?? null,
+        subscriptionId: entry.subscriptionId,
         starred: entry.starred,
         read: entry.read,
         type: entry.type,
-      };
+      });
     },
-    [entries]
+    [toggleRead]
   );
 
-  // Wrapper for toggle read - accepts (entryId, currentlyRead) for backwards compatibility
-  // Note: currentlyRead param is unused since we get the current state from entries
-  const handleToggleRead = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    (entryId: string, _currentlyRead: boolean) => {
-      const entryContext = getEntryContext(entryId);
-      if (entryContext) {
-        toggleRead(entryContext);
-      }
-    },
-    [getEntryContext, toggleRead]
-  );
-
-  // Wrapper for toggle star - accepts (entryId, currentlyStarred) for backwards compatibility
-  // Note: currentlyStarred param is unused since we get the current state from entries
   const handleToggleStar = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    (entryId: string, _currentlyStarred: boolean) => {
-      const entryContext = getEntryContext(entryId);
-      if (entryContext) {
-        toggleStarMutation(entryContext);
-      }
+    (entry: {
+      id: string;
+      subscriptionId: string | null;
+      starred: boolean;
+      read: boolean;
+      type: EntryType;
+    }) => {
+      toggleStar({
+        id: entry.id,
+        subscriptionId: entry.subscriptionId,
+        starred: entry.starred,
+        read: entry.read,
+        type: entry.type,
+      });
     },
-    [getEntryContext, toggleStarMutation]
+    [toggleStar]
   );
 
   // Navigation callbacks - delegate to useEntryListQuery which owns the list state
