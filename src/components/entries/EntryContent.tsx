@@ -232,32 +232,44 @@ export function EntryContent({
     fetchFullContentMutation.mutate({ id: entryId });
   }, [entry, fetchFullContent, entryId, fetchFullContentMutation]);
 
+  // Build entry context for mutations
+  const entryContext = useMemo(() => {
+    if (!entry) return null;
+    return {
+      id: entry.id,
+      subscriptionId: entry.subscriptionId,
+      starred: entry.starred,
+      read: entry.read,
+      type: entry.type,
+    };
+  }, [entry]);
+
   // Mark entry as read once when component mounts and entry data loads
   // The ref prevents re-marking if user later toggles read status
   // Component remounts on entry change (via key={openEntryId}), resetting the ref
   useEffect(() => {
-    if (hasAutoMarkedRead.current || !entry) return;
+    if (hasAutoMarkedRead.current || !entryContext) return;
     hasAutoMarkedRead.current = true;
-    if (!entry.read) {
-      markRead([entryId], true);
+    if (!entryContext.read) {
+      markRead(entryContext, true);
     }
-  }, [entry, entryId, markRead]);
+  }, [entryContext, markRead]);
 
   // Handle star toggle
   const handleStarToggle = () => {
-    if (!entry) return;
+    if (!entryContext) return;
 
-    if (entry.starred) {
-      unstar(entryId);
+    if (entryContext.starred) {
+      unstar(entryContext);
     } else {
-      star(entryId);
+      star(entryContext);
     }
   };
 
   // Handle read toggle - use local mutation for consistent loading state
   const handleReadToggle = () => {
-    if (!entry) return;
-    markRead([entryId], !entry.read);
+    if (!entryContext) return;
+    markRead(entryContext, !entryContext.read);
   };
 
   // Determine content based on loading/error/success state

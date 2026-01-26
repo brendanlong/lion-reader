@@ -11,13 +11,13 @@ import { useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import { type ExternalQueryState } from "@/components/entries";
-import { type EntryType } from "./useEntryMutations";
+import { type EntryType, type EntryContext } from "./useEntryMutations";
 import { useEntryUrlState } from "./useEntryUrlState";
 import { useUrlViewPreferences } from "./useUrlViewPreferences";
 import { type ViewType } from "./viewPreferences";
 import { useEntryListQuery, type EntryListData } from "./useEntryListQuery";
 import { useEntryMutations, type MarkAllReadOptions } from "./useEntryMutations";
-import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { useKeyboardShortcuts, type KeyboardEntryData } from "./useKeyboardShortcuts";
 import { useInfiniteScrollConfig } from "./useInfiniteScrollConfig";
 
 /**
@@ -189,11 +189,53 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
 
   // Entry mutations - cache operations handle all updates internally
   const {
-    toggleRead: handleToggleRead,
-    toggleStar,
+    toggleRead,
+    toggleStar: toggleStarMutation,
     markAllRead,
     isMarkAllReadPending,
   } = useEntryMutations();
+
+  // Helper to find entry by ID and build entry context
+  const getEntryContext = useCallback(
+    (entryId: string): EntryContext | null => {
+      const entry = entries.find((e) => e.id === entryId);
+      if (!entry) return null;
+      return {
+        id: entry.id,
+        subscriptionId: entry.subscriptionId ?? null,
+        starred: entry.starred,
+        read: entry.read,
+        type: entry.type,
+      };
+    },
+    [entries]
+  );
+
+  // Wrapper for toggle read - accepts (entryId, currentlyRead) for backwards compatibility
+  // Note: currentlyRead param is unused since we get the current state from entries
+  const handleToggleRead = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (entryId: string, _currentlyRead: boolean) => {
+      const entryContext = getEntryContext(entryId);
+      if (entryContext) {
+        toggleRead(entryContext);
+      }
+    },
+    [getEntryContext, toggleRead]
+  );
+
+  // Wrapper for toggle star - accepts (entryId, currentlyStarred) for backwards compatibility
+  // Note: currentlyStarred param is unused since we get the current state from entries
+  const handleToggleStar = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (entryId: string, _currentlyStarred: boolean) => {
+      const entryContext = getEntryContext(entryId);
+      if (entryContext) {
+        toggleStarMutation(entryContext);
+      }
+    },
+    [getEntryContext, toggleStarMutation]
+  );
 
   // Navigation callbacks - delegate to useEntryListQuery which owns the list state
   const goToNextEntry = useCallback(() => {
@@ -210,16 +252,30 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     }
   }, [entryListQuery, setOpenEntryId]);
 
+  // Map entries to keyboard shortcut format
+  const keyboardEntries: KeyboardEntryData[] = useMemo(
+    () =>
+      entries.map((e) => ({
+        id: e.id,
+        url: e.url,
+        read: e.read,
+        starred: e.starred,
+        subscriptionId: e.subscriptionId,
+        type: e.type,
+      })),
+    [entries]
+  );
+
   // Keyboard shortcuts
   const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
-    entries,
+    entries: keyboardEntries,
     onOpenEntry: setOpenEntryId,
     onClose: closeEntry,
     isEntryOpen: !!openEntryId,
     openEntryId,
     enabled: keyboardShortcutsEnabled,
     onToggleRead: handleToggleRead,
-    onToggleStar: toggleStar,
+    onToggleStar: handleToggleStar,
     onRefresh: () => {
       utils.entries.list.invalidate();
     },
@@ -271,7 +327,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       onEntryClick: handleEntryClick,
       selectedEntryId,
       onToggleRead: handleToggleRead,
-      onToggleStar: toggleStar,
+      onToggleStar: handleToggleStar,
       externalEntries: entries,
       externalQueryState,
       rootMargin: scrollConfig.rootMargin,
@@ -281,7 +337,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
       handleEntryClick,
       selectedEntryId,
       handleToggleRead,
-      toggleStar,
+      handleToggleStar,
       entries,
       externalQueryState,
       scrollConfig.rootMargin,
@@ -333,7 +389,7 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     // Callbacks
     handleEntryClick,
     handleToggleRead,
-    handleToggleStar: toggleStar,
+    handleToggleStar,
     handleBack,
     goToNextEntry,
     goToPreviousEntry,

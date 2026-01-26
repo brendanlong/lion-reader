@@ -2,7 +2,7 @@
  * Mutation Queue Types
  *
  * Type definitions for the offline-capable mutation queue used by read/starred operations.
- * The queue stores mutations in IndexedDB and syncs them when online.
+ * The queue stores mutations in IndexedDB and syncs them when online via Background Sync.
  */
 
 /**
@@ -16,14 +16,14 @@ export type EntryType = "web" | "email" | "saved";
 export type MutationType = "markRead" | "star" | "unstar";
 
 /**
- * Entry context needed for cache updates after mutation completes.
- * This is captured when the mutation is queued so we can do optimistic updates
- * without needing to re-fetch entry data.
+ * Entry context needed for optimistic cache updates.
+ * Captured when the mutation is queued so we can update counts immediately.
  */
 export interface EntryContext {
   id: string;
   subscriptionId: string | null;
   starred: boolean;
+  read: boolean;
   type: EntryType;
 }
 
@@ -50,10 +50,10 @@ export interface QueuedMutation {
    * Timestamp when the user performed the action.
    * Used for idempotency - server only applies if this is newer than existing state.
    */
-  changedAt: Date;
+  changedAt: string; // ISO date string for serialization across worker boundary
 
   /**
-   * Entry context for cache updates (captured at queue time).
+   * Entry context for optimistic cache updates.
    */
   entryContext: EntryContext;
 
@@ -70,7 +70,7 @@ export interface QueuedMutation {
   /**
    * When this mutation was queued.
    */
-  queuedAt: Date;
+  queuedAt: string; // ISO date string
 
   /**
    * Status of the mutation.
@@ -84,40 +84,48 @@ export interface QueuedMutation {
 }
 
 /**
- * Stored mutation in IndexedDB.
- * Uses ISO date strings for serialization.
+ * Message sent from main thread to service worker to queue a mutation.
  */
-export interface StoredMutation {
-  id: string;
-  type: MutationType;
-  entryId: string;
-  changedAt: string; // ISO date string
-  entryContext: EntryContext;
-  read?: boolean;
-  retryCount: number;
-  queuedAt: string; // ISO date string
-  status: "pending" | "processing" | "failed";
-  lastError?: string;
+export interface MutationQueueMessage {
+  type: "QUEUE_MUTATION";
+  mutation: QueuedMutation;
 }
 
 /**
- * Convert a QueuedMutation to StoredMutation for IndexedDB.
+ * Message sent from service worker to main thread when a mutation completes.
  */
-export function toStoredMutation(mutation: QueuedMutation): StoredMutation {
-  return {
-    ...mutation,
-    changedAt: mutation.changedAt.toISOString(),
-    queuedAt: mutation.queuedAt.toISOString(),
+export interface MutationResultMessage {
+  type: "MUTATION_RESULT";
+  mutationId: string;
+  success: boolean;
+  error?: string;
+  /**
+   * Server response data for cache updates (only on success).
+   */
+  result?: {
+    entries?: Array<{
+      id: string;
+      subscriptionId: string | null;
+      starred: boolean;
+      type: EntryType;
+    }>;
+    entry?: { id: string; read: boolean };
   };
 }
 
 /**
- * Convert a StoredMutation from IndexedDB to QueuedMutation.
+ * Message sent from service worker to main thread with queue status updates.
  */
-export function fromStoredMutation(stored: StoredMutation): QueuedMutation {
-  return {
-    ...stored,
-    changedAt: new Date(stored.changedAt),
-    queuedAt: new Date(stored.queuedAt),
-  };
+export interface MutationQueueStatusMessage {
+  type: "MUTATION_QUEUE_STATUS";
+  pendingCount: number;
+  isSyncing: boolean;
 }
+
+/**
+ * Union type for all service worker messages.
+ */
+export type ServiceWorkerMessage =
+  | MutationQueueMessage
+  | MutationResultMessage
+  | MutationQueueStatusMessage;

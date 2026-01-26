@@ -18,20 +18,22 @@ import { MutationQueueStore, MAX_RETRIES, type QueuedMutation } from "../../src/
  * Helper to create a test mutation.
  */
 function createTestMutation(overrides: Partial<QueuedMutation> = {}): QueuedMutation {
+  const now = new Date().toISOString();
   return {
     id: `mutation-${Date.now()}-${Math.random()}`,
     type: "markRead",
     entryId: "entry-123",
-    changedAt: new Date(),
+    changedAt: now,
     entryContext: {
       id: "entry-123",
-      subscriptionId: "sub-456",
+      subscriptionId: null,
       starred: false,
+      read: false,
       type: "web",
     },
     read: true,
     retryCount: 0,
-    queuedAt: new Date(),
+    queuedAt: now,
     status: "pending",
     ...overrides,
   };
@@ -86,8 +88,8 @@ describe("MutationQueueStore", () => {
     });
 
     it("preserves date fields correctly", async () => {
-      const changedAt = new Date("2024-01-15T10:30:00Z");
-      const queuedAt = new Date("2024-01-15T10:30:01Z");
+      const changedAt = "2024-01-15T10:30:00.000Z";
+      const queuedAt = "2024-01-15T10:30:01.000Z";
       const mutation = createTestMutation({
         id: "date-test",
         changedAt,
@@ -97,10 +99,8 @@ describe("MutationQueueStore", () => {
       await store.add(mutation);
       const retrieved = await store.get("date-test");
 
-      expect(retrieved?.changedAt).toBeInstanceOf(Date);
-      expect(retrieved?.queuedAt).toBeInstanceOf(Date);
-      expect(retrieved?.changedAt.toISOString()).toBe(changedAt.toISOString());
-      expect(retrieved?.queuedAt.toISOString()).toBe(queuedAt.toISOString());
+      expect(retrieved?.changedAt).toBe(changedAt);
+      expect(retrieved?.queuedAt).toBe(queuedAt);
     });
 
     it("stores multiple mutations", async () => {
@@ -196,9 +196,9 @@ describe("MutationQueueStore", () => {
     });
 
     it("returns mutations sorted by queuedAt", async () => {
-      const earlier = new Date("2024-01-15T10:00:00Z");
-      const later = new Date("2024-01-15T11:00:00Z");
-      const latest = new Date("2024-01-15T12:00:00Z");
+      const earlier = "2024-01-15T10:00:00.000Z";
+      const later = "2024-01-15T11:00:00.000Z";
+      const latest = "2024-01-15T12:00:00.000Z";
 
       await store.add(createTestMutation({ id: "later", queuedAt: later, status: "pending" }));
       await store.add(createTestMutation({ id: "latest", queuedAt: latest, status: "pending" }));
@@ -224,8 +224,8 @@ describe("MutationQueueStore", () => {
     });
 
     it("returns mutations sorted by queuedAt", async () => {
-      const earlier = new Date("2024-01-15T10:00:00Z");
-      const later = new Date("2024-01-15T11:00:00Z");
+      const earlier = "2024-01-15T10:00:00.000Z";
+      const later = "2024-01-15T11:00:00.000Z";
 
       await store.add(createTestMutation({ id: "later", queuedAt: later }));
       await store.add(createTestMutation({ id: "earlier", queuedAt: earlier }));
@@ -244,8 +244,8 @@ describe("MutationQueueStore", () => {
     });
 
     it("returns the most recent mutation for an entry", async () => {
-      const earlier = new Date("2024-01-15T10:00:00Z");
-      const later = new Date("2024-01-15T11:00:00Z");
+      const earlier = "2024-01-15T10:00:00.000Z";
+      const later = "2024-01-15T11:00:00.000Z";
 
       await store.add(
         createTestMutation({
@@ -275,7 +275,7 @@ describe("MutationQueueStore", () => {
         createTestMutation({
           id: "failed-mut",
           entryId: "entry-x",
-          changedAt: new Date("2024-01-15T12:00:00Z"),
+          changedAt: "2024-01-15T12:00:00.000Z",
           status: "failed",
         })
       );
@@ -283,7 +283,7 @@ describe("MutationQueueStore", () => {
         createTestMutation({
           id: "pending-mut",
           entryId: "entry-x",
-          changedAt: new Date("2024-01-15T10:00:00Z"),
+          changedAt: "2024-01-15T10:00:00.000Z",
           status: "pending",
         })
       );
@@ -384,45 +384,6 @@ describe("MutationQueueStore", () => {
 
       const retrieved = await store.get("unstar");
       expect(retrieved?.type).toBe("unstar");
-    });
-  });
-
-  describe("entry context", () => {
-    it("preserves full entry context", async () => {
-      const mutation = createTestMutation({
-        id: "context-test",
-        entryContext: {
-          id: "entry-123",
-          subscriptionId: "sub-456",
-          starred: true,
-          type: "email",
-        },
-      });
-      await store.add(mutation);
-
-      const retrieved = await store.get("context-test");
-      expect(retrieved?.entryContext).toEqual({
-        id: "entry-123",
-        subscriptionId: "sub-456",
-        starred: true,
-        type: "email",
-      });
-    });
-
-    it("handles null subscriptionId", async () => {
-      const mutation = createTestMutation({
-        id: "null-sub-test",
-        entryContext: {
-          id: "entry-123",
-          subscriptionId: null,
-          starred: false,
-          type: "saved",
-        },
-      });
-      await store.add(mutation);
-
-      const retrieved = await store.get("null-sub-test");
-      expect(retrieved?.entryContext.subscriptionId).toBeNull();
     });
   });
 

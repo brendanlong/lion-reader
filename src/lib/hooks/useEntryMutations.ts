@@ -2,7 +2,7 @@
  * useEntryMutations Hook
  *
  * Provides entry mutations (markRead, star, unstar) with offline-capable queue support.
- * Mutations are queued in IndexedDB and synced when online, with optimistic UI updates.
+ * Mutations are queued and synced via the service worker's Background Sync.
  *
  * Uses idempotent timestamps (#401) so offline mutations are properly merged when
  * syncing back online, even if another client made changes in the meantime.
@@ -11,16 +11,21 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { findEntryInListCache, type EntryWithContext } from "@/lib/cache";
 import { useMutationQueue } from "./useMutationQueue";
+import type { EntryContext as MutationQueueEntryContext } from "@/lib/mutation-queue";
 
 /**
  * Entry type for routing.
  */
 export type EntryType = "web" | "email" | "saved";
+
+/**
+ * Entry context for mutations.
+ * Re-exported from mutation-queue for convenience.
+ */
+export type EntryContext = MutationQueueEntryContext;
 
 /**
  * Options for the markAllRead mutation.
@@ -38,14 +43,17 @@ export interface MarkAllReadOptions {
  */
 export interface UseEntryMutationsResult {
   /**
-   * Mark one or more entries as read or unread.
+   * Mark an entry as read or unread.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
+   * @param read - Whether to mark as read (true) or unread (false)
    */
-  markRead: (ids: string[], read: boolean) => void;
+  markRead: (entry: EntryContext, read: boolean) => void;
 
   /**
    * Toggle the read status of an entry.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
    */
-  toggleRead: (entryId: string, currentlyRead: boolean) => void;
+  toggleRead: (entry: EntryContext) => void;
 
   /**
    * Mark all entries as read with optional filters.
@@ -54,18 +62,21 @@ export interface UseEntryMutationsResult {
 
   /**
    * Star an entry.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
    */
-  star: (entryId: string) => void;
+  star: (entry: EntryContext) => void;
 
   /**
    * Unstar an entry.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
    */
-  unstar: (entryId: string) => void;
+  unstar: (entry: EntryContext) => void;
 
   /**
    * Toggle the starred status of an entry.
+   * @param entry - Entry context (id, subscriptionId, starred, read, type)
    */
-  toggleStar: (entryId: string, currentlyStarred: boolean) => void;
+  toggleStar: (entry: EntryContext) => void;
 
   /**
    * Whether any mutation is currently in progress.
@@ -99,45 +110,11 @@ export interface UseEntryMutationsResult {
 }
 
 /**
- * Look up entry context from the React Query cache.
- * Tries entries.get cache first, then entries.list cache.
- */
-function getEntryContextFromCache(
-  utils: ReturnType<typeof trpc.useUtils>,
-  queryClient: ReturnType<typeof useQueryClient>,
-  entryId: string
-): EntryWithContext | null {
-  // Try entries.get cache first (full entry data)
-  const entryData = utils.entries.get.getData({ id: entryId });
-  if (entryData?.entry) {
-    return {
-      id: entryData.entry.id,
-      subscriptionId: entryData.entry.subscriptionId,
-      starred: entryData.entry.starred,
-      type: entryData.entry.type,
-    };
-  }
-
-  // Fall back to entries.list cache
-  const listEntry = findEntryInListCache(queryClient, entryId);
-  if (listEntry) {
-    return {
-      id: listEntry.id,
-      subscriptionId: listEntry.subscriptionId,
-      starred: listEntry.starred,
-      type: listEntry.type,
-    };
-  }
-
-  return null;
-}
-
-/**
  * Hook that provides entry mutations with offline-capable queue support.
  *
  * @example
  * ```tsx
- * function EntryList() {
+ * function EntryList({ entries }) {
  *   const { toggleRead, toggleStar, isOnline, pendingMutationCount } = useEntryMutations();
  *
  *   return (
@@ -145,10 +122,14 @@ function getEntryContextFromCache(
  *       {!isOnline && pendingMutationCount > 0 && (
  *         <div>Offline - {pendingMutationCount} changes pending</div>
  *       )}
- *       <Entry
- *         onToggleRead={(id, read) => toggleRead(id, read)}
- *         onToggleStar={(id, starred) => toggleStar(id, starred)}
- *       />
+ *       {entries.map(entry => (
+ *         <Entry
+ *           key={entry.id}
+ *           entry={entry}
+ *           onToggleRead={() => toggleRead(entry)}
+ *           onToggleStar={() => toggleStar(entry)}
+ *         />
+ *       ))}
  *     </>
  *   );
  * }
@@ -156,7 +137,6 @@ function getEntryContextFromCache(
  */
 export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
 
   // Mutation queue for offline support
   const {
@@ -191,32 +171,17 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // Queue a markRead mutation with entry context lookup
+  // Queue a markRead mutation
   const markRead = useCallback(
-    (ids: string[], read: boolean) => {
-      for (const entryId of ids) {
-        const context = getEntryContextFromCache(utils, queryClient, entryId);
-        if (context) {
-          queueMarkRead(entryId, read, context);
-        } else {
-          // Entry not in cache - this shouldn't happen in normal usage
-          // but if it does, create a minimal context
-          console.warn(`Entry ${entryId} not found in cache for markRead`);
-          queueMarkRead(entryId, read, {
-            id: entryId,
-            subscriptionId: null,
-            starred: false,
-            type: "web",
-          });
-        }
-      }
+    (entry: EntryContext, read: boolean) => {
+      queueMarkRead(entry.id, read, entry);
     },
-    [utils, queryClient, queueMarkRead]
+    [queueMarkRead]
   );
 
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => {
-      markRead([entryId], !currentlyRead);
+    (entry: EntryContext) => {
+      markRead(entry, !entry.read);
     },
     [markRead]
   );
@@ -232,50 +197,28 @@ export function useEntryMutations(): UseEntryMutationsResult {
     [markAllReadMutation, isOnline]
   );
 
-  // Queue star mutation with entry context lookup
+  // Queue star mutation
   const star = useCallback(
-    (entryId: string) => {
-      const context = getEntryContextFromCache(utils, queryClient, entryId);
-      if (context) {
-        queueStar(entryId, context);
-      } else {
-        console.warn(`Entry ${entryId} not found in cache for star`);
-        queueStar(entryId, {
-          id: entryId,
-          subscriptionId: null,
-          starred: false,
-          type: "web",
-        });
-      }
+    (entry: EntryContext) => {
+      queueStar(entry.id, entry);
     },
-    [utils, queryClient, queueStar]
+    [queueStar]
   );
 
-  // Queue unstar mutation with entry context lookup
+  // Queue unstar mutation
   const unstar = useCallback(
-    (entryId: string) => {
-      const context = getEntryContextFromCache(utils, queryClient, entryId);
-      if (context) {
-        queueUnstar(entryId, context);
-      } else {
-        console.warn(`Entry ${entryId} not found in cache for unstar`);
-        queueUnstar(entryId, {
-          id: entryId,
-          subscriptionId: null,
-          starred: true,
-          type: "web",
-        });
-      }
+    (entry: EntryContext) => {
+      queueUnstar(entry.id, entry);
     },
-    [utils, queryClient, queueUnstar]
+    [queueUnstar]
   );
 
   const toggleStar = useCallback(
-    (entryId: string, currentlyStarred: boolean) => {
-      if (currentlyStarred) {
-        unstar(entryId);
+    (entry: EntryContext) => {
+      if (entry.starred) {
+        unstar(entry);
       } else {
-        star(entryId);
+        star(entry);
       }
     },
     [star, unstar]

@@ -2,13 +2,12 @@
  * Mutation Queue IndexedDB Store
  *
  * Provides persistent storage for offline mutations in IndexedDB.
- * Similar pattern to VoiceCache but for mutation operations.
+ * Used by both the main thread and service worker.
  *
  * @module mutation-queue/store
  */
 
-import type { QueuedMutation, StoredMutation } from "./types";
-import { toStoredMutation, fromStoredMutation } from "./types";
+import type { QueuedMutation } from "./types";
 
 /**
  * Database name for mutation queue storage.
@@ -34,7 +33,7 @@ export const MAX_RETRIES = 5;
  * Class for managing mutation queue in IndexedDB.
  *
  * Provides persistent storage for read/starred mutations that can be
- * synced when the app comes back online.
+ * synced when the app comes back online via Background Sync.
  *
  * @example
  * ```ts
@@ -45,11 +44,11 @@ export const MAX_RETRIES = 5;
  *   id: "uuid",
  *   type: "markRead",
  *   entryId: "entry-uuid",
- *   changedAt: new Date(),
- *   entryContext: { ... },
+ *   changedAt: new Date().toISOString(),
+ *   entryContext: { id: "...", subscriptionId: "...", starred: false, read: false, type: "web" },
  *   read: true,
  *   retryCount: 0,
- *   queuedAt: new Date(),
+ *   queuedAt: new Date().toISOString(),
  *   status: "pending",
  * });
  *
@@ -63,12 +62,18 @@ export class MutationQueueStore {
 
   /**
    * Checks if IndexedDB is available in the current environment.
+   * Works in both main thread and service worker.
    */
   static isAvailable(): boolean {
-    if (typeof window === "undefined") {
-      return false;
+    // In service worker, use self.indexedDB
+    if (typeof self !== "undefined" && "indexedDB" in self) {
+      return true;
     }
-    return "indexedDB" in window && window.indexedDB !== null;
+    // In main thread, check window
+    if (typeof window !== "undefined" && "indexedDB" in window) {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -128,7 +133,7 @@ export class MutationQueueStore {
     return new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, "readwrite");
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.add(toStoredMutation(mutation));
+      const request = store.add(mutation);
 
       request.onerror = () => {
         reject(new Error(`Failed to add mutation: ${request.error?.message ?? "Unknown error"}`));
@@ -149,7 +154,7 @@ export class MutationQueueStore {
     return new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, "readwrite");
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(toStoredMutation(mutation));
+      const request = store.put(mutation);
 
       request.onerror = () => {
         reject(
@@ -202,8 +207,7 @@ export class MutationQueueStore {
       };
 
       request.onsuccess = () => {
-        const result = request.result as StoredMutation | undefined;
-        resolve(result ? fromStoredMutation(result) : undefined);
+        resolve(request.result as QueuedMutation | undefined);
       };
     });
   }
@@ -227,9 +231,9 @@ export class MutationQueueStore {
       };
 
       request.onsuccess = () => {
-        const results = (request.result as StoredMutation[]).map(fromStoredMutation);
-        // Sort by queuedAt to process in order
-        results.sort((a, b) => a.queuedAt.getTime() - b.queuedAt.getTime());
+        const results = request.result as QueuedMutation[];
+        // Sort by queuedAt to process in order (string comparison works for ISO dates)
+        results.sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
         resolve(results);
       };
     });
@@ -253,8 +257,8 @@ export class MutationQueueStore {
       };
 
       request.onsuccess = () => {
-        const results = (request.result as StoredMutation[]).map(fromStoredMutation);
-        results.sort((a, b) => a.queuedAt.getTime() - b.queuedAt.getTime());
+        const results = request.result as QueuedMutation[];
+        results.sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
         resolve(results);
       };
     });
@@ -282,39 +286,39 @@ export class MutationQueueStore {
       };
 
       request.onsuccess = () => {
-        const results = (request.result as StoredMutation[])
-          .map(fromStoredMutation)
-          .filter((m) => m.status === "pending" || m.status === "processing");
+        const results = (request.result as QueuedMutation[]).filter(
+          (m) => m.status === "pending" || m.status === "processing"
+        );
 
         if (results.length === 0) {
           resolve(undefined);
           return;
         }
 
-        // Return the most recent one by changedAt
-        results.sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime());
+        // Return the most recent one by changedAt (string comparison works for ISO dates)
+        results.sort((a, b) => b.changedAt.localeCompare(a.changedAt));
         resolve(results[0]);
       };
     });
   }
 
   /**
-   * Remove all mutations for an entry (used when superseded).
+   * Remove all mutations for an entry (used when superseded by a new mutation).
    */
   async removeAllForEntry(entryId: string): Promise<void> {
     const db = await this.openDatabase();
     const mutations = await this.getAll();
     const toRemove = mutations.filter((m) => m.entryId === entryId);
 
+    if (toRemove.length === 0) {
+      return;
+    }
+
     const transaction = db.transaction(STORE_NAME, "readwrite");
     const store = transaction.objectStore(STORE_NAME);
 
     return new Promise<void>((resolve, reject) => {
       let remaining = toRemove.length;
-      if (remaining === 0) {
-        resolve();
-        return;
-      }
 
       for (const mutation of toRemove) {
         const request = store.delete(mutation.id);
