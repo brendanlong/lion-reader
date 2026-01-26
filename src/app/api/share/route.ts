@@ -13,7 +13,33 @@ import { NextRequest, NextResponse } from "next/server";
  * - enctype: application/x-www-form-urlencoded
  * - params: title, text, url
  */
+
+/**
+ * Get the public-facing base URL for redirects.
+ * In production behind a proxy (e.g., Fly.io), request.url contains the internal
+ * URL (localhost:3000), not the external URL (lionreader.com). We need to use
+ * the forwarded headers or configured app URL for correct redirects.
+ */
+function getBaseUrl(request: NextRequest): string {
+  // First, try NEXT_PUBLIC_APP_URL (most reliable in production)
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL;
+  }
+
+  // Fall back to x-forwarded-host header (set by proxies like Fly.io)
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  // Last resort: use request.url (works for local dev)
+  return new URL(request.url).origin;
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const baseUrl = getBaseUrl(request);
+
   try {
     const formData = await request.formData();
 
@@ -36,19 +62,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (!urlToSave) {
       // No URL found, redirect to save page with error
-      return NextResponse.redirect(new URL("/save?error=no_url", request.url), 303);
+      return NextResponse.redirect(new URL("/save?error=no_url", baseUrl), 303);
     }
 
     // Redirect to /save with the URL
     // The service worker normally handles this and stores in IndexedDB,
     // but if that fails, we fall back to query params
-    const saveUrl = new URL("/save", request.url);
+    const saveUrl = new URL("/save", baseUrl);
     saveUrl.searchParams.set("url", urlToSave);
     saveUrl.searchParams.set("shared", "true");
 
     return NextResponse.redirect(saveUrl, 303);
   } catch {
     // Redirect to save page with error
-    return NextResponse.redirect(new URL("/save?error=share_failed", request.url), 303);
+    return NextResponse.redirect(new URL("/save?error=share_failed", baseUrl), 303);
   }
 }
