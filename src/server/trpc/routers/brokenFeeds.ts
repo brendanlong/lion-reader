@@ -44,14 +44,6 @@ export const brokenFeedsRouter = createTRPCRouter({
    * Ordered by failure count (highest first), then by last fetch time.
    */
   list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/broken-feeds",
-        tags: ["Broken Feeds"],
-        summary: "List broken feeds",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -111,14 +103,6 @@ export const brokenFeedsRouter = createTRPCRouter({
    * @returns Success status
    */
   retryFetch: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/broken-feeds/{feedId}/retry",
-        tags: ["Broken Feeds"],
-        summary: "Retry fetching a broken feed",
-      },
-    })
     .input(
       z.object({
         feedId: z.string().uuid("Invalid feed ID"),

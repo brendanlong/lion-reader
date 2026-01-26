@@ -47,14 +47,6 @@ export const blockedSendersRouter = createTRPCRouter({
    * Senders are ordered by block time (newest first).
    */
   list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/blocked-senders",
-        tags: ["Blocked Senders"],
-        summary: "List blocked senders",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -92,14 +84,6 @@ export const blockedSendersRouter = createTRPCRouter({
    * @returns Success status
    */
   unblock: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/blocked-senders/{id}",
-        tags: ["Blocked Senders"],
-        summary: "Unblock a sender",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,

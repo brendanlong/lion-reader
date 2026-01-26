@@ -68,14 +68,6 @@ export const tagsRouter = createTRPCRouter({
    * Tags are ordered by name (ascending).
    */
   list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/tags",
-        tags: ["Tags"],
-        summary: "List tags",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -139,14 +131,6 @@ export const tagsRouter = createTRPCRouter({
    * @returns The created tag
    */
   create: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/tags",
-        tags: ["Tags"],
-        summary: "Create a tag",
-      },
-    })
     .input(
       z.object({
         name: tagNameSchema,
@@ -208,14 +192,6 @@ export const tagsRouter = createTRPCRouter({
    * @returns The updated tag
    */
   update: protectedProcedure
-    .meta({
-      openapi: {
-        method: "PATCH",
-        path: "/tags/{id}",
-        tags: ["Tags"],
-        summary: "Update a tag",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -337,14 +313,6 @@ export const tagsRouter = createTRPCRouter({
    * @returns Success status
    */
   delete: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/tags/{id}",
-        tags: ["Tags"],
-        summary: "Delete a tag",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,

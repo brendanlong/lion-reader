@@ -634,14 +634,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * since it involves external HTTP requests.
    */
   create: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/subscriptions",
-        tags: ["Subscriptions"],
-        summary: "Subscribe to a feed",
-      },
-    })
     .input(
       z.object({
         url: feedUrlSchema,
@@ -683,14 +675,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * Subscriptions are ordered by feed title (ascending).
    */
   list: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/subscriptions",
-        tags: ["Subscriptions"],
-        summary: "List subscriptions",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -718,14 +702,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * @returns List of matching subscriptions, ranked by relevance
    */
   search: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/subscriptions/search",
-        tags: ["Subscriptions"],
-        summary: "Search subscriptions",
-      },
-    })
     .input(
       z.object({
         query: z.string().min(1, "Search query is required"),
@@ -758,14 +734,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * Returns the subscription with its associated feed information and unread count.
    */
   get: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/subscriptions/{id}",
-        tags: ["Subscriptions"],
-        summary: "Get subscription",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -795,14 +763,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * - fetchFullContent: Whether to fetch full article content from URL
    */
   update: protectedProcedure
-    .meta({
-      openapi: {
-        method: "PATCH",
-        path: "/subscriptions/{id}",
-        tags: ["Subscriptions"],
-        summary: "Update subscription",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -928,14 +888,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * 2. Adds the sender to the blocked_senders table
    */
   delete: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/subscriptions/{id}",
-        tags: ["Subscriptions"],
-        summary: "Unsubscribe from feed",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,
@@ -1054,14 +1006,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * @returns Import results with imported, skipped, and error counts
    */
   import: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/subscriptions/import",
-        tags: ["Subscriptions"],
-        summary: "Import feeds from OPML",
-      },
-    })
     .input(
       z.object({
         opml: z
@@ -1192,14 +1136,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * @returns OPML XML content
    */
   export: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/subscriptions/export",
-        tags: ["Subscriptions"],
-        summary: "Export subscriptions as OPML",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -1270,14 +1206,6 @@ export const subscriptionsRouter = createTRPCRouter({
    * @returns Empty object on success
    */
   setTags: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/subscriptions/{id}/tags",
-        tags: ["Subscriptions"],
-        summary: "Set subscription tags",
-      },
-    })
     .input(
       z.object({
         id: uuidSchema,

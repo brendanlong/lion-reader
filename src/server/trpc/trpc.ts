@@ -9,7 +9,6 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import type { Context } from "./context";
-import type { OpenApiMeta } from "trpc-to-openapi";
 import type { ApiTokenScope } from "@/server/auth";
 import {
   checkRateLimit,
@@ -25,22 +24,19 @@ import * as Sentry from "@sentry/nextjs";
  * Initialize tRPC with our context type and superjson transformer.
  * SuperJSON allows serializing Date, Map, Set, etc.
  */
-const t = initTRPC
-  .context<Context>()
-  .meta<OpenApiMeta>()
-  .create({
-    transformer: superjson,
-    errorFormatter({ shape, error }) {
-      return {
-        ...shape,
-        data: {
-          ...shape.data,
-          // Include Zod validation errors in response
-          zodError: error.cause instanceof ZodError ? error.cause.flatten() : null,
-        },
-      };
-    },
-  });
+const t = initTRPC.context<Context>().create({
+  transformer: superjson,
+  errorFormatter({ shape, error }) {
+    return {
+      ...shape,
+      data: {
+        ...shape.data,
+        // Include Zod validation errors in response
+        zodError: error.cause instanceof ZodError ? error.cause.flatten() : null,
+      },
+    };
+  },
+});
 
 /**
  * Export reusable router and procedure helpers

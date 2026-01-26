@@ -34,14 +34,6 @@ export const adminRouter = createTRPCRouter({
    * Returns the full URL that can be shared with the user.
    */
   createInvite: adminProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/admin/invites",
-        tags: ["Admin"],
-        summary: "Create a new invite",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -85,14 +77,6 @@ export const adminRouter = createTRPCRouter({
    * Returns all invites with their status (pending, used, expired).
    */
   listInvites: adminProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/admin/invites",
-        tags: ["Admin"],
-        summary: "List all invites",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -157,14 +141,6 @@ export const adminRouter = createTRPCRouter({
    * Only pending (unused, non-expired) invites can be revoked.
    */
   revokeInvite: adminProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/admin/invites/{inviteId}",
-        tags: ["Admin"],
-        summary: "Revoke an invite",
-      },
-    })
     .input(
       z.object({
         inviteId: z.string().uuid(),

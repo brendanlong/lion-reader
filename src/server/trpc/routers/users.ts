@@ -42,14 +42,6 @@ export const usersRouter = createTRPCRouter({
    * Sessions are ordered by last active time (most recent first).
    */
   "me.sessions": protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/users/me/sessions",
-        tags: ["Users"],
-        summary: "List active sessions",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -95,14 +87,6 @@ export const usersRouter = createTRPCRouter({
    * Cannot revoke the current session (use logout instead).
    */
   "me.revokeSession": protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/users/me/sessions/{sessionId}",
-        tags: ["Users"],
-        summary: "Revoke a session",
-      },
-    })
     .input(
       z.object({
         sessionId: z.string().uuid("Invalid session ID"),
@@ -145,14 +129,6 @@ export const usersRouter = createTRPCRouter({
    * This allows OAuth users to add password-based login to their account.
    */
   "me.setPassword": protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/users/me/set-password",
-        tags: ["Users"],
-        summary: "Set password for OAuth account",
-      },
-    })
     .input(
       z.object({
         newPassword: z
@@ -192,14 +168,6 @@ export const usersRouter = createTRPCRouter({
    * Requires the current password for verification before setting a new one.
    */
   "me.changePassword": protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/users/me/change-password",
-        tags: ["Users"],
-        summary: "Change password",
-      },
-    })
     .input(
       z.object({
         currentPassword: z.string().min(1, "Current password is required"),
@@ -252,14 +220,6 @@ export const usersRouter = createTRPCRouter({
    * Returns a list of OAuth providers that are linked to the user's account.
    */
   "me.linkedAccounts": protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/users/me/linked-accounts",
-        tags: ["Users"],
-        summary: "Get linked OAuth accounts",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -309,14 +269,6 @@ export const usersRouter = createTRPCRouter({
    * Returns user preferences including spam visibility setting.
    */
   "me.preferences": protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/users/me/preferences",
-        tags: ["Users"],
-        summary: "Get user preferences",
-      },
-    })
     .input(z.object({}).optional())
     .output(
       z.object({
@@ -336,14 +288,6 @@ export const usersRouter = createTRPCRouter({
    * Updates preferences and invalidates session cache to reflect changes immediately.
    */
   "me.updatePreferences": protectedProcedure
-    .meta({
-      openapi: {
-        method: "PATCH",
-        path: "/users/me/preferences",
-        tags: ["Users"],
-        summary: "Update user preferences",
-      },
-    })
     .input(
       z.object({
         showSpam: z.boolean().optional(),

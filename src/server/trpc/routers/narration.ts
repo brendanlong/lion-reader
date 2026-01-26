@@ -101,14 +101,6 @@ export const narrationRouter = createTRPCRouter({
    * @returns Narration text, whether it was cached, and the source (llm or fallback)
    */
   generate: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/narration/generate",
-        tags: ["Narration"],
-        summary: "Generate narration for article",
-      },
-    })
     .input(generateInputSchema)
     .output(generateOutputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -311,14 +303,6 @@ export const narrationRouter = createTRPCRouter({
    * LLM-based text normalization for higher quality narration.
    */
   isAiTextProcessingAvailable: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/narration/ai-available",
-        tags: ["Narration"],
-        summary: "Check if AI text processing is available",
-      },
-    })
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(() => {

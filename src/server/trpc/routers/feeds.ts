@@ -255,14 +255,6 @@ export const feedsRouter = createTRPCRouter({
    * @returns Feed preview with title, description, and sample entries
    */
   preview: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/feeds/preview",
-        tags: ["Feeds"],
-        summary: "Preview a feed without subscribing",
-      },
-    })
     .input(
       z.object({
         url: feedUrlSchema,
@@ -378,14 +370,6 @@ export const feedsRouter = createTRPCRouter({
    * @returns Array of discovered feeds
    */
   discover: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/feeds/discover",
-        tags: ["Feeds"],
-        summary: "Discover feeds from a URL",
-      },
-    })
     .input(
       z.object({
         url: feedUrlSchema,

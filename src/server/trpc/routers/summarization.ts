@@ -77,14 +77,6 @@ export const summarizationRouter = createTRPCRouter({
    * @returns Summary text, whether it was cached, model ID, and generation time
    */
   generate: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/summarization/generate",
-        tags: ["Summarization"],
-        summary: "Generate AI summary for article",
-      },
-    })
     .input(generateInputSchema)
     .output(generateOutputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -235,14 +227,6 @@ export const summarizationRouter = createTRPCRouter({
    * Returns true if ANTHROPIC_API_KEY is configured.
    */
   isAvailable: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/summarization/available",
-        tags: ["Summarization"],
-        summary: "Check if AI summarization is available",
-      },
-    })
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(() => {
