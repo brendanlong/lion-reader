@@ -13,12 +13,11 @@ import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
-import { markdownToHtml } from "@/server/file/process-upload";
+import { processMarkdown } from "@/server/markdown";
 import { escapeHtml } from "@/server/http/html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
-import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated } from "@/server/redis/pubsub";
 import { errors } from "@/server/trpc/errors";
@@ -279,21 +278,21 @@ export async function saveArticle(
     }
   }
 
-  // Track if we got Markdown (skip Readability for Markdown)
-  let isMarkdown = false;
+  // Track Markdown processing results (skip Readability for Markdown)
+  let markdownResult: { html: string; title: string | null } | null = null;
 
   // Fall back to normal HTML fetch if no plugin or plugin failed
   if (!pluginContent) {
     try {
       const result = await fetchHtmlPage(params.url);
-      isMarkdown = result.isMarkdown;
 
-      // If we got Markdown, convert it to HTML
+      // If we got Markdown, convert it to HTML and extract title
       if (result.isMarkdown) {
         logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
           url: params.url,
         });
-        html = await markdownToHtml(result.content);
+        markdownResult = await processMarkdown(result.content);
+        html = markdownResult.html;
       } else {
         html = result.content;
       }
@@ -316,7 +315,7 @@ export async function saveArticle(
   const metadata = extractMetadata(html!, params.url);
 
   // Run Readability for clean content (skip for plugins that request it, or for Markdown)
-  const shouldSkipReadability = pluginContent?.skipReadability || isMarkdown;
+  const shouldSkipReadability = pluginContent?.skipReadability || markdownResult !== null;
   const cleaned = shouldSkipReadability ? null : cleanContent(html!, { url: params.url });
 
   // Generate excerpt
@@ -331,27 +330,12 @@ export async function saveArticle(
     }
   }
 
-  // Build final values - prefer plugin data, then provided hint, then metadata, then Readability
-  // For Markdown, extract and strip title header from converted HTML
-  let finalContentCleaned: string | null;
-  let markdownExtractedTitle: string | null = null;
-
-  if (isMarkdown) {
-    const { title: extractedTitle, content: contentWithoutTitle } = extractAndStripTitleHeader(
-      html!
-    );
-    markdownExtractedTitle = extractedTitle;
-    finalContentCleaned = contentWithoutTitle;
-  } else if (shouldSkipReadability) {
-    finalContentCleaned = html!;
-  } else {
-    finalContentCleaned = cleaned?.content || null;
-  }
-
+  // Build final values - prefer plugin data, then provided hint, then extracted/metadata, then Readability
+  const finalContentCleaned = markdownResult?.html || cleaned?.content || html!;
   const finalTitle =
     pluginContent?.title ||
     params.title ||
-    markdownExtractedTitle ||
+    markdownResult?.title ||
     metadata.title ||
     cleaned?.title ||
     null;
@@ -554,12 +538,8 @@ export async function uploadArticle(
   userId: string,
   params: UploadArticleParams
 ): Promise<SavedArticle> {
-  // Convert markdown to HTML
-  const html = await markdownToHtml(params.content);
-
-  // Extract title from first header and strip it from content
-  // (the title is displayed separately in the UI)
-  const { title: extractedTitle, content: contentCleaned } = extractAndStripTitleHeader(html);
+  // Convert markdown to HTML and extract title
+  const { html: contentCleaned, title: extractedTitle } = await processMarkdown(params.content);
 
   // Use provided title, falling back to extracted title
   const finalTitle = params.title || extractedTitle;
