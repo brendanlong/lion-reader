@@ -26,6 +26,7 @@ import { createTRPCRouter, protectedProcedure, scopedProtectedProcedure } from "
 import { API_TOKEN_SCOPES } from "@/server/auth";
 import { errors } from "../errors";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
+import { markdownToHtml } from "@/server/file/process-upload";
 import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -439,7 +440,8 @@ export const savedRouter = createTRPCRouter({
               url: normalizedUrl,
             });
             try {
-              html = await fetchHtmlPage(normalizedUrl);
+              const result = await fetchHtmlPage(normalizedUrl);
+              html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
             } catch (error) {
               logger.warn("Failed to fetch Google Docs URL", {
                 url: normalizedUrl,
@@ -483,7 +485,8 @@ export const savedRouter = createTRPCRouter({
             url: input.url,
           });
           try {
-            html = await fetchHtmlPage(input.url);
+            const result = await fetchHtmlPage(input.url);
+            html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
           } catch (error) {
             logger.warn("Failed to fetch LessWrong URL", {
               url: input.url,
@@ -512,7 +515,8 @@ export const savedRouter = createTRPCRouter({
         });
 
         try {
-          html = await fetchHtmlPage(urlToFetch);
+          const result = await fetchHtmlPage(urlToFetch);
+          html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
         } catch (error) {
           logger.warn("Failed to fetch ArXiv URL", {
             url: urlToFetch,
@@ -574,7 +578,8 @@ export const savedRouter = createTRPCRouter({
         // Fall back to normal HTML fetch if plugin didn't provide content
         if (!html) {
           try {
-            html = await fetchHtmlPage(input.url);
+            const result = await fetchHtmlPage(input.url);
+            html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
           } catch (error) {
             logger.warn("Failed to fetch URL for saved article", {
               url: input.url,

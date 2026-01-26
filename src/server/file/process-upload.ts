@@ -147,18 +147,29 @@ function processHtml(content: string, filename: string): ProcessedFile {
 }
 
 /**
- * Converts Markdown to HTML using marked.
- * Markdown content is kept as-is semantically, just rendered to HTML.
+ * Converts Markdown to HTML using marked with safe defaults.
+ * Exported for reuse in other modules (URL fetching, plugins, etc.).
+ *
+ * @param markdown - The Markdown text to convert
+ * @returns The HTML representation
  */
-async function processMarkdown(content: string, filename: string): Promise<ProcessedFile> {
+export async function markdownToHtml(markdown: string): Promise<string> {
   // Configure marked for safe rendering
   marked.setOptions({
     gfm: true, // GitHub Flavored Markdown
     breaks: true, // Convert \n to <br>
   });
 
+  return marked.parse(markdown) as Promise<string>;
+}
+
+/**
+ * Converts Markdown to HTML using marked.
+ * Markdown content is kept as-is semantically, just rendered to HTML.
+ */
+async function processMarkdown(content: string, filename: string): Promise<ProcessedFile> {
   // Convert markdown to HTML
-  const html = await marked.parse(content);
+  const html = await markdownToHtml(content);
 
   // Extract title from first header and strip it from content
   // (the title is displayed separately in the UI)
