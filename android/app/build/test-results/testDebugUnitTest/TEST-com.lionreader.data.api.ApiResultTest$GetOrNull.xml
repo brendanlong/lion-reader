@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="getOrNull" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:08" hostname="brendan-laptop" time="0.005">
+  <properties/>
+  <testcase name="RateLimited returns null" classname="com.lionreader.data.api.ApiResultTest$GetOrNull" time="0.0"/>
+  <testcase name="Success returns data" classname="com.lionreader.data.api.ApiResultTest$GetOrNull" time="0.001"/>
+  <testcase name="NetworkError returns null" classname="com.lionreader.data.api.ApiResultTest$GetOrNull" time="0.001"/>
+  <testcase name="Unauthorized returns null" classname="com.lionreader.data.api.ApiResultTest$GetOrNull" time="0.001"/>
+  <testcase name="Error returns null" classname="com.lionreader.data.api.ApiResultTest$GetOrNull" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

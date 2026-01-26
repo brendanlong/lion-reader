@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Load More" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:14" hostname="brendan-laptop" time="0.014">
+  <properties/>
+  <testcase name="Load more does nothing when no more items" classname="com.lionreader.ui.entries.EntryListViewModelTest$LoadMore" time="0.007"/>
+  <testcase name="Load more does nothing when already loading" classname="com.lionreader.ui.entries.EntryListViewModelTest$LoadMore" time="0.007"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

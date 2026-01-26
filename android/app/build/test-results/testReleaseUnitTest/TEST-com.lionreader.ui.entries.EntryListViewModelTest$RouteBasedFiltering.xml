@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Route-based Filtering" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:14" hostname="brendan-laptop" time="0.086">
+  <properties/>
+  <testcase name="Setting subscription route uses subscription filter" classname="com.lionreader.ui.entries.EntryListViewModelTest$RouteBasedFiltering" time="0.046"/>
+  <testcase name="Setting starred route updates title" classname="com.lionreader.ui.entries.EntryListViewModelTest$RouteBasedFiltering" time="0.004"/>
+  <testcase name="Same route is ignored" classname="com.lionreader.ui.entries.EntryListViewModelTest$RouteBasedFiltering" time="0.006"/>
+  <testcase name="Setting tag route uses tag filter" classname="com.lionreader.ui.entries.EntryListViewModelTest$RouteBasedFiltering" time="0.028"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Filter Toggling" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:10" hostname="brendan-laptop" time="0.039">
+  <properties/>
+  <testcase name="Toggling unread resyncs entries" classname="com.lionreader.ui.entries.EntryListViewModelTest$FilterToggling" time="0.013"/>
+  <testcase name="Toggle unread only updates state" classname="com.lionreader.ui.entries.EntryListViewModelTest$FilterToggling" time="0.006"/>
+  <testcase name="Toggling sort order resyncs entries" classname="com.lionreader.ui.entries.EntryListViewModelTest$FilterToggling" time="0.008"/>
+  <testcase name="Toggle sort order changes between newest and oldest" classname="com.lionreader.ui.entries.EntryListViewModelTest$FilterToggling" time="0.005"/>
+  <testcase name="Toggle unread only twice returns to original" classname="com.lionreader.ui.entries.EntryListViewModelTest$FilterToggling" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

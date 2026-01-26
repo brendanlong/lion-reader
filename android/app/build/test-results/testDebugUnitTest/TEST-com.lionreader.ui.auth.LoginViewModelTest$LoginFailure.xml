@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Login Failure" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:09" hostname="brendan-laptop" time="0.021">
+  <properties/>
+  <testcase name="Rate limited error shows appropriate message" classname="com.lionreader.ui.auth.LoginViewModelTest$LoginFailure" time="0.005"/>
+  <testcase name="Network error shows connectivity message" classname="com.lionreader.ui.auth.LoginViewModelTest$LoginFailure" time="0.004"/>
+  <testcase name="User not found shows appropriate message" classname="com.lionreader.ui.auth.LoginViewModelTest$LoginFailure" time="0.004"/>
+  <testcase name="Invalid credentials shows appropriate error" classname="com.lionreader.ui.auth.LoginViewModelTest$LoginFailure" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

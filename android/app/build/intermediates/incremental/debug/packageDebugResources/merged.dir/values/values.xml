@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#FEF3C7</color>
+    <string name="app_name">Lion Reader</string>
+    <style name="Theme.LionReader" parent="android:Theme.Material.Light.NoActionBar">
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <style name="Theme.LionReader.Translucent" parent="android:Theme.Material.Light.Dialog">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
+</resources>

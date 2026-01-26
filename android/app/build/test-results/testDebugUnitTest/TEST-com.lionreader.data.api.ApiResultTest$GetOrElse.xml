@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="getOrElse" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:08" hostname="brendan-laptop" time="0.003">
+  <properties/>
+  <testcase name="Success returns data" classname="com.lionreader.data.api.ApiResultTest$GetOrElse" time="0.0"/>
+  <testcase name="NetworkError invokes fallback" classname="com.lionreader.data.api.ApiResultTest$GetOrElse" time="0.001"/>
+  <testcase name="Error invokes fallback" classname="com.lionreader.data.api.ApiResultTest$GetOrElse" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lionreader.data.api.ApiContractTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:08" hostname="brendan-laptop" time="0.057">
+  <properties/>
+  <testcase name="POST auth/login" classname="com.lionreader.data.api.ApiContractTest" time="0.028"/>
+  <testcase name="GET auth/providers" classname="com.lionreader.data.api.ApiContractTest" time="0.002"/>
+  <testcase name="GET auth/me" classname="com.lionreader.data.api.ApiContractTest" time="0.002"/>
+  <testcase name="POST auth/logout" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="GET subscriptions" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="GET tags" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="GET entries" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="GET entries/{id}" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="POST entries/mark-read" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="POST entries/{id}/star" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="DELETE entries/{id}/star" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="GET entries/count" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="POST saved" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="DELETE saved/{id}" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="POST narration/generate" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="GET narration/ai-available" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <testcase name="GET sync" classname="com.lionreader.data.api.ApiContractTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

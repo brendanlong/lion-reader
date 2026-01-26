@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="getOrThrow" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:08" hostname="brendan-laptop" time="0.007">
+  <properties/>
+  <testcase name="Error throws ApiException" classname="com.lionreader.data.api.ApiResultTest$GetOrThrow" time="0.002"/>
+  <testcase name="Success returns data" classname="com.lionreader.data.api.ApiResultTest$GetOrThrow" time="0.001"/>
+  <testcase name="RateLimited throws RateLimitedException" classname="com.lionreader.data.api.ApiResultTest$GetOrThrow" time="0.001"/>
+  <testcase name="NetworkError throws NetworkException" classname="com.lionreader.data.api.ApiResultTest$GetOrThrow" time="0.0"/>
+  <testcase name="Unauthorized throws UnauthorizedException" classname="com.lionreader.data.api.ApiResultTest$GetOrThrow" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

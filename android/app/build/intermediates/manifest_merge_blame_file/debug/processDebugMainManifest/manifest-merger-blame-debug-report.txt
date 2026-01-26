@@ -1,0 +1,466 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.lionreader.debug"
+4    android:versionCode="10001"
+5    android:versionName="1.0.0-debug" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="35" />
+10
+11    <!-- Internet permission for API calls -->
+12    <uses-permission android:name="android.permission.INTERNET" />
+12-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:6:5-67
+12-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:6:22-64
+13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+13-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:7:5-79
+13-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:7:22-76
+14
+15    <!-- Foreground service for narration -->
+16    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+16-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:10:5-77
+16-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:10:22-74
+17    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+17-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:11:5-92
+17-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:11:22-89
+18    <uses-permission android:name="android.permission.WAKE_LOCK" />
+18-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:23:5-68
+18-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:23:22-65
+19    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+19-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:25:5-81
+19-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:25:22-78
+20
+21    <permission
+21-->[androidx.core:core:1.16.0] /home/brendanlong/.gradle/caches/8.9/transforms/5e5a37b920748cca90e9d978ccac882e/transformed/core-1.16.0/AndroidManifest.xml:22:5-24:47
+22        android:name="com.lionreader.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+22-->[androidx.core:core:1.16.0] /home/brendanlong/.gradle/caches/8.9/transforms/5e5a37b920748cca90e9d978ccac882e/transformed/core-1.16.0/AndroidManifest.xml:23:9-81
+23        android:protectionLevel="signature" />
+23-->[androidx.core:core:1.16.0] /home/brendanlong/.gradle/caches/8.9/transforms/5e5a37b920748cca90e9d978ccac882e/transformed/core-1.16.0/AndroidManifest.xml:24:9-44
+24
+25    <uses-permission android:name="com.lionreader.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+25-->[androidx.core:core:1.16.0] /home/brendanlong/.gradle/caches/8.9/transforms/5e5a37b920748cca90e9d978ccac882e/transformed/core-1.16.0/AndroidManifest.xml:26:5-97
+25-->[androidx.core:core:1.16.0] /home/brendanlong/.gradle/caches/8.9/transforms/5e5a37b920748cca90e9d978ccac882e/transformed/core-1.16.0/AndroidManifest.xml:26:22-94
+26
+27    <application
+27-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:13:5-82:19
+28        android:name="com.lionreader.LionReaderApp"
+28-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:14:9-38
+29        android:allowBackup="true"
+29-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:15:9-35
+30        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+30-->[androidx.core:core:1.16.0] /home/brendanlong/.gradle/caches/8.9/transforms/5e5a37b920748cca90e9d978ccac882e/transformed/core-1.16.0/AndroidManifest.xml:28:18-86
+31        android:debuggable="true"
+32        android:extractNativeLibs="false"
+33        android:icon="@mipmap/ic_launcher"
+33-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:16:9-43
+34        android:label="@string/app_name"
+34-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:17:9-41
+35        android:roundIcon="@mipmap/ic_launcher_round"
+35-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:18:9-54
+36        android:supportsRtl="true"
+36-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:19:9-35
+37        android:theme="@style/Theme.LionReader" >
+37-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:20:9-48
+38
+39        <!-- Disable Sentry auto-initialization so we can control it in LionReaderApp -->
+40        <meta-data
+40-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:23:9-79
+41            android:name="io.sentry.auto-init"
+41-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:23:20-54
+42            android:value="false" />
+42-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:23:55-76
+43
+44        <!-- Disable default WorkManager initialization to use custom Configuration -->
+45        <provider
+46            android:name="androidx.startup.InitializationProvider"
+46-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:27:13-67
+47            android:authorities="com.lionreader.debug.androidx-startup"
+47-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:28:13-68
+48            android:exported="false" >
+48-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:29:13-37
+49            <meta-data
+49-->[androidx.emoji2:emoji2:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d17fe1fc8a49764fe9d17ab48787e85/transformed/emoji2-1.4.0/AndroidManifest.xml:29:13-31:52
+50                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+50-->[androidx.emoji2:emoji2:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d17fe1fc8a49764fe9d17ab48787e85/transformed/emoji2-1.4.0/AndroidManifest.xml:30:17-75
+51                android:value="androidx.startup" />
+51-->[androidx.emoji2:emoji2:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d17fe1fc8a49764fe9d17ab48787e85/transformed/emoji2-1.4.0/AndroidManifest.xml:31:17-49
+52            <meta-data
+52-->[androidx.lifecycle:lifecycle-process:2.9.4] /home/brendanlong/.gradle/caches/8.9/transforms/3e505300eb232d581555581b10b38df2/transformed/lifecycle-process-2.9.4/AndroidManifest.xml:29:13-31:52
+53                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+53-->[androidx.lifecycle:lifecycle-process:2.9.4] /home/brendanlong/.gradle/caches/8.9/transforms/3e505300eb232d581555581b10b38df2/transformed/lifecycle-process-2.9.4/AndroidManifest.xml:30:17-78
+54                android:value="androidx.startup" />
+54-->[androidx.lifecycle:lifecycle-process:2.9.4] /home/brendanlong/.gradle/caches/8.9/transforms/3e505300eb232d581555581b10b38df2/transformed/lifecycle-process-2.9.4/AndroidManifest.xml:31:17-49
+55            <meta-data
+55-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:29:13-31:52
+56                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+56-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:30:17-85
+57                android:value="androidx.startup" />
+57-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:31:17-49
+58        </provider>
+59
+60        <activity
+60-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:37:9-57:20
+61            android:name="com.lionreader.MainActivity"
+61-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:38:13-41
+62            android:exported="true"
+62-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:39:13-36
+63            android:theme="@style/Theme.LionReader" >
+63-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:40:13-52
+64            <intent-filter>
+64-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:41:13-44:29
+65                <action android:name="android.intent.action.MAIN" />
+65-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:42:17-69
+65-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:42:25-66
+66
+67                <category android:name="android.intent.category.LAUNCHER" />
+67-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:43:17-77
+67-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:43:27-74
+68            </intent-filter>
+69
+70            <!-- OAuth callback deep link -->
+71            <intent-filter>
+71-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:47:13-56:29
+72                <action android:name="android.intent.action.VIEW" />
+72-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:48:17-69
+72-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:48:25-66
+73
+74                <category android:name="android.intent.category.DEFAULT" />
+74-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:49:17-76
+74-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:49:27-73
+75                <category android:name="android.intent.category.BROWSABLE" />
+75-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:50:17-78
+75-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:50:27-75
+76
+77                <data
+77-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:52:17-55:54
+78                    android:host="oauth"
+78-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:54:21-41
+79                    android:pathPrefix="/callback"
+79-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:55:21-51
+80                    android:scheme="lionreader" />
+80-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:53:21-48
+81            </intent-filter>
+82        </activity>
+83
+84        <!-- Share receiver activity for saving articles from other apps -->
+85        <activity
+85-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:60:9-71:20
+86            android:name="com.lionreader.ShareReceiverActivity"
+86-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:61:13-50
+87            android:excludeFromRecents="true"
+87-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:64:13-46
+88            android:exported="true"
+88-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:62:13-36
+89            android:taskAffinity=""
+89-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:65:13-36
+90            android:theme="@style/Theme.LionReader.Translucent" >
+90-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:63:13-64
+91            <intent-filter>
+91-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:66:13-70:29
+92                <action android:name="android.intent.action.SEND" />
+92-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:67:17-69
+92-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:67:25-66
+93
+94                <category android:name="android.intent.category.DEFAULT" />
+94-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:49:17-76
+94-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:49:27-73
+95
+96                <data android:mimeType="text/plain" />
+96-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:52:17-55:54
+96-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:69:23-52
+97            </intent-filter>
+98        </activity>
+99
+100        <!-- Narration service for TTS playback using Media3 -->
+101        <service
+101-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:74:9-81:19
+102            android:name="com.lionreader.service.NarrationService"
+102-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:75:13-53
+103            android:exported="true"
+103-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:76:13-36
+104            android:foregroundServiceType="mediaPlayback" >
+104-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:77:13-58
+105            <intent-filter>
+105-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:78:13-80:29
+106                <action android:name="androidx.media3.session.MediaSessionService" />
+106-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:79:17-86
+106-->/home/brendanlong/workspace/lion-reader/android/app/src/main/AndroidManifest.xml:79:25-83
+107            </intent-filter>
+108        </service>
+109
+110        <activity
+110-->[androidx.compose.ui:ui-tooling-android:1.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/1b7f7399b7d15918621bb8130fa90e23/transformed/ui-tooling/AndroidManifest.xml:23:9-25:39
+111            android:name="androidx.compose.ui.tooling.PreviewActivity"
+111-->[androidx.compose.ui:ui-tooling-android:1.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/1b7f7399b7d15918621bb8130fa90e23/transformed/ui-tooling/AndroidManifest.xml:24:13-71
+112            android:exported="true" /> <!-- 'android:authorities' must be unique in the device, across all apps -->
+112-->[androidx.compose.ui:ui-tooling-android:1.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/1b7f7399b7d15918621bb8130fa90e23/transformed/ui-tooling/AndroidManifest.xml:25:13-36
+113        <provider
+113-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:12:9-15:40
+114            android:name="io.sentry.android.core.SentryInitProvider"
+114-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:13:13-69
+115            android:authorities="com.lionreader.debug.SentryInitProvider"
+115-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:14:13-70
+116            android:exported="false" />
+116-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:15:13-37
+117        <provider
+117-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:16:9-20:39
+118            android:name="io.sentry.android.core.SentryPerformanceProvider"
+118-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:17:13-76
+119            android:authorities="com.lionreader.debug.SentryPerformanceProvider"
+119-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:18:13-77
+120            android:exported="false"
+120-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:19:13-37
+121            android:initOrder="200" />
+121-->[io.sentry:sentry-android-core:8.0.0] /home/brendanlong/.gradle/caches/8.9/transforms/890acb2769041c4c26324c8ed3b9a96d/transformed/sentry-android-core-8.0.0/AndroidManifest.xml:20:13-36
+122
+123        <service
+123-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:39:9-45:35
+124            android:name="androidx.work.impl.background.systemalarm.SystemAlarmService"
+124-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:40:13-88
+125            android:directBootAware="false"
+125-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:41:13-44
+126            android:enabled="@bool/enable_system_alarm_service_default"
+126-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:42:13-72
+127            android:exported="false" />
+127-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:43:13-37
+128        <service
+128-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:46:9-52:35
+129            android:name="androidx.work.impl.background.systemjob.SystemJobService"
+129-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:47:13-84
+130            android:directBootAware="false"
+130-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:48:13-44
+131            android:enabled="@bool/enable_system_job_service_default"
+131-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:49:13-70
+132            android:exported="true"
+132-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:50:13-36
+133            android:permission="android.permission.BIND_JOB_SERVICE" />
+133-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:51:13-69
+134        <service
+134-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:53:9-59:35
+135            android:name="androidx.work.impl.foreground.SystemForegroundService"
+135-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:54:13-81
+136            android:directBootAware="false"
+136-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:55:13-44
+137            android:enabled="@bool/enable_system_foreground_service_default"
+137-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:56:13-77
+138            android:exported="false" />
+138-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:57:13-37
+139
+140        <receiver
+140-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:61:9-66:35
+141            android:name="androidx.work.impl.utils.ForceStopRunnable$BroadcastReceiver"
+141-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:62:13-88
+142            android:directBootAware="false"
+142-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:63:13-44
+143            android:enabled="true"
+143-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:64:13-35
+144            android:exported="false" />
+144-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:65:13-37
+145        <receiver
+145-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:67:9-77:20
+146            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy"
+146-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:68:13-106
+147            android:directBootAware="false"
+147-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:69:13-44
+148            android:enabled="false"
+148-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:70:13-36
+149            android:exported="false" >
+149-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:71:13-37
+150            <intent-filter>
+150-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:73:13-76:29
+151                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+151-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:74:17-87
+151-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:74:25-84
+152                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+152-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:75:17-90
+152-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:75:25-87
+153            </intent-filter>
+154        </receiver>
+155        <receiver
+155-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:78:9-88:20
+156            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy"
+156-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:79:13-104
+157            android:directBootAware="false"
+157-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:80:13-44
+158            android:enabled="false"
+158-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:81:13-36
+159            android:exported="false" >
+159-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:82:13-37
+160            <intent-filter>
+160-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:84:13-87:29
+161                <action android:name="android.intent.action.BATTERY_OKAY" />
+161-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:85:17-77
+161-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:85:25-74
+162                <action android:name="android.intent.action.BATTERY_LOW" />
+162-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:86:17-76
+162-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:86:25-73
+163            </intent-filter>
+164        </receiver>
+165        <receiver
+165-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:89:9-99:20
+166            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy"
+166-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:90:13-104
+167            android:directBootAware="false"
+167-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:91:13-44
+168            android:enabled="false"
+168-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:92:13-36
+169            android:exported="false" >
+169-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:93:13-37
+170            <intent-filter>
+170-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:95:13-98:29
+171                <action android:name="android.intent.action.DEVICE_STORAGE_LOW" />
+171-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:96:17-83
+171-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:96:25-80
+172                <action android:name="android.intent.action.DEVICE_STORAGE_OK" />
+172-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:97:17-82
+172-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:97:25-79
+173            </intent-filter>
+174        </receiver>
+175        <receiver
+175-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:100:9-109:20
+176            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy"
+176-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:101:13-103
+177            android:directBootAware="false"
+177-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:102:13-44
+178            android:enabled="false"
+178-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:103:13-36
+179            android:exported="false" >
+179-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:104:13-37
+180            <intent-filter>
+180-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:106:13-108:29
+181                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+181-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:107:17-79
+181-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:107:25-76
+182            </intent-filter>
+183        </receiver>
+184        <receiver
+184-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:110:9-121:20
+185            android:name="androidx.work.impl.background.systemalarm.RescheduleReceiver"
+185-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:111:13-88
+186            android:directBootAware="false"
+186-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:112:13-44
+187            android:enabled="false"
+187-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:113:13-36
+188            android:exported="false" >
+188-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:114:13-37
+189            <intent-filter>
+189-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:116:13-120:29
+190                <action android:name="android.intent.action.BOOT_COMPLETED" />
+190-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:117:17-79
+190-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:117:25-76
+191                <action android:name="android.intent.action.TIME_SET" />
+191-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:118:17-73
+191-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:118:25-70
+192                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+192-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:119:17-81
+192-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:119:25-78
+193            </intent-filter>
+194        </receiver>
+195        <receiver
+195-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:122:9-131:20
+196            android:name="androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver"
+196-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:123:13-99
+197            android:directBootAware="false"
+197-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:124:13-44
+198            android:enabled="@bool/enable_system_alarm_service_default"
+198-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:125:13-72
+199            android:exported="false" >
+199-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:126:13-37
+200            <intent-filter>
+200-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:128:13-130:29
+201                <action android:name="androidx.work.impl.background.systemalarm.UpdateProxies" />
+201-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:129:17-98
+201-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:129:25-95
+202            </intent-filter>
+203        </receiver>
+204        <receiver
+204-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:132:9-142:20
+205            android:name="androidx.work.impl.diagnostics.DiagnosticsReceiver"
+205-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:133:13-78
+206            android:directBootAware="false"
+206-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:134:13-44
+207            android:enabled="true"
+207-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:135:13-35
+208            android:exported="true"
+208-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:136:13-36
+209            android:permission="android.permission.DUMP" >
+209-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:137:13-57
+210            <intent-filter>
+210-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:139:13-141:29
+211                <action android:name="androidx.work.diagnostics.REQUEST_DIAGNOSTICS" />
+211-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:140:17-88
+211-->[androidx.work:work-runtime:2.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/76f0f32706ac7aff9a0aec9bceef237c/transformed/work-runtime-2.10.0/AndroidManifest.xml:140:25-85
+212            </intent-filter>
+213        </receiver>
+214
+215        <uses-library
+215-->[androidx.window:window:1.5.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d5c31dd5caed8d3f2f02284bd3f6ffb/transformed/window-1.5.0/AndroidManifest.xml:23:9-25:40
+216            android:name="androidx.window.extensions"
+216-->[androidx.window:window:1.5.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d5c31dd5caed8d3f2f02284bd3f6ffb/transformed/window-1.5.0/AndroidManifest.xml:24:13-54
+217            android:required="false" />
+217-->[androidx.window:window:1.5.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d5c31dd5caed8d3f2f02284bd3f6ffb/transformed/window-1.5.0/AndroidManifest.xml:25:13-37
+218        <uses-library
+218-->[androidx.window:window:1.5.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d5c31dd5caed8d3f2f02284bd3f6ffb/transformed/window-1.5.0/AndroidManifest.xml:26:9-28:40
+219            android:name="androidx.window.sidecar"
+219-->[androidx.window:window:1.5.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d5c31dd5caed8d3f2f02284bd3f6ffb/transformed/window-1.5.0/AndroidManifest.xml:27:13-51
+220            android:required="false" />
+220-->[androidx.window:window:1.5.0] /home/brendanlong/.gradle/caches/8.9/transforms/3d5c31dd5caed8d3f2f02284bd3f6ffb/transformed/window-1.5.0/AndroidManifest.xml:28:13-37
+221
+222        <activity
+222-->[androidx.compose.ui:ui-test-manifest:1.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/60f13bda424d7f7fd0164595527c7b39/transformed/ui-test-manifest-1.10.0/AndroidManifest.xml:23:9-26:79
+223            android:name="androidx.activity.ComponentActivity"
+223-->[androidx.compose.ui:ui-test-manifest:1.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/60f13bda424d7f7fd0164595527c7b39/transformed/ui-test-manifest-1.10.0/AndroidManifest.xml:24:13-63
+224            android:exported="true"
+224-->[androidx.compose.ui:ui-test-manifest:1.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/60f13bda424d7f7fd0164595527c7b39/transformed/ui-test-manifest-1.10.0/AndroidManifest.xml:25:13-36
+225            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+225-->[androidx.compose.ui:ui-test-manifest:1.10.0] /home/brendanlong/.gradle/caches/8.9/transforms/60f13bda424d7f7fd0164595527c7b39/transformed/ui-test-manifest-1.10.0/AndroidManifest.xml:26:13-76
+226
+227        <service
+227-->[androidx.room:room-runtime:2.6.1] /home/brendanlong/.gradle/caches/8.9/transforms/26e20f701808f7d52d3093c0a53e1e46/transformed/room-runtime-2.6.1/AndroidManifest.xml:24:9-28:63
+228            android:name="androidx.room.MultiInstanceInvalidationService"
+228-->[androidx.room:room-runtime:2.6.1] /home/brendanlong/.gradle/caches/8.9/transforms/26e20f701808f7d52d3093c0a53e1e46/transformed/room-runtime-2.6.1/AndroidManifest.xml:25:13-74
+229            android:directBootAware="true"
+229-->[androidx.room:room-runtime:2.6.1] /home/brendanlong/.gradle/caches/8.9/transforms/26e20f701808f7d52d3093c0a53e1e46/transformed/room-runtime-2.6.1/AndroidManifest.xml:26:13-43
+230            android:exported="false" />
+230-->[androidx.room:room-runtime:2.6.1] /home/brendanlong/.gradle/caches/8.9/transforms/26e20f701808f7d52d3093c0a53e1e46/transformed/room-runtime-2.6.1/AndroidManifest.xml:27:13-37
+231
+232        <receiver
+232-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:34:9-52:20
+233            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+233-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:35:13-76
+234            android:directBootAware="false"
+234-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:36:13-44
+235            android:enabled="true"
+235-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:37:13-35
+236            android:exported="true"
+236-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:38:13-36
+237            android:permission="android.permission.DUMP" >
+237-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:39:13-57
+238            <intent-filter>
+238-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:40:13-42:29
+239                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+239-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:41:17-91
+239-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:41:25-88
+240            </intent-filter>
+241            <intent-filter>
+241-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:43:13-45:29
+242                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+242-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:44:17-85
+242-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:44:25-82
+243            </intent-filter>
+244            <intent-filter>
+244-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:46:13-48:29
+245                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+245-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:47:17-88
+245-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:47:25-85
+246            </intent-filter>
+247            <intent-filter>
+247-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:49:13-51:29
+248                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+248-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:50:17-95
+248-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/brendanlong/.gradle/caches/8.9/transforms/3836832acd8ecde7f575191ae1632401/transformed/profileinstaller-1.4.0/AndroidManifest.xml:50:25-92
+249            </intent-filter>
+250        </receiver>
+251    </application>
+252
+253</manifest>

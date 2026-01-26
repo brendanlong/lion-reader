@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="UI State Management" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:09" hostname="brendan-laptop" time="0.035">
+  <properties/>
+  <testcase name="Loading state is set during login attempt" classname="com.lionreader.ui.auth.LoginViewModelTest$UiStateManagement" time="0.022"/>
+  <testcase name="Toggle password visibility works correctly" classname="com.lionreader.ui.auth.LoginViewModelTest$UiStateManagement" time="0.002"/>
+  <testcase name="Clear error removes error message" classname="com.lionreader.ui.auth.LoginViewModelTest$UiStateManagement" time="0.002"/>
+  <testcase name="Password change updates state and clears error" classname="com.lionreader.ui.auth.LoginViewModelTest$UiStateManagement" time="0.002"/>
+  <testcase name="Email change updates state and clears error" classname="com.lionreader.ui.auth.LoginViewModelTest$UiStateManagement" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

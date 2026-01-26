@@ -1,0 +1,937 @@
+package com.lionreader;
+
+import android.app.Activity;
+import android.app.Service;
+import android.content.Context;
+import android.view.View;
+import androidx.fragment.app.Fragment;
+import androidx.hilt.work.HiltWorkerFactory;
+import androidx.hilt.work.WorkerAssistedFactory;
+import androidx.hilt.work.WorkerFactoryModule_ProvideFactoryFactory;
+import androidx.lifecycle.SavedStateHandle;
+import androidx.lifecycle.ViewModel;
+import androidx.work.ListenableWorker;
+import androidx.work.WorkerParameters;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
+import com.lionreader.data.api.ApiClient;
+import com.lionreader.data.api.AuthInterceptor;
+import com.lionreader.data.api.LionReaderApi;
+import com.lionreader.data.api.SessionStore;
+import com.lionreader.data.db.LionReaderDatabase;
+import com.lionreader.data.db.dao.EntryDao;
+import com.lionreader.data.db.dao.EntryStateDao;
+import com.lionreader.data.db.dao.PendingActionDao;
+import com.lionreader.data.db.dao.SubscriptionDao;
+import com.lionreader.data.db.dao.TagDao;
+import com.lionreader.data.repository.AuthRepository;
+import com.lionreader.data.repository.EntryRepository;
+import com.lionreader.data.repository.SavedArticleRepository;
+import com.lionreader.data.repository.SubscriptionRepository;
+import com.lionreader.data.repository.SyncRepository;
+import com.lionreader.data.repository.TagRepository;
+import com.lionreader.data.sync.ConnectivityMonitor;
+import com.lionreader.data.sync.SyncErrorNotifier;
+import com.lionreader.data.sync.SyncPreferences;
+import com.lionreader.data.sync.SyncScheduler;
+import com.lionreader.di.AppConfig;
+import com.lionreader.di.AppModule_ProvideAppConfigFactory;
+import com.lionreader.di.DatabaseModule_ProvideEntryDaoFactory;
+import com.lionreader.di.DatabaseModule_ProvideEntryStateDaoFactory;
+import com.lionreader.di.DatabaseModule_ProvideLionReaderDatabaseFactory;
+import com.lionreader.di.DatabaseModule_ProvidePendingActionDaoFactory;
+import com.lionreader.di.DatabaseModule_ProvideSubscriptionDaoFactory;
+import com.lionreader.di.DatabaseModule_ProvideTagDaoFactory;
+import com.lionreader.di.NetworkModule_ProvideLionReaderApiFactory;
+import com.lionreader.di.RepositoryModule_ProvideAuthRepositoryFactory;
+import com.lionreader.di.RepositoryModule_ProvideEntryRepositoryFactory;
+import com.lionreader.di.RepositoryModule_ProvideSubscriptionRepositoryFactory;
+import com.lionreader.di.RepositoryModule_ProvideSyncRepositoryFactory;
+import com.lionreader.di.RepositoryModule_ProvideTagRepositoryFactory;
+import com.lionreader.service.NarrationService;
+import com.lionreader.service.NarrationService_MembersInjector;
+import com.lionreader.service.SyncWorker;
+import com.lionreader.service.SyncWorker_AssistedFactory;
+import com.lionreader.ui.auth.LoginViewModel;
+import com.lionreader.ui.auth.LoginViewModel_HiltModules;
+import com.lionreader.ui.entries.EntryDetailViewModel;
+import com.lionreader.ui.entries.EntryDetailViewModel_HiltModules;
+import com.lionreader.ui.entries.EntryListViewModel;
+import com.lionreader.ui.entries.EntryListViewModel_HiltModules;
+import com.lionreader.ui.main.DrawerViewModel;
+import com.lionreader.ui.main.DrawerViewModel_HiltModules;
+import com.lionreader.ui.main.MainViewModel;
+import com.lionreader.ui.main.MainViewModel_HiltModules;
+import com.lionreader.ui.narration.NarrationViewModel;
+import com.lionreader.ui.narration.NarrationViewModel_HiltModules;
+import com.lionreader.ui.saved.SavedArticleDetailViewModel;
+import com.lionreader.ui.saved.SavedArticleDetailViewModel_HiltModules;
+import com.lionreader.ui.saved.SavedArticlesViewModel;
+import com.lionreader.ui.saved.SavedArticlesViewModel_HiltModules;
+import dagger.hilt.android.ActivityRetainedLifecycle;
+import dagger.hilt.android.ViewModelLifecycle;
+import dagger.hilt.android.internal.builders.ActivityComponentBuilder;
+import dagger.hilt.android.internal.builders.ActivityRetainedComponentBuilder;
+import dagger.hilt.android.internal.builders.FragmentComponentBuilder;
+import dagger.hilt.android.internal.builders.ServiceComponentBuilder;
+import dagger.hilt.android.internal.builders.ViewComponentBuilder;
+import dagger.hilt.android.internal.builders.ViewModelComponentBuilder;
+import dagger.hilt.android.internal.builders.ViewWithFragmentComponentBuilder;
+import dagger.hilt.android.internal.lifecycle.DefaultViewModelFactories;
+import dagger.hilt.android.internal.lifecycle.DefaultViewModelFactories_InternalFactoryFactory_Factory;
+import dagger.hilt.android.internal.managers.ActivityRetainedComponentManager_LifecycleModule_ProvideActivityRetainedLifecycleFactory;
+import dagger.hilt.android.internal.managers.SavedStateHandleHolder;
+import dagger.hilt.android.internal.modules.ApplicationContextModule;
+import dagger.hilt.android.internal.modules.ApplicationContextModule_ProvideContextFactory;
+import dagger.internal.DaggerGenerated;
+import dagger.internal.DoubleCheck;
+import dagger.internal.IdentifierNameString;
+import dagger.internal.KeepFieldType;
+import dagger.internal.LazyClassKeyMap;
+import dagger.internal.Preconditions;
+import dagger.internal.Provider;
+import dagger.internal.SingleCheck;
+import java.util.Map;
+import java.util.Set;
+import javax.annotation.processing.Generated;
+
+@DaggerGenerated
+@Generated(
+    value = "dagger.internal.codegen.ComponentProcessor",
+    comments = "https://dagger.dev"
+)
+@SuppressWarnings({
+    "unchecked",
+    "rawtypes",
+    "KotlinInternal",
+    "KotlinInternalInJava",
+    "cast"
+})
+public final class DaggerLionReaderApp_HiltComponents_SingletonC {
+  private DaggerLionReaderApp_HiltComponents_SingletonC() {
+  }
+
+  public static Builder builder() {
+    return new Builder();
+  }
+
+  public static final class Builder {
+    private ApplicationContextModule applicationContextModule;
+
+    private Builder() {
+    }
+
+    public Builder applicationContextModule(ApplicationContextModule applicationContextModule) {
+      this.applicationContextModule = Preconditions.checkNotNull(applicationContextModule);
+      return this;
+    }
+
+    public LionReaderApp_HiltComponents.SingletonC build() {
+      Preconditions.checkBuilderRequirement(applicationContextModule, ApplicationContextModule.class);
+      return new SingletonCImpl(applicationContextModule);
+    }
+  }
+
+  private static final class ActivityRetainedCBuilder implements LionReaderApp_HiltComponents.ActivityRetainedC.Builder {
+    private final SingletonCImpl singletonCImpl;
+
+    private SavedStateHandleHolder savedStateHandleHolder;
+
+    private ActivityRetainedCBuilder(SingletonCImpl singletonCImpl) {
+      this.singletonCImpl = singletonCImpl;
+    }
+
+    @Override
+    public ActivityRetainedCBuilder savedStateHandleHolder(
+        SavedStateHandleHolder savedStateHandleHolder) {
+      this.savedStateHandleHolder = Preconditions.checkNotNull(savedStateHandleHolder);
+      return this;
+    }
+
+    @Override
+    public LionReaderApp_HiltComponents.ActivityRetainedC build() {
+      Preconditions.checkBuilderRequirement(savedStateHandleHolder, SavedStateHandleHolder.class);
+      return new ActivityRetainedCImpl(singletonCImpl, savedStateHandleHolder);
+    }
+  }
+
+  private static final class ActivityCBuilder implements LionReaderApp_HiltComponents.ActivityC.Builder {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private Activity activity;
+
+    private ActivityCBuilder(SingletonCImpl singletonCImpl,
+        ActivityRetainedCImpl activityRetainedCImpl) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+    }
+
+    @Override
+    public ActivityCBuilder activity(Activity activity) {
+      this.activity = Preconditions.checkNotNull(activity);
+      return this;
+    }
+
+    @Override
+    public LionReaderApp_HiltComponents.ActivityC build() {
+      Preconditions.checkBuilderRequirement(activity, Activity.class);
+      return new ActivityCImpl(singletonCImpl, activityRetainedCImpl, activity);
+    }
+  }
+
+  private static final class FragmentCBuilder implements LionReaderApp_HiltComponents.FragmentC.Builder {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private final ActivityCImpl activityCImpl;
+
+    private Fragment fragment;
+
+    private FragmentCBuilder(SingletonCImpl singletonCImpl,
+        ActivityRetainedCImpl activityRetainedCImpl, ActivityCImpl activityCImpl) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+      this.activityCImpl = activityCImpl;
+    }
+
+    @Override
+    public FragmentCBuilder fragment(Fragment fragment) {
+      this.fragment = Preconditions.checkNotNull(fragment);
+      return this;
+    }
+
+    @Override
+    public LionReaderApp_HiltComponents.FragmentC build() {
+      Preconditions.checkBuilderRequirement(fragment, Fragment.class);
+      return new FragmentCImpl(singletonCImpl, activityRetainedCImpl, activityCImpl, fragment);
+    }
+  }
+
+  private static final class ViewWithFragmentCBuilder implements LionReaderApp_HiltComponents.ViewWithFragmentC.Builder {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private final ActivityCImpl activityCImpl;
+
+    private final FragmentCImpl fragmentCImpl;
+
+    private View view;
+
+    private ViewWithFragmentCBuilder(SingletonCImpl singletonCImpl,
+        ActivityRetainedCImpl activityRetainedCImpl, ActivityCImpl activityCImpl,
+        FragmentCImpl fragmentCImpl) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+      this.activityCImpl = activityCImpl;
+      this.fragmentCImpl = fragmentCImpl;
+    }
+
+    @Override
+    public ViewWithFragmentCBuilder view(View view) {
+      this.view = Preconditions.checkNotNull(view);
+      return this;
+    }
+
+    @Override
+    public LionReaderApp_HiltComponents.ViewWithFragmentC build() {
+      Preconditions.checkBuilderRequirement(view, View.class);
+      return new ViewWithFragmentCImpl(singletonCImpl, activityRetainedCImpl, activityCImpl, fragmentCImpl, view);
+    }
+  }
+
+  private static final class ViewCBuilder implements LionReaderApp_HiltComponents.ViewC.Builder {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private final ActivityCImpl activityCImpl;
+
+    private View view;
+
+    private ViewCBuilder(SingletonCImpl singletonCImpl, ActivityRetainedCImpl activityRetainedCImpl,
+        ActivityCImpl activityCImpl) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+      this.activityCImpl = activityCImpl;
+    }
+
+    @Override
+    public ViewCBuilder view(View view) {
+      this.view = Preconditions.checkNotNull(view);
+      return this;
+    }
+
+    @Override
+    public LionReaderApp_HiltComponents.ViewC build() {
+      Preconditions.checkBuilderRequirement(view, View.class);
+      return new ViewCImpl(singletonCImpl, activityRetainedCImpl, activityCImpl, view);
+    }
+  }
+
+  private static final class ViewModelCBuilder implements LionReaderApp_HiltComponents.ViewModelC.Builder {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private SavedStateHandle savedStateHandle;
+
+    private ViewModelLifecycle viewModelLifecycle;
+
+    private ViewModelCBuilder(SingletonCImpl singletonCImpl,
+        ActivityRetainedCImpl activityRetainedCImpl) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+    }
+
+    @Override
+    public ViewModelCBuilder savedStateHandle(SavedStateHandle handle) {
+      this.savedStateHandle = Preconditions.checkNotNull(handle);
+      return this;
+    }
+
+    @Override
+    public ViewModelCBuilder viewModelLifecycle(ViewModelLifecycle viewModelLifecycle) {
+      this.viewModelLifecycle = Preconditions.checkNotNull(viewModelLifecycle);
+      return this;
+    }
+
+    @Override
+    public LionReaderApp_HiltComponents.ViewModelC build() {
+      Preconditions.checkBuilderRequirement(savedStateHandle, SavedStateHandle.class);
+      Preconditions.checkBuilderRequirement(viewModelLifecycle, ViewModelLifecycle.class);
+      return new ViewModelCImpl(singletonCImpl, activityRetainedCImpl, savedStateHandle, viewModelLifecycle);
+    }
+  }
+
+  private static final class ServiceCBuilder implements LionReaderApp_HiltComponents.ServiceC.Builder {
+    private final SingletonCImpl singletonCImpl;
+
+    private Service service;
+
+    private ServiceCBuilder(SingletonCImpl singletonCImpl) {
+      this.singletonCImpl = singletonCImpl;
+    }
+
+    @Override
+    public ServiceCBuilder service(Service service) {
+      this.service = Preconditions.checkNotNull(service);
+      return this;
+    }
+
+    @Override
+    public LionReaderApp_HiltComponents.ServiceC build() {
+      Preconditions.checkBuilderRequirement(service, Service.class);
+      return new ServiceCImpl(singletonCImpl, service);
+    }
+  }
+
+  private static final class ViewWithFragmentCImpl extends LionReaderApp_HiltComponents.ViewWithFragmentC {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private final ActivityCImpl activityCImpl;
+
+    private final FragmentCImpl fragmentCImpl;
+
+    private final ViewWithFragmentCImpl viewWithFragmentCImpl = this;
+
+    private ViewWithFragmentCImpl(SingletonCImpl singletonCImpl,
+        ActivityRetainedCImpl activityRetainedCImpl, ActivityCImpl activityCImpl,
+        FragmentCImpl fragmentCImpl, View viewParam) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+      this.activityCImpl = activityCImpl;
+      this.fragmentCImpl = fragmentCImpl;
+
+
+    }
+  }
+
+  private static final class FragmentCImpl extends LionReaderApp_HiltComponents.FragmentC {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private final ActivityCImpl activityCImpl;
+
+    private final FragmentCImpl fragmentCImpl = this;
+
+    private FragmentCImpl(SingletonCImpl singletonCImpl,
+        ActivityRetainedCImpl activityRetainedCImpl, ActivityCImpl activityCImpl,
+        Fragment fragmentParam) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+      this.activityCImpl = activityCImpl;
+
+
+    }
+
+    @Override
+    public DefaultViewModelFactories.InternalFactoryFactory getHiltInternalFactoryFactory() {
+      return activityCImpl.getHiltInternalFactoryFactory();
+    }
+
+    @Override
+    public ViewWithFragmentComponentBuilder viewWithFragmentComponentBuilder() {
+      return new ViewWithFragmentCBuilder(singletonCImpl, activityRetainedCImpl, activityCImpl, fragmentCImpl);
+    }
+  }
+
+  private static final class ViewCImpl extends LionReaderApp_HiltComponents.ViewC {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private final ActivityCImpl activityCImpl;
+
+    private final ViewCImpl viewCImpl = this;
+
+    private ViewCImpl(SingletonCImpl singletonCImpl, ActivityRetainedCImpl activityRetainedCImpl,
+        ActivityCImpl activityCImpl, View viewParam) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+      this.activityCImpl = activityCImpl;
+
+
+    }
+  }
+
+  private static final class ActivityCImpl extends LionReaderApp_HiltComponents.ActivityC {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private final ActivityCImpl activityCImpl = this;
+
+    private ActivityCImpl(SingletonCImpl singletonCImpl,
+        ActivityRetainedCImpl activityRetainedCImpl, Activity activityParam) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+
+
+    }
+
+    @Override
+    public void injectMainActivity(MainActivity mainActivity) {
+      injectMainActivity2(mainActivity);
+    }
+
+    @Override
+    public void injectShareReceiverActivity(ShareReceiverActivity shareReceiverActivity) {
+      injectShareReceiverActivity2(shareReceiverActivity);
+    }
+
+    @Override
+    public DefaultViewModelFactories.InternalFactoryFactory getHiltInternalFactoryFactory() {
+      return DefaultViewModelFactories_InternalFactoryFactory_Factory.newInstance(getViewModelKeys(), new ViewModelCBuilder(singletonCImpl, activityRetainedCImpl));
+    }
+
+    @Override
+    public Map<Class<?>, Boolean> getViewModelKeys() {
+      return LazyClassKeyMap.<Boolean>of(ImmutableMap.<String, Boolean>builderWithExpectedSize(8).put(LazyClassKeyProvider.com_lionreader_ui_main_DrawerViewModel, DrawerViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lionreader_ui_entries_EntryDetailViewModel, EntryDetailViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lionreader_ui_entries_EntryListViewModel, EntryListViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lionreader_ui_auth_LoginViewModel, LoginViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lionreader_ui_main_MainViewModel, MainViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lionreader_ui_narration_NarrationViewModel, NarrationViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lionreader_ui_saved_SavedArticleDetailViewModel, SavedArticleDetailViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lionreader_ui_saved_SavedArticlesViewModel, SavedArticlesViewModel_HiltModules.KeyModule.provide()).build());
+    }
+
+    @Override
+    public ViewModelComponentBuilder getViewModelComponentBuilder() {
+      return new ViewModelCBuilder(singletonCImpl, activityRetainedCImpl);
+    }
+
+    @Override
+    public FragmentComponentBuilder fragmentComponentBuilder() {
+      return new FragmentCBuilder(singletonCImpl, activityRetainedCImpl, activityCImpl);
+    }
+
+    @Override
+    public ViewComponentBuilder viewComponentBuilder() {
+      return new ViewCBuilder(singletonCImpl, activityRetainedCImpl, activityCImpl);
+    }
+
+    private MainActivity injectMainActivity2(MainActivity instance) {
+      MainActivity_MembersInjector.injectAppConfig(instance, singletonCImpl.provideAppConfigProvider.get());
+      MainActivity_MembersInjector.injectAuthRepository(instance, singletonCImpl.provideAuthRepositoryProvider.get());
+      return instance;
+    }
+
+    private ShareReceiverActivity injectShareReceiverActivity2(ShareReceiverActivity instance) {
+      ShareReceiverActivity_MembersInjector.injectApi(instance, singletonCImpl.provideLionReaderApiProvider.get());
+      ShareReceiverActivity_MembersInjector.injectSessionStore(instance, singletonCImpl.sessionStoreProvider.get());
+      return instance;
+    }
+
+    @IdentifierNameString
+    private static final class LazyClassKeyProvider {
+      static String com_lionreader_ui_narration_NarrationViewModel = "com.lionreader.ui.narration.NarrationViewModel";
+
+      static String com_lionreader_ui_auth_LoginViewModel = "com.lionreader.ui.auth.LoginViewModel";
+
+      static String com_lionreader_ui_saved_SavedArticlesViewModel = "com.lionreader.ui.saved.SavedArticlesViewModel";
+
+      static String com_lionreader_ui_entries_EntryDetailViewModel = "com.lionreader.ui.entries.EntryDetailViewModel";
+
+      static String com_lionreader_ui_entries_EntryListViewModel = "com.lionreader.ui.entries.EntryListViewModel";
+
+      static String com_lionreader_ui_main_MainViewModel = "com.lionreader.ui.main.MainViewModel";
+
+      static String com_lionreader_ui_main_DrawerViewModel = "com.lionreader.ui.main.DrawerViewModel";
+
+      static String com_lionreader_ui_saved_SavedArticleDetailViewModel = "com.lionreader.ui.saved.SavedArticleDetailViewModel";
+
+      @KeepFieldType
+      NarrationViewModel com_lionreader_ui_narration_NarrationViewModel2;
+
+      @KeepFieldType
+      LoginViewModel com_lionreader_ui_auth_LoginViewModel2;
+
+      @KeepFieldType
+      SavedArticlesViewModel com_lionreader_ui_saved_SavedArticlesViewModel2;
+
+      @KeepFieldType
+      EntryDetailViewModel com_lionreader_ui_entries_EntryDetailViewModel2;
+
+      @KeepFieldType
+      EntryListViewModel com_lionreader_ui_entries_EntryListViewModel2;
+
+      @KeepFieldType
+      MainViewModel com_lionreader_ui_main_MainViewModel2;
+
+      @KeepFieldType
+      DrawerViewModel com_lionreader_ui_main_DrawerViewModel2;
+
+      @KeepFieldType
+      SavedArticleDetailViewModel com_lionreader_ui_saved_SavedArticleDetailViewModel2;
+    }
+  }
+
+  private static final class ViewModelCImpl extends LionReaderApp_HiltComponents.ViewModelC {
+    private final SavedStateHandle savedStateHandle;
+
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl;
+
+    private final ViewModelCImpl viewModelCImpl = this;
+
+    private Provider<DrawerViewModel> drawerViewModelProvider;
+
+    private Provider<EntryDetailViewModel> entryDetailViewModelProvider;
+
+    private Provider<EntryListViewModel> entryListViewModelProvider;
+
+    private Provider<LoginViewModel> loginViewModelProvider;
+
+    private Provider<MainViewModel> mainViewModelProvider;
+
+    private Provider<NarrationViewModel> narrationViewModelProvider;
+
+    private Provider<SavedArticleDetailViewModel> savedArticleDetailViewModelProvider;
+
+    private Provider<SavedArticlesViewModel> savedArticlesViewModelProvider;
+
+    private ViewModelCImpl(SingletonCImpl singletonCImpl,
+        ActivityRetainedCImpl activityRetainedCImpl, SavedStateHandle savedStateHandleParam,
+        ViewModelLifecycle viewModelLifecycleParam) {
+      this.singletonCImpl = singletonCImpl;
+      this.activityRetainedCImpl = activityRetainedCImpl;
+      this.savedStateHandle = savedStateHandleParam;
+      initialize(savedStateHandleParam, viewModelLifecycleParam);
+
+    }
+
+    @SuppressWarnings("unchecked")
+    private void initialize(final SavedStateHandle savedStateHandleParam,
+        final ViewModelLifecycle viewModelLifecycleParam) {
+      this.drawerViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 0);
+      this.entryDetailViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 1);
+      this.entryListViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 2);
+      this.loginViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 3);
+      this.mainViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 4);
+      this.narrationViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 5);
+      this.savedArticleDetailViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 6);
+      this.savedArticlesViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 7);
+    }
+
+    @Override
+    public Map<Class<?>, javax.inject.Provider<ViewModel>> getHiltViewModelMap() {
+      return LazyClassKeyMap.<javax.inject.Provider<ViewModel>>of(ImmutableMap.<String, javax.inject.Provider<ViewModel>>builderWithExpectedSize(8).put(LazyClassKeyProvider.com_lionreader_ui_main_DrawerViewModel, ((Provider) drawerViewModelProvider)).put(LazyClassKeyProvider.com_lionreader_ui_entries_EntryDetailViewModel, ((Provider) entryDetailViewModelProvider)).put(LazyClassKeyProvider.com_lionreader_ui_entries_EntryListViewModel, ((Provider) entryListViewModelProvider)).put(LazyClassKeyProvider.com_lionreader_ui_auth_LoginViewModel, ((Provider) loginViewModelProvider)).put(LazyClassKeyProvider.com_lionreader_ui_main_MainViewModel, ((Provider) mainViewModelProvider)).put(LazyClassKeyProvider.com_lionreader_ui_narration_NarrationViewModel, ((Provider) narrationViewModelProvider)).put(LazyClassKeyProvider.com_lionreader_ui_saved_SavedArticleDetailViewModel, ((Provider) savedArticleDetailViewModelProvider)).put(LazyClassKeyProvider.com_lionreader_ui_saved_SavedArticlesViewModel, ((Provider) savedArticlesViewModelProvider)).build());
+    }
+
+    @Override
+    public Map<Class<?>, Object> getHiltViewModelAssistedMap() {
+      return ImmutableMap.<Class<?>, Object>of();
+    }
+
+    @IdentifierNameString
+    private static final class LazyClassKeyProvider {
+      static String com_lionreader_ui_main_DrawerViewModel = "com.lionreader.ui.main.DrawerViewModel";
+
+      static String com_lionreader_ui_main_MainViewModel = "com.lionreader.ui.main.MainViewModel";
+
+      static String com_lionreader_ui_entries_EntryListViewModel = "com.lionreader.ui.entries.EntryListViewModel";
+
+      static String com_lionreader_ui_entries_EntryDetailViewModel = "com.lionreader.ui.entries.EntryDetailViewModel";
+
+      static String com_lionreader_ui_saved_SavedArticlesViewModel = "com.lionreader.ui.saved.SavedArticlesViewModel";
+
+      static String com_lionreader_ui_saved_SavedArticleDetailViewModel = "com.lionreader.ui.saved.SavedArticleDetailViewModel";
+
+      static String com_lionreader_ui_auth_LoginViewModel = "com.lionreader.ui.auth.LoginViewModel";
+
+      static String com_lionreader_ui_narration_NarrationViewModel = "com.lionreader.ui.narration.NarrationViewModel";
+
+      @KeepFieldType
+      DrawerViewModel com_lionreader_ui_main_DrawerViewModel2;
+
+      @KeepFieldType
+      MainViewModel com_lionreader_ui_main_MainViewModel2;
+
+      @KeepFieldType
+      EntryListViewModel com_lionreader_ui_entries_EntryListViewModel2;
+
+      @KeepFieldType
+      EntryDetailViewModel com_lionreader_ui_entries_EntryDetailViewModel2;
+
+      @KeepFieldType
+      SavedArticlesViewModel com_lionreader_ui_saved_SavedArticlesViewModel2;
+
+      @KeepFieldType
+      SavedArticleDetailViewModel com_lionreader_ui_saved_SavedArticleDetailViewModel2;
+
+      @KeepFieldType
+      LoginViewModel com_lionreader_ui_auth_LoginViewModel2;
+
+      @KeepFieldType
+      NarrationViewModel com_lionreader_ui_narration_NarrationViewModel2;
+    }
+
+    private static final class SwitchingProvider<T> implements Provider<T> {
+      private final SingletonCImpl singletonCImpl;
+
+      private final ActivityRetainedCImpl activityRetainedCImpl;
+
+      private final ViewModelCImpl viewModelCImpl;
+
+      private final int id;
+
+      SwitchingProvider(SingletonCImpl singletonCImpl, ActivityRetainedCImpl activityRetainedCImpl,
+          ViewModelCImpl viewModelCImpl, int id) {
+        this.singletonCImpl = singletonCImpl;
+        this.activityRetainedCImpl = activityRetainedCImpl;
+        this.viewModelCImpl = viewModelCImpl;
+        this.id = id;
+      }
+
+      @SuppressWarnings("unchecked")
+      @Override
+      public T get() {
+        switch (id) {
+          case 0: // com.lionreader.ui.main.DrawerViewModel 
+          return (T) new DrawerViewModel(singletonCImpl.provideSubscriptionRepositoryProvider.get(), singletonCImpl.provideTagRepositoryProvider.get(), singletonCImpl.provideAuthRepositoryProvider.get(), singletonCImpl.provideEntryRepositoryProvider.get(), singletonCImpl.savedArticleRepositoryProvider.get());
+
+          case 1: // com.lionreader.ui.entries.EntryDetailViewModel 
+          return (T) new EntryDetailViewModel(viewModelCImpl.savedStateHandle, singletonCImpl.provideEntryRepositoryProvider.get(), singletonCImpl.syncErrorNotifierProvider.get());
+
+          case 2: // com.lionreader.ui.entries.EntryListViewModel 
+          return (T) new EntryListViewModel(viewModelCImpl.savedStateHandle, singletonCImpl.provideEntryRepositoryProvider.get(), singletonCImpl.provideSubscriptionRepositoryProvider.get(), singletonCImpl.provideTagRepositoryProvider.get(), singletonCImpl.connectivityMonitorProvider.get(), singletonCImpl.syncErrorNotifierProvider.get());
+
+          case 3: // com.lionreader.ui.auth.LoginViewModel 
+          return (T) new LoginViewModel(singletonCImpl.provideAuthRepositoryProvider.get());
+
+          case 4: // com.lionreader.ui.main.MainViewModel 
+          return (T) new MainViewModel(viewModelCImpl.savedStateHandle, singletonCImpl.provideSubscriptionRepositoryProvider.get(), singletonCImpl.provideTagRepositoryProvider.get());
+
+          case 5: // com.lionreader.ui.narration.NarrationViewModel 
+          return (T) new NarrationViewModel(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 6: // com.lionreader.ui.saved.SavedArticleDetailViewModel 
+          return (T) new SavedArticleDetailViewModel(viewModelCImpl.savedStateHandle, singletonCImpl.savedArticleRepositoryProvider.get());
+
+          case 7: // com.lionreader.ui.saved.SavedArticlesViewModel 
+          return (T) new SavedArticlesViewModel(singletonCImpl.savedArticleRepositoryProvider.get());
+
+          default: throw new AssertionError(id);
+        }
+      }
+    }
+  }
+
+  private static final class ActivityRetainedCImpl extends LionReaderApp_HiltComponents.ActivityRetainedC {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ActivityRetainedCImpl activityRetainedCImpl = this;
+
+    private Provider<ActivityRetainedLifecycle> provideActivityRetainedLifecycleProvider;
+
+    private ActivityRetainedCImpl(SingletonCImpl singletonCImpl,
+        SavedStateHandleHolder savedStateHandleHolderParam) {
+      this.singletonCImpl = singletonCImpl;
+
+      initialize(savedStateHandleHolderParam);
+
+    }
+
+    @SuppressWarnings("unchecked")
+    private void initialize(final SavedStateHandleHolder savedStateHandleHolderParam) {
+      this.provideActivityRetainedLifecycleProvider = DoubleCheck.provider(new SwitchingProvider<ActivityRetainedLifecycle>(singletonCImpl, activityRetainedCImpl, 0));
+    }
+
+    @Override
+    public ActivityComponentBuilder activityComponentBuilder() {
+      return new ActivityCBuilder(singletonCImpl, activityRetainedCImpl);
+    }
+
+    @Override
+    public ActivityRetainedLifecycle getActivityRetainedLifecycle() {
+      return provideActivityRetainedLifecycleProvider.get();
+    }
+
+    private static final class SwitchingProvider<T> implements Provider<T> {
+      private final SingletonCImpl singletonCImpl;
+
+      private final ActivityRetainedCImpl activityRetainedCImpl;
+
+      private final int id;
+
+      SwitchingProvider(SingletonCImpl singletonCImpl, ActivityRetainedCImpl activityRetainedCImpl,
+          int id) {
+        this.singletonCImpl = singletonCImpl;
+        this.activityRetainedCImpl = activityRetainedCImpl;
+        this.id = id;
+      }
+
+      @SuppressWarnings("unchecked")
+      @Override
+      public T get() {
+        switch (id) {
+          case 0: // dagger.hilt.android.ActivityRetainedLifecycle 
+          return (T) ActivityRetainedComponentManager_LifecycleModule_ProvideActivityRetainedLifecycleFactory.provideActivityRetainedLifecycle();
+
+          default: throw new AssertionError(id);
+        }
+      }
+    }
+  }
+
+  private static final class ServiceCImpl extends LionReaderApp_HiltComponents.ServiceC {
+    private final SingletonCImpl singletonCImpl;
+
+    private final ServiceCImpl serviceCImpl = this;
+
+    private ServiceCImpl(SingletonCImpl singletonCImpl, Service serviceParam) {
+      this.singletonCImpl = singletonCImpl;
+
+
+    }
+
+    @Override
+    public void injectNarrationService(NarrationService narrationService) {
+      injectNarrationService2(narrationService);
+    }
+
+    private NarrationService injectNarrationService2(NarrationService instance) {
+      NarrationService_MembersInjector.injectApi(instance, singletonCImpl.provideLionReaderApiProvider.get());
+      return instance;
+    }
+  }
+
+  private static final class SingletonCImpl extends LionReaderApp_HiltComponents.SingletonC {
+    private final ApplicationContextModule applicationContextModule;
+
+    private final SingletonCImpl singletonCImpl = this;
+
+    private Provider<AppConfig> provideAppConfigProvider;
+
+    private Provider<SessionStore> sessionStoreProvider;
+
+    private Provider<AuthInterceptor> authInterceptorProvider;
+
+    private Provider<ApiClient> apiClientProvider;
+
+    private Provider<LionReaderApi> provideLionReaderApiProvider;
+
+    private Provider<LionReaderDatabase> provideLionReaderDatabaseProvider;
+
+    private Provider<SyncErrorNotifier> syncErrorNotifierProvider;
+
+    private Provider<SyncRepository> provideSyncRepositoryProvider;
+
+    private Provider<ConnectivityMonitor> connectivityMonitorProvider;
+
+    private Provider<SyncPreferences> syncPreferencesProvider;
+
+    private Provider<EntryRepository> provideEntryRepositoryProvider;
+
+    private Provider<SyncWorker_AssistedFactory> syncWorker_AssistedFactoryProvider;
+
+    private Provider<SyncScheduler> syncSchedulerProvider;
+
+    private Provider<AuthRepository> provideAuthRepositoryProvider;
+
+    private Provider<SubscriptionRepository> provideSubscriptionRepositoryProvider;
+
+    private Provider<TagRepository> provideTagRepositoryProvider;
+
+    private Provider<SavedArticleRepository> savedArticleRepositoryProvider;
+
+    private SingletonCImpl(ApplicationContextModule applicationContextModuleParam) {
+      this.applicationContextModule = applicationContextModuleParam;
+      initialize(applicationContextModuleParam);
+
+    }
+
+    private PendingActionDao pendingActionDao() {
+      return DatabaseModule_ProvidePendingActionDaoFactory.providePendingActionDao(provideLionReaderDatabaseProvider.get());
+    }
+
+    private EntryStateDao entryStateDao() {
+      return DatabaseModule_ProvideEntryStateDaoFactory.provideEntryStateDao(provideLionReaderDatabaseProvider.get());
+    }
+
+    private EntryDao entryDao() {
+      return DatabaseModule_ProvideEntryDaoFactory.provideEntryDao(provideLionReaderDatabaseProvider.get());
+    }
+
+    private SubscriptionDao subscriptionDao() {
+      return DatabaseModule_ProvideSubscriptionDaoFactory.provideSubscriptionDao(provideLionReaderDatabaseProvider.get());
+    }
+
+    private TagDao tagDao() {
+      return DatabaseModule_ProvideTagDaoFactory.provideTagDao(provideLionReaderDatabaseProvider.get());
+    }
+
+    private Map<String, javax.inject.Provider<WorkerAssistedFactory<? extends ListenableWorker>>> mapOfStringAndProviderOfWorkerAssistedFactoryOf(
+        ) {
+      return ImmutableMap.<String, javax.inject.Provider<WorkerAssistedFactory<? extends ListenableWorker>>>of("com.lionreader.service.SyncWorker", ((Provider) syncWorker_AssistedFactoryProvider));
+    }
+
+    private HiltWorkerFactory hiltWorkerFactory() {
+      return WorkerFactoryModule_ProvideFactoryFactory.provideFactory(mapOfStringAndProviderOfWorkerAssistedFactoryOf());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void initialize(final ApplicationContextModule applicationContextModuleParam) {
+      this.provideAppConfigProvider = DoubleCheck.provider(new SwitchingProvider<AppConfig>(singletonCImpl, 4));
+      this.sessionStoreProvider = DoubleCheck.provider(new SwitchingProvider<SessionStore>(singletonCImpl, 6));
+      this.authInterceptorProvider = DoubleCheck.provider(new SwitchingProvider<AuthInterceptor>(singletonCImpl, 5));
+      this.apiClientProvider = DoubleCheck.provider(new SwitchingProvider<ApiClient>(singletonCImpl, 3));
+      this.provideLionReaderApiProvider = DoubleCheck.provider(new SwitchingProvider<LionReaderApi>(singletonCImpl, 2));
+      this.provideLionReaderDatabaseProvider = DoubleCheck.provider(new SwitchingProvider<LionReaderDatabase>(singletonCImpl, 7));
+      this.syncErrorNotifierProvider = DoubleCheck.provider(new SwitchingProvider<SyncErrorNotifier>(singletonCImpl, 8));
+      this.provideSyncRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<SyncRepository>(singletonCImpl, 1));
+      this.connectivityMonitorProvider = DoubleCheck.provider(new SwitchingProvider<ConnectivityMonitor>(singletonCImpl, 10));
+      this.syncPreferencesProvider = DoubleCheck.provider(new SwitchingProvider<SyncPreferences>(singletonCImpl, 11));
+      this.provideEntryRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<EntryRepository>(singletonCImpl, 9));
+      this.syncWorker_AssistedFactoryProvider = SingleCheck.provider(new SwitchingProvider<SyncWorker_AssistedFactory>(singletonCImpl, 0));
+      this.syncSchedulerProvider = DoubleCheck.provider(new SwitchingProvider<SyncScheduler>(singletonCImpl, 12));
+      this.provideAuthRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<AuthRepository>(singletonCImpl, 13));
+      this.provideSubscriptionRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<SubscriptionRepository>(singletonCImpl, 14));
+      this.provideTagRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<TagRepository>(singletonCImpl, 15));
+      this.savedArticleRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<SavedArticleRepository>(singletonCImpl, 16));
+    }
+
+    @Override
+    public void injectLionReaderApp(LionReaderApp lionReaderApp) {
+      injectLionReaderApp2(lionReaderApp);
+    }
+
+    @Override
+    public Set<Boolean> getDisableFragmentGetContextFix() {
+      return ImmutableSet.<Boolean>of();
+    }
+
+    @Override
+    public ActivityRetainedComponentBuilder retainedComponentBuilder() {
+      return new ActivityRetainedCBuilder(singletonCImpl);
+    }
+
+    @Override
+    public ServiceComponentBuilder serviceComponentBuilder() {
+      return new ServiceCBuilder(singletonCImpl);
+    }
+
+    private LionReaderApp injectLionReaderApp2(LionReaderApp instance) {
+      LionReaderApp_MembersInjector.injectWorkerFactory(instance, hiltWorkerFactory());
+      LionReaderApp_MembersInjector.injectSyncScheduler(instance, syncSchedulerProvider.get());
+      return instance;
+    }
+
+    private static final class SwitchingProvider<T> implements Provider<T> {
+      private final SingletonCImpl singletonCImpl;
+
+      private final int id;
+
+      SwitchingProvider(SingletonCImpl singletonCImpl, int id) {
+        this.singletonCImpl = singletonCImpl;
+        this.id = id;
+      }
+
+      @SuppressWarnings("unchecked")
+      @Override
+      public T get() {
+        switch (id) {
+          case 0: // com.lionreader.service.SyncWorker_AssistedFactory 
+          return (T) new SyncWorker_AssistedFactory() {
+            @Override
+            public SyncWorker create(Context appContext, WorkerParameters workerParams) {
+              return new SyncWorker(appContext, workerParams, singletonCImpl.provideSyncRepositoryProvider.get(), singletonCImpl.provideEntryRepositoryProvider.get(), singletonCImpl.syncErrorNotifierProvider.get());
+            }
+          };
+
+          case 1: // com.lionreader.data.repository.SyncRepository 
+          return (T) RepositoryModule_ProvideSyncRepositoryFactory.provideSyncRepository(singletonCImpl.provideLionReaderApiProvider.get(), singletonCImpl.pendingActionDao(), singletonCImpl.entryStateDao(), singletonCImpl.syncErrorNotifierProvider.get());
+
+          case 2: // com.lionreader.data.api.LionReaderApi 
+          return (T) NetworkModule_ProvideLionReaderApiFactory.provideLionReaderApi(singletonCImpl.apiClientProvider.get());
+
+          case 3: // com.lionreader.data.api.ApiClient 
+          return (T) new ApiClient(singletonCImpl.provideAppConfigProvider.get(), singletonCImpl.authInterceptorProvider.get());
+
+          case 4: // com.lionreader.di.AppConfig 
+          return (T) AppModule_ProvideAppConfigFactory.provideAppConfig(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 5: // com.lionreader.data.api.AuthInterceptor 
+          return (T) new AuthInterceptor(singletonCImpl.sessionStoreProvider.get());
+
+          case 6: // com.lionreader.data.api.SessionStore 
+          return (T) new SessionStore(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 7: // com.lionreader.data.db.LionReaderDatabase 
+          return (T) DatabaseModule_ProvideLionReaderDatabaseFactory.provideLionReaderDatabase(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 8: // com.lionreader.data.sync.SyncErrorNotifier 
+          return (T) new SyncErrorNotifier();
+
+          case 9: // com.lionreader.data.repository.EntryRepository 
+          return (T) RepositoryModule_ProvideEntryRepositoryFactory.provideEntryRepository(singletonCImpl.provideLionReaderApiProvider.get(), singletonCImpl.entryDao(), singletonCImpl.entryStateDao(), singletonCImpl.pendingActionDao(), singletonCImpl.subscriptionDao(), singletonCImpl.tagDao(), singletonCImpl.connectivityMonitorProvider.get(), singletonCImpl.provideSyncRepositoryProvider.get(), singletonCImpl.syncPreferencesProvider.get());
+
+          case 10: // com.lionreader.data.sync.ConnectivityMonitor 
+          return (T) new ConnectivityMonitor(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 11: // com.lionreader.data.sync.SyncPreferences 
+          return (T) new SyncPreferences(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 12: // com.lionreader.data.sync.SyncScheduler 
+          return (T) new SyncScheduler(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule), singletonCImpl.connectivityMonitorProvider.get());
+
+          case 13: // com.lionreader.data.repository.AuthRepository 
+          return (T) RepositoryModule_ProvideAuthRepositoryFactory.provideAuthRepository(singletonCImpl.provideLionReaderApiProvider.get(), singletonCImpl.sessionStoreProvider.get());
+
+          case 14: // com.lionreader.data.repository.SubscriptionRepository 
+          return (T) RepositoryModule_ProvideSubscriptionRepositoryFactory.provideSubscriptionRepository(singletonCImpl.provideLionReaderApiProvider.get(), singletonCImpl.subscriptionDao(), singletonCImpl.tagDao());
+
+          case 15: // com.lionreader.data.repository.TagRepository 
+          return (T) RepositoryModule_ProvideTagRepositoryFactory.provideTagRepository(singletonCImpl.provideLionReaderApiProvider.get(), singletonCImpl.tagDao());
+
+          case 16: // com.lionreader.data.repository.SavedArticleRepository 
+          return (T) new SavedArticleRepository(singletonCImpl.provideLionReaderApiProvider.get());
+
+          default: throw new AssertionError(id);
+        }
+      }
+    }
+  }
+}

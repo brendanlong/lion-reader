@@ -1,0 +1,61 @@
+<lint-module
+    format="1"
+    dir="/home/brendanlong/workspace/lion-reader/android/app"
+    name=":app"
+    type="APP"
+    maven="LionReader:app:unspecified"
+    agpVersion="8.7.3"
+    buildFolder="build"
+    bootClassPath="/home/brendanlong/Android/Sdk/platforms/android-35/android.jar:/home/brendanlong/Android/Sdk/build-tools/34.0.0/core-lambda-stubs.jar"
+    javaSourceLevel="17"
+    compileTarget="android-35">
+  <lintOptions
+      disable="NullSafeMutableLiveData,RememberInComposition,FrequentlyChangingValue,AutoboxingStateCreation,AutoboxingStateValueProperty,StateFlowValueCalledInComposition,FlowOperatorInvokedInComposition,ComposableNaming,UnrememberedMutableState,CoroutineCreationDuringComposition,ProduceStateDoesNotAssignValue,ReturnFromAwaitPointerEventScope,UnnecessaryComposedModifier"
+      abortOnError="true"
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true">
+    <severities>
+      <severity
+        id="AutoboxingStateCreation"
+        severity="IGNORE" />
+      <severity
+        id="AutoboxingStateValueProperty"
+        severity="IGNORE" />
+      <severity
+        id="ComposableNaming"
+        severity="IGNORE" />
+      <severity
+        id="CoroutineCreationDuringComposition"
+        severity="IGNORE" />
+      <severity
+        id="FlowOperatorInvokedInComposition"
+        severity="IGNORE" />
+      <severity
+        id="FrequentlyChangingValue"
+        severity="IGNORE" />
+      <severity
+        id="NullSafeMutableLiveData"
+        severity="IGNORE" />
+      <severity
+        id="ProduceStateDoesNotAssignValue"
+        severity="IGNORE" />
+      <severity
+        id="RememberInComposition"
+        severity="IGNORE" />
+      <severity
+        id="ReturnFromAwaitPointerEventScope"
+        severity="IGNORE" />
+      <severity
+        id="StateFlowValueCalledInComposition"
+        severity="IGNORE" />
+      <severity
+        id="UnnecessaryComposedModifier"
+        severity="IGNORE" />
+      <severity
+        id="UnrememberedMutableState"
+        severity="IGNORE" />
+    </severities>
+  </lintOptions>
+  <variant name="debug"/>
+</lint-module>

@@ -1,0 +1,1 @@
+{"className":"com.lionreader.data.db.LionReaderDatabase","classAnnotations":["androidx.room.Database","androidx.compose.runtime.internal.StabilityInferred"],"interfaces":[],"superClasses":["androidx.room.RoomDatabase","java.lang.Object"]}

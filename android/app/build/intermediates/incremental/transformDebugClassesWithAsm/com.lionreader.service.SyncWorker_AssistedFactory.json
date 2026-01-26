@@ -1,0 +1,1 @@
+{"className":"com.lionreader.service.SyncWorker_AssistedFactory","classAnnotations":["dagger.assisted.AssistedFactory"],"interfaces":["androidx.hilt.work.WorkerAssistedFactory"],"superClasses":["java.lang.Object"]}

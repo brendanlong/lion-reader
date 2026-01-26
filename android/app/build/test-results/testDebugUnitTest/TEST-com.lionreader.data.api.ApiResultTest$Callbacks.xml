@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="onSuccess and onError" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:08" hostname="brendan-laptop" time="0.012">
+  <properties/>
+  <testcase name="onError is called for Error" classname="com.lionreader.data.api.ApiResultTest$Callbacks" time="0.004"/>
+  <testcase name="onSuccess is called for Success" classname="com.lionreader.data.api.ApiResultTest$Callbacks" time="0.002"/>
+  <testcase name="onError is not called for Success" classname="com.lionreader.data.api.ApiResultTest$Callbacks" time="0.001"/>
+  <testcase name="Callbacks can be chained" classname="com.lionreader.data.api.ApiResultTest$Callbacks" time="0.001"/>
+  <testcase name="onSuccess is not called for Error" classname="com.lionreader.data.api.ApiResultTest$Callbacks" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

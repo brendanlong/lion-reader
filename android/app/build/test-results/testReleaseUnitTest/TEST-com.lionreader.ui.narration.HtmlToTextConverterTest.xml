@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lionreader.ui.narration.HtmlToTextConverterTest" tests="23" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:14" hostname="brendan-laptop" time="0.047">
+  <properties/>
+  <testcase name="convert handles list items()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.033"/>
+  <testcase name="convert handles figures without alt or caption()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert handles empty table()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert handles figures with figcaption()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert returns empty list for blank HTML()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert replaces inline images with descriptions()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert handles figures with alt text()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert preserves text formatting in paragraphs()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert extracts basic paragraphs()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert handles real-world article structure()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert replaces inline images without alt text()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert handles nested lists as separate items()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert handles tables()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert filters out empty paragraphs()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert handles blockquotes()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert prefixes h1 and h2 with Heading()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert handles complex mixed content()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert skips nested block elements to avoid duplication()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert returns empty list for whitespace-only HTML()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert handles code blocks with pre tag()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert trims whitespace from paragraphs()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <testcase name="convert handles HTML with only inline elements()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.001"/>
+  <testcase name="convert prefixes h3-h6 with Subheading()" classname="com.lionreader.ui.narration.HtmlToTextConverterTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

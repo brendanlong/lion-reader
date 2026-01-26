@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Login Success" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:13" hostname="brendan-laptop" time="0.02">
+  <properties/>
+  <testcase name="Successful login emits LoginSuccess event" classname="com.lionreader.ui.auth.LoginViewModelTest$LoginSuccess" time="0.016"/>
+  <testcase name="Successful login clears loading state" classname="com.lionreader.ui.auth.LoginViewModelTest$LoginSuccess" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

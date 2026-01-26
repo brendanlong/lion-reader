@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="fold extension function" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:08" hostname="brendan-laptop" time="0.02">
+  <properties/>
+  <testcase name="fold uses default error handlers when not provided" classname="com.lionreader.data.api.ApiResultTest$FoldExtension" time="0.004"/>
+  <testcase name="fold handles RateLimited with custom handler" classname="com.lionreader.data.api.ApiResultTest$FoldExtension" time="0.004"/>
+  <testcase name="fold handles NetworkError with custom handler" classname="com.lionreader.data.api.ApiResultTest$FoldExtension" time="0.001"/>
+  <testcase name="fold handles Success" classname="com.lionreader.data.api.ApiResultTest$FoldExtension" time="0.004"/>
+  <testcase name="fold handles Unauthorized with custom handler" classname="com.lionreader.data.api.ApiResultTest$FoldExtension" time="0.002"/>
+  <testcase name="fold handles Error" classname="com.lionreader.data.api.ApiResultTest$FoldExtension" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

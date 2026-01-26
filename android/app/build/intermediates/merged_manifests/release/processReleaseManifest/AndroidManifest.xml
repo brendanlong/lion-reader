@@ -1,0 +1,228 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:versionCode="10001" android:versionName="1.0.0" package="com.lionreader">
+        
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35"/>
+        
+    <!-- Internet permission for API calls -->
+        
+    <uses-permission android:name="android.permission.INTERNET"/>
+        
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+        
+    <!-- Foreground service for narration -->
+        
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+        
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+        
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+        
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+        
+    <permission android:name="com.lionreader.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" android:protectionLevel="signature"/>
+        
+    <uses-permission android:name="com.lionreader.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"/>
+        
+    <application android:allowBackup="true" android:appComponentFactory="androidx.core.app.CoreComponentFactory" android:extractNativeLibs="false" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:name="com.lionreader.LionReaderApp" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/Theme.LionReader">
+                
+        <!-- Disable Sentry auto-initialization so we can control it in LionReaderApp -->
+                
+        <meta-data android:name="io.sentry.auto-init" android:value="false"/>
+                
+        <!-- Disable default WorkManager initialization to use custom Configuration -->
+                
+        <provider android:authorities="com.lionreader.androidx-startup" android:exported="false" android:name="androidx.startup.InitializationProvider">
+                        
+            <meta-data android:name="androidx.emoji2.text.EmojiCompatInitializer" android:value="androidx.startup"/>
+                        
+            <meta-data android:name="androidx.lifecycle.ProcessLifecycleInitializer" android:value="androidx.startup"/>
+                        
+            <meta-data android:name="androidx.profileinstaller.ProfileInstallerInitializer" android:value="androidx.startup"/>
+                    
+        </provider>
+                
+        <activity android:exported="true" android:name="com.lionreader.MainActivity" android:theme="@style/Theme.LionReader">
+                        
+            <intent-filter>
+                                
+                <action android:name="android.intent.action.MAIN"/>
+                                
+                <category android:name="android.intent.category.LAUNCHER"/>
+                            
+            </intent-filter>
+                        
+            <!-- OAuth callback deep link -->
+                        
+            <intent-filter>
+                                
+                <action android:name="android.intent.action.VIEW"/>
+                                
+                <category android:name="android.intent.category.DEFAULT"/>
+                                
+                <category android:name="android.intent.category.BROWSABLE"/>
+                                
+                <data android:host="oauth" android:pathPrefix="/callback" android:scheme="lionreader"/>
+                            
+            </intent-filter>
+                    
+        </activity>
+                
+        <!-- Share receiver activity for saving articles from other apps -->
+                
+        <activity android:excludeFromRecents="true" android:exported="true" android:name="com.lionreader.ShareReceiverActivity" android:taskAffinity="" android:theme="@style/Theme.LionReader.Translucent">
+                        
+            <intent-filter>
+                                
+                <action android:name="android.intent.action.SEND"/>
+                                
+                <category android:name="android.intent.category.DEFAULT"/>
+                                
+                <data android:mimeType="text/plain"/>
+                            
+            </intent-filter>
+                    
+        </activity>
+                
+        <!-- Narration service for TTS playback using Media3 -->
+                
+        <service android:exported="true" android:foregroundServiceType="mediaPlayback" android:name="com.lionreader.service.NarrationService">
+                        
+            <intent-filter>
+                                
+                <action android:name="androidx.media3.session.MediaSessionService"/>
+                            
+            </intent-filter>
+                    
+        </service>
+                
+        <!-- 'android:authorities' must be unique in the device, across all apps -->
+                
+        <provider android:authorities="com.lionreader.SentryInitProvider" android:exported="false" android:name="io.sentry.android.core.SentryInitProvider"/>
+                
+        <provider android:authorities="com.lionreader.SentryPerformanceProvider" android:exported="false" android:initOrder="200" android:name="io.sentry.android.core.SentryPerformanceProvider"/>
+                
+        <service android:directBootAware="false" android:enabled="@bool/enable_system_alarm_service_default" android:exported="false" android:name="androidx.work.impl.background.systemalarm.SystemAlarmService"/>
+                
+        <service android:directBootAware="false" android:enabled="@bool/enable_system_job_service_default" android:exported="true" android:name="androidx.work.impl.background.systemjob.SystemJobService" android:permission="android.permission.BIND_JOB_SERVICE"/>
+                
+        <service android:directBootAware="false" android:enabled="@bool/enable_system_foreground_service_default" android:exported="false" android:name="androidx.work.impl.foreground.SystemForegroundService"/>
+                
+        <receiver android:directBootAware="false" android:enabled="true" android:exported="false" android:name="androidx.work.impl.utils.ForceStopRunnable$BroadcastReceiver"/>
+                
+        <receiver android:directBootAware="false" android:enabled="false" android:exported="false" android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy">
+                        
+            <intent-filter>
+                                
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED"/>
+                                
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED"/>
+                            
+            </intent-filter>
+                    
+        </receiver>
+                
+        <receiver android:directBootAware="false" android:enabled="false" android:exported="false" android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy">
+                        
+            <intent-filter>
+                                
+                <action android:name="android.intent.action.BATTERY_OKAY"/>
+                                
+                <action android:name="android.intent.action.BATTERY_LOW"/>
+                            
+            </intent-filter>
+                    
+        </receiver>
+                
+        <receiver android:directBootAware="false" android:enabled="false" android:exported="false" android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy">
+                        
+            <intent-filter>
+                                
+                <action android:name="android.intent.action.DEVICE_STORAGE_LOW"/>
+                                
+                <action android:name="android.intent.action.DEVICE_STORAGE_OK"/>
+                            
+            </intent-filter>
+                    
+        </receiver>
+                
+        <receiver android:directBootAware="false" android:enabled="false" android:exported="false" android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy">
+                        
+            <intent-filter>
+                                
+                <action android:name="android.net.conn.CONNECTIVITY_CHANGE"/>
+                            
+            </intent-filter>
+                    
+        </receiver>
+                
+        <receiver android:directBootAware="false" android:enabled="false" android:exported="false" android:name="androidx.work.impl.background.systemalarm.RescheduleReceiver">
+                        
+            <intent-filter>
+                                
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                                
+                <action android:name="android.intent.action.TIME_SET"/>
+                                
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+                            
+            </intent-filter>
+                    
+        </receiver>
+                
+        <receiver android:directBootAware="false" android:enabled="@bool/enable_system_alarm_service_default" android:exported="false" android:name="androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver">
+                        
+            <intent-filter>
+                                
+                <action android:name="androidx.work.impl.background.systemalarm.UpdateProxies"/>
+                            
+            </intent-filter>
+                    
+        </receiver>
+                
+        <receiver android:directBootAware="false" android:enabled="true" android:exported="true" android:name="androidx.work.impl.diagnostics.DiagnosticsReceiver" android:permission="android.permission.DUMP">
+                        
+            <intent-filter>
+                                
+                <action android:name="androidx.work.diagnostics.REQUEST_DIAGNOSTICS"/>
+                            
+            </intent-filter>
+                    
+        </receiver>
+                
+        <uses-library android:name="androidx.window.extensions" android:required="false"/>
+                
+        <uses-library android:name="androidx.window.sidecar" android:required="false"/>
+                
+        <service android:directBootAware="true" android:exported="false" android:name="androidx.room.MultiInstanceInvalidationService"/>
+                
+        <receiver android:directBootAware="false" android:enabled="true" android:exported="true" android:name="androidx.profileinstaller.ProfileInstallReceiver" android:permission="android.permission.DUMP">
+                        
+            <intent-filter>
+                                
+                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE"/>
+                            
+            </intent-filter>
+                        
+            <intent-filter>
+                                
+                <action android:name="androidx.profileinstaller.action.SKIP_FILE"/>
+                            
+            </intent-filter>
+                        
+            <intent-filter>
+                                
+                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE"/>
+                            
+            </intent-filter>
+                        
+            <intent-filter>
+                                
+                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION"/>
+                            
+            </intent-filter>
+                    
+        </receiver>
+            
+        <meta-data android:name="io.sentry.gradle-plugin-integrations" android:value="AppStartInstrumentation,ComposeInstrumentation,DatabaseInstrumentation,FileIOInstrumentation,LogcatInstrumentation,OkHttpInstrumentation,SourceContext"/>
+    </application>
+    
+</manifest>

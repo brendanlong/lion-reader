@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lionreader.ui.entries.EntryListViewModelTest$Refresh" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:14" hostname="brendan-laptop" time="0.041">
+  <properties/>
+  <testcase name="Refresh does not sync from server when offline" classname="com.lionreader.ui.entries.EntryListViewModelTest$Refresh" time="0.03"/>
+  <testcase name="Refresh syncs from server when online" classname="com.lionreader.ui.entries.EntryListViewModelTest$Refresh" time="0.006"/>
+  <testcase name="Refresh sets refreshing state" classname="com.lionreader.ui.entries.EntryListViewModelTest$Refresh" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

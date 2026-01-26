@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="flatMap" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-01-12T03:50:12" hostname="brendan-laptop" time="0.001">
+  <properties/>
+  <testcase name="Success chains to new Success" classname="com.lionreader.data.api.ApiResultTest$FlatMap" time="0.0"/>
+  <testcase name="Success chains to Error" classname="com.lionreader.data.api.ApiResultTest$FlatMap" time="0.001"/>
+  <testcase name="Error propagates without calling transform" classname="com.lionreader.data.api.ApiResultTest$FlatMap" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
