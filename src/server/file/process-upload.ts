@@ -57,7 +57,9 @@ export function detectFileType(filename: string): SupportedFileType | null {
   if (lower.endsWith(".html") || lower.endsWith(".htm")) {
     return "html";
   }
-  if (lower.endsWith(".md") || lower.endsWith(".markdown")) {
+  // Treat both markdown and plain text as markdown - the markdown processor
+  // handles plain text fine (it just renders it as-is, wrapped in paragraphs)
+  if (lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".txt")) {
     return "markdown";
   }
 
@@ -69,7 +71,7 @@ export function detectFileType(filename: string): SupportedFileType | null {
  */
 export function titleFromFilename(filename: string): string {
   // Remove extension
-  let title = filename.replace(/\.(docx|html?|md|markdown)$/i, "");
+  let title = filename.replace(/\.(docx|html?|md|markdown|txt)$/i, "");
 
   // Clean up common patterns
   title = title
@@ -203,7 +205,9 @@ export async function processUploadedFile(
   const fileType = detectFileType(filename);
 
   if (!fileType) {
-    throw new Error(`Unsupported file type. Supported types: .docx, .html, .htm, .md, .markdown`);
+    throw new Error(
+      `Unsupported file type. Supported types: .docx, .html, .htm, .md, .markdown, .txt`
+    );
   }
 
   logger.info("Processing uploaded file", { filename, fileType });
@@ -222,7 +226,7 @@ export async function processUploadedFile(
     }
 
     case "markdown": {
-      // Markdown should be string
+      // Markdown should be string (also handles plain text files)
       const mdContent = typeof content === "string" ? content : content.toString("utf-8");
       return processMarkdown(mdContent, filename);
     }
@@ -233,12 +237,12 @@ export async function processUploadedFile(
  * Gets the list of supported file extensions for display.
  */
 export function getSupportedExtensions(): string[] {
-  return [".docx", ".html", ".htm", ".md", ".markdown"];
+  return [".docx", ".html", ".htm", ".md", ".markdown", ".txt"];
 }
 
 /**
  * Gets a human-readable description of supported file types.
  */
 export function getSupportedTypesDescription(): string {
-  return "Word documents (.docx), HTML files (.html), and Markdown files (.md)";
+  return "Word documents (.docx), HTML files (.html), Markdown files (.md), and text files (.txt)";
 }
