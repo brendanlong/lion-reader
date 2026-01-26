@@ -214,6 +214,14 @@ export const savedRouter = createTRPCRouter({
    * @returns The saved article
    */
   save: scopedProtectedProcedure(API_TOKEN_SCOPES.SAVED_WRITE)
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/saved",
+        tags: ["Saved Articles"],
+        summary: "Save URL for later",
+      },
+    })
     .input(
       z.object({
         url: urlSchema,
