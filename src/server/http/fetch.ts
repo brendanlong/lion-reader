@@ -61,6 +61,8 @@ export interface FetchUrlResult {
   contentType: string;
   /** The final URL after any redirects */
   finalUrl: string;
+  /** Whether the content is Markdown (based on Content-Type header) */
+  isMarkdown?: boolean;
 }
 
 export interface FetchUrlOptions {
@@ -84,8 +86,10 @@ const FEED_ACCEPT_HEADER =
 
 /**
  * Accept header for HTML page requests.
+ * Prefers Markdown (text/markdown) but also accepts HTML.
  */
-const HTML_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+const HTML_ACCEPT_HEADER =
+  "text/markdown,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 
 // ============================================================================
 // Fetch Utilities
@@ -123,8 +127,9 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
 
     const text = await response.text();
     const contentType = response.headers.get("content-type") ?? "";
+    const isMarkdown = contentType.includes("text/markdown");
 
-    return { text, contentType, finalUrl: response.url };
+    return { text, contentType, finalUrl: response.url, isMarkdown };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw errors.feedFetchError(url, "Request timed out");
@@ -140,15 +145,26 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
 }
 
 /**
+ * Result from fetching an HTML page (or Markdown).
+ */
+export interface FetchHtmlPageResult {
+  /** The content as text (HTML or Markdown) */
+  content: string;
+  /** Whether the content is Markdown (based on Content-Type header) */
+  isMarkdown: boolean;
+}
+
+/**
  * Fetches an HTML page with appropriate settings.
  *
  * Uses a longer timeout (30s) and HTML Accept header.
+ * Prefers Markdown if available, but accepts HTML.
  *
  * @param url - The URL to fetch
- * @returns The HTML content
+ * @returns The content and whether it's Markdown
  * @throws Error on fetch failure
  */
-export async function fetchHtmlPage(url: string): Promise<string> {
+export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PAGE_FETCH_TIMEOUT_MS);
 
@@ -167,11 +183,19 @@ export async function fetchHtmlPage(url: string): Promise<string> {
     }
 
     const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+    const isMarkdown = contentType.includes("text/markdown");
+
+    // Accept markdown, HTML, or XHTML
+    if (
+      !isMarkdown &&
+      !contentType.includes("text/html") &&
+      !contentType.includes("application/xhtml+xml")
+    ) {
       throw new Error(`Invalid content type: ${contentType}`);
     }
 
-    return await response.text();
+    const content = await response.text();
+    return { content, isMarkdown };
   } finally {
     clearTimeout(timeout);
   }

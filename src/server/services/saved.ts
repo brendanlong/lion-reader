@@ -7,13 +7,13 @@
 
 import { eq, and } from "drizzle-orm";
 import { Parser } from "htmlparser2";
-import { marked } from "marked";
 import { createHash } from "crypto";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
+import { markdownToHtml } from "@/server/file/process-upload";
 import { escapeHtml } from "@/server/http/html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
@@ -279,10 +279,24 @@ export async function saveArticle(
     }
   }
 
+  // Track if we got Markdown (skip Readability for Markdown)
+  let isMarkdown = false;
+
   // Fall back to normal HTML fetch if no plugin or plugin failed
   if (!pluginContent) {
     try {
-      html = await fetchHtmlPage(params.url);
+      const result = await fetchHtmlPage(params.url);
+      isMarkdown = result.isMarkdown;
+
+      // If we got Markdown, convert it to HTML
+      if (result.isMarkdown) {
+        logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
+          url: params.url,
+        });
+        html = await markdownToHtml(result.content);
+      } else {
+        html = result.content;
+      }
     } catch (error) {
       logger.warn("Failed to fetch URL for saved article", {
         url: params.url,
@@ -301,13 +315,15 @@ export async function saveArticle(
   // Extract metadata
   const metadata = extractMetadata(html!, params.url);
 
-  // Run Readability for clean content (unless plugin says to skip)
-  const cleaned = pluginContent?.skipReadability ? null : cleanContent(html!, { url: params.url });
+  // Run Readability for clean content (skip for plugins that request it, or for Markdown)
+  const shouldSkipReadability = pluginContent?.skipReadability || isMarkdown;
+  const cleaned = shouldSkipReadability ? null : cleanContent(html!, { url: params.url });
 
   // Generate excerpt
   let excerpt: string | null = null;
-  if (pluginContent?.skipReadability) {
-    excerpt = generateSummary(pluginContent.html) || null;
+  if (shouldSkipReadability) {
+    // For content that skips Readability (plugins or Markdown), extract summary from HTML
+    excerpt = generateSummary(html!) || null;
   } else if (cleaned) {
     excerpt = cleaned.excerpt || cleaned.textContent.slice(0, 300).trim() || null;
     if (excerpt && excerpt.length > 300) {
@@ -316,13 +332,31 @@ export async function saveArticle(
   }
 
   // Build final values - prefer plugin data, then provided hint, then metadata, then Readability
+  // For Markdown, extract and strip title header from converted HTML
+  let finalContentCleaned: string | null;
+  let markdownExtractedTitle: string | null = null;
+
+  if (isMarkdown) {
+    const { title: extractedTitle, content: contentWithoutTitle } = extractAndStripTitleHeader(
+      html!
+    );
+    markdownExtractedTitle = extractedTitle;
+    finalContentCleaned = contentWithoutTitle;
+  } else if (shouldSkipReadability) {
+    finalContentCleaned = html!;
+  } else {
+    finalContentCleaned = cleaned?.content || null;
+  }
+
   const finalTitle =
-    pluginContent?.title || params.title || metadata.title || cleaned?.title || null;
+    pluginContent?.title ||
+    params.title ||
+    markdownExtractedTitle ||
+    metadata.title ||
+    cleaned?.title ||
+    null;
   const finalAuthor = pluginContent?.author || metadata.author || cleaned?.byline || null;
   const finalSiteName = pluginContent?.siteName || metadata.siteName;
-  const finalContentCleaned = pluginContent?.skipReadability
-    ? pluginContent.html
-    : cleaned?.content || null;
 
   // Compute content hash for narration deduplication
   const contentHash = generateContentHash(finalTitle, finalContentCleaned || html!);
@@ -520,14 +554,8 @@ export async function uploadArticle(
   userId: string,
   params: UploadArticleParams
 ): Promise<SavedArticle> {
-  // Configure marked for safe rendering
-  marked.setOptions({
-    gfm: true, // GitHub Flavored Markdown
-    breaks: true, // Convert \n to <br>
-  });
-
   // Convert markdown to HTML
-  const html = await marked.parse(params.content);
+  const html = await markdownToHtml(params.content);
 
   // Extract title from first header and strip it from content
   // (the title is displayed separately in the UI)
