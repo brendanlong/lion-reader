@@ -9,11 +9,10 @@
  */
 
 import * as mammoth from "mammoth";
-import { marked } from "marked";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { generateSummary } from "@/server/html/strip-html";
-import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { logger } from "@/lib/logger";
+import { processMarkdown as convertMarkdown } from "@/server/markdown";
 
 // ============================================================================
 // Types
@@ -147,33 +146,12 @@ function processHtml(content: string, filename: string): ProcessedFile {
 }
 
 /**
- * Converts Markdown to HTML using marked with safe defaults.
- * Exported for reuse in other modules (URL fetching, plugins, etc.).
- *
- * @param markdown - The Markdown text to convert
- * @returns The HTML representation
- */
-export async function markdownToHtml(markdown: string): Promise<string> {
-  // Configure marked for safe rendering
-  marked.setOptions({
-    gfm: true, // GitHub Flavored Markdown
-    breaks: true, // Convert \n to <br>
-  });
-
-  return marked.parse(markdown) as Promise<string>;
-}
-
-/**
  * Converts Markdown to HTML using marked.
  * Markdown content is kept as-is semantically, just rendered to HTML.
  */
 async function processMarkdown(content: string, filename: string): Promise<ProcessedFile> {
-  // Convert markdown to HTML
-  const html = await markdownToHtml(content);
-
-  // Extract title from first header and strip it from content
-  // (the title is displayed separately in the UI)
-  const { title: extractedTitle, content: contentCleaned } = extractAndStripTitleHeader(html);
+  // Convert markdown to HTML and extract title
+  const { html: contentCleaned, title: extractedTitle } = await convertMarkdown(content);
   const title = extractedTitle || titleFromFilename(filename);
 
   // Generate excerpt from the cleaned content (after title is stripped)

@@ -26,7 +26,7 @@ import { createTRPCRouter, protectedProcedure, scopedProtectedProcedure } from "
 import { API_TOKEN_SCOPES } from "@/server/auth";
 import { errors } from "../errors";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
-import { markdownToHtml } from "@/server/file/process-upload";
+import { markdownToHtml } from "@/server/markdown";
 import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
