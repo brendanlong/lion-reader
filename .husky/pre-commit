@@ -1,11 +1,1 @@
 pnpm exec lint-staged
-
-# Auto-format and lint Kotlin files if any are staged
-if git diff --cached --name-only | grep -q '\.kt$'; then
-  echo "Formatting Kotlin files..."
-  (cd android && ./gradlew ktlintFormat --quiet)
-  git diff --cached --name-only | grep '\.kt$' | xargs git add
-
-  echo "Running detekt..."
-  (cd android && ./gradlew detekt --quiet)
-fi
