@@ -23,6 +23,7 @@ import { buildEntryFeedFilter } from "./entry-filters";
 
 export interface ListEntriesParams {
   userId: string;
+  query?: string; // Optional full-text search query (searches title and content)
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
@@ -151,11 +152,24 @@ function encodeCursor(ts: Date, entryId: string): string {
 
 /**
  * Lists entries with filters and pagination.
+ *
+ * If query is provided, performs full-text search across title and content.
+ * Otherwise, returns entries filtered by metadata and sorted by time.
  */
 export async function listEntries(
   db: typeof dbType,
   params: ListEntriesParams
 ): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
+  // If query is provided, delegate to search implementation
+  if (params.query) {
+    return searchEntries(db, {
+      ...params,
+      query: params.query,
+      searchIn: "both", // Always search both title and content
+      showSpam: params.showSpam,
+    });
+  }
+
   const limit = Math.min(params.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
   const sortOrder = params.sortOrder ?? "newest";
 
