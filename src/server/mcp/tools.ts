@@ -43,10 +43,15 @@ export function registerTools(): Tool[] {
     {
       name: "list_entries",
       description:
-        "List feed entries with filters and pagination. Returns summaries (title, snippet) without full content.",
+        "List feed entries with filters and pagination. Optionally perform full-text search with the query parameter (searches both title and content, results ranked by relevance). Without query, returns entries sorted by time. Returns summaries (title, snippet) without full content.",
       inputSchema: {
         type: "object",
         properties: {
+          query: {
+            type: "string",
+            description:
+              "Optional full-text search query (searches both title and content, results ranked by relevance)",
+          },
           subscriptionId: { type: "string", description: "Filter by subscription ID" },
           tagId: { type: "string", description: "Filter by tag ID" },
           uncategorized: { type: "boolean", description: "Show only uncategorized entries" },
@@ -60,7 +65,7 @@ export function registerTools(): Tool[] {
           sortOrder: {
             type: "string",
             enum: ["newest", "oldest"],
-            description: "Sort order (default: newest)",
+            description: "Sort order (default: newest). Ignored when query is provided.",
           },
           limit: { type: "number", description: "Number of entries per page (max 100)" },
           cursor: { type: "string", description: "Pagination cursor from previous response" },
@@ -73,40 +78,6 @@ export function registerTools(): Tool[] {
           userId,
           ...params,
           showSpam: false, // Default to hiding spam for MCP
-        });
-      },
-    },
-
-    {
-      name: "search_entries",
-      description:
-        "Search feed entries by title and/or content using full-text search. Results ranked by relevance.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "Search query" },
-          searchIn: {
-            type: "string",
-            enum: ["title", "content", "both"],
-            description: "Where to search (default: both)",
-          },
-          subscriptionId: { type: "string", description: "Filter by subscription ID" },
-          tagId: { type: "string", description: "Filter by tag ID" },
-          unreadOnly: { type: "boolean", description: "Show only unread entries" },
-          starredOnly: { type: "boolean", description: "Show only starred entries" },
-          limit: { type: "number", description: "Number of entries per page (max 100)" },
-          cursor: { type: "string", description: "Pagination cursor from previous response" },
-        },
-        required: ["query"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        const { userId, query, ...params } = args;
-        return entriesService.searchEntries(db, {
-          userId,
-          query,
-          ...params,
-          showSpam: false,
         });
       },
     },
