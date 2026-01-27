@@ -130,39 +130,93 @@ function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
 // Service Functions
 // ============================================================================
 
-/**
- * Lists all active subscriptions for a user.
- */
-export async function listSubscriptions(
-  db: typeof dbType,
-  userId: string
-): Promise<Subscription[]> {
-  const results = await buildSubscriptionBaseQuery(db, userId)
-    .where(eq(userFeeds.userId, userId))
-    .orderBy(userFeeds.title);
+export interface ListSubscriptionsParams {
+  userId: string;
+  query?: string; // Case-insensitive title search
+  tagId?: string; // Filter by tag
+  unreadOnly?: boolean; // Only show feeds with unread items
+  cursor?: string; // Pagination cursor (subscription ID)
+  limit?: number; // Max results per page
+}
 
-  return results.map(formatSubscriptionRow);
+export interface ListSubscriptionsResult {
+  subscriptions: Subscription[];
+  nextCursor?: string;
 }
 
 /**
- * Searches subscriptions by title using case-insensitive substring matching.
+ * Lists active subscriptions for a user with optional filtering and pagination.
+ *
+ * Supports:
+ * - Case-insensitive title search
+ * - Tag filtering
+ * - Unread-only filtering
+ * - Cursor-based pagination
  */
-export async function searchSubscriptions(
+export async function listSubscriptions(
   db: typeof dbType,
-  userId: string,
-  query: string
-): Promise<Subscription[]> {
-  // Use COALESCE to handle NULL titles, then ILIKE for case-insensitive substring matching
-  // The % wildcards are added to search for the query as a substring
-  const likePattern = `%${query}%`;
+  params: ListSubscriptionsParams
+): Promise<ListSubscriptionsResult> {
+  const { userId, query, tagId, unreadOnly, cursor, limit = 50 } = params;
 
+  // Cap limit at 100
+  const effectiveLimit = Math.min(limit, 100);
+
+  // Apply filters
+  const conditions = [eq(userFeeds.userId, userId)];
+
+  // Title search (case-insensitive)
+  if (query && query.length > 0) {
+    const likePattern = `%${query}%`;
+    conditions.push(sql`COALESCE(${userFeeds.title}, '') ILIKE ${likePattern}`);
+  }
+
+  // Tag filter
+  if (tagId) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${subscriptionTags}
+      WHERE ${subscriptionTags.subscriptionId} = ${userFeeds.id}
+        AND ${subscriptionTags.tagId} = ${tagId}
+    )`);
+  }
+
+  // Unread filter (requires unread count > 0)
+  if (unreadOnly) {
+    // This will be checked after we get unread counts in the query
+    // We'll filter in-memory since the unread count is computed
+  }
+
+  // Cursor pagination
+  if (cursor) {
+    conditions.push(sql`${userFeeds.id} > ${cursor}`);
+  }
+
+  // Build and execute query
   const results = await buildSubscriptionBaseQuery(db, userId)
-    .where(
-      and(eq(userFeeds.userId, userId), sql`COALESCE(${userFeeds.title}, '') ILIKE ${likePattern}`)
-    )
-    .orderBy(userFeeds.title);
+    .where(and(...conditions))
+    .orderBy(userFeeds.id)
+    .limit(effectiveLimit + 1);
 
-  return results.map(formatSubscriptionRow);
+  // Format results
+  let subscriptions = results.map(formatSubscriptionRow);
+
+  // Apply unread filter in-memory (since it depends on computed unread count)
+  if (unreadOnly) {
+    subscriptions = subscriptions.filter((sub) => sub.unreadCount > 0);
+  }
+
+  // Check if there are more results
+  const hasMore = subscriptions.length > effectiveLimit;
+  if (hasMore) {
+    subscriptions = subscriptions.slice(0, effectiveLimit);
+  }
+
+  const nextCursor = hasMore ? subscriptions[subscriptions.length - 1].id : undefined;
+
+  return {
+    subscriptions,
+    nextCursor,
+  };
 }
 
 /**
