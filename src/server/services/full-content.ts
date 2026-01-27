@@ -10,6 +10,7 @@ import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
 import { pluginRegistry } from "@/server/plugins";
 import { logger } from "@/lib/logger";
+import { processMarkdown } from "@/server/markdown";
 
 /**
  * Result of fetching full article content.
@@ -76,9 +77,26 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
     // Fall back to standard HTML fetching + Readability
     logger.debug("Fetching full content using standard method", { url });
 
-    const html = await fetchHtmlPage(url);
+    const result = await fetchHtmlPage(url);
 
-    // Absolutize URLs in the original HTML
+    // If we got Markdown, convert it to HTML and skip Readability
+    // Markdown is already clean content, no need for article extraction
+    if (result.isMarkdown) {
+      logger.debug("Converting Markdown to HTML (skipping Readability)", { url });
+      const { html: contentCleaned } = await processMarkdown(result.content);
+
+      // Absolutize URLs in the original HTML (before title stripping)
+      const contentOriginal = absolutizeUrls(contentCleaned, url);
+
+      return {
+        success: true,
+        contentOriginal,
+        contentCleaned,
+      };
+    }
+
+    // For HTML, absolutize URLs in the original
+    const html = result.content;
     const contentOriginal = absolutizeUrls(html, url);
 
     // Clean the content using Readability
