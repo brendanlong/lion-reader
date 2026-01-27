@@ -39,13 +39,13 @@ export const arxivPlugin: UrlPlugin = {
           });
 
           // Fetch the content
-          const html = await fetchHtmlPage(fetchUrl);
-          if (!html) {
+          const result = await fetchHtmlPage(fetchUrl);
+          if (!result.content) {
             return null;
           }
 
           return {
-            html,
+            html: result.content,
             title: null, // Let Readability extract title
             author: null,
             publishedAt: null,
