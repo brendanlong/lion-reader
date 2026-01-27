@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, inArray, desc } from "drizzle-orm";
+import { eq, and, isNull, sql, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -37,6 +37,7 @@ import {
 import { publishSubscriptionCreated, publishSubscriptionDeleted } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
+import * as subscriptionsService from "@/server/services/subscriptions";
 
 // ============================================================================
 // Validation Schemas
@@ -709,13 +710,12 @@ export const subscriptionsRouter = createTRPCRouter({
     }),
 
   /**
-   * Search subscriptions by title using PostgreSQL full-text search.
+   * Search subscriptions by title using case-insensitive substring matching.
    *
-   * Searches the feed title (custom or original) and returns matching subscriptions
-   * ranked by relevance.
+   * Searches the feed title (custom or original) and returns matching subscriptions.
    *
    * @param query - The search query text
-   * @returns List of matching subscriptions, ranked by relevance
+   * @returns List of matching subscriptions
    */
   search: protectedProcedure
     .meta({
@@ -738,18 +738,12 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-
-      // Build full-text search on the title field (which is COALESCE of customTitle and original)
-      const searchVector = sql`to_tsvector('english', COALESCE(${userFeeds.title}, ''))`;
-      const searchQuery = sql`plainto_tsquery('english', ${input.query})`;
-      const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
-
-      // user_feeds view already filters out unsubscribed, just need user_id filter and search match
-      const results = await buildSubscriptionBaseQuery(ctx.db, userId)
-        .where(and(eq(userFeeds.userId, userId), sql`${searchVector} @@ ${searchQuery}`))
-        .orderBy(desc(rankColumn), userFeeds.title);
-
-      return { items: results.map(formatSubscriptionRow) };
+      const subscriptions = await subscriptionsService.searchSubscriptions(
+        ctx.db,
+        userId,
+        input.query
+      );
+      return { items: subscriptions };
     }),
 
   /**
