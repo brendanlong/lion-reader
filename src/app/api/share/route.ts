@@ -10,8 +10,12 @@ import { NextRequest, NextResponse } from "next/server";
  *
  * The manifest.json specifies this endpoint as the share_target action:
  * - method: POST
- * - enctype: application/x-www-form-urlencoded
- * - params: title, text, url
+ * - enctype: multipart/form-data
+ * - params: title, text, url, files
+ *
+ * Supports:
+ * - URL sharing (traditional share target)
+ * - File sharing (text/plain, text/markdown, text/html, .docx)
  */
 
 /**
@@ -43,7 +47,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const formData = await request.formData();
 
-    // Extract shared data
+    // Check if a file was shared
+    const sharedFile = formData.get("file") as File | null;
+
+    if (sharedFile) {
+      // File was shared - redirect to /save with a file indicator
+      // The service worker normally intercepts share target POST requests and stores
+      // the file in IndexedDB before redirecting. This server-side route is a fallback
+      // that just redirects with metadata (the actual file content is lost in this case,
+      // but the service worker should handle it 99% of the time).
+
+      // Redirect to save page with file upload flag
+      const saveUrl = new URL("/save", baseUrl);
+      saveUrl.searchParams.set("type", "file");
+      saveUrl.searchParams.set("filename", sharedFile.name);
+      saveUrl.searchParams.set("shared", "true");
+      // Note: We can't pass the file content via URL (too large)
+      // This is why the service worker intercept is important for file shares
+
+      return NextResponse.redirect(saveUrl, 303);
+    }
+
+    // No file - check for URL sharing
     const sharedUrl = formData.get("url")?.toString();
     const sharedText = formData.get("text")?.toString();
 
@@ -61,8 +86,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (!urlToSave) {
-      // No URL found, redirect to save page with error
-      return NextResponse.redirect(new URL("/save?error=no_url", baseUrl), 303);
+      // No URL or file found, redirect to save page with error
+      return NextResponse.redirect(new URL("/save?error=no_url_or_file", baseUrl), 303);
     }
 
     // Redirect to /save with the URL
@@ -73,8 +98,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     saveUrl.searchParams.set("shared", "true");
 
     return NextResponse.redirect(saveUrl, 303);
-  } catch {
+  } catch (error) {
     // Redirect to save page with error
+    console.error("Share target error:", error);
     return NextResponse.redirect(new URL("/save?error=share_failed", baseUrl), 303);
   }
 }
