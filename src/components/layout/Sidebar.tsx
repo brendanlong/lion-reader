@@ -3,11 +3,14 @@
  *
  * Navigation sidebar for the main app layout.
  * Shows navigation links, feed list with unread counts, and tags.
+ *
+ * Uses tags.list for the tag structure and entries.count for All Articles unread count.
+ * Subscriptions are loaded per-tag via TagSubscriptionList when a tag is expanded.
  */
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,7 +26,7 @@ import {
   ChevronRightIcon,
   ColorDot,
 } from "@/components/ui";
-import { SubscriptionItem } from "./SubscriptionItem";
+import { TagSubscriptionList } from "./TagSubscriptionList";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -43,104 +46,52 @@ export function Sidebar({ onClose }: SidebarProps) {
     tagIds: string[];
   } | null>(null);
 
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
   const tagsQuery = trpc.tags.list.useQuery();
+  // Use entries.count for All Articles unread count (server-side, not client-side sum)
+  const allCountQuery = trpc.entries.count.useQuery({});
   // Use unified entries.count with type='saved' filter
   const savedCountQuery = trpc.entries.count.useQuery({ type: "saved" });
   // Use unified entries.count with starredOnly filter
   const starredCountQuery = trpc.entries.count.useQuery({ starredOnly: true });
   const utils = trpc.useUtils();
 
-  // Use subscription data directly (no delta merging)
-  const subscriptions = subscriptionsQuery.data?.items;
-
-  // Use tag data directly (no delta merging)
+  // Use tag data directly
   const tags = tagsQuery.data?.items;
+  const uncategorized = tagsQuery.data?.uncategorized;
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
-    onMutate: async (variables) => {
+    onMutate: async () => {
       // Close dialog immediately for responsive feel
       setUnsubscribeTarget(null);
-
-      // Cancel in-flight queries to prevent race conditions
-      await utils.subscriptions.list.cancel();
-
-      // Snapshot current state for rollback
-      const previousData = utils.subscriptions.list.getData();
-
-      // Optimistically remove the subscription from the list
-      utils.subscriptions.list.setData(undefined, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          items: oldData.items.filter((item) => item.id !== variables.id),
-        };
-      });
-
-      return { previousData };
     },
-    onError: (_error, _variables, context) => {
-      // Rollback on error
-      if (context?.previousData) {
-        utils.subscriptions.list.setData(undefined, context.previousData);
-      }
+    onError: () => {
       toast.error("Failed to unsubscribe from feed");
     },
-    onSettled: (_data, error) => {
-      // Only invalidate on error since optimistic update handles the success case
-      // The SSE handler will also skip invalidation since the subscription is already removed
-      if (error) {
-        utils.subscriptions.list.invalidate();
-      }
-      // Invalidate entries and tags to update counts (entries from unsubscribed feed
-      // are filtered out by the query, tags need updated unread counts)
+    onSettled: () => {
+      // Invalidate all subscription queries (per-tag infinite queries)
+      utils.subscriptions.list.invalidate();
+      // Invalidate entries and tags to update counts
       utils.entries.list.invalidate();
+      utils.entries.count.invalidate();
       utils.tags.list.invalidate();
     },
   });
 
-  // Calculate saved unread count directly from query
-  const savedUnreadCount = savedCountQuery.data?.unread ?? 0;
+  // All Articles unread count from server
+  const totalUnreadCount = allCountQuery.data?.unread ?? 0;
 
-  // Calculate total unread count (subscriptions + saved articles)
-  const totalUnreadCount =
-    (subscriptions?.reduce((sum, item) => sum + item.unreadCount, 0) ?? 0) + savedUnreadCount;
+  // Saved unread count
+  const savedUnreadCount = savedCountQuery.data?.unread ?? 0;
 
   // Hook for managing tag expansion state
   const { isExpanded, toggleExpanded } = useExpandedTags();
 
-  // Group subscriptions by tag
-  const subscriptionsByTag = useMemo(() => {
-    type SubscriptionItem = NonNullable<typeof subscriptions>[number];
-    const byTag = new Map<string, SubscriptionItem[]>();
-    const uncategorized: SubscriptionItem[] = [];
+  // Tags sorted alphabetically, showing only tags that have subscriptions
+  const sortedTags = [...(tags ?? [])]
+    .filter((tag) => tag.feedCount > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-    for (const item of subscriptions ?? []) {
-      if (item.tags.length === 0) {
-        uncategorized.push(item);
-      } else {
-        for (const tag of item.tags) {
-          const existing = byTag.get(tag.id) ?? [];
-          existing.push(item);
-          byTag.set(tag.id, existing);
-        }
-      }
-    }
-
-    return { byTag, uncategorized };
-  }, [subscriptions]);
-
-  // Sort tags alphabetically and filter out empty ones
-  const sortedTags = useMemo(() => {
-    return [...(tags ?? [])]
-      .filter((tag) => subscriptionsByTag.byTag.has(tag.id))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [tags, subscriptionsByTag.byTag]);
-
-  // Compute uncategorized stats
-  const uncategorizedUnreadCount = useMemo(() => {
-    return subscriptionsByTag.uncategorized.reduce((sum, item) => sum + item.unreadCount, 0);
-  }, [subscriptionsByTag.uncategorized]);
+  const hasUncategorized = (uncategorized?.feedCount ?? 0) > 0;
 
   const isActiveLink = (href: string) => {
     if (href === "/all") {
@@ -171,6 +122,21 @@ export function Sidebar({ onClose }: SidebarProps) {
     });
     onClose?.();
   };
+
+  const handleEdit = (sub: {
+    id: string;
+    title: string;
+    customTitle: string | null;
+    tagIds: string[];
+  }) => {
+    setEditTarget(sub);
+  };
+
+  const handleUnsubscribe = (sub: { id: string; title: string }) => {
+    setUnsubscribeTarget(sub);
+  };
+
+  const hasTags = sortedTags.length > 0 || hasUncategorized;
 
   return (
     <>
@@ -210,7 +176,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
         {/* Scrollable area with tags and feeds */}
         <div className="flex-1 overflow-y-auto p-3">
-          {subscriptionsQuery.isLoading ? (
+          {tagsQuery.isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
                 <div
@@ -219,9 +185,9 @@ export function Sidebar({ onClose }: SidebarProps) {
                 />
               ))}
             </div>
-          ) : subscriptionsQuery.error ? (
+          ) : tagsQuery.error ? (
             <p className="ui-text-sm px-3 text-red-600 dark:text-red-400">Failed to load feeds</p>
-          ) : subscriptionsQuery.data?.items.length === 0 ? (
+          ) : !hasTags ? (
             <p className="ui-text-sm px-3 text-zinc-500 dark:text-zinc-400">
               No subscriptions yet.{" "}
               <Link
@@ -239,7 +205,6 @@ export function Sidebar({ onClose }: SidebarProps) {
                 const tagHref = `/tag/${tag.id}`;
                 const isActive = isActiveLink(tagHref);
                 const expanded = isExpanded(tag.id);
-                const tagFeeds = subscriptionsByTag.byTag.get(tag.id) ?? [];
 
                 return (
                   <li key={tag.id}>
@@ -268,39 +233,22 @@ export function Sidebar({ onClose }: SidebarProps) {
                       />
                     </div>
 
-                    {/* Nested feeds (when expanded) */}
+                    {/* Nested feeds (when expanded) - loaded per-tag */}
                     {expanded && (
-                      <ul className="mt-1 ml-6 space-y-1">
-                        {tagFeeds.map((sub) => (
-                          <SubscriptionItem
-                            key={sub.id}
-                            subscription={sub}
-                            isActive={pathname === `/subscription/${sub.id}`}
-                            onClose={handleClose}
-                            onEdit={() =>
-                              setEditTarget({
-                                id: sub.id,
-                                title: sub.title || "Untitled Feed",
-                                customTitle: sub.title !== sub.originalTitle ? sub.title : null,
-                                tagIds: sub.tags.map((t) => t.id),
-                              })
-                            }
-                            onUnsubscribe={() =>
-                              setUnsubscribeTarget({
-                                id: sub.id,
-                                title: sub.title || "Untitled Feed",
-                              })
-                            }
-                          />
-                        ))}
-                      </ul>
+                      <TagSubscriptionList
+                        tagId={tag.id}
+                        pathname={pathname}
+                        onClose={handleClose}
+                        onEdit={handleEdit}
+                        onUnsubscribe={handleUnsubscribe}
+                      />
                     )}
                   </li>
                 );
               })}
 
               {/* Uncategorized section (only if there are uncategorized feeds) */}
-              {subscriptionsByTag.uncategorized.length > 0 && (
+              {hasUncategorized && (
                 <li>
                   {/* Uncategorized row */}
                   <div className="flex min-h-[44px] items-center">
@@ -322,37 +270,20 @@ export function Sidebar({ onClose }: SidebarProps) {
                       isActive={isActiveLink("/uncategorized")}
                       icon={<ColorDot color={null} size="sm" />}
                       label="Uncategorized"
-                      count={uncategorizedUnreadCount}
+                      count={uncategorized?.unreadCount ?? 0}
                       onClick={handleClose}
                     />
                   </div>
 
                   {/* Nested uncategorized feeds (when expanded) */}
                   {isExpanded("uncategorized") && (
-                    <ul className="mt-1 ml-6 space-y-1">
-                      {subscriptionsByTag.uncategorized.map((sub) => (
-                        <SubscriptionItem
-                          key={sub.id}
-                          subscription={sub}
-                          isActive={pathname === `/subscription/${sub.id}`}
-                          onClose={handleClose}
-                          onEdit={() =>
-                            setEditTarget({
-                              id: sub.id,
-                              title: sub.title || "Untitled Feed",
-                              customTitle: sub.title !== sub.originalTitle ? sub.title : null,
-                              tagIds: sub.tags.map((t) => t.id),
-                            })
-                          }
-                          onUnsubscribe={() =>
-                            setUnsubscribeTarget({
-                              id: sub.id,
-                              title: sub.title || "Untitled Feed",
-                            })
-                          }
-                        />
-                      ))}
-                    </ul>
+                    <TagSubscriptionList
+                      uncategorized
+                      pathname={pathname}
+                      onClose={handleClose}
+                      onEdit={handleEdit}
+                      onUnsubscribe={handleUnsubscribe}
+                    />
                   )}
                 </li>
               )}

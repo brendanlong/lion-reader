@@ -683,6 +683,7 @@ export const subscriptionsRouter = createTRPCRouter({
    * Supports optional filtering and pagination:
    * - query: Case-insensitive title search (substring matching)
    * - tagId: Filter by tag
+   * - uncategorized: Only show subscriptions with no tags
    * - unreadOnly: Only show feeds with unread items
    * - cursor/limit: Cursor-based pagination (max 100 per page)
    *
@@ -702,6 +703,7 @@ export const subscriptionsRouter = createTRPCRouter({
         .object({
           query: z.string().optional(),
           tagId: z.string().uuid().optional(),
+          uncategorized: z.boolean().optional(),
           unreadOnly: z.boolean().optional(),
           cursor: z.string().optional(),
           limit: z.number().min(1).max(100).optional(),
