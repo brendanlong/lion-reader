@@ -4,7 +4,7 @@
  * Business logic for subscription operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries, tags, subscriptionTags, userFeeds } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
@@ -141,20 +141,19 @@ export async function listSubscriptions(
 }
 
 /**
- * Searches subscriptions by title.
+ * Searches subscriptions by title using case-insensitive substring matching.
  */
 export async function searchSubscriptions(
   db: typeof dbType,
   userId: string,
   query: string
 ): Promise<Subscription[]> {
-  const searchVector = sql`to_tsvector('english', COALESCE(${userFeeds.title}, ''))`;
-  const searchQuery = sql`plainto_tsquery('english', ${query})`;
-  const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
+  // Use ILIKE for case-insensitive substring matching
+  const likePattern = `%${query}%`;
 
   const results = await buildSubscriptionBaseQuery(db, userId)
-    .where(and(eq(userFeeds.userId, userId), sql`${searchVector} @@ ${searchQuery}`))
-    .orderBy(desc(rankColumn), userFeeds.title);
+    .where(and(eq(userFeeds.userId, userId), sql`${userFeeds.title} ILIKE ${likePattern}`))
+    .orderBy(userFeeds.title);
 
   return results.map(formatSubscriptionRow);
 }
