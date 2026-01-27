@@ -50,19 +50,20 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 | ------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------ |
 | `entries.list` (infinite) | `EntryList`, `useEntryListQuery`, `useEntryPage` | `subscriptionId`, `tagId`, `uncategorized`, `unreadOnly`, `starredOnly`, `sortOrder`, `type`, `limit` | Paginated entry list           |
 | `entries.get`             | `EntryContent`                                   | `{ id }`                                                                                              | Single entry with full content |
-| `entries.count`           | `Sidebar`                                        | `{ type: "saved" }` or `{ starredOnly: true }`                                                        | Unread count for badges        |
+| `entries.count`           | `Sidebar`                                        | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }`                                                 | Unread count for badges        |
 
 ### Subscription Queries
 
-| Query                | Used In                                                | Filters | Description                               |
-| -------------------- | ------------------------------------------------------ | ------- | ----------------------------------------- |
-| `subscriptions.list` | `Sidebar`, `EntryContent`, `useEntryPage`, entry pages | None    | All user subscriptions with unread counts |
+| Query                           | Used In                         | Filters                            | Description                                      |
+| ------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------------------------ |
+| `subscriptions.list`            | `EntryContent`, `useEntryPage`  | None                               | First page of subscriptions for placeholder data |
+| `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar) | `{ tagId }` or `{ uncategorized }` | Per-tag paginated subscriptions                  |
 
 ### Tag Queries
 
-| Query       | Used In                                              | Filters | Description                      |
-| ----------- | ---------------------------------------------------- | ------- | -------------------------------- |
-| `tags.list` | `Sidebar`, `EditSubscriptionDialog`, `TagManagement` | None    | All user tags with unread counts |
+| Query       | Used In                                              | Filters | Description                                             |
+| ----------- | ---------------------------------------------------- | ------- | ------------------------------------------------------- |
+| `tags.list` | `Sidebar`, `EditSubscriptionDialog`, `TagManagement` | None    | All user tags with unread counts + uncategorized counts |
 
 ### Feed Queries
 

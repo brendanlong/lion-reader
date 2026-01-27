@@ -125,6 +125,9 @@ export function useEntryMutations(): UseEntryMutationsResult {
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
 
+      // All Articles count is always affected
+      utils.entries.count.invalidate({});
+
       // Starred count is always affected since starred entries can exist in any view
       utils.entries.count.invalidate({ starredOnly: true });
 

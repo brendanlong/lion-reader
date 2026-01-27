@@ -126,6 +126,8 @@ export default function BrokenFeedsPage() {
       utils.brokenFeeds.list.invalidate();
       utils.subscriptions.list.invalidate();
       utils.entries.list.invalidate();
+      utils.entries.count.invalidate();
+      utils.tags.list.invalidate();
       setUnsubscribeTarget(null);
       toast.success("Unsubscribed from feed");
     },

@@ -127,10 +127,18 @@ function ImportSection() {
     if (isCompleted && !prevCompleted.current) {
       prevCompleted.current = true;
       utils.subscriptions.list.invalidate();
+      utils.tags.list.invalidate();
+      utils.entries.count.invalidate();
     } else if (baseState.type !== "importing") {
       prevCompleted.current = false;
     }
-  }, [importState.type, baseState.type, utils.subscriptions.list]);
+  }, [
+    importState.type,
+    baseState.type,
+    utils.subscriptions.list,
+    utils.tags.list,
+    utils.entries.count,
+  ]);
 
   const importMutation = trpc.subscriptions.import.useMutation({
     onSuccess: (data) => {
