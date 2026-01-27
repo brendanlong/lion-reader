@@ -35,12 +35,6 @@ import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import {
-  isLessWrongUrl,
-  fetchLessWrongContentFromUrl,
-  type LessWrongContent,
-} from "@/server/feed/lesswrong";
-import { isArxivTransformableUrl, getArxivFetchUrl } from "@/server/feed/arxiv";
-import {
   isGoogleDocsUrl,
   fetchGoogleDocsFromUrl,
   fetchPrivateGoogleDoc,
@@ -296,8 +290,6 @@ export const savedRouter = createTRPCRouter({
 
       // Use provided HTML or fetch the page
       let html: string | undefined;
-      // For LessWrong URLs, we may get content directly from their GraphQL API
-      let lessWrongContent: LessWrongContent | null = null;
       // For Google Docs URLs, we may get content from the Google Docs API
       let googleDocsContent: GoogleDocsContent | null = null;
       // For plugin-handled URLs, we may get content from a plugin
@@ -457,81 +449,9 @@ export const savedRouter = createTRPCRouter({
             }
           }
         }
-      } else if (isLessWrongUrl(input.url)) {
-        // Try LessWrong GraphQL API first (pages don't render without JavaScript)
-        logger.debug("Attempting LessWrong GraphQL fetch", { url: input.url });
-        lessWrongContent = await fetchLessWrongContentFromUrl(input.url);
-
-        if (lessWrongContent) {
-          // Build a title for the HTML - for comments, include post context
-          const htmlTitle =
-            lessWrongContent.type === "comment"
-              ? `Comment on "${lessWrongContent.postTitle ?? "LessWrong post"}"`
-              : (lessWrongContent.title ?? "");
-
-          // Wrap the content in a basic HTML structure for consistency
-          html = `<!DOCTYPE html><html><head><title>${escapeHtml(htmlTitle)}</title></head><body>${lessWrongContent.html}</body></html>`;
-          logger.debug("Successfully fetched LessWrong content via GraphQL", {
-            url: input.url,
-            type: lessWrongContent.type,
-            id:
-              lessWrongContent.type === "post"
-                ? lessWrongContent.postId
-                : lessWrongContent.commentId,
-          });
-        } else {
-          // Fall back to normal fetch
-          logger.debug("LessWrong GraphQL fetch failed, falling back to normal fetch", {
-            url: input.url,
-          });
-          try {
-            const result = await fetchHtmlPage(input.url);
-            html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
-          } catch (error) {
-            logger.warn("Failed to fetch LessWrong URL", {
-              url: input.url,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            if (error instanceof HttpFetchError && error.isBlocked()) {
-              throw errors.siteBlocked(input.url, error.status);
-            }
-            throw errors.savedArticleFetchError(
-              input.url,
-              error instanceof Error ? error.message : "Unknown error"
-            );
-          }
-        }
-      } else if (isArxivTransformableUrl(input.url)) {
-        // For ArXiv abs/pdf URLs, try to fetch the HTML version if available
-        logger.debug("Attempting ArXiv HTML version fetch", { url: input.url });
-        const arxivFetchUrl = await getArxivFetchUrl(input.url);
-
-        // arxivFetchUrl is either the HTML version (if it exists) or the abs page
-        const urlToFetch = arxivFetchUrl ?? input.url;
-        logger.debug("ArXiv fetch URL determined", {
-          originalUrl: input.url,
-          fetchUrl: urlToFetch,
-          isHtmlVersion: arxivFetchUrl?.includes("/html/") ?? false,
-        });
-
-        try {
-          const result = await fetchHtmlPage(urlToFetch);
-          html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
-        } catch (error) {
-          logger.warn("Failed to fetch ArXiv URL", {
-            url: urlToFetch,
-            originalUrl: input.url,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          if (error instanceof HttpFetchError && error.isBlocked()) {
-            throw errors.siteBlocked(input.url, error.status);
-          }
-          throw errors.savedArticleFetchError(
-            input.url,
-            error instanceof Error ? error.message : "Unknown error"
-          );
-        }
       } else {
+        // For all other URLs, use the plugin system
+        // LessWrong and ArXiv are now handled by plugins, no need for special cases
         // Check if a plugin can handle this URL
         let urlObj: URL | null = null;
         try {
@@ -628,45 +548,26 @@ export const savedRouter = createTRPCRouter({
       }
 
       // Use provided title, then API data (Google Docs/LessWrong), then metadata, then Readability as fallback
-      // For LessWrong comments, create a descriptive title
-      let lessWrongTitle: string | null = null;
-      if (lessWrongContent) {
-        if (lessWrongContent.type === "comment") {
-          // For comments, create a title like "Comment by Author on Post Title"
-          const authorPart = lessWrongContent.author
-            ? `${lessWrongContent.author}'s comment`
-            : "Comment";
-          const postPart = lessWrongContent.postTitle ? ` on "${lessWrongContent.postTitle}"` : "";
-          lessWrongTitle = `${authorPart}${postPart}`;
-        } else {
-          lessWrongTitle = lessWrongContent.title;
-        }
-      }
       // For Google Docs, prefer API title over browser-provided title (which includes " - Google Docs" suffix)
+      // For other sources, prefer plugin data, then provided title, then metadata
       const finalTitle =
         googleDocsContent?.title ||
         pluginContent?.title ||
         input.title ||
-        lessWrongTitle ||
         metadata.title ||
         cleaned?.title ||
         null;
-      // For author, prefer API data (Google Docs/LessWrong/Plugin), then metadata
+      // For author, prefer API data (Google Docs/Plugin), then metadata
       const finalAuthor =
         googleDocsContent?.author ||
         pluginContent?.author ||
-        lessWrongContent?.author ||
         metadata.author ||
         cleaned?.byline ||
         null;
       // For siteName, use appropriate source when content came from API
       const finalSiteName = googleDocsContent
         ? "Google Docs"
-        : pluginContent?.siteName
-          ? pluginContent.siteName
-          : lessWrongContent
-            ? "LessWrong"
-            : metadata.siteName;
+        : pluginContent?.siteName || metadata.siteName;
       // Saved articles don't have a publishedAt - they use fetchedAt (when saved)
       // This ensures consistent sorting by save time in all views
 
