@@ -648,8 +648,8 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
     });
   });
 
-  describe("search", () => {
-    it("searches subscriptions by title", async () => {
+  describe("list with query filter", () => {
+    it("filters subscriptions by title query", async () => {
       const userId = await createTestUser();
 
       // Create multiple feeds
@@ -675,13 +675,13 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const caller = createCaller(ctx);
 
       // Search for "Tech"
-      const result = await caller.subscriptions.search({ query: "Tech" });
+      const result = await caller.subscriptions.list({ query: "Tech" });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("Tech Blog");
     });
 
-    it("searches subscriptions with custom titles", async () => {
+    it("filters subscriptions with custom titles", async () => {
       const userId = await createTestUser();
 
       const feedId = await createTestFeed({
@@ -699,8 +699,8 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      // Search should match custom title
-      const result = await caller.subscriptions.search({ query: "Custom" });
+      // Query should match custom title
+      const result = await caller.subscriptions.list({ query: "Custom" });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("My Custom Feed Name");
@@ -729,7 +729,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.subscriptions.search({ query: "JavaScript" });
+      const result = await caller.subscriptions.list({ query: "JavaScript" });
 
       expect(result.items).toHaveLength(2);
       expect(result.items.map((s) => s.title)).toContain("JavaScript Weekly");
@@ -748,12 +748,12 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.subscriptions.search({ query: "nonexistentquery12345" });
+      const result = await caller.subscriptions.list({ query: "nonexistentquery12345" });
 
       expect(result.items).toHaveLength(0);
     });
 
-    it("only searches user's own subscriptions", async () => {
+    it("only filters user's own subscriptions", async () => {
       const user1Id = await createTestUser("user1");
       const user2Id = await createTestUser("user2");
 
@@ -774,14 +774,14 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       // User 1 searches for "Topic"
       const ctx1 = createAuthContext(user1Id);
       const caller1 = createCaller(ctx1);
-      const result1 = await caller1.subscriptions.search({ query: "Topic" });
+      const result1 = await caller1.subscriptions.list({ query: "Topic" });
 
       // Should only see their own subscription
       expect(result1.items).toHaveLength(1);
       expect(result1.items[0].title).toBe("Shared Topic Feed");
     });
 
-    it("searches case-insensitively (lowercase query matches mixed case title)", async () => {
+    it("filters case-insensitively (lowercase query matches mixed case title)", async () => {
       const userId = await createTestUser();
 
       const feedId = await createTestFeed({
@@ -794,13 +794,13 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const caller = createCaller(ctx);
 
       // Search with lowercase - should match
-      const result = await caller.subscriptions.search({ query: "arxiv" });
+      const result = await caller.subscriptions.list({ query: "arxiv" });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("cs.AI updates on arXiv.org");
     });
 
-    it("searches case-insensitively (uppercase query matches mixed case title)", async () => {
+    it("filters case-insensitively (uppercase query matches mixed case title)", async () => {
       const userId = await createTestUser();
 
       const feedId = await createTestFeed({
@@ -813,13 +813,13 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const caller = createCaller(ctx);
 
       // Search with uppercase - should match
-      const result = await caller.subscriptions.search({ query: "ARXIV" });
+      const result = await caller.subscriptions.list({ query: "ARXIV" });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("cs.AI updates on arXiv.org");
     });
 
-    it("searches case-insensitively (mixed case query matches different case title)", async () => {
+    it("filters case-insensitively (mixed case query matches different case title)", async () => {
       const userId = await createTestUser();
 
       const feedId = await createTestFeed({
@@ -832,13 +832,13 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const caller = createCaller(ctx);
 
       // Search with different casing
-      const result1 = await caller.subscriptions.search({ query: "javascript" });
+      const result1 = await caller.subscriptions.list({ query: "javascript" });
       expect(result1.items).toHaveLength(1);
 
-      const result2 = await caller.subscriptions.search({ query: "WEEKLY" });
+      const result2 = await caller.subscriptions.list({ query: "WEEKLY" });
       expect(result2.items).toHaveLength(1);
 
-      const result3 = await caller.subscriptions.search({ query: "newsletter" });
+      const result3 = await caller.subscriptions.list({ query: "newsletter" });
       expect(result3.items).toHaveLength(1);
 
       // All should find the same feed
@@ -846,7 +846,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(result2.items[0].id).toBe(result3.items[0].id);
     });
 
-    it("searches case-insensitively with partial matches", async () => {
+    it("filters case-insensitively with partial matches", async () => {
       const userId = await createTestUser();
 
       const feed1Id = await createTestFeed({
@@ -865,7 +865,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const caller = createCaller(ctx);
 
       // Search for partial substring with different casing
-      const result = await caller.subscriptions.search({ query: "PROG" });
+      const result = await caller.subscriptions.list({ query: "PROG" });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("Ruby Programming Tips");

@@ -680,8 +680,13 @@ export const subscriptionsRouter = createTRPCRouter({
   /**
    * List all active subscriptions for the current user.
    *
+   * Supports optional filtering and pagination:
+   * - query: Case-insensitive title search (substring matching)
+   * - tagId: Filter by tag
+   * - unreadOnly: Only show feeds with unread items
+   * - cursor/limit: Cursor-based pagination (max 100 per page)
+   *
    * Returns subscriptions with their associated feed information and unread counts.
-   * Subscriptions are ordered by feed title (ascending).
    */
   list: protectedProcedure
     .meta({
@@ -692,58 +697,30 @@ export const subscriptionsRouter = createTRPCRouter({
         summary: "List subscriptions",
       },
     })
-    .input(z.object({}).optional())
-    .output(
-      z.object({
-        items: z.array(subscriptionOutputSchema),
-      })
-    )
-    .query(async ({ ctx }) => {
-      const userId = ctx.session.user.id;
-
-      // user_feeds view already filters out unsubscribed, just need user_id filter
-      const results = await buildSubscriptionBaseQuery(ctx.db, userId)
-        .where(eq(userFeeds.userId, userId))
-        .orderBy(userFeeds.title);
-
-      return { items: results.map(formatSubscriptionRow) };
-    }),
-
-  /**
-   * Search subscriptions by title using case-insensitive substring matching.
-   *
-   * Searches the feed title (custom or original) and returns matching subscriptions.
-   *
-   * @param query - The search query text
-   * @returns List of matching subscriptions
-   */
-  search: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/subscriptions/search",
-        tags: ["Subscriptions"],
-        summary: "Search subscriptions",
-      },
-    })
     .input(
-      z.object({
-        query: z.string().min(1, "Search query is required"),
-      })
+      z
+        .object({
+          query: z.string().optional(),
+          tagId: z.string().uuid().optional(),
+          unreadOnly: z.boolean().optional(),
+          cursor: z.string().optional(),
+          limit: z.number().min(1).max(100).optional(),
+        })
+        .optional()
     )
     .output(
       z.object({
         items: z.array(subscriptionOutputSchema),
+        nextCursor: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const subscriptions = await subscriptionsService.searchSubscriptions(
-        ctx.db,
+      const result = await subscriptionsService.listSubscriptions(ctx.db, {
         userId,
-        input.query
-      );
-      return { items: subscriptions };
+        ...input,
+      });
+      return { items: result.subscriptions, nextCursor: result.nextCursor };
     }),
 
   /**
