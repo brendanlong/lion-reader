@@ -220,20 +220,6 @@ export async function listSubscriptions(
 }
 
 /**
- * Searches subscriptions by title using case-insensitive substring matching.
- *
- * @deprecated Use listSubscriptions with query parameter instead
- */
-export async function searchSubscriptions(
-  db: typeof dbType,
-  userId: string,
-  query: string
-): Promise<Subscription[]> {
-  const result = await listSubscriptions(db, { userId, query });
-  return result.subscriptions;
-}
-
-/**
  * Gets a single subscription by ID.
  */
 export async function getSubscription(

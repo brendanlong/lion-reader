@@ -733,12 +733,11 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const subscriptions = await subscriptionsService.searchSubscriptions(
-        ctx.db,
+      const result = await subscriptionsService.listSubscriptions(ctx.db, {
         userId,
-        input.query
-      );
-      return { items: subscriptions };
+        query: input.query,
+      });
+      return { items: result.subscriptions };
     }),
 
   /**
