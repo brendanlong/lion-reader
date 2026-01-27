@@ -4,7 +4,7 @@
  * Business logic for subscription operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries, tags, subscriptionTags, userFeeds } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
@@ -30,6 +30,7 @@ export interface Subscription {
   subscribedAt: Date;
   unreadCount: number;
   tags: Tag[];
+  fetchFullContent: boolean;
 }
 
 // ============================================================================
@@ -62,6 +63,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       id: userFeeds.id,
       subscribedAt: userFeeds.subscribedAt,
       feedId: userFeeds.feedId, // internal use only
+      fetchFullContent: userFeeds.fetchFullContent,
       // From user_feeds view - feed fields (already merged)
       type: userFeeds.type,
       url: userFeeds.url,
@@ -89,6 +91,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       userFeeds.id,
       userFeeds.subscribedAt,
       userFeeds.feedId,
+      userFeeds.fetchFullContent,
       userFeeds.type,
       userFeeds.url,
       userFeeds.title,
@@ -119,6 +122,7 @@ function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
     subscribedAt: row.subscribedAt,
     unreadCount: row.unreadCount,
     tags: row.tags,
+    fetchFullContent: row.fetchFullContent,
   };
 }
 
@@ -141,20 +145,22 @@ export async function listSubscriptions(
 }
 
 /**
- * Searches subscriptions by title.
+ * Searches subscriptions by title using case-insensitive substring matching.
  */
 export async function searchSubscriptions(
   db: typeof dbType,
   userId: string,
   query: string
 ): Promise<Subscription[]> {
-  const searchVector = sql`to_tsvector('english', COALESCE(${userFeeds.title}, ''))`;
-  const searchQuery = sql`plainto_tsquery('english', ${query})`;
-  const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
+  // Use COALESCE to handle NULL titles, then ILIKE for case-insensitive substring matching
+  // The % wildcards are added to search for the query as a substring
+  const likePattern = `%${query}%`;
 
   const results = await buildSubscriptionBaseQuery(db, userId)
-    .where(and(eq(userFeeds.userId, userId), sql`${searchVector} @@ ${searchQuery}`))
-    .orderBy(desc(rankColumn), userFeeds.title);
+    .where(
+      and(eq(userFeeds.userId, userId), sql`COALESCE(${userFeeds.title}, '') ILIKE ${likePattern}`)
+    )
+    .orderBy(userFeeds.title);
 
   return results.map(formatSubscriptionRow);
 }
