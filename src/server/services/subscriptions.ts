@@ -30,6 +30,7 @@ export interface Subscription {
   subscribedAt: Date;
   unreadCount: number;
   tags: Tag[];
+  fetchFullContent: boolean;
 }
 
 // ============================================================================
@@ -62,6 +63,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       id: userFeeds.id,
       subscribedAt: userFeeds.subscribedAt,
       feedId: userFeeds.feedId, // internal use only
+      fetchFullContent: userFeeds.fetchFullContent,
       // From user_feeds view - feed fields (already merged)
       type: userFeeds.type,
       url: userFeeds.url,
@@ -89,6 +91,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       userFeeds.id,
       userFeeds.subscribedAt,
       userFeeds.feedId,
+      userFeeds.fetchFullContent,
       userFeeds.type,
       userFeeds.url,
       userFeeds.title,
@@ -119,6 +122,7 @@ function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
     subscribedAt: row.subscribedAt,
     unreadCount: row.unreadCount,
     tags: row.tags,
+    fetchFullContent: row.fetchFullContent,
   };
 }
 
@@ -148,11 +152,14 @@ export async function searchSubscriptions(
   userId: string,
   query: string
 ): Promise<Subscription[]> {
-  // Use ILIKE for case-insensitive substring matching
+  // Use COALESCE to handle NULL titles, then ILIKE for case-insensitive substring matching
+  // The % wildcards are added to search for the query as a substring
   const likePattern = `%${query}%`;
 
   const results = await buildSubscriptionBaseQuery(db, userId)
-    .where(and(eq(userFeeds.userId, userId), sql`${userFeeds.title} ILIKE ${likePattern}`))
+    .where(
+      and(eq(userFeeds.userId, userId), sql`COALESCE(${userFeeds.title}, '') ILIKE ${likePattern}`)
+    )
     .orderBy(userFeeds.title);
 
   return results.map(formatSubscriptionRow);

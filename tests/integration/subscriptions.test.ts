@@ -780,5 +780,95 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(result1.items).toHaveLength(1);
       expect(result1.items[0].title).toBe("Shared Topic Feed");
     });
+
+    it("searches case-insensitively (lowercase query matches mixed case title)", async () => {
+      const userId = await createTestUser();
+
+      const feedId = await createTestFeed({
+        url: "https://example.com/arxiv.xml",
+        title: "cs.AI updates on arXiv.org",
+      });
+      await createTestSubscription(userId, feedId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Search with lowercase - should match
+      const result = await caller.subscriptions.search({ query: "arxiv" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].title).toBe("cs.AI updates on arXiv.org");
+    });
+
+    it("searches case-insensitively (uppercase query matches mixed case title)", async () => {
+      const userId = await createTestUser();
+
+      const feedId = await createTestFeed({
+        url: "https://example.com/arxiv.xml",
+        title: "cs.AI updates on arXiv.org",
+      });
+      await createTestSubscription(userId, feedId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Search with uppercase - should match
+      const result = await caller.subscriptions.search({ query: "ARXIV" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].title).toBe("cs.AI updates on arXiv.org");
+    });
+
+    it("searches case-insensitively (mixed case query matches different case title)", async () => {
+      const userId = await createTestUser();
+
+      const feedId = await createTestFeed({
+        url: "https://example.com/feed.xml",
+        title: "JavaScript Weekly Newsletter",
+      });
+      await createTestSubscription(userId, feedId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Search with different casing
+      const result1 = await caller.subscriptions.search({ query: "javascript" });
+      expect(result1.items).toHaveLength(1);
+
+      const result2 = await caller.subscriptions.search({ query: "WEEKLY" });
+      expect(result2.items).toHaveLength(1);
+
+      const result3 = await caller.subscriptions.search({ query: "newsletter" });
+      expect(result3.items).toHaveLength(1);
+
+      // All should find the same feed
+      expect(result1.items[0].id).toBe(result2.items[0].id);
+      expect(result2.items[0].id).toBe(result3.items[0].id);
+    });
+
+    it("searches case-insensitively with partial matches", async () => {
+      const userId = await createTestUser();
+
+      const feed1Id = await createTestFeed({
+        url: "https://example.com/python.xml",
+        title: "Python Tutorial Blog",
+      });
+      const feed2Id = await createTestFeed({
+        url: "https://example.com/ruby.xml",
+        title: "Ruby Programming Tips",
+      });
+
+      await createTestSubscription(userId, feed1Id);
+      await createTestSubscription(userId, feed2Id);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Search for partial substring with different casing
+      const result = await caller.subscriptions.search({ query: "PROG" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].title).toBe("Ruby Programming Tips");
+    });
   });
 });
