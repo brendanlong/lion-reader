@@ -66,14 +66,19 @@ export interface SubscriptionData {
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionDeltas - Map of subscriptionId -> unread count delta
+ * @param queryClient - React Query client for updating infinite query caches
  */
 function updateSubscriptionAndTagCounts(
   utils: TRPCClientUtils,
-  subscriptionDeltas: Map<string, number>
+  subscriptionDeltas: Map<string, number>,
+  queryClient?: QueryClient
 ): void {
-  adjustSubscriptionUnreadCounts(utils, subscriptionDeltas);
-  const tagDeltas = calculateTagDeltasFromSubscriptions(utils, subscriptionDeltas);
-  adjustTagUnreadCounts(utils, tagDeltas);
+  adjustSubscriptionUnreadCounts(utils, subscriptionDeltas, queryClient);
+  const { tagDeltas, uncategorizedDelta } = calculateTagDeltasFromSubscriptions(
+    utils,
+    subscriptionDeltas
+  );
+  adjustTagUnreadCounts(utils, tagDeltas, uncategorizedDelta);
 }
 
 /**
@@ -123,16 +128,19 @@ export function handleEntriesMarkedRead(
     }
   }
 
-  // 3. Update subscription and tag unread counts
-  updateSubscriptionAndTagCounts(utils, subscriptionDeltas);
+  // 3. Update subscription and tag unread counts (including per-tag infinite queries)
+  updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
 
-  // 4. Update starred unread count - only for entries that are starred
+  // 4. Update All Articles unread count
+  adjustEntriesCount(utils, {}, delta * entries.length);
+
+  // 5. Update starred unread count - only for entries that are starred
   const starredCount = entries.filter((e) => e.starred).length;
   if (starredCount > 0) {
     adjustEntriesCount(utils, { starredOnly: true }, delta * starredCount);
   }
 
-  // 5. Update saved unread count - only for saved entries
+  // 6. Update saved unread count - only for saved entries
   const savedCount = entries.filter((e) => e.type === "saved").length;
   if (savedCount > 0) {
     adjustEntriesCount(utils, { type: "saved" }, delta * savedCount);
@@ -214,6 +222,8 @@ export function handleSubscriptionCreated(
   addSubscriptionToCache(utils, subscription);
   // Tags may need updating if subscription uses existing tags
   utils.tags.list.invalidate();
+  // All Articles count may change with new subscription
+  utils.entries.count.invalidate();
 }
 
 /**
@@ -231,6 +241,7 @@ export function handleSubscriptionDeleted(utils: TRPCClientUtils, subscriptionId
   removeSubscriptionFromCache(utils, subscriptionId);
   utils.entries.list.invalidate();
   utils.tags.list.invalidate();
+  utils.entries.count.invalidate();
 }
 
 /**
@@ -249,21 +260,26 @@ export function handleSubscriptionDeleted(utils: TRPCClientUtils, subscriptionId
  * @param utils - tRPC utils for cache access
  * @param subscriptionId - Subscription the entry belongs to
  * @param feedType - Type of feed (web, email, saved)
+ * @param queryClient - React Query client for updating infinite query caches
  */
 export function handleNewEntry(
   utils: TRPCClientUtils,
   subscriptionId: string,
-  feedType: "web" | "email" | "saved"
+  feedType: "web" | "email" | "saved",
+  queryClient?: QueryClient
 ): void {
   // New entries are always unread (read: false, starred: false)
   const subscriptionDeltas = new Map<string, number>();
   subscriptionDeltas.set(subscriptionId, 1); // +1 unread
 
-  // Update subscription and tag unread counts
-  updateSubscriptionAndTagCounts(utils, subscriptionDeltas);
+  // Update subscription and tag unread counts (including per-tag infinite queries)
+  updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
+
+  // Update All Articles unread count (+1 unread, +1 total)
+  adjustEntriesCount(utils, {}, 1, 1);
 
   // Update saved unread count if it's a saved entry
   if (feedType === "saved") {
-    adjustEntriesCount(utils, { type: "saved" }, 1);
+    adjustEntriesCount(utils, { type: "saved" }, 1, 1);
   }
 }

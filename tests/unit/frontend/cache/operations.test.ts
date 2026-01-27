@@ -213,24 +213,26 @@ describe("handleNewEntry", () => {
     expect(countOps.length).toBeGreaterThan(0);
   });
 
-  it("does not increment saved count for web entries", () => {
+  it("increments All Articles count but not saved count for web entries", () => {
     handleNewEntry(mockUtils.utils, "sub-1", "web");
 
-    // For web entries, we don't update the saved count
+    // For web entries, we update All Articles count but not saved count
     const countOps = mockUtils.operations.filter(
       (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
     );
-    expect(countOps.length).toBe(0);
+    // Only 1 operation: All Articles count (no saved count for web entries)
+    expect(countOps.length).toBe(1);
   });
 
-  it("increments saved unread count for email entries", () => {
+  it("increments All Articles count but not saved count for email entries", () => {
     handleNewEntry(mockUtils.utils, "sub-1", "email");
 
-    // Email entries don't affect saved count
+    // Email entries update All Articles count but don't affect saved count
     const countOps = mockUtils.operations.filter(
       (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
     );
-    expect(countOps.length).toBe(0);
+    // Only 1 operation: All Articles count (no saved count for email entries)
+    expect(countOps.length).toBe(1);
   });
 });
 
