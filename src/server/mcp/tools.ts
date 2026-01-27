@@ -92,6 +92,12 @@ export function registerTools(): Tool[] {
           },
           subscriptionId: { type: "string", description: "Filter by subscription ID" },
           tagId: { type: "string", description: "Filter by tag ID" },
+          uncategorized: { type: "boolean", description: "Show only uncategorized entries" },
+          type: {
+            type: "string",
+            enum: ["web", "email", "saved"],
+            description: "Filter by entry type",
+          },
           unreadOnly: { type: "boolean", description: "Show only unread entries" },
           starredOnly: { type: "boolean", description: "Show only starred entries" },
           limit: { type: "number", description: "Number of entries per page (max 100)" },
