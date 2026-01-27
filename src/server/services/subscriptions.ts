@@ -134,6 +134,7 @@ export interface ListSubscriptionsParams {
   userId: string;
   query?: string; // Case-insensitive title search
   tagId?: string; // Filter by tag
+  uncategorized?: boolean; // Only show subscriptions with no tags
   unreadOnly?: boolean; // Only show feeds with unread items
   cursor?: string; // Pagination cursor (subscription ID)
   limit?: number; // Max results per page
@@ -150,6 +151,7 @@ export interface ListSubscriptionsResult {
  * Supports:
  * - Case-insensitive title search
  * - Tag filtering
+ * - Uncategorized filtering (subscriptions with no tags)
  * - Unread-only filtering
  * - Cursor-based pagination
  */
@@ -157,7 +159,7 @@ export async function listSubscriptions(
   db: typeof dbType,
   params: ListSubscriptionsParams
 ): Promise<ListSubscriptionsResult> {
-  const { userId, query, tagId, unreadOnly, cursor, limit = 50 } = params;
+  const { userId, query, tagId, uncategorized, unreadOnly, cursor, limit = 50 } = params;
 
   // Cap limit at 100
   const effectiveLimit = Math.min(limit, 100);
@@ -177,6 +179,14 @@ export async function listSubscriptions(
       SELECT 1 FROM ${subscriptionTags}
       WHERE ${subscriptionTags.subscriptionId} = ${userFeeds.id}
         AND ${subscriptionTags.tagId} = ${tagId}
+    )`);
+  }
+
+  // Uncategorized filter (subscriptions with no tags)
+  if (uncategorized) {
+    conditions.push(sql`NOT EXISTS (
+      SELECT 1 FROM ${subscriptionTags}
+      WHERE ${subscriptionTags.subscriptionId} = ${userFeeds.id}
     )`);
   }
 

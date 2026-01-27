@@ -6,9 +6,8 @@
  *
  * Prefetches data used across all pages (sidebar, header):
  * - auth.me (user info for header)
- * - subscriptions.list (sidebar feed list)
- * - tags.list (sidebar tag list)
- * - entries.count (starred/saved counts)
+ * - tags.list (sidebar tag structure and unread counts)
+ * - entries.count (all/starred/saved counts for sidebar)
  *
  * Initial sync uses null cursors to get all recent data, which then establishes
  * the baseline cursors for subsequent incremental syncs.
@@ -53,15 +52,15 @@ export default async function AppLayout({ children }: AppLayoutProps) {
       queryKey: [["auth", "me"], { type: "query" }],
       queryFn: () => trpc.auth.me(),
     }),
-    // Subscriptions for sidebar
-    queryClient.prefetchQuery({
-      queryKey: [["subscriptions", "list"], { type: "query" }],
-      queryFn: () => trpc.subscriptions.list(),
-    }),
-    // Tags for sidebar
+    // Tags for sidebar (includes uncategorized counts)
     queryClient.prefetchQuery({
       queryKey: [["tags", "list"], { type: "query" }],
       queryFn: () => trpc.tags.list(),
+    }),
+    // All Articles count for sidebar
+    queryClient.prefetchQuery({
+      queryKey: [["entries", "count"], { input: {}, type: "query" }],
+      queryFn: () => trpc.entries.count({}),
     }),
     // Saved count for sidebar
     queryClient.prefetchQuery({

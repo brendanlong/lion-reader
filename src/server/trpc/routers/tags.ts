@@ -80,6 +80,10 @@ export const tagsRouter = createTRPCRouter({
     .output(
       z.object({
         items: z.array(tagOutputSchema),
+        uncategorized: z.object({
+          feedCount: z.number(),
+          unreadCount: z.number(),
+        }),
       })
     )
     .query(async ({ ctx }) => {
@@ -89,35 +93,63 @@ export const tagsRouter = createTRPCRouter({
       // Uses subqueries to avoid incorrect counts from JOIN multiplication
       // Note: We use "tags"."id" explicitly because ${tags.id} resolves to just "id"
       // which becomes ambiguous in subqueries with multiple tables that have id columns
-      const userTags = await ctx.db
-        .select({
-          id: tags.id,
-          name: tags.name,
-          color: tags.color,
-          createdAt: tags.createdAt,
-          feedCount: sql<number>`(
-            SELECT COUNT(*)::int
-            FROM ${subscriptionTags}
-            WHERE ${subscriptionTags.tagId} = "tags"."id"
-          )`,
-          unreadCount: sql<number>`(
-            SELECT COUNT(*)::int
-            FROM ${subscriptionTags} st
-            INNER JOIN ${subscriptions} s
-              ON st.subscription_id = s.id
-              AND s.unsubscribed_at IS NULL
-            INNER JOIN ${entries} e
-              ON e.feed_id = ANY(s.feed_ids)
-            INNER JOIN ${userEntries} ue
-              ON ue.entry_id = e.id
-              AND ue.user_id = ${userId}
-              AND ue.read = false
-            WHERE st.tag_id = "tags"."id"
-          )`,
-        })
-        .from(tags)
-        .where(eq(tags.userId, userId))
-        .orderBy(tags.name);
+      const [userTags, uncategorizedResult] = await Promise.all([
+        ctx.db
+          .select({
+            id: tags.id,
+            name: tags.name,
+            color: tags.color,
+            createdAt: tags.createdAt,
+            feedCount: sql<number>`(
+              SELECT COUNT(*)::int
+              FROM ${subscriptionTags}
+              WHERE ${subscriptionTags.tagId} = "tags"."id"
+            )`,
+            unreadCount: sql<number>`(
+              SELECT COUNT(*)::int
+              FROM ${subscriptionTags} st
+              INNER JOIN ${subscriptions} s
+                ON st.subscription_id = s.id
+                AND s.unsubscribed_at IS NULL
+              INNER JOIN ${entries} e
+                ON e.feed_id = ANY(s.feed_ids)
+              INNER JOIN ${userEntries} ue
+                ON ue.entry_id = e.id
+                AND ue.user_id = ${userId}
+                AND ue.read = false
+              WHERE st.tag_id = "tags"."id"
+            )`,
+          })
+          .from(tags)
+          .where(eq(tags.userId, userId))
+          .orderBy(tags.name),
+        // Count uncategorized subscriptions (those with no tags)
+        ctx.db
+          .select({
+            feedCount: sql<number>`COUNT(DISTINCT ${subscriptions.id})::int`,
+            unreadCount: sql<number>`COUNT(DISTINCT ${userEntries.entryId})::int`,
+          })
+          .from(subscriptions)
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              isNull(subscriptions.unsubscribedAt),
+              sql`NOT EXISTS (
+                SELECT 1 FROM ${subscriptionTags}
+                WHERE ${subscriptionTags.subscriptionId} = ${subscriptions.id}
+              )`
+            )
+          )
+          .leftJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
+          .leftJoin(
+            userEntries,
+            and(
+              eq(userEntries.entryId, entries.id),
+              eq(userEntries.userId, userId),
+              eq(userEntries.read, false)
+            )
+          ),
+      ]);
 
       return {
         items: userTags.map((tag) => ({
@@ -128,6 +160,10 @@ export const tagsRouter = createTRPCRouter({
           unreadCount: tag.unreadCount,
           createdAt: tag.createdAt,
         })),
+        uncategorized: {
+          feedCount: uncategorizedResult[0]?.feedCount ?? 0,
+          unreadCount: uncategorizedResult[0]?.unreadCount ?? 0,
+        },
       };
     }),
 
