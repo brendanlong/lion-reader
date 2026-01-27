@@ -700,13 +700,8 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
-
-      // user_feeds view already filters out unsubscribed, just need user_id filter
-      const results = await buildSubscriptionBaseQuery(ctx.db, userId)
-        .where(eq(userFeeds.userId, userId))
-        .orderBy(userFeeds.title);
-
-      return { items: results.map(formatSubscriptionRow) };
+      const result = await subscriptionsService.listSubscriptions(ctx.db, { userId });
+      return { items: result.subscriptions };
     }),
 
   /**
