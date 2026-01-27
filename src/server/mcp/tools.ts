@@ -273,37 +273,28 @@ export function registerTools(): Tool[] {
 
     {
       name: "list_subscriptions",
-      description: "List all active feed subscriptions with unread counts and tags.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        const subscriptions = await subscriptionsService.listSubscriptions(db, args.userId);
-        return { subscriptions };
-      },
-    },
-
-    {
-      name: "search_subscriptions",
       description:
-        "Search subscriptions by feed title (custom or original). Results ranked by relevance.",
+        "List active feed subscriptions with optional filtering and pagination. Supports case-insensitive title search, tag filtering, unread-only filtering, and cursor-based pagination.",
       inputSchema: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query" },
+          query: {
+            type: "string",
+            description: "Case-insensitive title search (substring matching)",
+          },
+          tagId: { type: "string", description: "Filter by tag ID" },
+          unreadOnly: { type: "boolean", description: "Only show feeds with unread items" },
+          limit: { type: "number", description: "Number of subscriptions per page (max 100)" },
+          cursor: { type: "string", description: "Pagination cursor from previous response" },
         },
-        required: ["query"],
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
-        const subscriptions = await subscriptionsService.searchSubscriptions(
-          db,
-          args.userId,
-          args.query
-        );
-        return { subscriptions };
+        const { userId, ...params } = args;
+        return subscriptionsService.listSubscriptions(db, {
+          userId,
+          ...params,
+        });
       },
     },
 
