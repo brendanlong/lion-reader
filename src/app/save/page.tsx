@@ -28,6 +28,7 @@ export default function SavePage() {
 function SaveContent() {
   const searchParams = useSearchParams();
   const urlToSave = searchParams.get("url");
+  const shareType = searchParams.get("type");
   const shareError = searchParams.get("error");
 
   const [articleTitle, setArticleTitle] = useState<string | null>(null);
@@ -38,6 +39,12 @@ function SaveContent() {
   const saveInitiatedRef = useRef(false);
 
   const saveMutation = trpc.saved.save.useMutation({
+    onSuccess: (data) => {
+      setArticleTitle(data.article.title);
+    },
+  });
+
+  const uploadFileMutation = trpc.saved.uploadFile.useMutation({
     onSuccess: (data) => {
       setArticleTitle(data.article.title);
     },
@@ -58,6 +65,9 @@ function SaveContent() {
     },
   });
 
+  // Determine which mutation is active (URL save or file upload)
+  const activeMutation = shareType === "file" ? uploadFileMutation : saveMutation;
+
   // Check if returning from OAuth flow
   useEffect(() => {
     const pendingUrl = sessionStorage.getItem("pendingSaveUrl");
@@ -68,6 +78,55 @@ function SaveContent() {
     }
   }, [urlToSave]);
 
+  // Handle file upload from IndexedDB
+  useEffect(() => {
+    if (shareType === "file" && !saveInitiatedRef.current) {
+      saveInitiatedRef.current = true;
+
+      // Open IndexedDB to retrieve the shared file
+      const dbRequest = indexedDB.open("lion-reader-share", 1);
+
+      dbRequest.onsuccess = () => {
+        const db = dbRequest.result;
+        const transaction = db.transaction("files", "readonly");
+        const store = transaction.objectStore("files");
+        const getRequest = store.get("pending");
+
+        getRequest.onsuccess = () => {
+          const fileData = getRequest.result;
+          if (fileData) {
+            // Upload the file using the uploadFile mutation
+            uploadFileMutation.mutate({
+              content: fileData.content,
+              filename: fileData.filename,
+              title: fileData.title,
+            });
+
+            // Clean up - delete the file from IndexedDB after reading
+            const deleteTransaction = db.transaction("files", "readwrite");
+            const deleteStore = deleteTransaction.objectStore("files");
+            deleteStore.delete("pending");
+          } else {
+            // No file found in IndexedDB
+            console.error("No file found in IndexedDB");
+          }
+        };
+
+        getRequest.onerror = () => {
+          console.error("Failed to read file from IndexedDB:", getRequest.error);
+        };
+
+        transaction.oncomplete = () => {
+          db.close();
+        };
+      };
+
+      dbRequest.onerror = () => {
+        console.error("Failed to open IndexedDB:", dbRequest.error);
+      };
+    }
+  }, [shareType, uploadFileMutation]);
+
   // Start saving when URL is present (only once)
   useEffect(() => {
     if (urlToSave && !saveInitiatedRef.current) {
@@ -76,9 +135,9 @@ function SaveContent() {
     }
   }, [urlToSave, saveMutation]);
 
-  // Auto-close countdown on success
+  // Auto-close countdown on success (for either mutation)
   useEffect(() => {
-    if (!saveMutation.isSuccess) return;
+    if (!activeMutation.isSuccess) return;
 
     const interval = setInterval(() => {
       setCountdown((prev) => {
@@ -92,7 +151,7 @@ function SaveContent() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [saveMutation.isSuccess]);
+  }, [activeMutation.isSuccess]);
 
   // Handle manual close
   const handleClose = () => {
@@ -104,6 +163,29 @@ function SaveContent() {
     if (urlToSave) {
       saveInitiatedRef.current = false;
       saveMutation.mutate({ url: urlToSave });
+    } else if (shareType === "file") {
+      // Retry file upload - re-read from IndexedDB
+      saveInitiatedRef.current = false;
+      const dbRequest = indexedDB.open("lion-reader-share", 1);
+      dbRequest.onsuccess = () => {
+        const db = dbRequest.result;
+        const transaction = db.transaction("files", "readonly");
+        const store = transaction.objectStore("files");
+        const getRequest = store.get("pending");
+        getRequest.onsuccess = () => {
+          const fileData = getRequest.result;
+          if (fileData) {
+            uploadFileMutation.mutate({
+              content: fileData.content,
+              filename: fileData.filename,
+              title: fileData.title,
+            });
+          }
+        };
+        transaction.oncomplete = () => {
+          db.close();
+        };
+      };
     }
   };
 
@@ -114,10 +196,10 @@ function SaveContent() {
   };
 
   // Check if error is an auth error (session expired, revoked, etc.)
-  const isAuthError = saveMutation.error?.data?.code === "UNAUTHORIZED";
+  const isAuthError = activeMutation.error?.data?.code === "UNAUTHORIZED";
 
   // Check if error is a Google Docs permission error
-  const errorMessage = saveMutation.error?.message || "";
+  const errorMessage = activeMutation.error?.message || "";
   const needsDocsPermission = errorMessage === "NEEDS_DOCS_PERMISSION";
   const needsGoogleSignin = errorMessage === "NEEDS_GOOGLE_SIGNIN";
   const needsGoogleReauth = errorMessage === "NEEDS_GOOGLE_REAUTH";
@@ -134,10 +216,11 @@ function SaveContent() {
     window.location.href = `/login?redirect=${encodeURIComponent("/save")}`;
   };
 
-  // Share error or no URL provided
-  if (!urlToSave) {
+  // Share error or no URL/file provided
+  if (!urlToSave && shareType !== "file") {
     const errorMessages: Record<string, string> = {
       no_url: "No URL was found in the shared content.",
+      no_url_or_file: "No URL or file was found in the shared content.",
       share_failed: "Failed to process the shared content.",
     };
 
@@ -151,7 +234,7 @@ function SaveContent() {
             <Alert variant="error" className="mt-4">
               {shareError
                 ? errorMessages[shareError] || "An error occurred."
-                : "No URL provided. Use the bookmarklet or share from another app."}
+                : "No URL or file provided. Use the bookmarklet or share from another app."}
             </Alert>
             <Button variant="secondary" className="mt-4 w-full" onClick={handleClose}>
               Close
@@ -171,7 +254,7 @@ function SaveContent() {
           </h1>
 
           {/* Saving State (includes idle and pending) */}
-          {(saveMutation.isIdle || saveMutation.isPending) && (
+          {(activeMutation.isIdle || activeMutation.isPending) && (
             <div className="mt-6">
               <div className="flex justify-center">
                 <svg
@@ -195,15 +278,19 @@ function SaveContent() {
                   />
                 </svg>
               </div>
-              <p className="ui-text-sm mt-3 text-zinc-600 dark:text-zinc-400">Saving article...</p>
-              <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
-                {urlToSave}
+              <p className="ui-text-sm mt-3 text-zinc-600 dark:text-zinc-400">
+                {shareType === "file" ? "Uploading file..." : "Saving article..."}
               </p>
+              {urlToSave && (
+                <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
+                  {urlToSave}
+                </p>
+              )}
             </div>
           )}
 
           {/* Success State */}
-          {saveMutation.isSuccess && (
+          {activeMutation.isSuccess && (
             <div className="mt-6">
               <div className="flex justify-center">
                 <svg
@@ -234,7 +321,7 @@ function SaveContent() {
           )}
 
           {/* Error State */}
-          {saveMutation.isError && (
+          {activeMutation.isError && (
             <div className="mt-6">
               {/* Authentication Required */}
               {isAuthError ? (
@@ -338,11 +425,14 @@ function SaveContent() {
                     </svg>
                   </div>
                   <Alert variant="error" className="mt-4 text-left">
-                    {saveMutation.error?.message || "Failed to save article"}
+                    {activeMutation.error?.message ||
+                      (shareType === "file" ? "Failed to upload file" : "Failed to save article")}
                   </Alert>
-                  <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
-                    {urlToSave}
-                  </p>
+                  {urlToSave && (
+                    <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
+                      {urlToSave}
+                    </p>
+                  )}
                   <div className="mt-4 flex gap-2">
                     <Button variant="secondary" className="flex-1" onClick={handleClose}>
                       Close
