@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, lte, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, and, lte, inArray, notInArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -25,17 +25,12 @@ import {
   narrationContent,
 } from "@/server/db/schema";
 import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
-import { countEntries } from "@/server/services/entries";
+import * as entriesService from "@/server/services/entries";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
 // Constants
 // ============================================================================
-
-/**
- * Default number of entries to return per page.
- */
-const DEFAULT_LIMIT = 50;
 
 /**
  * Maximum number of entries that can be requested per page.
@@ -65,11 +60,6 @@ const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
  * Sort order validation schema.
  */
 const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
-
-/**
- * Search field validation schema.
- */
-const searchInSchema = z.enum(["title", "content", "both"]).optional();
 
 /**
  * Feed type validation schema for filtering entries by type.
@@ -173,49 +163,6 @@ const starOutputSchema = z.object({
 // ============================================================================
 
 /**
- * Cursor data for pagination.
- * Uses compound cursor with timestamp + ID to handle entries with same timestamp.
- */
-interface CursorData {
-  /** ISO timestamp string for the sort column (publishedAt or fetchedAt) */
-  ts: string;
-  /** Entry ID as tiebreaker */
-  id: string;
-}
-
-/**
- * Decodes a cursor to get the timestamp and entry ID.
- * Cursor is base64-encoded JSON with { ts, id }.
- *
- * @param cursor - The cursor string
- * @returns The decoded cursor data
- */
-function decodeCursor(cursor: string): CursorData {
-  try {
-    const decoded = Buffer.from(cursor, "base64").toString("utf8");
-    const parsed = JSON.parse(decoded) as CursorData;
-    if (!parsed.ts || !parsed.id) {
-      throw new Error("Invalid cursor structure");
-    }
-    return parsed;
-  } catch {
-    throw errors.validation("Invalid cursor format");
-  }
-}
-
-/**
- * Encodes cursor data for pagination.
- *
- * @param ts - The timestamp (publishedAt or fetchedAt)
- * @param entryId - The entry ID
- * @returns The encoded cursor
- */
-function encodeCursor(ts: Date, entryId: string): string {
-  const data: CursorData = { ts: ts.toISOString(), id: entryId };
-  return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
-}
-
-/**
  * Database context type for helper functions.
  */
 type DbContext = {
@@ -310,14 +257,19 @@ export const entriesRouter = createTRPCRouter({
   /**
    * List entries with filters and cursor-based pagination.
    *
-   * Entries are visible to a user only if they have a corresponding
-   * row in the user_entries table for their user_id.
+   * Supports optional full-text search via the query parameter.
+   * When query is provided, searches both title and content and ranks by relevance.
+   * Without query, returns entries sorted by time.
    *
+   * @param query - Optional full-text search query (searches title and content)
    * @param subscriptionId - Optional filter by subscription ID
    * @param tagId - Optional filter by tag ID (entries from subscriptions with this tag)
+   * @param uncategorized - Optional filter to show only entries from uncategorized subscriptions
+   * @param type - Optional filter by entry type (web/email/saved)
+   * @param excludeTypes - Optional array of types to exclude
    * @param unreadOnly - Optional filter to show only unread entries
    * @param starredOnly - Optional filter to show only starred entries
-   * @param sortOrder - Optional sort order: "newest" (default) or "oldest"
+   * @param sortOrder - Optional sort order: "newest" (default) or "oldest". Ignored when query is provided.
    * @param cursor - Optional pagination cursor (from previous response)
    * @param limit - Optional number of entries per page (default: 50, max: 100)
    * @returns Paginated list of entries
@@ -333,6 +285,7 @@ export const entriesRouter = createTRPCRouter({
     })
     .input(
       z.object({
+        query: z.string().optional(),
         subscriptionId: uuidSchema.optional(),
         tagId: uuidSchema.optional(),
         uncategorized: booleanQueryParam,
@@ -348,381 +301,23 @@ export const entriesRouter = createTRPCRouter({
     .output(entriesListOutputSchema)
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const limit = input.limit ?? DEFAULT_LIMIT;
-      const sortOrder = input.sortOrder ?? "newest";
-
-      // Build the base query conditions using visible_entries view
-      // The view already enforces visibility (active subscription OR starred)
-      const conditions = [eq(visibleEntries.userId, userId)];
-
-      // Filter by subscriptionId
-      if (input.subscriptionId) {
-        const feedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
-        if (feedIds === null) {
-          // Subscription not found or doesn't belong to user
-          return { items: [], nextCursor: undefined };
-        }
-        conditions.push(inArray(visibleEntries.feedId, feedIds));
-      }
-
-      // Filter by tagId if specified
-      if (input.tagId) {
-        // First verify the tag belongs to the user
-        const tagExists = await ctx.db
-          .select({ id: tags.id })
-          .from(tags)
-          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId)))
-          .limit(1);
-
-        if (tagExists.length === 0) {
-          // Tag not found or doesn't belong to user, return empty result
-          return { items: [], nextCursor: undefined };
-        }
-
-        // Get feed IDs for subscriptions with this tag using user_feeds view
-        const taggedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-          .from(subscriptionTags)
-          .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
-          .where(eq(subscriptionTags.tagId, input.tagId));
-        conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
-      }
-
-      // Filter by uncategorized if specified
-      if (input.uncategorized) {
-        // Get subscription IDs that have tags
-        const taggedSubscriptionIds = ctx.db
-          .select({ subscriptionId: subscriptionTags.subscriptionId })
-          .from(subscriptionTags);
-
-        // Get feed IDs for subscriptions with no tags using user_feeds view
-        const uncategorizedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-          .from(userFeeds)
-          .where(
-            and(eq(userFeeds.userId, userId), notInArray(userFeeds.id, taggedSubscriptionIds))
-          );
-
-        conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
-      }
-
-      // Apply unreadOnly filter
-      if (input.unreadOnly) {
-        conditions.push(eq(visibleEntries.read, false));
-      }
-
-      // Apply starredOnly filter
-      if (input.starredOnly) {
-        conditions.push(eq(visibleEntries.starred, true));
-      }
-
-      // Apply type filter if specified
-      if (input.type) {
-        conditions.push(eq(visibleEntries.type, input.type));
-      }
-
-      // Apply excludeTypes filter if specified
-      if (input.excludeTypes && input.excludeTypes.length > 0) {
-        conditions.push(notInArray(visibleEntries.type, input.excludeTypes));
-      }
-
-      // Apply spam filter: exclude spam entries unless user has showSpam enabled
       const showSpam = ctx.session.user.showSpam;
-      if (!showSpam) {
-        conditions.push(eq(visibleEntries.isSpam, false));
-      }
 
-      // Sort by publishedAt, falling back to fetchedAt if null
-      // Use entry.id as tiebreaker for stable ordering
-      const sortColumn = sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
-
-      // Add cursor condition if present
-      // Uses compound comparison: (sortColumn, id) for stable pagination
-      if (input.cursor) {
-        const { ts, id } = decodeCursor(input.cursor);
-        const cursorTs = new Date(ts);
-        if (sortOrder === "newest") {
-          // Entries older than cursor, or same timestamp with smaller ID
-          conditions.push(
-            sql`(${sortColumn} < ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${visibleEntries.id} < ${id}))`
-          );
-        } else {
-          // Entries newer than cursor, or same timestamp with larger ID
-          conditions.push(
-            sql`(${sortColumn} > ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${visibleEntries.id} > ${id}))`
-          );
-        }
-      }
-
-      // Query entries using visible_entries view
-      // The view already includes entry data, user state (read/starred), and subscription_id
-      // Just need to join feeds for feedTitle
-      const orderByClause =
-        sortOrder === "newest"
-          ? [desc(sortColumn), desc(visibleEntries.id)]
-          : [asc(sortColumn), asc(visibleEntries.id)];
-      const queryResults = await ctx.db
-        .select({
-          id: visibleEntries.id,
-          feedId: visibleEntries.feedId,
-          type: visibleEntries.type,
-          url: visibleEntries.url,
-          title: visibleEntries.title,
-          author: visibleEntries.author,
-          summary: visibleEntries.summary,
-          publishedAt: visibleEntries.publishedAt,
-          fetchedAt: visibleEntries.fetchedAt,
-          read: visibleEntries.read,
-          starred: visibleEntries.starred,
-          subscriptionId: visibleEntries.subscriptionId,
-          siteName: visibleEntries.siteName,
-          feedTitle: feeds.title,
-        })
-        .from(visibleEntries)
-        .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-        .where(and(...conditions))
-        .orderBy(...orderByClause)
-        .limit(limit + 1);
-
-      // Determine if there are more results
-      const hasMore = queryResults.length > limit;
-      const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
-
-      // Format the output
-      const items = resultEntries.map((row) => ({
-        id: row.id,
-        subscriptionId: row.subscriptionId,
-        feedId: row.feedId,
-        type: row.type,
-        url: row.url,
-        title: row.title,
-        author: row.author,
-        summary: row.summary,
-        publishedAt: row.publishedAt,
-        fetchedAt: row.fetchedAt,
-        read: row.read,
-        starred: row.starred,
-        feedTitle: row.feedTitle,
-        siteName: row.siteName,
-      }));
-
-      // Generate next cursor if there are more results
-      let nextCursor: string | undefined;
-      if (hasMore && resultEntries.length > 0) {
-        const lastEntry = resultEntries[resultEntries.length - 1];
-        const lastTs = lastEntry.publishedAt ?? lastEntry.fetchedAt;
-        nextCursor = encodeCursor(lastTs, lastEntry.id);
-      }
-
-      return { items, nextCursor };
-    }),
-
-  /**
-   * Search entries by title and/or content using PostgreSQL full-text search.
-   *
-   * Results are ranked by relevance and support the same filters as list.
-   *
-   * @param query - The search query text
-   * @param searchIn - Where to search: "title", "content", or "both" (default)
-   * @param subscriptionId - Optional filter by subscription ID
-   * @param tagId - Optional filter by tag ID
-   * @param unreadOnly - Optional filter to show only unread entries
-   * @param starredOnly - Optional filter to show only starred entries
-   * @param cursor - Optional pagination cursor (from previous response)
-   * @param limit - Optional number of entries per page (default: 50, max: 100)
-   * @returns Paginated list of matching entries, ranked by relevance
-   */
-  search: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/entries/search",
-        tags: ["Entries"],
-        summary: "Search entries",
-      },
-    })
-    .input(
-      z.object({
-        query: z.string().min(1, "Search query is required"),
-        searchIn: searchInSchema,
-        subscriptionId: uuidSchema.optional(),
-        tagId: uuidSchema.optional(),
-        uncategorized: booleanQueryParam,
-        type: feedTypeSchema.optional(),
-        excludeTypes: z.array(feedTypeSchema).optional(),
-        unreadOnly: booleanQueryParam,
-        starredOnly: booleanQueryParam,
-        cursor: cursorSchema,
-        limit: limitSchema,
-      })
-    )
-    .output(entriesListOutputSchema)
-    .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const limit = input.limit ?? DEFAULT_LIMIT;
-      const searchIn = input.searchIn ?? "both";
-
-      // Build the base query conditions using visible_entries view
-      const conditions = [eq(visibleEntries.userId, userId)];
-
-      // Build full-text search vector based on searchIn parameter
-      let searchVector: ReturnType<typeof sql>;
-      if (searchIn === "title") {
-        searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.title}, ''))`;
-      } else if (searchIn === "content") {
-        searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.contentCleaned}, ''))`;
-      } else {
-        // both
-        searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.title}, '') || ' ' || COALESCE(${visibleEntries.contentCleaned}, ''))`;
-      }
-
-      // Create the search query
-      const searchQuery = sql`plainto_tsquery('english', ${input.query})`;
-
-      // Add full-text search condition
-      conditions.push(sql`${searchVector} @@ ${searchQuery}`);
-
-      // Calculate relevance rank for sorting
-      const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
-
-      // Filter by subscriptionId
-      if (input.subscriptionId) {
-        const feedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
-        if (feedIds === null) {
-          return { items: [], nextCursor: undefined };
-        }
-        conditions.push(inArray(visibleEntries.feedId, feedIds));
-      }
-
-      // Filter by tagId if specified
-      if (input.tagId) {
-        const tagExists = await ctx.db
-          .select({ id: tags.id })
-          .from(tags)
-          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId)))
-          .limit(1);
-
-        if (tagExists.length === 0) {
-          return { items: [], nextCursor: undefined };
-        }
-
-        const taggedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-          .from(subscriptionTags)
-          .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
-          .where(eq(subscriptionTags.tagId, input.tagId));
-        conditions.push(inArray(visibleEntries.feedId, taggedFeedIds));
-      }
-
-      // Filter by uncategorized if specified
-      if (input.uncategorized) {
-        const taggedSubscriptionIds = ctx.db
-          .select({ subscriptionId: subscriptionTags.subscriptionId })
-          .from(subscriptionTags);
-
-        const uncategorizedFeedIds = ctx.db
-          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
-          .from(userFeeds)
-          .where(
-            and(eq(userFeeds.userId, userId), notInArray(userFeeds.id, taggedSubscriptionIds))
-          );
-
-        conditions.push(inArray(visibleEntries.feedId, uncategorizedFeedIds));
-      }
-
-      // Apply unreadOnly filter
-      if (input.unreadOnly) {
-        conditions.push(eq(visibleEntries.read, false));
-      }
-
-      // Apply starredOnly filter
-      if (input.starredOnly) {
-        conditions.push(eq(visibleEntries.starred, true));
-      }
-
-      // Apply type filter if specified
-      if (input.type) {
-        conditions.push(eq(visibleEntries.type, input.type));
-      }
-
-      // Apply excludeTypes filter if specified
-      if (input.excludeTypes && input.excludeTypes.length > 0) {
-        conditions.push(notInArray(visibleEntries.type, input.excludeTypes));
-      }
-
-      // Apply spam filter
-      const showSpam = ctx.session.user.showSpam;
-      if (!showSpam) {
-        conditions.push(eq(visibleEntries.isSpam, false));
-      }
-
-      // For search results, we use rank for primary sorting, with ID as tiebreaker
-      // Cursor contains { rank, id } for pagination
-      if (input.cursor) {
-        const { ts: rankStr, id } = decodeCursor(input.cursor);
-        const cursorRank = parseFloat(rankStr);
-        // Results with lower rank than cursor, or same rank with smaller ID
-        conditions.push(
-          sql`(${rankColumn} < ${cursorRank} OR (${rankColumn} = ${cursorRank} AND ${visibleEntries.id} < ${id}))`
-        );
-      }
-
-      // Query entries, ordered by relevance rank (descending), then ID
-      const queryResults = await ctx.db
-        .select({
-          id: visibleEntries.id,
-          feedId: visibleEntries.feedId,
-          type: visibleEntries.type,
-          url: visibleEntries.url,
-          title: visibleEntries.title,
-          author: visibleEntries.author,
-          summary: visibleEntries.summary,
-          publishedAt: visibleEntries.publishedAt,
-          fetchedAt: visibleEntries.fetchedAt,
-          read: visibleEntries.read,
-          starred: visibleEntries.starred,
-          subscriptionId: visibleEntries.subscriptionId,
-          siteName: visibleEntries.siteName,
-          feedTitle: feeds.title,
-          rank: rankColumn,
-        })
-        .from(visibleEntries)
-        .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-        .where(and(...conditions))
-        .orderBy(desc(rankColumn), desc(visibleEntries.id))
-        .limit(limit + 1);
-
-      // Determine if there are more results
-      const hasMore = queryResults.length > limit;
-      const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
-
-      // Format the output
-      const items = resultEntries.map((row) => ({
-        id: row.id,
-        subscriptionId: row.subscriptionId,
-        feedId: row.feedId,
-        type: row.type,
-        url: row.url,
-        title: row.title,
-        author: row.author,
-        summary: row.summary,
-        publishedAt: row.publishedAt,
-        fetchedAt: row.fetchedAt,
-        read: row.read,
-        starred: row.starred,
-        feedTitle: row.feedTitle,
-        siteName: row.siteName,
-      }));
-
-      // Generate next cursor if there are more results
-      // For search, cursor contains rank (as string) + ID
-      let nextCursor: string | undefined;
-      if (hasMore && resultEntries.length > 0) {
-        const lastEntry = resultEntries[resultEntries.length - 1];
-        nextCursor = encodeCursor(new Date(lastEntry.rank.toString()), lastEntry.id);
-      }
-
-      return { items, nextCursor };
+      return entriesService.listEntries(ctx.db, {
+        userId,
+        query: input.query,
+        subscriptionId: input.subscriptionId,
+        tagId: input.tagId,
+        uncategorized: input.uncategorized,
+        type: input.type,
+        excludeTypes: input.excludeTypes,
+        unreadOnly: input.unreadOnly,
+        starredOnly: input.starredOnly,
+        sortOrder: input.sortOrder,
+        cursor: input.cursor,
+        limit: input.limit,
+        showSpam,
+      });
     }),
 
   /**
@@ -1195,7 +790,7 @@ export const entriesRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       // Use the shared countEntries service function
-      return countEntries(ctx.db, ctx.session.user.id, {
+      return entriesService.countEntries(ctx.db, ctx.session.user.id, {
         subscriptionId: input?.subscriptionId,
         tagId: input?.tagId,
         uncategorized: input?.uncategorized,

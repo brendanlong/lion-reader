@@ -297,7 +297,7 @@ describe("Entries", () => {
     });
   });
 
-  describe("search", () => {
+  describe("list with query", () => {
     it("searches entries by title", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");
@@ -323,7 +323,7 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.search({ query: "PostgreSQL", searchIn: "title" });
+      const result = await caller.entries.list({ query: "PostgreSQL" });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].id).toBe(entry1Id);
@@ -350,9 +350,8 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.search({
+      const result = await caller.entries.list({
         query: "artificial intelligence",
-        searchIn: "content",
       });
 
       expect(result.items).toHaveLength(1);
@@ -385,7 +384,7 @@ describe("Entries", () => {
       const caller = createCaller(ctx);
 
       // Should match both entry1 (title) and entry2 (content)
-      const result = await caller.entries.search({ query: "TypeScript" });
+      const result = await caller.entries.list({ query: "TypeScript" });
 
       expect(result.items).toHaveLength(2);
       expect(result.items.map((e) => e.id)).toContain(entry1Id);
@@ -412,7 +411,7 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.search({ query: "React", unreadOnly: true });
+      const result = await caller.entries.list({ query: "React", unreadOnly: true });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].id).toBe(unreadMatch);
@@ -430,7 +429,7 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.search({ query: "nonexistentquery12345" });
+      const result = await caller.entries.list({ query: "nonexistentquery12345" });
 
       expect(result.items).toHaveLength(0);
     });
