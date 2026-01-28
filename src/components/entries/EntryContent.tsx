@@ -159,8 +159,10 @@ export function EntryContent({
       fetchFullContent: newValue,
     });
 
-    // If enabling full content and it hasn't been fetched yet, trigger fetch
-    if (newValue && !entry.fullContentFetchedAt) {
+    // If enabling full content and it hasn't been fetched successfully, trigger fetch
+    // This includes retrying after a previous error
+    const needsFetch = !entry.fullContentFetchedAt || entry.fullContentError;
+    if (newValue && needsFetch) {
       fetchFullContentMutation.mutate({ id: entryId });
     }
   }, [entry, fetchFullContent, entryId, updateSubscriptionMutation, fetchFullContentMutation]);
@@ -255,7 +257,8 @@ export function EntryContent({
   useEffect(() => {
     if (hasAutoFetchedFullContent.current || !entry) return;
     if (!fetchFullContent) return;
-    if (entry.fullContentFetchedAt) return; // Already fetched
+    // Skip if already fetched successfully (has timestamp but no error)
+    if (entry.fullContentFetchedAt && !entry.fullContentError) return;
     if (fetchFullContentMutation.isPending) return; // Already fetching
 
     hasAutoFetchedFullContent.current = true;
