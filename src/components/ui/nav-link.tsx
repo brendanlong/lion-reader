@@ -52,6 +52,7 @@ export function NavLink({
   return (
     <Link
       href={href}
+      prefetch={false}
       onClick={onClick}
       className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
         isActive
@@ -107,6 +108,7 @@ export function NavLinkWithIcon({
   return (
     <Link
       href={href}
+      prefetch={false}
       onClick={onClick}
       className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
         isActive
