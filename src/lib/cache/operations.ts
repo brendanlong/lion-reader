@@ -209,7 +209,8 @@ export function handleEntryUnstarred(
  * Handles a new subscription being created.
  *
  * Updates:
- * - subscriptions.list (add subscription)
+ * - subscriptions.list (add subscription to unparameterized cache)
+ * - subscriptions.list per-tag infinite queries (invalidated - alphabetical order may change)
  * - tags.list (invalidated - may affect tag counts)
  *
  * @param utils - tRPC utils for cache access
@@ -220,6 +221,8 @@ export function handleSubscriptionCreated(
   subscription: SubscriptionData
 ): void {
   addSubscriptionToCache(utils, subscription);
+  // Invalidate per-tag infinite queries so sidebar refetches with correct alphabetical order
+  utils.subscriptions.list.invalidate();
   // Tags may need updating if subscription uses existing tags
   utils.tags.list.invalidate();
   // All Articles count may change with new subscription
@@ -230,7 +233,8 @@ export function handleSubscriptionCreated(
  * Handles a subscription being deleted.
  *
  * Updates:
- * - subscriptions.list (remove subscription)
+ * - subscriptions.list (remove subscription from unparameterized cache)
+ * - subscriptions.list per-tag infinite queries (invalidated - list changed)
  * - entries.list (invalidated - entries may be filtered out)
  * - tags.list (invalidated - tag counts change)
  *
@@ -239,6 +243,8 @@ export function handleSubscriptionCreated(
  */
 export function handleSubscriptionDeleted(utils: TRPCClientUtils, subscriptionId: string): void {
   removeSubscriptionFromCache(utils, subscriptionId);
+  // Invalidate per-tag infinite queries so sidebar refetches after removal
+  utils.subscriptions.list.invalidate();
   utils.entries.list.invalidate();
   utils.tags.list.invalidate();
   utils.entries.count.invalidate();
