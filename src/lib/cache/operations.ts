@@ -76,7 +76,8 @@ function updateSubscriptionAndTagCounts(
   adjustSubscriptionUnreadCounts(utils, subscriptionDeltas, queryClient);
   const { tagDeltas, uncategorizedDelta } = calculateTagDeltasFromSubscriptions(
     utils,
-    subscriptionDeltas
+    subscriptionDeltas,
+    queryClient
   );
   adjustTagUnreadCounts(utils, tagDeltas, uncategorizedDelta);
 }
