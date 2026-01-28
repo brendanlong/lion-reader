@@ -31,10 +31,17 @@ import {
   subscribeToHub,
   deactivateWebsub,
   getDomainFromUrl,
+  parseLessWrongFeedUrl,
+  fetchLessWrongFeedPosts,
+  getLessWrongFeedTitle,
+  lessWrongPostsToParsedFeed,
+  LESSWRONG_FETCH_PAGE_SIZE,
+  LESSWRONG_FETCH_INTERVAL_MS,
   type FetchFeedResult,
   type ParsedCacheHeaders,
   type RedirectInfo,
 } from "../feed";
+import { fetchLessWrongUserById } from "../feed/lesswrong";
 import {
   type JobPayloads,
   createOrEnableFeedJob,
@@ -193,6 +200,150 @@ async function fetchFullContentForNewEntries(
 }
 
 /**
+ * Handler for fetching LessWrong API feeds.
+ * Uses the GraphQL API instead of HTTP RSS/Atom fetching.
+ */
+async function handleFetchLessWrongFeed(feed: Feed): Promise<JobHandlerResult> {
+  const now = new Date();
+
+  if (!feed.url) {
+    return {
+      success: false,
+      nextRunAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      error: "LessWrong feed has no URL",
+    };
+  }
+
+  const config = parseLessWrongFeedUrl(feed.url);
+  if (!config) {
+    return {
+      success: false,
+      nextRunAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      error: `Invalid LessWrong feed URL: ${feed.url}`,
+    };
+  }
+
+  try {
+    // Parse cursor as "since" timestamp
+    const since = feed.apiCursor ? new Date(feed.apiCursor) : undefined;
+
+    // Fetch posts, paginating if needed
+    let allPosts: Awaited<ReturnType<typeof fetchLessWrongFeedPosts>>["posts"] = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { posts } = await fetchLessWrongFeedPosts(config, {
+        since,
+        limit: LESSWRONG_FETCH_PAGE_SIZE,
+        offset,
+      });
+
+      allPosts = allPosts.concat(posts);
+      hasMore = posts.length === LESSWRONG_FETCH_PAGE_SIZE;
+      offset += posts.length;
+
+      // Safety limit to prevent runaway pagination
+      if (allPosts.length >= 500) {
+        logger.warn("LessWrong feed hit pagination limit", {
+          feedId: feed.id,
+          totalPosts: allPosts.length,
+        });
+        break;
+      }
+    }
+
+    // Resolve feed title
+    let userDisplayName: string | undefined;
+    if (config.view === "userPosts" && config.userId) {
+      const user = await fetchLessWrongUserById(config.userId);
+      userDisplayName = user?.displayName ?? undefined;
+    }
+    const feedTitle = getLessWrongFeedTitle(config, userDisplayName);
+
+    // Convert to ParsedFeed and process entries
+    const parsedFeed = lessWrongPostsToParsedFeed(allPosts, feedTitle);
+
+    const processResult = await processEntries(feed.id, "lesswrong", parsedFeed, {
+      fetchedAt: now,
+      previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
+      feedUrl: feed.url,
+    });
+
+    // Track latest postedAt as new cursor
+    let latestPostedAt = since;
+    for (const post of allPosts) {
+      if (post.postedAt) {
+        const postDate = new Date(post.postedAt);
+        if (!latestPostedAt || postDate > latestPostedAt) {
+          latestPostedAt = postDate;
+        }
+      }
+    }
+
+    // Calculate next fetch with jitter (10%)
+    const jitter = Math.random() * 0.1 * LESSWRONG_FETCH_INTERVAL_MS;
+    const nextFetchAt = new Date(now.getTime() + LESSWRONG_FETCH_INTERVAL_MS + jitter);
+
+    // Update feed record
+    await db
+      .update(feeds)
+      .set({
+        title: feedTitle,
+        siteUrl: "https://www.lesswrong.com",
+        lastFetchedAt: now,
+        lastEntriesUpdatedAt: processResult.hasChanges ? now : feed.lastEntriesUpdatedAt,
+        nextFetchAt,
+        apiCursor: latestPostedAt?.toISOString() ?? feed.apiCursor,
+        consecutiveFailures: 0,
+        lastError: null,
+        updatedAt: now,
+      })
+      .where(eq(feeds.id, feed.id));
+
+    return {
+      success: true,
+      nextRunAt: nextFetchAt,
+      metadata: {
+        feedType: "lesswrong",
+        postsFound: allPosts.length,
+        newEntries: processResult.newCount,
+        updatedEntries: processResult.updatedCount,
+        unchangedEntries: processResult.unchangedCount,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const newFailureCount = (feed.consecutiveFailures ?? 0) + 1;
+
+    // Exponential backoff: 10min, 20min, 40min, ... capped at 7 days
+    const backoffMs = Math.min(
+      LESSWRONG_FETCH_INTERVAL_MS * Math.pow(2, newFailureCount - 1),
+      7 * 24 * 60 * 60 * 1000
+    );
+    const nextFetchAt = new Date(now.getTime() + backoffMs);
+
+    await db
+      .update(feeds)
+      .set({
+        lastFetchedAt: now,
+        nextFetchAt,
+        consecutiveFailures: newFailureCount,
+        lastError: errorMessage,
+        updatedAt: now,
+      })
+      .where(eq(feeds.id, feed.id));
+
+    return {
+      success: false,
+      nextRunAt: nextFetchAt,
+      error: errorMessage,
+      metadata: { consecutiveFailures: newFailureCount },
+    };
+  }
+}
+
+/**
  * Handler for fetch_feed jobs.
  * Fetches a feed, processes entries, and returns the next fetch time.
  *
@@ -224,6 +375,14 @@ export async function handleFetchFeed(
       nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
       error: `Feed not found: ${feedId}`,
     };
+  }
+
+  // Dispatch LessWrong API feeds to their own handler
+  if (feed.type === "lesswrong") {
+    const result = await handleFetchLessWrongFeed(feed);
+    const metricsStatus = result.success ? "success" : "error";
+    endFeedFetchTimer(metricsStatus);
+    return result;
   }
 
   if (!feed.url) {

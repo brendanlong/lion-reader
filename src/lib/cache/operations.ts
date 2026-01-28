@@ -26,7 +26,7 @@ import {
 /**
  * Entry type (matches feed type schema).
  */
-export type EntryType = "web" | "email" | "saved";
+export type EntryType = "web" | "email" | "saved" | "lesswrong";
 
 /**
  * Entry with context, as returned by markRead mutation.
@@ -44,7 +44,7 @@ export interface EntryWithContext {
  */
 export interface SubscriptionData {
   id: string;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "lesswrong";
   url: string | null;
   title: string | null;
   originalTitle: string | null;
@@ -272,7 +272,7 @@ export function handleSubscriptionDeleted(utils: TRPCClientUtils, subscriptionId
 export function handleNewEntry(
   utils: TRPCClientUtils,
   subscriptionId: string,
-  feedType: "web" | "email" | "saved",
+  feedType: "web" | "email" | "saved" | "lesswrong",
   queryClient?: QueryClient
 ): void {
   // New entries are always unread (read: false, starred: false)

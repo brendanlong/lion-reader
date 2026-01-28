@@ -295,6 +295,20 @@
       "when": 1767490000000,
       "tag": "0041_full_content_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1767500000000,
+      "tag": "0042_lesswrong_api_feed_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1767500000001,
+      "tag": "0043_lesswrong_constraint",
+      "breakpoints": true
     }
   ]
 }

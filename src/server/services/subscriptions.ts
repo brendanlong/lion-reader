@@ -21,7 +21,7 @@ export interface Tag {
 
 export interface Subscription {
   id: string;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "lesswrong";
   url: string | null;
   title: string | null;
   originalTitle: string | null;

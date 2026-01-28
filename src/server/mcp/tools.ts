@@ -57,7 +57,7 @@ export function registerTools(): Tool[] {
           uncategorized: { type: "boolean", description: "Show only uncategorized entries" },
           type: {
             type: "string",
-            enum: ["web", "email", "saved"],
+            enum: ["web", "email", "saved", "lesswrong"],
             description: "Filter by entry type",
           },
           unreadOnly: { type: "boolean", description: "Show only unread entries" },
@@ -149,7 +149,7 @@ export function registerTools(): Tool[] {
           uncategorized: { type: "boolean", description: "Count only uncategorized entries" },
           type: {
             type: "string",
-            enum: ["web", "email", "saved"],
+            enum: ["web", "email", "saved", "lesswrong"],
             description: "Filter by entry type",
           },
           unreadOnly: { type: "boolean", description: "Count only unread entries" },

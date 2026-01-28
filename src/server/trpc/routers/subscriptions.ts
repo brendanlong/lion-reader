@@ -25,7 +25,19 @@ import {
   type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { parseFeed, discoverFeeds, deriveGuid, getDomainFromUrl } from "@/server/feed";
+import {
+  parseFeed,
+  discoverFeeds,
+  deriveGuid,
+  getDomainFromUrl,
+  fetchLessWrongFeedPosts,
+  getLessWrongFeedTitle,
+  lessWrongPostsToParsedFeed,
+  buildLessWrongFeedUrl,
+  fetchLessWrongTag,
+  processEntries,
+  type LessWrongView,
+} from "@/server/feed";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import {
@@ -75,7 +87,7 @@ const tagOutputSchema = z.object({
  */
 const subscriptionOutputSchema = z.object({
   id: z.string(), // subscription ID (primary key)
-  type: z.enum(["web", "email", "saved"]),
+  type: z.enum(["web", "email", "saved", "lesswrong"]),
   url: z.string().nullable(),
   title: z.string().nullable(), // resolved title (custom or original)
   originalTitle: z.string().nullable(), // feed's original title for rename UI
@@ -675,6 +687,190 @@ export const subscriptionsRouter = createTRPCRouter({
 
       // Slow path: need to fetch and potentially discover the feed
       return await subscribeToNewOrUnfetchedFeed(ctx.db, userId, feedUrl);
+    }),
+
+  /**
+   * Subscribe to a LessWrong API feed.
+   *
+   * This procedure:
+   * 1. Validates the LessWrong feed configuration
+   * 2. Builds a synthetic URL for the feed
+   * 3. Creates or finds the existing feed record
+   * 4. Fetches initial posts from the GraphQL API
+   * 5. Creates the subscription
+   *
+   * @param view - LessWrong feed view (frontpage, curated, all, userPosts, tagRelevance)
+   * @param userId - LessWrong user ID (required for userPosts)
+   * @param tagId - LessWrong tag ID (required for tagRelevance)
+   * @returns The subscription
+   */
+  createLessWrong: expensiveProtectedProcedure
+    .input(
+      z.object({
+        view: z.enum(["frontpage", "curated", "all", "userPosts", "tagRelevance"]),
+        userId: z.string().optional(),
+        tagId: z.string().optional(),
+      })
+    )
+    .output(subscriptionOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const view = input.view as LessWrongView;
+
+      // Validate required fields
+      if (view === "userPosts" && !input.userId) {
+        throw errors.validation("userId is required for userPosts view");
+      }
+      if (view === "tagRelevance" && !input.tagId) {
+        throw errors.validation("tagId is required for tagRelevance view");
+      }
+
+      const config = { view, userId: input.userId, tagId: input.tagId };
+      const syntheticUrl = buildLessWrongFeedUrl(config);
+
+      // Resolve display names
+      let userDisplayName: string | undefined;
+      let tagName: string | undefined;
+
+      if (view === "userPosts" && input.userId) {
+        const user = await fetchLessWrongUserById(input.userId);
+        userDisplayName = user?.displayName ?? undefined;
+      }
+      if (view === "tagRelevance" && input.tagId) {
+        const tag = await fetchLessWrongTag(input.tagId);
+        tagName = tag?.name ?? undefined;
+      }
+
+      const feedTitle = getLessWrongFeedTitle(config, userDisplayName, tagName);
+
+      // Check if feed already exists
+      const existingFeed = await ctx.db
+        .select()
+        .from(feeds)
+        .where(eq(feeds.url, syntheticUrl))
+        .limit(1);
+
+      let feedId: string;
+      let feedRecord: typeof feeds.$inferSelect;
+
+      if (existingFeed.length > 0) {
+        feedId = existingFeed[0].id;
+        feedRecord = existingFeed[0];
+
+        // If already fetched, use the fast path
+        if (feedRecord.lastFetchedAt !== null) {
+          return await subscribeToExistingFeed(ctx.db, userId, feedRecord);
+        }
+
+        // Ensure job is enabled
+        await createOrEnableFeedJob(feedId);
+      } else {
+        // Create new feed
+        feedId = generateUuidv7();
+        const now = new Date();
+
+        const newFeed = {
+          id: feedId,
+          type: "lesswrong" as const,
+          url: syntheticUrl,
+          title: feedTitle,
+          description: null,
+          siteUrl: "https://www.lesswrong.com",
+          nextFetchAt: now,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        await ctx.db.insert(feeds).values(newFeed);
+        feedRecord = newFeed as typeof feeds.$inferSelect;
+
+        await createOrEnableFeedJob(feedId);
+      }
+
+      // Fetch initial posts
+      const { posts } = await fetchLessWrongFeedPosts(config, { limit: 50 });
+      const parsedFeed = lessWrongPostsToParsedFeed(posts, feedTitle);
+
+      // Process entries
+      const now = new Date();
+      await processEntries(feedId, "lesswrong", parsedFeed, {
+        fetchedAt: now,
+        previousLastEntriesUpdatedAt: feedRecord.lastEntriesUpdatedAt,
+        feedUrl: syntheticUrl,
+      });
+
+      // Update feed with initial fetch data
+      const latestPostedAt = posts
+        .map((p) => (p.postedAt ? new Date(p.postedAt) : null))
+        .filter((d): d is Date => d !== null)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+
+      await ctx.db
+        .update(feeds)
+        .set({
+          title: feedTitle,
+          lastFetchedAt: now,
+          lastEntriesUpdatedAt: posts.length > 0 ? now : null,
+          apiCursor: latestPostedAt?.toISOString() ?? null,
+          updatedAt: now,
+        })
+        .where(eq(feeds.id, feedId));
+
+      // Extract GUIDs for entry matching
+      const feedGuids = posts.map((p) => p._id);
+
+      // Create subscription
+      const result = await createOrReactivateSubscription(ctx.db, {
+        userId,
+        feedId,
+        entrySource: {
+          type: "guids",
+          guids: feedGuids,
+        },
+      });
+
+      const feedData = {
+        id: feedRecord.id,
+        type: feedRecord.type,
+        url: feedRecord.url,
+        title: feedTitle,
+        description: feedRecord.description,
+        siteUrl: feedRecord.siteUrl,
+      };
+
+      // Publish SSE event
+      const sseSubscriptionData = {
+        id: result.subscriptionId,
+        feedId,
+        customTitle: null,
+        subscribedAt: result.subscribedAt.toISOString(),
+        unreadCount: result.unreadCount,
+        tags: [] as Array<{ id: string; name: string; color: string | null }>,
+      };
+
+      publishSubscriptionCreated(
+        userId,
+        feedId,
+        result.subscriptionId,
+        sseSubscriptionData,
+        feedData
+      ).catch((err) => {
+        logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+      });
+
+      return {
+        id: result.subscriptionId,
+        type: feedRecord.type,
+        url: feedRecord.url,
+        title: feedTitle,
+        originalTitle: feedTitle,
+        description: feedRecord.description,
+        siteUrl: feedRecord.siteUrl ?? "https://www.lesswrong.com",
+        subscribedAt: result.subscribedAt,
+        unreadCount: result.unreadCount,
+        tags: [] as Array<{ id: string; name: string; color: string | null }>,
+        fetchFullContent: false,
+      };
     }),
 
   /**

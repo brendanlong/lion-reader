@@ -65,7 +65,7 @@ const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
 /**
  * Feed type validation schema for filtering entries by type.
  */
-const feedTypeSchema = z.enum(["web", "email", "saved"]);
+const feedTypeSchema = z.enum(["web", "email", "saved", "lesswrong"]);
 
 /**
  * Boolean query parameter schema that handles string coercion.

@@ -20,7 +20,7 @@ import { sql } from "drizzle-orm";
 // ENUMS
 // ============================================================================
 
-export const feedTypeEnum = pgEnum("feed_type", ["web", "email", "saved"]);
+export const feedTypeEnum = pgEnum("feed_type", ["web", "email", "saved", "lesswrong"]);
 
 export const websubStateEnum = pgEnum("websub_state", ["pending", "active", "unsubscribed"]);
 
@@ -351,6 +351,9 @@ export const feeds = pgTable(
     hubUrl: text("hub_url"), // WebSub hub URL discovered from feed
     selfUrl: text("self_url"), // Canonical feed URL (topic URL)
     websubActive: boolean("websub_active").notNull().default(false), // Whether WebSub is currently active
+
+    // API-based feed cursor (for non-HTTP feeds like LessWrong GraphQL)
+    apiCursor: text("api_cursor"),
 
     // Redirect tracking - wait period before applying permanent redirects
     redirectUrl: text("redirect_url"), // URL we're being redirected to (301/308)

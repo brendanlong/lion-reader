@@ -12,7 +12,8 @@ CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
 CREATE TYPE public.feed_type AS ENUM (
     'web',
     'email',
-    'saved'
+    'saved',
+    'lesswrong'
 );
 
 CREATE TYPE public.websub_state AS ENUM (
@@ -71,7 +72,7 @@ CREATE TABLE public.entries (
     full_content_fetched_at timestamp with time zone,
     full_content_error text,
     full_content_hash text,
-    CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
+    CONSTRAINT entries_last_seen_only_fetched CHECK (((type = ANY (ARRAY['web'::public.feed_type, 'lesswrong'::public.feed_type])) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
@@ -113,6 +114,7 @@ CREATE TABLE public.feeds (
     last_entries_updated_at timestamp with time zone,
     redirect_url text,
     redirect_first_seen_at timestamp with time zone,
+    api_cursor text,
     CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type])) = (user_id IS NOT NULL)))
 );
 

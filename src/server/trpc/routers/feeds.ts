@@ -20,8 +20,14 @@ import {
   detectFeedType,
   getCommonFeedUrls,
   getDomainFromUrl,
+  fetchLessWrongFeedPosts,
+  getLessWrongFeedTitle,
+  lessWrongPostToParsedEntry,
+  fetchLessWrongTag,
+  buildLessWrongFeedUrl,
   type ParsedEntry,
   type DiscoveredFeed,
+  type LessWrongView,
 } from "@/server/feed";
 import { isLessWrongFeed, cleanLessWrongContent } from "@/server/feed/content-cleaner";
 import {
@@ -30,6 +36,7 @@ import {
   extractUserSlug,
   fetchLessWrongUserBySlug,
   buildLessWrongUserFeedUrl,
+  fetchLessWrongUserById,
 } from "@/server/feed/lesswrong";
 
 // ============================================================================
@@ -444,5 +451,90 @@ export const feedsRouter = createTRPCRouter({
       }
 
       return { feeds: allFeeds };
+    }),
+
+  /**
+   * Preview a LessWrong API feed.
+   *
+   * Fetches sample posts from the LessWrong GraphQL API based on the
+   * specified view and optional user/tag filter.
+   *
+   * @param view - The LessWrong feed view (frontpage, curated, all, userPosts, tagRelevance)
+   * @param userId - LessWrong user ID (required for userPosts view)
+   * @param tagId - LessWrong tag ID (required for tagRelevance view)
+   * @returns Feed preview with title, description, and sample entries
+   */
+  previewLessWrong: publicProcedure
+    .input(
+      z.object({
+        view: z.enum(["frontpage", "curated", "all", "userPosts", "tagRelevance"]),
+        userId: z.string().optional(),
+        tagId: z.string().optional(),
+      })
+    )
+    .output(
+      z.object({
+        feed: feedPreviewSchema,
+      })
+    )
+    .query(async ({ input }) => {
+      const view = input.view as LessWrongView;
+
+      // Validate required fields for specific views
+      if (view === "userPosts" && !input.userId) {
+        throw errors.validation("userId is required for userPosts view");
+      }
+      if (view === "tagRelevance" && !input.tagId) {
+        throw errors.validation("tagId is required for tagRelevance view");
+      }
+
+      const config = { view, userId: input.userId, tagId: input.tagId };
+
+      // Resolve display names for user/tag views
+      let userDisplayName: string | undefined;
+      let tagName: string | undefined;
+
+      if (view === "userPosts" && input.userId) {
+        const user = await fetchLessWrongUserById(input.userId);
+        userDisplayName = user?.displayName ?? undefined;
+      }
+      if (view === "tagRelevance" && input.tagId) {
+        const tag = await fetchLessWrongTag(input.tagId);
+        tagName = tag?.name ?? undefined;
+      }
+
+      // Fetch sample posts
+      const { posts } = await fetchLessWrongFeedPosts(config, { limit: MAX_SAMPLE_ENTRIES });
+
+      if (posts.length === 0) {
+        throw errors.validation("No posts found for this LessWrong feed configuration");
+      }
+
+      // Convert posts to sample entries
+      const sampleEntries = posts.map((post) => {
+        const entry = lessWrongPostToParsedEntry(post);
+        return {
+          guid: entry.guid ?? null,
+          link: entry.link ?? null,
+          title: entry.title ?? null,
+          author: entry.author ?? null,
+          summary: truncateText(entry.content, 300),
+          pubDate: entry.pubDate ?? null,
+        };
+      });
+
+      const feedTitle = getLessWrongFeedTitle(config, userDisplayName, tagName);
+      const syntheticUrl = buildLessWrongFeedUrl(config);
+
+      return {
+        feed: {
+          url: syntheticUrl,
+          title: feedTitle,
+          description: null,
+          siteUrl: "https://www.lesswrong.com",
+          iconUrl: null,
+          sampleEntries,
+        },
+      };
     }),
 });

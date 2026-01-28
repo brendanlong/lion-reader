@@ -18,7 +18,7 @@ export interface EntryListFilters {
   tagId?: string;
   uncategorized?: boolean;
   starredOnly?: boolean;
-  type?: "web" | "email" | "saved";
+  type?: "web" | "email" | "saved" | "lesswrong";
 }
 
 interface EntryListPageProps {

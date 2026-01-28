@@ -22,7 +22,7 @@ interface BaseFeedEvent {
   feedId: string;
   entryId: string;
   timestamp: string;
-  feedType?: "web" | "email" | "saved"; // Added to new_entry for cache updates
+  feedType?: "web" | "email" | "saved" | "lesswrong"; // Added to new_entry for cache updates
 }
 
 /**
@@ -63,7 +63,7 @@ export interface SubscriptionCreatedEventSubscription {
  */
 export interface SubscriptionCreatedEventFeed {
   id: string;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "lesswrong";
   url: string | null;
   title: string | null;
   description: string | null;
@@ -274,7 +274,7 @@ async function publishFeedEvent(event: FeedEvent): Promise<number> {
 export async function publishNewEntry(
   feedId: string,
   entryId: string,
-  feedType?: "web" | "email" | "saved"
+  feedType?: "web" | "email" | "saved" | "lesswrong"
 ): Promise<number> {
   const event: NewEntryEvent = {
     type: "new_entry",

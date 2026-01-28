@@ -154,7 +154,7 @@ export async function findEntryByGuid(feedId: string, guid: string): Promise<Ent
  */
 export async function createEntry(
   feedId: string,
-  feedType: "web" | "email" | "saved",
+  feedType: "web" | "email" | "saved" | "lesswrong",
   parsedEntry: ParsedEntry,
   contentHash: string,
   fetchedAt: Date,
@@ -168,8 +168,8 @@ export async function createEntry(
     feedUrl,
   });
 
-  // Only web entries track lastSeenAt (for visibility on subscription)
-  const isFetchedType = feedType === "web";
+  // Web and LessWrong entries track lastSeenAt (for visibility on subscription)
+  const isFetchedType = feedType === "web" || feedType === "lesswrong";
 
   const newEntry: NewEntry = {
     id: generateUuidv7(),
@@ -244,7 +244,7 @@ export async function updateEntryContent(
  */
 export async function processEntry(
   feedId: string,
-  feedType: "web" | "email" | "saved",
+  feedType: "web" | "email" | "saved" | "lesswrong",
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
   feedUrl?: string
@@ -324,7 +324,7 @@ interface CachedEntryInfo {
  */
 async function processEntryWithCache(
   feedId: string,
-  feedType: "web" | "email" | "saved",
+  feedType: "web" | "email" | "saved" | "lesswrong",
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
   existingEntriesMap: Map<string, CachedEntryInfo>,
@@ -489,7 +489,7 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
  */
 export async function processEntries(
   feedId: string,
-  feedType: "web" | "email" | "saved",
+  feedType: "web" | "email" | "saved" | "lesswrong",
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
 ): Promise<ProcessEntriesResult> {
@@ -554,10 +554,10 @@ export async function processEntries(
     }
   }
 
-  // Detect entries that disappeared from the feed (web feeds only)
+  // Detect entries that disappeared from the feed (web/lesswrong feeds only)
   // These are entries where lastSeenAt = previousLastEntriesUpdatedAt but guid not in current feed
   let disappearedCount = 0;
-  const isFetchedType = feedType === "web";
+  const isFetchedType = feedType === "web" || feedType === "lesswrong";
 
   if (isFetchedType && previousLastEntriesUpdatedAt) {
     // Find entries that were previously "current" (lastSeenAt = previousLastEntriesUpdatedAt)

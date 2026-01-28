@@ -254,7 +254,7 @@ export function adjustEntriesCount(
 export function addSubscriptionToCache(
   utils: TRPCClientUtils,
   subscription: CachedSubscription & {
-    type: "web" | "email" | "saved";
+    type: "web" | "email" | "saved" | "lesswrong";
     url: string | null;
     title: string | null;
     originalTitle: string | null;
