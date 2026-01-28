@@ -136,7 +136,7 @@ export interface ListSubscriptionsParams {
   tagId?: string; // Filter by tag
   uncategorized?: boolean; // Only show subscriptions with no tags
   unreadOnly?: boolean; // Only show feeds with unread items
-  cursor?: string; // Pagination cursor (subscription ID)
+  cursor?: string; // Pagination cursor (base64-encoded JSON: {title, id})
   limit?: number; // Max results per page
 }
 
@@ -196,15 +196,31 @@ export async function listSubscriptions(
     // We'll filter in-memory since the unread count is computed
   }
 
-  // Cursor pagination
+  // Cursor pagination using (title, id) keyset for alphabetical ordering
   if (cursor) {
-    conditions.push(sql`${userFeeds.id} > ${cursor}`);
+    try {
+      const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8")) as {
+        title: string | null;
+        id: string;
+      };
+      // Keyset pagination: (title, id) > (cursor.title, cursor.id)
+      // NULL titles sort first (COALESCE to empty string)
+      conditions.push(sql`(
+        COALESCE(${userFeeds.title}, '') > COALESCE(${decoded.title}::text, '')
+        OR (
+          COALESCE(${userFeeds.title}, '') = COALESCE(${decoded.title}::text, '')
+          AND ${userFeeds.id} > ${decoded.id}
+        )
+      )`);
+    } catch {
+      // Invalid cursor - ignore and return from beginning
+    }
   }
 
-  // Build and execute query
+  // Build and execute query, sorted alphabetically by title then by id as tiebreaker
   const results = await buildSubscriptionBaseQuery(db, userId)
     .where(and(...conditions))
-    .orderBy(userFeeds.id)
+    .orderBy(sql`COALESCE(${userFeeds.title}, '') ASC`, userFeeds.id)
     .limit(effectiveLimit + 1);
 
   // Format results
@@ -221,7 +237,14 @@ export async function listSubscriptions(
     subscriptions = subscriptions.slice(0, effectiveLimit);
   }
 
-  const nextCursor = hasMore ? subscriptions[subscriptions.length - 1].id : undefined;
+  // Encode cursor as base64url JSON with title and id for keyset pagination
+  let nextCursor: string | undefined;
+  if (hasMore) {
+    const lastSub = subscriptions[subscriptions.length - 1];
+    nextCursor = Buffer.from(JSON.stringify({ title: lastSub.title, id: lastSub.id })).toString(
+      "base64url"
+    );
+  }
 
   return {
     subscriptions,
