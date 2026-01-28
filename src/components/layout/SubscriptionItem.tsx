@@ -44,6 +44,7 @@ export function SubscriptionItem({
     <li className="group relative">
       <Link
         href={subHref}
+        prefetch={false}
         onClick={onClose}
         className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
           isActive
