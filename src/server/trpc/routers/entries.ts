@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 import { eq, and, lte, inArray, notInArray, sql } from "drizzle-orm";
+import { createHash } from "crypto";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -920,6 +921,12 @@ export const entriesRouter = createTRPCRouter({
         };
       }
 
+      // Compute hash of full content for separate summary caching
+      const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
+      const fullContentHash = fullContentForHash
+        ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
+        : null;
+
       // Update entry with full content
       const now = new Date();
       await ctx.db
@@ -927,6 +934,7 @@ export const entriesRouter = createTRPCRouter({
         .set({
           fullContentOriginal: result.contentOriginal ?? null,
           fullContentCleaned: result.contentCleaned ?? null,
+          fullContentHash,
           fullContentFetchedAt: now,
           fullContentError: null,
           updatedAt: now,

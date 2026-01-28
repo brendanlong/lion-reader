@@ -44,6 +44,13 @@ const uuidSchema = z.string().uuid("Invalid ID");
  */
 const generateInputSchema = z.object({
   entryId: uuidSchema,
+  /**
+   * Controls which content version to summarize:
+   * - `true`: Summarize full content (error if not fetched yet)
+   * - `false`: Summarize feed content only
+   * - `undefined`/omitted: Return cached summary if available, otherwise summarize feed content
+   */
+  useFullContent: z.boolean().optional(),
 });
 
 // ============================================================================
@@ -103,6 +110,7 @@ export const summarizationRouter = createTRPCRouter({
           contentOriginal: entries.contentOriginal,
           contentHash: entries.contentHash,
           fullContentCleaned: entries.fullContentCleaned,
+          fullContentHash: entries.fullContentHash,
           title: entries.title,
         })
         .from(entries)
@@ -116,10 +124,78 @@ export const summarizationRouter = createTRPCRouter({
 
       const entry = entryResult[0];
 
-      // Prefer full content (fetched from URL) over feed content
-      const sourceContent =
-        entry.fullContentCleaned || entry.contentCleaned || entry.contentOriginal || "";
-      const contentHash = entry.contentHash;
+      // Determine which content version and hash to use based on useFullContent param:
+      // - true: use full content (error if not available)
+      // - false: use feed content only
+      // - undefined: return any cached summary, or generate from feed content
+      let sourceContent: string;
+      let contentHash: string;
+
+      if (input.useFullContent === true) {
+        // Explicit full content request
+        if (!entry.fullContentCleaned) {
+          throw errors.validation("Full content has not been fetched for this entry");
+        }
+        if (!entry.fullContentHash) {
+          throw errors.validation("Full content hash is not available for this entry");
+        }
+        sourceContent = entry.fullContentCleaned;
+        contentHash = entry.fullContentHash;
+      } else if (input.useFullContent === false) {
+        // Explicit feed content request
+        sourceContent = entry.contentCleaned || entry.contentOriginal || "";
+        contentHash = entry.contentHash;
+      } else {
+        // undefined: try to return whichever cached summary exists, preferring full content
+        // Check full content summary first (if available)
+        if (entry.fullContentHash) {
+          const fullSummary = await ctx.db
+            .select()
+            .from(entrySummaries)
+            .where(eq(entrySummaries.contentHash, entry.fullContentHash))
+            .limit(1);
+
+          const fullRecord = fullSummary[0];
+          if (fullRecord?.summaryText) {
+            const currentModelId = getSummarizationModelId();
+            const promptVersionChanged = fullRecord.promptVersion !== CURRENT_PROMPT_VERSION;
+            const modelChanged =
+              fullRecord.modelId !== null && fullRecord.modelId !== currentModelId;
+            return {
+              summary: fullRecord.summaryText,
+              cached: true,
+              modelId: fullRecord.modelId || "unknown",
+              generatedAt: fullRecord.generatedAt,
+              settingsChanged: promptVersionChanged || modelChanged,
+            };
+          }
+        }
+
+        // Check feed content summary
+        const feedSummary = await ctx.db
+          .select()
+          .from(entrySummaries)
+          .where(eq(entrySummaries.contentHash, entry.contentHash))
+          .limit(1);
+
+        const feedRecord = feedSummary[0];
+        if (feedRecord?.summaryText) {
+          const currentModelId = getSummarizationModelId();
+          const promptVersionChanged = feedRecord.promptVersion !== CURRENT_PROMPT_VERSION;
+          const modelChanged = feedRecord.modelId !== null && feedRecord.modelId !== currentModelId;
+          return {
+            summary: feedRecord.summaryText,
+            cached: true,
+            modelId: feedRecord.modelId || "unknown",
+            generatedAt: feedRecord.generatedAt,
+            settingsChanged: promptVersionChanged || modelChanged,
+          };
+        }
+
+        // No cached summary found — generate from feed content
+        sourceContent = entry.contentCleaned || entry.contentOriginal || "";
+        contentHash = entry.contentHash;
+      }
 
       // Handle empty content
       if (!sourceContent.trim()) {

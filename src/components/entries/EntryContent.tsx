@@ -165,29 +165,51 @@ export function EntryContent({
     }
   }, [entry, fetchFullContent, entryId, updateSubscriptionMutation, fetchFullContentMutation]);
 
-  // Summarization state and mutation
-  const [summary, setSummary] = useState<{
+  // Determine if full content is currently being shown
+  // This mirrors the logic in EntryContentBody for content selection
+  const hasFullContent = Boolean(
+    (entry?.fullContentCleaned || entry?.fullContentOriginal) &&
+    entry?.fullContentFetchedAt &&
+    !entry?.fullContentError
+  );
+  const isShowingFullContent = fetchFullContent && hasFullContent;
+
+  // Summarization state — track separate summaries for feed vs full content
+  type SummaryData = {
     text: string;
     modelId: string;
     generatedAt: Date | null;
     settingsChanged: boolean;
-  } | null>(null);
+  };
+  const [feedSummary, setFeedSummary] = useState<SummaryData | null>(null);
+  const [fullContentSummary, setFullContentSummary] = useState<SummaryData | null>(null);
   const [showSummary, setShowSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  // The active summary is whichever matches the currently displayed content version
+  const summary = isShowingFullContent ? fullContentSummary : feedSummary;
 
   // Check if summarization is available
   const summarizationAvailableQuery = trpc.summarization.isAvailable.useQuery();
   const isSummarizationAvailable = summarizationAvailableQuery.data?.available ?? false;
 
+  // Track which content version the current mutation is for
+  const mutationIsForFullContent = useRef(false);
+
   // Summarization mutation
   const summarizationMutation = trpc.summarization.generate.useMutation({
     onSuccess: (result) => {
-      setSummary({
+      const summaryData: SummaryData = {
         text: result.summary,
         modelId: result.modelId,
         generatedAt: result.generatedAt,
         settingsChanged: result.settingsChanged,
-      });
+      };
+      if (mutationIsForFullContent.current) {
+        setFullContentSummary(summaryData);
+      } else {
+        setFeedSummary(summaryData);
+      }
       setSummaryError(null);
       setShowSummary(true);
     },
@@ -200,14 +222,18 @@ export function EntryContent({
   // Handle summarize button click
   const handleSummarize = useCallback(() => {
     if (summary) {
-      // Toggle visibility if we already have a summary
+      // Toggle visibility if we already have a summary for current view
       setShowSummary(!showSummary);
     } else {
-      // Generate new summary
+      // Generate new summary for the content version being displayed
       setSummaryError(null);
-      summarizationMutation.mutate({ entryId });
+      mutationIsForFullContent.current = isShowingFullContent;
+      summarizationMutation.mutate({
+        entryId,
+        useFullContent: isShowingFullContent,
+      });
     }
-  }, [summary, showSummary, summarizationMutation, entryId]);
+  }, [summary, showSummary, summarizationMutation, entryId, isShowingFullContent]);
 
   // Handle summary close
   const handleSummaryClose = useCallback(() => {
@@ -217,8 +243,12 @@ export function EntryContent({
   // Handle summary regenerate
   const handleSummaryRegenerate = useCallback(() => {
     setSummaryError(null);
-    summarizationMutation.mutate({ entryId });
-  }, [summarizationMutation, entryId]);
+    mutationIsForFullContent.current = isShowingFullContent;
+    summarizationMutation.mutate({
+      entryId,
+      useFullContent: isShowingFullContent,
+    });
+  }, [summarizationMutation, entryId, isShowingFullContent]);
 
   // Auto-fetch full content when entry loads and setting is enabled
   const hasAutoFetchedFullContent = useRef(false);

@@ -288,6 +288,13 @@
       "when": 1767480000000,
       "tag": "0040_entry_state_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1767490000000,
+      "tag": "0041_full_content_hash",
+      "breakpoints": true
     }
   ]
 }
