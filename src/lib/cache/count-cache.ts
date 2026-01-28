@@ -36,10 +36,10 @@ interface SubscriptionInfiniteData {
 /**
  * Applies subscription unread count deltas to a list of subscriptions.
  */
-function applySubscriptionDeltas(
-  items: CachedSubscription[],
+function applySubscriptionDeltas<T extends CachedSubscription>(
+  items: T[],
   subscriptionDeltas: Map<string, number>
-): CachedSubscription[] {
+): T[] {
   return items.map((sub) => {
     const delta = subscriptionDeltas.get(sub.id);
     if (delta !== undefined) {
@@ -50,6 +50,47 @@ function applySubscriptionDeltas(
     }
     return sub;
   });
+}
+
+/**
+ * Collects all cached subscriptions from both the unparameterized query
+ * and all per-tag infinite queries into a single map.
+ *
+ * Subscriptions may only exist in one cache or the other depending on
+ * which views have been loaded (entry view vs sidebar tag views).
+ */
+function getAllCachedSubscriptions(
+  utils: TRPCClientUtils,
+  queryClient?: QueryClient
+): Map<string, CachedSubscription> {
+  const subscriptionMap = new Map<string, CachedSubscription>();
+
+  // Check the unparameterized query (used by useEntryPage/EntryContent)
+  const subscriptionsData = utils.subscriptions.list.getData();
+  if (subscriptionsData) {
+    for (const s of subscriptionsData.items) {
+      subscriptionMap.set(s.id, s);
+    }
+  }
+
+  // Check per-tag infinite queries (used by TagSubscriptionList in sidebar)
+  if (queryClient) {
+    const infiniteQueries = queryClient.getQueriesData<SubscriptionInfiniteData>({
+      queryKey: [["subscriptions", "list"]],
+    });
+    for (const [, data] of infiniteQueries) {
+      if (!data?.pages) continue;
+      for (const page of data.pages) {
+        for (const s of page.items) {
+          if (!subscriptionMap.has(s.id)) {
+            subscriptionMap.set(s.id, s);
+          }
+        }
+      }
+    }
+  }
+
+  return subscriptionMap;
 }
 
 /**
@@ -74,16 +115,7 @@ export function adjustSubscriptionUnreadCounts(
 
     return {
       ...oldData,
-      items: oldData.items.map((sub) => {
-        const delta = subscriptionDeltas.get(sub.id);
-        if (delta !== undefined) {
-          return {
-            ...sub,
-            unreadCount: Math.max(0, sub.unreadCount + delta),
-          };
-        }
-        return sub;
-      }),
+      items: applySubscriptionDeltas(oldData.items, subscriptionDeltas),
     };
   });
 
@@ -237,21 +269,19 @@ export interface TagDeltaResult {
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionDeltas - Map of subscriptionId -> count change
+ * @param queryClient - React Query client for searching infinite query caches
  * @returns Tag deltas and uncategorized delta
  */
 export function calculateTagDeltasFromSubscriptions(
   utils: TRPCClientUtils,
-  subscriptionDeltas: Map<string, number>
+  subscriptionDeltas: Map<string, number>,
+  queryClient?: QueryClient
 ): TagDeltaResult {
   const tagDeltas = new Map<string, number>();
   let uncategorizedDelta = 0;
 
-  // Get subscriptions from cache to look up tags
-  const subscriptionsData = utils.subscriptions.list.getData();
-  if (!subscriptionsData) return { tagDeltas, uncategorizedDelta };
-
-  // Build a map for quick lookup
-  const subscriptionMap = new Map(subscriptionsData.items.map((s) => [s.id, s]));
+  const subscriptionMap = getAllCachedSubscriptions(utils, queryClient);
+  if (subscriptionMap.size === 0) return { tagDeltas, uncategorizedDelta };
 
   // Calculate tag deltas and uncategorized delta
   for (const [subscriptionId, delta] of subscriptionDeltas) {
