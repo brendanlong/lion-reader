@@ -109,7 +109,9 @@ export interface EntryContentBodyProps {
   /** Callback when swiping to previous article */
   onSwipePrevious?: () => void;
   // Full content fields
-  /** Full content cleaned HTML (fetched from URL) */
+  /** Full content original HTML (fetched from URL) */
+  fullContentOriginal?: string | null;
+  /** Full content cleaned HTML (fetched from URL), null if Readability was skipped */
   fullContentCleaned?: string | null;
   /** Whether full content has been fetched */
   fullContentFetchedAt?: Date | null;
@@ -173,6 +175,7 @@ export function EntryContentBody({
   onSwipeNext,
   onSwipePrevious,
   // Full content props
+  fullContentOriginal,
   fullContentCleaned,
   fullContentFetchedAt,
   fullContentError,
@@ -198,7 +201,9 @@ export function EntryContentBody({
   // Full content is shown if:
   // 1. User has fetchFullContent enabled for the subscription
   // 2. Full content has been fetched successfully (no error, has content)
-  const hasFullContent = Boolean(fullContentCleaned && fullContentFetchedAt && !fullContentError);
+  const hasFullContent = Boolean(
+    (fullContentCleaned || fullContentOriginal) && fullContentFetchedAt && !fullContentError
+  );
   const showFullContent = fetchFullContent && hasFullContent;
 
   // Check if both feed content versions are available for toggle
@@ -209,7 +214,7 @@ export function EntryContentBody({
   // Priority: full content (if enabled and available) > cleaned feed content > original feed content
   let contentToDisplay: string | null;
   if (showFullContent) {
-    contentToDisplay = fullContentCleaned ?? null;
+    contentToDisplay = fullContentCleaned ?? fullContentOriginal ?? null;
   } else if (showOriginal) {
     contentToDisplay = contentOriginal;
   } else {
