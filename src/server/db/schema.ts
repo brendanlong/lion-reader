@@ -416,6 +416,7 @@ export const entries = pgTable(
     contentHash: text("content_hash").notNull(), // for detecting updates
 
     // Full content fetching (on-demand from URL)
+    fullContentHash: text("full_content_hash"), // SHA256 of full content (for separate summary caching)
     fullContentOriginal: text("full_content_original"), // Raw HTML from URL
     fullContentCleaned: text("full_content_cleaned"), // Readability-cleaned HTML
     fullContentFetchedAt: timestamp("full_content_fetched_at", { withTimezone: true }),
@@ -654,6 +655,7 @@ export const visibleEntries = pgView("visible_entries", {
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   contentHash: text("content_hash").notNull(),
+  fullContentHash: text("full_content_hash"),
   spamScore: real("spam_score"),
   isSpam: boolean("is_spam").notNull(),
   listUnsubscribeMailto: text("list_unsubscribe_mailto"),
