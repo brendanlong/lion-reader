@@ -43,4 +43,5 @@ export {
   addSubscriptionToCache,
   removeSubscriptionFromCache,
   calculateTagDeltasFromSubscriptions,
+  findCachedSubscription,
 } from "./count-cache";

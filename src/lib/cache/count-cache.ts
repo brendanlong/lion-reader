@@ -9,13 +9,12 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 
 /**
- * Subscription data from the cache.
+ * Full subscription type as returned by subscriptions.list/get.
+ * Inferred from the tRPC client utils to stay in sync with the router schema.
  */
-interface CachedSubscription {
-  id: string;
-  unreadCount: number;
-  tags: Array<{ id: string; name: string; color: string | null }>;
-}
+export type CachedSubscription = NonNullable<
+  ReturnType<TRPCClientUtils["subscriptions"]["list"]["getData"]>
+>["items"][number];
 
 /**
  * Page structure in subscription infinite query cache.
@@ -75,22 +74,65 @@ function getAllCachedSubscriptions(
 
   // Check per-tag infinite queries (used by TagSubscriptionList in sidebar)
   if (queryClient) {
-    const infiniteQueries = queryClient.getQueriesData<SubscriptionInfiniteData>({
-      queryKey: [["subscriptions", "list"]],
-    });
-    for (const [, data] of infiniteQueries) {
-      if (!data?.pages) continue;
-      for (const page of data.pages) {
-        for (const s of page.items) {
-          if (!subscriptionMap.has(s.id)) {
-            subscriptionMap.set(s.id, s);
-          }
-        }
+    forEachCachedInfiniteSubscription(queryClient, (s) => {
+      if (!subscriptionMap.has(s.id)) {
+        subscriptionMap.set(s.id, s);
       }
-    }
+    });
   }
 
   return subscriptionMap;
+}
+
+/**
+ * Iterates over all subscriptions in per-tag infinite query caches.
+ */
+function forEachCachedInfiniteSubscription(
+  queryClient: QueryClient,
+  callback: (subscription: CachedSubscription) => void
+): void {
+  const infiniteQueries = queryClient.getQueriesData<SubscriptionInfiniteData>({
+    queryKey: [["subscriptions", "list"]],
+  });
+  for (const [, data] of infiniteQueries) {
+    if (!data?.pages) continue;
+    for (const page of data.pages) {
+      for (const s of page.items) {
+        callback(s);
+      }
+    }
+  }
+}
+
+/**
+ * Finds a single subscription by ID across all subscription caches.
+ *
+ * Checks both the unparameterized subscriptions.list query (populated by entry pages)
+ * and per-tag infinite queries (populated by sidebar tag sections).
+ *
+ * Useful for providing placeholder data when navigating to a subscription page,
+ * since the subscription may be cached from the sidebar but not from the entry page query.
+ */
+export function findCachedSubscription(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  subscriptionId: string
+): CachedSubscription | undefined {
+  // Check the unparameterized query first (cheaper lookup)
+  const listData = utils.subscriptions.list.getData();
+  if (listData) {
+    const found = listData.items.find((s) => s.id === subscriptionId);
+    if (found) return found;
+  }
+
+  // Check per-tag infinite queries
+  let found: CachedSubscription | undefined;
+  forEachCachedInfiniteSubscription(queryClient, (s) => {
+    if (!found && s.id === subscriptionId) {
+      found = s;
+    }
+  });
+  return found;
 }
 
 /**
