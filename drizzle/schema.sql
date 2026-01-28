@@ -300,7 +300,13 @@ CREATE TABLE public.user_entries (
     starred boolean DEFAULT false NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     read_changed_at timestamp with time zone DEFAULT now() NOT NULL,
-    starred_changed_at timestamp with time zone DEFAULT now() NOT NULL
+    starred_changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    score smallint,
+    score_changed_at timestamp with time zone,
+    has_marked_read_on_list boolean DEFAULT false NOT NULL,
+    has_marked_unread boolean DEFAULT false NOT NULL,
+    has_starred boolean DEFAULT false NOT NULL,
+    CONSTRAINT user_entries_score_range CHECK (((score >= '-2'::integer) AND (score <= 2)))
 );
 
 CREATE VIEW public.user_feeds AS
@@ -365,6 +371,10 @@ CREATE VIEW public.visible_entries AS
     e.full_content_error,
     ue.read,
     ue.starred,
+    ue.score,
+    ue.has_marked_read_on_list,
+    ue.has_marked_unread,
+    ue.has_starred,
     s.id AS subscription_id
    FROM ((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
