@@ -300,6 +300,7 @@ export function EntryContent({
         onSwipeNext={onSwipeNext}
         onSwipePrevious={onSwipePrevious}
         // Full content props - only available if entry has a subscription
+        fullContentOriginal={entry.fullContentOriginal}
         fullContentCleaned={entry.fullContentCleaned}
         fullContentFetchedAt={entry.fullContentFetchedAt}
         fullContentError={entry.fullContentError}

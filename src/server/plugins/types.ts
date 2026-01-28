@@ -25,7 +25,6 @@ export interface UrlPlugin {
 
 export interface PluginCapabilities {
   feed?: FeedCapability;
-  entry?: EntryCapability;
   savedArticle?: SavedArticleCapability;
 }
 
@@ -57,24 +56,6 @@ export interface FeedCapability {
    * Falls back to feed's own site name if not provided.
    */
   siteName?: string;
-}
-
-// ============ Entry Capability ============
-
-export interface EntryCapability {
-  /**
-   * Fetch full content for an entry URL.
-   * Used when RSS provides only excerpts.
-   * Return null to fall back to normal fetching.
-   */
-  fetchFullContent?(url: URL): Promise<EntryContent | null>;
-}
-
-export interface EntryContent {
-  html: string;
-  title?: string;
-  author?: string;
-  publishedAt?: Date;
 }
 
 // ============ Saved Article Capability ============

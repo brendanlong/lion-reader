@@ -42,7 +42,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
     const urlObj = new URL(url);
 
     // Check if there's a plugin that can handle this URL
-    const plugin = pluginRegistry.findWithCapability(urlObj, "entry");
+    const plugin = pluginRegistry.findWithCapability(urlObj, "savedArticle");
 
     if (plugin) {
       logger.debug("Using plugin for full content fetch", {
@@ -51,7 +51,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
       });
 
       try {
-        const pluginContent = await plugin.capabilities.entry?.fetchFullContent?.(urlObj);
+        const pluginContent = await plugin.capabilities.savedArticle.fetchContent(urlObj, {});
 
         if (pluginContent) {
           logger.debug("Plugin successfully fetched content", {
@@ -59,10 +59,25 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
             plugin: plugin.name,
           });
 
+          const html = pluginContent.html;
+
+          const contentOriginal = absolutizeUrls(html, url);
+
+          // Respect plugin's skipReadability setting
+          if (plugin.capabilities.savedArticle.skipReadability) {
+            return {
+              success: true,
+              contentOriginal,
+            };
+          }
+
+          // Run Readability on plugin content
+          const cleaned = cleanContent(html, { url });
+
           return {
             success: true,
-            contentOriginal: pluginContent.html,
-            contentCleaned: pluginContent.html,
+            contentOriginal,
+            contentCleaned: cleaned?.content,
           };
         }
       } catch (error) {

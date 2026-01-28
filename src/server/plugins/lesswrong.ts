@@ -1,4 +1,4 @@
-import type { UrlPlugin, EntryContent, SavedArticleContent } from "./types";
+import type { UrlPlugin, SavedArticleContent } from "./types";
 import {
   fetchLessWrongContentFromUrl,
   fetchLessWrongUserBySlug,
@@ -13,8 +13,7 @@ import { logger } from "@/lib/logger";
  *
  * Provides capabilities for:
  * - Feed: Transform user profiles to RSS feeds, clean entry content
- * - Entry: Fetch full post/comment content from URLs
- * - SavedArticle: Fetch full post/comment content (same as entry)
+ * - SavedArticle: Fetch full post/comment content via GraphQL API
  */
 export const lessWrongPlugin: UrlPlugin = {
   name: "lesswrong",
@@ -70,36 +69,6 @@ export const lessWrongPlugin: UrlPlugin = {
       },
 
       siteName: "LessWrong",
-    },
-
-    entry: {
-      async fetchFullContent(url: URL): Promise<EntryContent | null> {
-        try {
-          const content = await fetchLessWrongContentFromUrl(url.href);
-          if (!content) return null;
-
-          // Handle both posts and comments (which have different title fields)
-          const title =
-            content.type === "post"
-              ? content.title
-              : content.type === "comment"
-                ? content.postTitle
-                : null;
-
-          return {
-            html: content.html,
-            title: title || undefined,
-            author: content.author || undefined,
-            publishedAt: content.publishedAt || undefined,
-          };
-        } catch (error) {
-          logger.warn("Failed to fetch LessWrong full content", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        }
-      },
     },
 
     savedArticle: {
