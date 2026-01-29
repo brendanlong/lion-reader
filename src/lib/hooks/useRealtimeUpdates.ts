@@ -502,21 +502,25 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         // Invalidate the specific entry to refresh content
         utils.entries.get.invalidate({ id: data.entryId });
       } else if (data.type === "subscription_created") {
-        // Use high-level operation - handles cache add + tag invalidation
+        // Use high-level operation - handles cache add + targeted invalidations
         const { subscription, feed } = data;
-        handleSubscriptionCreated(utils, {
-          id: subscription.id,
-          type: feed.type,
-          url: feed.url,
-          title: subscription.customTitle ?? feed.title,
-          originalTitle: feed.title,
-          description: feed.description,
-          siteUrl: feed.siteUrl,
-          subscribedAt: new Date(subscription.subscribedAt),
-          unreadCount: subscription.unreadCount,
-          tags: subscription.tags,
-          fetchFullContent: false,
-        });
+        handleSubscriptionCreated(
+          utils,
+          {
+            id: subscription.id,
+            type: feed.type,
+            url: feed.url,
+            title: subscription.customTitle ?? feed.title,
+            originalTitle: feed.title,
+            description: feed.description,
+            siteUrl: feed.siteUrl,
+            subscribedAt: new Date(subscription.subscribedAt),
+            unreadCount: subscription.unreadCount,
+            tags: subscription.tags,
+            fetchFullContent: false,
+          },
+          queryClient
+        );
       } else if (data.type === "subscription_deleted") {
         // Check if already removed (optimistic update from same tab)
         const currentData = utils.subscriptions.list.getData();
@@ -524,8 +528,8 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           currentData && !currentData.items.some((s) => s.id === data.subscriptionId);
 
         if (!alreadyRemoved) {
-          // Use high-level operation - handles cache remove + invalidations
-          handleSubscriptionDeleted(utils, data.subscriptionId);
+          // Use high-level operation - handles cache remove + targeted invalidations
+          handleSubscriptionDeleted(utils, data.subscriptionId, queryClient);
         }
       } else if (data.type === "saved_article_created") {
         utils.entries.list.invalidate({ type: "saved" });

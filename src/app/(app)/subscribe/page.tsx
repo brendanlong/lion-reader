@@ -10,8 +10,10 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { handleSubscriptionCreated } from "@/lib/cache";
 import { Button, Input, Alert } from "@/components/ui";
 
 // ============================================================================
@@ -32,6 +34,7 @@ type Step = "input" | "discovery" | "preview";
 
 export default function SubscribePage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState<string | undefined>();
   const [step, setStep] = useState<Step>("input");
@@ -62,26 +65,8 @@ export default function SubscribePage() {
   // Subscribe mutation
   const subscribeMutation = trpc.subscriptions.create.useMutation({
     onSuccess: (data) => {
-      // Add the new subscription directly to the cache instead of invalidating
-      // This avoids an extra network request and duplicate SSE-triggered invalidations
-      utils.subscriptions.list.setData(undefined, (oldData) => {
-        // Handle case where query hasn't completed yet (race condition)
-        if (!oldData) {
-          return { items: [data] };
-        }
-        // Check for duplicates - SSE might have already added this subscription
-        if (oldData.items.some((item) => item.id === data.id)) {
-          return oldData;
-        }
-        // Insert the new subscription and maintain alphabetical order by title
-        const newItems = [...oldData.items, data];
-        newItems.sort((a, b) => {
-          const titleA = (a.title || a.originalTitle || "").toLowerCase();
-          const titleB = (b.title || b.originalTitle || "").toLowerCase();
-          return titleA.localeCompare(titleB);
-        });
-        return { ...oldData, items: newItems };
-      });
+      // Use centralized cache operation for consistent behavior with SSE events
+      handleSubscriptionCreated(utils, data, queryClient);
       router.push("/all");
     },
     onError: () => {

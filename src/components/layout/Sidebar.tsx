@@ -16,6 +16,7 @@ import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { handleSubscriptionDeleted } from "@/lib/cache";
 import { useExpandedTags } from "@/lib/hooks";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
@@ -60,20 +61,18 @@ export function Sidebar({ onClose }: SidebarProps) {
   const uncategorized = tagsQuery.data?.uncategorized;
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
-    onMutate: async () => {
+    onMutate: async (variables) => {
       // Close dialog immediately for responsive feel
       setUnsubscribeTarget(null);
+      // Use centralized cache operation for optimistic removal
+      handleSubscriptionDeleted(utils, variables.id, queryClient);
     },
     onError: () => {
       toast.error("Failed to unsubscribe from feed");
-    },
-    onSettled: () => {
-      // Invalidate all subscription queries (per-tag infinite queries)
+      // On error, invalidate to refetch correct state
       utils.subscriptions.list.invalidate();
-      // Invalidate entries and tags to update counts
-      utils.entries.list.invalidate();
-      utils.entries.count.invalidate();
       utils.tags.list.invalidate();
+      utils.entries.count.invalidate();
     },
   });
 
