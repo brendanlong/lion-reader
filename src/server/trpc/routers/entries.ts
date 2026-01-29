@@ -507,6 +507,8 @@ export const entriesRouter = createTRPCRouter({
             subscriptionId: z.string().nullable(),
             starred: z.boolean(), // For updating starred unread count
             type: feedTypeSchema, // For updating saved/email counts
+            score: z.number().nullable(), // For updating score display
+            implicitScore: z.number(), // For updating score display
           })
         ),
       })
@@ -566,6 +568,10 @@ export const entriesRouter = createTRPCRouter({
           subscriptionId: visibleEntries.subscriptionId,
           starred: visibleEntries.starred,
           type: visibleEntries.type,
+          score: visibleEntries.score,
+          hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+          hasMarkedUnread: visibleEntries.hasMarkedUnread,
+          hasStarred: visibleEntries.hasStarred,
         })
         .from(visibleEntries)
         .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
@@ -578,6 +584,12 @@ export const entriesRouter = createTRPCRouter({
           subscriptionId: e.subscriptionId,
           starred: e.starred,
           type: e.type,
+          score: e.score,
+          implicitScore: entriesService.computeImplicitScore(
+            e.hasStarred,
+            e.hasMarkedUnread,
+            e.hasMarkedReadOnList
+          ),
         })),
       };
     }),

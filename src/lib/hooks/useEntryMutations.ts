@@ -121,9 +121,14 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const queryClient = useQueryClient();
 
   // markRead mutation - uses handleEntriesMarkedRead for all cache updates
+  // Also updates score cache since marking read/unread sets implicit signal flags
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: (data, variables) => {
       handleEntriesMarkedRead(utils, data.entries, variables.read, queryClient);
+      // Update score cache for each entry (implicit signals changed)
+      for (const entry of data.entries) {
+        handleEntryScoreChanged(utils, entry.id, entry.score, entry.implicitScore, queryClient);
+      }
     },
     onError: () => {
       toast.error("Failed to update read status");
