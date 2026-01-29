@@ -6,6 +6,7 @@ import {
   buildLessWrongUserFeedUrl,
 } from "@/server/feed/lesswrong";
 import { cleanLessWrongContent } from "@/server/feed/content-cleaner";
+import { wrapHtmlFragment } from "@/server/http/html";
 import { logger } from "@/lib/logger";
 
 /**
@@ -86,7 +87,7 @@ export const lessWrongPlugin: UrlPlugin = {
                 : null;
 
           return {
-            html: content.html,
+            html: wrapHtmlFragment(content.html, title),
             title: title || null,
             author: content.author || null,
             publishedAt: content.publishedAt || null,

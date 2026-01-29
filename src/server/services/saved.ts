@@ -14,7 +14,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { processMarkdown } from "@/server/markdown";
-import { escapeHtml } from "@/server/http/html";
+import { wrapHtmlFragment } from "@/server/http/html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
@@ -261,8 +261,7 @@ export async function saveArticle(
           siteName: plugin.capabilities.savedArticle.siteName,
           skipReadability: plugin.capabilities.savedArticle.skipReadability,
         };
-        // Wrap in HTML structure for consistency
-        html = `<!DOCTYPE html><html><head><title>${escapeHtml(content.title ?? "")}</title></head><body>${content.html}</body></html>`;
+        html = content.html;
         logger.debug("Successfully fetched content via plugin", {
           url: params.url,
           plugin: plugin.name,
@@ -292,7 +291,7 @@ export async function saveArticle(
           url: params.url,
         });
         markdownResult = await processMarkdown(result.content);
-        html = markdownResult.html;
+        html = wrapHtmlFragment(markdownResult.html, markdownResult.title);
       } else {
         html = result.content;
       }

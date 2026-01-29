@@ -478,8 +478,7 @@ export const savedRouter = createTRPCRouter({
                 siteName: plugin.capabilities.savedArticle.siteName,
                 publishedAt: content.publishedAt,
               };
-              // Wrap the content in a basic HTML structure for consistency
-              html = `<!DOCTYPE html><html><head><title>${escapeHtml(content.title ?? "")}</title></head><body>${content.html}</body></html>`;
+              html = content.html;
               logger.debug("Successfully fetched content via plugin", {
                 url: input.url,
                 plugin: plugin.name,

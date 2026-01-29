@@ -2,6 +2,7 @@ import type { UrlPlugin, SavedArticleContent } from "./types";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { githubConfig } from "@/server/config/env";
+import { wrapHtmlFragment } from "@/server/http/html";
 import { marked } from "marked";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 
@@ -425,7 +426,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       return {
-        html,
+        html: wrapHtmlFragment(html, title),
         title,
         author: gist.owner?.login ?? null,
         publishedAt: gist.created_at ? new Date(gist.created_at) : null,
@@ -441,11 +442,12 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       const { html, extractedTitle } = processFileContent(readme.content, readme.filename, null);
+      // Use extracted title from README, fall back to repo name
+      const title = extractedTitle || `${parsed.owner}/${parsed.repo}`;
 
       return {
-        html,
-        // Use extracted title from README, fall back to repo name
-        title: extractedTitle || `${parsed.owner}/${parsed.repo}`,
+        html: wrapHtmlFragment(html, title),
+        title,
         author: parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}`,
@@ -465,9 +467,10 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
         }
 
         const { html, extractedTitle } = processFileContent(rawContent, parsed.path, null);
+        const title = extractedTitle || filename;
         return {
-          html,
-          title: extractedTitle || filename,
+          html: wrapHtmlFragment(html, title),
+          title,
           author: parsed.owner,
           publishedAt: null,
           canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
@@ -476,10 +479,11 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
 
       const content = Buffer.from(contents.content, "base64").toString("utf-8");
       const { html, extractedTitle } = processFileContent(content, parsed.path, null);
+      const title = extractedTitle || filename;
 
       return {
-        html,
-        title: extractedTitle || filename,
+        html: wrapHtmlFragment(html, title),
+        title,
         author: parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
@@ -495,10 +499,11 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
 
       const filename = parsed.path.split("/").pop() ?? parsed.path;
       const { html, extractedTitle } = processFileContent(content, parsed.path, null);
+      const title = extractedTitle || filename;
 
       return {
-        html,
-        title: extractedTitle || filename,
+        html: wrapHtmlFragment(html, title),
+        title,
         author: parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
