@@ -121,17 +121,24 @@ export interface MarkReadResult {
 // ============================================================================
 
 /**
- * Computes the implicit score from boolean signal flags.
- * Priority: starred (+2) > unread (+1) > read-on-list (-1) > default (0)
+ * Computes the implicit score from boolean signal flags and entry type.
+ *
+ * Priority: starred (+2) > unread (+1) > read-on-list (-1) > saved default (+1) > default (0)
+ *
+ * Saved articles default to +1 because the user explicitly saved them, indicating interest.
+ * Other signals apply on top, so a saved article marked read from list becomes -1.
  */
 export function computeImplicitScore(
   hasStarred: boolean,
   hasMarkedUnread: boolean,
-  hasMarkedReadOnList: boolean
+  hasMarkedReadOnList: boolean,
+  type?: "web" | "email" | "saved"
 ): number {
   if (hasStarred) return 2;
   if (hasMarkedUnread) return 1;
   if (hasMarkedReadOnList) return -1;
+  // Saved articles default to +1 since user explicitly saved them
+  if (type === "saved") return 1;
   return 0;
 }
 
@@ -312,7 +319,8 @@ export async function listEntries(
     implicitScore: computeImplicitScore(
       row.hasStarred,
       row.hasMarkedUnread,
-      row.hasMarkedReadOnList
+      row.hasMarkedReadOnList,
+      row.type
     ),
   }));
 
@@ -452,7 +460,8 @@ export async function searchEntries(
     implicitScore: computeImplicitScore(
       row.hasStarred,
       row.hasMarkedUnread,
-      row.hasMarkedReadOnList
+      row.hasMarkedReadOnList,
+      row.type
     ),
   }));
 
@@ -513,7 +522,8 @@ export async function getEntry(
     implicitScore: computeImplicitScore(
       row.hasStarred,
       row.hasMarkedUnread,
-      row.hasMarkedReadOnList
+      row.hasMarkedReadOnList,
+      row.type
     ),
   };
 }
@@ -795,7 +805,7 @@ export async function setEntryScore(
       )
     );
 
-  // Always return final state
+  // Always return final state (join with entries to get type for implicit score)
   const result = await db
     .select({
       id: userEntries.entryId,
@@ -805,8 +815,10 @@ export async function setEntryScore(
       hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
       hasMarkedUnread: userEntries.hasMarkedUnread,
       hasStarred: userEntries.hasStarred,
+      type: entries.type,
     })
     .from(userEntries)
+    .innerJoin(entries, eq(userEntries.entryId, entries.id))
     .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 
   if (result.length === 0) {
@@ -822,7 +834,8 @@ export async function setEntryScore(
     implicitScore: computeImplicitScore(
       row.hasStarred,
       row.hasMarkedUnread,
-      row.hasMarkedReadOnList
+      row.hasMarkedReadOnList,
+      row.type
     ),
   };
 }

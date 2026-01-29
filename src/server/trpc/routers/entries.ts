@@ -254,7 +254,7 @@ async function updateEntryStarred(
       )
     );
 
-  // Always return final state
+  // Always return final state (join with entries to get type for implicit score)
   const result = await ctx.db
     .select({
       id: userEntries.entryId,
@@ -264,8 +264,10 @@ async function updateEntryStarred(
       hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
       hasMarkedUnread: userEntries.hasMarkedUnread,
       hasStarred: userEntries.hasStarred,
+      type: entries.type,
     })
     .from(userEntries)
+    .innerJoin(entries, eq(userEntries.entryId, entries.id))
     .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 
   if (result.length === 0) {
@@ -281,7 +283,8 @@ async function updateEntryStarred(
     implicitScore: entriesService.computeImplicitScore(
       row.hasStarred,
       row.hasMarkedUnread,
-      row.hasMarkedReadOnList
+      row.hasMarkedReadOnList,
+      row.type
     ),
   };
 }
@@ -452,7 +455,8 @@ export const entriesRouter = createTRPCRouter({
           implicitScore: entriesService.computeImplicitScore(
             entry.hasStarred,
             entry.hasMarkedUnread,
-            entry.hasMarkedReadOnList
+            entry.hasMarkedReadOnList,
+            entry.type
           ),
         },
       };
@@ -588,7 +592,8 @@ export const entriesRouter = createTRPCRouter({
           implicitScore: entriesService.computeImplicitScore(
             e.hasStarred,
             e.hasMarkedUnread,
-            e.hasMarkedReadOnList
+            e.hasMarkedReadOnList,
+            e.type
           ),
         })),
       };
@@ -999,7 +1004,8 @@ export const entriesRouter = createTRPCRouter({
       const implicitScore = entriesService.computeImplicitScore(
         rawEntry.hasStarred,
         rawEntry.hasMarkedUnread,
-        rawEntry.hasMarkedReadOnList
+        rawEntry.hasMarkedReadOnList,
+        rawEntry.type
       );
       // Strip boolean flags from the entry, compute implicitScore
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
