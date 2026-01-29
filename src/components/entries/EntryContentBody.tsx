@@ -43,6 +43,7 @@ import {
   ArrowLeftIcon,
   SpinnerIcon,
   SparklesIcon,
+  AlertIcon,
 } from "@/components/ui";
 import { SummaryCard } from "@/components/summarization";
 import {
@@ -485,25 +486,35 @@ export function EntryContentBody({
           {/* Full content toggle - shows when URL exists */}
           {url && onToggleFetchFullContent && (
             <Button
-              variant={fetchFullContent ? "primary" : "secondary"}
+              variant={fullContentError ? "secondary" : fetchFullContent ? "primary" : "secondary"}
               size="sm"
               onClick={onToggleFetchFullContent}
               disabled={isFullContentFetching}
               className={
-                fetchFullContent
-                  ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
-                  : ""
+                fullContentError
+                  ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950"
+                  : fetchFullContent
+                    ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                    : ""
               }
               aria-label={
-                fetchFullContent
-                  ? "Switch to feed content"
-                  : "Fetch and display full article content"
+                fullContentError
+                  ? `Retry fetching full content (previous error: ${fullContentError})`
+                  : fetchFullContent
+                    ? "Switch to feed content"
+                    : "Fetch and display full article content"
               }
+              title={fullContentError ? `Error: ${fullContentError}` : undefined}
             >
               {isFullContentFetching ? (
                 <>
                   <SpinnerIcon className="h-4 w-4" />
                   <span className="ml-2">Fetching...</span>
+                </>
+              ) : fullContentError ? (
+                <>
+                  <AlertIcon className="h-4 w-4" />
+                  <span className="ml-2">Retry Fetch</span>
                 </>
               ) : fetchFullContent ? (
                 <span>Full Content</span>
