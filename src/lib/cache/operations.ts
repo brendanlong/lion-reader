@@ -15,6 +15,7 @@ import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   updateEntriesReadStatus,
   updateEntryStarredStatus,
+  updateEntryScoreInCache,
   adjustSubscriptionUnreadCounts,
   adjustTagUnreadCounts,
   adjustEntriesCount,
@@ -204,6 +205,31 @@ export function handleEntryUnstarred(
   // 2. Update starred count
   // Total always -1, unread -1 only if entry was unread
   adjustEntriesCount(utils, { starredOnly: true }, read ? 0 : -1, -1);
+}
+
+/**
+ * Handles an entry's score being changed.
+ *
+ * Updates:
+ * - entries.get cache (score, implicitScore)
+ * - entries.list cache (score, implicitScore)
+ *
+ * Score changes don't affect unread counts, subscription counts, or tag counts.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param entryId - Entry ID whose score changed
+ * @param score - New explicit score (null if cleared)
+ * @param implicitScore - New implicit score
+ * @param queryClient - React Query client (optional, for list cache updates)
+ */
+export function handleEntryScoreChanged(
+  utils: TRPCClientUtils,
+  entryId: string,
+  score: number | null,
+  implicitScore: number,
+  queryClient?: QueryClient
+): void {
+  updateEntryScoreInCache(utils, entryId, score, implicitScore, queryClient);
 }
 
 /**

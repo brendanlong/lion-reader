@@ -9,6 +9,7 @@ import {
   pgView,
   primaryKey,
   real,
+  smallint,
   text,
   timestamp,
   unique,
@@ -581,6 +582,16 @@ export const userEntries = pgTable(
     read: boolean("read").notNull().default(false),
     starred: boolean("starred").notNull().default(false),
 
+    // Explicit score: user-voted score (-2 to +2), null means no vote
+    score: smallint("score"),
+    scoreChangedAt: timestamp("score_changed_at", { withTimezone: true }),
+
+    // Implicit signal flags - track user actions that imply interest/disinterest
+    // Priority for implicit score: starred (+2) > unread (+1) > read-on-list (-1) > default (0)
+    hasMarkedReadOnList: boolean("has_marked_read_on_list").notNull().default(false),
+    hasMarkedUnread: boolean("has_marked_unread").notNull().default(false),
+    hasStarred: boolean("has_starred").notNull().default(false),
+
     // Timestamps for idempotent updates - tracks when each field was last set
     // Used for conditional updates: only apply if incoming timestamp is newer
     readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull().defaultNow(),
@@ -669,6 +680,10 @@ export const visibleEntries = pgView("visible_entries", {
   fullContentError: text("full_content_error"),
   read: boolean("read").notNull(),
   starred: boolean("starred").notNull(),
+  score: smallint("score"),
+  hasMarkedReadOnList: boolean("has_marked_read_on_list").notNull(),
+  hasMarkedUnread: boolean("has_marked_unread").notNull(),
+  hasStarred: boolean("has_starred").notNull(),
   subscriptionId: uuid("subscription_id"), // nullable - null for orphaned starred entries
 }).existing();
 

@@ -113,8 +113,8 @@ export function EntryContent({
   // Get fetchFullContent setting from subscription
   const fetchFullContent = subscription?.fetchFullContent ?? false;
 
-  // Entry mutations for marking read, starring, etc.
-  const { markRead, star, unstar } = useEntryMutations();
+  // Entry mutations for marking read, starring, scoring, etc.
+  const { markRead, star, unstar, setScore } = useEntryMutations();
 
   // Mutation to update subscription's fetchFullContent setting
   const utils = trpc.useUtils();
@@ -287,11 +287,21 @@ export function EntryContent({
     }
   };
 
-  // Handle read toggle - use local mutation for consistent loading state
+  // Handle read toggle from entry view
+  // Marking unread sets implicit score signal (+1), marking read does NOT
+  // (only marking read from the entry list sets implicit -1)
   const handleReadToggle = () => {
     if (!entry) return;
     markRead([entryId], !entry.read);
   };
+
+  // Handle score change
+  const handleSetScore = useCallback(
+    (newScore: number | null) => {
+      setScore(entryId, newScore);
+    },
+    [entryId, setScore]
+  );
 
   // Determine content based on loading/error/success state
   // Progressive rendering: show header immediately if we have entry data (even if seeded from list)
@@ -351,6 +361,10 @@ export function EntryContent({
         onSummaryRegenerate={handleSummaryRegenerate}
         // Progressive loading - show content skeleton while fetching full data
         isContentLoading={isContentLoading}
+        // Score props
+        score={entry.score ?? null}
+        implicitScore={entry.implicitScore ?? 0}
+        onSetScore={handleSetScore}
       />
     );
   }

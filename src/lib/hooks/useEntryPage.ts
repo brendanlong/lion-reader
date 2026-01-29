@@ -189,11 +189,20 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
 
   // Entry mutations - cache operations handle all updates internally
   const {
-    toggleRead: handleToggleRead,
+    toggleRead: rawToggleRead,
     toggleStar,
     markAllRead,
     isMarkAllReadPending,
   } = useEntryMutations();
+
+  // Wrap toggleRead to always pass fromList: true from the entry list context
+  // This sets implicit score signals (mark-read-on-list = -1, mark-unread = +1)
+  const handleToggleRead = useCallback(
+    (entryId: string, currentlyRead: boolean) => {
+      rawToggleRead(entryId, currentlyRead, true);
+    },
+    [rawToggleRead]
+  );
 
   // Navigation callbacks - delegate to useEntryListQuery which owns the list state
   const goToNextEntry = useCallback(() => {

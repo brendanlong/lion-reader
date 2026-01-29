@@ -139,6 +139,27 @@ export function registerTools(): Tool[] {
     },
 
     {
+      name: "set_entry_score",
+      description:
+        "Set the explicit score for an entry (-2 to +2, or null to clear). Used for LessWrong-style voting.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          entryId: { type: "string", description: "Entry ID" },
+          score: {
+            type: "number",
+            description: "Score value: -2, -1, 0, 1, 2. Use null to clear explicit vote.",
+          },
+        },
+        required: ["entryId", "score"],
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (db, args: any) => {
+        return entriesService.setEntryScore(db, args.userId, args.entryId, args.score);
+      },
+    },
+
+    {
       name: "count_entries",
       description: "Get count of entries with filters. Returns total and unread counts.",
       inputSchema: {

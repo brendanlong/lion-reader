@@ -60,6 +60,7 @@ import { useImagePrefetch } from "@/lib/hooks";
 import { formatDate, getDomain, SWIPE_CONFIG } from "./EntryContentHelpers";
 import { ContentSkeleton } from "./EntryContentStates";
 import { EntryContentRenderer } from "./EntryContentRenderer";
+import { VoteControls } from "./VoteControls";
 
 // Re-export components and helpers for backwards compatibility
 export { EntryContentSkeleton, EntryContentError } from "./EntryContentStates";
@@ -148,6 +149,13 @@ export interface EntryContentBodyProps {
   onSummaryRegenerate?: () => void;
   /** Whether the main content is still loading (for progressive rendering) */
   isContentLoading?: boolean;
+  // Score fields
+  /** The explicit score (null if not voted) */
+  score?: number | null;
+  /** The implicit score (computed from actions) */
+  implicitScore?: number;
+  /** Callback when vote score changes */
+  onSetScore?: (score: number | null) => void;
 }
 
 /**
@@ -194,6 +202,10 @@ export function EntryContentBody({
   onSummaryRegenerate,
   // Progressive loading
   isContentLoading,
+  // Score props
+  score,
+  implicitScore,
+  onSetScore,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -442,7 +454,16 @@ export function EntryContentBody({
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-wrap gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* Vote controls */}
+          {onSetScore && (
+            <VoteControls
+              score={score ?? null}
+              implicitScore={implicitScore ?? 0}
+              onSetScore={onSetScore}
+            />
+          )}
+
           {/* Star button */}
           <Button
             variant={starred ? "primary" : "secondary"}

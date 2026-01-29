@@ -22,6 +22,7 @@ export {
   handleEntriesMarkedRead,
   handleEntryStarred,
   handleEntryUnstarred,
+  handleEntryScoreChanged,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   handleNewEntry,
@@ -33,6 +34,7 @@ export {
 export {
   updateEntriesReadStatus,
   updateEntryStarredStatus,
+  updateEntryScoreInCache,
   updateEntriesInListCache,
 } from "./entry-cache";
 
