@@ -1,0 +1,4 @@
+- We use a custom migration tool, not drizzle-kit. Never run migrations with drizzle-kit, always use `pnpm db:migrate` or `pnpm db:migrate:test`. See ../scripts/migrate.ts if you need details.
+- Always add new migrations to meta/\_journal.json. Only migrations in the journal will be run.
+- Test new migrations using `pnpm test:integration`
+- Read @schema.sql and keep it up to date with `pnpm db:schema`
