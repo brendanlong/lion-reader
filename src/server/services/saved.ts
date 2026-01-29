@@ -279,7 +279,7 @@ export async function saveArticle(
   }
 
   // Track Markdown processing results (skip Readability for Markdown)
-  let markdownResult: { html: string; title: string | null } | null = null;
+  let markdownResult: { html: string; title: string | null; summary: string | null } | null = null;
 
   // Fall back to normal HTML fetch if no plugin or plugin failed
   if (!pluginContent) {
@@ -318,9 +318,12 @@ export async function saveArticle(
   const shouldSkipReadability = pluginContent?.skipReadability || markdownResult !== null;
   const cleaned = shouldSkipReadability ? null : cleanContent(html!, { url: params.url });
 
-  // Generate excerpt
+  // Generate excerpt - prefer frontmatter summary for Markdown content
   let excerpt: string | null = null;
-  if (shouldSkipReadability) {
+  if (markdownResult?.summary) {
+    // Use summary from frontmatter
+    excerpt = markdownResult.summary;
+  } else if (shouldSkipReadability) {
     // For content that skips Readability (plugins or Markdown), extract summary from HTML
     excerpt = generateSummary(html!) || null;
   } else if (cleaned) {
@@ -538,8 +541,12 @@ export async function uploadArticle(
   userId: string,
   params: UploadArticleParams
 ): Promise<SavedArticle> {
-  // Convert markdown to HTML and extract title
-  const { html: contentCleaned, title: extractedTitle } = await processMarkdown(params.content);
+  // Convert markdown to HTML and extract title/summary from frontmatter or content
+  const {
+    html: contentCleaned,
+    title: extractedTitle,
+    summary,
+  } = await processMarkdown(params.content);
 
   // Use provided title, falling back to extracted title
   const finalTitle = params.title || extractedTitle;
@@ -547,6 +554,7 @@ export async function uploadArticle(
   return createUploadedArticle(db, userId, {
     contentHtml: contentCleaned,
     title: finalTitle,
+    excerpt: summary,
     siteName: "Uploaded Article",
   });
 }

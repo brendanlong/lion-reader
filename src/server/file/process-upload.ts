@@ -150,14 +150,19 @@ function processHtml(content: string, filename: string): ProcessedFile {
 /**
  * Converts Markdown to HTML using marked.
  * Markdown content is kept as-is semantically, just rendered to HTML.
+ * Supports YAML frontmatter for title and description extraction.
  */
 async function processMarkdown(content: string, filename: string): Promise<ProcessedFile> {
-  // Convert markdown to HTML and extract title
-  const { html: contentCleaned, title: extractedTitle } = await convertMarkdown(content);
+  // Convert markdown to HTML and extract title/summary from frontmatter or content
+  const {
+    html: contentCleaned,
+    title: extractedTitle,
+    summary: frontmatterSummary,
+  } = await convertMarkdown(content);
   const title = extractedTitle || titleFromFilename(filename);
 
-  // Generate excerpt from the cleaned content (after title is stripped)
-  const excerpt = generateSummary(contentCleaned);
+  // Prefer frontmatter description, fall back to generated summary from content
+  const excerpt = frontmatterSummary ?? generateSummary(contentCleaned);
 
   return {
     contentCleaned,
