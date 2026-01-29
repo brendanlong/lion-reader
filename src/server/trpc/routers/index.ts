@@ -21,3 +21,4 @@ export { brokenFeedsRouter } from "./brokenFeeds";
 export { feedStatsRouter } from "./feedStats";
 export { importsRouter } from "./imports";
 export { syncRouter } from "./sync";
+export { scorePredictionRouter } from "./scorePrediction";

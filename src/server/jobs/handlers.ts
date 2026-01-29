@@ -1705,3 +1705,145 @@ export async function handleProcessOpmlImport(
     };
   }
 }
+
+/**
+ * Handler for train_score_model jobs.
+ * Trains a score prediction model for a user.
+ *
+ * This is typically run:
+ * - Daily for users with new interactions
+ * - Weekly for all active users (full retrain)
+ *
+ * @param payload - The job payload containing userId
+ * @returns Job handler result with next run time (7 days for success, 1 day for retry)
+ */
+export async function handleTrainScoreModel(
+  payload: JobPayloads["train_score_model"]
+): Promise<JobHandlerResult> {
+  const { userId } = payload;
+
+  logger.info("Starting score model training", { userId });
+
+  try {
+    // Lazy import to avoid circular dependencies
+    const { trainModel } = await import("../services/score-prediction");
+
+    const result = await trainModel(db, userId);
+
+    if (!result.success) {
+      logger.info("Score model training skipped", {
+        userId,
+        reason: result.error,
+      });
+
+      // Not enough data - check again in 7 days
+      return {
+        success: true,
+        nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        metadata: {
+          skipped: true,
+          reason: result.error,
+        },
+      };
+    }
+
+    logger.info("Score model training completed", {
+      userId,
+      trainingCount: result.trainingCount,
+      modelVersion: result.modelVersion,
+      cvMae: result.cvMae,
+      cvCorrelation: result.cvCorrelation,
+    });
+
+    // Schedule next training in 7 days
+    return {
+      success: true,
+      nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      metadata: {
+        trainingCount: result.trainingCount,
+        modelVersion: result.modelVersion,
+        cvMae: result.cvMae,
+        cvCorrelation: result.cvCorrelation,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    logger.error("Score model training failed", { userId, error: errorMessage });
+
+    // Retry in 1 day
+    return {
+      success: false,
+      nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      error: errorMessage,
+    };
+  }
+}
+
+/**
+ * Handler for predict_scores jobs.
+ * Predicts scores for entries using a user's trained model.
+ *
+ * This is typically run:
+ * - Daily for users with trained models (score recent entries)
+ * - After model training (score all unscored entries)
+ *
+ * @param payload - The job payload containing userId and optional entryIds
+ * @returns Job handler result with next run time (1 day)
+ */
+export async function handlePredictScores(
+  payload: JobPayloads["predict_scores"]
+): Promise<JobHandlerResult> {
+  const { userId, entryIds } = payload;
+
+  logger.info("Starting score prediction", { userId, entryCount: entryIds?.length ?? "all" });
+
+  try {
+    // Lazy import to avoid circular dependencies
+    const { predictScores } = await import("../services/score-prediction");
+
+    const result = await predictScores(db, userId, entryIds);
+
+    if (!result.success) {
+      logger.info("Score prediction skipped", {
+        userId,
+        reason: result.error,
+      });
+
+      // No model - check again in 7 days
+      return {
+        success: true,
+        nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        metadata: {
+          skipped: true,
+          reason: result.error,
+        },
+      };
+    }
+
+    logger.info("Score prediction completed", {
+      userId,
+      predictedCount: result.predictedCount,
+    });
+
+    // Schedule next prediction in 1 day
+    return {
+      success: true,
+      nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      metadata: {
+        predictedCount: result.predictedCount,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    logger.error("Score prediction failed", { userId, error: errorMessage });
+
+    // Retry in 1 day
+    return {
+      success: false,
+      nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      error: errorMessage,
+    };
+  }
+}

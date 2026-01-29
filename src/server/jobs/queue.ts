@@ -59,6 +59,8 @@ export interface JobPayloads {
   fetch_feed: { feedId: string };
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
   process_opml_import: { importId: string }; // Process an OPML import in the background
+  train_score_model: { userId: string }; // Train ML model for score prediction
+  predict_scores: { userId: string; entryIds?: string[] }; // Predict scores for entries
 }
 
 export type JobType = keyof JobPayloads;

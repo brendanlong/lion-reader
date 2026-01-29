@@ -23,6 +23,8 @@ import {
   handleFetchFeed,
   handleRenewWebsub,
   handleProcessOpmlImport,
+  handleTrainScoreModel,
+  handlePredictScores,
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
@@ -147,6 +149,16 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         case "process_opml_import": {
           const payload = getJobPayload<"process_opml_import">(job);
           result = await handleProcessOpmlImport(payload);
+          break;
+        }
+        case "train_score_model": {
+          const payload = getJobPayload<"train_score_model">(job);
+          result = await handleTrainScoreModel(payload);
+          break;
+        }
+        case "predict_scores": {
+          const payload = getJobPayload<"predict_scores">(job);
+          result = await handlePredictScores(payload);
           break;
         }
         default: {
