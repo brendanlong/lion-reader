@@ -27,8 +27,8 @@ export interface ListEntriesParams {
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
-  type?: "web" | "email" | "saved";
-  excludeTypes?: Array<"web" | "email" | "saved">;
+  type?: "web" | "email" | "saved" | "lesswrong";
+  excludeTypes?: Array<"web" | "email" | "saved" | "lesswrong">;
   unreadOnly?: boolean;
   starredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
@@ -44,8 +44,8 @@ export interface SearchEntriesParams {
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
-  type?: "web" | "email" | "saved";
-  excludeTypes?: Array<"web" | "email" | "saved">;
+  type?: "web" | "email" | "saved" | "lesswrong";
+  excludeTypes?: Array<"web" | "email" | "saved" | "lesswrong">;
   unreadOnly?: boolean;
   starredOnly?: boolean;
   cursor?: string;
@@ -57,7 +57,7 @@ export interface EntryListItem {
   id: string;
   subscriptionId: string | null;
   feedId: string;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "lesswrong";
   url: string | null;
   title: string | null;
   author: string | null;
@@ -74,7 +74,7 @@ export interface EntryFull {
   id: string;
   subscriptionId: string | null;
   feedId: string;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "lesswrong";
   url: string | null;
   title: string | null;
   author: string | null;
@@ -634,8 +634,8 @@ export async function countEntries(
     subscriptionId?: string;
     tagId?: string;
     uncategorized?: boolean;
-    type?: "web" | "email" | "saved";
-    excludeTypes?: Array<"web" | "email" | "saved">;
+    type?: "web" | "email" | "saved" | "lesswrong";
+    excludeTypes?: Array<"web" | "email" | "saved" | "lesswrong">;
     unreadOnly?: boolean;
     starredOnly?: boolean;
     showSpam: boolean;

@@ -19,7 +19,7 @@ import { handleEntriesMarkedRead, handleEntryStarred, handleEntryUnstarred } fro
 /**
  * Entry type for routing.
  */
-export type EntryType = "web" | "email" | "saved";
+export type EntryType = "web" | "email" | "saved" | "lesswrong";
 
 /**
  * Options for the markAllRead mutation.

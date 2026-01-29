@@ -147,7 +147,7 @@ export interface EntryListItem {
   id: string;
   feedId: string;
   subscriptionId: string | null;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "lesswrong";
   url: string | null;
   title: string | null;
   author: string | null;
@@ -234,7 +234,7 @@ export interface EntryListFilters {
   unreadOnly?: boolean;
   starredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
-  type?: "web" | "email" | "saved";
+  type?: "web" | "email" | "saved" | "lesswrong";
 }
 
 /**
@@ -364,7 +364,7 @@ interface EntryListItemForPlaceholder {
   id: string;
   subscriptionId: string | null;
   feedId: string;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "lesswrong";
   url: string | null;
   title: string | null;
   author: string | null;

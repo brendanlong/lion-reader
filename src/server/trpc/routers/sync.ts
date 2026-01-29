@@ -44,7 +44,7 @@ const MAX_STATE_UPDATES = 1000;
 const syncEntrySchema = z.object({
   id: z.string(),
   subscriptionId: z.string().nullable(), // nullable for orphaned starred entries
-  type: z.enum(["web", "email", "saved"]),
+  type: z.enum(["web", "email", "saved", "lesswrong"]),
   url: z.string().nullable(),
   title: z.string().nullable(),
   author: z.string().nullable(),
@@ -74,7 +74,7 @@ const syncSubscriptionSchema = z.object({
   feedId: z.string(),
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
-  feedType: z.enum(["web", "email", "saved"]),
+  feedType: z.enum(["web", "email", "saved", "lesswrong"]),
   customTitle: z.string().nullable(),
   subscribedAt: z.date(),
 });

@@ -14,6 +14,21 @@ export { fetchFeed, type FetchFeedResult, type RedirectInfo } from "./fetcher";
 export { calculateNextFetch, WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
 export { deriveGuid, processEntries, createUserEntriesForFeed } from "./entry-processor";
 export {
+  type LessWrongView,
+  type LessWrongFeedConfig,
+  type LessWrongPost,
+  buildLessWrongFeedUrl,
+  parseLessWrongFeedUrl,
+  isLessWrongFeedUrl as isLessWrongApiFeedUrl,
+  getLessWrongFeedTitle,
+  fetchLessWrongFeedPosts,
+  fetchLessWrongTag,
+  lessWrongPostToParsedEntry,
+  lessWrongPostsToParsedFeed,
+  LESSWRONG_FETCH_PAGE_SIZE,
+  LESSWRONG_FETCH_INTERVAL_MS,
+} from "./lesswrong-feed";
+export {
   handleVerificationChallenge,
   verifyHmacSignature,
   renewExpiringSubscriptions,

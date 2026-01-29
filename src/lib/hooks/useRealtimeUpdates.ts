@@ -114,7 +114,7 @@ interface SubscriptionEntryEventData {
   subscriptionId: string;
   entryId: string;
   timestamp: string;
-  feedType?: "web" | "email" | "saved"; // Included for new_entry to enable cache updates
+  feedType?: "web" | "email" | "saved" | "lesswrong"; // Included for new_entry to enable cache updates
 }
 
 interface SubscriptionCreatedEventSubscription {
@@ -128,7 +128,7 @@ interface SubscriptionCreatedEventSubscription {
 
 interface SubscriptionCreatedEventFeed {
   id: string;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "lesswrong";
   url: string | null;
   title: string | null;
   description: string | null;
@@ -226,8 +226,9 @@ function parseEventData(data: string): SSEEventData | null {
         entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
         feedType:
-          typeof event.feedType === "string" && ["web", "email", "saved"].includes(event.feedType)
-            ? (event.feedType as "web" | "email" | "saved")
+          typeof event.feedType === "string" &&
+          ["web", "email", "saved", "lesswrong"].includes(event.feedType)
+            ? (event.feedType as "web" | "email" | "saved" | "lesswrong")
             : undefined,
       };
     }
@@ -261,7 +262,10 @@ function parseEventData(data: string): SSEEventData | null {
       // Validate feed structure
       if (
         typeof feed.id !== "string" ||
-        (feed.type !== "web" && feed.type !== "email" && feed.type !== "saved") ||
+        (feed.type !== "web" &&
+          feed.type !== "email" &&
+          feed.type !== "saved" &&
+          feed.type !== "lesswrong") ||
         (feed.url !== null && typeof feed.url !== "string") ||
         (feed.title !== null && typeof feed.title !== "string") ||
         (feed.description !== null && typeof feed.description !== "string") ||
