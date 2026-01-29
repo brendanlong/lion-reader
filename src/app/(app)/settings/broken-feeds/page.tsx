@@ -8,8 +8,10 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { handleSubscriptionDeleted } from "@/lib/cache";
 import { Button, Alert } from "@/components/ui";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 
@@ -113,6 +115,7 @@ function getFeedDisplayName(feed: BrokenFeed): string {
 // ============================================================================
 
 export default function BrokenFeedsPage() {
+  const queryClient = useQueryClient();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
@@ -122,17 +125,21 @@ export default function BrokenFeedsPage() {
   const brokenQuery = trpc.brokenFeeds.list.useQuery();
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
+    onMutate: (variables) => {
+      // Use centralized cache operation for optimistic removal
+      handleSubscriptionDeleted(utils, variables.id, queryClient);
+    },
     onSuccess: () => {
       utils.brokenFeeds.list.invalidate();
-      utils.subscriptions.list.invalidate();
-      utils.entries.list.invalidate();
-      utils.entries.count.invalidate();
-      utils.tags.list.invalidate();
       setUnsubscribeTarget(null);
       toast.success("Unsubscribed from feed");
     },
     onError: () => {
       toast.error("Failed to unsubscribe from feed");
+      // On error, invalidate to refetch correct state
+      utils.subscriptions.list.invalidate();
+      utils.tags.list.invalidate();
+      utils.entries.count.invalidate();
     },
   });
 

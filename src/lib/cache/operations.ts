@@ -21,6 +21,7 @@ import {
   calculateTagDeltasFromSubscriptions,
   addSubscriptionToCache,
   removeSubscriptionFromCache,
+  findCachedSubscription,
 } from "./index";
 
 /**
@@ -80,6 +81,114 @@ function updateSubscriptionAndTagCounts(
     queryClient
   );
   adjustTagUnreadCounts(utils, tagDeltas, uncategorizedDelta);
+}
+
+/**
+ * Query key input type for subscriptions.list.
+ */
+interface SubscriptionListInput {
+  tagId?: string;
+  uncategorized?: boolean;
+  query?: string;
+  unreadOnly?: boolean;
+  cursor?: string;
+  limit?: number;
+}
+
+/**
+ * Invalidates subscription list queries for specific tags.
+ * More targeted than invalidating all subscription lists.
+ *
+ * @param queryClient - React Query client
+ * @param tagIds - Tag IDs to invalidate queries for
+ * @param includeUncategorized - Whether to also invalidate the uncategorized query
+ */
+function invalidateSubscriptionListsForTags(
+  queryClient: QueryClient,
+  tagIds: string[],
+  includeUncategorized: boolean
+): void {
+  const tagIdSet = new Set(tagIds);
+
+  // Get all subscription list queries
+  const queries = queryClient.getQueriesData<unknown>({
+    queryKey: [["subscriptions", "list"]],
+  });
+
+  for (const [queryKey] of queries) {
+    // Query key structure: [["subscriptions", "list"], { input: {...}, type: "query"|"infinite" }]
+    const keyData = queryKey[1] as { input?: SubscriptionListInput; type?: string } | undefined;
+    const input = keyData?.input;
+
+    // Always invalidate the unparameterized query (used by entry content pages)
+    if (!input) {
+      queryClient.invalidateQueries({ queryKey });
+      continue;
+    }
+
+    // Invalidate if this query is for one of the affected tags
+    if (input.tagId && tagIdSet.has(input.tagId)) {
+      queryClient.invalidateQueries({ queryKey });
+      continue;
+    }
+
+    // Invalidate uncategorized query if needed
+    if (includeUncategorized && input.uncategorized === true) {
+      queryClient.invalidateQueries({ queryKey });
+    }
+  }
+}
+
+/**
+ * Page structure in subscription infinite query cache.
+ */
+interface CachedSubscriptionPage {
+  items: Array<{ id: string; [key: string]: unknown }>;
+  nextCursor?: string;
+}
+
+/**
+ * Infinite query data structure for subscriptions.
+ */
+interface SubscriptionInfiniteData {
+  pages: CachedSubscriptionPage[];
+  pageParams: unknown[];
+}
+
+/**
+ * Removes a subscription from all infinite query caches.
+ * Used when unsubscribing to immediately remove from sidebar lists.
+ *
+ * @param queryClient - React Query client
+ * @param subscriptionId - ID of the subscription to remove
+ */
+function removeSubscriptionFromInfiniteQueries(
+  queryClient: QueryClient,
+  subscriptionId: string
+): void {
+  const infiniteQueries = queryClient.getQueriesData<SubscriptionInfiniteData>({
+    queryKey: [["subscriptions", "list"]],
+  });
+
+  for (const [queryKey, data] of infiniteQueries) {
+    // Only update infinite queries (they have pages array)
+    if (!data?.pages) continue;
+
+    // Check if any page contains this subscription
+    const hasSubscription = data.pages.some((page) =>
+      page.items.some((s) => s.id === subscriptionId)
+    );
+
+    if (hasSubscription) {
+      queryClient.setQueryData<SubscriptionInfiniteData>(queryKey, {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          items: page.items.filter((s) => s.id !== subscriptionId),
+        })),
+      });
+    }
+  }
 }
 
 /**
@@ -211,44 +320,154 @@ export function handleEntryUnstarred(
  *
  * Updates:
  * - subscriptions.list (add subscription to unparameterized cache)
- * - subscriptions.list per-tag infinite queries (invalidated - alphabetical order may change)
- * - tags.list (invalidated - may affect tag counts)
+ * - subscriptions.list per-tag infinite queries (only affected tags, or uncategorized if no tags)
+ * - tags.list (direct update of feedCount and unreadCount)
+ * - entries.count (direct update)
  *
  * @param utils - tRPC utils for cache access
  * @param subscription - The new subscription data
+ * @param queryClient - React Query client for targeted invalidations
  */
 export function handleSubscriptionCreated(
   utils: TRPCClientUtils,
-  subscription: SubscriptionData
+  subscription: SubscriptionData,
+  queryClient?: QueryClient
 ): void {
   addSubscriptionToCache(utils, subscription);
-  // Invalidate per-tag infinite queries so sidebar refetches with correct alphabetical order
-  utils.subscriptions.list.invalidate();
-  // Tags may need updating if subscription uses existing tags
-  utils.tags.list.invalidate();
-  // All Articles count may change with new subscription
-  utils.entries.count.invalidate();
+
+  // Invalidate only the affected subscription list queries
+  // - The unparameterized query (no input) for entry content pages
+  // - Per-tag queries for tags the subscription belongs to
+  // - Uncategorized query if subscription has no tags
+  if (queryClient) {
+    invalidateSubscriptionListsForTags(
+      queryClient,
+      subscription.tags.map((t) => t.id),
+      subscription.tags.length === 0
+    );
+  } else {
+    // Fallback: invalidate all subscription lists
+    utils.subscriptions.list.invalidate();
+  }
+
+  // Directly update tags.list with feedCount and unreadCount changes
+  utils.tags.list.setData(undefined, (oldData) => {
+    if (!oldData) return oldData;
+
+    if (subscription.tags.length === 0) {
+      // Uncategorized subscription
+      return {
+        ...oldData,
+        uncategorized: {
+          feedCount: oldData.uncategorized.feedCount + 1,
+          unreadCount: oldData.uncategorized.unreadCount + subscription.unreadCount,
+        },
+      };
+    }
+
+    // Update feedCount and unreadCount for each tag the subscription belongs to
+    const tagIds = new Set(subscription.tags.map((t) => t.id));
+    return {
+      ...oldData,
+      items: oldData.items.map((tag) => {
+        if (tagIds.has(tag.id)) {
+          return {
+            ...tag,
+            feedCount: tag.feedCount + 1,
+            unreadCount: tag.unreadCount + subscription.unreadCount,
+          };
+        }
+        return tag;
+      }),
+    };
+  });
+
+  // Directly update entries.count for All Articles
+  adjustEntriesCount(utils, {}, subscription.unreadCount, subscription.unreadCount);
 }
 
 /**
  * Handles a subscription being deleted.
  *
  * Updates:
- * - subscriptions.list (remove subscription from unparameterized cache)
- * - subscriptions.list per-tag infinite queries (invalidated - list changed)
+ * - subscriptions.list (remove subscription from caches)
+ * - subscriptions.list per-tag infinite queries (only affected tags, or uncategorized)
  * - entries.list (invalidated - entries may be filtered out)
- * - tags.list (invalidated - tag counts change)
+ * - tags.list (direct update of feedCount and unreadCount if subscription found in cache)
+ * - entries.count (direct update if subscription found in cache)
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionId - ID of the deleted subscription
+ * @param queryClient - React Query client for targeted invalidations
  */
-export function handleSubscriptionDeleted(utils: TRPCClientUtils, subscriptionId: string): void {
+export function handleSubscriptionDeleted(
+  utils: TRPCClientUtils,
+  subscriptionId: string,
+  queryClient?: QueryClient
+): void {
+  // Look up subscription data before removing from cache
+  // This lets us do targeted updates instead of broad invalidations
+  const subscription = queryClient
+    ? findCachedSubscription(utils, queryClient, subscriptionId)
+    : undefined;
+
+  // Remove from all subscription caches
   removeSubscriptionFromCache(utils, subscriptionId);
-  // Invalidate per-tag infinite queries so sidebar refetches after removal
-  utils.subscriptions.list.invalidate();
+  if (queryClient) {
+    removeSubscriptionFromInfiniteQueries(queryClient, subscriptionId);
+  }
+
+  if (subscription && queryClient) {
+    // Targeted invalidations using subscription data
+    invalidateSubscriptionListsForTags(
+      queryClient,
+      subscription.tags.map((t) => t.id),
+      subscription.tags.length === 0
+    );
+
+    // Directly update tags.list feedCount and unreadCount
+    utils.tags.list.setData(undefined, (oldData) => {
+      if (!oldData) return oldData;
+
+      if (subscription.tags.length === 0) {
+        // Uncategorized subscription
+        return {
+          ...oldData,
+          uncategorized: {
+            feedCount: Math.max(0, oldData.uncategorized.feedCount - 1),
+            unreadCount: Math.max(0, oldData.uncategorized.unreadCount - subscription.unreadCount),
+          },
+        };
+      }
+
+      // Update feedCount and unreadCount for each tag
+      const tagIds = new Set(subscription.tags.map((t) => t.id));
+      return {
+        ...oldData,
+        items: oldData.items.map((tag) => {
+          if (tagIds.has(tag.id)) {
+            return {
+              ...tag,
+              feedCount: Math.max(0, tag.feedCount - 1),
+              unreadCount: Math.max(0, tag.unreadCount - subscription.unreadCount),
+            };
+          }
+          return tag;
+        }),
+      };
+    });
+
+    // Directly update entries.count for All Articles
+    adjustEntriesCount(utils, {}, -subscription.unreadCount, -subscription.unreadCount);
+  } else {
+    // Fallback: invalidate broadly when we don't have subscription data
+    utils.subscriptions.list.invalidate();
+    utils.tags.list.invalidate();
+    utils.entries.count.invalidate();
+  }
+
+  // Always invalidate entries.list - entries from this subscription should be filtered out
   utils.entries.list.invalidate();
-  utils.tags.list.invalidate();
-  utils.entries.count.invalidate();
 }
 
 /**
