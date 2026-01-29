@@ -5,6 +5,7 @@ import {
   normalizeGoogleDocsUrl,
   fetchGoogleDocsFromUrl,
 } from "@/server/google/docs";
+import { wrapHtmlFragment } from "@/server/http/html";
 import { logger } from "@/lib/logger";
 
 /**
@@ -48,10 +49,11 @@ export const googleDocsPlugin: UrlPlugin = {
 
           // Normalize the URL to use as canonical
           const canonical = normalizeGoogleDocsUrl(url.href);
+          const title = content.title || null;
 
           return {
-            html: content.html,
-            title: content.title || null,
+            html: wrapHtmlFragment(content.html, title),
+            title,
             author: content.author || null,
             publishedAt: content.modifiedAt || null,
             canonicalUrl: canonical,

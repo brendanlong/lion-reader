@@ -60,3 +60,18 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+/**
+ * Wraps an HTML fragment in a full document structure.
+ *
+ * Used by plugins that return content fragments (e.g., from APIs) to ensure
+ * consistent document structure for metadata extraction and Readability.
+ *
+ * @param html - The HTML fragment to wrap
+ * @param title - Optional title for the document
+ * @returns A complete HTML document
+ */
+export function wrapHtmlFragment(html: string, title?: string | null): string {
+  const titleTag = title ? `<title>${escapeHtml(title)}</title>` : "";
+  return `<!DOCTYPE html><html><head>${titleTag}</head><body>${html}</body></html>`;
+}
