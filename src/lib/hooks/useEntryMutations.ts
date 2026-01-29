@@ -1,7 +1,7 @@
 /**
  * useEntryMutations Hook
  *
- * Provides entry mutations (markRead, star, unstar) with direct cache updates.
+ * Provides entry mutations (markRead, star, unstar, setScore) with direct cache updates.
  * Consolidates mutation logic from page components.
  *
  * Uses high-level cache operations that handle all interactions correctly
@@ -14,7 +14,12 @@ import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleEntriesMarkedRead, handleEntryStarred, handleEntryUnstarred } from "@/lib/cache";
+import {
+  handleEntriesMarkedRead,
+  handleEntryStarred,
+  handleEntryUnstarred,
+  handleEntryScoreChanged,
+} from "@/lib/cache";
 
 /**
  * Entry type for routing.
@@ -38,13 +43,15 @@ export interface MarkAllReadOptions {
 export interface UseEntryMutationsResult {
   /**
    * Mark one or more entries as read or unread.
+   * @param fromList - If true, sets implicit score signal (mark-read-on-list)
    */
-  markRead: (ids: string[], read: boolean) => void;
+  markRead: (ids: string[], read: boolean, fromList?: boolean) => void;
 
   /**
    * Toggle the read status of an entry.
+   * @param fromList - If true, sets implicit score signal (mark-read-on-list)
    */
-  toggleRead: (entryId: string, currentlyRead: boolean) => void;
+  toggleRead: (entryId: string, currentlyRead: boolean, fromList?: boolean) => void;
 
   /**
    * Mark all entries as read with optional filters.
@@ -65,6 +72,11 @@ export interface UseEntryMutationsResult {
    * Toggle the starred status of an entry.
    */
   toggleStar: (entryId: string, currentlyStarred: boolean) => void;
+
+  /**
+   * Set the explicit score for an entry (-2 to +2, or null to clear).
+   */
+  setScore: (entryId: string, score: number | null) => void;
 
   /**
    * Whether any mutation is currently in progress.
@@ -109,9 +121,14 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const queryClient = useQueryClient();
 
   // markRead mutation - uses handleEntriesMarkedRead for all cache updates
+  // Also updates score cache since marking read/unread sets implicit signal flags
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: (data, variables) => {
       handleEntriesMarkedRead(utils, data.entries, variables.read, queryClient);
+      // Update score cache for each entry (implicit signals changed)
+      for (const entry of data.entries) {
+        handleEntryScoreChanged(utils, entry.id, entry.score, entry.implicitScore, queryClient);
+      }
     },
     onError: () => {
       toast.error("Failed to update read status");
@@ -143,9 +160,17 @@ export function useEntryMutations(): UseEntryMutationsResult {
   });
 
   // star mutation - uses handleEntryStarred for all cache updates
+  // Also updates score cache since starring sets hasStarred implicit signal
   const starMutation = trpc.entries.star.useMutation({
     onSuccess: (data) => {
       handleEntryStarred(utils, data.entry.id, data.entry.read, queryClient);
+      handleEntryScoreChanged(
+        utils,
+        data.entry.id,
+        data.entry.score,
+        data.entry.implicitScore,
+        queryClient
+      );
     },
     onError: () => {
       toast.error("Failed to star entry");
@@ -156,29 +181,54 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const unstarMutation = trpc.entries.unstar.useMutation({
     onSuccess: (data) => {
       handleEntryUnstarred(utils, data.entry.id, data.entry.read, queryClient);
+      handleEntryScoreChanged(
+        utils,
+        data.entry.id,
+        data.entry.score,
+        data.entry.implicitScore,
+        queryClient
+      );
     },
     onError: () => {
       toast.error("Failed to unstar entry");
     },
   });
 
+  // setScore mutation - updates score cache only (no count changes)
+  const setScoreMutation = trpc.entries.setScore.useMutation({
+    onSuccess: (data) => {
+      handleEntryScoreChanged(
+        utils,
+        data.entry.id,
+        data.entry.score,
+        data.entry.implicitScore,
+        queryClient
+      );
+    },
+    onError: () => {
+      toast.error("Failed to update score");
+    },
+  });
+
   // Generate timestamp at action time for idempotent updates
   const markRead = useCallback(
-    (ids: string[], read: boolean) => {
+    (ids: string[], read: boolean, fromList?: boolean) => {
       const changedAt = new Date();
       markReadMutation.mutate({
         entries: ids.map((id) => ({ id, changedAt })),
         read,
+        fromList: fromList || undefined,
       });
     },
     [markReadMutation]
   );
 
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => {
+    (entryId: string, currentlyRead: boolean, fromList?: boolean) => {
       markReadMutation.mutate({
         entries: [{ id: entryId, changedAt: new Date() }],
         read: !currentlyRead,
+        fromList: fromList || undefined,
       });
     },
     [markReadMutation]
@@ -217,11 +267,19 @@ export function useEntryMutations(): UseEntryMutationsResult {
     [starMutation, unstarMutation]
   );
 
+  const setScore = useCallback(
+    (entryId: string, score: number | null) => {
+      setScoreMutation.mutate({ id: entryId, score, changedAt: new Date() });
+    },
+    [setScoreMutation]
+  );
+
   const isPending =
     markReadMutation.isPending ||
     markAllReadMutation.isPending ||
     starMutation.isPending ||
-    unstarMutation.isPending;
+    unstarMutation.isPending ||
+    setScoreMutation.isPending;
 
   return useMemo(
     () => ({
@@ -231,6 +289,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
       star,
       unstar,
       toggleStar,
+      setScore,
       isPending,
       isMarkReadPending: markReadMutation.isPending,
       isMarkAllReadPending: markAllReadMutation.isPending,
@@ -243,6 +302,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
       star,
       unstar,
       toggleStar,
+      setScore,
       isPending,
       markReadMutation.isPending,
       markAllReadMutation.isPending,

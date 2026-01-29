@@ -50,7 +50,7 @@ interface InfiniteData {
 export function updateEntriesInListCache(
   queryClient: QueryClient,
   entryIds: string[],
-  updates: Partial<{ read: boolean; starred: boolean }>
+  updates: Partial<{ read: boolean; starred: boolean; score: number | null; implicitScore: number }>
 ): void {
   const entryIdSet = new Set(entryIds);
 
@@ -141,6 +141,38 @@ export function updateEntryStarredStatus(
 }
 
 /**
+ * Updates score fields for an entry in caches.
+ * Updates both entries.get (single entry) and entries.list (all lists) caches.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param entryId - Entry ID to update
+ * @param score - New explicit score (null to clear)
+ * @param implicitScore - New implicit score
+ * @param queryClient - React Query client (optional, needed for list cache updates)
+ */
+export function updateEntryScoreInCache(
+  utils: TRPCClientUtils,
+  entryId: string,
+  score: number | null,
+  implicitScore: number,
+  queryClient?: QueryClient
+): void {
+  // Update entries.get cache
+  utils.entries.get.setData({ id: entryId }, (oldData) => {
+    if (!oldData) return oldData;
+    return {
+      ...oldData,
+      entry: { ...oldData.entry, score, implicitScore },
+    };
+  });
+
+  // Update entries in all cached list queries (if queryClient provided)
+  if (queryClient) {
+    updateEntriesInListCache(queryClient, [entryId], { score, implicitScore });
+  }
+}
+
+/**
  * Entry data from the list (lightweight, no content).
  */
 export interface EntryListItem {
@@ -157,6 +189,8 @@ export interface EntryListItem {
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
+  score: number | null;
+  implicitScore: number;
 }
 
 /**
@@ -375,6 +409,8 @@ interface EntryListItemForPlaceholder {
   starred: boolean;
   feedTitle: string | null;
   siteName: string | null;
+  score: number | null;
+  implicitScore: number;
 }
 
 /**

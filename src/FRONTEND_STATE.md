@@ -26,10 +26,11 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Entry Cache (`entry-cache.ts`)
 
-| Function                   | Purpose                                                  |
-| -------------------------- | -------------------------------------------------------- |
-| `updateEntriesReadStatus`  | Updates `entries.get` cache + invalidates `entries.list` |
-| `updateEntryStarredStatus` | Updates `entries.get` cache + invalidates `entries.list` |
+| Function                   | Purpose                                                       |
+| -------------------------- | ------------------------------------------------------------- |
+| `updateEntriesReadStatus`  | Updates `entries.get` cache + `entries.list` in-place         |
+| `updateEntryStarredStatus` | Updates `entries.get` cache + `entries.list` in-place         |
+| `updateEntryScoreInCache`  | Updates score/implicitScore in `entries.get` + `entries.list` |
 
 ### Count Cache (`count-cache.ts`)
 
@@ -109,10 +110,11 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 | Mutation                   | Used In             | Cache Updates                                                                                                                         |
 | -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `subscriptions.list` counts, `tags.list` counts. Invalidate: `entries.list`                                    |
+| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `subscriptions.list` counts, `tags.list` counts, entry scores (implicit signals). Invalidate: `entries.list`   |
 | `entries.markAllRead`      | `useEntryMutations` | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count({ starredOnly: true })` (bulk operation, count unknown) |
-| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.count({ starredOnly: true })`. Invalidate: `entries.list`                                             |
-| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.count({ starredOnly: true })`. Invalidate: `entries.list`                                             |
+| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.count({ starredOnly: true })`, entry scores (implicit +2). Invalidate: `entries.list`                 |
+| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.count({ starredOnly: true })`, entry scores. Invalidate: `entries.list`                               |
+| `entries.setScore`         | `useEntryMutations` | Direct: `entries.get`, entry scores                                                                                                   |
 | `entries.fetchFullContent` | `EntryContent`      | Invalidate: `entries.get({ id })`                                                                                                     |
 
 ### Subscription Mutations
@@ -232,13 +234,15 @@ Returns entries with all context needed for cache updates:
     subscriptionId: string | null; // For subscription/tag count updates
     starred: boolean; // For starred unread count updates
     type: "web" | "email" | "saved"; // For saved count updates
+    score: number | null; // Explicit score for display
+    implicitScore: number; // Implicit score from actions (star, mark-unread, mark-read-on-list)
   }>;
 }
 ```
 
 ### entries.star / entries.unstar
 
-Returns the updated entry with read status:
+Returns the updated entry with read status and scores:
 
 ```typescript
 // Response
@@ -247,6 +251,25 @@ Returns the updated entry with read status:
     id: string;
     read: boolean; // For starred unread count updates
     starred: boolean;
+    score: number | null; // Explicit score for display
+    implicitScore: number; // Implicit score (starring sets hasStarred = implicit +2)
+  }
+}
+```
+
+### entries.setScore
+
+Returns the updated entry with score fields:
+
+```typescript
+// Response
+{
+  entry: {
+    id: string;
+    read: boolean;
+    starred: boolean;
+    score: number | null; // Explicit score (-2 to +2, or null to clear)
+    implicitScore: number; // Implicit score from actions
   }
 }
 ```

@@ -68,6 +68,8 @@ export interface EntryListItem {
   starred: boolean;
   feedTitle: string | null;
   siteName: string | null;
+  score: number | null;
+  implicitScore: number;
 }
 
 export interface EntryFull {
@@ -88,6 +90,8 @@ export interface EntryFull {
   feedTitle: string | null;
   feedUrl: string | null;
   siteName: string | null;
+  score: number | null;
+  implicitScore: number;
 }
 
 export interface EntryState {
@@ -110,6 +114,32 @@ export interface MarkReadResult {
   entries: EntryState[];
   subscriptionUnreadCounts: SubscriptionUnreadCount[];
   tagUnreadCounts: TagUnreadCount[];
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Computes the implicit score from boolean signal flags and entry type.
+ *
+ * Priority: starred (+2) > unread (+1) > read-on-list (-1) > saved default (+1) > default (0)
+ *
+ * Saved articles default to +1 because the user explicitly saved them, indicating interest.
+ * Other signals apply on top, so a saved article marked read from list becomes -1.
+ */
+export function computeImplicitScore(
+  hasStarred: boolean,
+  hasMarkedUnread: boolean,
+  hasMarkedReadOnList: boolean,
+  type?: "web" | "email" | "saved"
+): number {
+  if (hasStarred) return 2;
+  if (hasMarkedUnread) return 1;
+  if (hasMarkedReadOnList) return -1;
+  // Saved articles default to +1 since user explicitly saved them
+  if (type === "saved") return 1;
+  return 0;
 }
 
 // ============================================================================
@@ -256,6 +286,10 @@ export async function listEntries(
       subscriptionId: visibleEntries.subscriptionId,
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
+      score: visibleEntries.score,
+      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+      hasMarkedUnread: visibleEntries.hasMarkedUnread,
+      hasStarred: visibleEntries.hasStarred,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -281,6 +315,13 @@ export async function listEntries(
     starred: row.starred,
     feedTitle: row.feedTitle,
     siteName: row.siteName,
+    score: row.score,
+    implicitScore: computeImplicitScore(
+      row.hasStarred,
+      row.hasMarkedUnread,
+      row.hasMarkedReadOnList,
+      row.type
+    ),
   }));
 
   let nextCursor: string | undefined;
@@ -386,6 +427,10 @@ export async function searchEntries(
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
       rank: rankColumn,
+      score: visibleEntries.score,
+      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+      hasMarkedUnread: visibleEntries.hasMarkedUnread,
+      hasStarred: visibleEntries.hasStarred,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -411,6 +456,13 @@ export async function searchEntries(
     starred: row.starred,
     feedTitle: row.feedTitle,
     siteName: row.siteName,
+    score: row.score,
+    implicitScore: computeImplicitScore(
+      row.hasStarred,
+      row.hasMarkedUnread,
+      row.hasMarkedReadOnList,
+      row.type
+    ),
   }));
 
   let nextCursor: string | undefined;
@@ -449,6 +501,10 @@ export async function getEntry(
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
       feedUrl: feeds.url,
+      score: visibleEntries.score,
+      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+      hasMarkedUnread: visibleEntries.hasMarkedUnread,
+      hasStarred: visibleEntries.hasStarred,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -459,7 +515,17 @@ export async function getEntry(
     throw errors.entryNotFound();
   }
 
-  return result[0];
+  const row = result[0];
+  return {
+    ...row,
+    score: row.score,
+    implicitScore: computeImplicitScore(
+      row.hasStarred,
+      row.hasMarkedUnread,
+      row.hasMarkedReadOnList,
+      row.type
+    ),
+  };
 }
 
 /**
@@ -693,5 +759,83 @@ export async function countEntries(
   return {
     total: result[0]?.total ?? 0,
     unread: result[0]?.unread ?? 0,
+  };
+}
+
+/**
+ * Score state returned from score mutations.
+ */
+export interface ScoreState {
+  id: string;
+  read: boolean;
+  starred: boolean;
+  score: number | null;
+  implicitScore: number;
+}
+
+/**
+ * Sets the explicit score for an entry.
+ *
+ * Uses idempotent updates: only applies if changedAt is newer than the stored
+ * score_changed_at timestamp (or if score has never been set).
+ *
+ * @param score - The score to set (-2 to +2), or null to clear explicit vote
+ * @param changedAt - When the user initiated the action. Defaults to now.
+ */
+export async function setEntryScore(
+  db: typeof dbType,
+  userId: string,
+  entryId: string,
+  score: number | null,
+  changedAt: Date = new Date()
+): Promise<ScoreState> {
+  // Conditional update: only apply if incoming timestamp is newer or score never set
+  await db
+    .update(userEntries)
+    .set({
+      score,
+      scoreChangedAt: changedAt,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(userEntries.userId, userId),
+        eq(userEntries.entryId, entryId),
+        sql`(${userEntries.scoreChangedAt} IS NULL OR ${userEntries.scoreChangedAt} <= ${changedAt})`
+      )
+    );
+
+  // Always return final state (join with entries to get type for implicit score)
+  const result = await db
+    .select({
+      id: userEntries.entryId,
+      read: userEntries.read,
+      starred: userEntries.starred,
+      score: userEntries.score,
+      hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
+      hasMarkedUnread: userEntries.hasMarkedUnread,
+      hasStarred: userEntries.hasStarred,
+      type: entries.type,
+    })
+    .from(userEntries)
+    .innerJoin(entries, eq(userEntries.entryId, entries.id))
+    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+
+  if (result.length === 0) {
+    throw errors.entryNotFound();
+  }
+
+  const row = result[0];
+  return {
+    id: row.id,
+    read: row.read,
+    starred: row.starred,
+    score: row.score,
+    implicitScore: computeImplicitScore(
+      row.hasStarred,
+      row.hasMarkedUnread,
+      row.hasMarkedReadOnList,
+      row.type
+    ),
   };
 }

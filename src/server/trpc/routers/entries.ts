@@ -103,6 +103,8 @@ const entryListItemSchema = z.object({
   starred: z.boolean(),
   feedTitle: z.string().nullable(),
   siteName: z.string().nullable(),
+  score: z.number().nullable(),
+  implicitScore: z.number(),
 });
 
 /**
@@ -131,6 +133,9 @@ const entryFullSchema = z.object({
   fullContentCleaned: z.string().nullable(),
   fullContentFetchedAt: z.date().nullable(),
   fullContentError: z.string().nullable(),
+  // Score fields
+  score: z.number().nullable(),
+  implicitScore: z.number(),
 });
 
 /**
@@ -149,6 +154,8 @@ const entryMutationResultSchema = z.object({
   id: z.string(),
   read: z.boolean(),
   starred: z.boolean(),
+  score: z.number().nullable(),
+  implicitScore: z.number(),
 });
 
 /**
@@ -216,15 +223,29 @@ async function updateEntryStarred(
   entryId: string,
   starred: boolean,
   changedAt: Date = new Date()
-): Promise<{ id: string; read: boolean; starred: boolean }> {
+): Promise<{
+  id: string;
+  read: boolean;
+  starred: boolean;
+  score: number | null;
+  implicitScore: number;
+}> {
+  // Build SET clause, including hasStarred flag when starring
+  const setClause: Record<string, unknown> = {
+    starred,
+    starredChangedAt: changedAt,
+    updatedAt: new Date(),
+  };
+
+  // Set implicit signal flag when starring (not when unstarring)
+  if (starred) {
+    setClause.hasStarred = true;
+  }
+
   // Conditional update: only apply if incoming timestamp is newer
   await ctx.db
     .update(userEntries)
-    .set({
-      starred,
-      starredChangedAt: changedAt,
-      updatedAt: new Date(),
-    })
+    .set(setClause)
     .where(
       and(
         eq(userEntries.userId, userId),
@@ -233,21 +254,39 @@ async function updateEntryStarred(
       )
     );
 
-  // Always return final state
+  // Always return final state (join with entries to get type for implicit score)
   const result = await ctx.db
     .select({
       id: userEntries.entryId,
       read: userEntries.read,
       starred: userEntries.starred,
+      score: userEntries.score,
+      hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
+      hasMarkedUnread: userEntries.hasMarkedUnread,
+      hasStarred: userEntries.hasStarred,
+      type: entries.type,
     })
     .from(userEntries)
+    .innerJoin(entries, eq(userEntries.entryId, entries.id))
     .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 
   if (result.length === 0) {
     throw errors.entryNotFound();
   }
 
-  return result[0];
+  const row = result[0];
+  return {
+    id: row.id,
+    read: row.read,
+    starred: row.starred,
+    score: row.score,
+    implicitScore: entriesService.computeImplicitScore(
+      row.hasStarred,
+      row.hasMarkedUnread,
+      row.hasMarkedReadOnList,
+      row.type
+    ),
+  };
 }
 
 // ============================================================================
@@ -373,6 +412,10 @@ export const entriesRouter = createTRPCRouter({
           fullContentCleaned: visibleEntries.fullContentCleaned,
           fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
           fullContentError: visibleEntries.fullContentError,
+          score: visibleEntries.score,
+          hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+          hasMarkedUnread: visibleEntries.hasMarkedUnread,
+          hasStarred: visibleEntries.hasStarred,
         })
         .from(visibleEntries)
         .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -408,6 +451,13 @@ export const entriesRouter = createTRPCRouter({
           fullContentCleaned: entry.fullContentCleaned,
           fullContentFetchedAt: entry.fullContentFetchedAt,
           fullContentError: entry.fullContentError,
+          score: entry.score,
+          implicitScore: entriesService.computeImplicitScore(
+            entry.hasStarred,
+            entry.hasMarkedUnread,
+            entry.hasMarkedReadOnList,
+            entry.type
+          ),
         },
       };
     }),
@@ -446,6 +496,8 @@ export const entriesRouter = createTRPCRouter({
           .min(1, "At least one entry is required")
           .max(1000, "Maximum 1000 entries per request"),
         read: z.boolean(),
+        // Implicit score signal: set when marking read from the entry list
+        fromList: z.boolean().optional(),
       })
     )
     .output(
@@ -459,6 +511,8 @@ export const entriesRouter = createTRPCRouter({
             subscriptionId: z.string().nullable(),
             starred: z.boolean(), // For updating starred unread count
             type: feedTypeSchema, // For updating saved/email counts
+            score: z.number().nullable(), // For updating score display
+            implicitScore: z.number(), // For updating score display
           })
         ),
       })
@@ -466,6 +520,21 @@ export const entriesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
+
+      // Build the SET clause, optionally including implicit signal flags
+      const setClause: Record<string, unknown> = {
+        read: input.read,
+        updatedAt: now,
+      };
+
+      // Set implicit score signals based on the action and source
+      if (input.read && input.fromList) {
+        // Marking read from the entry list → implicit -1
+        setClause.hasMarkedReadOnList = true;
+      } else if (!input.read) {
+        // Marking unread from anywhere → implicit +1
+        setClause.hasMarkedUnread = true;
+      }
 
       // Group entries by timestamp for efficient batch updates
       // Most cases (interactive use) will have all entries with same/no timestamp
@@ -483,9 +552,8 @@ export const entriesRouter = createTRPCRouter({
         await ctx.db
           .update(userEntries)
           .set({
-            read: input.read,
+            ...setClause,
             readChangedAt: changedAt,
-            updatedAt: now,
           })
           .where(
             and(
@@ -504,6 +572,10 @@ export const entriesRouter = createTRPCRouter({
           subscriptionId: visibleEntries.subscriptionId,
           starred: visibleEntries.starred,
           type: visibleEntries.type,
+          score: visibleEntries.score,
+          hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+          hasMarkedUnread: visibleEntries.hasMarkedUnread,
+          hasStarred: visibleEntries.hasStarred,
         })
         .from(visibleEntries)
         .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
@@ -516,6 +588,13 @@ export const entriesRouter = createTRPCRouter({
           subscriptionId: e.subscriptionId,
           starred: e.starred,
           type: e.type,
+          score: e.score,
+          implicitScore: entriesService.computeImplicitScore(
+            e.hasStarred,
+            e.hasMarkedUnread,
+            e.hasMarkedReadOnList,
+            e.type
+          ),
         })),
       };
     }),
@@ -747,6 +826,48 @@ export const entriesRouter = createTRPCRouter({
     }),
 
   /**
+   * Set the explicit score for an entry.
+   *
+   * Score values: -2, -1, 0, 1, 2, or null to clear the explicit vote.
+   * Uses idempotent timestamp-based updates.
+   *
+   * @param id - The entry ID
+   * @param score - The score to set (-2 to +2), or null to clear
+   * @returns The updated entry with score state
+   */
+  setScore: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/entries/{id}/score",
+        tags: ["Entries"],
+        summary: "Set entry score",
+      },
+    })
+    .input(
+      z.object({
+        id: uuidSchema,
+        score: z.number().int().min(-2).max(2).nullable(),
+        changedAt: z.coerce.date().optional(),
+      })
+    )
+    .output(
+      z.object({
+        entry: entryMutationResultSchema,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const entry = await entriesService.setEntryScore(
+        ctx.db,
+        ctx.session.user.id,
+        input.id,
+        input.score,
+        input.changedAt ?? new Date()
+      );
+      return { entry };
+    }),
+
+  /**
    * Get count of entries with optional filters.
    *
    * Entries are visible to a user only if they have a corresponding
@@ -865,6 +986,10 @@ export const entriesRouter = createTRPCRouter({
           fullContentError: visibleEntries.fullContentError,
           feedTitle: feeds.title,
           feedUrl: feeds.url,
+          score: visibleEntries.score,
+          hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+          hasMarkedUnread: visibleEntries.hasMarkedUnread,
+          hasStarred: visibleEntries.hasStarred,
         })
         .from(visibleEntries)
         .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -875,7 +1000,18 @@ export const entriesRouter = createTRPCRouter({
         throw errors.entryNotFound();
       }
 
-      const entry = existingEntry[0];
+      const rawEntry = existingEntry[0];
+      const implicitScore = entriesService.computeImplicitScore(
+        rawEntry.hasStarred,
+        rawEntry.hasMarkedUnread,
+        rawEntry.hasMarkedReadOnList,
+        rawEntry.type
+      );
+      // Strip boolean flags from the entry, compute implicitScore
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { hasMarkedReadOnList, hasMarkedUnread, hasStarred, contentHash, ...entryFields } =
+        rawEntry;
+      const entry = { ...entryFields, implicitScore, contentHash };
 
       // Check if entry has a URL to fetch
       if (!entry.url) {

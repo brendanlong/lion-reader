@@ -60,6 +60,7 @@ import { useImagePrefetch } from "@/lib/hooks";
 import { formatDate, getDomain, SWIPE_CONFIG } from "./EntryContentHelpers";
 import { ContentSkeleton } from "./EntryContentStates";
 import { EntryContentRenderer } from "./EntryContentRenderer";
+import { VoteControls } from "./VoteControls";
 
 // Re-export components and helpers for backwards compatibility
 export { EntryContentSkeleton, EntryContentError } from "./EntryContentStates";
@@ -148,6 +149,13 @@ export interface EntryContentBodyProps {
   onSummaryRegenerate?: () => void;
   /** Whether the main content is still loading (for progressive rendering) */
   isContentLoading?: boolean;
+  // Score fields
+  /** The explicit score (null if not voted) */
+  score?: number | null;
+  /** The implicit score (computed from actions) */
+  implicitScore?: number;
+  /** Callback when vote score changes */
+  onSetScore?: (score: number | null) => void;
 }
 
 /**
@@ -194,6 +202,10 @@ export function EntryContentBody({
   onSummaryRegenerate,
   // Progressive loading
   isContentLoading,
+  // Score props
+  score,
+  implicitScore,
+  onSetScore,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -401,48 +413,70 @@ export function EntryContentBody({
 
       {/* Header */}
       <header className="mb-6 sm:mb-8">
-        {/* Title */}
-        {url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ui-text-xl sm:ui-text-2xl mb-3 block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:text-blue-600 hover:underline sm:mb-4 md:text-3xl dark:text-zinc-100 dark:hover:text-blue-400"
-          >
-            {title}
-          </a>
-        ) : (
-          <h1 className="ui-text-xl sm:ui-text-2xl mb-3 leading-tight font-bold text-zinc-900 sm:mb-4 md:text-3xl dark:text-zinc-100">
-            {title}
-          </h1>
-        )}
+        {/* Title row: title+meta on left, vote controls on right */}
+        <div className="mb-4 flex gap-4 sm:mb-6">
+          {/* Left column: title and meta */}
+          <div className="min-w-0 flex-1">
+            {/* Title */}
+            <div className="mb-2">
+              {url ? (
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ui-text-xl sm:ui-text-2xl block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:text-blue-600 hover:underline md:text-3xl dark:text-zinc-100 dark:hover:text-blue-400"
+                >
+                  {title}
+                </a>
+              ) : (
+                <h1 className="ui-text-xl sm:ui-text-2xl leading-tight font-bold text-zinc-900 md:text-3xl dark:text-zinc-100">
+                  {title}
+                </h1>
+              )}
+            </div>
 
-        {/* Meta row: Source, Author, Date */}
-        <div className="ui-text-xs sm:ui-text-sm mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:mb-6 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
-          <span className="font-medium">{source}</span>
-          {author && (
-            <>
+            {/* Meta row: Source, Author, Date */}
+            <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
+              <span className="font-medium">{source}</span>
+              {author && (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
+                  >
+                    |
+                  </span>
+                  <span className="hidden sm:inline">by {author}</span>
+                  <span className="sm:hidden">- {author}</span>
+                </>
+              )}
               <span
                 aria-hidden="true"
                 className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
               >
                 |
               </span>
-              <span className="hidden sm:inline">by {author}</span>
-              <span className="sm:hidden">- {author}</span>
-            </>
+              <time dateTime={date.toISOString()} className="basis-full sm:basis-auto">
+                {datePrefix ? `${datePrefix} ` : ""}
+                {formatDate(date)}
+              </time>
+            </div>
+          </div>
+
+          {/* Right column: vote controls, aligned so score is at title level */}
+          {onSetScore && (
+            <div className="-mt-[24px] shrink-0">
+              <VoteControls
+                score={score ?? null}
+                implicitScore={implicitScore ?? 0}
+                onSetScore={onSetScore}
+              />
+            </div>
           )}
-          <span aria-hidden="true" className="hidden text-zinc-400 sm:inline dark:text-zinc-600">
-            |
-          </span>
-          <time dateTime={date.toISOString()} className="basis-full sm:basis-auto">
-            {datePrefix ? `${datePrefix} ` : ""}
-            {formatDate(date)}
-          </time>
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-wrap gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Star button */}
           <Button
             variant={starred ? "primary" : "secondary"}
@@ -468,7 +502,7 @@ export function EntryContentBody({
             title="Keyboard shortcut: m"
           >
             {read ? <CircleIcon className="h-4 w-4" /> : <CircleFilledIcon className="h-4 w-4" />}
-            <span className="ml-2">{read ? "Mark Unread" : "Mark Read"}</span>
+            <span className="ml-2">{read ? "Read" : "Unread"}</span>
           </Button>
 
           {/* Content view toggle - only show when both versions exist and not showing full content */}
@@ -516,24 +550,9 @@ export function EntryContentBody({
                   <AlertIcon className="h-4 w-4" />
                   <span className="ml-2">Retry Fetch</span>
                 </>
-              ) : fetchFullContent ? (
-                <span>Full Content</span>
               ) : (
-                <span>Fetch Full Content</span>
+                <span>Full Content</span>
               )}
-            </Button>
-          )}
-
-          {/* Original article link */}
-          {url && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
-              aria-label="Open original article in new tab"
-            >
-              <ExternalLinkIcon className="h-4 w-4" />
-              <span className="ml-2">View Original</span>
             </Button>
           )}
 
