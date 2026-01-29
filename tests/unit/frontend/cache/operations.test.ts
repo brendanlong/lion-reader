@@ -270,14 +270,15 @@ describe("handleSubscriptionCreated", () => {
     expect(setDataOps.length).toBeGreaterThan(0);
   });
 
-  it("invalidates tags.list cache", () => {
+  it("directly updates tags.list cache", () => {
     const subscription = createSubscription();
     handleSubscriptionCreated(mockUtils.utils, subscription);
 
-    const invalidateOps = mockUtils.operations.filter(
-      (op) => op.type === "invalidate" && op.router === "tags" && op.procedure === "list"
+    // Should use setData instead of invalidate for direct cache update
+    const setDataOps = mockUtils.operations.filter(
+      (op) => op.type === "setData" && op.router === "tags" && op.procedure === "list"
     );
-    expect(invalidateOps.length).toBe(1);
+    expect(setDataOps.length).toBe(1);
   });
 
   it("adds subscription with tags to cache", () => {
