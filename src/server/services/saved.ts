@@ -49,6 +49,8 @@ export interface CreateUploadedArticleParams {
   excerpt?: string | null;
   /** Site name to display (e.g., "Uploaded Document", "Uploaded Markdown") */
   siteName: string;
+  /** Author (optional) */
+  author?: string | null;
 }
 
 export interface SavedArticle {
@@ -278,7 +280,12 @@ export async function saveArticle(
   }
 
   // Track Markdown processing results (skip Readability for Markdown)
-  let markdownResult: { html: string; title: string | null; summary: string | null } | null = null;
+  let markdownResult: {
+    html: string;
+    title: string | null;
+    summary: string | null;
+    author: string | null;
+  } | null = null;
 
   // Fall back to normal HTML fetch if no plugin or plugin failed
   if (!pluginContent) {
@@ -341,7 +348,8 @@ export async function saveArticle(
     metadata.title ||
     cleaned?.title ||
     null;
-  const finalAuthor = pluginContent?.author || metadata.author || cleaned?.byline || null;
+  const finalAuthor =
+    pluginContent?.author || markdownResult?.author || metadata.author || cleaned?.byline || null;
   const finalSiteName = pluginContent?.siteName || metadata.siteName;
 
   // Compute content hash for narration deduplication
@@ -479,7 +487,7 @@ export async function createUploadedArticle(
     guid,
     url: null, // Uploaded articles don't have URLs
     title: params.title,
-    author: null,
+    author: params.author ?? null,
     contentOriginal: params.contentHtml, // Store processed content as original too
     contentCleaned: params.contentHtml,
     summary: excerpt,
@@ -519,7 +527,7 @@ export async function createUploadedArticle(
     url: null,
     title: params.title,
     siteName: params.siteName,
-    author: null,
+    author: params.author ?? null,
     imageUrl: null,
     contentCleaned: params.contentHtml,
     excerpt,
@@ -540,11 +548,12 @@ export async function uploadArticle(
   userId: string,
   params: UploadArticleParams
 ): Promise<SavedArticle> {
-  // Convert markdown to HTML and extract title/summary from frontmatter or content
+  // Convert markdown to HTML and extract title/summary/author from frontmatter or content
   const {
     html: contentCleaned,
     title: extractedTitle,
     summary,
+    author,
   } = await processMarkdown(params.content);
 
   // Use provided title, falling back to extracted title
@@ -555,5 +564,6 @@ export async function uploadArticle(
     title: finalTitle,
     excerpt: summary,
     siteName: "Uploaded Article",
+    author,
   });
 }

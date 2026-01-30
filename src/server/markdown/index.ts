@@ -17,6 +17,8 @@ export interface Frontmatter {
   title?: string;
   /** Description/summary from frontmatter */
   description?: string;
+  /** Author from frontmatter */
+  author?: string;
   /** Raw frontmatter object for future extensibility */
   raw: Record<string, unknown>;
 }
@@ -73,6 +75,11 @@ export function extractFrontmatter(markdown: string): FrontmatterResult {
       frontmatter.description = parsed.description.trim();
     }
 
+    // Extract author if present and is a string
+    if (typeof parsed.author === "string" && parsed.author.trim()) {
+      frontmatter.author = parsed.author.trim();
+    }
+
     return { frontmatter, content: contentWithoutFrontmatter };
   } catch {
     // YAML parsing failed, treat as no frontmatter
@@ -106,6 +113,8 @@ export interface ProcessedMarkdown {
   title: string | null;
   /** Summary/description from frontmatter (if any) */
   summary: string | null;
+  /** Author from frontmatter (if any) */
+  author: string | null;
 }
 
 /**
@@ -138,9 +147,13 @@ export async function processMarkdown(markdown: string): Promise<ProcessedMarkdo
   // Summary comes from frontmatter description
   const summary = frontmatter?.description ?? null;
 
+  // Author comes from frontmatter
+  const author = frontmatter?.author ?? null;
+
   return {
     html: htmlWithoutHeader,
     title,
     summary,
+    author,
   };
 }

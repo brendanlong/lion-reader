@@ -52,10 +52,47 @@ Content.`;
     const result = extractFrontmatter(markdown);
     expect(result.frontmatter?.title).toBeUndefined();
     expect(result.frontmatter?.description).toBeUndefined();
+    expect(result.frontmatter?.author).toBe("John Doe");
     expect(result.frontmatter?.raw).toEqual({
       author: "John Doe",
       date: "2024-01-15",
     });
+  });
+
+  it("extracts author from frontmatter", () => {
+    const markdown = `---
+title: My Article
+author: Jane Smith
+---
+
+Content here.`;
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter?.title).toBe("My Article");
+    expect(result.frontmatter?.author).toBe("Jane Smith");
+  });
+
+  it("trims whitespace from author", () => {
+    const markdown = `---
+author: "  Padded Author  "
+---
+
+Content.`;
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter?.author).toBe("Padded Author");
+  });
+
+  it("handles empty author", () => {
+    const markdown = `---
+title: My Article
+author: ""
+---
+
+Content.`;
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter?.author).toBeUndefined();
   });
 
   it("handles Cloudflare docs style frontmatter", () => {
@@ -259,5 +296,53 @@ A serverless platform for building, deploying, and scaling apps across [Cloudfla
     expect(result.summary).toBe("With Cloudflare Workers, you can expect to:");
     expect(result.html).toContain("serverless platform");
     expect(result.html).toContain('<a href="https://www.cloudflare.com/network/">');
+  });
+
+  it("extracts author from frontmatter", async () => {
+    const markdown = `---
+title: My Article
+author: John Doe
+---
+
+Content here.`;
+
+    const result = await processMarkdown(markdown);
+    expect(result.author).toBe("John Doe");
+  });
+
+  it("returns null author when no author in frontmatter", async () => {
+    const markdown = `---
+title: My Article
+---
+
+Content here.`;
+
+    const result = await processMarkdown(markdown);
+    expect(result.author).toBeNull();
+  });
+
+  it("returns null author when no frontmatter", async () => {
+    const markdown = `# My Article
+
+Content here.`;
+
+    const result = await processMarkdown(markdown);
+    expect(result.author).toBeNull();
+  });
+
+  it("extracts all metadata from frontmatter", async () => {
+    const markdown = `---
+title: Complete Article
+description: A brief summary.
+author: Jane Smith
+---
+
+The full content of the article.`;
+
+    const result = await processMarkdown(markdown);
+    expect(result.title).toBe("Complete Article");
+    expect(result.summary).toBe("A brief summary.");
+    expect(result.author).toBe("Jane Smith");
+    expect(result.html).toContain("full content");
   });
 });
