@@ -133,10 +133,19 @@ export function EntryContent({
   // Mutation to fetch full content for the entry
   const fetchFullContentMutation = trpc.entries.fetchFullContent.useMutation({
     onSuccess: (result) => {
-      if (result.success) {
-        // Invalidate entry query to get the new content
+      // Update the entry cache with the returned data
+      // The mutation returns the updated entry with fullContentFetchedAt/fullContentError
+      if (result.entry) {
+        utils.entries.get.setData({ id: entryId }, (oldData) => {
+          if (!oldData) return oldData;
+          return { entry: { ...oldData.entry, ...result.entry } };
+        });
+      } else {
+        // Fallback: invalidate to refetch from server
         utils.entries.get.invalidate({ id: entryId });
-      } else if (result.error) {
+      }
+
+      if (!result.success && result.error) {
         toast.error("Failed to fetch full content", {
           description: result.error,
         });
