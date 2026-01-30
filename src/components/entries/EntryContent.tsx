@@ -325,7 +325,9 @@ export function EntryContent({
       <EntryContentBody
         articleId={entryId}
         title={entry.title ?? "Untitled"}
-        source={entry.feedTitle ?? "Unknown Feed"}
+        source={
+          (entry.type === "saved" ? entry.siteName : null) ?? entry.feedTitle ?? "Unknown Feed"
+        }
         author={entry.author}
         url={entry.url}
         date={entry.publishedAt ?? entry.fetchedAt}

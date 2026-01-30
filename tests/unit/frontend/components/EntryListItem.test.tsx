@@ -41,6 +41,7 @@ function createMockEntry(overrides: Partial<EntryListItemData> = {}): EntryListI
     read: false,
     starred: false,
     feedTitle: "Example Feed",
+    siteName: null,
     ...overrides,
   };
 }
@@ -73,6 +74,43 @@ describe("EntryListItem", () => {
       render(<EntryListItem entry={entry} />);
 
       expect(screen.getByText("Unknown Feed")).toBeInTheDocument();
+    });
+
+    it("renders siteName for saved articles instead of feedTitle", () => {
+      const entry = createMockEntry({
+        type: "saved",
+        feedTitle: "Saved Articles",
+        siteName: "arXiv",
+      });
+      render(<EntryListItem entry={entry} />);
+
+      // Should show siteName, not feedTitle
+      expect(screen.getByText("arXiv")).toBeInTheDocument();
+      expect(screen.queryByText("Saved Articles")).not.toBeInTheDocument();
+    });
+
+    it("falls back to feedTitle for saved articles when siteName is null", () => {
+      const entry = createMockEntry({
+        type: "saved",
+        feedTitle: "Saved Articles",
+        siteName: null,
+      });
+      render(<EntryListItem entry={entry} />);
+
+      expect(screen.getByText("Saved Articles")).toBeInTheDocument();
+    });
+
+    it("uses feedTitle for non-saved entries even when siteName is set", () => {
+      const entry = createMockEntry({
+        type: "web",
+        feedTitle: "Tech News",
+        siteName: "Example Site",
+      });
+      render(<EntryListItem entry={entry} />);
+
+      // Should show feedTitle for web entries, not siteName
+      expect(screen.getByText("Tech News")).toBeInTheDocument();
+      expect(screen.queryByText("Example Site")).not.toBeInTheDocument();
     });
 
     it("renders the summary when provided", () => {

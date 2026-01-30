@@ -53,6 +53,8 @@ export interface EntryListData {
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
+  /** Site name for saved articles (e.g., "arXiv", "LessWrong", extracted from og:site_name) */
+  siteName: string | null;
 }
 
 /**
@@ -239,6 +241,7 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
           read: entry.read,
           starred: entry.starred,
           feedTitle: entry.feedTitle,
+          siteName: entry.siteName,
         }))
       ) ?? []
     );

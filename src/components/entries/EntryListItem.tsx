@@ -29,6 +29,8 @@ export interface EntryListItemData {
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
+  /** Site name for saved articles (e.g., "arXiv", "LessWrong", extracted from og:site_name) */
+  siteName: string | null;
 }
 
 interface EntryListItemProps {
@@ -95,11 +97,14 @@ export const EntryListItem = memo(function EntryListItem({
     type,
     subscriptionId,
     feedTitle,
+    siteName,
     publishedAt,
     fetchedAt,
   } = entry;
   const displayTitle = title ?? "Untitled";
-  const source = feedTitle ?? "Unknown Feed";
+  // For saved articles, prefer siteName (extracted from page metadata) over feedTitle
+  // feedTitle for saved articles is always "Saved Articles" (the feed name)
+  const source = (type === "saved" ? siteName : null) ?? feedTitle ?? "Unknown Feed";
   const date = publishedAt ?? fetchedAt;
 
   const handleClick = () => {

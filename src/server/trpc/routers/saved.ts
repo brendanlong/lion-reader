@@ -869,6 +869,7 @@ export const savedRouter = createTRPCRouter({
         title: finalTitle,
         excerpt: processed.excerpt,
         siteName,
+        author: processed.author,
       });
 
       logger.info("Uploaded file saved", {

@@ -33,6 +33,8 @@ export interface ProcessedFile {
   excerpt: string | null;
   /** Extracted or derived title (from filename or content) */
   title: string | null;
+  /** Extracted author (from frontmatter, metadata, or Readability) */
+  author: string | null;
   /** Original file type */
   fileType: SupportedFileType;
 }
@@ -118,6 +120,7 @@ async function processDocx(buffer: Buffer, filename: string): Promise<ProcessedF
     contentCleaned,
     excerpt: excerpt || null,
     title: cleaned?.title || titleFromFilename(filename),
+    author: cleaned?.byline || null,
     fileType: "docx",
   };
 }
@@ -134,6 +137,7 @@ function processHtml(content: string, filename: string): ProcessedFile {
       contentCleaned: cleaned.content,
       excerpt: cleaned.excerpt || generateSummary(cleaned.content) || null,
       title: cleaned.title || titleFromFilename(filename),
+      author: cleaned.byline || null,
       fileType: "html",
     };
   }
@@ -143,6 +147,7 @@ function processHtml(content: string, filename: string): ProcessedFile {
     contentCleaned: content,
     excerpt: generateSummary(content) || null,
     title: titleFromFilename(filename),
+    author: null,
     fileType: "html",
   };
 }
@@ -150,14 +155,15 @@ function processHtml(content: string, filename: string): ProcessedFile {
 /**
  * Converts Markdown to HTML using marked.
  * Markdown content is kept as-is semantically, just rendered to HTML.
- * Supports YAML frontmatter for title and description extraction.
+ * Supports YAML frontmatter for title, description, and author extraction.
  */
 async function processMarkdown(content: string, filename: string): Promise<ProcessedFile> {
-  // Convert markdown to HTML and extract title/summary from frontmatter or content
+  // Convert markdown to HTML and extract title/summary/author from frontmatter or content
   const {
     html: contentCleaned,
     title: extractedTitle,
     summary: frontmatterSummary,
+    author,
   } = await convertMarkdown(content);
   const title = extractedTitle || titleFromFilename(filename);
 
@@ -168,6 +174,7 @@ async function processMarkdown(content: string, filename: string): Promise<Proce
     contentCleaned,
     excerpt: excerpt || null,
     title,
+    author,
     fileType: "markdown",
   };
 }
