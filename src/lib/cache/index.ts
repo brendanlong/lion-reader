@@ -26,8 +26,12 @@ export {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   handleNewEntry,
+  setCounts,
+  setBulkCounts,
   type EntryWithContext,
   type SubscriptionData,
+  type UnreadCounts,
+  type BulkUnreadCounts,
 } from "./operations";
 
 // Low-level helpers (for special cases)

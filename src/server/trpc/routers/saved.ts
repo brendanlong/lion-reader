@@ -48,6 +48,7 @@ import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/g
 import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth";
 import { logger } from "@/lib/logger";
 import { publishSavedArticleCreated, publishSavedArticleUpdated } from "@/server/redis/pubsub";
+import * as countsService from "@/server/services/counts";
 import {
   processUploadedFile,
   detectFileType,
@@ -91,6 +92,16 @@ const savedArticleFullSchema = z.object({
   read: z.boolean(),
   starred: z.boolean(),
   savedAt: z.date(),
+});
+
+/**
+ * Schema for unread counts returned from saved article mutations.
+ * Saved articles only affect all, starred, and saved counts (no subscription/tags).
+ */
+const savedUnreadCountsSchema = z.object({
+  all: z.object({ total: z.number(), unread: z.number() }),
+  starred: z.object({ total: z.number(), unread: z.number() }),
+  saved: z.object({ total: z.number(), unread: z.number() }),
 });
 
 // ============================================================================
@@ -228,7 +239,7 @@ export const savedRouter = createTRPCRouter({
         force: z.boolean().optional(),
       })
     )
-    .output(z.object({ article: savedArticleFullSchema }))
+    .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
@@ -267,6 +278,8 @@ export const savedRouter = createTRPCRouter({
         if (!input.refetch) {
           // Return existing article instead of error
           const { entry, userState } = existing[0];
+          // Get counts for existing entry
+          const counts = await countsService.getEntryRelatedCounts(ctx.db, userId, entry.id);
           return {
             article: {
               id: entry.id,
@@ -281,6 +294,11 @@ export const savedRouter = createTRPCRouter({
               read: userState.read,
               starred: userState.starred,
               savedAt: entry.fetchedAt,
+            },
+            counts: {
+              all: counts.all,
+              starred: counts.starred,
+              saved: counts.saved!,
             },
           };
         }
@@ -653,6 +671,9 @@ export const savedRouter = createTRPCRouter({
         // Publish event to notify other browser windows/tabs of the update
         await publishSavedArticleUpdated(userId, oldEntry.id);
 
+        // Get counts after update
+        const counts = await countsService.getEntryRelatedCounts(ctx.db, userId, oldEntry.id);
+
         return {
           article: {
             id: oldEntry.id,
@@ -667,6 +688,11 @@ export const savedRouter = createTRPCRouter({
             read: false, // Marked unread since content was updated
             starred: userState.starred,
             savedAt: oldEntry.fetchedAt, // Keep original save time
+          },
+          counts: {
+            all: counts.all,
+            starred: counts.starred,
+            saved: counts.saved!,
           },
         };
       }
@@ -710,6 +736,9 @@ export const savedRouter = createTRPCRouter({
       // Publish event to notify other browser windows/tabs
       await publishSavedArticleCreated(userId, entryId);
 
+      // Get counts after creating new entry
+      const counts = await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null);
+
       return {
         article: {
           id: entryId,
@@ -724,6 +753,11 @@ export const savedRouter = createTRPCRouter({
           read: false,
           starred: false,
           savedAt: now,
+        },
+        counts: {
+          all: counts.all,
+          starred: counts.starred,
+          saved: counts.saved!,
         },
       };
     }),
@@ -812,7 +846,7 @@ export const savedRouter = createTRPCRouter({
         title: z.string().optional(),
       })
     )
-    .output(z.object({ article: savedArticleFullSchema }))
+    .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
@@ -879,6 +913,9 @@ export const savedRouter = createTRPCRouter({
         title: finalTitle,
       });
 
+      // Get counts after creating new entry
+      const counts = await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null);
+
       return {
         article: {
           id: article.id,
@@ -893,6 +930,11 @@ export const savedRouter = createTRPCRouter({
           read: article.read,
           starred: article.starred,
           savedAt: article.savedAt,
+        },
+        counts: {
+          all: counts.all,
+          starred: counts.starred,
+          saved: counts.saved!,
         },
       };
     }),

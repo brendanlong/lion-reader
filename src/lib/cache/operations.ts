@@ -535,3 +535,189 @@ export function handleNewEntry(
     adjustEntriesCount(utils, { type: "saved" }, 1, 1);
   }
 }
+
+// ============================================================================
+// Absolute Count Updates (Server-Provided Counts)
+// ============================================================================
+
+/**
+ * Unread counts for a single entry, as returned by star/unstar mutations.
+ */
+export interface UnreadCounts {
+  all: { total: number; unread: number };
+  starred: { total: number; unread: number };
+  saved?: { total: number; unread: number };
+  subscription?: { id: string; unread: number };
+  tags?: Array<{ id: string; unread: number }>;
+  uncategorized?: { unread: number };
+}
+
+/**
+ * Bulk unread counts, as returned by markRead mutation.
+ */
+export interface BulkUnreadCounts {
+  all: { total: number; unread: number };
+  starred: { total: number; unread: number };
+  saved: { total: number; unread: number };
+  subscriptions: Array<{ id: string; unread: number }>;
+  tags: Array<{ id: string; unread: number }>;
+  uncategorized?: { unread: number };
+}
+
+/**
+ * Sets absolute counts from server response.
+ * Used by single-entry mutations (star, unstar) that return UnreadCounts.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param counts - Absolute counts from server
+ * @param queryClient - React Query client for updating infinite query caches
+ */
+export function setCounts(
+  utils: TRPCClientUtils,
+  counts: UnreadCounts,
+  queryClient?: QueryClient
+): void {
+  // Set global counts
+  utils.entries.count.setData({}, counts.all);
+  utils.entries.count.setData({ starredOnly: true }, counts.starred);
+
+  if (counts.saved) {
+    utils.entries.count.setData({ type: "saved" }, counts.saved);
+  }
+
+  // Set subscription unread count
+  if (counts.subscription) {
+    setSubscriptionUnreadCount(
+      utils,
+      counts.subscription.id,
+      counts.subscription.unread,
+      queryClient
+    );
+  }
+
+  // Set tag unread counts
+  if (counts.tags) {
+    for (const tag of counts.tags) {
+      setTagUnreadCount(utils, tag.id, tag.unread);
+    }
+  }
+
+  // Set uncategorized count
+  if (counts.uncategorized) {
+    setUncategorizedUnreadCount(utils, counts.uncategorized.unread);
+  }
+}
+
+/**
+ * Sets absolute counts from bulk mutation response.
+ * Used by markRead mutation that returns BulkUnreadCounts.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param counts - Absolute counts from server
+ * @param queryClient - React Query client for updating infinite query caches
+ */
+export function setBulkCounts(
+  utils: TRPCClientUtils,
+  counts: BulkUnreadCounts,
+  queryClient?: QueryClient
+): void {
+  // Set global counts
+  utils.entries.count.setData({}, counts.all);
+  utils.entries.count.setData({ starredOnly: true }, counts.starred);
+  utils.entries.count.setData({ type: "saved" }, counts.saved);
+
+  // Set subscription unread counts
+  for (const sub of counts.subscriptions) {
+    setSubscriptionUnreadCount(utils, sub.id, sub.unread, queryClient);
+  }
+
+  // Set tag unread counts
+  for (const tag of counts.tags) {
+    setTagUnreadCount(utils, tag.id, tag.unread);
+  }
+
+  // Set uncategorized count
+  if (counts.uncategorized) {
+    setUncategorizedUnreadCount(utils, counts.uncategorized.unread);
+  }
+}
+
+/**
+ * Sets the unread count for a specific subscription.
+ */
+function setSubscriptionUnreadCount(
+  utils: TRPCClientUtils,
+  subscriptionId: string,
+  unread: number,
+  queryClient?: QueryClient
+): void {
+  // Update in unparameterized subscriptions.list cache
+  utils.subscriptions.list.setData(undefined, (oldData) => {
+    if (!oldData) return oldData;
+    return {
+      ...oldData,
+      items: oldData.items.map((sub) =>
+        sub.id === subscriptionId ? { ...sub, unreadCount: unread } : sub
+      ),
+    };
+  });
+
+  // Update in per-tag infinite query caches
+  if (queryClient) {
+    const infiniteQueries = queryClient.getQueriesData<{
+      pages: Array<{ items: Array<{ id: string; unreadCount: number; [key: string]: unknown }> }>;
+      pageParams: unknown[];
+    }>({
+      queryKey: [["subscriptions", "list"]],
+    });
+
+    for (const [queryKey, data] of infiniteQueries) {
+      if (!data?.pages) continue;
+
+      const hasSubscription = data.pages.some((page) =>
+        page.items.some((s) => s.id === subscriptionId)
+      );
+
+      if (hasSubscription) {
+        queryClient.setQueryData(queryKey, {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.map((s) =>
+              s.id === subscriptionId ? { ...s, unreadCount: unread } : s
+            ),
+          })),
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Sets the unread count for a specific tag.
+ */
+function setTagUnreadCount(utils: TRPCClientUtils, tagId: string, unread: number): void {
+  utils.tags.list.setData(undefined, (oldData) => {
+    if (!oldData) return oldData;
+    return {
+      ...oldData,
+      items: oldData.items.map((tag) => (tag.id === tagId ? { ...tag, unreadCount: unread } : tag)),
+    };
+  });
+}
+
+/**
+ * Sets the uncategorized unread count.
+ */
+function setUncategorizedUnreadCount(utils: TRPCClientUtils, unread: number): void {
+  utils.tags.list.setData(undefined, (oldData) => {
+    if (!oldData) return oldData;
+    return {
+      ...oldData,
+      uncategorized: {
+        ...oldData.uncategorized,
+        unreadCount: unread,
+      },
+    };
+  });
+}
