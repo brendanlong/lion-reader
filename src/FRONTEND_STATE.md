@@ -166,18 +166,45 @@ The `useRealtimeUpdates` hook manages SSE connections and updates caches.
 
 **Key principle:** Direct cache updates where possible, invalidation only when necessary. `entries.list` is NOT invalidated for new entries - users see new entries when they navigate (sidebar counts update immediately).
 
-| SSE Event              | Cache Updates                                                                                                                                   |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `new_entry`            | Direct: `subscriptions.list` unreadCount, `tags.list` unreadCount, `entries.count`. Does NOT invalidate `entries.list`.                         |
-| `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). Invalidates `entries.get` for full content refresh. |
-| `subscription_created` | Direct: add to `subscriptions.list`, update `tags.list` feedCount/unreadCount, update `entries.count`.                                          |
-| `subscription_deleted` | Direct: remove from `subscriptions.list`, update `tags.list`, update `entries.count`. Invalidate: `entries.list`.                               |
-| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                               |
-| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription updates handled by individual events during import.                       |
+| SSE Event              | Cache Updates                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `new_entry`            | Direct: `subscriptions.list` unreadCount, `tags.list` unreadCount, `entries.count`. Does NOT invalidate `entries.list`.                           |
+| `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). No invalidation - avoids race condition when viewing. |
+| `subscription_created` | Direct: add to `subscriptions.list`, update `tags.list` feedCount/unreadCount, update `entries.count`.                                            |
+| `subscription_deleted` | Direct: remove from `subscriptions.list`, update `tags.list`, update `entries.count`. Invalidate: `entries.list`.                                 |
+| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                                 |
+| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription updates handled by individual events during import.                         |
 
 ## Optimistic Updates
 
-Some mutations use optimistic updates for better UX:
+Some mutations use optimistic updates for better UX.
+
+**Important:** Optimistic updates do NOT cancel in-flight queries. Cancelling queries can abort content fetches, leaving components stuck with placeholder data. If a query completes with stale data while a mutation is pending, the mutation tracking system handles the race correctly.
+
+### Timestamp-based State Tracking
+
+Entry mutations (markRead, setStarred) use timestamp-based tracking to handle concurrent operations:
+
+1. **Pending count tracking:** Each entry tracks how many mutations are currently in flight
+2. **Winning state:** As mutations complete, their responses are compared by `updatedAt` timestamp; the newest wins
+3. **Cache merge:** When all mutations for an entry complete, the winning state is merged into cache only if it's newer than the current cache state
+
+This allows:
+
+- **Parallel operations:** Get query and mark-read mutation can run simultaneously
+- **No flickering:** Out-of-order completion doesn't cause UI state changes
+- **Race resolution:** The server's `updatedAt` (computed as `GREATEST(entry.updated_at, user_entry.updated_at)`) determines truth
+
+### Auto-mark-read (EntryContent)
+
+When opening an entry, the mark-read mutation fires immediately in parallel with the `entries.get` query:
+
+1. Entry mounts, fires `entries.get` query
+2. If entry is unread (from placeholder data), immediately fires `markRead` mutation
+3. Optimistic update shows entry as read instantly
+4. Both requests complete in any order; timestamp tracking ensures correct final state
+
+This is simpler than the old two-phase approach and provides better latency.
 
 ### subscriptions.delete (Sidebar)
 
@@ -234,6 +261,7 @@ Returns entries with all context needed for cache updates:
     subscriptionId: string | null; // For subscription/tag count updates
     starred: boolean; // For starred unread count updates
     type: "web" | "email" | "saved"; // For saved count updates
+    updatedAt: Date; // For timestamp-based cache freshness comparison
     score: number | null; // Explicit score for display
     implicitScore: number; // Implicit score from actions (star, mark-unread, mark-read-on-list)
   }>;
@@ -251,6 +279,7 @@ Returns the updated entry with read status and scores:
     id: string;
     read: boolean; // For starred unread count updates
     starred: boolean;
+    updatedAt: Date; // For timestamp-based cache freshness comparison
     score: number | null; // Explicit score for display
     implicitScore: number; // Implicit score (starring sets hasStarred = implicit +2)
   }
@@ -268,6 +297,7 @@ Returns the updated entry with score fields:
     id: string;
     read: boolean;
     starred: boolean;
+    updatedAt: Date; // For timestamp-based cache freshness comparison
     score: number | null; // Explicit score (-2 to +2, or null to clear)
     implicitScore: number; // Implicit score from actions
   }

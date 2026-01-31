@@ -64,6 +64,7 @@ export interface EntryListItem {
   summary: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
+  updatedAt: Date;
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
@@ -85,6 +86,7 @@ export interface EntryFull {
   summary: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
+  updatedAt: Date;
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
@@ -283,6 +285,7 @@ export async function listEntries(
       fetchedAt: visibleEntries.fetchedAt,
       read: visibleEntries.read,
       starred: visibleEntries.starred,
+      updatedAt: visibleEntries.updatedAt,
       subscriptionId: visibleEntries.subscriptionId,
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
@@ -313,6 +316,7 @@ export async function listEntries(
     fetchedAt: row.fetchedAt,
     read: row.read,
     starred: row.starred,
+    updatedAt: row.updatedAt,
     feedTitle: row.feedTitle,
     siteName: row.siteName,
     score: row.score,
@@ -423,6 +427,7 @@ export async function searchEntries(
       fetchedAt: visibleEntries.fetchedAt,
       read: visibleEntries.read,
       starred: visibleEntries.starred,
+      updatedAt: visibleEntries.updatedAt,
       subscriptionId: visibleEntries.subscriptionId,
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
@@ -454,6 +459,7 @@ export async function searchEntries(
     fetchedAt: row.fetchedAt,
     read: row.read,
     starred: row.starred,
+    updatedAt: row.updatedAt,
     feedTitle: row.feedTitle,
     siteName: row.siteName,
     score: row.score,
@@ -495,6 +501,7 @@ export async function getEntry(
       summary: visibleEntries.summary,
       publishedAt: visibleEntries.publishedAt,
       fetchedAt: visibleEntries.fetchedAt,
+      updatedAt: visibleEntries.updatedAt,
       read: visibleEntries.read,
       starred: visibleEntries.starred,
       subscriptionId: visibleEntries.subscriptionId,
@@ -769,6 +776,7 @@ export interface ScoreState {
   id: string;
   read: boolean;
   starred: boolean;
+  updatedAt: Date;
   score: number | null;
   implicitScore: number;
 }
@@ -811,6 +819,7 @@ export async function setEntryScore(
       id: userEntries.entryId,
       read: userEntries.read,
       starred: userEntries.starred,
+      updatedAt: userEntries.updatedAt,
       score: userEntries.score,
       hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
       hasMarkedUnread: userEntries.hasMarkedUnread,
@@ -830,6 +839,7 @@ export async function setEntryScore(
     id: row.id,
     read: row.read,
     starred: row.starred,
+    updatedAt: row.updatedAt,
     score: row.score,
     implicitScore: computeImplicitScore(
       row.hasStarred,

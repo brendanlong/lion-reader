@@ -533,8 +533,11 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           },
           queryClient
         );
-        // Also invalidate entries.get to refetch full content (which isn't in metadata)
-        utils.entries.get.invalidate({ id: data.entryId });
+        // Note: We intentionally don't invalidate entries.get here. The metadata is updated
+        // directly in cache via setData above. Calling invalidate() would cause a race condition
+        // when the user is viewing the entry: the in-flight fetch would be cancelled, query
+        // would revert to placeholder data, and isContentLoading would stay true until the
+        // new fetch completes. If entry content also changed, users will see it on next visit.
       } else if (data.type === "subscription_created") {
         // Use high-level operation - handles cache add + targeted invalidations
         const { subscription, feed } = data;

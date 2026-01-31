@@ -380,6 +380,7 @@ export interface EntryListItem {
   summary: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
+  updatedAt: Date;
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
@@ -599,6 +600,7 @@ interface EntryListItemForPlaceholder {
   summary: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
+  updatedAt: Date;
   read: boolean;
   starred: boolean;
   feedTitle: string | null;

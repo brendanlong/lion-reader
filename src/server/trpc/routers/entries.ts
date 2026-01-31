@@ -102,6 +102,7 @@ const entryListItemSchema = z.object({
   fetchedAt: z.date(),
   read: z.boolean(),
   starred: z.boolean(),
+  updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
   feedTitle: z.string().nullable(),
   siteName: z.string().nullable(),
   score: z.number().nullable(),
@@ -126,6 +127,7 @@ const entryFullSchema = z.object({
   fetchedAt: z.date(),
   read: z.boolean(),
   starred: z.boolean(),
+  updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
   siteName: z.string().nullable(),
@@ -149,12 +151,13 @@ const entriesListOutputSchema = z.object({
 
 /**
  * Schema for entries returned from mutation operations.
- * Contains minimal fields needed for optimistic updates.
+ * Contains minimal fields needed for optimistic updates plus updatedAt for cache freshness.
  */
 const entryMutationResultSchema = z.object({
   id: z.string(),
   read: z.boolean(),
   starred: z.boolean(),
+  updatedAt: z.date(), // For comparing with cached data to determine winner
   score: z.number().nullable(),
   implicitScore: z.number(),
 });
@@ -267,6 +270,7 @@ async function updateEntryStarred(
   id: string;
   read: boolean;
   starred: boolean;
+  updatedAt: Date;
   score: number | null;
   implicitScore: number;
 }> {
@@ -300,6 +304,7 @@ async function updateEntryStarred(
       id: userEntries.entryId,
       read: userEntries.read,
       starred: userEntries.starred,
+      updatedAt: userEntries.updatedAt,
       score: userEntries.score,
       hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
       hasMarkedUnread: userEntries.hasMarkedUnread,
@@ -319,6 +324,7 @@ async function updateEntryStarred(
     id: row.id,
     read: row.read,
     starred: row.starred,
+    updatedAt: row.updatedAt,
     score: row.score,
     implicitScore: entriesService.computeImplicitScore(
       row.hasStarred,
@@ -444,6 +450,7 @@ export const entriesRouter = createTRPCRouter({
           fetchedAt: visibleEntries.fetchedAt,
           read: visibleEntries.read,
           starred: visibleEntries.starred,
+          updatedAt: visibleEntries.updatedAt,
           subscriptionId: visibleEntries.subscriptionId,
           siteName: visibleEntries.siteName,
           feedTitle: feeds.title,
@@ -484,6 +491,7 @@ export const entriesRouter = createTRPCRouter({
           fetchedAt: entry.fetchedAt,
           read: entry.read,
           starred: entry.starred,
+          updatedAt: entry.updatedAt,
           feedTitle: entry.feedTitle,
           feedUrl: entry.feedUrl,
           siteName: entry.siteName,
@@ -551,6 +559,7 @@ export const entriesRouter = createTRPCRouter({
             subscriptionId: z.string().nullable(),
             starred: z.boolean(), // For updating starred unread count
             type: feedTypeSchema, // For updating saved/email counts
+            updatedAt: z.date(), // For cache freshness comparison
             score: z.number().nullable(), // For updating score display
             implicitScore: z.number(), // For updating score display
           })
@@ -614,6 +623,7 @@ export const entriesRouter = createTRPCRouter({
           subscriptionId: visibleEntries.subscriptionId,
           starred: visibleEntries.starred,
           type: visibleEntries.type,
+          updatedAt: visibleEntries.updatedAt,
           score: visibleEntries.score,
           hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
           hasMarkedUnread: visibleEntries.hasMarkedUnread,
@@ -627,6 +637,7 @@ export const entriesRouter = createTRPCRouter({
         subscriptionId: e.subscriptionId,
         starred: e.starred,
         type: e.type,
+        updatedAt: e.updatedAt,
         score: e.score,
         implicitScore: entriesService.computeImplicitScore(
           e.hasStarred,
@@ -998,6 +1009,7 @@ export const entriesRouter = createTRPCRouter({
           fetchedAt: visibleEntries.fetchedAt,
           read: visibleEntries.read,
           starred: visibleEntries.starred,
+          updatedAt: visibleEntries.updatedAt,
           subscriptionId: visibleEntries.subscriptionId,
           siteName: visibleEntries.siteName,
           fullContentOriginal: visibleEntries.fullContentOriginal,

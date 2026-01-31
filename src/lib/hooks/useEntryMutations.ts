@@ -9,13 +9,17 @@
  * - If the server request fails, changes are rolled back automatically
  * - Server response is used to update counts and scores after success
  *
- * Uses high-level cache operations that handle all interactions correctly
- * (e.g., starring an unread entry updates the starred unread count).
+ * Tracks pending mutations per entry with timestamp-based state merging:
+ * - Multiple mutations can run in parallel for the same entry
+ * - Each mutation's response is compared by updatedAt timestamp
+ * - The "winning" state (newest updatedAt) is tracked
+ * - When all mutations complete, the winning state is merged into cache
+ *   only if it's newer than the current cache state
  */
 
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -25,11 +29,10 @@ import {
   setBulkCounts,
   updateEntriesReadStatus,
   updateEntryStarredStatus,
+  updateEntriesInListCache,
   updateEntriesInAffectedListCaches,
   applyOptimisticReadUpdate,
-  rollbackOptimisticReadUpdate,
   applyOptimisticStarredUpdate,
-  rollbackOptimisticStarredUpdate,
 } from "@/lib/cache";
 
 /**
@@ -111,6 +114,30 @@ export interface UseEntryMutationsResult {
 }
 
 /**
+ * State from a completed mutation, tracked for timestamp-based merging.
+ */
+interface MutationResultState {
+  read: boolean;
+  starred: boolean;
+  updatedAt: Date;
+  score: number | null;
+  implicitScore: number;
+}
+
+/**
+ * Tracking state for an entry with pending mutations.
+ */
+interface EntryMutationTracking {
+  /** Number of mutations currently in flight */
+  pendingCount: number;
+  /** The winning state from completed mutations (newest updatedAt) */
+  winningState: MutationResultState | null;
+  /** Original state for rollback if all mutations fail */
+  originalRead: boolean;
+  originalStarred: boolean;
+}
+
+/**
  * Hook that provides entry mutations with direct cache updates.
  *
  * @example
@@ -131,46 +158,192 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
 
+  // Track pending mutations per entry for timestamp-based state merging
+  const entryTracking = useRef(new Map<string, EntryMutationTracking>());
+
+  /**
+   * Start tracking a mutation for an entry.
+   * Increments pending count and stores original state if this is the first mutation.
+   */
+  const startTracking = (entryId: string, originalRead: boolean, originalStarred: boolean) => {
+    const existing = entryTracking.current.get(entryId);
+    if (existing) {
+      existing.pendingCount++;
+    } else {
+      entryTracking.current.set(entryId, {
+        pendingCount: 1,
+        winningState: null,
+        originalRead,
+        originalStarred,
+      });
+    }
+  };
+
+  /**
+   * Record a mutation result and determine if we should update cache.
+   * Compares updatedAt with tracked winning state, keeps the newer one.
+   * Returns true if all mutations for this entry are now complete.
+   */
+  const recordMutationResult = (
+    entryId: string,
+    result: MutationResultState
+  ): { allComplete: boolean; winningState: MutationResultState | null } => {
+    const tracking = entryTracking.current.get(entryId);
+    if (!tracking) {
+      // No tracking = single mutation, just return it as winner
+      return { allComplete: true, winningState: result };
+    }
+
+    // Compare with current winning state
+    if (
+      !tracking.winningState ||
+      result.updatedAt.getTime() >= tracking.winningState.updatedAt.getTime()
+    ) {
+      tracking.winningState = result;
+    }
+
+    tracking.pendingCount--;
+    const allComplete = tracking.pendingCount === 0;
+
+    if (allComplete) {
+      const winner = tracking.winningState;
+      entryTracking.current.delete(entryId);
+      return { allComplete: true, winningState: winner };
+    }
+
+    return { allComplete: false, winningState: null };
+  };
+
+  /**
+   * Record a mutation error. Returns rollback info if all mutations are complete.
+   */
+  const recordMutationError = (
+    entryId: string
+  ): {
+    allComplete: boolean;
+    winningState: MutationResultState | null;
+    originalRead: boolean;
+    originalStarred: boolean;
+  } | null => {
+    const tracking = entryTracking.current.get(entryId);
+    if (!tracking) return null;
+
+    tracking.pendingCount--;
+    const allComplete = tracking.pendingCount === 0;
+
+    if (allComplete) {
+      const result = {
+        allComplete: true,
+        winningState: tracking.winningState,
+        originalRead: tracking.originalRead,
+        originalStarred: tracking.originalStarred,
+      };
+      entryTracking.current.delete(entryId);
+      return result;
+    }
+
+    return { allComplete: false, winningState: null, originalRead: false, originalStarred: false };
+  };
+
+  /**
+   * Apply winning state to cache if it's newer than current cache state.
+   */
+  const applyWinningStateToCache = (entryId: string, winningState: MutationResultState) => {
+    // Get current cache state to compare timestamps
+    const cachedData = utils.entries.get.getData({ id: entryId });
+    const cachedUpdatedAt = cachedData?.entry?.updatedAt;
+
+    // Only update if winning state is newer than cache
+    if (cachedUpdatedAt && winningState.updatedAt.getTime() < cachedUpdatedAt.getTime()) {
+      // Cache is newer, don't update
+      return;
+    }
+
+    // Update the cache with winning state
+    updateEntriesReadStatus(utils, [entryId], winningState.read);
+    updateEntryStarredStatus(utils, entryId, winningState.starred, queryClient);
+    handleEntryScoreChanged(
+      utils,
+      entryId,
+      winningState.score,
+      winningState.implicitScore,
+      queryClient
+    );
+  };
+
   // markRead mutation - uses optimistic updates for instant UI feedback
   // Also updates score cache since marking read/unread sets implicit signal flags
   const markReadMutation = trpc.entries.markRead.useMutation({
     // Optimistic update: immediately update the UI before server responds
-    onMutate: async (variables) => {
+    onMutate: async () => {
       const entryIds = variables.entries.map((e) => e.id);
-      return applyOptimisticReadUpdate(utils, queryClient, entryIds, variables.read);
-    },
 
-    onSuccess: (data, variables) => {
-      // Server confirmed - update with authoritative data
-      // The read status is already updated optimistically, but we need to:
-      // 1. Update individual entries.get caches with any additional data
-      updateEntriesReadStatus(
+      const optimisticContext = await applyOptimisticReadUpdate(
         utils,
-        data.entries.map((e) => e.id),
+        queryClient,
+        entryIds,
         variables.read
       );
 
-      // 2. Update only the affected entry list caches using server-provided scope
+      // Start tracking for each entry
+      for (const entryId of entryIds) {
+        const prevEntry = optimisticContext.previousEntries.get(entryId);
+        const originalRead = prevEntry?.read ?? false;
+        const cachedData = utils.entries.get.getData({ id: entryId });
+        const originalStarred = cachedData?.entry?.starred ?? false;
+        startTracking(entryId, originalRead, originalStarred);
+      }
+
+      return optimisticContext;
+    },
+
+    onSuccess: (data, variables) => {
+      // Process each entry's result
+      for (const entry of data.entries) {
+        const result: MutationResultState = {
+          read: variables.read,
+          starred: entry.starred,
+          updatedAt: entry.updatedAt,
+          score: entry.score,
+          implicitScore: entry.implicitScore,
+        };
+
+        const { allComplete, winningState } = recordMutationResult(entry.id, result);
+
+        if (allComplete && winningState) {
+          applyWinningStateToCache(entry.id, winningState);
+        }
+      }
+
+      // Update list caches with read status
       const scope = {
         tagIds: new Set(data.counts.tags.map((t) => t.id)),
         hasUncategorized: data.counts.uncategorized !== undefined,
       };
       updateEntriesInAffectedListCaches(queryClient, data.entries, { read: variables.read }, scope);
 
-      // 3. Set absolute counts from server (no delta calculations)
+      // Update counts (always apply, not dependent on timestamp)
       setBulkCounts(utils, data.counts, queryClient);
-
-      // 4. Update score cache for each entry (implicit signals changed)
-      for (const entry of data.entries) {
-        handleEntryScoreChanged(utils, entry.id, entry.score, entry.implicitScore, queryClient);
-      }
     },
 
-    onError: (_error, _variables, context) => {
-      // Rollback to previous state on error
-      if (context) {
-        rollbackOptimisticReadUpdate(utils, queryClient, context);
+    onError: (_error, variables) => {
+      const entryIds = variables.entries.map((e) => e.id);
+
+      // Check each entry for completion and handle rollback
+      for (const entryId of entryIds) {
+        const result = recordMutationError(entryId);
+        if (result?.allComplete) {
+          if (result.winningState) {
+            // Some mutations succeeded, apply winning state
+            applyWinningStateToCache(entryId, result.winningState);
+          } else {
+            // All mutations failed, rollback to original state from tracking
+            // (not from context, which may have captured intermediate state)
+            updateEntriesReadStatus(utils, [entryId], result.originalRead, queryClient);
+          }
+        }
       }
+
       toast.error("Failed to update read status");
     },
   });
@@ -204,29 +377,54 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const setStarredMutation = trpc.entries.setStarred.useMutation({
     // Optimistic update: immediately show the entry with new starred status
     onMutate: async (variables) => {
-      return applyOptimisticStarredUpdate(utils, queryClient, variables.id, variables.starred);
+      const optimisticContext = await applyOptimisticStarredUpdate(
+        utils,
+        queryClient,
+        variables.id,
+        variables.starred
+      );
+
+      // Start tracking
+      const originalStarred = optimisticContext.wasStarred;
+      const cachedData = utils.entries.get.getData({ id: variables.id });
+      const originalRead = cachedData?.entry?.read ?? false;
+      startTracking(variables.id, originalRead, originalStarred);
+
+      return optimisticContext;
     },
 
     onSuccess: (data) => {
-      // Server confirmed - update with authoritative data
-      updateEntryStarredStatus(utils, data.entry.id, data.entry.starred, queryClient);
+      const result: MutationResultState = {
+        read: data.entry.read,
+        starred: data.entry.starred,
+        updatedAt: data.entry.updatedAt,
+        score: data.entry.score,
+        implicitScore: data.entry.implicitScore,
+      };
 
-      // Set absolute counts from server
+      const { allComplete, winningState } = recordMutationResult(data.entry.id, result);
+
+      if (allComplete && winningState) {
+        applyWinningStateToCache(data.entry.id, winningState);
+      }
+
+      // Update list cache with starred status
+      updateEntriesInListCache(queryClient, [data.entry.id], { starred: data.entry.starred });
+
+      // Update counts (always apply)
       setCounts(utils, data.counts, queryClient);
-
-      handleEntryScoreChanged(
-        utils,
-        data.entry.id,
-        data.entry.score,
-        data.entry.implicitScore,
-        queryClient
-      );
     },
 
-    onError: (_error, variables, context) => {
-      // Rollback to previous state on error
-      if (context) {
-        rollbackOptimisticStarredUpdate(utils, queryClient, context);
+    onError: (_error, variables) => {
+      const result = recordMutationError(variables.id);
+      if (result?.allComplete) {
+        if (result.winningState) {
+          applyWinningStateToCache(variables.id, result.winningState);
+        } else {
+          // All mutations failed, rollback to original state from tracking
+          // (not from context, which may have captured intermediate state)
+          updateEntryStarredStatus(utils, variables.id, result.originalStarred, queryClient);
+        }
       }
       toast.error(variables.starred ? "Failed to star entry" : "Failed to unstar entry");
     },

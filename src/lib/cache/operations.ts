@@ -840,9 +840,11 @@ export async function applyOptimisticReadUpdate(
   entryIds: string[],
   read: boolean
 ): Promise<OptimisticReadContext> {
-  // Cancel any outgoing refetches so they don't overwrite our optimistic update
-  await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
-  await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
+  // We intentionally don't cancel any queries here.
+  // - Cancelling entries.get would abort content fetches, leaving only placeholder data
+  // - Cancelling entries.list would disrupt scrolling/loading while marking entries read
+  // - If a fetch completes with stale read status, onSuccess will correct it immediately
+  // - The race condition window is small (between onMutate and onSuccess)
 
   // Snapshot the previous state for rollback
   const previousEntries = new Map<string, { read: boolean } | undefined>();
@@ -901,9 +903,10 @@ export async function applyOptimisticStarredUpdate(
   entryId: string,
   starred: boolean
 ): Promise<OptimisticStarredContext> {
-  // Cancel any outgoing refetches
-  await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
-  await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
+  // We intentionally don't cancel any queries here.
+  // - Cancelling entries.get would abort content fetches, leaving only placeholder data
+  // - Cancelling entries.list would disrupt scrolling/loading
+  // - If a fetch completes with stale starred status, onSuccess will correct it immediately
 
   // Snapshot previous state for rollback
   const previousEntry = utils.entries.get.getData({ id: entryId });

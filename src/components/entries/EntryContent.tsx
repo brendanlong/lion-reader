@@ -70,8 +70,11 @@ export function EntryContent({
   nextEntryId,
   previousEntryId,
 }: EntryContentProps) {
-  const hasAutoMarkedRead = useRef(false);
   const queryClient = useQueryClient();
+  const utils = trpc.useUtils();
+
+  // Track whether we've sent the auto-mark-read mutation
+  const hasSentMarkReadMutation = useRef(false);
 
   // Fetch the entry with placeholderData from list cache for progressive rendering
   // This shows the header immediately while full content loads
@@ -117,7 +120,6 @@ export function EntryContent({
   const { markRead, star, unstar, setScore } = useEntryMutations();
 
   // Mutation to update subscription's fetchFullContent setting
-  const utils = trpc.useUtils();
   const updateSubscriptionMutation = trpc.subscriptions.update.useMutation({
     onSuccess: () => {
       // Invalidate subscriptions list to reflect the new setting
@@ -274,15 +276,20 @@ export function EntryContent({
     fetchFullContentMutation.mutate({ id: entryId });
   }, [entry, fetchFullContent, entryId, fetchFullContentMutation]);
 
-  // Mark entry as read once when component mounts and entry data loads
-  // The ref prevents re-marking if user later toggles read status
-  // Component remounts on entry change (via key={openEntryId}), resetting the ref
+  // Auto-mark-read: Fire mutation immediately when entry is unread
+  // The mutation runs in parallel with the get query. Both use updatedAt timestamps
+  // to determine which state wins, so race conditions are handled correctly.
   useEffect(() => {
-    if (hasAutoMarkedRead.current || !entry) return;
-    hasAutoMarkedRead.current = true;
-    if (!entry.read) {
-      markRead([entryId], true);
-    }
+    // Only fire once per entry
+    if (hasSentMarkReadMutation.current) return;
+    // Need entry data to check read status
+    if (!entry) return;
+    // Only mark read if currently unread
+    if (entry.read) return;
+
+    hasSentMarkReadMutation.current = true;
+    // Fire immediately - optimistic update and timestamp tracking handled by useEntryMutations
+    markRead([entryId], true);
   }, [entry, entryId, markRead]);
 
   // Handle star toggle
