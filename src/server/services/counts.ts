@@ -88,11 +88,9 @@ export async function getEntryRelatedCounts(
   userId: string,
   entryId: string
 ): Promise<UnreadCounts> {
-  // Query 1: Get entry context + global counts + saved counts + subscription count in one query
+  // Query 1: Get global counts + saved counts + subscription count in one query
   const result = await db
     .select({
-      subscriptionId: visibleEntries.subscriptionId,
-      type: visibleEntries.type,
       // Global counts
       allTotal: sql<number>`count(*)::int`,
       allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
