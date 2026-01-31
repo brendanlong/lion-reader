@@ -22,6 +22,7 @@ import {
   handleSubscriptionDeleted,
   handleNewEntry,
   updateEntriesInListCache,
+  adjustEntriesCount,
 } from "@/lib/cache";
 
 /**
@@ -532,8 +533,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           handleSubscriptionDeleted(utils, data.subscriptionId, queryClient);
         }
       } else if (data.type === "saved_article_created") {
-        utils.entries.list.invalidate({ type: "saved" });
-        utils.entries.count.invalidate({ type: "saved" });
+        // Update counts without invalidating entries.list to avoid disrupting the UI
+        // New saved entries will appear when user navigates to Saved view
+        adjustEntriesCount(utils, { type: "saved" }, 1, 1); // +1 unread, +1 total
+        adjustEntriesCount(utils, {}, 1, 1); // Update "All Articles" count too
       } else if (data.type === "saved_article_updated") {
         utils.entries.get.invalidate({ id: data.entryId });
         utils.entries.list.invalidate({ type: "saved" });

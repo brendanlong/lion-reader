@@ -6,6 +6,12 @@
  * 1. Share Target API for URLs and files
  * 2. Offline fallback for navigation requests
  *
+ * For URL shares, the service worker attempts to save directly via the API
+ * without navigation, then notifies open tabs via postMessage. This allows
+ * sharing to Lion Reader from within Lion Reader without losing the current page.
+ *
+ * File shares still redirect to /save because they require more complex processing.
+ *
  * Note: The main caching of Next.js static assets is handled by next-pwa's
  * Workbox configuration in next.config.ts. This file only adds custom handlers.
  */
@@ -22,6 +28,15 @@ interface SWFetchEvent extends Event {
   respondWith(response: Response | Promise<Response>): void;
 }
 
+// Message types for communicating with open tabs
+interface ShareResultMessage {
+  type: "share-result";
+  success: boolean;
+  url?: string;
+  title?: string;
+  error?: string;
+}
+
 // Helper to convert File/Blob to base64
 async function fileToBase64(file: File | Blob): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
@@ -31,6 +46,133 @@ async function fileToBase64(file: File | Blob): Promise<string> {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+}
+
+/**
+ * Notifies all open Lion Reader tabs about a share result.
+ * Uses postMessage to send the result to all controlled clients.
+ */
+async function notifyClients(message: ShareResultMessage): Promise<void> {
+  const clients = await sw.clients.matchAll({ type: "window" });
+  for (const client of clients) {
+    client.postMessage(message);
+  }
+}
+
+/**
+ * Attempts to save a URL directly via the API without navigation.
+ * Returns the saved article title on success, or throws an error.
+ */
+async function saveUrlDirectly(url: string, origin: string): Promise<{ title: string | null }> {
+  const apiUrl = `${origin}/api/v1/saved`;
+
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include", // Include session cookie
+    body: JSON.stringify({ url }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401) {
+      throw new Error("NOT_AUTHENTICATED");
+    }
+
+    throw new Error(data.error?.message || `HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  return { title: data.article?.title || null };
+}
+
+/**
+ * Returns an HTML page that shows a success/error message and closes itself.
+ * Used as a fallback when the share was handled in the service worker.
+ */
+function createResultPage(success: boolean, message: string, details?: string): Response {
+  const bgColor = success ? "#16a34a" : "#dc2626";
+  const icon = success ? "✓" : "✕";
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${success ? "Saved" : "Error"} - Lion Reader</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #18181b;
+      color: #fafafa;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .container {
+      max-width: 320px;
+      width: 100%;
+      text-align: center;
+    }
+    .icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: ${bgColor};
+      color: white;
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1rem;
+    }
+    h1 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .details {
+      font-size: 0.875rem;
+      color: #a1a1aa;
+      word-break: break-word;
+    }
+    .closing {
+      margin-top: 1rem;
+      font-size: 0.75rem;
+      color: #71717a;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">${icon}</div>
+    <h1>${message}</h1>
+    ${details ? `<p class="details">${details}</p>` : ""}
+    <p class="closing">Closing...</p>
+  </div>
+  <script>
+    // Try to close the window/tab, or go back
+    setTimeout(() => {
+      if (window.opener || window.history.length <= 1) {
+        window.close();
+      } else {
+        window.history.back();
+      }
+    }, 1500);
+  </script>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
 }
 
 // Handle share target POST requests
@@ -99,7 +241,7 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
 
             return Response.redirect(redirectUrl.toString(), 303);
           } else if (sharedUrl || sharedText) {
-            // URL was shared - extract and redirect
+            // URL was shared - try to save directly without navigation
             let urlToSave = sharedUrl;
 
             if (!urlToSave && sharedText) {
@@ -118,12 +260,42 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
               return Response.redirect(errorUrl.toString(), 303);
             }
 
-            // Redirect to save page with URL
-            const saveUrl = new URL("/save", url.origin);
-            saveUrl.searchParams.set("url", urlToSave);
-            saveUrl.searchParams.set("shared", "true");
+            // Try to save directly via API (no navigation)
+            try {
+              const result = await saveUrlDirectly(urlToSave, url.origin);
 
-            return Response.redirect(saveUrl.toString(), 303);
+              // Notify all open tabs about the successful save
+              await notifyClients({
+                type: "share-result",
+                success: true,
+                url: urlToSave,
+                title: result.title || undefined,
+              });
+
+              // Return a success page that auto-closes
+              return createResultPage(true, "Saved!", result.title || urlToSave);
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+              // If not authenticated, redirect to /save for login flow
+              if (errorMessage === "NOT_AUTHENTICATED") {
+                const saveUrl = new URL("/save", url.origin);
+                saveUrl.searchParams.set("url", urlToSave);
+                saveUrl.searchParams.set("shared", "true");
+                return Response.redirect(saveUrl.toString(), 303);
+              }
+
+              // Notify all open tabs about the error
+              await notifyClients({
+                type: "share-result",
+                success: false,
+                url: urlToSave,
+                error: errorMessage,
+              });
+
+              // Return an error page
+              return createResultPage(false, "Failed to save", errorMessage);
+            }
           } else {
             // No file or URL found
             const errorUrl = new URL("/save", url.origin);
