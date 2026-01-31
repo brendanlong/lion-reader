@@ -5,12 +5,10 @@
  * Subscribes to Redis pub/sub and forwards relevant feed events.
  *
  * Events:
- * - new_entry: A new entry was added to a subscribed feed
+ * - new_entry: A new entry was added to a subscribed feed (or saved article)
  * - entry_updated: An existing entry's content was updated
  * - subscription_created: User subscribed to a new feed
  * - subscription_deleted: User unsubscribed from a feed
- * - saved_article_created: User saved a new article via bookmarklet
- * - saved_article_updated: A saved article's content was updated (e.g., refetched)
  *
  * Heartbeat: Sent every 30 seconds as a comment (: heartbeat)
  */
@@ -18,6 +16,7 @@
 import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import { validateSession } from "@/server/auth";
+import { getSavedFeedId } from "@/server/feed/saved-feed";
 import {
   createSubscriberClient,
   getFeedEventsChannel,
@@ -175,6 +174,9 @@ export async function GET(req: Request): Promise<Response> {
   // Get user's feed -> subscription mapping
   const feedToSubscriptionMap = await getUserFeedSubscriptionMap(userId);
 
+  // Get the user's saved feed ID (if it exists)
+  const savedFeedId = await getSavedFeedId(db, userId);
+
   // Get the user-specific events channel
   const userEventsChannel = getUserEventsChannel(userId);
 
@@ -289,9 +291,17 @@ export async function GET(req: Request): Promise<Response> {
         // Build list of channels to subscribe to:
         // - User-specific channel for subscription events
         // - Per-feed channels for each subscribed feed
+        // - Saved feed channel (if user has a saved feed)
         const feedIds = Array.from(feedSubscriptionMap.keys());
         const feedChannels = feedIds.map(getFeedEventsChannel);
         const allChannels = [userEventsChannel, ...feedChannels];
+
+        // Add saved feed channel if it exists
+        if (savedFeedId) {
+          const savedFeedChannel = getFeedEventsChannel(savedFeedId);
+          allChannels.push(savedFeedChannel);
+          subscribedFeedChannels.add(savedFeedChannel);
+        }
 
         // Track subscribed feed channels
         for (const channel of feedChannels) {
@@ -313,7 +323,7 @@ export async function GET(req: Request): Promise<Response> {
 
         // Handle incoming messages
         subscriber.on("message", (channel: string, message: string) => {
-          // Handle user events (subscription_created, subscription_deleted, saved_article_created, import_progress, import_completed)
+          // Handle user events (subscription_created, subscription_deleted, import_progress, import_completed)
           if (channel === userEventsChannel) {
             const event = parseUserEvent(message);
             if (!event) return;
@@ -332,14 +342,6 @@ export async function GET(req: Request): Promise<Response> {
               // Forward the event to the client
               send(formatSSEUserEvent(event));
               trackSSEEventSent(event.type);
-            } else if (event.type === "saved_article_created") {
-              // Forward the event to the client
-              send(formatSSEUserEvent(event));
-              trackSSEEventSent(event.type);
-            } else if (event.type === "saved_article_updated") {
-              // Forward the event to the client
-              send(formatSSEUserEvent(event));
-              trackSSEEventSent(event.type);
             } else if (event.type === "import_progress" || event.type === "import_completed") {
               // Forward import events to the client
               send(formatSSEUserEvent(event));
@@ -355,12 +357,8 @@ export async function GET(req: Request): Promise<Response> {
             if (!event) return;
 
             // Look up the subscriptionId for this feed
-            const subscriptionId = feedSubscriptionMap.get(event.feedId);
-            if (!subscriptionId) {
-              // This shouldn't happen, but skip if we don't have the mapping
-              console.warn(`No subscription mapping for feedId ${event.feedId}`);
-              return;
-            }
+            // For saved feeds, subscriptionId will be null (no subscription exists)
+            const subscriptionId = feedSubscriptionMap.get(event.feedId) ?? null;
 
             // Transform event to use subscriptionId instead of feedId
             const clientEvent = {

@@ -15,10 +15,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import {
-  handleEntriesMarkedRead,
-  handleEntryStarred,
-  handleEntryUnstarred,
   handleEntryScoreChanged,
+  setCounts,
+  setBulkCounts,
+  updateEntriesReadStatus,
+  updateEntryStarredStatus,
 } from "@/lib/cache";
 
 /**
@@ -120,11 +121,21 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
 
-  // markRead mutation - uses handleEntriesMarkedRead for all cache updates
+  // markRead mutation - uses server-provided absolute counts
   // Also updates score cache since marking read/unread sets implicit signal flags
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: (data, variables) => {
-      handleEntriesMarkedRead(utils, data.entries, variables.read, queryClient);
+      // Update entry read status in entry caches
+      updateEntriesReadStatus(
+        utils,
+        data.entries.map((e) => e.id),
+        variables.read,
+        queryClient
+      );
+
+      // Set absolute counts from server (no delta calculations)
+      setBulkCounts(utils, data.counts, queryClient);
+
       // Update score cache for each entry (implicit signals changed)
       for (const entry of data.entries) {
         handleEntryScoreChanged(utils, entry.id, entry.score, entry.implicitScore, queryClient);
@@ -159,11 +170,16 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // star mutation - uses handleEntryStarred for all cache updates
+  // star mutation - uses server-provided absolute counts
   // Also updates score cache since starring sets hasStarred implicit signal
   const starMutation = trpc.entries.star.useMutation({
     onSuccess: (data) => {
-      handleEntryStarred(utils, data.entry.id, data.entry.read, queryClient);
+      // Update starred status in entry caches
+      updateEntryStarredStatus(utils, data.entry.id, true, queryClient);
+
+      // Set absolute counts from server
+      setCounts(utils, data.counts, queryClient);
+
       handleEntryScoreChanged(
         utils,
         data.entry.id,
@@ -177,10 +193,15 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // unstar mutation - uses handleEntryUnstarred for all cache updates
+  // unstar mutation - uses server-provided absolute counts
   const unstarMutation = trpc.entries.unstar.useMutation({
     onSuccess: (data) => {
-      handleEntryUnstarred(utils, data.entry.id, data.entry.read, queryClient);
+      // Update starred status in entry caches
+      updateEntryStarredStatus(utils, data.entry.id, false, queryClient);
+
+      // Set absolute counts from server
+      setCounts(utils, data.counts, queryClient);
+
       handleEntryScoreChanged(
         utils,
         data.entry.id,

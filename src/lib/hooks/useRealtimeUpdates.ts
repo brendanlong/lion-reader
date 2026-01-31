@@ -22,7 +22,6 @@ import {
   handleSubscriptionDeleted,
   handleNewEntry,
   updateEntriesInListCache,
-  adjustEntriesCount,
 } from "@/lib/cache";
 
 /**
@@ -109,10 +108,12 @@ const SSE_RETRY_INTERVAL_MS = 60_000;
  * Entry events from SSE, transformed to include subscriptionId.
  * These are published at the feed level internally but transformed
  * by the SSE endpoint to be subscription-centric for clients.
+ *
+ * For saved articles, subscriptionId is null since they don't have subscriptions.
  */
 interface SubscriptionEntryEventData {
   type: "new_entry" | "entry_updated";
-  subscriptionId: string;
+  subscriptionId: string | null;
   entryId: string;
   timestamp: string;
   feedType?: "web" | "email" | "saved"; // Included for new_entry to enable cache updates
@@ -154,20 +155,6 @@ interface SubscriptionDeletedEventData {
   timestamp: string;
 }
 
-interface SavedArticleCreatedEventData {
-  type: "saved_article_created";
-  userId: string;
-  entryId: string;
-  timestamp: string;
-}
-
-interface SavedArticleUpdatedEventData {
-  type: "saved_article_updated";
-  userId: string;
-  entryId: string;
-  timestamp: string;
-}
-
 interface ImportProgressEventData {
   type: "import_progress";
   userId: string;
@@ -195,8 +182,6 @@ interface ImportCompletedEventData {
 type UserEventData =
   | SubscriptionCreatedEventData
   | SubscriptionDeletedEventData
-  | SavedArticleCreatedEventData
-  | SavedArticleUpdatedEventData
   | ImportProgressEventData
   | ImportCompletedEventData;
 
@@ -216,14 +201,15 @@ function parseEventData(data: string): SSEEventData | null {
     const event = parsed as Record<string, unknown>;
 
     // Handle feed events (now include subscriptionId instead of feedId)
+    // subscriptionId can be null for saved articles (no subscription row)
     if (
       (event.type === "new_entry" || event.type === "entry_updated") &&
-      typeof event.subscriptionId === "string" &&
+      (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
       typeof event.entryId === "string"
     ) {
       return {
         type: event.type,
-        subscriptionId: event.subscriptionId,
+        subscriptionId: event.subscriptionId as string | null,
         entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
         feedType:
@@ -308,34 +294,6 @@ function parseEventData(data: string): SSEEventData | null {
         userId: event.userId,
         feedId: event.feedId,
         subscriptionId: event.subscriptionId,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-      };
-    }
-
-    // Handle user events - saved_article_created
-    if (
-      event.type === "saved_article_created" &&
-      typeof event.userId === "string" &&
-      typeof event.entryId === "string"
-    ) {
-      return {
-        type: event.type,
-        userId: event.userId,
-        entryId: event.entryId,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-      };
-    }
-
-    // Handle user events - saved_article_updated
-    if (
-      event.type === "saved_article_updated" &&
-      typeof event.userId === "string" &&
-      typeof event.entryId === "string"
-    ) {
-      return {
-        type: event.type,
-        userId: event.userId,
-        entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
       };
     }
@@ -532,17 +490,6 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           // Use high-level operation - handles cache remove + targeted invalidations
           handleSubscriptionDeleted(utils, data.subscriptionId, queryClient);
         }
-      } else if (data.type === "saved_article_created") {
-        // Update counts without invalidating entries.list to avoid disrupting the UI
-        // New saved entries will appear when user navigates to Saved view
-        adjustEntriesCount(utils, { type: "saved" }, 1, 1); // +1 unread, +1 total
-        adjustEntriesCount(utils, {}, 1, 1); // Update "All Articles" count too
-      } else if (data.type === "saved_article_updated") {
-        // Invalidate the specific entry (content changed) and counts (marked unread)
-        // Don't invalidate entries.list to avoid disrupting the UI
-        utils.entries.get.invalidate({ id: data.entryId });
-        utils.entries.count.invalidate({ type: "saved" });
-        utils.entries.count.invalidate({});
       } else if (data.type === "import_progress") {
         utils.imports.get.invalidate({ id: data.importId });
         utils.imports.list.invalidate();
@@ -794,8 +741,6 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         eventSource.addEventListener("entry_updated", handleEvent);
         eventSource.addEventListener("subscription_created", handleEvent);
         eventSource.addEventListener("subscription_deleted", handleEvent);
-        eventSource.addEventListener("saved_article_created", handleEvent);
-        eventSource.addEventListener("saved_article_updated", handleEvent);
         eventSource.addEventListener("import_progress", handleEvent);
         eventSource.addEventListener("import_completed", handleEvent);
 

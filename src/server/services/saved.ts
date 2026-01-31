@@ -19,7 +19,7 @@ import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import { logger } from "@/lib/logger";
-import { publishSavedArticleCreated } from "@/server/redis/pubsub";
+import { publishNewEntry } from "@/server/redis/pubsub";
 import { errors } from "@/server/trpc/errors";
 import { pluginRegistry } from "@/server/plugins";
 
@@ -391,7 +391,7 @@ export async function saveArticle(
   });
 
   // Publish event to notify other browser windows/tabs
-  await publishSavedArticleCreated(userId, entryId);
+  await publishNewEntry(savedFeedId, entryId, "saved");
 
   logger.info("Saved article via service", {
     entryId,
@@ -514,7 +514,7 @@ export async function createUploadedArticle(
   });
 
   // Publish event to notify other browser windows/tabs
-  await publishSavedArticleCreated(userId, entryId);
+  await publishNewEntry(savedFeedId, entryId, "saved");
 
   logger.info("Created uploaded article", {
     entryId,

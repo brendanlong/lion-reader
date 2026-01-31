@@ -27,6 +27,7 @@ import {
 } from "@/server/db/schema";
 import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
+import * as countsService from "@/server/services/counts";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -159,11 +160,50 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
+ * Schema for unread counts returned from single-entry mutations.
+ * Contains absolute counts for all lists the entry belongs to.
+ */
+const unreadCountsSchema = z.object({
+  // Always present
+  all: z.object({ total: z.number(), unread: z.number() }),
+  starred: z.object({ total: z.number(), unread: z.number() }),
+
+  // Only for saved articles
+  saved: z.object({ total: z.number(), unread: z.number() }).optional(),
+
+  // Only for web/email entries (have subscriptions)
+  subscription: z.object({ id: z.string(), unread: z.number() }).optional(),
+  tags: z.array(z.object({ id: z.string(), unread: z.number() })).optional(),
+  uncategorized: z.object({ unread: z.number() }).optional(),
+});
+
+/**
+ * Schema for unread counts returned from bulk mutations (markRead).
+ * Contains absolute counts for all affected lists.
+ */
+const bulkUnreadCountsSchema = z.object({
+  // Always present
+  all: z.object({ total: z.number(), unread: z.number() }),
+  starred: z.object({ total: z.number(), unread: z.number() }),
+  saved: z.object({ total: z.number(), unread: z.number() }),
+
+  // Per-subscription counts (only subscriptions that were affected)
+  subscriptions: z.array(z.object({ id: z.string(), unread: z.number() })),
+
+  // Per-tag counts (only tags that were affected)
+  tags: z.array(z.object({ id: z.string(), unread: z.number() })),
+
+  // Uncategorized count (if any affected subscription has no tags)
+  uncategorized: z.object({ unread: z.number() }).optional(),
+});
+
+/**
  * Output schema for star/unstar mutations.
- * Returns the updated entry with new starred state.
+ * Returns the updated entry with new starred state and counts.
  */
 const starOutputSchema = z.object({
   entry: entryMutationResultSchema,
+  counts: unreadCountsSchema,
 });
 
 // ============================================================================
@@ -515,6 +555,8 @@ export const entriesRouter = createTRPCRouter({
             implicitScore: z.number(), // For updating score display
           })
         ),
+        // Absolute counts for all affected lists
+        counts: bulkUnreadCountsSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -580,22 +622,28 @@ export const entriesRouter = createTRPCRouter({
         .from(visibleEntries)
         .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
 
+      const entriesResult = entrySubscriptions.map((e) => ({
+        id: e.id,
+        subscriptionId: e.subscriptionId,
+        starred: e.starred,
+        type: e.type,
+        score: e.score,
+        implicitScore: entriesService.computeImplicitScore(
+          e.hasStarred,
+          e.hasMarkedUnread,
+          e.hasMarkedReadOnList,
+          e.type
+        ),
+      }));
+
+      // Get absolute counts for all affected lists
+      const counts = await countsService.getBulkEntryRelatedCounts(ctx.db, userId, entriesResult);
+
       return {
         success: true,
         count: entrySubscriptions.length,
-        entries: entrySubscriptions.map((e) => ({
-          id: e.id,
-          subscriptionId: e.subscriptionId,
-          starred: e.starred,
-          type: e.type,
-          score: e.score,
-          implicitScore: entriesService.computeImplicitScore(
-            e.hasStarred,
-            e.hasMarkedUnread,
-            e.hasMarkedReadOnList,
-            e.type
-          ),
-        })),
+        entries: entriesResult,
+        counts,
       };
     }),
 
@@ -787,7 +835,12 @@ export const entriesRouter = createTRPCRouter({
         true,
         input.changedAt ?? new Date()
       );
-      return { entry };
+      const counts = await countsService.getEntryRelatedCounts(
+        ctx.db,
+        ctx.session.user.id,
+        input.id
+      );
+      return { entry, counts };
     }),
 
   /**
@@ -822,7 +875,12 @@ export const entriesRouter = createTRPCRouter({
         false,
         input.changedAt ?? new Date()
       );
-      return { entry };
+      const counts = await countsService.getEntryRelatedCounts(
+        ctx.db,
+        ctx.session.user.id,
+        input.id
+      );
+      return { entry, counts };
     }),
 
   /**
