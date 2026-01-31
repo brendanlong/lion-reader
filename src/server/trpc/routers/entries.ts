@@ -298,22 +298,21 @@ async function updateEntryStarred(
       )
     );
 
-  // Always return final state (join with entries to get type for implicit score)
+  // Always return final state from visibleEntries (includes computed updatedAt)
   const result = await ctx.db
     .select({
-      id: userEntries.entryId,
-      read: userEntries.read,
-      starred: userEntries.starred,
-      updatedAt: userEntries.updatedAt,
-      score: userEntries.score,
-      hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
-      hasMarkedUnread: userEntries.hasMarkedUnread,
-      hasStarred: userEntries.hasStarred,
-      type: entries.type,
+      id: visibleEntries.id,
+      read: visibleEntries.read,
+      starred: visibleEntries.starred,
+      updatedAt: visibleEntries.updatedAt,
+      score: visibleEntries.score,
+      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+      hasMarkedUnread: visibleEntries.hasMarkedUnread,
+      hasStarred: visibleEntries.hasStarred,
+      type: visibleEntries.type,
     })
-    .from(userEntries)
-    .innerJoin(entries, eq(userEntries.entryId, entries.id))
-    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)));
 
   if (result.length === 0) {
     throw errors.entryNotFound();

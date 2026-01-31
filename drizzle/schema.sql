@@ -387,7 +387,7 @@ CREATE VIEW public.visible_entries AS
     e.list_unsubscribe_https,
     e.list_unsubscribe_post,
     e.created_at,
-    e.updated_at,
+    GREATEST(e.updated_at, ue.updated_at) AS updated_at,
     e.full_content_original,
     e.full_content_cleaned,
     e.full_content_fetched_at,
