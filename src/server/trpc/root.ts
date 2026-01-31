@@ -24,7 +24,6 @@ import {
   feedStatsRouter,
   importsRouter,
   syncRouter,
-  scorePredictionRouter,
 } from "./routers";
 
 /**
@@ -49,7 +48,6 @@ export const appRouter = createTRPCRouter({
   feedStats: feedStatsRouter,
   imports: importsRouter,
   sync: syncRouter,
-  scorePrediction: scorePredictionRouter,
 });
 
 /**

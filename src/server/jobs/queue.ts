@@ -8,12 +8,16 @@
  * Uses row locking (SELECT FOR UPDATE SKIP LOCKED) for concurrent job claiming,
  * ensuring only one worker can process a job at a time.
  *
+ * Job eligibility is data-driven: instead of an "enabled" flag, jobs are
+ * claimed based on the actual data state. For example, feed jobs are only
+ * claimed if the feed has active subscribers.
+ *
  * See docs/job-queue-design.md for detailed documentation.
  */
 
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { jobs, subscriptions, type Job } from "../db/schema";
+import { jobs, type Job } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 
 /**
@@ -23,7 +27,6 @@ type RawJobRow = {
   id: string;
   type: string;
   payload: Record<string, unknown>;
-  enabled: boolean;
   next_run_at: string | null;
   running_since: string | null;
   last_run_at: string | null;
@@ -41,7 +44,6 @@ function rowToJob(row: RawJobRow): Job {
     id: row.id,
     type: row.type,
     payload: row.payload,
-    enabled: row.enabled,
     nextRunAt: row.next_run_at ? new Date(row.next_run_at) : null,
     runningSince: row.running_since ? new Date(row.running_since) : null,
     lastRunAt: row.last_run_at ? new Date(row.last_run_at) : null,
@@ -60,7 +62,6 @@ export interface JobPayloads {
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
   process_opml_import: { importId: string }; // Process an OPML import in the background
   train_score_model: { userId: string }; // Train ML model for score prediction
-  predict_scores: { userId: string; entryIds?: string[] }; // Predict scores for entries
 }
 
 export type JobType = keyof JobPayloads;
@@ -78,7 +79,6 @@ export interface CreateJobOptions<T extends JobType> {
   type: T;
   payload: JobPayloads[T];
   nextRunAt?: Date;
-  enabled?: boolean;
 }
 
 /**
@@ -106,7 +106,7 @@ export interface FinishJobOptions {
  * @returns The created job
  */
 export async function createJob<T extends JobType>(options: CreateJobOptions<T>): Promise<Job> {
-  const { type, payload, nextRunAt = new Date(), enabled = true } = options;
+  const { type, payload, nextRunAt = new Date() } = options;
 
   const id = generateUuidv7();
   const now = new Date();
@@ -117,7 +117,6 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
       id,
       type,
       payload,
-      enabled,
       nextRunAt,
       createdAt: now,
       updatedAt: now,
@@ -134,9 +133,11 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
  * can claim a job at a time, without blocking other workers.
  *
  * Jobs are claimed if:
- * - enabled = true
  * - next_run_at <= now
  * - running_since is NULL OR older than stale threshold (5 minutes)
+ *
+ * Note: This only claims non-feed jobs (process_opml_import, etc.).
+ * Feed jobs are claimed via claimFeedJob() which checks for active subscribers.
  *
  * @param options Claim options (optional type filter)
  * @returns The claimed job, or null if no jobs are available
@@ -162,8 +163,7 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
       updated_at = ${now}
     WHERE id = (
       SELECT id FROM ${jobs}
-      WHERE enabled = true
-        AND next_run_at <= ${now}
+      WHERE next_run_at <= ${now}
         AND (running_since IS NULL OR running_since < ${staleThreshold})
         ${typeFilter}
       ORDER BY next_run_at ASC
@@ -270,22 +270,25 @@ export function getJobPayload<T extends JobType>(job: Job): JobPayloads[T] {
 }
 
 /**
- * Creates or enables a job for a feed.
- * Idempotent - if a job already exists, enables it if disabled.
+ * Ensures a job exists for a feed.
+ * Idempotent - if a job already exists, updates next_run_at if not already set.
+ *
+ * In the data-driven model, job eligibility is determined by whether the feed
+ * has active subscribers, not by an enabled flag. This function just ensures
+ * the job row exists for tracking scheduling state.
  *
  * @param feedId The feed ID
  * @param nextRunAt When the job should run (default: now)
- * @returns The job (created or updated)
+ * @returns The job (created or existing)
  */
-export async function createOrEnableFeedJob(feedId: string, nextRunAt?: Date): Promise<Job> {
+export async function ensureFeedJob(feedId: string, nextRunAt?: Date): Promise<Job> {
   const now = new Date();
   const runAt = nextRunAt ?? now;
 
-  // Try to enable existing job first
+  // Try to update existing job's next_run_at if it's null
   const result = await db.execute<RawJobRow>(sql`
     UPDATE ${jobs}
     SET
-      enabled = true,
       next_run_at = COALESCE(next_run_at, ${runAt}),
       updated_at = ${now}
     WHERE type = 'fetch_feed'
@@ -302,71 +305,13 @@ export async function createOrEnableFeedJob(feedId: string, nextRunAt?: Date): P
     type: "fetch_feed",
     payload: { feedId },
     nextRunAt: runAt,
-    enabled: true,
   });
 }
 
 /**
- * Enables a feed job if it exists and is disabled.
- * Returns the job's next_run_at so it can be synced to feeds.next_fetch_at.
- *
- * @param feedId The feed ID
- * @returns The job if found and enabled, null otherwise
+ * @deprecated Use ensureFeedJob instead. This alias exists for backwards compatibility.
  */
-export async function enableFeedJob(feedId: string): Promise<Job | null> {
-  const now = new Date();
-
-  const result = await db.execute<RawJobRow>(sql`
-    UPDATE ${jobs}
-    SET
-      enabled = true,
-      updated_at = ${now}
-    WHERE type = 'fetch_feed'
-      AND payload->>'feedId' = ${feedId}
-    RETURNING *
-  `);
-
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  return rowToJob(result.rows[0]);
-}
-
-/**
- * Syncs a feed job's enabled state based on whether the feed has active subscribers.
- * This should be called after a subscription is deleted to check if the job should be disabled.
- *
- * @param feedId The feed ID
- * @returns Object with the job's new enabled state, or null if job not found
- */
-export async function syncFeedJobEnabled(
-  feedId: string
-): Promise<{ enabled: boolean; job: Job } | null> {
-  const now = new Date();
-
-  // Atomically update enabled based on whether there are active subscribers
-  const result = await db.execute<RawJobRow>(sql`
-    UPDATE ${jobs}
-    SET
-      enabled = EXISTS (
-        SELECT 1 FROM ${subscriptions}
-        WHERE ${subscriptions.feedId} = ${feedId}
-          AND ${subscriptions.unsubscribedAt} IS NULL
-      ),
-      updated_at = ${now}
-    WHERE type = 'fetch_feed'
-      AND payload->>'feedId' = ${feedId}
-    RETURNING *
-  `);
-
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  const job = rowToJob(result.rows[0]);
-  return { enabled: job.enabled, job };
-}
+export const createOrEnableFeedJob = ensureFeedJob;
 
 /**
  * Updates a feed job's next_run_at.
@@ -404,28 +349,17 @@ export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Pro
  */
 export async function listJobs(
   options: {
-    enabled?: boolean;
     type?: JobType;
     limit?: number;
   } = {}
 ): Promise<Job[]> {
-  const { enabled, type, limit = 100 } = options;
+  const { type, limit = 100 } = options;
 
-  const conditions = [];
-  if (enabled !== undefined) {
-    conditions.push(eq(jobs.enabled, enabled));
-  }
   if (type) {
-    conditions.push(eq(jobs.type, type));
+    return db.select().from(jobs).where(eq(jobs.type, type)).limit(limit);
   }
 
-  const query = db.select().from(jobs).limit(limit);
-
-  if (conditions.length > 0) {
-    return query.where(and(...conditions));
-  }
-
-  return query;
+  return db.select().from(jobs).limit(limit);
 }
 
 /**
@@ -483,7 +417,6 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
         id: generateUuidv7(),
         type,
         payload: {},
-        enabled: true,
         nextRunAt: now,
         runningSince: now,
         createdAt: now,
@@ -511,4 +444,147 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
     // Job exists and is running - that's fine
     return null;
   }
+}
+
+/**
+ * Claims a feed job for processing using data-driven eligibility.
+ *
+ * A feed job is eligible if:
+ * - The feed has at least one active subscriber (subscription with no unsubscribed_at)
+ * - The job's next_run_at <= now
+ * - The job is not already running (or is stale)
+ *
+ * This ensures we only fetch feeds that users actually care about.
+ *
+ * @returns The claimed job, or null if no eligible feed jobs
+ */
+export async function claimFeedJob(): Promise<Job | null> {
+  const now = new Date();
+  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
+
+  // Claim a feed job only if the feed has active subscribers
+  // We use EXISTS instead of JOIN + GROUP BY to allow FOR UPDATE
+  const result = await db.execute<RawJobRow>(sql`
+    UPDATE jobs
+    SET
+      running_since = ${now},
+      updated_at = ${now}
+    WHERE id = (
+      SELECT j.id FROM jobs j
+      WHERE j.type = 'fetch_feed'
+        AND j.next_run_at <= ${now}
+        AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
+        AND EXISTS (
+          SELECT 1 FROM subscriptions s
+          WHERE s.feed_id = (j.payload->>'feedId')::uuid
+            AND s.unsubscribed_at IS NULL
+        )
+      ORDER BY j.next_run_at ASC
+      LIMIT 1
+      FOR UPDATE OF j SKIP LOCKED
+    )
+    RETURNING *
+  `);
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return rowToJob(result.rows[0]);
+}
+
+/**
+ * Claims a score training job for processing using data-driven eligibility.
+ *
+ * A user needs score training if:
+ * - They have at least 20 entries with scoring signals (explicit score, starred, etc.)
+ * - Either they have no model, or the model is older than 24 hours
+ *
+ * This queries the actual user data to determine eligibility.
+ *
+ * @returns The claimed job, or null if no eligible training jobs
+ */
+export async function claimScoreTrainingJob(): Promise<Job | null> {
+  const now = new Date();
+  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
+  const modelAgeThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours
+
+  // Find a user who needs training:
+  // - Has 20+ scored entries
+  // - Model is missing OR model is stale (> 24h old)
+  // - Doesn't have a training job currently running
+  const result = await db.execute<RawJobRow>(sql`
+    WITH users_needing_training AS (
+      SELECT ue.user_id
+      FROM user_entries ue
+      INNER JOIN entries e ON e.id = ue.entry_id
+      WHERE ue.score IS NOT NULL
+         OR ue.has_starred = true
+         OR ue.has_marked_unread = true
+         OR ue.has_marked_read_on_list = true
+         OR e.type = 'saved'
+      GROUP BY ue.user_id
+      HAVING count(*) >= 20
+    ),
+    users_with_stale_model AS (
+      SELECT unt.user_id
+      FROM users_needing_training unt
+      LEFT JOIN user_score_models usm ON usm.user_id = unt.user_id
+      WHERE usm.user_id IS NULL
+         OR usm.trained_at < ${modelAgeThreshold}
+    )
+    UPDATE jobs
+    SET
+      running_since = ${now},
+      updated_at = ${now}
+    WHERE id = (
+      SELECT j.id FROM jobs j
+      INNER JOIN users_with_stale_model uwsm ON (j.payload->>'userId')::uuid = uwsm.user_id
+      WHERE j.type = 'train_score_model'
+        AND j.next_run_at <= ${now}
+        AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
+      ORDER BY j.next_run_at ASC
+      LIMIT 1
+      FOR UPDATE OF j SKIP LOCKED
+    )
+    RETURNING *
+  `);
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return rowToJob(result.rows[0]);
+}
+
+/**
+ * Ensures a training job exists for a user.
+ * Idempotent - if a job already exists, returns it.
+ *
+ * @param userId The user ID
+ * @param nextRunAt When the job should run (default: now)
+ * @returns The job (created or existing)
+ */
+export async function ensureScoreTrainingJob(userId: string, nextRunAt?: Date): Promise<Job> {
+  const now = new Date();
+  const runAt = nextRunAt ?? now;
+
+  // Check if job exists
+  const result = await db.execute<RawJobRow>(sql`
+    SELECT * FROM ${jobs}
+    WHERE type = 'train_score_model'
+      AND payload->>'userId' = ${userId}
+    LIMIT 1
+  `);
+
+  if (result.rows.length > 0) {
+    return rowToJob(result.rows[0]);
+  }
+
+  // Create new job
+  return createJob({
+    type: "train_score_model",
+    payload: { userId },
+    nextRunAt: runAt,
+  });
 }

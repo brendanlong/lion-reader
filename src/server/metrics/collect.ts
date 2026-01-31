@@ -54,14 +54,15 @@ async function collectJobQueueMetrics(): Promise<void> {
   if (!metricsEnabled) return;
 
   // Count jobs by type and status
-  // In the new schema: enabled=true jobs are "pending", running_since IS NOT NULL are "running"
+  // Pending: jobs that are not currently running
+  // Running: jobs with running_since IS NOT NULL
   const pendingCounts = await db
     .select({
       type: jobs.type,
       count: sql<number>`count(*)::int`,
     })
     .from(jobs)
-    .where(sql`${jobs.enabled} = true AND ${jobs.runningSince} IS NULL`)
+    .where(sql`${jobs.runningSince} IS NULL`)
     .groupBy(jobs.type);
 
   const runningCounts = await db

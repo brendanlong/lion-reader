@@ -165,7 +165,6 @@ async function seed() {
     id: generateUuidv7(),
     type: "fetch_feed",
     payload: { feedId: feeds[0].id },
-    enabled: true,
     nextRunAt: now,
     createdAt: now,
     updatedAt: now,

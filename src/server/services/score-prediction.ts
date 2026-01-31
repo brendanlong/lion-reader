@@ -7,7 +7,7 @@
  * See docs/features/score-prediction-design.md for design details.
  */
 
-import { eq, and, sql, isNull, desc, inArray, isNotNull, or } from "drizzle-orm";
+import { eq, and, sql, desc, inArray, isNotNull, or, isNull } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries, userScoreModels, entryScorePredictions } from "@/server/db/schema";
 import { TfidfVectorizer, combineFeatures, type SparseVector } from "@/server/ml/tfidf";
@@ -608,4 +608,75 @@ export async function getModelInfo(
     cvMae: model.cvMae ?? undefined,
     cvCorrelation: model.cvCorrelation ?? undefined,
   };
+}
+
+/**
+ * Predicts scores for specific entries after a feed fetch.
+ * Called inline by the feed fetcher for new/updated entries.
+ *
+ * For each user who:
+ * 1. Has an active subscription to the feed
+ * 2. Has a trained score model
+ *
+ * This predicts and stores scores for the given entry IDs.
+ *
+ * @param db - Database connection
+ * @param feedId - The feed ID that was just fetched
+ * @param entryIds - Entry IDs to predict scores for
+ * @returns Count of predictions made
+ */
+export async function predictScoresForFeedEntries(
+  db: typeof dbType,
+  feedId: string,
+  entryIds: string[]
+): Promise<{ predictedCount: number }> {
+  if (entryIds.length === 0) {
+    return { predictedCount: 0 };
+  }
+
+  // Find users who:
+  // 1. Have an active subscription to this feed
+  // 2. Have a trained model
+  const usersWithModels = await db.execute<{ user_id: string }>(sql`
+    SELECT DISTINCT s.user_id
+    FROM subscriptions s
+    INNER JOIN user_score_models usm ON usm.user_id = s.user_id
+    WHERE s.feed_id = ${feedId}
+      AND s.unsubscribed_at IS NULL
+  `);
+
+  if (usersWithModels.rows.length === 0) {
+    logger.debug("No users with models subscribed to feed", { feedId });
+    return { predictedCount: 0 };
+  }
+
+  let totalPredicted = 0;
+
+  // Predict for each user
+  for (const row of usersWithModels.rows) {
+    const userId = row.user_id;
+
+    try {
+      const result = await predictScores(db, userId, entryIds);
+      if (result.success) {
+        totalPredicted += result.predictedCount;
+      }
+    } catch (error) {
+      // Log but don't fail the feed fetch
+      logger.warn("Failed to predict scores for user after feed fetch", {
+        userId,
+        feedId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  logger.debug("Predicted scores for feed entries", {
+    feedId,
+    entryCount: entryIds.length,
+    userCount: usersWithModels.rows.length,
+    totalPredicted,
+  });
+
+  return { predictedCount: totalPredicted };
 }

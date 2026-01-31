@@ -15,6 +15,8 @@
 import {
   claimJob as defaultClaimJob,
   claimSingletonJob,
+  claimFeedJob,
+  claimScoreTrainingJob,
   finishJob,
   getJobPayload,
   type JobType,
@@ -24,7 +26,6 @@ import {
   handleRenewWebsub,
   handleProcessOpmlImport,
   handleTrainScoreModel,
-  handlePredictScores,
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
@@ -99,22 +100,50 @@ export function createWorker(config: WorkerConfig = {}): Worker {
     });
   }
 
-  // Default claim function - tries regular jobs first, then singleton jobs
+  // Default claim function - tries different job types in priority order:
+  // 1. Regular jobs (process_opml_import) - user-triggered, highest priority
+  // 2. Feed jobs (fetch_feed) - data-driven, only for feeds with active subscribers
+  // 3. Singleton jobs (renew_websub) - system maintenance
+  // 4. Score training jobs - data-driven, for users with enough training data
   const baseClaimJob = claimJobOverride ?? defaultClaimJob;
 
   async function claimJob(options?: { types?: JobType[] }): Promise<Job | null> {
-    // First try to claim a regular job
-    const regularJob = await baseClaimJob(options);
-    if (regularJob) {
-      return regularJob;
+    // First try to claim a regular job (e.g., OPML imports)
+    // Exclude feed jobs here since they need special data-driven claiming
+    const regularTypes = options?.types?.filter(
+      (t) => t !== "fetch_feed" && t !== "train_score_model"
+    );
+    if (!options?.types || (regularTypes && regularTypes.length > 0)) {
+      const regularJob = await baseClaimJob({
+        types: regularTypes || ["process_opml_import"],
+      });
+      if (regularJob) {
+        return regularJob;
+      }
     }
 
-    // No regular jobs - try singleton jobs (only if not filtered by type)
+    // Try to claim a feed job (data-driven: only if feed has active subscribers)
+    if (!options?.types || options.types.includes("fetch_feed")) {
+      const feedJob = await claimFeedJob();
+      if (feedJob) {
+        return feedJob;
+      }
+    }
+
+    // Try singleton jobs (only if not filtered by type)
     // Singleton jobs self-create if they don't exist
     if (!options?.types || options.types.includes("renew_websub")) {
       const singletonJob = await claimSingletonJob("renew_websub");
       if (singletonJob) {
         return singletonJob;
+      }
+    }
+
+    // Try to claim a score training job (data-driven: only if user needs training)
+    if (!options?.types || options.types.includes("train_score_model")) {
+      const trainingJob = await claimScoreTrainingJob();
+      if (trainingJob) {
+        return trainingJob;
       }
     }
 
@@ -154,11 +183,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         case "train_score_model": {
           const payload = getJobPayload<"train_score_model">(job);
           result = await handleTrainScoreModel(payload);
-          break;
-        }
-        case "predict_scores": {
-          const payload = getJobPayload<"predict_scores">(job);
-          result = await handlePredictScores(payload);
           break;
         }
         default: {

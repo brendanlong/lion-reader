@@ -699,16 +699,18 @@ export const visibleEntries = pgView("visible_entries", {
  *
  * One job per scheduled task (e.g., one per feed for fetch_feed jobs).
  * Jobs are persistent and reused across runs, not created/completed per execution.
+ *
+ * Note: Job eligibility is determined by data state (e.g., feeds with active subscribers),
+ * not by an enabled flag. The job table tracks scheduling state only.
  */
 export const jobs = pgTable(
   "jobs",
   {
     id: uuid("id").primaryKey(),
-    type: text("type").notNull(), // 'fetch_feed', 'renew_websub'
+    type: text("type").notNull(), // 'fetch_feed', 'renew_websub', 'train_score_model'
     payload: jsonb("payload").notNull().default({}).$type<Record<string, unknown>>(),
 
     // Scheduling state
-    enabled: boolean("enabled").notNull().default(true),
     nextRunAt: timestamp("next_run_at", { withTimezone: true }),
     runningSince: timestamp("running_since", { withTimezone: true }), // NULL = not running
 
@@ -721,7 +723,7 @@ export const jobs = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    // Index for polling: enabled jobs that are due
+    // Index for polling: jobs that are due
     index("idx_jobs_polling").on(table.nextRunAt),
     // Index for looking up feed jobs by feedId
     index("idx_jobs_feed_id").on(sql`(${table.payload}->>'feedId')`),

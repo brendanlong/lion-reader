@@ -165,7 +165,6 @@ export const brokenFeedsRouter = createTRPCRouter({
           consecutiveFailures: 0,
           lastError: null,
           nextRunAt: now,
-          enabled: true,
           updatedAt: now,
         })
         .where(sql`${jobs.payload}->>'feedId' = ${input.feedId} AND ${jobs.type} = 'fetch_feed'`);

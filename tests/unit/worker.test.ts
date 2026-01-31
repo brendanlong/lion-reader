@@ -20,7 +20,6 @@ function createMockJob(id: string, type: string = "fetch_feed"): Job {
     id,
     type,
     payload: { feedId: `feed-${id}` },
-    enabled: true,
     consecutiveFailures: 0,
     nextRunAt: new Date(),
     runningSince: new Date(),

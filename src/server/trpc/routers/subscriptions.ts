@@ -28,12 +28,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeed, discoverFeeds, deriveGuid, getDomainFromUrl } from "@/server/feed";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
-import {
-  createOrEnableFeedJob,
-  enableFeedJob,
-  syncFeedJobEnabled,
-  createJob,
-} from "@/server/jobs/queue";
+import { ensureFeedJob, createJob } from "@/server/jobs/queue";
 import { publishSubscriptionCreated, publishSubscriptionDeleted } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
@@ -369,9 +364,9 @@ async function subscribeToExistingFeed(
 ): Promise<z.infer<typeof subscriptionOutputSchema>> {
   const feedId = feedRecord.id;
 
-  // Ensure job is enabled and sync next_fetch_at
-  const job = await enableFeedJob(feedId);
-  if (job?.nextRunAt) {
+  // Ensure job exists and sync next_fetch_at
+  const job = await ensureFeedJob(feedId);
+  if (job.nextRunAt) {
     await db
       .update(feeds)
       .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
@@ -506,9 +501,9 @@ async function subscribeToNewOrUnfetchedFeed(
     feedId = existingFeed[0].id;
     feedRecord = existingFeed[0];
 
-    // Ensure job is enabled
-    const job = await enableFeedJob(feedId);
-    if (job?.nextRunAt) {
+    // Ensure job exists
+    const job = await ensureFeedJob(feedId);
+    if (job.nextRunAt) {
       await db
         .update(feeds)
         .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
@@ -545,7 +540,7 @@ async function subscribeToNewOrUnfetchedFeed(
     await db.insert(feeds).values(newFeed);
     feedRecord = newFeed as typeof feeds.$inferSelect;
 
-    await createOrEnableFeedJob(feedId);
+    await ensureFeedJob(feedId);
   }
 
   // Extract GUIDs from parsed feed for entry matching
@@ -999,17 +994,8 @@ export const subscriptionsRouter = createTRPCRouter({
         });
       });
 
-      // Sync job enabled state - if this was the last subscriber, job will be disabled
-      const syncResult = await syncFeedJobEnabled(feed.id);
-      if (syncResult && !syncResult.enabled) {
-        // Job was disabled (no more subscribers) - clear next_fetch_at
-        await ctx.db
-          .update(feeds)
-          .set({ nextFetchAt: null, updatedAt: now })
-          .where(eq(feeds.id, feed.id));
-
-        logger.debug("Feed job disabled - no active subscribers", { feedId: feed.id });
-      }
+      // Note: In the data-driven model, we don't need to disable the job.
+      // The job will simply not be claimed if there are no active subscribers.
 
       return { success: true };
     }),

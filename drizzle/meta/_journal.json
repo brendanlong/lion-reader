@@ -309,6 +309,27 @@
       "when": 1767510000000,
       "tag": "0043_backfill_has_starred",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1767520000000,
+      "tag": "0044_score_predictions",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1767530000000,
+      "tag": "0045_visible_entries_predicted_score",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1767540000000,
+      "tag": "0046_simplify_jobs",
+      "breakpoints": true
     }
   ]
 }

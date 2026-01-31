@@ -35,12 +35,7 @@ import {
   type ParsedCacheHeaders,
   type RedirectInfo,
 } from "../feed";
-import {
-  type JobPayloads,
-  createOrEnableFeedJob,
-  enableFeedJob,
-  syncFeedJobEnabled,
-} from "./queue";
+import { type JobPayloads, ensureFeedJob } from "./queue";
 import { logger } from "@/lib/logger";
 import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from "../metrics/metrics";
 import {
@@ -494,6 +489,32 @@ async function processSuccessfulFetch(
         }
       : {};
 
+  // Predict scores for new/updated entries (inline for immediate availability)
+  let scorePredictionMetadata: Record<string, unknown> = {};
+  const entriesNeedingPrediction = processResult.entries
+    .filter((e) => e.isNew || e.isUpdated)
+    .map((e) => e.id);
+
+  if (entriesNeedingPrediction.length > 0) {
+    try {
+      const { predictScoresForFeedEntries } = await import("../services/score-prediction");
+      const predictionResult = await predictScoresForFeedEntries(
+        db,
+        feed.id,
+        entriesNeedingPrediction
+      );
+      if (predictionResult.predictedCount > 0) {
+        scorePredictionMetadata = { scoresPredicted: predictionResult.predictedCount };
+      }
+    } catch (error) {
+      // Log but don't fail the feed fetch
+      logger.warn("Failed to predict scores for new entries", {
+        feedId: feed.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return {
     success: true,
     nextRunAt: nextFetch.nextFetchAt,
@@ -505,6 +526,7 @@ async function processSuccessfulFetch(
       nextFetchReason: nextFetch.reason,
       ...websubMetadata,
       ...fullContentMetadata,
+      ...scorePredictionMetadata,
     },
   };
 }
@@ -1157,8 +1179,8 @@ export async function migrateSubscriptionsToExistingFeed(
 
     await db.insert(subscriptions).values(newSubscriptions);
 
-    // Enable the job for the new feed (only once, not per-user)
-    await enableFeedJob(newFeed.id);
+    // Ensure a job exists for the new feed (will be claimed via data-driven eligibility)
+    await ensureFeedJob(newFeed.id);
   }
 
   // Batch update: Unsubscribe all old subscriptions at once
@@ -1177,8 +1199,8 @@ export async function migrateSubscriptionsToExistingFeed(
     newSubscriptions: usersWithoutExisting.length,
   });
 
-  // Sync the old feed's job - it will be disabled since it has no subscribers now
-  await syncFeedJobEnabled(oldFeed.id);
+  // Note: The old feed's job will naturally stop being claimed since it has no active
+  // subscribers. In the data-driven model, we don't need to explicitly disable it.
 }
 
 /**
@@ -1478,10 +1500,10 @@ export async function handleProcessOpmlImport(
         let feedId: string;
 
         if (existingFeed.length > 0) {
-          // Feed exists - ensure job is enabled and sync next_fetch_at
+          // Feed exists - ensure job exists
           feedId = existingFeed[0].id;
-          const job = await enableFeedJob(feedId);
-          if (job?.nextRunAt) {
+          const job = await ensureFeedJob(feedId);
+          if (job.nextRunAt) {
             await db
               .update(feeds)
               .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
@@ -1503,8 +1525,8 @@ export async function handleProcessOpmlImport(
             updatedAt: now,
           });
 
-          // Create job for the new feed (enabled, runs immediately)
-          await createOrEnableFeedJob(feedId);
+          // Create job for the new feed (will be claimed via data-driven eligibility)
+          await ensureFeedJob(feedId);
         }
 
         // Create or reactivate subscription with entry population
@@ -1708,11 +1730,11 @@ export async function handleProcessOpmlImport(
 
 /**
  * Handler for train_score_model jobs.
- * Trains a score prediction model for a user.
+ * Trains a score prediction model for a user, then immediately runs predictions
+ * for all their visible entries.
  *
- * This is typically run:
- * - Daily for users with new interactions
- * - Weekly for all active users (full retrain)
+ * Job eligibility is determined by data state (users with 20+ rated entries
+ * whose model is missing or stale). See claimScoreTrainingJob().
  *
  * @param payload - The job payload containing userId
  * @returns Job handler result with next run time (7 days for success, 1 day for retry)
@@ -1726,7 +1748,7 @@ export async function handleTrainScoreModel(
 
   try {
     // Lazy import to avoid circular dependencies
-    const { trainModel } = await import("../services/score-prediction");
+    const { trainModel, predictScores } = await import("../services/score-prediction");
 
     const result = await trainModel(db, userId);
 
@@ -1755,6 +1777,14 @@ export async function handleTrainScoreModel(
       cvCorrelation: result.cvCorrelation,
     });
 
+    // Immediately run predictions for all unscored entries after training
+    const predictionResult = await predictScores(db, userId);
+
+    logger.info("Score predictions completed after training", {
+      userId,
+      predictedCount: predictionResult.predictedCount,
+    });
+
     // Schedule next training in 7 days
     return {
       success: true,
@@ -1764,80 +1794,13 @@ export async function handleTrainScoreModel(
         modelVersion: result.modelVersion,
         cvMae: result.cvMae,
         cvCorrelation: result.cvCorrelation,
+        predictedCount: predictionResult.predictedCount,
       },
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     logger.error("Score model training failed", { userId, error: errorMessage });
-
-    // Retry in 1 day
-    return {
-      success: false,
-      nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      error: errorMessage,
-    };
-  }
-}
-
-/**
- * Handler for predict_scores jobs.
- * Predicts scores for entries using a user's trained model.
- *
- * This is typically run:
- * - Daily for users with trained models (score recent entries)
- * - After model training (score all unscored entries)
- *
- * @param payload - The job payload containing userId and optional entryIds
- * @returns Job handler result with next run time (1 day)
- */
-export async function handlePredictScores(
-  payload: JobPayloads["predict_scores"]
-): Promise<JobHandlerResult> {
-  const { userId, entryIds } = payload;
-
-  logger.info("Starting score prediction", { userId, entryCount: entryIds?.length ?? "all" });
-
-  try {
-    // Lazy import to avoid circular dependencies
-    const { predictScores } = await import("../services/score-prediction");
-
-    const result = await predictScores(db, userId, entryIds);
-
-    if (!result.success) {
-      logger.info("Score prediction skipped", {
-        userId,
-        reason: result.error,
-      });
-
-      // No model - check again in 7 days
-      return {
-        success: true,
-        nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        metadata: {
-          skipped: true,
-          reason: result.error,
-        },
-      };
-    }
-
-    logger.info("Score prediction completed", {
-      userId,
-      predictedCount: result.predictedCount,
-    });
-
-    // Schedule next prediction in 1 day
-    return {
-      success: true,
-      nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      metadata: {
-        predictedCount: result.predictedCount,
-      },
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    logger.error("Score prediction failed", { userId, error: errorMessage });
 
     // Retry in 1 day
     return {
