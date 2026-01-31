@@ -1,8 +1,13 @@
 /**
  * useEntryMutations Hook
  *
- * Provides entry mutations (markRead, star, unstar, setScore) with direct cache updates.
+ * Provides entry mutations (markRead, star, unstar, setScore) with optimistic updates.
  * Consolidates mutation logic from page components.
+ *
+ * Uses optimistic updates for immediate UI feedback:
+ * - Read/starred status updates appear instantly in the UI
+ * - If the server request fails, changes are rolled back automatically
+ * - Server response is used to update counts and scores after success
  *
  * Uses high-level cache operations that handle all interactions correctly
  * (e.g., starring an unread entry updates the starred unread count).
@@ -122,34 +127,67 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
 
-  // markRead mutation - uses server-provided absolute counts
+  // markRead mutation - uses optimistic updates for instant UI feedback
   // Also updates score cache since marking read/unread sets implicit signal flags
   const markReadMutation = trpc.entries.markRead.useMutation({
+    // Optimistic update: immediately update the UI before server responds
+    onMutate: async (variables) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
+      await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
+
+      // Get the entry IDs being updated
+      const entryIds = variables.entries.map((e) => e.id);
+
+      // Snapshot the previous state for rollback
+      const previousEntries = new Map<string, { read: boolean } | undefined>();
+      for (const entryId of entryIds) {
+        const data = utils.entries.get.getData({ id: entryId });
+        previousEntries.set(entryId, data?.entry ? { read: data.entry.read } : undefined);
+      }
+
+      // Optimistically update the cache immediately
+      updateEntriesReadStatus(utils, entryIds, variables.read, queryClient);
+
+      // Return context for rollback
+      return { previousEntries, entryIds };
+    },
+
     onSuccess: (data, variables) => {
-      // Update individual entries.get caches (keyed by entry ID)
-      // Don't pass queryClient - we'll update list caches separately with targeting
+      // Server confirmed - update with authoritative data
+      // The read status is already updated optimistically, but we need to:
+      // 1. Update individual entries.get caches with any additional data
       updateEntriesReadStatus(
         utils,
         data.entries.map((e) => e.id),
         variables.read
       );
 
-      // Update only the affected entry list caches using server-provided scope
+      // 2. Update only the affected entry list caches using server-provided scope
       const scope = {
         tagIds: new Set(data.counts.tags.map((t) => t.id)),
         hasUncategorized: data.counts.uncategorized !== undefined,
       };
       updateEntriesInAffectedListCaches(queryClient, data.entries, { read: variables.read }, scope);
 
-      // Set absolute counts from server (no delta calculations)
+      // 3. Set absolute counts from server (no delta calculations)
       setBulkCounts(utils, data.counts, queryClient);
 
-      // Update score cache for each entry (implicit signals changed)
+      // 4. Update score cache for each entry (implicit signals changed)
       for (const entry of data.entries) {
         handleEntryScoreChanged(utils, entry.id, entry.score, entry.implicitScore, queryClient);
       }
     },
-    onError: () => {
+
+    onError: (_error, _variables, context) => {
+      // Rollback to previous state on error
+      if (context?.previousEntries) {
+        for (const [entryId, prevState] of context.previousEntries) {
+          if (prevState !== undefined) {
+            updateEntriesReadStatus(utils, [entryId], prevState.read, queryClient);
+          }
+        }
+      }
       toast.error("Failed to update read status");
     },
   });
@@ -178,11 +216,27 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // star mutation - uses server-provided absolute counts
+  // star mutation - uses optimistic updates for instant UI feedback
   // Also updates score cache since starring sets hasStarred implicit signal
   const starMutation = trpc.entries.star.useMutation({
+    // Optimistic update: immediately show the entry as starred
+    onMutate: async (variables) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
+      await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
+
+      // Snapshot previous state for rollback
+      const previousEntry = utils.entries.get.getData({ id: variables.id });
+      const wasStarred = previousEntry?.entry?.starred ?? false;
+
+      // Optimistically update the cache
+      updateEntryStarredStatus(utils, variables.id, true, queryClient);
+
+      return { entryId: variables.id, wasStarred };
+    },
+
     onSuccess: (data) => {
-      // Update starred status in entry caches
+      // Server confirmed - update with authoritative data
       updateEntryStarredStatus(utils, data.entry.id, true, queryClient);
 
       // Set absolute counts from server
@@ -196,15 +250,36 @@ export function useEntryMutations(): UseEntryMutationsResult {
         queryClient
       );
     },
-    onError: () => {
+
+    onError: (_error, _variables, context) => {
+      // Rollback to previous state on error
+      if (context) {
+        updateEntryStarredStatus(utils, context.entryId, context.wasStarred, queryClient);
+      }
       toast.error("Failed to star entry");
     },
   });
 
-  // unstar mutation - uses server-provided absolute counts
+  // unstar mutation - uses optimistic updates for instant UI feedback
   const unstarMutation = trpc.entries.unstar.useMutation({
+    // Optimistic update: immediately show the entry as unstarred
+    onMutate: async (variables) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
+      await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
+
+      // Snapshot previous state for rollback
+      const previousEntry = utils.entries.get.getData({ id: variables.id });
+      const wasStarred = previousEntry?.entry?.starred ?? true;
+
+      // Optimistically update the cache
+      updateEntryStarredStatus(utils, variables.id, false, queryClient);
+
+      return { entryId: variables.id, wasStarred };
+    },
+
     onSuccess: (data) => {
-      // Update starred status in entry caches
+      // Server confirmed - update with authoritative data
       updateEntryStarredStatus(utils, data.entry.id, false, queryClient);
 
       // Set absolute counts from server
@@ -218,7 +293,12 @@ export function useEntryMutations(): UseEntryMutationsResult {
         queryClient
       );
     },
-    onError: () => {
+
+    onError: (_error, _variables, context) => {
+      // Rollback to previous state on error
+      if (context) {
+        updateEntryStarredStatus(utils, context.entryId, context.wasStarred, queryClient);
+      }
       toast.error("Failed to unstar entry");
     },
   });
