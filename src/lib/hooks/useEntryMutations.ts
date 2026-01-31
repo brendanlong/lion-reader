@@ -275,7 +275,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
   // Also updates score cache since marking read/unread sets implicit signal flags
   const markReadMutation = trpc.entries.markRead.useMutation({
     // Optimistic update: immediately update the UI before server responds
-    onMutate: async () => {
+    onMutate: async (variables) => {
       const entryIds = variables.entries.map((e) => e.id);
 
       const optimisticContext = await applyOptimisticReadUpdate(
@@ -326,7 +326,8 @@ export function useEntryMutations(): UseEntryMutationsResult {
       setBulkCounts(utils, data.counts, queryClient);
     },
 
-    onError: (_error, variables) => {
+    onError: (error, variables) => {
+      console.error("markRead mutation error:", error);
       const entryIds = variables.entries.map((e) => e.id);
 
       // Check each entry for completion and handle rollback
@@ -415,7 +416,8 @@ export function useEntryMutations(): UseEntryMutationsResult {
       setCounts(utils, data.counts, queryClient);
     },
 
-    onError: (_error, variables) => {
+    onError: (error, variables) => {
+      console.error("setStarred mutation error:", error);
       const result = recordMutationError(variables.id);
       if (result?.allComplete) {
         if (result.winningState) {
