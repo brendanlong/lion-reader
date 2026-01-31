@@ -629,10 +629,20 @@ export function setBulkCounts(
   utils.entries.count.setData({ starredOnly: true }, counts.starred);
   utils.entries.count.setData({ type: "saved" }, counts.saved);
 
-  // Set subscription unread counts
-  for (const sub of counts.subscriptions) {
-    setSubscriptionUnreadCount(utils, sub.id, sub.unread, queryClient);
-  }
+  // Build subscription updates map for efficient batch update
+  const subscriptionUpdates = new Map(counts.subscriptions.map((s) => [s.id, s.unread]));
+
+  // Build set of affected tag IDs to only update those caches
+  const affectedTagIds = new Set(counts.tags.map((t) => t.id));
+
+  // Batch update all subscription unread counts
+  setBulkSubscriptionUnreadCounts(
+    utils,
+    subscriptionUpdates,
+    affectedTagIds,
+    counts.uncategorized !== undefined,
+    queryClient
+  );
 
   // Set tag unread counts
   for (const tag of counts.tags) {
@@ -646,7 +656,81 @@ export function setBulkCounts(
 }
 
 /**
+ * Sets unread counts for multiple subscriptions, only updating affected tag caches.
+ *
+ * Instead of scanning ALL cached tag queries for each subscription, this function
+ * uses the known affected tag IDs to only iterate through relevant caches.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param subscriptionUpdates - Map of subscriptionId -> new unread count
+ * @param affectedTagIds - Set of tag IDs that were affected (only these caches need updating)
+ * @param hasUncategorized - Whether uncategorized subscriptions were affected
+ * @param queryClient - React Query client for updating infinite query caches
+ */
+function setBulkSubscriptionUnreadCounts(
+  utils: TRPCClientUtils,
+  subscriptionUpdates: Map<string, number>,
+  affectedTagIds: Set<string>,
+  hasUncategorized: boolean,
+  queryClient?: QueryClient
+): void {
+  if (subscriptionUpdates.size === 0) return;
+
+  // Update in unparameterized subscriptions.list cache
+  utils.subscriptions.list.setData(undefined, (oldData) => {
+    if (!oldData) return oldData;
+    return {
+      ...oldData,
+      items: oldData.items.map((sub) => {
+        const newUnread = subscriptionUpdates.get(sub.id);
+        return newUnread !== undefined ? { ...sub, unreadCount: newUnread } : sub;
+      }),
+    };
+  });
+
+  // Update only the affected per-tag infinite query caches
+  if (queryClient) {
+    const infiniteQueries = queryClient.getQueriesData<{
+      pages: Array<{ items: Array<{ id: string; unreadCount: number; [key: string]: unknown }> }>;
+      pageParams: unknown[];
+    }>({
+      queryKey: [["subscriptions", "list"]],
+    });
+
+    for (const [queryKey, data] of infiniteQueries) {
+      if (!data?.pages) continue;
+
+      // Check if this query is for an affected tag
+      const keyData = queryKey[1] as { input?: SubscriptionListInput } | undefined;
+      const input = keyData?.input;
+
+      // Skip queries that aren't for affected tags or uncategorized
+      if (input) {
+        const isAffectedTag = input.tagId && affectedTagIds.has(input.tagId);
+        const isAffectedUncategorized = hasUncategorized && input.uncategorized === true;
+        if (!isAffectedTag && !isAffectedUncategorized) {
+          continue;
+        }
+      }
+
+      // Update subscriptions in this cache
+      queryClient.setQueryData(queryKey, {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          items: page.items.map((s) => {
+            const newUnread = subscriptionUpdates.get(s.id);
+            return newUnread !== undefined ? { ...s, unreadCount: newUnread } : s;
+          }),
+        })),
+      });
+    }
+  }
+}
+
+/**
  * Sets the unread count for a specific subscription.
+ * Used by single-entry mutations (setCounts) where we don't know the affected tags.
  */
 function setSubscriptionUnreadCount(
   utils: TRPCClientUtils,
@@ -666,6 +750,9 @@ function setSubscriptionUnreadCount(
   });
 
   // Update in per-tag infinite query caches
+  // Note: For single-entry mutations, we still need to scan all caches
+  // since we don't have the affected tag IDs. This is acceptable because
+  // single-entry mutations (star/unstar) are less frequent than markRead.
   if (queryClient) {
     const infiniteQueries = queryClient.getQueriesData<{
       pages: Array<{ items: Array<{ id: string; unreadCount: number; [key: string]: unknown }> }>;

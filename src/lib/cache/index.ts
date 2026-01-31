@@ -40,8 +40,11 @@ export {
   updateEntryStarredStatus,
   updateEntryScoreInCache,
   updateEntriesInListCache,
+  updateEntriesInAffectedListCaches,
   updateEntryMetadataInCache,
   type EntryMetadataUpdate,
+  type EntryContext,
+  type AffectedScope,
 } from "./entry-cache";
 
 export {

@@ -74,6 +74,127 @@ export function updateEntriesInListCache(
 }
 
 /**
+ * Entry context for targeted cache updates.
+ */
+export interface EntryContext {
+  id: string;
+  subscriptionId: string | null;
+  type: "web" | "email" | "saved";
+  starred: boolean;
+}
+
+/**
+ * Affected scope info for targeted cache updates.
+ */
+export interface AffectedScope {
+  tagIds: Set<string>;
+  hasUncategorized: boolean;
+}
+
+/**
+ * Updates entries in only the affected cached entry lists.
+ * Uses the entry context and affected scope to skip unrelated caches.
+ *
+ * @param queryClient - React Query client for cache access
+ * @param entries - Entries with their context
+ * @param updates - Fields to update (read, starred)
+ * @param scope - Affected tags and uncategorized flag from server response
+ */
+export function updateEntriesInAffectedListCaches(
+  queryClient: QueryClient,
+  entries: EntryContext[],
+  updates: Partial<{ read: boolean }>,
+  scope: AffectedScope
+): void {
+  if (entries.length === 0) return;
+
+  const entryIdSet = new Set(entries.map((e) => e.id));
+  const subscriptionIds = new Set(entries.map((e) => e.subscriptionId).filter(Boolean) as string[]);
+  const entryTypes = new Set(entries.map((e) => e.type));
+  const hasStarred = entries.some((e) => e.starred);
+
+  // Get all cached entry list queries
+  const infiniteQueries = queryClient.getQueriesData<InfiniteData>({
+    queryKey: [["entries", "list"]],
+  });
+
+  for (const [queryKey, data] of infiniteQueries) {
+    if (!data?.pages) continue;
+
+    // Extract filters from query key
+    const keyMeta = queryKey[1] as TRPCQueryKey | undefined;
+    const filters: EntryListFilters = keyMeta?.input ?? {};
+
+    // Check if this cache could contain any of the affected entries
+    if (!shouldUpdateEntryListCache(filters, subscriptionIds, entryTypes, hasStarred, scope)) {
+      continue;
+    }
+
+    // Update entries in this cache
+    queryClient.setQueryData(queryKey, {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        items: page.items.map((entry) => {
+          if (entryIdSet.has(entry.id)) {
+            return { ...entry, ...updates };
+          }
+          return entry;
+        }),
+      })),
+    });
+  }
+}
+
+/**
+ * Determines if an entry list cache should be updated based on its filters
+ * and the affected entries' context.
+ */
+function shouldUpdateEntryListCache(
+  filters: EntryListFilters,
+  subscriptionIds: Set<string>,
+  entryTypes: Set<string>,
+  hasStarred: boolean,
+  scope: AffectedScope
+): boolean {
+  // No filters = All entries view, always update
+  const hasNoFilters =
+    !filters.subscriptionId &&
+    !filters.tagId &&
+    !filters.uncategorized &&
+    !filters.starredOnly &&
+    !filters.type;
+  if (hasNoFilters) return true;
+
+  // Subscription filter: only update if an affected entry is in this subscription
+  if (filters.subscriptionId) {
+    if (!subscriptionIds.has(filters.subscriptionId)) return false;
+  }
+
+  // Tag filter: only update if this tag was affected
+  if (filters.tagId) {
+    if (!scope.tagIds.has(filters.tagId)) return false;
+  }
+
+  // Uncategorized filter: only update if uncategorized entries were affected
+  if (filters.uncategorized) {
+    if (!scope.hasUncategorized) return false;
+  }
+
+  // Starred filter: only update if any affected entry is starred
+  if (filters.starredOnly) {
+    if (!hasStarred) return false;
+  }
+
+  // Type filter: only update if an affected entry has this type
+  if (filters.type) {
+    if (!entryTypes.has(filters.type)) return false;
+  }
+
+  return true;
+}
+
+/**
  * Updates read status for entries in caches.
  * Updates both entries.get (single entry) and entries.list (all lists) caches.
  * Does NOT invalidate/refetch - entries stay visible until navigation.
