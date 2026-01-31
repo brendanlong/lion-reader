@@ -23,6 +23,7 @@ Visual architecture diagrams are available in `docs/diagrams/`:
 - **[frontend-data-flow.d2](diagrams/frontend-data-flow.d2)** - Delta-based state management with React Query
 - **[backend-api.d2](diagrams/backend-api.d2)** - tRPC routers, services layer, and database
 - **[feed-fetcher.d2](diagrams/feed-fetcher.d2)** - Background job queue and feed processing pipeline
+- **[sse-cache-updates.d2](diagrams/sse-cache-updates.d2)** - SSE event flow from backend to frontend cache updates
 
 To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playground](https://play.d2lang.com/).
 

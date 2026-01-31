@@ -141,6 +141,79 @@ export function updateEntryStarredStatus(
 }
 
 /**
+ * Entry metadata that can be updated from SSE events.
+ */
+export interface EntryMetadataUpdate {
+  title?: string | null;
+  author?: string | null;
+  summary?: string | null;
+  url?: string | null;
+  publishedAt?: Date | null;
+}
+
+/**
+ * Updates entry metadata in caches.
+ * Updates both entries.get (single entry) and entries.list (all lists) caches.
+ * Used when entry content changes (e.g., feed refetch, saved article refresh).
+ *
+ * @param utils - tRPC utils for cache access
+ * @param entryId - Entry ID to update
+ * @param metadata - New metadata values
+ * @param queryClient - React Query client (optional, needed for list cache updates)
+ */
+export function updateEntryMetadataInCache(
+  utils: TRPCClientUtils,
+  entryId: string,
+  metadata: EntryMetadataUpdate,
+  queryClient?: QueryClient
+): void {
+  // Update entries.get cache
+  utils.entries.get.setData({ id: entryId }, (oldData) => {
+    if (!oldData) return oldData;
+    return {
+      ...oldData,
+      entry: {
+        ...oldData.entry,
+        ...(metadata.title !== undefined && { title: metadata.title }),
+        ...(metadata.author !== undefined && { author: metadata.author }),
+        ...(metadata.summary !== undefined && { summary: metadata.summary }),
+        ...(metadata.url !== undefined && { url: metadata.url }),
+        ...(metadata.publishedAt !== undefined && { publishedAt: metadata.publishedAt }),
+      },
+    };
+  });
+
+  // Update entries in all cached list queries (if queryClient provided)
+  if (queryClient) {
+    const updates: Partial<CachedListEntry> = {};
+    if (metadata.title !== undefined) updates.title = metadata.title;
+    if (metadata.author !== undefined) updates.author = metadata.author;
+    if (metadata.summary !== undefined) updates.summary = metadata.summary;
+    if (metadata.url !== undefined) updates.url = metadata.url;
+    if (metadata.publishedAt !== undefined) updates.publishedAt = metadata.publishedAt;
+
+    if (Object.keys(updates).length > 0) {
+      queryClient.setQueriesData<InfiniteData>({ queryKey: [["entries", "list"]] }, (oldData) => {
+        if (!oldData?.pages) return oldData;
+
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page) => ({
+            ...page,
+            items: page.items.map((entry) => {
+              if (entry.id === entryId) {
+                return { ...entry, ...updates };
+              }
+              return entry;
+            }),
+          })),
+        };
+      });
+    }
+  }
+}
+
+/**
  * Updates score fields for an entry in caches.
  * Updates both entries.get (single entry) and entries.list (all lists) caches.
  *

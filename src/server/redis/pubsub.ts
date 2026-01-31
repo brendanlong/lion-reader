@@ -33,10 +33,24 @@ export interface NewEntryEvent extends BaseFeedEvent {
 }
 
 /**
+ * Entry metadata included in entry_updated events.
+ * Enables direct cache updates without refetching.
+ */
+export interface EntryUpdatedMetadata {
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  url: string | null;
+  publishedAt: string | null; // ISO string for serialization
+}
+
+/**
  * Event published when an existing entry is updated.
  */
 export interface EntryUpdatedEvent extends BaseFeedEvent {
   type: "entry_updated";
+  /** Entry metadata for direct cache updates */
+  metadata: EntryUpdatedMetadata;
 }
 
 /**
@@ -265,16 +279,56 @@ export async function publishNewEntry(
  *
  * @param feedId - The ID of the feed containing the entry
  * @param entryId - The ID of the updated entry
+ * @param metadata - Entry metadata for direct cache updates
  * @returns The number of subscribers that received the message
  */
-export async function publishEntryUpdated(feedId: string, entryId: string): Promise<number> {
+export async function publishEntryUpdated(
+  feedId: string,
+  entryId: string,
+  metadata: EntryUpdatedMetadata
+): Promise<number> {
   const event: EntryUpdatedEvent = {
     type: "entry_updated",
     feedId,
     entryId,
     timestamp: new Date().toISOString(),
+    metadata,
   };
   return publishFeedEvent(event);
+}
+
+/**
+ * Entry-like object with fields needed for publishing update events.
+ * Matches the Entry type from the database schema.
+ */
+interface EntryLike {
+  id: string;
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  url: string | null;
+  publishedAt: Date | null;
+}
+
+/**
+ * Convenience function to publish an entry_updated event from an Entry object.
+ * Extracts metadata from the entry automatically.
+ *
+ * @param feedId - The ID of the feed containing the entry
+ * @param entry - The entry object (from database)
+ * @returns The number of subscribers that received the message
+ */
+export async function publishEntryUpdatedFromEntry(
+  feedId: string,
+  entry: EntryLike
+): Promise<number> {
+  return publishEntryUpdated(feedId, entry.id, {
+    title: entry.title,
+    author: entry.author,
+    summary: entry.summary,
+    url: entry.url,
+    publishedAt: entry.publishedAt?.toISOString() ?? null,
+  });
 }
 
 /**
@@ -459,20 +513,34 @@ export function parseFeedEvent(message: string): FeedEvent | null {
       "entryId" in parsed &&
       "timestamp" in parsed
     ) {
-      const event = parsed as {
-        type: unknown;
-        feedId: unknown;
-        entryId: unknown;
-        timestamp: unknown;
-      };
+      const event = parsed as Record<string, unknown>;
 
       if (
-        (event.type === "new_entry" || event.type === "entry_updated") &&
         typeof event.feedId === "string" &&
         typeof event.entryId === "string" &&
         typeof event.timestamp === "string"
       ) {
-        return event as FeedEvent;
+        if (event.type === "new_entry") {
+          return event as unknown as NewEntryEvent;
+        }
+
+        if (
+          event.type === "entry_updated" &&
+          typeof event.metadata === "object" &&
+          event.metadata !== null
+        ) {
+          const metadata = event.metadata as Record<string, unknown>;
+          // Validate metadata structure (all fields can be null or correct type)
+          if (
+            (metadata.title === null || typeof metadata.title === "string") &&
+            (metadata.author === null || typeof metadata.author === "string") &&
+            (metadata.summary === null || typeof metadata.summary === "string") &&
+            (metadata.url === null || typeof metadata.url === "string") &&
+            (metadata.publishedAt === null || typeof metadata.publishedAt === "string")
+          ) {
+            return event as unknown as EntryUpdatedEvent;
+          }
+        }
       }
     }
 

@@ -22,6 +22,7 @@ import {
   handleSubscriptionDeleted,
   handleNewEntry,
   updateEntriesInListCache,
+  updateEntryMetadataInCache,
 } from "@/lib/cache";
 
 /**
@@ -105,19 +106,46 @@ const SSE_RETRY_INTERVAL_MS = 60_000;
 // ============================================================================
 
 /**
+ * Entry metadata included in entry_updated events.
+ */
+interface EntryUpdatedMetadata {
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  url: string | null;
+  publishedAt: string | null; // ISO string
+}
+
+/**
+ * new_entry event from SSE.
+ */
+interface NewEntryEventData {
+  type: "new_entry";
+  subscriptionId: string | null;
+  entryId: string;
+  timestamp: string;
+  feedType?: "web" | "email" | "saved";
+}
+
+/**
+ * entry_updated event from SSE.
+ */
+interface EntryUpdatedEventData {
+  type: "entry_updated";
+  subscriptionId: string | null;
+  entryId: string;
+  timestamp: string;
+  metadata: EntryUpdatedMetadata;
+}
+
+/**
  * Entry events from SSE, transformed to include subscriptionId.
  * These are published at the feed level internally but transformed
  * by the SSE endpoint to be subscription-centric for clients.
  *
  * For saved articles, subscriptionId is null since they don't have subscriptions.
  */
-interface SubscriptionEntryEventData {
-  type: "new_entry" | "entry_updated";
-  subscriptionId: string | null;
-  entryId: string;
-  timestamp: string;
-  feedType?: "web" | "email" | "saved"; // Included for new_entry to enable cache updates
-}
+type SubscriptionEntryEventData = NewEntryEventData | EntryUpdatedEventData;
 
 interface SubscriptionCreatedEventSubscription {
   id: string;
@@ -200,15 +228,14 @@ function parseEventData(data: string): SSEEventData | null {
 
     const event = parsed as Record<string, unknown>;
 
-    // Handle feed events (now include subscriptionId instead of feedId)
-    // subscriptionId can be null for saved articles (no subscription row)
+    // Handle new_entry events
     if (
-      (event.type === "new_entry" || event.type === "entry_updated") &&
+      event.type === "new_entry" &&
       (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
       typeof event.entryId === "string"
     ) {
       return {
-        type: event.type,
+        type: "new_entry" as const,
         subscriptionId: event.subscriptionId as string | null,
         entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
@@ -217,6 +244,40 @@ function parseEventData(data: string): SSEEventData | null {
             ? (event.feedType as "web" | "email" | "saved")
             : undefined,
       };
+    }
+
+    // Handle entry_updated events (includes metadata for cache updates)
+    if (
+      event.type === "entry_updated" &&
+      (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
+      typeof event.entryId === "string" &&
+      typeof event.metadata === "object" &&
+      event.metadata !== null
+    ) {
+      const metadata = event.metadata as Record<string, unknown>;
+      // Validate metadata structure
+      if (
+        (metadata.title === null || typeof metadata.title === "string") &&
+        (metadata.author === null || typeof metadata.author === "string") &&
+        (metadata.summary === null || typeof metadata.summary === "string") &&
+        (metadata.url === null || typeof metadata.url === "string") &&
+        (metadata.publishedAt === null || typeof metadata.publishedAt === "string")
+      ) {
+        return {
+          type: "entry_updated" as const,
+          subscriptionId: event.subscriptionId as string | null,
+          entryId: event.entryId,
+          timestamp:
+            typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+          metadata: {
+            title: metadata.title as string | null,
+            author: metadata.author as string | null,
+            summary: metadata.summary as string | null,
+            url: metadata.url as string | null,
+            publishedAt: metadata.publishedAt as string | null,
+          },
+        };
+      }
     }
 
     // Handle user events - subscription_created
@@ -458,7 +519,21 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           handleNewEntry(utils, data.subscriptionId, data.feedType, queryClient);
         }
       } else if (data.type === "entry_updated") {
-        // Invalidate the specific entry to refresh content
+        // Update entry metadata directly in caches (title, author, summary, etc.)
+        // This updates both entries.get and entries.list without requiring refetch
+        updateEntryMetadataInCache(
+          utils,
+          data.entryId,
+          {
+            title: data.metadata.title,
+            author: data.metadata.author,
+            summary: data.metadata.summary,
+            url: data.metadata.url,
+            publishedAt: data.metadata.publishedAt ? new Date(data.metadata.publishedAt) : null,
+          },
+          queryClient
+        );
+        // Also invalidate entries.get to refetch full content (which isn't in metadata)
         utils.entries.get.invalidate({ id: data.entryId });
       } else if (data.type === "subscription_created") {
         // Use high-level operation - handles cache add + targeted invalidations
@@ -498,9 +573,8 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       } else if (data.type === "import_completed") {
         utils.imports.get.invalidate({ id: data.importId });
         utils.imports.list.invalidate();
-        // Subscriptions and tags are already updated via individual subscription_created events
-        // Only invalidate entries since we may have new entries from newly imported feeds
-        utils.entries.list.invalidate();
+        // Subscriptions, tags, and entries are already updated via individual
+        // subscription_created and new_entry events during the import
       }
     },
     [utils, queryClient]

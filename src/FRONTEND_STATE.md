@@ -108,14 +108,14 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Entry Mutations
 
-| Mutation                   | Used In             | Cache Updates                                                                                                                         |
-| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `subscriptions.list` counts, `tags.list` counts, entry scores (implicit signals). Invalidate: `entries.list`   |
-| `entries.markAllRead`      | `useEntryMutations` | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count({ starredOnly: true })` (bulk operation, count unknown) |
-| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.count({ starredOnly: true })`, entry scores (implicit +2). Invalidate: `entries.list`                 |
-| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.count({ starredOnly: true })`, entry scores. Invalidate: `entries.list`                               |
-| `entries.setScore`         | `useEntryMutations` | Direct: `entries.get`, entry scores                                                                                                   |
-| `entries.fetchFullContent` | `EntryContent`      | Invalidate: `entries.get({ id })`                                                                                                     |
+| Mutation                   | Used In             | Cache Updates                                                                                                                                    |
+| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `subscriptions.list` counts, `tags.list` counts, entry scores. Server returns absolute counts. |
+| `entries.markAllRead`      | `useEntryMutations` | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count` (bulk operation, direct update not practical)                     |
+| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.          |
+| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.          |
+| `entries.setScore`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), entry scores                                                                                   |
+| `entries.fetchFullContent` | `EntryContent`      | Invalidate: `entries.get({ id })`                                                                                                                |
 
 ### Subscription Mutations
 
@@ -162,18 +162,18 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ## Real-Time Updates
 
-The `useRealtimeUpdates` hook manages SSE connections and updates caches:
+The `useRealtimeUpdates` hook manages SSE connections and updates caches.
 
-| SSE Event               | Cache Updates                                                                                              |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `new_entry`             | Invalidate: `entries.list`, `subscriptions.list`, `tags.list` (full entry data not in event)               |
-| `entry_updated`         | Invalidate: `entries.get({ id })`                                                                          |
-| `subscription_created`  | Direct: add to `subscriptions.list`. Invalidate: `tags.list`                                               |
-| `subscription_deleted`  | Direct: remove from `subscriptions.list` (if not already removed). Invalidate: `entries.list`, `tags.list` |
-| `saved_article_created` | Invalidate: `entries.list({ type: "saved" })`, `entries.count({ type: "saved" })`                          |
-| `saved_article_updated` | Invalidate: `entries.get({ id })`, `entries.list({ type: "saved" })`                                       |
-| `import_progress`       | Invalidate: `imports.get({ id })`, `imports.list`                                                          |
-| `import_completed`      | Invalidate: `imports.get({ id })`, `imports.list`, `entries.list`                                          |
+**Key principle:** Direct cache updates where possible, invalidation only when necessary. `entries.list` is NOT invalidated for new entries - users see new entries when they navigate (sidebar counts update immediately).
+
+| SSE Event              | Cache Updates                                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `new_entry`            | Direct: `subscriptions.list` unreadCount, `tags.list` unreadCount, `entries.count`. Does NOT invalidate `entries.list`.                         |
+| `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). Invalidates `entries.get` for full content refresh. |
+| `subscription_created` | Direct: add to `subscriptions.list`, update `tags.list` feedCount/unreadCount, update `entries.count`.                                          |
+| `subscription_deleted` | Direct: remove from `subscriptions.list`, update `tags.list`, update `entries.count`. Invalidate: `entries.list`.                               |
+| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                               |
+| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription updates handled by individual events during import.                       |
 
 ## Optimistic Updates
 

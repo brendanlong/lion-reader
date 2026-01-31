@@ -47,7 +47,7 @@ import {
 import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
 import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth";
 import { logger } from "@/lib/logger";
-import { publishNewEntry, publishEntryUpdated } from "@/server/redis/pubsub";
+import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
 import * as countsService from "@/server/services/counts";
 import {
   processUploadedFile,
@@ -669,7 +669,14 @@ export const savedRouter = createTRPCRouter({
         });
 
         // Publish event to notify other browser windows/tabs of the update
-        await publishEntryUpdated(savedFeedId, oldEntry.id);
+        await publishEntryUpdatedFromEntry(savedFeedId, {
+          id: oldEntry.id,
+          title: finalTitle,
+          author: finalAuthor,
+          summary: excerpt,
+          url: normalizedUrl,
+          publishedAt: oldEntry.publishedAt,
+        });
 
         // Get counts after update
         const counts = await countsService.getEntryRelatedCounts(ctx.db, userId, oldEntry.id);

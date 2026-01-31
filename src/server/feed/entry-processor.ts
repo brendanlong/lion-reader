@@ -11,7 +11,7 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
-import { publishNewEntry, publishEntryUpdated } from "../redis/pubsub";
+import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
 import type { ParsedEntry, ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { generateSummary } from "../html/strip-html";
@@ -280,7 +280,7 @@ export async function processEntry(
 
     // Publish entry_updated event for real-time updates
     // Fire and forget - we don't want publishing failures to affect entry processing
-    publishEntryUpdated(feedId, entry.id).catch((err) => {
+    publishEntryUpdatedFromEntry(feedId, entry).catch((err) => {
       console.error("Failed to publish entry_updated event:", err);
     });
 
@@ -367,7 +367,7 @@ async function processEntryWithCache(
 
     // Publish entry_updated event for real-time updates
     // Fire and forget - we don't want publishing failures to affect entry processing
-    publishEntryUpdated(feedId, entry.id).catch((err) => {
+    publishEntryUpdatedFromEntry(feedId, entry).catch((err) => {
       console.error("Failed to publish entry_updated event:", err);
     });
 

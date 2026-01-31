@@ -1,0 +1,412 @@
+# SSE Event Flow and Cache Update Architecture
+#
+# This diagram shows how events flow from backend origins through Redis pub/sub
+# to the SSE endpoint, and how the frontend handles them to update caches.
+
+direction: down
+
+# ==============================================================================
+# EVENT SOURCES (Backend)
+# ==============================================================================
+
+event-sources: Event Sources {
+  style.fill: "#f0f9ff"
+
+  entry-processor: Entry Processor {
+    style.fill: "#dbeafe"
+    tooltip: "src/server/feed/entry-processor.ts"
+
+    new-entry-web: publishNewEntry(feedId, entryId, "web")
+    entry-updated: publishEntryUpdated(feedId, entryId)
+  }
+
+  email-processor: Email Inbound {
+    style.fill: "#dbeafe"
+    tooltip: "src/server/email/process-inbound.ts"
+
+    new-entry-email: publishNewEntry(feedId, entryId, "email")
+  }
+
+  saved-service: Saved Articles Service {
+    style.fill: "#dbeafe"
+    tooltip: "src/server/services/saved.ts + routers/saved.ts"
+
+    new-saved: publishNewEntry(savedFeedId, entryId, "saved")
+    saved-updated: publishEntryUpdated(savedFeedId, entryId)
+  }
+
+  subscriptions-router: Subscriptions Router {
+    style.fill: "#e0e7ff"
+    tooltip: "src/server/trpc/routers/subscriptions.ts"
+
+    sub-created: publishSubscriptionCreated(userId, feedId, subscriptionId, subscription, feed)
+    sub-deleted: publishSubscriptionDeleted(userId, feedId, subscriptionId)
+  }
+
+  job-handlers: Background Jobs {
+    style.fill: "#e0e7ff"
+    tooltip: "src/server/jobs/handlers.ts"
+
+    import-sub-created: publishSubscriptionCreated(...) // OPML import
+    import-progress: publishImportProgress(userId, importId, feedUrl, status, counts)
+    import-completed: publishImportCompleted(userId, importId, counts)
+  }
+}
+
+# ==============================================================================
+# REDIS PUB/SUB CHANNELS
+# ==============================================================================
+
+redis: Redis Pub/Sub {
+  style.fill: "#fef3c7"
+
+  feed-channels: Feed Channels {
+    style.fill: "#fde68a"
+    tooltip: "feed:{feedId}:events"
+
+    channel-pattern: |
+      Pattern: feed:{feedId}:events
+
+      Events:
+      - new_entry (feedId, entryId, feedType?)
+      - entry_updated (feedId, entryId)
+    |
+  }
+
+  user-channels: User Channels {
+    style.fill: "#fde68a"
+    tooltip: "user:{userId}:events"
+
+    channel-pattern: |
+      Pattern: user:{userId}:events
+
+      Events:
+      - subscription_created (full subscription + feed data)
+      - subscription_deleted (subscriptionId)
+      - import_progress (per-feed progress)
+      - import_completed (final counts)
+    |
+  }
+}
+
+# ==============================================================================
+# SSE BACKEND ENDPOINT
+# ==============================================================================
+
+sse-endpoint: SSE Endpoint {
+  style.fill: "#f0fdf4"
+  tooltip: "src/app/api/v1/events/route.ts"
+
+  subscriber: Redis Subscriber {
+    style.fill: "#bbf7d0"
+
+    description: |
+      On connection:
+      1. Build feedId → subscriptionId map
+      2. Subscribe to user:{userId}:events
+      3. Subscribe to feed:{feedId}:events for each subscription
+      4. Subscribe to saved feed channel (if exists)
+    |
+  }
+
+  message-handler: Message Handler {
+    style.fill: "#bbf7d0"
+
+    transform: |
+      Feed Events:
+      - Transform feedId → subscriptionId (null for saved)
+      - Include feedType for cache decisions
+
+      User Events:
+      - Forward directly
+      - On subscription_created: subscribe to new feed channel
+      - On subscription_deleted: unsubscribe from feed channel
+    |
+  }
+
+  heartbeat: Heartbeat {
+    style.fill: "#bbf7d0"
+    interval: Every 30 seconds
+  }
+}
+
+# ==============================================================================
+# FRONTEND EVENT HANDLING
+# ==============================================================================
+
+frontend: Frontend (useRealtimeUpdates) {
+  style.fill: "#fdf4ff"
+  tooltip: "src/lib/hooks/useRealtimeUpdates.ts"
+
+  event-source: EventSource {
+    style.fill: "#f5d0fe"
+
+    listeners: |
+      Named event listeners:
+      - connected
+      - new_entry
+      - entry_updated
+      - subscription_created
+      - subscription_deleted
+      - import_progress
+      - import_completed
+    |
+  }
+
+  handle-event: Event Handler {
+    style.fill: "#f5d0fe"
+    tooltip: "handleEvent callback"
+  }
+
+  polling-fallback: Polling Fallback {
+    style.fill: "#e9d5ff"
+
+    description: |
+      When SSE unavailable (503):
+      - Poll sync.changes every 30s
+      - Retry SSE every 60s
+      - Uses granular cursors per entity type
+    |
+  }
+}
+
+# ==============================================================================
+# CACHE UPDATE OPERATIONS
+# ==============================================================================
+
+cache-ops: Cache Operations {
+  style.fill: "#fff7ed"
+  tooltip: "src/lib/cache/operations.ts"
+
+  new-entry-handler: handleNewEntry {
+    style.fill: "#fed7aa"
+
+    updates: |
+      Updates (surgical, no refetch):
+      - subscriptions.list: unreadCount += 1
+      - tags.list: unreadCount += 1
+      - entries.count({}): unread += 1, total += 1
+      - entries.count({ type: "saved" }): if feedType === "saved"
+
+      Does NOT invalidate entries.list
+      (entries appear on navigation)
+    |
+  }
+
+  entry-updated-handler: entry_updated {
+    style.fill: "#fed7aa"
+
+    updates: |
+      Direct updates (metadata from event):
+      - entries.get: title, author, summary, url, publishedAt
+      - entries.list: same metadata fields (in-place)
+
+      Invalidations:
+      - entries.get({ id }): refetch full content
+    |
+  }
+
+  sub-created-handler: handleSubscriptionCreated {
+    style.fill: "#fed7aa"
+
+    updates: |
+      Direct updates (no refetch):
+      - subscriptions.list: add subscription
+      - tags.list: feedCount += 1, unreadCount += N
+      - entries.count({}): unread += N, total += N
+
+      Targeted invalidations:
+      - subscriptions.list per-tag queries (affected tags only)
+    |
+  }
+
+  sub-deleted-handler: handleSubscriptionDeleted {
+    style.fill: "#fed7aa"
+
+    updates: |
+      Direct updates (no refetch):
+      - subscriptions.list: remove subscription
+      - tags.list: feedCount -= 1, unreadCount -= N
+      - entries.count({}): unread -= N, total -= N
+
+      Invalidations:
+      - entries.list (entries should be filtered out)
+    |
+  }
+
+  import-handlers: import_progress / import_completed {
+    style.fill: "#fed7aa"
+
+    updates: |
+      import_progress:
+      - imports.get({ id }): invalidate
+      - imports.list: invalidate
+
+      import_completed:
+      - imports.get({ id }): invalidate
+      - imports.list: invalidate
+      (entry/subscription updates handled by individual events)
+    |
+  }
+}
+
+# ==============================================================================
+# CONNECTIONS - Event Sources to Redis
+# ==============================================================================
+
+event-sources.entry-processor.new-entry-web -> redis.feed-channels: new_entry {
+  style.stroke: "#2563eb"
+}
+event-sources.entry-processor.entry-updated -> redis.feed-channels: entry_updated {
+  style.stroke: "#2563eb"
+}
+event-sources.email-processor.new-entry-email -> redis.feed-channels: new_entry {
+  style.stroke: "#2563eb"
+}
+event-sources.saved-service.new-saved -> redis.feed-channels: new_entry {
+  style.stroke: "#2563eb"
+}
+event-sources.saved-service.saved-updated -> redis.feed-channels: entry_updated {
+  style.stroke: "#2563eb"
+}
+
+event-sources.subscriptions-router.sub-created -> redis.user-channels: subscription_created {
+  style.stroke: "#7c3aed"
+}
+event-sources.subscriptions-router.sub-deleted -> redis.user-channels: subscription_deleted {
+  style.stroke: "#7c3aed"
+}
+event-sources.job-handlers.import-sub-created -> redis.user-channels: subscription_created {
+  style.stroke: "#7c3aed"
+}
+event-sources.job-handlers.import-progress -> redis.user-channels: import_progress {
+  style.stroke: "#7c3aed"
+}
+event-sources.job-handlers.import-completed -> redis.user-channels: import_completed {
+  style.stroke: "#7c3aed"
+}
+
+# ==============================================================================
+# CONNECTIONS - Redis to SSE Endpoint
+# ==============================================================================
+
+redis.feed-channels -> sse-endpoint.subscriber: Subscribe per-feed {
+  style.stroke: "#16a34a"
+}
+redis.user-channels -> sse-endpoint.subscriber: Subscribe per-user {
+  style.stroke: "#16a34a"
+}
+
+sse-endpoint.subscriber -> sse-endpoint.message-handler: on("message") {
+  style.stroke: "#16a34a"
+}
+
+# ==============================================================================
+# CONNECTIONS - SSE Endpoint to Frontend
+# ==============================================================================
+
+sse-endpoint.message-handler -> frontend.event-source: SSE stream {
+  style.stroke: "#c026d3"
+  style.stroke-width: 2
+}
+
+frontend.event-source -> frontend.handle-event: Named events {
+  style.stroke: "#c026d3"
+}
+
+# ==============================================================================
+# CONNECTIONS - Frontend to Cache Operations
+# ==============================================================================
+
+frontend.handle-event -> cache-ops.new-entry-handler: new_entry + feedType {
+  style.stroke: "#ea580c"
+}
+frontend.handle-event -> cache-ops.entry-updated-handler: entry_updated {
+  style.stroke: "#ea580c"
+}
+frontend.handle-event -> cache-ops.sub-created-handler: subscription_created {
+  style.stroke: "#ea580c"
+}
+frontend.handle-event -> cache-ops.sub-deleted-handler: subscription_deleted {
+  style.stroke: "#ea580c"
+}
+frontend.handle-event -> cache-ops.import-handlers: import_* {
+  style.stroke: "#ea580c"
+}
+
+# ==============================================================================
+# ENTRY TYPE DIFFERENCES
+# ==============================================================================
+
+entry-types: Entry Type Differences {
+  style.fill: "#f1f5f9"
+
+  web: web (RSS/Atom) {
+    style.fill: "#e2e8f0"
+    description: |
+      - Published from entry-processor
+      - Has subscriptionId
+      - Updates subscription + tag unread counts
+    |
+  }
+
+  email: email (Newsletter) {
+    style.fill: "#e2e8f0"
+    description: |
+      - Published from email inbound processor
+      - Has subscriptionId
+      - Updates subscription + tag unread counts
+    |
+  }
+
+  saved: saved (Read-it-later) {
+    style.fill: "#e2e8f0"
+    description: |
+      - Published from saved service/router
+      - subscriptionId is NULL (no subscription row)
+      - Updates entries.count({ type: "saved" })
+      - Does NOT update subscription/tag counts
+    |
+  }
+}
+
+# ==============================================================================
+# CACHE UPDATE STRATEGY NOTES
+# ==============================================================================
+
+strategy-notes: Cache Strategy {
+  style.fill: "#ecfccb"
+
+  direct-updates: Direct Updates (preferred) {
+    style.fill: "#d9f99d"
+    description: |
+      Surgical updates avoid refetch:
+      - Subscription unread counts
+      - Tag unread counts
+      - Global entry counts
+      - Entry read/starred state
+      - Subscription list add/remove
+    |
+  }
+
+  invalidations: Invalidations (force refetch) {
+    style.fill: "#d9f99d"
+    description: |
+      Force refetch when necessary:
+      - Entry lists (too many filter combinations)
+      - Entry content on update
+      - Import progress (complex state)
+    |
+  }
+
+  design-rationale: Design Rationale {
+    style.fill: "#d9f99d"
+    description: |
+      entries.list is NOT invalidated on new_entry:
+      - Too many filter combinations (sub, tag, unread, starred)
+      - User won't see new entries until navigation
+      - Unread counts still update (sidebar shows activity)
+      - Keeps scrolling smooth without flicker
+    |
+  }
+}
