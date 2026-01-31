@@ -276,18 +276,22 @@ export function EntryContent({
     fetchFullContentMutation.mutate({ id: entryId });
   }, [entry, fetchFullContent, entryId, fetchFullContentMutation]);
 
-  // Auto-mark-read: Fire mutation immediately when entry is unread
+  // Auto-mark-read: Fire mutation once on mount when entry is unread
   // The mutation runs in parallel with the get query. Both use updatedAt timestamps
   // to determine which state wins, so race conditions are handled correctly.
   useEffect(() => {
-    // Only fire once per entry
+    // Only fire once per entry - check this first
     if (hasSentMarkReadMutation.current) return;
     // Need entry data to check read status
     if (!entry) return;
+
+    // Mark that we've done the initial check - this prevents re-triggering
+    // if the user manually marks the entry unread later
+    hasSentMarkReadMutation.current = true;
+
     // Only mark read if currently unread
     if (entry.read) return;
 
-    hasSentMarkReadMutation.current = true;
     // Fire immediately - optimistic update and timestamp tracking handled by useEntryMutations
     markRead([entryId], true);
   }, [entry, entryId, markRead]);

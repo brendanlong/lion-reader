@@ -557,6 +557,7 @@ export const entriesRouter = createTRPCRouter({
           z.object({
             id: z.string(),
             subscriptionId: z.string().nullable(),
+            read: z.boolean(), // Actual read state after update
             starred: z.boolean(), // For updating starred unread count
             type: feedTypeSchema, // For updating saved/email counts
             updatedAt: z.date(), // For cache freshness comparison
@@ -621,6 +622,7 @@ export const entriesRouter = createTRPCRouter({
         .select({
           id: visibleEntries.id,
           subscriptionId: visibleEntries.subscriptionId,
+          read: visibleEntries.read,
           starred: visibleEntries.starred,
           type: visibleEntries.type,
           updatedAt: visibleEntries.updatedAt,
@@ -635,6 +637,7 @@ export const entriesRouter = createTRPCRouter({
       const entriesResult = entrySubscriptions.map((e) => ({
         id: e.id,
         subscriptionId: e.subscriptionId,
+        read: e.read,
         starred: e.starred,
         type: e.type,
         updatedAt: e.updatedAt,

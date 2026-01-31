@@ -297,11 +297,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
       return optimisticContext;
     },
 
-    onSuccess: (data, variables) => {
+    onSuccess: (data) => {
       // Process each entry's result
       for (const entry of data.entries) {
         const result: MutationResultState = {
-          read: variables.read,
+          read: entry.read,
           starred: entry.starred,
           updatedAt: entry.updatedAt,
           score: entry.score,
@@ -315,12 +315,18 @@ export function useEntryMutations(): UseEntryMutationsResult {
         }
       }
 
-      // Update list caches with read status
+      // Update list caches with read status from server response
       const scope = {
         tagIds: new Set(data.counts.tags.map((t) => t.id)),
         hasUncategorized: data.counts.uncategorized !== undefined,
       };
-      updateEntriesInAffectedListCaches(queryClient, data.entries, { read: variables.read }, scope);
+      // All entries in a markRead batch have the same read value
+      updateEntriesInAffectedListCaches(
+        queryClient,
+        data.entries,
+        { read: data.entries[0]?.read ?? false },
+        scope
+      );
 
       // Update counts (always apply, not dependent on timestamp)
       setBulkCounts(utils, data.counts, queryClient);
