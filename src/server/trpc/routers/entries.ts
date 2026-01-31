@@ -198,10 +198,10 @@ const bulkUnreadCountsSchema = z.object({
 });
 
 /**
- * Output schema for star/unstar mutations.
+ * Output schema for setStarred mutation.
  * Returns the updated entry with new starred state and counts.
  */
-const starOutputSchema = z.object({
+const setStarredOutputSchema = z.object({
   entry: entryMutationResultSchema,
   counts: unreadCountsSchema,
 });
@@ -804,75 +804,37 @@ export const entriesRouter = createTRPCRouter({
     }),
 
   /**
-   * Star an entry.
+   * Set the starred status of an entry.
    *
    * The entry must be visible to the user (via user_entries).
    *
-   * @param id - The entry ID to star
+   * @param id - The entry ID to update
+   * @param starred - Whether to star (true) or unstar (false)
    * @returns The updated entry with current state
    */
-  star: protectedProcedure
+  setStarred: protectedProcedure
     .meta({
       openapi: {
         method: "POST",
-        path: "/entries/{id}/star",
+        path: "/entries/{id}/starred",
         tags: ["Entries"],
-        summary: "Star entry",
+        summary: "Set entry starred status",
       },
     })
     .input(
       z.object({
         id: uuidSchema,
+        starred: z.boolean(),
         changedAt: z.coerce.date().optional(),
       })
     )
-    .output(starOutputSchema)
+    .output(setStarredOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const entry = await updateEntryStarred(
         ctx,
         ctx.session.user.id,
         input.id,
-        true,
-        input.changedAt ?? new Date()
-      );
-      const counts = await countsService.getEntryRelatedCounts(
-        ctx.db,
-        ctx.session.user.id,
-        input.id
-      );
-      return { entry, counts };
-    }),
-
-  /**
-   * Unstar an entry.
-   *
-   * The entry must be visible to the user (via user_entries).
-   *
-   * @param id - The entry ID to unstar
-   * @returns The updated entry with current state
-   */
-  unstar: protectedProcedure
-    .meta({
-      openapi: {
-        method: "DELETE",
-        path: "/entries/{id}/star",
-        tags: ["Entries"],
-        summary: "Unstar entry",
-      },
-    })
-    .input(
-      z.object({
-        id: uuidSchema,
-        changedAt: z.coerce.date().optional(),
-      })
-    )
-    .output(starOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const entry = await updateEntryStarred(
-        ctx,
-        ctx.session.user.id,
-        input.id,
-        false,
+        input.starred,
         input.changedAt ?? new Date()
       );
       const counts = await countsService.getEntryRelatedCounts(

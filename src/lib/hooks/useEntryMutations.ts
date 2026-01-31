@@ -26,6 +26,10 @@ import {
   updateEntriesReadStatus,
   updateEntryStarredStatus,
   updateEntriesInAffectedListCaches,
+  applyOptimisticReadUpdate,
+  rollbackOptimisticReadUpdate,
+  applyOptimisticStarredUpdate,
+  rollbackOptimisticStarredUpdate,
 } from "@/lib/cache";
 
 /**
@@ -132,25 +136,8 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const markReadMutation = trpc.entries.markRead.useMutation({
     // Optimistic update: immediately update the UI before server responds
     onMutate: async (variables) => {
-      // Cancel any outgoing refetches so they don't overwrite our optimistic update
-      await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
-      await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
-
-      // Get the entry IDs being updated
       const entryIds = variables.entries.map((e) => e.id);
-
-      // Snapshot the previous state for rollback
-      const previousEntries = new Map<string, { read: boolean } | undefined>();
-      for (const entryId of entryIds) {
-        const data = utils.entries.get.getData({ id: entryId });
-        previousEntries.set(entryId, data?.entry ? { read: data.entry.read } : undefined);
-      }
-
-      // Optimistically update the cache immediately
-      updateEntriesReadStatus(utils, entryIds, variables.read, queryClient);
-
-      // Return context for rollback
-      return { previousEntries, entryIds };
+      return applyOptimisticReadUpdate(utils, queryClient, entryIds, variables.read);
     },
 
     onSuccess: (data, variables) => {
@@ -181,12 +168,8 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
     onError: (_error, _variables, context) => {
       // Rollback to previous state on error
-      if (context?.previousEntries) {
-        for (const [entryId, prevState] of context.previousEntries) {
-          if (prevState !== undefined) {
-            updateEntriesReadStatus(utils, [entryId], prevState.read, queryClient);
-          }
-        }
+      if (context) {
+        rollbackOptimisticReadUpdate(utils, queryClient, context);
       }
       toast.error("Failed to update read status");
     },
@@ -216,28 +199,17 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // star mutation - uses optimistic updates for instant UI feedback
+  // setStarred mutation - uses optimistic updates for instant UI feedback
   // Also updates score cache since starring sets hasStarred implicit signal
-  const starMutation = trpc.entries.star.useMutation({
-    // Optimistic update: immediately show the entry as starred
+  const setStarredMutation = trpc.entries.setStarred.useMutation({
+    // Optimistic update: immediately show the entry with new starred status
     onMutate: async (variables) => {
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
-      await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
-
-      // Snapshot previous state for rollback
-      const previousEntry = utils.entries.get.getData({ id: variables.id });
-      const wasStarred = previousEntry?.entry?.starred ?? false;
-
-      // Optimistically update the cache
-      updateEntryStarredStatus(utils, variables.id, true, queryClient);
-
-      return { entryId: variables.id, wasStarred };
+      return applyOptimisticStarredUpdate(utils, queryClient, variables.id, variables.starred);
     },
 
     onSuccess: (data) => {
       // Server confirmed - update with authoritative data
-      updateEntryStarredStatus(utils, data.entry.id, true, queryClient);
+      updateEntryStarredStatus(utils, data.entry.id, data.entry.starred, queryClient);
 
       // Set absolute counts from server
       setCounts(utils, data.counts, queryClient);
@@ -251,55 +223,12 @@ export function useEntryMutations(): UseEntryMutationsResult {
       );
     },
 
-    onError: (_error, _variables, context) => {
+    onError: (_error, variables, context) => {
       // Rollback to previous state on error
       if (context) {
-        updateEntryStarredStatus(utils, context.entryId, context.wasStarred, queryClient);
+        rollbackOptimisticStarredUpdate(utils, queryClient, context);
       }
-      toast.error("Failed to star entry");
-    },
-  });
-
-  // unstar mutation - uses optimistic updates for instant UI feedback
-  const unstarMutation = trpc.entries.unstar.useMutation({
-    // Optimistic update: immediately show the entry as unstarred
-    onMutate: async (variables) => {
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
-      await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
-
-      // Snapshot previous state for rollback
-      const previousEntry = utils.entries.get.getData({ id: variables.id });
-      const wasStarred = previousEntry?.entry?.starred ?? true;
-
-      // Optimistically update the cache
-      updateEntryStarredStatus(utils, variables.id, false, queryClient);
-
-      return { entryId: variables.id, wasStarred };
-    },
-
-    onSuccess: (data) => {
-      // Server confirmed - update with authoritative data
-      updateEntryStarredStatus(utils, data.entry.id, false, queryClient);
-
-      // Set absolute counts from server
-      setCounts(utils, data.counts, queryClient);
-
-      handleEntryScoreChanged(
-        utils,
-        data.entry.id,
-        data.entry.score,
-        data.entry.implicitScore,
-        queryClient
-      );
-    },
-
-    onError: (_error, _variables, context) => {
-      // Rollback to previous state on error
-      if (context) {
-        updateEntryStarredStatus(utils, context.entryId, context.wasStarred, queryClient);
-      }
-      toast.error("Failed to unstar entry");
+      toast.error(variables.starred ? "Failed to star entry" : "Failed to unstar entry");
     },
   });
 
@@ -352,28 +281,27 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
   const star = useCallback(
     (entryId: string) => {
-      starMutation.mutate({ id: entryId, changedAt: new Date() });
+      setStarredMutation.mutate({ id: entryId, starred: true, changedAt: new Date() });
     },
-    [starMutation]
+    [setStarredMutation]
   );
 
   const unstar = useCallback(
     (entryId: string) => {
-      unstarMutation.mutate({ id: entryId, changedAt: new Date() });
+      setStarredMutation.mutate({ id: entryId, starred: false, changedAt: new Date() });
     },
-    [unstarMutation]
+    [setStarredMutation]
   );
 
   const toggleStar = useCallback(
     (entryId: string, currentlyStarred: boolean) => {
-      const changedAt = new Date();
-      if (currentlyStarred) {
-        unstarMutation.mutate({ id: entryId, changedAt });
-      } else {
-        starMutation.mutate({ id: entryId, changedAt });
-      }
+      setStarredMutation.mutate({
+        id: entryId,
+        starred: !currentlyStarred,
+        changedAt: new Date(),
+      });
     },
-    [starMutation, unstarMutation]
+    [setStarredMutation]
   );
 
   const setScore = useCallback(
@@ -386,8 +314,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const isPending =
     markReadMutation.isPending ||
     markAllReadMutation.isPending ||
-    starMutation.isPending ||
-    unstarMutation.isPending ||
+    setStarredMutation.isPending ||
     setScoreMutation.isPending;
 
   return useMemo(
@@ -402,7 +329,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
       isPending,
       isMarkReadPending: markReadMutation.isPending,
       isMarkAllReadPending: markAllReadMutation.isPending,
-      isStarPending: starMutation.isPending || unstarMutation.isPending,
+      isStarPending: setStarredMutation.isPending,
     }),
     [
       markRead,
@@ -415,8 +342,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
       isPending,
       markReadMutation.isPending,
       markAllReadMutation.isPending,
-      starMutation.isPending,
-      unstarMutation.isPending,
+      setStarredMutation.isPending,
     ]
   );
 }

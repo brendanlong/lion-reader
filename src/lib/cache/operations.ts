@@ -811,3 +811,122 @@ function setUncategorizedUnreadCount(utils: TRPCClientUtils, unread: number): vo
     };
   });
 }
+
+// ============================================================================
+// Optimistic Update Helpers
+// ============================================================================
+
+/**
+ * Context returned by optimistic read update for rollback.
+ */
+export interface OptimisticReadContext {
+  previousEntries: Map<string, { read: boolean } | undefined>;
+  entryIds: string[];
+}
+
+/**
+ * Prepares and applies an optimistic read status update.
+ * Should be called in onMutate. Returns context needed for rollback in onError.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param queryClient - React Query client for cache access
+ * @param entryIds - Entry IDs to update
+ * @param read - New read status
+ * @returns Context for rollback
+ */
+export async function applyOptimisticReadUpdate(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  entryIds: string[],
+  read: boolean
+): Promise<OptimisticReadContext> {
+  // Cancel any outgoing refetches so they don't overwrite our optimistic update
+  await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
+  await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
+
+  // Snapshot the previous state for rollback
+  const previousEntries = new Map<string, { read: boolean } | undefined>();
+  for (const entryId of entryIds) {
+    const data = utils.entries.get.getData({ id: entryId });
+    previousEntries.set(entryId, data?.entry ? { read: data.entry.read } : undefined);
+  }
+
+  // Optimistically update the cache immediately
+  updateEntriesReadStatus(utils, entryIds, read, queryClient);
+
+  return { previousEntries, entryIds };
+}
+
+/**
+ * Rolls back an optimistic read update.
+ * Should be called in onError with the context from applyOptimisticReadUpdate.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param queryClient - React Query client for cache access
+ * @param context - Context from applyOptimisticReadUpdate
+ */
+export function rollbackOptimisticReadUpdate(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  context: OptimisticReadContext
+): void {
+  for (const [entryId, prevState] of context.previousEntries) {
+    if (prevState !== undefined) {
+      updateEntriesReadStatus(utils, [entryId], prevState.read, queryClient);
+    }
+  }
+}
+
+/**
+ * Context returned by optimistic starred update for rollback.
+ */
+export interface OptimisticStarredContext {
+  entryId: string;
+  wasStarred: boolean;
+}
+
+/**
+ * Prepares and applies an optimistic starred status update.
+ * Should be called in onMutate. Returns context needed for rollback in onError.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param queryClient - React Query client for cache access
+ * @param entryId - Entry ID to update
+ * @param starred - New starred status
+ * @returns Context for rollback
+ */
+export async function applyOptimisticStarredUpdate(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  entryId: string,
+  starred: boolean
+): Promise<OptimisticStarredContext> {
+  // Cancel any outgoing refetches
+  await queryClient.cancelQueries({ queryKey: [["entries", "list"]] });
+  await queryClient.cancelQueries({ queryKey: [["entries", "get"]] });
+
+  // Snapshot previous state for rollback
+  const previousEntry = utils.entries.get.getData({ id: entryId });
+  const wasStarred = previousEntry?.entry?.starred ?? !starred;
+
+  // Optimistically update the cache
+  updateEntryStarredStatus(utils, entryId, starred, queryClient);
+
+  return { entryId, wasStarred };
+}
+
+/**
+ * Rolls back an optimistic starred update.
+ * Should be called in onError with the context from applyOptimisticStarredUpdate.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param queryClient - React Query client for cache access
+ * @param context - Context from applyOptimisticStarredUpdate
+ */
+export function rollbackOptimisticStarredUpdate(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  context: OptimisticStarredContext
+): void {
+  updateEntryStarredStatus(utils, context.entryId, context.wasStarred, queryClient);
+}
