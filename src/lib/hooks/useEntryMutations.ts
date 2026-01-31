@@ -20,6 +20,7 @@ import {
   setBulkCounts,
   updateEntriesReadStatus,
   updateEntryStarredStatus,
+  updateEntriesInAffectedListCaches,
 } from "@/lib/cache";
 
 /**
@@ -125,13 +126,20 @@ export function useEntryMutations(): UseEntryMutationsResult {
   // Also updates score cache since marking read/unread sets implicit signal flags
   const markReadMutation = trpc.entries.markRead.useMutation({
     onSuccess: (data, variables) => {
-      // Update entry read status in entry caches
+      // Update individual entries.get caches (keyed by entry ID)
+      // Don't pass queryClient - we'll update list caches separately with targeting
       updateEntriesReadStatus(
         utils,
         data.entries.map((e) => e.id),
-        variables.read,
-        queryClient
+        variables.read
       );
+
+      // Update only the affected entry list caches using server-provided scope
+      const scope = {
+        tagIds: new Set(data.counts.tags.map((t) => t.id)),
+        hasUncategorized: data.counts.uncategorized !== undefined,
+      };
+      updateEntriesInAffectedListCaches(queryClient, data.entries, { read: variables.read }, scope);
 
       // Set absolute counts from server (no delta calculations)
       setBulkCounts(utils, data.counts, queryClient);
