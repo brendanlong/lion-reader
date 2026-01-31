@@ -11,7 +11,7 @@ import { db } from "../../src/server/db";
 import { feeds, subscriptions, users, jobs } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
-import { createOrEnableFeedJob, getJobPayload, listJobs } from "../../src/server/jobs";
+import { ensureFeedJob, getJobPayload, claimFeedJob } from "../../src/server/jobs";
 
 describe("Redirect Tracking", () => {
   // Clean up before each test
@@ -233,12 +233,12 @@ describe("Redirect Tracking", () => {
       const oldFeedUrl = "https://oldsite.com/feed.xml";
       const oldFeedId = await createTestFeed({ url: oldFeedUrl });
       await createSubscription(userId, oldFeedId);
-      await createOrEnableFeedJob(oldFeedId);
+      await ensureFeedJob(oldFeedId);
 
       // Create new feed (redirect destination)
       const newFeedUrl = "https://newsite.com/feed.xml";
       const newFeedId = await createTestFeed({ url: newFeedUrl });
-      await createOrEnableFeedJob(newFeedId);
+      await ensureFeedJob(newFeedId);
 
       // Verify initial state: user subscribed to old feed only
       const initialOldSub = await db
@@ -402,22 +402,18 @@ describe("Redirect Tracking", () => {
   });
 
   describe("job enabling on redirect", () => {
-    it("enables job for new feed when subscriptions are migrated", async () => {
+    it("job becomes claimable when subscriptions are migrated", async () => {
       const userId = await createTestUser();
 
       // Create new feed (redirect destination)
       const newFeedId = await createTestFeed({ url: "https://newsite.com/feed.xml" });
 
-      // Create disabled job for new feed (simulating no active subscribers)
-      await createOrEnableFeedJob(newFeedId);
-      await db.update(jobs).set({ enabled: false }).where(eq(jobs.id, newFeedId)); // This won't work - need to find by payload
+      // Create job for new feed (but no subscribers yet, so it won't be claimable)
+      await ensureFeedJob(newFeedId, new Date(Date.now() - 1000)); // Due now
 
-      // Find and disable the job
-      const feedJobs = await listJobs({ type: "fetch_feed" });
-      const newFeedJob = feedJobs.find((j) => getJobPayload<"fetch_feed">(j).feedId === newFeedId);
-      if (newFeedJob) {
-        await db.update(jobs).set({ enabled: false }).where(eq(jobs.id, newFeedJob.id));
-      }
+      // Verify job is NOT claimable (no active subscribers)
+      const claimedBefore = await claimFeedJob();
+      expect(claimedBefore).toBeNull();
 
       // Simulate migration: create subscription to new feed
       const now = new Date();
@@ -431,16 +427,10 @@ describe("Redirect Tracking", () => {
         updatedAt: now,
       });
 
-      // Enable the job (simulating what happens after migration)
-      await createOrEnableFeedJob(newFeedId);
-
-      // Verify job is enabled
-      const updatedJobs = await listJobs({ type: "fetch_feed" });
-      const updatedJob = updatedJobs.find(
-        (j) => getJobPayload<"fetch_feed">(j).feedId === newFeedId
-      );
-      expect(updatedJob).toBeDefined();
-      expect(updatedJob!.enabled).toBe(true);
+      // Now the job should be claimable (has active subscriber)
+      const claimedAfter = await claimFeedJob();
+      expect(claimedAfter).not.toBeNull();
+      expect(getJobPayload<"fetch_feed">(claimedAfter!).feedId).toBe(newFeedId);
     });
   });
 
