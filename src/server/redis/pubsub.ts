@@ -106,30 +106,6 @@ export interface SubscriptionDeletedEvent {
 }
 
 /**
- * Event published when a user saves an article via bookmarklet.
- * This is sent to all of the user's active SSE connections so they can
- * refresh the saved articles list.
- */
-export interface SavedArticleCreatedEvent {
-  type: "saved_article_created";
-  userId: string;
-  entryId: string;
-  timestamp: string;
-}
-
-/**
- * Event published when a saved article's content is updated (e.g., refetched).
- * This is sent to all of the user's active SSE connections so they can
- * invalidate cached entry data.
- */
-export interface SavedArticleUpdatedEvent {
-  type: "saved_article_updated";
-  userId: string;
-  entryId: string;
-  timestamp: string;
-}
-
-/**
  * Event published when an OPML import makes progress (a feed is processed).
  * Sent after each feed is processed so the UI can show real-time progress.
  */
@@ -170,8 +146,6 @@ export interface ImportCompletedEvent {
 export type UserEvent =
   | SubscriptionCreatedEvent
   | SubscriptionDeletedEvent
-  | SavedArticleCreatedEvent
-  | SavedArticleUpdatedEvent
   | ImportProgressEvent
   | ImportCompletedEvent;
 
@@ -365,52 +339,6 @@ export async function publishSubscriptionDeleted(
     userId,
     feedId,
     subscriptionId,
-    timestamp: new Date().toISOString(),
-  };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
-}
-
-/**
- * Publishes a saved_article_created event when a user saves an article.
- * This notifies all of the user's SSE connections to refresh the saved articles list.
- *
- * @param userId - The ID of the user who saved the article
- * @param entryId - The ID of the saved entry
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishSavedArticleCreated(userId: string, entryId: string): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
-  const event: SavedArticleCreatedEvent = {
-    type: "saved_article_created",
-    userId,
-    entryId,
-    timestamp: new Date().toISOString(),
-  };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
-}
-
-/**
- * Publishes a saved_article_updated event when a saved article's content is updated.
- * This notifies all of the user's SSE connections to invalidate cached entry data.
- *
- * @param userId - The ID of the user who owns the saved article
- * @param entryId - The ID of the updated entry
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishSavedArticleUpdated(userId: string, entryId: string): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
-  const event: SavedArticleUpdatedEvent = {
-    type: "saved_article_updated",
-    userId,
-    entryId,
     timestamp: new Date().toISOString(),
   };
   const channel = getUserEventsChannel(userId);
@@ -648,34 +576,6 @@ export function parseUserEvent(message: string): UserEvent | null {
           userId: event.userId,
           feedId: event.feedId,
           subscriptionId: event.subscriptionId,
-          timestamp: event.timestamp,
-        };
-      }
-
-      if (
-        event.type === "saved_article_created" &&
-        typeof event.userId === "string" &&
-        typeof event.entryId === "string" &&
-        typeof event.timestamp === "string"
-      ) {
-        return {
-          type: "saved_article_created",
-          userId: event.userId,
-          entryId: event.entryId,
-          timestamp: event.timestamp,
-        };
-      }
-
-      if (
-        event.type === "saved_article_updated" &&
-        typeof event.userId === "string" &&
-        typeof event.entryId === "string" &&
-        typeof event.timestamp === "string"
-      ) {
-        return {
-          type: "saved_article_updated",
-          userId: event.userId,
-          entryId: event.entryId,
           timestamp: event.timestamp,
         };
       }

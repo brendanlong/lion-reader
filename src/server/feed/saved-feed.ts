@@ -64,3 +64,23 @@ export async function getOrCreateSavedFeed(db: Database, userId: string): Promis
 
   return result[0].id;
 }
+
+/**
+ * Gets the user's saved articles feed ID if it exists.
+ *
+ * Unlike getOrCreateSavedFeed, this does not create the feed if it doesn't exist.
+ * Used by SSE to subscribe to the saved feed channel without creating the feed.
+ *
+ * @param db - Database instance
+ * @param userId - User ID
+ * @returns The feed ID of the user's saved articles feed, or null if it doesn't exist
+ */
+export async function getSavedFeedId(db: Database, userId: string): Promise<string | null> {
+  const result = await db
+    .select({ id: feeds.id })
+    .from(feeds)
+    .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)))
+    .limit(1);
+
+  return result[0]?.id ?? null;
+}

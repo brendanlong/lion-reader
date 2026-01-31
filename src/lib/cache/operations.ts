@@ -516,16 +516,19 @@ export function handleSubscriptionDeleted(
  */
 export function handleNewEntry(
   utils: TRPCClientUtils,
-  subscriptionId: string,
+  subscriptionId: string | null,
   feedType: "web" | "email" | "saved",
   queryClient?: QueryClient
 ): void {
-  // New entries are always unread (read: false, starred: false)
-  const subscriptionDeltas = new Map<string, number>();
-  subscriptionDeltas.set(subscriptionId, 1); // +1 unread
+  // Update subscription and tag unread counts (only for non-saved entries)
+  if (subscriptionId) {
+    // New entries are always unread (read: false, starred: false)
+    const subscriptionDeltas = new Map<string, number>();
+    subscriptionDeltas.set(subscriptionId, 1); // +1 unread
 
-  // Update subscription and tag unread counts (including per-tag infinite queries)
-  updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
+    // Update subscription and tag unread counts (including per-tag infinite queries)
+    updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
+  }
 
   // Update All Articles unread count (+1 unread, +1 total)
   adjustEntriesCount(utils, {}, 1, 1);
