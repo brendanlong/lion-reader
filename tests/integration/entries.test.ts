@@ -538,7 +538,7 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.star({ id: entryId });
+      const result = await caller.entries.setStarred({ id: entryId, starred: true });
 
       expect(result.entry.id).toBe(entryId);
       expect(result.entry.starred).toBe(true);
@@ -564,7 +564,7 @@ describe("Entries", () => {
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      const result = await caller.entries.unstar({ id: entryId });
+      const result = await caller.entries.setStarred({ id: entryId, starred: false });
 
       expect(result.entry.id).toBe(entryId);
       expect(result.entry.starred).toBe(false);
@@ -592,7 +592,7 @@ describe("Entries", () => {
       const ctx2 = createAuthContext(user2Id);
       const caller2 = createCaller(ctx2);
 
-      await expect(caller2.entries.star({ id: entryId })).rejects.toThrow();
+      await expect(caller2.entries.setStarred({ id: entryId, starred: true })).rejects.toThrow();
     });
   });
 
@@ -834,7 +834,11 @@ describe("Entries", () => {
       const caller = createCaller(ctx);
 
       // Star with newer timestamp should succeed
-      const result = await caller.entries.star({ id: entryId, changedAt: newTimestamp });
+      const result = await caller.entries.setStarred({
+        id: entryId,
+        starred: true,
+        changedAt: newTimestamp,
+      });
 
       expect(result.entry.starred).toBe(true);
 
@@ -864,7 +868,11 @@ describe("Entries", () => {
       const caller = createCaller(ctx);
 
       // Unstar with older timestamp should be rejected
-      const result = await caller.entries.unstar({ id: entryId, changedAt: olderTimestamp });
+      const result = await caller.entries.setStarred({
+        id: entryId,
+        starred: false,
+        changedAt: olderTimestamp,
+      });
 
       // Returns final state (still starred)
       expect(result.entry.starred).toBe(true);

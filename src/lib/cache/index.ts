@@ -28,10 +28,17 @@ export {
   handleNewEntry,
   setCounts,
   setBulkCounts,
+  // Optimistic update helpers
+  applyOptimisticReadUpdate,
+  rollbackOptimisticReadUpdate,
+  applyOptimisticStarredUpdate,
+  rollbackOptimisticStarredUpdate,
   type EntryWithContext,
   type SubscriptionData,
   type UnreadCounts,
   type BulkUnreadCounts,
+  type OptimisticReadContext,
+  type OptimisticStarredContext,
 } from "./operations";
 
 // Low-level helpers (for special cases)
