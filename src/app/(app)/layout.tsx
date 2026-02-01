@@ -4,11 +4,12 @@
  * Server component wrapper that provides TRPCProvider and prefetches common data.
  * The actual layout UI is in AppLayoutContent.
  *
- * Prefetches data used across all pages (sidebar, header):
+ * Prefetches data used across all pages (sidebar, header, entry content):
  * - auth.me (user info for header)
  * - tags.list (sidebar tag structure and unread counts)
  * - entries.count (all/starred/saved counts for sidebar)
  * - sync.changes (for initial delta sync cursors)
+ * - summarization.isAvailable (for entry content summarization button)
  *
  * Note: entries.list is prefetched per-page in EntryListPage based on route-specific filters
  *
@@ -60,6 +61,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     trpc.entries.count.prefetch({ type: "saved" }),
     trpc.entries.count.prefetch({ starredOnly: true }),
     trpc.sync.changes.prefetch({}), // Initial sync with no cursors
+    trpc.summarization.isAvailable.prefetch(), // For entry content summarization button
   ]);
 
   return (
