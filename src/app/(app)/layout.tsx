@@ -36,17 +36,6 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     redirect("/login");
   }
 
-  // Initial sync uses null cursors to fetch all recent data.
-  // The sync endpoint will return proper cursors derived from the actual data,
-  // which the client then uses for subsequent incremental syncs.
-  const initialCursors: SyncCursors = {
-    entries: null,
-    entryStates: null,
-    subscriptions: null,
-    removedSubscriptions: null,
-    tags: null,
-  };
-
   // Use tRPC hydration helpers for prefetching - this ensures query keys match
   // exactly what the client will use, preventing cache misses
   const { trpc, HydrateClient } = await createHydrationHelpersForRequest();
@@ -54,15 +43,22 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   // Prefetch common data used in sidebar and header
   // These are independent queries so we can run them in parallel
   // Must await so the data is in the QueryClient before HydrateClient dehydrates
-  await Promise.all([
+  //
+  // Note: sync.changes is called directly (not prefetch) because we need its
+  // return value to pass the initial cursors to the client. This prevents
+  // the client from re-syncing with null cursors on SSE connect.
+  const [syncResult] = await Promise.all([
+    trpc.sync.changes({}), // Direct call to get cursors
     trpc.auth.me.prefetch(),
     trpc.tags.list.prefetch(),
     trpc.entries.count.prefetch({}),
     trpc.entries.count.prefetch({ type: "saved" }),
     trpc.entries.count.prefetch({ starredOnly: true }),
-    trpc.sync.changes.prefetch({}), // Initial sync with no cursors
     trpc.summarization.isAvailable.prefetch(), // For entry content summarization button
   ]);
+
+  // Extract cursors from the sync response for client-side SSE
+  const initialCursors: SyncCursors = syncResult.cursors;
 
   return (
     <TRPCProvider>
