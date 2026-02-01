@@ -422,6 +422,7 @@ export function findEntryInListCache(
 /**
  * Converts a list item to the full entry response format for use as placeholder data.
  * Content fields are set to null since they're not available in list data.
+ * fetchFullContent defaults to false until the full entry loads.
  *
  * @param listItem - Entry data from the list
  * @returns Object matching the entries.get response shape
@@ -436,6 +437,7 @@ export function listItemToPlaceholderEntry(listItem: EntryListItem): {
     fullContentCleaned: null;
     fullContentFetchedAt: null;
     fullContentError: null;
+    fetchFullContent: boolean;
   };
 } {
   return {
@@ -449,6 +451,8 @@ export function listItemToPlaceholderEntry(listItem: EntryListItem): {
       fullContentCleaned: null,
       fullContentFetchedAt: null,
       fullContentError: null,
+      // Default until full entry loads
+      fetchFullContent: false,
     },
   };
 }

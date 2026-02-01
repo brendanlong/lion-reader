@@ -106,24 +106,27 @@ export function EntryContent({
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
-  // Get subscription to look up tags and fetchFullContent setting
-  const subscriptionQuery = trpc.subscriptions.get.useQuery(
-    { id: entry?.subscriptionId ?? "" },
-    { enabled: !!entry?.subscriptionId }
-  );
-  const subscription = subscriptionQuery.data;
-
-  // Get fetchFullContent setting from subscription
-  const fetchFullContent = subscription?.fetchFullContent ?? false;
+  // Get fetchFullContent setting directly from entry (included in entries.get response)
+  // This avoids a separate subscriptions.get query
+  const fetchFullContent = entry?.fetchFullContent ?? false;
 
   // Entry mutations for marking read, starring, scoring, etc.
   const { markRead, star, unstar, setScore } = useEntryMutations();
 
   // Mutation to update subscription's fetchFullContent setting
   const updateSubscriptionMutation = trpc.subscriptions.update.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       // Invalidate subscriptions list to reflect the new setting
       utils.subscriptions.list.invalidate();
+      // Update entry cache with new fetchFullContent value if it was changed
+      if (variables.fetchFullContent !== undefined) {
+        utils.entries.get.setData({ id: entryId }, (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            entry: { ...oldData.entry, fetchFullContent: variables.fetchFullContent! },
+          };
+        });
+      }
     },
     onError: (error) => {
       toast.error("Failed to update subscription setting", {
