@@ -7,7 +7,7 @@
 
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { db } from "@/server/db";
 import { validateSession } from "@/server/auth";
 import { createCaller } from "@/server/trpc/root";
@@ -78,20 +78,12 @@ export const createServerCaller = cache(async () => {
 
 /**
  * Creates a QueryClient for server-side prefetching.
- * Should be created fresh for each request to avoid sharing state.
+ * Uses React's cache() to share the QueryClient within a request,
+ * ensuring client components during SSR see the prefetched data.
+ *
+ * Re-exports from query-client.ts for backwards compatibility.
  */
-export function createServerQueryClient(): QueryClient {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        // Don't retry on server - let errors propagate
-        retry: false,
-        // Prevent refetching on client mount - we're prefetching for hydration
-        staleTime: 60 * 1000,
-      },
-    },
-  });
-}
+export { getQueryClient as createServerQueryClient } from "./query-client";
 
 /**
  * Helper type for prefetch function results.

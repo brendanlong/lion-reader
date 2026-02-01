@@ -7,12 +7,12 @@
 
 "use client";
 
-import { useState, useCallback, type ReactNode } from "react";
-import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
-import { TRPCClientError } from "@trpc/client";
+import { useState, useEffect, type ReactNode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 import { trpc } from "./client";
+import { getQueryClient } from "./query-client";
 
 /**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
@@ -94,35 +94,42 @@ interface TRPCProviderProps {
  * ```
  */
 export function TRPCProvider({ children }: TRPCProviderProps) {
-  const handleError = useCallback((error: Error) => {
-    if (isUnauthorizedError(error)) {
-      handleUnauthorizedError();
-    }
-  }, []);
+  // Use the shared QueryClient from query-client.ts
+  // This ensures server prefetching and client components use the same instance
+  // during SSR, preventing hydration mismatches.
+  const queryClient = getQueryClient();
 
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        queryCache: new QueryCache({
-          onError: handleError,
-        }),
-        mutationCache: new MutationCache({
-          onError: handleError,
-        }),
-        defaultOptions: {
-          queries: {
-            // With SSR, we usually want to set some default staleTime
-            // above 0 to avoid refetching immediately on the client
-            staleTime: 60 * 1000, // 1 minute
-            // Retry failed requests once, but not for auth errors
-            retry: (failureCount, error) => {
-              if (isUnauthorizedError(error)) return false;
-              return failureCount < 1;
-            },
-          },
-        },
-      })
-  );
+  // Set up error handling via cache subscription (client-side only)
+  // This handles unauthorized errors by clearing the session and redirecting
+  useEffect(() => {
+    const queryCache = queryClient.getQueryCache();
+    const mutationCache = queryClient.getMutationCache();
+
+    // Subscribe to query cache events to catch errors
+    const unsubscribeQueries = queryCache.subscribe((event) => {
+      if (event.type === "updated" && event.action.type === "error") {
+        const error = event.action.error;
+        if (isUnauthorizedError(error)) {
+          handleUnauthorizedError();
+        }
+      }
+    });
+
+    // Subscribe to mutation cache events to catch errors
+    const unsubscribeMutations = mutationCache.subscribe((event) => {
+      if (event.type === "updated" && event.action.type === "error") {
+        const error = event.action.error;
+        if (isUnauthorizedError(error)) {
+          handleUnauthorizedError();
+        }
+      }
+    });
+
+    return () => {
+      unsubscribeQueries();
+      unsubscribeMutations();
+    };
+  }, [queryClient]);
 
   const [trpcClient] = useState(() =>
     trpc.createClient({
