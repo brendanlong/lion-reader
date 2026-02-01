@@ -74,9 +74,18 @@ const syncSubscriptionSchema = z.object({
 });
 
 /**
- * Tag for sync.
+ * Tag for sync (created or updated).
  */
 const syncTagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().nullable(),
+});
+
+/**
+ * Updated tag for sync (includes all modifiable fields).
+ */
+const syncTagUpdatedSchema = z.object({
   id: z.string(),
   name: z.string(),
   color: z.string().nullable(),
@@ -94,7 +103,7 @@ const syncCursorsSchema = z.object({
   entries: z.string().datetime().nullable(),
   /** Cursor for subscriptions - max(subscriptions.updated_at), covers both active and removed */
   subscriptions: z.string().datetime().nullable(),
-  /** Cursor for tags - max(tags.created_at), no updated_at column yet */
+  /** Cursor for tags - max(tags.updated_at), covers creates, updates, and soft deletes */
   tags: z.string().datetime().nullable(),
 });
 
@@ -113,6 +122,7 @@ const syncChangesOutputSchema = z.object({
   }),
   tags: z.object({
     created: z.array(syncTagSchema),
+    updated: z.array(syncTagUpdatedSchema),
     removed: z.array(z.string()),
   }),
   /** Granular cursors for each query type (for correct incremental sync) */
@@ -159,10 +169,9 @@ export const syncRouter = createTRPCRouter({
         .from(subscriptions)
         .where(eq(subscriptions.userId, userId)),
 
-      // Tags: max(created_at) - tags don't have updatedAt yet
-      // TODO: Add updatedAt to tags table to detect name/color changes
+      // Tags: max(updated_at) - captures creates, updates, and soft deletes
       ctx.db
-        .select({ max: sql<string>`MAX(${tags.createdAt})::text` })
+        .select({ max: sql<string>`MAX(${tags.updatedAt})::text` })
         .from(tags)
         .where(eq(tags.userId, userId)),
     ]);
@@ -461,51 +470,77 @@ export const syncRouter = createTRPCRouter({
       }
 
       // ========================================================================
-      // Fetch new tags (created since timestamp)
+      // Fetch changed tags (created, updated, or deleted since timestamp)
+      // Uses updated_at which is set on all changes including soft deletes
       // ========================================================================
       let createdTags: z.infer<typeof syncTagSchema>[] = [];
+      const updatedTags: z.infer<typeof syncTagUpdatedSchema>[] = [];
+      const removedTagIds: string[] = [];
 
       if (tagsCursor) {
-        const newTagResults = await ctx.db
+        // Incremental sync: get tags changed since cursor
+        const changedTagResults = await ctx.db
           .select({
             id: tags.id,
             name: tags.name,
             color: tags.color,
             createdAt: tags.createdAt,
+            updatedAt: tags.updatedAt,
+            deletedAt: tags.deletedAt,
           })
           .from(tags)
-          .where(and(eq(tags.userId, userId), gt(tags.createdAt, tagsCursor)))
-          .orderBy(tags.createdAt);
+          .where(and(eq(tags.userId, userId), gt(tags.updatedAt, tagsCursor)))
+          .orderBy(tags.updatedAt);
 
-        // Update cursor to the last tag's createdAt
-        if (newTagResults.length > 0) {
-          const lastTag = newTagResults[newTagResults.length - 1];
-          outputTagsCursor = lastTag.createdAt;
+        // Update cursor to the last tag's updatedAt
+        if (changedTagResults.length > 0) {
+          const lastTag = changedTagResults[changedTagResults.length - 1];
+          outputTagsCursor = lastTag.updatedAt;
         }
 
-        createdTags = newTagResults.map((row) => ({
-          id: row.id,
-          name: row.name,
-          color: row.color,
-        }));
+        // Split into created, updated, and removed based on timestamps
+        for (const row of changedTagResults) {
+          if (row.deletedAt !== null) {
+            // Tag was soft deleted
+            removedTagIds.push(row.id);
+          } else if (row.createdAt > tagsCursor) {
+            // Tag was created after the cursor
+            createdTags.push({
+              id: row.id,
+              name: row.name,
+              color: row.color,
+            });
+          } else {
+            // Tag existed before cursor but was updated
+            updatedTags.push({
+              id: row.id,
+              name: row.name,
+              color: row.color,
+            });
+          }
+        }
       } else {
-        // Initial sync: get all tags
+        // Initial sync: get all active (non-deleted) tags
         const allTagResults = await ctx.db
           .select({
             id: tags.id,
             name: tags.name,
             color: tags.color,
-            createdAt: tags.createdAt,
+            updatedAt: tags.updatedAt,
           })
           .from(tags)
-          .where(eq(tags.userId, userId));
+          .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
 
-        // For initial sync, set cursor to the max createdAt of returned tags
-        if (allTagResults.length > 0) {
-          outputTagsCursor = allTagResults.reduce(
-            (max, row) => (row.createdAt > max ? row.createdAt : max),
-            allTagResults[0].createdAt
-          );
+        // For initial sync, set cursor to max(updated_at) of ALL tags (including deleted)
+        // This ensures we catch any deletes that happen after this point
+        const maxUpdatedAt = await ctx.db
+          .select({ max: sql<Date>`MAX(${tags.updatedAt})` })
+          .from(tags)
+          .where(eq(tags.userId, userId))
+          .then((rows) => rows[0]?.max ?? null);
+
+        if (maxUpdatedAt) {
+          outputTagsCursor = maxUpdatedAt;
         }
 
         createdTags = allTagResults.map((row) => ({
@@ -549,10 +584,6 @@ export const syncRouter = createTRPCRouter({
         }
       }
 
-      // Note: Tag removal tracking would require a deleted_at column on tags
-      // For now, clients can detect removed tags by comparing with previous sync
-      const removedTagIds: string[] = [];
-
       // Compute syncedAt as the max of all output cursors for backward compatibility
       const allCursors = [outputEntriesCursor, outputSubscriptionsCursor, outputTagsCursor].filter(
         (c): c is Date => c !== null
@@ -575,6 +606,7 @@ export const syncRouter = createTRPCRouter({
         },
         tags: {
           created: createdTags,
+          updated: updatedTags,
           removed: removedTagIds,
         },
         cursors: {

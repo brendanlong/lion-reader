@@ -62,4 +62,7 @@ export {
   removeSubscriptionFromCache,
   calculateTagDeltasFromSubscriptions,
   findCachedSubscription,
+  applySyncTagChanges,
+  removeSyncTags,
+  type SyncTag,
 } from "./count-cache";
