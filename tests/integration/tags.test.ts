@@ -584,9 +584,10 @@ describe("Tags API", () => {
 
       expect(result.success).toBe(true);
 
-      // Verify tag is deleted
+      // Verify tag is soft deleted (deleted_at is set)
       const dbTag = await db.select().from(tags).where(eq(tags.id, tagId)).limit(1);
-      expect(dbTag).toHaveLength(0);
+      expect(dbTag).toHaveLength(1);
+      expect(dbTag[0].deletedAt).not.toBeNull();
     });
 
     it("cascades deletion to subscription_tags", async () => {

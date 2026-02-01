@@ -121,7 +121,7 @@ export const tagsRouter = createTRPCRouter({
             )`,
           })
           .from(tags)
-          .where(eq(tags.userId, userId))
+          .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)))
           .orderBy(tags.name),
         // Count uncategorized subscriptions (those with no tags)
         ctx.db
@@ -267,11 +267,11 @@ export const tagsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Verify the tag exists and belongs to the user
+      // Verify the tag exists and belongs to the user (and is not deleted)
       const existingTag = await ctx.db
         .select()
         .from(tags)
-        .where(and(eq(tags.id, input.id), eq(tags.userId, userId)))
+        .where(and(eq(tags.id, input.id), eq(tags.userId, userId), isNull(tags.deletedAt)))
         .limit(1);
 
       if (existingTag.length === 0) {
@@ -291,8 +291,10 @@ export const tagsRouter = createTRPCRouter({
         }
       }
 
-      // Build the update object
-      const updateData: { name?: string; color?: string | null } = {};
+      // Build the update object - always set updatedAt on changes
+      const updateData: { name?: string; color?: string | null; updatedAt: Date } = {
+        updatedAt: new Date(),
+      };
 
       if (input.name !== undefined) {
         updateData.name = input.name;
@@ -302,10 +304,8 @@ export const tagsRouter = createTRPCRouter({
         updateData.color = input.color;
       }
 
-      // Update the tag if there are changes
-      if (Object.keys(updateData).length > 0) {
-        await ctx.db.update(tags).set(updateData).where(eq(tags.id, input.id));
-      }
+      // Update the tag (we always have at least updatedAt)
+      await ctx.db.update(tags).set(updateData).where(eq(tags.id, input.id));
 
       // Get updated tag with feed count and unread count concurrently
       const [updatedTag, unreadResult] = await Promise.all([
@@ -366,8 +366,9 @@ export const tagsRouter = createTRPCRouter({
   /**
    * Delete a tag.
    *
-   * This will also remove all subscription_tags associations for this tag
-   * (handled by the database CASCADE constraint).
+   * Uses soft delete (sets deleted_at) for sync tracking. The tag remains in the
+   * database but is excluded from queries. Subscription-tag associations are
+   * removed immediately since they aren't tracked for sync.
    *
    * @param id - The tag ID
    * @returns Success status
@@ -389,17 +390,22 @@ export const tagsRouter = createTRPCRouter({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const now = new Date();
 
-      // Delete the tag directly - RETURNING verifies it existed and belonged to user
-      // (subscription_tags will cascade)
+      // Soft delete the tag - set deleted_at and updated_at
+      // subscription_tags associations are removed by cascade when we delete them explicitly
       const deleted = await ctx.db
-        .delete(tags)
-        .where(and(eq(tags.id, input.id), eq(tags.userId, userId)))
+        .update(tags)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(and(eq(tags.id, input.id), eq(tags.userId, userId), isNull(tags.deletedAt)))
         .returning({ id: tags.id });
 
       if (deleted.length === 0) {
         throw errors.tagNotFound();
       }
+
+      // Remove subscription_tags associations (these aren't synced, so hard delete is fine)
+      await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.tagId, input.id));
 
       return { success: true };
     }),

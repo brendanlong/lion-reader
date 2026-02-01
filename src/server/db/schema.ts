@@ -473,12 +473,16 @@ export const tags = pgTable(
     color: text("color"), // hex color for UI (e.g., "#ff6b6b")
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }), // Soft delete for sync tracking
   },
   (table) => [
     // Each user can only have one tag with a given name
     unique("uq_tags_user_name").on(table.userId, table.name),
     // Index for listing tags by user
     index("idx_tags_user").on(table.userId),
+    // Index for sync queries
+    index("idx_tags_updated_at").on(table.userId, table.updatedAt),
   ]
 );
 

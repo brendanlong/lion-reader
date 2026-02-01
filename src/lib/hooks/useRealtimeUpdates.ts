@@ -23,6 +23,8 @@ import {
   handleNewEntry,
   updateEntriesInListCache,
   updateEntryMetadataInCache,
+  applySyncTagChanges,
+  removeSyncTags,
 } from "@/lib/cache";
 
 /**
@@ -625,7 +627,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       const hasSubscriptionChanges =
         result.subscriptions.created.length > 0 || result.subscriptions.removed.length > 0;
 
-      const hasTagChanges = result.tags.created.length > 0 || result.tags.removed.length > 0;
+      const hasTagChanges =
+        result.tags.created.length > 0 ||
+        result.tags.updated.length > 0 ||
+        result.tags.removed.length > 0;
 
       // Handle structural entry changes - invalidate list
       if (hasStructuralEntryChanges) {
@@ -640,8 +645,17 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         utils.subscriptions.list.invalidate();
       }
 
+      // Handle tag changes by updating cache directly
+      // This avoids invalidating and refetching the entire tag list
       if (hasTagChanges) {
-        utils.tags.list.invalidate();
+        // Apply creates and updates
+        if (result.tags.created.length > 0 || result.tags.updated.length > 0) {
+          applySyncTagChanges(utils, result.tags.created, result.tags.updated);
+        }
+        // Apply removes
+        if (result.tags.removed.length > 0) {
+          removeSyncTags(utils, result.tags.removed);
+        }
       }
 
       return result.cursors;
@@ -649,7 +663,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       console.error("Sync failed:", error);
       return null;
     }
-  }, [utils.client.sync.changes, utils.subscriptions, utils.tags, queryClient]);
+  }, [utils, queryClient]);
 
   /**
    * Starts polling mode when SSE is unavailable.
