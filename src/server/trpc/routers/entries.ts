@@ -19,6 +19,7 @@ import {
   entries,
   feeds,
   userEntries,
+  subscriptions,
   subscriptionTags,
   tags,
   visibleEntries,
@@ -139,6 +140,8 @@ const entryFullSchema = z.object({
   // Score fields
   score: z.number().nullable(),
   implicitScore: z.number(),
+  // Subscription field - included to avoid separate subscriptions.get query
+  fetchFullContent: z.boolean(), // subscription setting for auto-fetching full content
 });
 
 /**
@@ -411,8 +414,11 @@ export const entriesRouter = createTRPCRouter({
    * The entry is visible to a user only if they have a corresponding
    * row in the user_entries table for their user_id.
    *
+   * Includes subscription data (fetchFullContent, tags) to avoid separate
+   * subscriptions.get query on the client.
+   *
    * @param id - The entry ID
-   * @returns The full entry with content
+   * @returns The full entry with content and subscription data
    */
   get: protectedProcedure
     .meta({
@@ -432,8 +438,9 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Get the entry using visible_entries view
+      // Get the entry using visible_entries view with subscription data
       // The view already enforces visibility and includes subscription_id
+      // We join with subscriptions to get fetchFullContent setting
       const result = await ctx.db
         .select({
           id: visibleEntries.id,
@@ -462,9 +469,12 @@ export const entriesRouter = createTRPCRouter({
           hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
           hasMarkedUnread: visibleEntries.hasMarkedUnread,
           hasStarred: visibleEntries.hasStarred,
+          // Subscription fields - null for orphaned starred entries
+          fetchFullContent: subscriptions.fetchFullContent,
         })
         .from(visibleEntries)
         .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+        .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
         .where(and(eq(visibleEntries.id, input.id), eq(visibleEntries.userId, userId)))
         .limit(1);
 
@@ -505,6 +515,8 @@ export const entriesRouter = createTRPCRouter({
             entry.hasMarkedReadOnList,
             entry.type
           ),
+          // Subscription field - default for orphaned starred entries
+          fetchFullContent: entry.fetchFullContent ?? false,
         },
       };
     }),
@@ -1024,9 +1036,11 @@ export const entriesRouter = createTRPCRouter({
           hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
           hasMarkedUnread: visibleEntries.hasMarkedUnread,
           hasStarred: visibleEntries.hasStarred,
+          fetchFullContent: subscriptions.fetchFullContent,
         })
         .from(visibleEntries)
         .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+        .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
         .where(and(eq(visibleEntries.id, input.id), eq(visibleEntries.userId, userId)))
         .limit(1);
 
@@ -1041,11 +1055,17 @@ export const entriesRouter = createTRPCRouter({
         rawEntry.hasMarkedReadOnList,
         rawEntry.type
       );
+
       // Strip boolean flags from the entry, compute implicitScore
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { hasMarkedReadOnList, hasMarkedUnread, hasStarred, contentHash, ...entryFields } =
         rawEntry;
-      const entry = { ...entryFields, implicitScore, contentHash };
+      const entry = {
+        ...entryFields,
+        implicitScore,
+        contentHash,
+        fetchFullContent: rawEntry.fetchFullContent ?? false,
+      };
 
       // Check if entry has a URL to fetch
       if (!entry.url) {
