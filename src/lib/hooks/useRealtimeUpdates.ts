@@ -629,7 +629,6 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
       // Handle structural entry changes - invalidate list
       if (hasStructuralEntryChanges) {
-        utils.entries.list.invalidate();
         utils.subscriptions.list.invalidate();
       }
 
@@ -650,7 +649,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       console.error("Sync failed:", error);
       return null;
     }
-  }, [utils.client.sync.changes, utils.entries, utils.subscriptions, utils.tags, queryClient]);
+  }, [utils.client.sync.changes, utils.subscriptions, utils.tags, queryClient]);
 
   /**
    * Starts polling mode when SSE is unavailable.
