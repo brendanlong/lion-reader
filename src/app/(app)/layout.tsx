@@ -11,12 +11,14 @@
  *
  * Initial sync uses null cursors to get all recent data, which then establishes
  * the baseline cursors for subsequent incremental syncs.
+ *
+ * Uses tRPC's hydration helpers to ensure query keys match exactly between
+ * server prefetch and client query, preventing hydration mismatches.
  */
 
 import { redirect } from "next/navigation";
-import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { TRPCProvider } from "@/lib/trpc/provider";
-import { createServerCaller, createServerQueryClient, isAuthenticated } from "@/lib/trpc/server";
+import { createHydrationHelpersForRequest, isAuthenticated } from "@/lib/trpc/server";
 import { AppLayoutContent } from "./AppLayoutContent";
 import { type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
 
@@ -30,8 +32,6 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     redirect("/login");
   }
 
-  const queryClient = createServerQueryClient();
-
   // Initial sync uses null cursors to fetch all recent data.
   // The sync endpoint will return proper cursors derived from the actual data,
   // which the client then uses for subsequent incremental syncs.
@@ -43,42 +43,26 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     tags: null,
   };
 
+  // Use tRPC hydration helpers for prefetching - this ensures query keys match
+  // exactly what the client will use, preventing cache misses
+  const { trpc, HydrateClient } = await createHydrationHelpersForRequest();
+
   // Prefetch common data used in sidebar and header
   // These are independent queries so we can run them in parallel
-  const trpc = await createServerCaller();
+  // Must await so the data is in the QueryClient before HydrateClient dehydrates
   await Promise.all([
-    // User info for header
-    queryClient.prefetchQuery({
-      queryKey: [["auth", "me"], { type: "query" }],
-      queryFn: () => trpc.auth.me(),
-    }),
-    // Tags for sidebar (includes uncategorized counts)
-    queryClient.prefetchQuery({
-      queryKey: [["tags", "list"], { type: "query" }],
-      queryFn: () => trpc.tags.list(),
-    }),
-    // All Articles count for sidebar
-    queryClient.prefetchQuery({
-      queryKey: [["entries", "count"], { input: {}, type: "query" }],
-      queryFn: () => trpc.entries.count({}),
-    }),
-    // Saved count for sidebar
-    queryClient.prefetchQuery({
-      queryKey: [["entries", "count"], { input: { type: "saved" }, type: "query" }],
-      queryFn: () => trpc.entries.count({ type: "saved" }),
-    }),
-    // Starred count for sidebar
-    queryClient.prefetchQuery({
-      queryKey: [["entries", "count"], { input: { starredOnly: true }, type: "query" }],
-      queryFn: () => trpc.entries.count({ starredOnly: true }),
-    }),
+    trpc.auth.me.prefetch(),
+    trpc.tags.list.prefetch(),
+    trpc.entries.count.prefetch({}),
+    trpc.entries.count.prefetch({ type: "saved" }),
+    trpc.entries.count.prefetch({ starredOnly: true }),
   ]);
 
   return (
     <TRPCProvider>
-      <HydrationBoundary state={dehydrate(queryClient)}>
+      <HydrateClient>
         <AppLayoutContent initialCursors={initialCursors}>{children}</AppLayoutContent>
-      </HydrationBoundary>
+      </HydrateClient>
     </TRPCProvider>
   );
 }

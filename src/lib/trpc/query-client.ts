@@ -7,11 +7,16 @@
  *   data is available to client components during SSR, preventing hydration
  *   mismatches.
  * - Browser: Uses a module-level singleton for the entire session.
+ *
+ * IMPORTANT: The QueryClient is configured with superjson for serialization
+ * during hydration. This matches the tRPC transformer and ensures Date objects
+ * and other complex types are properly serialized/deserialized.
  */
 
 import { cache } from "react";
 import { QueryClient, isServer } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
+import superjson from "superjson";
 
 /**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
@@ -26,6 +31,7 @@ function isUnauthorizedError(error: unknown): boolean {
 /**
  * Creates a new QueryClient for server-side rendering.
  * Optimized for prefetching: no retries, errors propagate immediately.
+ * Configured with superjson for hydration to match tRPC's transformer.
  */
 function makeServerQueryClient(): QueryClient {
   return new QueryClient({
@@ -36,6 +42,13 @@ function makeServerQueryClient(): QueryClient {
         // Prevent refetching on client mount - we're prefetching for hydration
         staleTime: 60 * 1000,
       },
+      // Configure hydration to use superjson (matches tRPC transformer)
+      dehydrate: {
+        serializeData: superjson.serialize,
+      },
+      hydrate: {
+        deserializeData: superjson.deserialize,
+      },
     },
   });
 }
@@ -43,6 +56,7 @@ function makeServerQueryClient(): QueryClient {
 /**
  * Creates a new QueryClient for the browser.
  * Includes retry logic for resilience, but skips retrying auth errors.
+ * Configured with superjson for hydration to match tRPC's transformer.
  */
 function makeBrowserQueryClient(): QueryClient {
   return new QueryClient({
@@ -55,6 +69,13 @@ function makeBrowserQueryClient(): QueryClient {
         },
         // Prevent refetching on mount - we're hydrating from SSR
         staleTime: 60 * 1000,
+      },
+      // Configure hydration to use superjson (matches tRPC transformer)
+      dehydrate: {
+        serializeData: superjson.serialize,
+      },
+      hydrate: {
+        deserializeData: superjson.deserialize,
       },
     },
   });

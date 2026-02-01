@@ -6,9 +6,9 @@
  * when just viewing an entry.
  */
 
-import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
-import { createServerCaller, createServerQueryClient, isAuthenticated } from "@/lib/trpc/server";
+import { createHydrationHelpersForRequest, isAuthenticated } from "@/lib/trpc/server";
 import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
+import { buildEntriesListInput, type EntriesListInput } from "@/lib/queries/entries-list-input";
 
 /**
  * Filters for the entry list query.
@@ -20,6 +20,9 @@ export interface EntryListFilters {
   starredOnly?: boolean;
   type?: "web" | "email" | "saved";
 }
+
+// Re-export for consumers
+export type { EntriesListInput };
 
 interface EntryListPageProps {
   /** Filters for the entry list query */
@@ -38,6 +41,9 @@ interface EntryListPageProps {
  * - Skipping prefetch when viewing an entry (prevents list refetch)
  * - Passing hydrated state to client
  *
+ * Uses tRPC's hydration helpers to ensure query keys match exactly between
+ * server prefetch and client query, preventing hydration mismatches.
+ *
  * @example
  * ```tsx
  * // In page.tsx
@@ -51,41 +57,30 @@ interface EntryListPageProps {
  * ```
  */
 export async function EntryListPage({ filters, searchParams, children }: EntryListPageProps) {
-  const queryClient = createServerQueryClient();
   const params = await searchParams;
 
   // Skip prefetch if viewing an entry - the list is already cached on the client
   // This prevents the list from refetching when clicking into an entry
   const isViewingEntry = !!params.entry;
 
-  if ((await isAuthenticated()) && !isViewingEntry) {
-    const trpc = await createServerCaller();
+  // Get tRPC hydration helpers - this provides HydrateClient component and prefetch methods
+  const { trpc, HydrateClient } = await createHydrationHelpersForRequest();
 
+  if ((await isAuthenticated()) && !isViewingEntry) {
     // Parse view preferences from URL (same logic as client hook)
     const urlParams = new URLSearchParams();
     if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
     if (params.sort) urlParams.set("sort", String(params.sort));
     const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams);
 
-    // Build input matching the query key structure tRPC generates on the client
-    // IMPORTANT: Include ALL fields (even undefined) to match exactly
-    const input = {
-      subscriptionId: filters.subscriptionId,
-      tagId: filters.tagId,
-      uncategorized: filters.uncategorized,
-      unreadOnly,
-      starredOnly: filters.starredOnly,
-      sortOrder,
-      type: filters.type,
-      limit: 10,
-    };
+    // Build input using shared function to ensure cache key matches client
+    const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
 
-    await queryClient.prefetchInfiniteQuery({
-      queryKey: [["entries", "list"], { input, type: "infinite" }],
-      queryFn: () => trpc.entries.list(input),
-      initialPageParam: undefined as string | undefined,
-    });
+    // Use prefetchInfinite which automatically uses the correct query key format
+    // Must await so the data is in the QueryClient before HydrateClient dehydrates
+    await trpc.entries.list.prefetchInfinite(input);
   }
 
-  return <HydrationBoundary state={dehydrate(queryClient)}>{children}</HydrationBoundary>;
+  // HydrateClient automatically dehydrates the QueryClient and provides it to children
+  return <HydrateClient>{children}</HydrateClient>;
 }

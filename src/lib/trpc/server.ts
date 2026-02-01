@@ -8,10 +8,12 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
 import type { QueryClient } from "@tanstack/react-query";
+import { createHydrationHelpers } from "@trpc/react-query/rsc";
 import { db } from "@/server/db";
 import { validateSession } from "@/server/auth";
-import { createCaller } from "@/server/trpc/root";
+import { createCaller, type AppRouter } from "@/server/trpc/root";
 import type { Context } from "@/server/trpc/context";
+import { getQueryClient } from "./query-client";
 
 /**
  * Gets the session token from cookies.
@@ -84,6 +86,32 @@ export const createServerCaller = cache(async () => {
  * Re-exports from query-client.ts for backwards compatibility.
  */
 export { getQueryClient as createServerQueryClient } from "./query-client";
+
+/**
+ * Creates tRPC hydration helpers for RSC prefetching.
+ *
+ * Returns:
+ * - `trpc`: Wrapped caller with prefetch helpers
+ *   - Direct calls: `await trpc.entries.list({...})`
+ *   - Prefetching: `void trpc.entries.list.prefetch({...})`
+ *   - Infinite prefetching: `void trpc.entries.list.prefetchInfinite({...})`
+ * - `HydrateClient`: Component that dehydrates the QueryClient and provides
+ *   it to client components. Wrap your client components with this.
+ *
+ * Prefetch methods automatically use the correct query key format,
+ * ensuring cache hits when client components query the same data.
+ *
+ * @example
+ * ```tsx
+ * const { trpc, HydrateClient } = await createHydrationHelpersForRequest();
+ * void trpc.entries.list.prefetch({});
+ * return <HydrateClient>{children}</HydrateClient>;
+ * ```
+ */
+export const createHydrationHelpersForRequest = cache(async () => {
+  const caller = await createServerCaller();
+  return createHydrationHelpers<AppRouter>(caller, getQueryClient);
+});
 
 /**
  * Helper type for prefetch function results.

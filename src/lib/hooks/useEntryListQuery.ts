@@ -20,6 +20,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
 import { type EntryType } from "./useEntryMutations";
+import { buildEntriesListInput } from "@/lib/queries/entries-list-input";
 
 /**
  * Filter options for the entry list query.
@@ -187,6 +188,26 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
   const lastKnownNextRef = useRef<string | undefined>(undefined);
   const lastKnownPrevRef = useRef<string | undefined>(undefined);
 
+  // Build input using shared function to ensure cache key matches server prefetch
+  const queryInput = useMemo(
+    () =>
+      buildEntriesListInput(
+        {
+          subscriptionId: filters.subscriptionId,
+          tagId: filters.tagId,
+          uncategorized: filters.uncategorized,
+          starredOnly: filters.starredOnly,
+          type: filters.type,
+        },
+        {
+          unreadOnly: filters.unreadOnly ?? true,
+          sortOrder: filters.sortOrder ?? "newest",
+        },
+        pageSize
+      ),
+    [filters, pageSize]
+  );
+
   // Use infinite query for cursor-based pagination
   // Note: refetchOnMount is false - we handle refetch on pathname change via effect below
   const {
@@ -198,30 +219,18 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     hasNextPage,
     isFetchingNextPage,
     refetch,
-  } = trpc.entries.list.useInfiniteQuery(
-    {
-      subscriptionId: filters.subscriptionId,
-      tagId: filters.tagId,
-      uncategorized: filters.uncategorized,
-      unreadOnly: filters.unreadOnly,
-      starredOnly: filters.starredOnly,
-      sortOrder: filters.sortOrder,
-      type: filters.type,
-      limit: pageSize,
-    },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      // Never automatically mark as stale - sidebar navigation explicitly marks queries stale
-      // This prevents read entries from disappearing while browsing within a view
-      staleTime: Infinity,
-      // Refetch on mount if data is stale (sidebar marks stale on navigation)
-      refetchOnMount: true,
-      refetchOnWindowFocus: false,
-      // Use parent list as placeholder data for immediate display while fetching
-      // This provides entries from a broader cached list (e.g., "All" list for subscription view)
-      placeholderData: () => findParentListPlaceholderData(queryClient, filters, subscriptions),
-    }
-  );
+  } = trpc.entries.list.useInfiniteQuery(queryInput, {
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    // Never automatically mark as stale - sidebar navigation explicitly marks queries stale
+    // This prevents read entries from disappearing while browsing within a view
+    staleTime: Infinity,
+    // Refetch on mount if data is stale (sidebar marks stale on navigation)
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    // Use parent list as placeholder data for immediate display while fetching
+    // This provides entries from a broader cached list (e.g., "All" list for subscription view)
+    placeholderData: () => findParentListPlaceholderData(queryClient, filters, subscriptions),
+  });
 
   // Flatten all pages into a single array of entries
   const entries: EntryListData[] = useMemo(() => {
