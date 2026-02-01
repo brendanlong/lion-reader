@@ -9,30 +9,28 @@
 
 import { useEffect, useRef, useMemo, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import DOMPurify from "dompurify";
+import DOMPurify from "isomorphic-dompurify";
 
 // Configure DOMPurify to:
 // 1. Open all external links in new tabs
 // 2. Lazy load all images
 // This hook runs after each element is sanitized
-if (typeof window !== "undefined") {
-  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-    // Add target="_blank" for external links
-    if (node.tagName === "A" && node.hasAttribute("href")) {
-      const href = node.getAttribute("href") ?? "";
-      // Only add target="_blank" for http/https links (external links)
-      if (href.startsWith("http://") || href.startsWith("https://")) {
-        node.setAttribute("target", "_blank");
-        node.setAttribute("rel", "noopener noreferrer");
-      }
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  // Add target="_blank" for external links
+  if (node.tagName === "A" && node.hasAttribute("href")) {
+    const href = node.getAttribute("href") ?? "";
+    // Only add target="_blank" for http/https links (external links)
+    if (href.startsWith("http://") || href.startsWith("https://")) {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
     }
+  }
 
-    // Lazy load all images
-    if (node.tagName === "IMG") {
-      node.setAttribute("loading", "lazy");
-    }
-  });
-}
+  // Lazy load all images
+  if (node.tagName === "IMG") {
+    node.setAttribute("loading", "lazy");
+  }
+});
 import {
   Button,
   StarIcon,
@@ -52,7 +50,6 @@ import {
   useNarration,
   useNarrationHighlight,
 } from "@/components/narration";
-import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance";
@@ -235,7 +232,6 @@ export function EntryContentBody({
   }
 
   // Set up narration with highlighting support
-  const narrationSupported = isNarrationSupported();
   const narration = useNarration({
     id: articleId,
     title,
@@ -257,7 +253,8 @@ export function EntryContentBody({
   // Determine if we should process HTML for highlighting
   // We process it whenever narration has been activated (processedHtml exists or state is not idle)
   const shouldProcessForHighlighting =
-    narrationSupported && (narration.processedHtml !== null || narration.state.status !== "idle");
+    narration.isSupported &&
+    (narration.processedHtml !== null || narration.state.status !== "idle");
 
   // Sanitize and optionally process HTML content for highlighting
   const sanitizedContent = useMemo(() => {

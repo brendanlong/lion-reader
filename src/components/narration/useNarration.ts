@@ -26,7 +26,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { ArticleNarrator, type NarrationState } from "@/lib/narration/ArticleNarrator";
 import { useNarrationSettings } from "@/lib/narration/settings";
@@ -80,7 +80,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const [state, setState] = useState<NarrationState>(DEFAULT_NARRATION_STATE);
   const [isLoading, setIsLoading] = useState(false);
   const [narrationText, setNarrationText] = useState<string | null>(null);
-  const [isSupported] = useState(() => isNarrationSupported());
+  // Defer browser support check until after hydration to avoid SSR mismatch
+  // useSyncExternalStore ensures the check runs after hydration without cascading renders
+  const isSupported = useSyncExternalStore(
+    () => () => {}, // No subscription needed - browser capabilities don't change
+    () => isNarrationSupported(), // Client snapshot
+    () => false // Server snapshot - always false during SSR
+  );
   const [processedHtml, setProcessedHtml] = useState<string | null>(null);
 
   // Refs

@@ -27,6 +27,12 @@ export interface EntriesListInput {
   sortOrder: "newest" | "oldest";
   type: EntryType | undefined;
   limit: number;
+  /**
+   * Direction for infinite query pagination.
+   * tRPC adds this automatically for useInfiniteQuery, so we must include it
+   * in server-side prefetchInfinite for cache key matching.
+   */
+  direction: "forward" | "backward";
 }
 
 /**
@@ -69,6 +75,8 @@ export function buildEntriesListInput(
 ): EntriesListInput {
   // Construct the input with explicit property order and explicit undefined values.
   // This ensures the object structure is identical regardless of where it's constructed.
+  // NOTE: direction is required for tRPC infinite query cache key matching.
+  // Direction depends on sort order: "newest" fetches forward, "oldest" fetches backward.
   return {
     subscriptionId: filters.subscriptionId,
     tagId: filters.tagId,
@@ -78,5 +86,6 @@ export function buildEntriesListInput(
     sortOrder: preferences.sortOrder,
     type: filters.type,
     limit,
+    direction: preferences.sortOrder === "newest" ? "forward" : "backward",
   };
 }

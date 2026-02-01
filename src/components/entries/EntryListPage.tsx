@@ -2,11 +2,10 @@
  * EntryListPage Server Component
  *
  * Shared server component that handles entry list prefetching for all list views.
- * Skips prefetch when an entry is open (?entry= param) to avoid refetching the list
- * when just viewing an entry.
+ * Prefetches both the entry list and the specific entry (if viewing one).
  */
 
-import { createHydrationHelpersForRequest, isAuthenticated } from "@/lib/trpc/server";
+import { createHydrationHelpersForRequest } from "@/lib/trpc/server";
 import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
 import { buildEntriesListInput, type EntriesListInput } from "@/lib/queries/entries-list-input";
 
@@ -38,7 +37,7 @@ interface EntryListPageProps {
  *
  * Handles:
  * - Prefetching entry list with filters
- * - Skipping prefetch when viewing an entry (prevents list refetch)
+ * - Prefetching specific entry when viewing one (?entry= param)
  * - Passing hydrated state to client
  *
  * Uses tRPC's hydration helpers to ensure query keys match exactly between
@@ -59,28 +58,29 @@ interface EntryListPageProps {
 export async function EntryListPage({ filters, searchParams, children }: EntryListPageProps) {
   const params = await searchParams;
 
-  // Skip prefetch if viewing an entry - the list is already cached on the client
-  // This prevents the list from refetching when clicking into an entry
-  const isViewingEntry = !!params.entry;
+  // Check if viewing a specific entry
+  const entryId = typeof params.entry === "string" ? params.entry : undefined;
 
-  if ((await isAuthenticated()) && !isViewingEntry) {
-    // Get tRPC caller for prefetching
-    // Uses the same QueryClient as the layout (via cache()) to share prefetched data
-    const { trpc } = await createHydrationHelpersForRequest();
+  // Get tRPC caller for prefetching
+  // Uses the same QueryClient as the layout (via cache()) to share prefetched data
+  // Note: Layout already verified authentication, so we skip that check here
+  const { trpc } = await createHydrationHelpersForRequest();
 
-    // Parse view preferences from URL (same logic as client hook)
-    const urlParams = new URLSearchParams();
-    if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
-    if (params.sort) urlParams.set("sort", String(params.sort));
-    const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams);
+  // Parse view preferences from URL (same logic as client hook)
+  const urlParams = new URLSearchParams();
+  if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
+  if (params.sort) urlParams.set("sort", String(params.sort));
+  const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams);
 
-    // Build input using shared function to ensure cache key matches client
-    const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
+  // Build input using shared function to ensure cache key matches client
+  const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
 
-    // Prefetch entries - data goes into the shared QueryClient
-    // The layout's HydrateClient will dehydrate all prefetched data
-    await trpc.entries.list.prefetchInfinite(input);
-  }
+  // Prefetch the entry list (always needed for sidebar)
+  // Also prefetch the specific entry if viewing one
+  await Promise.all([
+    trpc.entries.list.prefetchInfinite(input),
+    entryId ? trpc.entries.get.prefetch({ id: entryId }) : Promise.resolve(),
+  ]);
 
   // Return children directly - the layout's HydrateClient handles hydration
   return <>{children}</>;

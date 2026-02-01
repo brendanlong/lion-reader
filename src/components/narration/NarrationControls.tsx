@@ -21,6 +21,7 @@
 
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { useNarration } from "./useNarration";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
@@ -78,8 +79,17 @@ export function NarrationControls({
   content,
   narration,
 }: NarrationControlsProps) {
+  // Defer browser support check until after hydration to avoid mismatch.
+  // Server and initial client render both show null, then we update after mount.
+  // useSyncExternalStore ensures the check runs after hydration without cascading renders.
+  const isSupported = useSyncExternalStore(
+    () => () => {}, // No subscription needed - browser capabilities don't change
+    () => isNarrationSupported(), // Client snapshot
+    () => false // Server snapshot - always false during SSR
+  );
+
   // Don't render if narration is not supported
-  if (!isNarrationSupported()) {
+  if (!isSupported) {
     return null;
   }
 
