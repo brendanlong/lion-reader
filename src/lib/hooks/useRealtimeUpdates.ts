@@ -26,14 +26,12 @@ import {
 } from "@/lib/cache";
 
 /**
- * Granular sync cursors for each entity type.
- * Each cursor is an ISO8601 timestamp derived from the actual last item in its query result.
+ * Sync cursors for each entity type.
+ * Each cursor is an ISO8601 timestamp based on max(updated_at) for the entity type.
  */
 export interface SyncCursors {
   entries: string | null;
-  entryStates: string | null;
   subscriptions: string | null;
-  removedSubscriptions: string | null;
   tags: string | null;
 }
 
@@ -428,7 +426,7 @@ function parseEventData(data: string): SSEEventData | null {
  * ```tsx
  * function AppLayout({ children }) {
  *   // Get initial cursors from server or use null for initial sync
- *   const initialCursors: SyncCursors = { entries: null, entryStates: null, subscriptions: null, removedSubscriptions: null, tags: null };
+ *   const initialCursors: SyncCursors = { entries: null, subscriptions: null, tags: null };
  *   const { status, isConnected, isPolling } = useRealtimeUpdates(initialCursors);
  *
  *   return (
@@ -599,9 +597,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         // Use granular cursors for correct incremental sync
         cursors: {
           entries: currentCursors.entries ?? undefined,
-          entryStates: currentCursors.entryStates ?? undefined,
           subscriptions: currentCursors.subscriptions ?? undefined,
-          removedSubscriptions: currentCursors.removedSubscriptions ?? undefined,
           tags: currentCursors.tags ?? undefined,
         },
       });

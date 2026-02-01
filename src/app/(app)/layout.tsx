@@ -8,13 +8,10 @@
  * - auth.me (user info for header)
  * - tags.list (sidebar tag structure and unread counts)
  * - entries.count (all/starred/saved counts for sidebar)
- * - sync.changes (for initial delta sync cursors)
+ * - sync.cursors (lightweight max timestamps for SSE cursor initialization)
  * - summarization.isAvailable (for entry content summarization button)
  *
  * Note: entries.list is prefetched per-page in EntryListPage based on route-specific filters
- *
- * Initial sync uses null cursors to get all recent data, which then establishes
- * the baseline cursors for subsequent incremental syncs.
  *
  * Uses tRPC's hydration helpers to ensure query keys match exactly between
  * server prefetch and client query, preventing hydration mismatches.
@@ -24,7 +21,6 @@ import { redirect } from "next/navigation";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { createHydrationHelpersForRequest, isAuthenticated } from "@/lib/trpc/server";
 import { AppLayoutContent } from "./AppLayoutContent";
-import { type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -44,11 +40,13 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   // These are independent queries so we can run them in parallel
   // Must await so the data is in the QueryClient before HydrateClient dehydrates
   //
-  // Note: sync.changes is called directly (not prefetch) because we need its
+  // Note: sync.cursors is called directly (not prefetch) because we need its
   // return value to pass the initial cursors to the client. This prevents
   // the client from re-syncing with null cursors on SSE connect.
-  const [syncResult] = await Promise.all([
-    trpc.sync.changes({}), // Direct call to get cursors
+  // sync.cursors is a lightweight endpoint that just does MAX() queries,
+  // avoiding the overhead of fetching all data just to get cursor timestamps.
+  const [initialCursors] = await Promise.all([
+    trpc.sync.cursors(), // Lightweight cursor-only query
     trpc.auth.me.prefetch(),
     trpc.tags.list.prefetch(),
     trpc.entries.count.prefetch({}),
@@ -56,9 +54,6 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     trpc.entries.count.prefetch({ starredOnly: true }),
     trpc.summarization.isAvailable.prefetch(), // For entry content summarization button
   ]);
-
-  // Extract cursors from the sync response for client-side SSE
-  const initialCursors: SyncCursors = syncResult.cursors;
 
   return (
     <TRPCProvider>
