@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, useMemo, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
@@ -106,12 +106,12 @@ export function EntryContent({
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
-  // Get subscriptions to look up tags and fetchFullContent setting for the entry's subscription
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
-  const subscription = useMemo(() => {
-    if (!entry?.subscriptionId || !subscriptionsQuery.data) return undefined;
-    return subscriptionsQuery.data.items.find((sub) => sub.id === entry.subscriptionId);
-  }, [entry, subscriptionsQuery.data]);
+  // Get subscription to look up tags and fetchFullContent setting
+  const subscriptionQuery = trpc.subscriptions.get.useQuery(
+    { id: entry?.subscriptionId ?? "" },
+    { enabled: !!entry?.subscriptionId }
+  );
+  const subscription = subscriptionQuery.data;
 
   // Get fetchFullContent setting from subscription
   const fetchFullContent = subscription?.fetchFullContent ?? false;

@@ -8,6 +8,9 @@
  * - auth.me (user info for header)
  * - tags.list (sidebar tag structure and unread counts)
  * - entries.count (all/starred/saved counts for sidebar)
+ * - sync.changes (for initial delta sync cursors)
+ *
+ * Note: entries.list is prefetched per-page in EntryListPage based on route-specific filters
  *
  * Initial sync uses null cursors to get all recent data, which then establishes
  * the baseline cursors for subsequent incremental syncs.
@@ -56,6 +59,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     trpc.entries.count.prefetch({}),
     trpc.entries.count.prefetch({ type: "saved" }),
     trpc.entries.count.prefetch({ starredOnly: true }),
+    trpc.sync.changes.prefetch({}), // Initial sync with no cursors
   ]);
 
   return (

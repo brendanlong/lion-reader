@@ -63,10 +63,11 @@ export async function EntryListPage({ filters, searchParams, children }: EntryLi
   // This prevents the list from refetching when clicking into an entry
   const isViewingEntry = !!params.entry;
 
-  // Get tRPC hydration helpers - this provides HydrateClient component and prefetch methods
-  const { trpc, HydrateClient } = await createHydrationHelpersForRequest();
-
   if ((await isAuthenticated()) && !isViewingEntry) {
+    // Get tRPC caller for prefetching
+    // Uses the same QueryClient as the layout (via cache()) to share prefetched data
+    const { trpc } = await createHydrationHelpersForRequest();
+
     // Parse view preferences from URL (same logic as client hook)
     const urlParams = new URLSearchParams();
     if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
@@ -76,11 +77,11 @@ export async function EntryListPage({ filters, searchParams, children }: EntryLi
     // Build input using shared function to ensure cache key matches client
     const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
 
-    // Use prefetchInfinite which automatically uses the correct query key format
-    // Must await so the data is in the QueryClient before HydrateClient dehydrates
+    // Prefetch entries - data goes into the shared QueryClient
+    // The layout's HydrateClient will dehydrate all prefetched data
     await trpc.entries.list.prefetchInfinite(input);
   }
 
-  // HydrateClient automatically dehydrates the QueryClient and provides it to children
-  return <HydrateClient>{children}</HydrateClient>;
+  // Return children directly - the layout's HydrateClient handles hydration
+  return <>{children}</>;
 }

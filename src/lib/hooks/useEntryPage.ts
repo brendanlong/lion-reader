@@ -53,16 +53,6 @@ export interface UseEntryPageOptions {
 }
 
 /**
- * Subscription data from the subscriptions.list query.
- */
-type SubscriptionItem = {
-  id: string;
-  unreadCount: number;
-  tags: Array<{ id: string }>;
-  [key: string]: unknown;
-};
-
-/**
  * Result of the useEntryPage hook.
  */
 export interface UseEntryPageResult {
@@ -81,8 +71,6 @@ export interface UseEntryPageResult {
 
   // Query state
   isLoading: boolean;
-  subscriptionsLoading: boolean;
-  subscriptions: { items: SubscriptionItem[] } | undefined;
 
   // Callbacks for EntryList
   handleEntryClick: (entryId: string) => void;
@@ -173,15 +161,16 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     [filters, showUnreadOnly, sortOrder]
   );
 
-  // Subscriptions query for tag lookup and placeholder data
-  const subscriptionsQuery = trpc.subscriptions.list.useQuery();
+  // Get cached subscriptions for placeholder data (don't trigger fetch)
+  // Only use subscriptions if already cached from server prefetch or sidebar
+  const cachedSubscriptions = utils.subscriptions.list.getData();
 
   // Entry list query
   const entryListQuery = useEntryListQuery({
     filters: combinedFilters,
     openEntryId,
-    // Pass subscriptions for tag filtering in placeholder data
-    subscriptions: subscriptionsQuery.data?.items,
+    // Pass cached subscriptions for tag filtering in placeholder data
+    subscriptions: cachedSubscriptions?.items,
   });
 
   // Use entries directly from query (no delta merging)
@@ -336,8 +325,6 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
 
     // Query state
     isLoading: entryListQuery.isLoading,
-    subscriptionsLoading: subscriptionsQuery.isLoading,
-    subscriptions: subscriptionsQuery.data,
 
     // Callbacks
     handleEntryClick,
