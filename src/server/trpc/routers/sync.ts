@@ -299,9 +299,10 @@ export const syncRouter = createTRPCRouter({
         }
 
         // Update cursor to the max GREATEST from results
+        // Note: sql<Date> is just a type hint - Postgres returns string timestamps
         if (changedEntryResults.length > 0) {
           const lastEntry = changedEntryResults[changedEntryResults.length - 1];
-          outputEntriesCursor = lastEntry.maxUpdatedAt;
+          outputEntriesCursor = new Date(lastEntry.maxUpdatedAt);
         }
 
         // Split results: metadata changes go to created, state-only changes go to updated
@@ -448,14 +449,15 @@ export const syncRouter = createTRPCRouter({
 
         // For initial sync, set cursor to the max updatedAt of ALL subscriptions (including removed)
         // This ensures we catch any unsubscribes that happen after this point
+        // Note: sql<Date> is just a type hint - Postgres returns string timestamps
         const maxUpdatedAt = await ctx.db
-          .select({ max: sql<Date>`MAX(${subscriptions.updatedAt})` })
+          .select({ max: sql<string>`MAX(${subscriptions.updatedAt})` })
           .from(subscriptions)
           .where(eq(subscriptions.userId, userId))
           .then((rows) => rows[0]?.max ?? null);
 
         if (maxUpdatedAt) {
-          outputSubscriptionsCursor = maxUpdatedAt;
+          outputSubscriptionsCursor = new Date(maxUpdatedAt);
         }
 
         createdSubscriptions = allSubscriptionResults.map(({ subscription, feed }) => ({
@@ -533,14 +535,15 @@ export const syncRouter = createTRPCRouter({
 
         // For initial sync, set cursor to max(updated_at) of ALL tags (including deleted)
         // This ensures we catch any deletes that happen after this point
+        // Note: sql<Date> is just a type hint - Postgres returns string timestamps
         const maxUpdatedAt = await ctx.db
-          .select({ max: sql<Date>`MAX(${tags.updatedAt})` })
+          .select({ max: sql<string>`MAX(${tags.updatedAt})` })
           .from(tags)
           .where(eq(tags.userId, userId))
           .then((rows) => rows[0]?.max ?? null);
 
         if (maxUpdatedAt) {
-          outputTagsCursor = maxUpdatedAt;
+          outputTagsCursor = new Date(maxUpdatedAt);
         }
 
         createdTags = allTagResults.map((row) => ({
