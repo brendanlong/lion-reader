@@ -15,7 +15,7 @@
 
 "use client";
 
-import { useMemo, useCallback, useRef, useEffect } from "react";
+import { useMemo, useCallback, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
@@ -180,14 +180,6 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
   // Get query client for placeholder data lookup
   const queryClient = useQueryClient();
 
-  // Track if we've triggered a fetch to avoid duplicate calls
-  const fetchingRef = useRef(false);
-
-  // Track last known adjacent entries for when the current entry is filtered out
-  // This prevents navigation breaking when the open entry disappears from the list
-  const lastKnownNextRef = useRef<string | undefined>(undefined);
-  const lastKnownPrevRef = useRef<string | undefined>(undefined);
-
   // Build input using shared function to ensure cache key matches server prefetch
   const queryInput = useMemo(
     () =>
@@ -258,17 +250,17 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
 
   // Calculate next and previous entry IDs for prefetching
   const { nextEntryId, previousEntryId, currentIndex } = useMemo(() => {
-    if (!openEntryId) {
+    if (!openEntryId || entries.length === 0) {
       return { nextEntryId: undefined, previousEntryId: undefined, currentIndex: -1 };
     }
 
     const idx = entries.findIndex((e) => e.id === openEntryId);
     if (idx === -1) {
-      // Entry not found (likely filtered out) - return undefined for render
-      // getNextEntryId/getPreviousEntryId will use refs as fallback
+      // Entry not in list (e.g., already read with unreadOnly=true, or beyond loaded pages)
+      // Use first/last entries as fallbacks so prefetching still works
       return {
-        nextEntryId: undefined,
-        previousEntryId: undefined,
+        nextEntryId: entries[0]?.id,
+        previousEntryId: entries[entries.length - 1]?.id,
         currentIndex: -1,
       };
     }
@@ -284,15 +276,6 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     };
   }, [openEntryId, entries]);
 
-  // Update refs when entry is found - runs after render to comply with React rules
-  // These refs are used as fallback in getNextEntryId/getPreviousEntryId when entry is filtered out
-  useEffect(() => {
-    if (nextEntryId !== undefined || previousEntryId !== undefined) {
-      lastKnownNextRef.current = nextEntryId;
-      lastKnownPrevRef.current = previousEntryId;
-    }
-  }, [nextEntryId, previousEntryId]);
-
   // Proactively load more entries when approaching the end of the list
   useEffect(() => {
     if (
@@ -300,13 +283,9 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
       entries.length > 0 &&
       entries.length - currentIndex <= prefetchThreshold &&
       hasNextPage &&
-      !isFetchingNextPage &&
-      !fetchingRef.current
+      !isFetchingNextPage
     ) {
-      fetchingRef.current = true;
-      fetchNextPage().finally(() => {
-        fetchingRef.current = false;
-      });
+      fetchNextPage();
     }
   }, [
     currentIndex,
@@ -317,60 +296,44 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     fetchNextPage,
   ]);
 
-  // Get next entry ID, using remembered value if current entry is filtered out
-  // Refs are accessed only in this callback, not during render
+  // Get next entry ID for navigation
   const getNextEntryId = useCallback((): string | undefined => {
     if (entries.length === 0) return undefined;
 
     const idx = openEntryId ? entries.findIndex((e) => e.id === openEntryId) : -1;
 
     if (idx === -1) {
-      // Entry not found - use remembered next entry if available
-      if (lastKnownNextRef.current) {
-        return lastKnownNextRef.current;
-      }
-      // Fall back to first entry if nothing remembered
+      // Entry not in list (e.g., loaded directly and not in first page)
+      // Fall back to first entry
       return entries[0]?.id;
     }
 
     if (idx < entries.length - 1) {
-      // Return next entry
       return entries[idx + 1].id;
     }
 
-    // At the last entry - return undefined (we already prefetch proactively)
+    // At the last loaded entry
     return undefined;
   }, [entries, openEntryId]);
 
-  // Get previous entry ID, using remembered value if current entry is filtered out
-  // Refs are accessed only in this callback, not during render
+  // Get previous entry ID for navigation
   const getPreviousEntryId = useCallback((): string | undefined => {
     if (entries.length === 0) return undefined;
 
     const idx = openEntryId ? entries.findIndex((e) => e.id === openEntryId) : -1;
 
     if (idx === -1) {
-      // Entry not found - use remembered previous entry if available
-      if (lastKnownPrevRef.current) {
-        return lastKnownPrevRef.current;
-      }
-      // Fall back to last entry if nothing remembered
+      // Entry not in list - fall back to last entry
       return entries[entries.length - 1]?.id;
     }
 
     if (idx > 0) {
-      // Return previous entry
       return entries[idx - 1].id;
     }
 
     // At the first entry
     return undefined;
   }, [entries, openEntryId]);
-
-  // Wrap fetchNextPage to reset the fetching ref
-  const wrappedFetchNextPage = useCallback(() => {
-    fetchNextPage();
-  }, [fetchNextPage]);
 
   return {
     entries,
@@ -379,7 +342,7 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     errorMessage: error?.message,
     isFetchingNextPage,
     hasNextPage: hasNextPage ?? false,
-    fetchNextPage: wrappedFetchNextPage,
+    fetchNextPage,
     refetch,
     nextEntryId,
     previousEntryId,
