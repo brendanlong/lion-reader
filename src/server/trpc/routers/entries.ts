@@ -29,6 +29,7 @@ import {
 import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
+import { publishEntryStateChanged } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -664,6 +665,20 @@ export const entriesRouter = createTRPCRouter({
       // Get absolute counts for all affected lists
       const counts = await countsService.getBulkEntryRelatedCounts(ctx.db, userId, entriesResult);
 
+      // Publish entry state change events for multi-tab/device sync
+      // Fire and forget - don't block the response
+      for (const entry of entriesResult) {
+        publishEntryStateChanged(
+          userId,
+          entry.id,
+          entry.read,
+          entry.starred,
+          entry.updatedAt
+        ).catch(() => {
+          // Ignore publish errors - SSE is best-effort
+        });
+      }
+
       return {
         success: true,
         count: entrySubscriptions.length,
@@ -855,18 +870,24 @@ export const entriesRouter = createTRPCRouter({
     )
     .output(setStarredOutputSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
       const entry = await updateEntryStarred(
         ctx,
-        ctx.session.user.id,
+        userId,
         input.id,
         input.starred,
         input.changedAt ?? new Date()
       );
-      const counts = await countsService.getEntryRelatedCounts(
-        ctx.db,
-        ctx.session.user.id,
-        input.id
+      const counts = await countsService.getEntryRelatedCounts(ctx.db, userId, input.id);
+
+      // Publish entry state change event for multi-tab/device sync
+      // Fire and forget - don't block the response
+      publishEntryStateChanged(userId, entry.id, entry.read, entry.starred, entry.updatedAt).catch(
+        () => {
+          // Ignore publish errors - SSE is best-effort
+        }
       );
+
       return { entry, counts };
     }),
 

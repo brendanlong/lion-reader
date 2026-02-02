@@ -676,6 +676,7 @@ export const savedRouter = createTRPCRouter({
           summary: excerpt,
           url: normalizedUrl,
           publishedAt: oldEntry.publishedAt,
+          updatedAt: now,
         });
 
         // Get counts after update
@@ -741,7 +742,7 @@ export const savedRouter = createTRPCRouter({
       });
 
       // Publish event to notify other browser windows/tabs
-      await publishNewEntry(savedFeedId, entryId, "saved");
+      await publishNewEntry(savedFeedId, entryId, now, "saved");
 
       // Get counts after creating new entry
       const counts = await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null);

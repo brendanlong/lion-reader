@@ -333,6 +333,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
       userId,
       feed.id,
       upsertedSubscription.id,
+      upsertedSubscription.updatedAt,
       {
         id: upsertedSubscription.id,
         feedId: feed.id,
@@ -448,7 +449,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
 
   // 9. Publish real-time event via Redis
   // Fire and forget - we don't want publishing failures to affect email processing
-  publishNewEntry(feed.id, entryId, "email").catch((err) => {
+  publishNewEntry(feed.id, entryId, now, "email").catch((err) => {
     logger.error("Failed to publish new_entry event for email", {
       feedId: feed.id,
       entryId,

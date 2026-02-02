@@ -17,15 +17,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
-import {
-  handleSubscriptionCreated,
-  handleSubscriptionDeleted,
-  handleNewEntry,
-  updateEntriesInListCache,
-  updateEntryMetadataInCache,
-  applySyncTagChanges,
-  removeSyncTags,
-} from "@/lib/cache";
+import { handleSyncEvent, type SyncEvent } from "@/lib/cache";
 
 /**
  * Sync cursors for each entity type.
@@ -124,6 +116,7 @@ interface NewEntryEventData {
   subscriptionId: string | null;
   entryId: string;
   timestamp: string;
+  updatedAt: string; // Database updated_at for cursor tracking (entries cursor)
   feedType?: "web" | "email" | "saved";
 }
 
@@ -135,6 +128,7 @@ interface EntryUpdatedEventData {
   subscriptionId: string | null;
   entryId: string;
   timestamp: string;
+  updatedAt: string; // Database updated_at for cursor tracking (entries cursor)
   metadata: EntryUpdatedMetadata;
 }
 
@@ -171,6 +165,7 @@ interface SubscriptionCreatedEventData {
   feedId: string;
   subscriptionId: string;
   timestamp: string;
+  updatedAt: string; // Database updated_at for cursor tracking (subscriptions cursor)
   subscription: SubscriptionCreatedEventSubscription;
   feed: SubscriptionCreatedEventFeed;
 }
@@ -181,6 +176,7 @@ interface SubscriptionDeletedEventData {
   feedId: string;
   subscriptionId: string;
   timestamp: string;
+  updatedAt: string; // Database updated_at for cursor tracking (subscriptions cursor)
 }
 
 interface ImportProgressEventData {
@@ -207,11 +203,45 @@ interface ImportCompletedEventData {
   timestamp: string;
 }
 
+interface EntryStateChangedEventData {
+  type: "entry_state_changed";
+  entryId: string;
+  read: boolean;
+  starred: boolean;
+  timestamp: string;
+  updatedAt: string; // Database updated_at for cursor tracking (entries cursor)
+}
+
+interface TagCreatedEventData {
+  type: "tag_created";
+  tag: { id: string; name: string; color: string | null };
+  timestamp: string;
+  updatedAt: string; // Database updated_at for cursor tracking (tags cursor)
+}
+
+interface TagUpdatedEventData {
+  type: "tag_updated";
+  tag: { id: string; name: string; color: string | null };
+  timestamp: string;
+  updatedAt: string; // Database updated_at for cursor tracking (tags cursor)
+}
+
+interface TagDeletedEventData {
+  type: "tag_deleted";
+  tagId: string;
+  timestamp: string;
+  updatedAt: string; // Database updated_at for cursor tracking (tags cursor)
+}
+
 type UserEventData =
   | SubscriptionCreatedEventData
   | SubscriptionDeletedEventData
   | ImportProgressEventData
-  | ImportCompletedEventData;
+  | ImportCompletedEventData
+  | EntryStateChangedEventData
+  | TagCreatedEventData
+  | TagUpdatedEventData
+  | TagDeletedEventData;
 
 type SSEEventData = SubscriptionEntryEventData | UserEventData;
 
@@ -232,13 +262,15 @@ function parseEventData(data: string): SSEEventData | null {
     if (
       event.type === "new_entry" &&
       (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
-      typeof event.entryId === "string"
+      typeof event.entryId === "string" &&
+      typeof event.updatedAt === "string"
     ) {
       return {
         type: "new_entry" as const,
         subscriptionId: event.subscriptionId as string | null,
         entryId: event.entryId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        updatedAt: event.updatedAt,
         feedType:
           typeof event.feedType === "string" && ["web", "email", "saved"].includes(event.feedType)
             ? (event.feedType as "web" | "email" | "saved")
@@ -251,6 +283,7 @@ function parseEventData(data: string): SSEEventData | null {
       event.type === "entry_updated" &&
       (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
       typeof event.entryId === "string" &&
+      typeof event.updatedAt === "string" &&
       typeof event.metadata === "object" &&
       event.metadata !== null
     ) {
@@ -269,6 +302,7 @@ function parseEventData(data: string): SSEEventData | null {
           entryId: event.entryId,
           timestamp:
             typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+          updatedAt: event.updatedAt,
           metadata: {
             title: metadata.title as string | null,
             author: metadata.author as string | null,
@@ -318,12 +352,18 @@ function parseEventData(data: string): SSEEventData | null {
         return null;
       }
 
+      // Require updatedAt for cursor tracking
+      if (typeof event.updatedAt !== "string") {
+        return null;
+      }
+
       return {
         type: event.type,
         userId: event.userId,
         feedId: event.feedId,
         subscriptionId: event.subscriptionId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        updatedAt: event.updatedAt,
         subscription: {
           id: sub.id,
           feedId: sub.feedId,
@@ -348,7 +388,8 @@ function parseEventData(data: string): SSEEventData | null {
       event.type === "subscription_deleted" &&
       typeof event.userId === "string" &&
       typeof event.feedId === "string" &&
-      typeof event.subscriptionId === "string"
+      typeof event.subscriptionId === "string" &&
+      typeof event.updatedAt === "string"
     ) {
       return {
         type: event.type,
@@ -356,6 +397,7 @@ function parseEventData(data: string): SSEEventData | null {
         feedId: event.feedId,
         subscriptionId: event.subscriptionId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        updatedAt: event.updatedAt,
       };
     }
 
@@ -406,6 +448,92 @@ function parseEventData(data: string): SSEEventData | null {
         failed: event.failed,
         total: event.total,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+      };
+    }
+
+    // Handle entry_state_changed events
+    if (
+      event.type === "entry_state_changed" &&
+      typeof event.entryId === "string" &&
+      typeof event.read === "boolean" &&
+      typeof event.starred === "boolean" &&
+      typeof event.updatedAt === "string"
+    ) {
+      return {
+        type: event.type,
+        entryId: event.entryId,
+        read: event.read,
+        starred: event.starred,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        updatedAt: event.updatedAt,
+      };
+    }
+
+    // Handle tag_created events
+    if (
+      event.type === "tag_created" &&
+      typeof event.tag === "object" &&
+      event.tag !== null &&
+      typeof event.updatedAt === "string"
+    ) {
+      const tag = event.tag as Record<string, unknown>;
+      if (
+        typeof tag.id === "string" &&
+        typeof tag.name === "string" &&
+        (tag.color === null || typeof tag.color === "string")
+      ) {
+        return {
+          type: event.type,
+          tag: {
+            id: tag.id,
+            name: tag.name,
+            color: tag.color as string | null,
+          },
+          timestamp:
+            typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+          updatedAt: event.updatedAt,
+        };
+      }
+    }
+
+    // Handle tag_updated events
+    if (
+      event.type === "tag_updated" &&
+      typeof event.tag === "object" &&
+      event.tag !== null &&
+      typeof event.updatedAt === "string"
+    ) {
+      const tag = event.tag as Record<string, unknown>;
+      if (
+        typeof tag.id === "string" &&
+        typeof tag.name === "string" &&
+        (tag.color === null || typeof tag.color === "string")
+      ) {
+        return {
+          type: event.type,
+          tag: {
+            id: tag.id,
+            name: tag.name,
+            color: tag.color as string | null,
+          },
+          timestamp:
+            typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+          updatedAt: event.updatedAt,
+        };
+      }
+    }
+
+    // Handle tag_deleted events
+    if (
+      event.type === "tag_deleted" &&
+      typeof event.tagId === "string" &&
+      typeof event.updatedAt === "string"
+    ) {
+      return {
+        type: event.type,
+        tagId: event.tagId,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        updatedAt: event.updatedAt,
       };
     }
 
@@ -497,106 +625,76 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   }, []);
 
   /**
+   * Updates the appropriate cursor based on the event type.
+   * Only updates if the new timestamp is greater than the current cursor.
+   */
+  const updateCursorForEvent = useCallback((data: SSEEventData) => {
+    // Extract updatedAt and determine which cursor to update
+    let updatedAt: string | undefined;
+    let cursorType: "entries" | "subscriptions" | "tags" | null = null;
+
+    if (
+      data.type === "new_entry" ||
+      data.type === "entry_updated" ||
+      data.type === "entry_state_changed"
+    ) {
+      updatedAt = data.updatedAt;
+      cursorType = "entries";
+    } else if (data.type === "subscription_created" || data.type === "subscription_deleted") {
+      updatedAt = data.updatedAt;
+      cursorType = "subscriptions";
+    } else if (
+      data.type === "tag_created" ||
+      data.type === "tag_updated" ||
+      data.type === "tag_deleted"
+    ) {
+      updatedAt = data.updatedAt;
+      cursorType = "tags";
+    }
+
+    // Update the cursor if we have a valid updatedAt and it's newer than current
+    if (cursorType && updatedAt) {
+      const currentCursor = cursorsRef.current[cursorType];
+      if (!currentCursor || new Date(updatedAt) > new Date(currentCursor)) {
+        cursorsRef.current = {
+          ...cursorsRef.current,
+          [cursorType]: updatedAt,
+        };
+      }
+    }
+  }, []);
+
+  /**
    * Handles incoming SSE events by updating or invalidating relevant caches.
-   * Uses direct cache updates where possible to avoid full refetches.
+   * Uses the shared handleSyncEvent function for unified event handling.
    *
-   * Note: SSE events provide real-time updates, so we don't need to update cursors here.
-   * The cursors are updated via performSync() after reconnection or during polling.
+   * Also updates the appropriate cursor based on the event's updatedAt field
+   * to keep cursors in sync as events arrive.
    */
   const handleEvent = useCallback(
     (event: MessageEvent) => {
-      // SSE lastEventId is still tracked by the browser for reconnection,
-      // but we don't update cursorsRef here - that happens in performSync()
-
       const data = parseEventData(event.data);
       if (!data) return;
 
-      if (data.type === "new_entry") {
-        // Update unread counts surgically without invalidating entries.list
-        // This allows smooth scrolling while keeping counts fresh
-        // New entries appear when user navigates to that feed/view
-        if (data.feedType) {
-          handleNewEntry(utils, data.subscriptionId, data.feedType, queryClient);
-        }
-      } else if (data.type === "entry_updated") {
-        // Update entry metadata directly in caches (title, author, summary, etc.)
-        // This updates both entries.get and entries.list without requiring refetch
-        updateEntryMetadataInCache(
-          utils,
-          data.entryId,
-          {
-            title: data.metadata.title,
-            author: data.metadata.author,
-            summary: data.metadata.summary,
-            url: data.metadata.url,
-            publishedAt: data.metadata.publishedAt ? new Date(data.metadata.publishedAt) : null,
-          },
-          queryClient
-        );
-        // Note: We intentionally don't invalidate entries.get here. The metadata is updated
-        // directly in cache via setData above. Calling invalidate() would cause a race condition
-        // when the user is viewing the entry: the in-flight fetch would be cancelled, query
-        // would revert to placeholder data, and isContentLoading would stay true until the
-        // new fetch completes. If entry content also changed, users will see it on next visit.
-      } else if (data.type === "subscription_created") {
-        // Use high-level operation - handles cache add + targeted invalidations
-        const { subscription, feed } = data;
-        handleSubscriptionCreated(
-          utils,
-          {
-            id: subscription.id,
-            type: feed.type,
-            url: feed.url,
-            title: subscription.customTitle ?? feed.title,
-            originalTitle: feed.title,
-            description: feed.description,
-            siteUrl: feed.siteUrl,
-            subscribedAt: new Date(subscription.subscribedAt),
-            unreadCount: subscription.unreadCount,
-            tags: subscription.tags,
-            fetchFullContent: false,
-          },
-          queryClient
-        );
-      } else if (data.type === "subscription_deleted") {
-        // Check if already removed (optimistic update from same tab)
-        const currentData = utils.subscriptions.list.getData();
-        const alreadyRemoved =
-          currentData && !currentData.items.some((s) => s.id === data.subscriptionId);
+      // Update the appropriate cursor based on event type
+      updateCursorForEvent(data);
 
-        if (!alreadyRemoved) {
-          // Use high-level operation - handles cache remove + targeted invalidations
-          handleSubscriptionDeleted(utils, data.subscriptionId, queryClient);
-        }
-      } else if (data.type === "import_progress") {
-        utils.imports.get.invalidate({ id: data.importId });
-        utils.imports.list.invalidate();
-        // Don't invalidate subscriptions on each import_progress - import_completed handles it
-        // This avoids N refetches for N imported feeds
-      } else if (data.type === "import_completed") {
-        utils.imports.get.invalidate({ id: data.importId });
-        utils.imports.list.invalidate();
-        // Subscriptions, tags, and entries are already updated via individual
-        // subscription_created and new_entry events during the import
-      }
+      // Convert SSE event to SyncEvent format and delegate to shared handler
+      handleSyncEvent(utils, queryClient, data as SyncEvent);
     },
-    [utils, queryClient]
+    [utils, queryClient, updateCursorForEvent]
   );
 
   /**
    * Performs a sync and updates caches appropriately.
-   * Uses granular cursors to ensure no changes are missed between syncs.
+   * Uses the sync.changes endpoint with three separate cursors to track each entity type.
    * Used during polling mode and for catch-up sync after SSE reconnection.
-   *
-   * Entry state changes (read/starred) are applied directly to the cache to avoid
-   * unnecessary refetches - this prevents the list from refreshing when we've
-   * already updated the cache optimistically via mutations.
    */
   const performSync = useCallback(async () => {
     try {
       const currentCursors = cursorsRef.current;
+
       const result = await utils.client.sync.changes.query({
-        // Use granular cursors for correct incremental sync
         cursors: {
           entries: currentCursors.entries ?? undefined,
           subscriptions: currentCursors.subscriptions ?? undefined,
@@ -604,66 +702,43 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         },
       });
 
-      // Update cursors from the response (derived from actual query results)
-      cursorsRef.current = result.cursors;
+      // Invalidate relevant queries based on changes
+      // Note: The changes endpoint returns different data format than events endpoint
+      // We handle cache updates differently here since changes are batched by type
 
-      // Handle entry state updates (read/starred changes) by updating cache directly
-      // This avoids refetching the list when we've already applied optimistic updates
-      if (result.entries.updated.length > 0) {
-        // Group updates by their state for efficient batch updates
-        for (const entry of result.entries.updated) {
-          updateEntriesInListCache(queryClient, [entry.id], {
-            read: entry.read,
-            starred: entry.starred,
-          });
-        }
+      // Handle new/updated entries - invalidate entry lists
+      if (result.entries.created.length > 0 || result.entries.updated.length > 0) {
+        void utils.entries.list.invalidate();
+        void utils.entries.count.invalidate();
       }
 
-      // Only invalidate entries.list for actual structural changes (new/removed entries)
-      // NOT for read/starred state updates which we handle above
-      const hasStructuralEntryChanges =
-        result.entries.created.length > 0 || result.entries.removed.length > 0;
+      // Handle subscription changes
+      if (result.subscriptions.created.length > 0 || result.subscriptions.removed.length > 0) {
+        void utils.subscriptions.list.invalidate();
+      }
 
-      const hasSubscriptionChanges =
-        result.subscriptions.created.length > 0 || result.subscriptions.removed.length > 0;
-
-      const hasTagChanges =
+      // Handle tag changes
+      if (
         result.tags.created.length > 0 ||
         result.tags.updated.length > 0 ||
-        result.tags.removed.length > 0;
-
-      // Handle structural entry changes - invalidate list
-      if (hasStructuralEntryChanges) {
-        utils.subscriptions.list.invalidate();
+        result.tags.removed.length > 0
+      ) {
+        void utils.tags.list.invalidate();
       }
 
-      // Handle subscription changes - only invalidate subscriptions.list, not entries.list
-      // Subscription creates/deletes don't affect which entries are visible in the current view.
-      // New entries from new subscriptions will appear when the user navigates to that feed.
-      // Removed subscriptions won't have their entries shown after navigation away.
-      if (hasSubscriptionChanges) {
-        utils.subscriptions.list.invalidate();
-      }
+      // Update cursors from the response (sync.changes returns granular cursors)
+      cursorsRef.current = {
+        entries: result.cursors.entries,
+        subscriptions: result.cursors.subscriptions,
+        tags: result.cursors.tags,
+      };
 
-      // Handle tag changes by updating cache directly
-      // This avoids invalidating and refetching the entire tag list
-      if (hasTagChanges) {
-        // Apply creates and updates
-        if (result.tags.created.length > 0 || result.tags.updated.length > 0) {
-          applySyncTagChanges(utils, result.tags.created, result.tags.updated);
-        }
-        // Apply removes
-        if (result.tags.removed.length > 0) {
-          removeSyncTags(utils, result.tags.removed);
-        }
-      }
-
-      return result.cursors;
+      return cursorsRef.current;
     } catch (error) {
       console.error("Sync failed:", error);
       return null;
     }
-  }, [utils, queryClient]);
+  }, [utils]);
 
   /**
    * Starts polling mode when SSE is unavailable.
@@ -825,8 +900,12 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         eventSource.addEventListener("connected", handleEvent); // Initial cursor from server
         eventSource.addEventListener("new_entry", handleEvent);
         eventSource.addEventListener("entry_updated", handleEvent);
+        eventSource.addEventListener("entry_state_changed", handleEvent);
         eventSource.addEventListener("subscription_created", handleEvent);
         eventSource.addEventListener("subscription_deleted", handleEvent);
+        eventSource.addEventListener("tag_created", handleEvent);
+        eventSource.addEventListener("tag_updated", handleEvent);
+        eventSource.addEventListener("tag_deleted", handleEvent);
         eventSource.addEventListener("import_progress", handleEvent);
         eventSource.addEventListener("import_completed", handleEvent);
 

@@ -1589,6 +1589,7 @@ export async function handleProcessOpmlImport(
           userId,
           feedId,
           actualSubscriptionId,
+          subscriptionResult.subscribedAt, // subscribedAt is used for both subscribedAt and updatedAt
           {
             id: actualSubscriptionId,
             feedId,

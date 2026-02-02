@@ -16,6 +16,7 @@ import {
   userEntries,
   tags,
   visibleEntries,
+  subscriptionTags,
 } from "@/server/db/schema";
 
 // ============================================================================
@@ -89,6 +90,128 @@ const syncTagUpdatedSchema = z.object({
   id: z.string(),
   name: z.string(),
   color: z.string().nullable(),
+});
+
+// ============================================================================
+// Event Schemas (SSE-compatible format for sync.events)
+// ============================================================================
+
+/**
+ * Entry metadata for entry_updated events.
+ */
+const entryMetadataSchema = z.object({
+  title: z.string().nullable(),
+  author: z.string().nullable(),
+  summary: z.string().nullable(),
+  url: z.string().nullable(),
+  publishedAt: z.string().nullable(),
+});
+
+/**
+ * Subscription data for subscription_created events.
+ */
+const subscriptionCreatedDataSchema = z.object({
+  id: z.string(),
+  feedId: z.string(),
+  customTitle: z.string().nullable(),
+  subscribedAt: z.string(),
+  unreadCount: z.number(),
+  tags: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      color: z.string().nullable(),
+    })
+  ),
+});
+
+/**
+ * Feed data for subscription_created events.
+ */
+const feedCreatedDataSchema = z.object({
+  id: z.string(),
+  type: z.enum(["web", "email", "saved"]),
+  url: z.string().nullable(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  siteUrl: z.string().nullable(),
+});
+
+/**
+ * Unified event schema matching SSE event format.
+ * Each event has a type discriminator and event-specific data.
+ * All events include `updatedAt` for cursor tracking.
+ */
+const syncEventSchema = z.discriminatedUnion("type", [
+  // Entry events (updatedAt tracks entries cursor)
+  z.object({
+    type: z.literal("new_entry"),
+    subscriptionId: z.string().nullable(),
+    entryId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(), // Database updated_at for cursor tracking
+    feedType: z.enum(["web", "email", "saved"]).optional(),
+  }),
+  z.object({
+    type: z.literal("entry_updated"),
+    subscriptionId: z.string().nullable(),
+    entryId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(), // Database updated_at for cursor tracking
+    metadata: entryMetadataSchema,
+  }),
+  z.object({
+    type: z.literal("entry_state_changed"),
+    entryId: z.string(),
+    read: z.boolean(),
+    starred: z.boolean(),
+    timestamp: z.string(),
+    updatedAt: z.string(), // Database updated_at for cursor tracking
+  }),
+  // Subscription events (updatedAt tracks subscriptions cursor)
+  z.object({
+    type: z.literal("subscription_created"),
+    subscriptionId: z.string(),
+    feedId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(), // Database updated_at for cursor tracking
+    subscription: subscriptionCreatedDataSchema,
+    feed: feedCreatedDataSchema,
+  }),
+  z.object({
+    type: z.literal("subscription_deleted"),
+    subscriptionId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(), // Database updated_at for cursor tracking
+  }),
+  // Tag events (updatedAt tracks tags cursor)
+  z.object({
+    type: z.literal("tag_created"),
+    tag: syncTagSchema,
+    timestamp: z.string(),
+    updatedAt: z.string(), // Database updated_at for cursor tracking
+  }),
+  z.object({
+    type: z.literal("tag_updated"),
+    tag: syncTagSchema,
+    timestamp: z.string(),
+    updatedAt: z.string(), // Database updated_at for cursor tracking
+  }),
+  z.object({
+    type: z.literal("tag_deleted"),
+    tagId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(), // Database updated_at for cursor tracking
+  }),
+]);
+
+/**
+ * Output schema for sync.events procedure.
+ */
+const syncEventsOutputSchema = z.object({
+  events: z.array(syncEventSchema),
+  cursor: z.string().datetime(),
+  hasMore: z.boolean(),
 });
 
 /**
@@ -618,6 +741,284 @@ export const syncRouter = createTRPCRouter({
           tags: outputTagsCursor?.toISOString() ?? null,
         },
         syncedAt: syncedAt.toISOString(),
+        hasMore,
+      };
+    }),
+
+  /**
+   * Get changes since a cursor as individual events (SSE-compatible format).
+   *
+   * This endpoint returns events in the same format as SSE, allowing the client
+   * to use identical event handlers for both SSE and sync. Events are sorted
+   * by timestamp and can be processed in order.
+   *
+   * @param cursor - ISO 8601 timestamp to get events since (optional, defaults to current time for initial cursors)
+   * @returns Array of events with a new cursor
+   */
+  events: protectedProcedure
+    .input(
+      z.object({
+        cursor: z.string().datetime().optional(),
+      })
+    )
+    .output(syncEventsOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const cursorDate = input.cursor ? new Date(input.cursor) : null;
+
+      // If no cursor provided, just return empty events with current timestamp
+      // This is used to establish the initial cursor for SSE connections
+      if (!cursorDate) {
+        return {
+          events: [],
+          cursor: new Date().toISOString(),
+          hasMore: false,
+        };
+      }
+
+      // Collect all events with their timestamps for sorting
+      const allEvents: Array<z.infer<typeof syncEventSchema> & { _sortTime: Date }> = [];
+
+      // Track if we hit any limits
+      let hasMore = false;
+
+      // ========================================================================
+      // Entry state changes (read/starred) - from user_entries.updated_at
+      // ========================================================================
+      const entryStateResults = await ctx.db
+        .select({
+          id: userEntries.entryId,
+          read: userEntries.read,
+          starred: userEntries.starred,
+          updatedAt: userEntries.updatedAt,
+        })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), gt(userEntries.updatedAt, cursorDate)))
+        .orderBy(userEntries.updatedAt)
+        .limit(MAX_ENTRIES + 1);
+
+      if (entryStateResults.length > MAX_ENTRIES) {
+        hasMore = true;
+        entryStateResults.pop();
+      }
+
+      for (const row of entryStateResults) {
+        allEvents.push({
+          type: "entry_state_changed" as const,
+          entryId: row.id,
+          read: row.read,
+          starred: row.starred,
+          timestamp: row.updatedAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          _sortTime: row.updatedAt,
+        });
+      }
+
+      // ========================================================================
+      // Entry metadata changes - from entries.updated_at
+      // Only include entries the user has access to (via user_entries)
+      // ========================================================================
+      const entryMetadataResults = await ctx.db
+        .select({
+          id: entries.id,
+          type: entries.type,
+          title: entries.title,
+          author: entries.author,
+          summary: entries.summary,
+          url: entries.url,
+          publishedAt: entries.publishedAt,
+          updatedAt: entries.updatedAt,
+          subscriptionId: subscriptions.id,
+        })
+        .from(entries)
+        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+        .leftJoin(
+          subscriptions,
+          and(
+            eq(subscriptions.userId, userId),
+            sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .where(
+          and(
+            eq(userEntries.userId, userId),
+            gt(entries.updatedAt, cursorDate),
+            // Visibility: either from active subscription or starred
+            sql`(${subscriptions.id} IS NOT NULL OR ${userEntries.starred} = true)`
+          )
+        )
+        .orderBy(entries.updatedAt)
+        .limit(MAX_ENTRIES + 1);
+
+      if (entryMetadataResults.length > MAX_ENTRIES) {
+        hasMore = true;
+        entryMetadataResults.pop();
+      }
+
+      for (const row of entryMetadataResults) {
+        allEvents.push({
+          type: "entry_updated" as const,
+          subscriptionId: row.subscriptionId,
+          entryId: row.id,
+          timestamp: row.updatedAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          metadata: {
+            title: row.title,
+            author: row.author,
+            summary: row.summary,
+            url: row.url,
+            publishedAt: row.publishedAt?.toISOString() ?? null,
+          },
+          _sortTime: row.updatedAt,
+        });
+      }
+
+      // ========================================================================
+      // Subscription changes
+      // ========================================================================
+      const subscriptionResults = await ctx.db
+        .select({
+          subscription: subscriptions,
+          feed: feeds,
+        })
+        .from(subscriptions)
+        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+        .where(and(eq(subscriptions.userId, userId), gt(subscriptions.updatedAt, cursorDate)))
+        .orderBy(subscriptions.updatedAt);
+
+      for (const { subscription, feed } of subscriptionResults) {
+        if (subscription.unsubscribedAt === null) {
+          // Get tags for this subscription
+          const tagResults = await ctx.db
+            .select({
+              id: tags.id,
+              name: tags.name,
+              color: tags.color,
+            })
+            .from(subscriptionTags)
+            .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
+            .where(eq(subscriptionTags.subscriptionId, subscription.id));
+
+          // Count unread entries for this subscription
+          const unreadResult = await ctx.db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(userEntries)
+            .innerJoin(entries, eq(entries.id, userEntries.entryId))
+            .where(
+              and(
+                eq(userEntries.userId, userId),
+                eq(userEntries.read, false),
+                sql`${entries.feedId} = ANY(${subscription.feedIds})`
+              )
+            );
+
+          allEvents.push({
+            type: "subscription_created" as const,
+            subscriptionId: subscription.id,
+            feedId: subscription.feedId,
+            timestamp: subscription.updatedAt.toISOString(),
+            updatedAt: subscription.updatedAt.toISOString(),
+            subscription: {
+              id: subscription.id,
+              feedId: subscription.feedId,
+              customTitle: subscription.customTitle,
+              subscribedAt: subscription.subscribedAt.toISOString(),
+              unreadCount: unreadResult[0]?.count ?? 0,
+              tags: tagResults,
+            },
+            feed: {
+              id: feed.id,
+              type: feed.type,
+              url: feed.url,
+              title: feed.title,
+              description: feed.description,
+              siteUrl: feed.siteUrl,
+            },
+            _sortTime: subscription.updatedAt,
+          });
+        } else {
+          // Subscription was removed
+          allEvents.push({
+            type: "subscription_deleted" as const,
+            subscriptionId: subscription.id,
+            timestamp: subscription.updatedAt.toISOString(),
+            updatedAt: subscription.updatedAt.toISOString(),
+            _sortTime: subscription.updatedAt,
+          });
+        }
+      }
+
+      // ========================================================================
+      // Tag changes
+      // ========================================================================
+      const tagResults = await ctx.db
+        .select({
+          id: tags.id,
+          name: tags.name,
+          color: tags.color,
+          createdAt: tags.createdAt,
+          updatedAt: tags.updatedAt,
+          deletedAt: tags.deletedAt,
+        })
+        .from(tags)
+        .where(and(eq(tags.userId, userId), gt(tags.updatedAt, cursorDate)))
+        .orderBy(tags.updatedAt);
+
+      for (const row of tagResults) {
+        if (row.deletedAt !== null) {
+          allEvents.push({
+            type: "tag_deleted" as const,
+            tagId: row.id,
+            timestamp: row.updatedAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+            _sortTime: row.updatedAt,
+          });
+        } else if (row.createdAt > cursorDate) {
+          allEvents.push({
+            type: "tag_created" as const,
+            tag: {
+              id: row.id,
+              name: row.name,
+              color: row.color,
+            },
+            timestamp: row.updatedAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+            _sortTime: row.updatedAt,
+          });
+        } else {
+          allEvents.push({
+            type: "tag_updated" as const,
+            tag: {
+              id: row.id,
+              name: row.name,
+              color: row.color,
+            },
+            timestamp: row.updatedAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+            _sortTime: row.updatedAt,
+          });
+        }
+      }
+
+      // Sort all events by timestamp
+      allEvents.sort((a, b) => a._sortTime.getTime() - b._sortTime.getTime());
+
+      // Compute new cursor from the last event's timestamp
+      const newCursor =
+        allEvents.length > 0
+          ? allEvents[allEvents.length - 1]._sortTime.toISOString()
+          : cursorDate.toISOString();
+
+      // Remove _sortTime from events before returning
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const events = allEvents.map(({ _sortTime, ...event }) => event) as z.infer<
+        typeof syncEventSchema
+      >[];
+
+      return {
+        events,
+        cursor: newCursor,
         hasMore,
       };
     }),
