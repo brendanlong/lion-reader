@@ -9,7 +9,14 @@
  * and use next/dynamic with ssr: false for components.
  */
 
-export { NarrationControls } from "./NarrationControls";
+import dynamic from "next/dynamic";
+
+// NarrationControls depends on browser-only APIs (speechSynthesis, localStorage).
+// Using ssr: false avoids hydration mismatches and the flash of the button appearing.
+export const NarrationControls = dynamic(
+  () => import("./NarrationControls").then((mod) => mod.NarrationControlsImpl),
+  { ssr: false }
+);
 export { useNarration } from "./useNarration";
 export { useNarrationHighlight } from "./useNarrationHighlight";
 export { NarrationHighlightStyles } from "./NarrationHighlightStyles";

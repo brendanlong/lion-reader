@@ -9,8 +9,13 @@
  *
  * Only renders if narration is supported in the current browser.
  *
+ * NOTE: This component is loaded with next/dynamic ssr: false (see index.ts).
+ * This avoids hydration mismatches since we can't check browser support on the server.
+ *
  * Usage:
  * ```tsx
+ * import { NarrationControls } from "@/components/narration";
+ *
  * <NarrationControls
  *   articleId="..."
  *   title="Article Title"
@@ -21,9 +26,7 @@
 
 "use client";
 
-import { useSyncExternalStore } from "react";
 import { useNarration } from "./useNarration";
-import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
 import {
   Button,
@@ -61,7 +64,10 @@ export interface NarrationControlsProps {
 }
 
 /**
- * NarrationControls component.
+ * NarrationControls implementation.
+ *
+ * Exported for dynamic import in index.ts. Use the default export from
+ * "@/components/narration" which wraps this with ssr: false.
  *
  * Renders playback controls for article narration. Only renders
  * if the Web Speech API is supported in the current browser.
@@ -71,45 +77,7 @@ export interface NarrationControlsProps {
  * 2. Controlled: Parent provides narration state via the `narration` prop
  *    (used when parent needs access to state for highlighting)
  */
-export function NarrationControls({
-  articleId,
-  title,
-  feedTitle,
-  artwork,
-  content,
-  narration,
-}: NarrationControlsProps) {
-  // Defer browser support check until after hydration to avoid mismatch.
-  // Server and initial client render both show null, then we update after mount.
-  // useSyncExternalStore ensures the check runs after hydration without cascading renders.
-  const isSupported = useSyncExternalStore(
-    () => () => {}, // No subscription needed - browser capabilities don't change
-    () => isNarrationSupported(), // Client snapshot
-    () => false // Server snapshot - always false during SSR
-  );
-
-  // Don't render if narration is not supported
-  if (!isSupported) {
-    return null;
-  }
-
-  return (
-    <NarrationControlsInner
-      articleId={articleId}
-      title={title}
-      feedTitle={feedTitle}
-      artwork={artwork}
-      content={content}
-      narration={narration}
-    />
-  );
-}
-
-/**
- * Inner component that uses the narration hook.
- * Separated to avoid calling hooks conditionally.
- */
-function NarrationControlsInner({
+export function NarrationControlsImpl({
   articleId,
   title,
   feedTitle,
@@ -130,13 +98,19 @@ function NarrationControlsInner({
   const { state, isLoading, play, pause, skipForward, skipBackward, isSupported } =
     externalNarration ?? internalNarration;
 
-  // Enable keyboard shortcuts for narration
+  // Enable keyboard shortcuts for narration (must be called before early return)
   useNarrationKeyboardShortcuts({
     state,
     controls: { play, pause, skipForward, skipBackward },
     isLoading,
     isSupported,
   });
+
+  // Don't render if narration is not supported in this browser
+  // This check is safe since we're loaded with ssr: false
+  if (!isSupported) {
+    return null;
+  }
 
   const { status, currentParagraph, totalParagraphs } = state;
   const isPlaying = status === "playing";
