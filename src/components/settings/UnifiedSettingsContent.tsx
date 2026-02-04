@@ -7,27 +7,29 @@
  *
  * Includes the settings layout (sidebar navigation) and switches
  * content based on the current pathname.
+ *
+ * Settings pages are NOT lazy-loaded so that static content (titles,
+ * descriptions) can render immediately while data loads. The settings
+ * bundle is small enough that this tradeoff is worthwhile for better UX.
  */
 
 "use client";
 
-import { Suspense, lazy } from "react";
 import { usePathname } from "next/navigation";
 import { ClientLink } from "@/components/ui";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
-// Settings page components - lazy loaded for code splitting
-const AccountSettingsContent = lazy(() => import("./pages/AccountSettingsContent"));
-const AppearanceSettingsContent = lazy(() =>
-  import("./AppearanceSettings").then((m) => ({ default: m.AppearanceSettings }))
-);
-const SessionsSettingsContent = lazy(() => import("./pages/SessionsSettingsContent"));
-const ApiTokensSettingsContent = lazy(() => import("./pages/ApiTokensSettingsContent"));
-const IntegrationsSettingsContent = lazy(() => import("./pages/IntegrationsSettingsContent"));
-const EmailSettingsContent = lazy(() => import("./pages/EmailSettingsContent"));
-const BlockedSendersSettingsContent = lazy(() => import("./pages/BlockedSendersSettingsContent"));
-const BrokenFeedsSettingsContent = lazy(() => import("./pages/BrokenFeedsSettingsContent"));
-const FeedStatsSettingsContent = lazy(() => import("./pages/FeedStatsSettingsContent"));
+// Settings page components - directly imported (not lazy) so static content
+// like titles renders immediately while data loads
+import AccountSettingsContent from "./pages/AccountSettingsContent";
+import { AppearanceSettings as AppearanceSettingsContent } from "./AppearanceSettings";
+import SessionsSettingsContent from "./pages/SessionsSettingsContent";
+import ApiTokensSettingsContent from "./pages/ApiTokensSettingsContent";
+import IntegrationsSettingsContent from "./pages/IntegrationsSettingsContent";
+import EmailSettingsContent from "./pages/EmailSettingsContent";
+import BlockedSendersSettingsContent from "./pages/BlockedSendersSettingsContent";
+import BrokenFeedsSettingsContent from "./pages/BrokenFeedsSettingsContent";
+import FeedStatsSettingsContent from "./pages/FeedStatsSettingsContent";
 
 const settingsLinks = [
   { href: "/settings", label: "Account" },
@@ -40,24 +42,6 @@ const settingsLinks = [
   { href: "/settings/broken-feeds", label: "Broken Feeds" },
   { href: "/settings/feed-stats", label: "Feed Stats" },
 ];
-
-/**
- * Loading skeleton for settings content.
- */
-function SettingsContentSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-12 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /**
  * Renders the appropriate settings content based on pathname.
@@ -145,9 +129,7 @@ export function UnifiedSettingsContent() {
         {/* Main Content */}
         <div className="min-w-0 flex-1">
           <ErrorBoundary message="Failed to load settings">
-            <Suspense fallback={<SettingsContentSkeleton />}>
-              <SettingsContentRouter />
-            </Suspense>
+            <SettingsContentRouter />
           </ErrorBoundary>
         </div>
       </div>
