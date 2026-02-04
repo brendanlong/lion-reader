@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Toaster, toast } from "sonner";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { UserEmail } from "@/components/layout/UserEmail";
 import { RealtimeProvider } from "@/components/layout/RealtimeProvider";
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
 import {
@@ -34,7 +35,6 @@ export function AppLayoutContent({ children, initialCursors }: AppLayoutContentP
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const userQuery = trpc.auth.me.useQuery();
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
       // Clear the session cookie
@@ -157,7 +157,7 @@ export function AppLayoutContent({ children, initialCursors }: AppLayoutContentP
                         aria-haspopup="true"
                       >
                         <span className="hidden max-w-[150px] truncate sm:inline">
-                          {userQuery.data?.user.email ?? "..."}
+                          <UserEmail />
                         </span>
                         <span className="sm:hidden" aria-label="Account menu">
                           <svg

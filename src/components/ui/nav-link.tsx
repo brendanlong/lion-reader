@@ -19,6 +19,8 @@ export interface NavLinkProps {
   children: ReactNode;
   /** Optional count to display (e.g., unread count) */
   count?: number;
+  /** Optional custom element for count (for Suspense streaming) */
+  countElement?: ReactNode;
   /** Called when link is clicked */
   onClick?: () => void;
   /** Whether to show count even when zero */
@@ -43,6 +45,7 @@ export function NavLink({
   isActive,
   children,
   count,
+  countElement,
   onClick,
   showZeroCount = false,
   className = "",
@@ -61,8 +64,16 @@ export function NavLink({
       } ${className}`}
     >
       <span className="truncate">{children}</span>
-      {showCount && (
-        <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">({count})</span>
+      {countElement ? (
+        <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
+          ({countElement})
+        </span>
+      ) : (
+        showCount && (
+          <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
+            ({count})
+          </span>
+        )
       )}
     </Link>
   );
