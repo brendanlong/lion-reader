@@ -1,5 +1,7 @@
 # Source Code Guidelines
 
+- Use Suspense and useSuspenseQuery with appropriate fallbacks and well-factored components with small suspense boundaries unless you have a good reason not to
+
 ## Frontend State Management
 
 When working on queries, mutations, or cache invalidation, read and update:

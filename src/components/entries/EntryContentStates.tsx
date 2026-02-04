@@ -8,37 +8,50 @@ import { Button, AlertIcon } from "@/components/ui";
 
 /**
  * Loading skeleton for entry content.
+ * Used when there's no cached data available.
  */
 export function EntryContentSkeleton() {
   return (
-    <div className="mx-auto max-w-3xl animate-pulse px-4 py-6 sm:py-8">
+    <div className="mx-auto max-w-3xl px-4 py-6 sm:py-8">
       {/* Back button placeholder */}
-      <div className="mb-6 h-8 w-20 rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="mb-4 h-10 w-28 animate-pulse rounded bg-zinc-200 sm:mb-6 dark:bg-zinc-700" />
 
-      {/* Title placeholder */}
-      <div className="mb-2 h-8 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="mb-4 h-8 w-1/2 rounded bg-zinc-200 dark:bg-zinc-700" />
+      {/* Header section */}
+      <header className="mb-6 sm:mb-8">
+        {/* Title row with vote controls placeholder */}
+        <div className="mb-4 flex gap-4 sm:mb-6">
+          <div className="min-w-0 flex-1">
+            {/* Title placeholder */}
+            <div className="mb-2 h-8 w-3/4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+            <div className="mb-4 h-8 w-1/2 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
 
-      {/* Meta row placeholder */}
-      <div className="mb-6 flex items-center gap-4">
-        <div className="h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
-      </div>
+            {/* Meta row placeholder */}
+            <div className="flex items-center gap-4">
+              <div className="h-4 w-24 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+              <div className="h-4 w-32 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+            </div>
+          </div>
 
-      {/* Action buttons placeholder */}
-      <div className="mb-8 flex gap-3">
-        <div className="h-10 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-10 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
-      </div>
+          {/* Vote controls placeholder */}
+          <div className="shrink-0">
+            <div className="flex h-24 w-10 animate-pulse flex-col items-center justify-center rounded bg-zinc-200 dark:bg-zinc-700" />
+          </div>
+        </div>
+
+        {/* Action buttons placeholder */}
+        <div className="flex gap-2 sm:gap-3">
+          <div className="h-10 w-24 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+          <div className="h-10 w-24 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+          <div className="h-10 w-28 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+          <div className="h-10 w-20 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+        </div>
+      </header>
+
+      {/* Divider - always show (not animated) */}
+      <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
 
       {/* Content placeholders */}
-      <div className="space-y-4">
-        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-5/6 rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
-        <div className="h-4 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
-      </div>
+      <ContentSkeleton />
     </div>
   );
 }
