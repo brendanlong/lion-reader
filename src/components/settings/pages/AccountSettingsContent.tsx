@@ -385,7 +385,7 @@ export default function AccountSettingsContent() {
           <div className="mt-4">
             <a
               href="/privacy"
-              className="ui-text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              className="ui-text-sm text-accent hover:text-accent-hover font-medium"
             >
               View Privacy Policy &rarr;
             </a>

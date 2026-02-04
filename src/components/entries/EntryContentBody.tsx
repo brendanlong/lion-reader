@@ -421,7 +421,7 @@ export function EntryContentBody({
                   href={url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="ui-text-xl sm:ui-text-2xl block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:text-blue-600 hover:underline md:text-3xl dark:text-zinc-100 dark:hover:text-blue-400"
+                  className="ui-text-xl sm:ui-text-2xl hover:text-accent block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:underline md:text-3xl dark:text-zinc-100"
                 >
                   {title}
                 </a>
@@ -525,7 +525,7 @@ export function EntryContentBody({
                 fullContentError
                   ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950"
                   : fetchFullContent
-                    ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                    ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
                     : ""
               }
               aria-label={
@@ -570,7 +570,7 @@ export function EntryContentBody({
               disabled={isSummarizing}
               className={
                 showSummary && summary
-                  ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                  ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
                   : ""
               }
               aria-label={summary ? "Toggle summary" : "Generate AI summary"}
@@ -641,7 +641,7 @@ export function EntryContentBody({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
+            className="ui-text-sm text-accent hover:text-accent-hover inline-flex min-h-[44px] items-center gap-2 font-medium transition-colors"
           >
             <ExternalLinkIcon className="h-4 w-4" />
             Read on {displayFooterDomain}
