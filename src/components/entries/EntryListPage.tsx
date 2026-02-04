@@ -75,10 +75,13 @@ export async function EntryListPage({ filters, searchParams, children }: EntryLi
   // Build input using shared function to ensure cache key matches client
   const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
 
-  // Prefetch the entry list and the specific entry if there is one
+  // Prefetch the entry list and related data
   void trpc.entries.list.prefetchInfinite(input);
   if (entryId != null) {
     void trpc.entries.get.prefetch({ id: entryId });
+  }
+  if (filters.subscriptionId != null) {
+    void trpc.subscriptions.get.prefetch({ id: filters.subscriptionId });
   }
 
   // Return children directly - the layout's HydrateClient handles hydration
