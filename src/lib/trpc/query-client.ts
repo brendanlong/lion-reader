@@ -14,7 +14,7 @@
  */
 
 import { cache } from "react";
-import { QueryClient, isServer } from "@tanstack/react-query";
+import { QueryClient, defaultShouldDehydrateQuery, isServer } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 
@@ -45,6 +45,9 @@ function makeServerQueryClient(): QueryClient {
       // Configure hydration to use superjson (matches tRPC transformer)
       dehydrate: {
         serializeData: superjson.serialize,
+        // Include pending queries in dehydration so they can be streamed to client
+        shouldDehydrateQuery: (query) =>
+          defaultShouldDehydrateQuery(query) || query.state.status === "pending",
       },
       hydrate: {
         deserializeData: superjson.deserialize,
@@ -73,6 +76,9 @@ function makeBrowserQueryClient(): QueryClient {
       // Configure hydration to use superjson (matches tRPC transformer)
       dehydrate: {
         serializeData: superjson.serialize,
+        // Include pending queries in dehydration so they can be streamed to client
+        shouldDehydrateQuery: (query) =>
+          defaultShouldDehydrateQuery(query) || query.state.status === "pending",
       },
       hydrate: {
         deserializeData: superjson.deserialize,

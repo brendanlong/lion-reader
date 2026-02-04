@@ -75,12 +75,11 @@ export async function EntryListPage({ filters, searchParams, children }: EntryLi
   // Build input using shared function to ensure cache key matches client
   const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
 
-  // Prefetch the entry list (always needed for sidebar)
-  // Also prefetch the specific entry if viewing one
-  await Promise.all([
-    trpc.entries.list.prefetchInfinite(input),
-    entryId ? trpc.entries.get.prefetch({ id: entryId }) : Promise.resolve(),
-  ]);
+  // Prefetch the entry list and the specific entry if there is one
+  void trpc.entries.list.prefetchInfinite(input);
+  if (entryId != null) {
+    void trpc.entries.get.prefetch({ id: entryId });
+  }
 
   // Return children directly - the layout's HydrateClient handles hydration
   return <>{children}</>;

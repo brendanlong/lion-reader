@@ -38,15 +38,15 @@ export default async function AppLayout({ children }: AppLayoutProps) {
 
   // Prefetch common data used in sidebar and header
   // These are independent queries so we can run them in parallel
-  // Must await so the data is in the QueryClient before HydrateClient dehydrates
+  // No await needed - pending queries are dehydrated and streamed to the client
+  // as they resolve (requires shouldDehydrateQuery config in query-client.ts)
   //
   // Note: sync.cursors is called directly (not prefetch) because we need its
   // return value to pass the initial cursors to the client. This prevents
   // the client from re-syncing with null cursors on SSE connect.
   // sync.cursors is a lightweight endpoint that just does MAX() queries,
   // avoiding the overhead of fetching all data just to get cursor timestamps.
-  const [initialCursors] = await Promise.all([
-    trpc.sync.cursors(), // Lightweight cursor-only query
+  void Promise.all([
     trpc.auth.me.prefetch(),
     trpc.tags.list.prefetch(),
     trpc.entries.count.prefetch({}),
@@ -54,6 +54,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     trpc.entries.count.prefetch({ starredOnly: true }),
     trpc.summarization.isAvailable.prefetch(), // For entry content summarization button
   ]);
+  const initialCursors = await trpc.sync.cursors(); // Lightweight cursor-only query
 
   return (
     <TRPCProvider>
