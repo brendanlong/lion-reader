@@ -2,7 +2,7 @@
  * AppearanceSettings Component
  *
  * Settings UI for appearance preferences including:
- * - Theme mode (auto/light/dark)
+ * - Theme mode (system/light/dark) - powered by next-themes
  * - Text size for entry content
  * - Text justification for entry content
  * - Font family for entry content
@@ -10,10 +10,10 @@
 
 "use client";
 
+import { useTheme } from "next-themes";
 import {
   useAppearance,
   useEntryTextStyles,
-  type ThemeMode,
   type TextSize,
   type TextJustification,
   type FontFamily,
@@ -81,8 +81,9 @@ function OptionGroup<T extends string>({
   );
 }
 
-const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
-  { value: "auto", label: "Auto" },
+/** Theme options for next-themes (uses "system" instead of "auto") */
+const THEME_OPTIONS: { value: string; label: string }[] = [
+  { value: "system", label: "Auto" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ];
@@ -129,7 +130,8 @@ function TextPreview() {
 }
 
 export function AppearanceSettings() {
-  const { settings, updateSettings, resolvedTheme } = useAppearance();
+  const { settings, updateSettings } = useAppearance();
+  const { theme, setTheme, resolvedTheme } = useTheme();
 
   return (
     <div className="space-y-8">
@@ -140,15 +142,15 @@ export function AppearanceSettings() {
           <OptionGroup
             label="Color Mode"
             description={
-              settings.themeMode === "auto" && resolvedTheme
+              theme === "system" && resolvedTheme
                 ? `Following system preference (currently ${resolvedTheme})`
-                : settings.themeMode === "auto"
+                : theme === "system"
                   ? "Following system preference"
                   : undefined
             }
-            value={settings.themeMode}
+            value={theme || "system"}
             options={THEME_OPTIONS}
-            onChange={(themeMode) => updateSettings({ themeMode })}
+            onChange={setTheme}
           />
         </div>
       </section>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
+import { ThemeProvider } from "@/lib/theme";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -47,30 +48,30 @@ export const metadata: Metadata = {
 };
 
 /**
- * Blocking script to apply appearance settings before first paint.
+ * Blocking script to apply text appearance settings before first paint.
  *
- * This runs synchronously in the <head> to prevent flash of wrong theme/text size.
+ * This runs synchronously in the <head> to prevent flash of wrong text size/font.
  * Must be kept in sync with settings.ts storage key and logic.
  *
- * Sets:
- * - dark class on html element for theme
- * - CSS custom properties for text appearance (--entry-font-size, etc.)
+ * Note: Theme (dark/light mode) is handled by next-themes, not this script.
+ *
+ * Sets CSS custom properties for text appearance:
+ * - --entry-font-family
+ * - --entry-font-size
+ * - --entry-line-height
+ * - --entry-text-align
  */
-const appearanceScript = `
+const textAppearanceScript = `
 (function() {
   try {
     var stored = localStorage.getItem('lion-reader-appearance-settings');
     var settings = {
-      themeMode: 'auto',
       textSize: 'medium',
       fontFamily: 'system',
       textJustification: 'left'
     };
     if (stored) {
       var parsed = JSON.parse(stored);
-      if (parsed.themeMode === 'light' || parsed.themeMode === 'dark' || parsed.themeMode === 'auto') {
-        settings.themeMode = parsed.themeMode;
-      }
       if (['small', 'medium', 'large', 'x-large'].indexOf(parsed.textSize) >= 0) {
         settings.textSize = parsed.textSize;
       }
@@ -80,12 +81,6 @@ const appearanceScript = `
       if (parsed.textJustification === 'justify') {
         settings.textJustification = 'justify';
       }
-    }
-
-    // Apply dark mode
-    var dark = settings.themeMode === 'dark' || (settings.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    if (dark) {
-      document.documentElement.classList.add('dark');
     }
 
     // Font configs with size adjustments for visual consistency
@@ -137,13 +132,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: appearanceScript }} />
+        <script dangerouslySetInnerHTML={{ __html: textAppearanceScript }} />
         <script dangerouslySetInnerHTML={{ __html: swScript }} />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} ${literata.variable} ${inter.variable} ${sourceSans.variable} antialiased`}
       >
-        {children}
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );
