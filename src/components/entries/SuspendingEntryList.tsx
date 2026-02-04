@@ -67,6 +67,34 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     [data?.pages]
   );
 
+  // Compute next/previous entry IDs for keyboard navigation
+  const { nextEntryId, previousEntryId } = useMemo(() => {
+    if (!openEntryId || entries.length === 0) {
+      return { nextEntryId: undefined, previousEntryId: undefined };
+    }
+    const currentIndex = entries.findIndex((e) => e.id === openEntryId);
+    if (currentIndex === -1) {
+      return { nextEntryId: undefined, previousEntryId: undefined };
+    }
+    return {
+      nextEntryId: currentIndex < entries.length - 1 ? entries[currentIndex + 1].id : undefined,
+      previousEntryId: currentIndex > 0 ? entries[currentIndex - 1].id : undefined,
+    };
+  }, [openEntryId, entries]);
+
+  // Navigation callbacks for keyboard shortcuts (j/k when viewing an entry)
+  const goToNextEntry = useCallback(() => {
+    if (nextEntryId) {
+      setOpenEntryId(nextEntryId);
+    }
+  }, [nextEntryId, setOpenEntryId]);
+
+  const goToPreviousEntry = useCallback(() => {
+    if (previousEntryId) {
+      setOpenEntryId(previousEntryId);
+    }
+  }, [previousEntryId, setOpenEntryId]);
+
   // Entry mutations
   const { toggleRead: rawToggleRead, toggleStar } = useEntryMutations();
 
@@ -97,8 +125,8 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     onToggleStar: toggleStar,
     onRefresh: () => utils.entries.list.invalidate(),
     onToggleUnreadOnly: toggleShowUnreadOnly,
-    onNavigateNext: undefined, // Navigation handled by EntryContent
-    onNavigatePrevious: undefined,
+    onNavigateNext: goToNextEntry,
+    onNavigatePrevious: goToPreviousEntry,
   });
 
   // External query state for EntryList

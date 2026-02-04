@@ -21,7 +21,7 @@
 
 "use client";
 
-import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type EntryType } from "./useEntryMutations";
 import { clientPush } from "@/lib/navigation";
@@ -246,8 +246,9 @@ export function useKeyboardShortcuts(
     };
   }, []);
 
-  // Get entry IDs from entries
-  const entryIds = entries.map((e) => e.id);
+  // Get entry IDs from entries - memoized to prevent useHotkeys from
+  // re-registering handlers on every render
+  const entryIds = useMemo(() => entries.map((e) => e.id), [entries]);
 
   // Get the current index of the selected entry
   const getSelectedIndex = useCallback((): number => {
