@@ -8,9 +8,8 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { handleClientNav } from "@/lib/navigation";
+import { ClientLink } from "@/components/ui";
 import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks";
 import { NavLinkWithIcon, ChevronDownIcon, ChevronRightIcon, ColorDot } from "@/components/ui";
@@ -61,13 +60,13 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
     return (
       <p className="ui-text-sm px-3 text-zinc-500 dark:text-zinc-400">
         No subscriptions yet.{" "}
-        <Link
+        <ClientLink
           href="/subscribe"
-          onClick={(e) => handleClientNav(e, "/subscribe", onNavigate)}
+          onNavigate={onNavigate}
           className="text-zinc-900 underline dark:text-zinc-50"
         >
           Add one
-        </Link>
+        </ClientLink>
       </p>
     );
   }

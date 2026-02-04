@@ -8,9 +8,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { handleClientNav } from "@/lib/navigation";
+import { ClientLink } from "@/components/ui";
 import { Toaster, toast } from "sonner";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { UserEmail } from "@/components/layout/UserEmail";
@@ -74,13 +73,12 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
               >
                 {/* Sidebar header */}
                 <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-4 dark:border-zinc-800">
-                  <Link
+                  <ClientLink
                     href="/all"
-                    onClick={(e) => handleClientNav(e, "/all")}
                     className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50"
                   >
                     Lion Reader
-                  </Link>
+                  </ClientLink>
                   <button
                     onClick={() => setSidebarOpen(false)}
                     className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
@@ -129,9 +127,8 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   {/* Right side actions */}
                   <div className="flex items-center gap-2">
                     {/* Subscribe button */}
-                    <Link
+                    <ClientLink
                       href="/subscribe"
-                      onClick={(e) => handleClientNav(e, "/subscribe")}
                       className="ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-900 px-3 font-medium text-white transition-colors hover:bg-zinc-800 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:active:bg-zinc-300"
                     >
                       <svg
@@ -148,7 +145,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                         />
                       </svg>
                       <span className="hidden sm:inline">Subscribe</span>
-                    </Link>
+                    </ClientLink>
 
                     {/* User menu */}
                     <div className="relative">
@@ -199,26 +196,20 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                             onClick={() => setUserMenuOpen(false)}
                           />
                           <div className="absolute right-0 z-20 mt-1 w-48 rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                            <Link
+                            <ClientLink
                               href="/settings"
-                              onClick={(e) =>
-                                handleClientNav(e, "/settings", () => setUserMenuOpen(false))
-                              }
+                              onNavigate={() => setUserMenuOpen(false)}
                               className="ui-text-sm flex min-h-[44px] items-center px-4 text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                             >
                               Settings
-                            </Link>
-                            <Link
+                            </ClientLink>
+                            <ClientLink
                               href="/settings/sessions"
-                              onClick={(e) =>
-                                handleClientNav(e, "/settings/sessions", () =>
-                                  setUserMenuOpen(false)
-                                )
-                              }
+                              onNavigate={() => setUserMenuOpen(false)}
                               className="ui-text-sm flex min-h-[44px] items-center px-4 text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                             >
                               Sessions
-                            </Link>
+                            </ClientLink>
                             <hr className="my-1 border-zinc-200 dark:border-zinc-700" />
                             <button
                               onClick={() => {

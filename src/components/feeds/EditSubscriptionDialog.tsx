@@ -21,6 +21,7 @@ import {
   Alert,
   CheckIcon,
   ColorDot,
+  ClientLink,
 } from "@/components/ui";
 
 // ============================================================================
@@ -180,9 +181,9 @@ function EditSubscriptionForm({
           {tags.length === 0 ? (
             <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
               No tags created yet. Create tags in{" "}
-              <a href="/settings" className="text-zinc-900 underline dark:text-zinc-50">
+              <ClientLink href="/settings" className="text-zinc-900 underline dark:text-zinc-50">
                 Settings
-              </a>
+              </ClientLink>
               .
             </p>
           ) : (

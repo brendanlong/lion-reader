@@ -27,6 +27,7 @@ export {
   StatusCard,
 } from "./card";
 export { NavLink, NavLinkWithIcon } from "./nav-link";
+export { ClientLink } from "./client-link";
 export { NotFoundCard } from "./not-found-card";
 export { ColorPicker, ColorDot } from "./color-picker";
 export { StateToggleButton } from "./state-toggle-button";

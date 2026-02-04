@@ -7,9 +7,7 @@
 
 "use client";
 
-import Link from "next/link";
-import { IconButton, EditIcon, CloseIcon } from "@/components/ui";
-import { handleClientNav } from "@/lib/navigation";
+import { IconButton, EditIcon, CloseIcon, ClientLink } from "@/components/ui";
 
 // ============================================================================
 // Types
@@ -43,10 +41,9 @@ export function SubscriptionItem({
 
   return (
     <li className="group relative">
-      <Link
+      <ClientLink
         href={subHref}
-        prefetch={false}
-        onClick={(e) => handleClientNav(e, subHref, onClose)}
+        onNavigate={onClose}
         className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
           isActive
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -59,7 +56,7 @@ export function SubscriptionItem({
             ({subscription.unreadCount})
           </span>
         )}
-      </Link>
+      </ClientLink>
 
       {/* Action buttons - visible on hover/touch */}
       <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">

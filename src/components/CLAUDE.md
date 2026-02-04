@@ -16,6 +16,7 @@ Reusable UI primitives are in `src/components/ui/`. **Always check for existing 
 | **Dialog**     | Modal dialogs with backdrop, focus trap, escape handling  |
 | **Card**       | Container with border, background, and consistent padding |
 | **StatusCard** | Colored card for info/success/warning/error states        |
+| **ClientLink** | Internal navigation links (use instead of Next.js Link)   |
 | **NavLink**    | Sidebar navigation links with active state and counts     |
 | **IconButton** | Small icon-only action buttons (edit, close, etc.)        |
 

@@ -9,7 +9,6 @@
 
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { clientReplace } from "@/lib/navigation";
@@ -171,12 +170,12 @@ function AccountSettingsContentInner() {
             Learn more about how we collect, use, and protect your data.
           </p>
           <div className="mt-4">
-            <Link
+            <a
               href="/privacy"
               className="ui-text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
               View Privacy Policy &rarr;
-            </Link>
+            </a>
           </div>
         </div>
       </section>

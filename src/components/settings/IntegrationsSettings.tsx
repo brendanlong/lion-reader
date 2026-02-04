@@ -8,7 +8,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import { ClientLink } from "@/components/ui";
 
 export function IntegrationsSettings() {
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
@@ -149,7 +149,7 @@ export function IntegrationsSettings() {
           <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
             Need to manage API tokens or create custom integrations?
           </p>
-          <Link
+          <ClientLink
             href="/settings/api-tokens"
             className="ui-text-sm mt-2 inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
@@ -157,7 +157,7 @@ export function IntegrationsSettings() {
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
-          </Link>
+          </ClientLink>
         </div>
 
         {/* Note about MCP URL */}

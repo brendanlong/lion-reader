@@ -12,9 +12,8 @@
 "use client";
 
 import { Suspense, lazy } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { handleClientNav } from "@/lib/navigation";
+import { ClientLink } from "@/components/ui";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 // Settings page components - lazy loaded for code splitting
@@ -102,9 +101,8 @@ export function UnifiedSettingsContent() {
     <div className="mx-auto max-w-4xl px-4 py-8">
       {/* Header */}
       <div className="mb-8">
-        <Link
+        <ClientLink
           href="/all"
-          onClick={(e) => handleClientNav(e, "/all")}
           className="ui-text-sm mb-4 inline-flex items-center text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
         >
           <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -116,7 +114,7 @@ export function UnifiedSettingsContent() {
             />
           </svg>
           Back to feeds
-        </Link>
+        </ClientLink>
         <h1 className="ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">Settings</h1>
       </div>
 
@@ -128,9 +126,8 @@ export function UnifiedSettingsContent() {
               const isActive = pathname === link.href;
               return (
                 <li key={link.href}>
-                  <Link
+                  <ClientLink
                     href={link.href}
-                    onClick={(e) => handleClientNav(e, link.href)}
                     className={`ui-text-sm block rounded-md px-3 py-2 font-medium transition-colors ${
                       isActive
                         ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -138,7 +135,7 @@ export function UnifiedSettingsContent() {
                     }`}
                   >
                     {link.label}
-                  </Link>
+                  </ClientLink>
                 </li>
               );
             })}

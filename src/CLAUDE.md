@@ -1,6 +1,7 @@
 # Source Code Guidelines
 
 - Use Suspense and useSuspenseQuery with appropriate fallbacks and well-factored components with small suspense boundaries unless you have a good reason not to
+- Always use client-only navigation. Don't use Next.js's `<Link>` or `useRouter` - they trigger SSR fetches and prefetching we don't want. Use `<ClientLink>` from `@/components/ui` for internal navigation instead.
 
 ## Frontend State Management
 
