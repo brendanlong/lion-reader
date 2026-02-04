@@ -298,7 +298,9 @@ CREATE TABLE public.tags (
     user_id uuid NOT NULL,
     name text NOT NULL,
     color text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
 );
 
 CREATE TABLE public.user_entries (
@@ -654,6 +656,8 @@ CREATE INDEX idx_subscriptions_feed_ids ON public.subscriptions USING gin (feed_
 CREATE INDEX idx_subscriptions_user ON public.subscriptions USING btree (user_id);
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
+
+CREATE INDEX idx_tags_updated_at ON public.tags USING btree (user_id, updated_at);
 
 CREATE INDEX idx_tags_user ON public.tags USING btree (user_id);
 
