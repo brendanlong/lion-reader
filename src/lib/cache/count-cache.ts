@@ -25,6 +25,14 @@ interface CachedSubscriptionPage {
 }
 
 /**
+ * Regular query data structure for subscriptions.
+ */
+interface SubscriptionListData {
+  items: CachedSubscription[];
+  nextCursor?: string;
+}
+
+/**
  * Infinite query data structure for subscriptions.
  */
 interface SubscriptionInfiniteData {
@@ -74,7 +82,7 @@ function getAllCachedSubscriptions(
 
   // Check per-tag infinite queries (used by TagSubscriptionList in sidebar)
   if (queryClient) {
-    forEachCachedInfiniteSubscription(queryClient, (s) => {
+    forEachCachedSubscription(queryClient, (s) => {
       if (!subscriptionMap.has(s.id)) {
         subscriptionMap.set(s.id, s);
       }
@@ -85,19 +93,32 @@ function getAllCachedSubscriptions(
 }
 
 /**
- * Iterates over all subscriptions in per-tag infinite query caches.
+ * Iterates over all subscriptions in cached subscription list queries.
+ * Handles both regular queries and infinite queries (used by sidebar).
  */
-function forEachCachedInfiniteSubscription(
+function forEachCachedSubscription(
   queryClient: QueryClient,
   callback: (subscription: CachedSubscription) => void
 ): void {
-  const infiniteQueries = queryClient.getQueriesData<SubscriptionInfiniteData>({
+  const queries = queryClient.getQueriesData<SubscriptionListData | SubscriptionInfiniteData>({
     queryKey: [["subscriptions", "list"]],
   });
-  for (const [, data] of infiniteQueries) {
-    if (!data?.pages) continue;
-    for (const page of data.pages) {
-      for (const s of page.items) {
+  for (const [, data] of queries) {
+    if (!data) continue;
+
+    // Check if it's infinite query format (has pages array)
+    if ("pages" in data && Array.isArray(data.pages)) {
+      for (const page of data.pages) {
+        if (page?.items) {
+          for (const s of page.items) {
+            callback(s);
+          }
+        }
+      }
+    }
+    // Regular query format (has items directly)
+    else if ("items" in data && Array.isArray(data.items)) {
+      for (const s of data.items) {
         callback(s);
       }
     }
@@ -127,7 +148,7 @@ export function findCachedSubscription(
 
   // Check per-tag infinite queries
   let found: CachedSubscription | undefined;
-  forEachCachedInfiniteSubscription(queryClient, (s) => {
+  forEachCachedSubscription(queryClient, (s) => {
     if (!found && s.id === subscriptionId) {
       found = s;
     }

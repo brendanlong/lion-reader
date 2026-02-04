@@ -241,6 +241,43 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
 }
 
 /**
+ * Smart title fallback that tries to show cached title instead of skeleton.
+ * Used as the Suspense fallback for the title slot.
+ */
+function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
+  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
+
+  // Static title - render immediately (shouldn't suspend anyway, but handle it)
+  if (routeInfo.title !== null) {
+    return <TitleText>{routeInfo.title}</TitleText>;
+  }
+
+  // Subscription title from cache
+  if (routeInfo.subscriptionId) {
+    const subscription = findCachedSubscription(utils, queryClient, routeInfo.subscriptionId);
+    if (subscription) {
+      return (
+        <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
+      );
+    }
+    return <TitleSkeleton />;
+  }
+
+  // Tag title from cache
+  if (routeInfo.tagId) {
+    const tagsData = utils.tags.list.getData();
+    const tag = tagsData?.items.find((t) => t.id === routeInfo.tagId);
+    if (tag) {
+      return <TitleText>{tag.name}</TitleText>;
+    }
+    return <TitleSkeleton />;
+  }
+
+  return <TitleText>All Items</TitleText>;
+}
+
+/**
  * Inner content component that renders based on route.
  * Entry content and entry list have independent Suspense boundaries.
  */
@@ -359,9 +396,9 @@ function UnifiedEntriesContentInner() {
     );
   }
 
-  // Title has its own Suspense boundary
+  // Title has its own Suspense boundary with smart fallback that uses cache
   const titleSlot = (
-    <Suspense fallback={<TitleSkeleton />}>
+    <Suspense fallback={<TitleFallback routeInfo={routeInfo} />}>
       <EntryListTitle routeInfo={routeInfo} />
     </Suspense>
   );
@@ -418,74 +455,20 @@ function UnifiedEntriesContentInner() {
 }
 
 /**
- * Fallback component that shows cached entries or skeleton.
- * Reads URL to match the filters the main component will use.
- *
- * Tries to show the real title when possible:
- * - Static titles (All Items, Starred, Saved) are shown immediately
- * - Subscription/tag titles are shown if available in cache
- */
-function UnifiedEntriesFallback() {
-  const routeInfo = useRouteInfo();
-  const { showUnreadOnly, sortOrder } = useUrlViewPreferences();
-  const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
-
-  // Derive the title from static route info or cache
-  const title = useMemo(() => {
-    // Static title (All Items, Starred, Saved, Uncategorized)
-    if (routeInfo.title !== null) {
-      return routeInfo.title;
-    }
-
-    // Subscription title from cache
-    if (routeInfo.subscriptionId) {
-      const subscription = findCachedSubscription(utils, queryClient, routeInfo.subscriptionId);
-      if (subscription) {
-        return subscription.title ?? subscription.originalTitle ?? "Untitled Feed";
-      }
-      return null; // Not in cache
-    }
-
-    // Tag title from cache
-    if (routeInfo.tagId) {
-      const tagsData = utils.tags.list.getData();
-      const tag = tagsData?.items.find((t) => t.id === routeInfo.tagId);
-      if (tag) {
-        return tag.name;
-      }
-      return null; // Not in cache
-    }
-
-    return "All Items";
-  }, [routeInfo, utils, queryClient]);
-
-  return (
-    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      <div className="mb-4 sm:mb-6">
-        {title === null ? <TitleSkeleton /> : <TitleText>{title}</TitleText>}
-      </div>
-      <EntryListFallback
-        filters={{ ...routeInfo.filters, unreadOnly: showUnreadOnly, sortOrder }}
-        skeletonCount={5}
-      />
-    </div>
-  );
-}
-
-/**
  * Unified entry content component.
  *
  * This single component handles all entry list pages by reading the current URL
  * to determine what to render. When navigation happens via pushState, usePathname()
  * updates and this component re-renders with the appropriate content.
+ *
+ * Note: No outer Suspense needed because UnifiedEntriesContentInner uses only
+ * non-suspending queries. All suspending queries are inside child components
+ * with their own Suspense boundaries (title, entry list, entry content).
  */
 export function UnifiedEntriesContent() {
   return (
     <ErrorBoundary message="Failed to load entries">
-      <Suspense fallback={<UnifiedEntriesFallback />}>
-        <UnifiedEntriesContentInner />
-      </Suspense>
+      <UnifiedEntriesContentInner />
     </ErrorBoundary>
   );
 }
