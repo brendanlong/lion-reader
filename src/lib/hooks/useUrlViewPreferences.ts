@@ -14,7 +14,8 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
+import { clientReplace } from "@/lib/navigation";
 import { parseViewPreferencesFromParams } from "./viewPreferences";
 
 // Re-export for backwards compatibility
@@ -66,7 +67,6 @@ export interface UseUrlViewPreferencesResult {
  * ```
  */
 export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -103,9 +103,9 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
 
       const queryString = params.toString();
       const url = queryString ? `${pathname}?${queryString}` : pathname;
-      router.replace(url, { scroll: false });
+      clientReplace(url);
     },
-    [router, pathname, searchParams]
+    [pathname, searchParams]
   );
 
   const toggleShowUnreadOnly = useCallback(() => {

@@ -9,6 +9,7 @@
 
 import Link from "next/link";
 import { type ReactNode } from "react";
+import { handleClientNav } from "@/lib/navigation";
 
 export interface NavLinkProps {
   /** Link destination */
@@ -56,7 +57,7 @@ export function NavLink({
     <Link
       href={href}
       prefetch={false}
-      onClick={onClick}
+      onClick={(e) => handleClientNav(e, href, onClick)}
       className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
         isActive
           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -120,7 +121,7 @@ export function NavLinkWithIcon({
     <Link
       href={href}
       prefetch={false}
-      onClick={onClick}
+      onClick={(e) => handleClientNav(e, href, onClick)}
       className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
         isActive
           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"

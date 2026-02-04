@@ -10,6 +10,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { handleClientNav } from "@/lib/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks";
 import { NavLinkWithIcon, ChevronDownIcon, ChevronRightIcon, ColorDot } from "@/components/ui";
@@ -62,7 +63,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
         No subscriptions yet.{" "}
         <Link
           href="/subscribe"
-          onClick={onNavigate}
+          onClick={(e) => handleClientNav(e, "/subscribe", onNavigate)}
           className="text-zinc-900 underline dark:text-zinc-50"
         >
           Add one

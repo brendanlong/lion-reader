@@ -1,13 +1,9 @@
 /**
  * Appearance Settings Page
  *
- * Allows users to customize theme and text appearance settings.
+ * Route marker for /settings/appearance. AppRouter handles rendering.
  */
 
-"use client";
-
-import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
-
 export default function AppearanceSettingsPage() {
-  return <AppearanceSettings />;
+  return null;
 }

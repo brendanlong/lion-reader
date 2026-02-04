@@ -1,11 +1,10 @@
 /**
  * Uncategorized Entries Page
  *
- * Displays entries from feeds with no tags.
+ * Prefetches entry data for /uncategorized route. AppRouter handles rendering.
  */
 
 import { EntryListPage } from "@/components/entries/EntryListPage";
-import { UncategorizedEntriesContent } from "./UncategorizedEntriesContent";
 
 interface UncategorizedEntriesPageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -14,7 +13,7 @@ interface UncategorizedEntriesPageProps {
 export default function UncategorizedEntriesPage({ searchParams }: UncategorizedEntriesPageProps) {
   return (
     <EntryListPage filters={{ uncategorized: true }} searchParams={searchParams}>
-      <UncategorizedEntriesContent />
+      {null}
     </EntryListPage>
   );
 }

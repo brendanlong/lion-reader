@@ -9,7 +9,8 @@
 "use client";
 
 import { useCallback, useMemo, useRef } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
+import { clientPush, clientReplace } from "@/lib/navigation";
 
 export interface UseEntryUrlStateResult {
   /** The currently open entry ID, or null if no entry is open */
@@ -41,7 +42,6 @@ export interface UseEntryUrlStateResult {
  */
 export function useEntryUrlState(): UseEntryUrlStateResult {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
 
   // Track whether we pushed to history when opening an entry
@@ -74,13 +74,13 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
       if (entryId && !currentEntryId) {
         // Opening an entry from list view - add to history
         pushedToHistoryRef.current = true;
-        router.push(newUrl, { scroll: false });
+        clientPush(newUrl);
       } else {
         // Navigating between entries or closing - replace to avoid history bloat
-        router.replace(newUrl, { scroll: false });
+        clientReplace(newUrl);
       }
     },
-    [searchParams, pathname, router]
+    [searchParams, pathname]
   );
 
   // Close the entry - uses history.back() if we pushed when opening, to preserve React state

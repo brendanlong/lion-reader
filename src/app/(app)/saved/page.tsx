@@ -1,11 +1,10 @@
 /**
  * Saved Articles Page
  *
- * Displays saved articles (read later).
+ * Prefetches entry data for /saved route. AppRouter handles rendering.
  */
 
 import { EntryListPage } from "@/components/entries/EntryListPage";
-import { SavedArticlesContent } from "./SavedArticlesContent";
 
 interface SavedArticlesPageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -14,7 +13,7 @@ interface SavedArticlesPageProps {
 export default function SavedArticlesPage({ searchParams }: SavedArticlesPageProps) {
   return (
     <EntryListPage filters={{ type: "saved" }} searchParams={searchParams}>
-      <SavedArticlesContent />
+      {null}
     </EntryListPage>
   );
 }

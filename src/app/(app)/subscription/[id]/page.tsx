@@ -1,11 +1,10 @@
 /**
  * Single Subscription Page
  *
- * Displays entries from a specific subscription.
+ * Prefetches entry data for /subscription/[id] route. AppRouter handles rendering.
  */
 
 import { EntryListPage } from "@/components/entries/EntryListPage";
-import { SingleSubscriptionContent } from "./SingleSubscriptionContent";
 
 interface SingleSubscriptionPageProps {
   params: Promise<{ id: string }>;
@@ -20,7 +19,7 @@ export default async function SingleSubscriptionPage({
 
   return (
     <EntryListPage filters={{ subscriptionId }} searchParams={searchParams}>
-      <SingleSubscriptionContent />
+      {null}
     </EntryListPage>
   );
 }

@@ -12,6 +12,7 @@ export { UnreadToggle } from "./UnreadToggle";
 export { SortToggle } from "./SortToggle";
 export { MarkAllReadButton } from "./MarkAllReadButton";
 export { EntryPageLayout } from "./EntryPageLayout";
+export { UnifiedEntriesContent } from "./UnifiedEntriesContent";
 
 // Note: EntryListPage is a server component and should be imported directly
 // from "@/components/entries/EntryListPage" to avoid bundling server code in clients

@@ -9,6 +9,7 @@
 
 import Link from "next/link";
 import { IconButton, EditIcon, CloseIcon } from "@/components/ui";
+import { handleClientNav } from "@/lib/navigation";
 
 // ============================================================================
 // Types
@@ -45,7 +46,7 @@ export function SubscriptionItem({
       <Link
         href={subHref}
         prefetch={false}
-        onClick={onClose}
+        onClick={(e) => handleClientNav(e, subHref, onClose)}
         className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
           isActive
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"

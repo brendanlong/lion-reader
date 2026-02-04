@@ -26,6 +26,16 @@ interface AppLayoutProps {
   children: React.ReactNode;
 }
 
+/**
+ * App layout that wraps all authenticated pages.
+ *
+ * The layout renders AppLayoutContent which uses AppRouter to determine
+ * what content to show based on the current pathname. This enables
+ * client-side navigation via pushState without triggering SSR.
+ *
+ * Page files (page.tsx) still exist for prefetching route-specific data,
+ * but their rendered output is not used - AppRouter handles all rendering.
+ */
 export default async function AppLayout({ children }: AppLayoutProps) {
   // Redirect unauthenticated users to login
   if (!(await isAuthenticated())) {
@@ -56,10 +66,15 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   ]);
   const initialCursors = await trpc.sync.cursors(); // Lightweight cursor-only query
 
+  // children contains the page.tsx output (prefetch triggers), but AppRouter
+  // handles all rendering based on pathname. We include children to ensure
+  // Next.js runs the page.tsx files for prefetching.
   return (
     <TRPCProvider>
       <HydrateClient>
-        <AppLayoutContent initialCursors={initialCursors}>{children}</AppLayoutContent>
+        <AppLayoutContent initialCursors={initialCursors} />
+        {/* Page files run for prefetching but their output is hidden */}
+        <div className="hidden">{children}</div>
       </HydrateClient>
     </TRPCProvider>
   );

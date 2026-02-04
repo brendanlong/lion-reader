@@ -1,11 +1,10 @@
 /**
  * Starred Entries Page
  *
- * Displays all starred entries.
+ * Prefetches entry data for /starred route. AppRouter handles rendering.
  */
 
 import { EntryListPage } from "@/components/entries/EntryListPage";
-import { StarredEntriesContent } from "./StarredEntriesContent";
 
 interface StarredEntriesPageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -14,7 +13,7 @@ interface StarredEntriesPageProps {
 export default function StarredEntriesPage({ searchParams }: StarredEntriesPageProps) {
   return (
     <EntryListPage filters={{ starredOnly: true }} searchParams={searchParams}>
-      <StarredEntriesContent />
+      {null}
     </EntryListPage>
   );
 }
