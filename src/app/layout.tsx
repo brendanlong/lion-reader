@@ -47,26 +47,67 @@ export const metadata: Metadata = {
 };
 
 /**
- * Blocking script to apply theme before first paint.
+ * Blocking script to apply appearance settings before first paint.
  *
- * This runs synchronously in the <head> to prevent flash of wrong theme.
+ * This runs synchronously in the <head> to prevent flash of wrong theme/text size.
  * Must be kept in sync with settings.ts storage key and logic.
+ *
+ * Sets:
+ * - dark class on html element for theme
+ * - CSS custom properties for text appearance (--entry-font-size, etc.)
  */
-const themeScript = `
+const appearanceScript = `
 (function() {
   try {
     var stored = localStorage.getItem('lion-reader-appearance-settings');
-    var mode = 'auto';
+    var settings = {
+      themeMode: 'auto',
+      textSize: 'medium',
+      fontFamily: 'system',
+      textJustification: 'left'
+    };
     if (stored) {
       var parsed = JSON.parse(stored);
-      if (parsed.themeMode === 'light' || parsed.themeMode === 'dark') {
-        mode = parsed.themeMode;
+      if (parsed.themeMode === 'light' || parsed.themeMode === 'dark' || parsed.themeMode === 'auto') {
+        settings.themeMode = parsed.themeMode;
+      }
+      if (['small', 'medium', 'large', 'x-large'].indexOf(parsed.textSize) >= 0) {
+        settings.textSize = parsed.textSize;
+      }
+      if (['system', 'merriweather', 'literata', 'inter', 'source-sans'].indexOf(parsed.fontFamily) >= 0) {
+        settings.fontFamily = parsed.fontFamily;
+      }
+      if (parsed.textJustification === 'justify') {
+        settings.textJustification = 'justify';
       }
     }
-    var dark = mode === 'dark' || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    // Apply dark mode
+    var dark = settings.themeMode === 'dark' || (settings.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     if (dark) {
       document.documentElement.classList.add('dark');
     }
+
+    // Font configs with size adjustments for visual consistency
+    var fontConfigs = {
+      'system': { family: 'inherit', sizeAdjust: 1, lineHeight: 1.7 },
+      'merriweather': { family: 'var(--font-merriweather), Georgia, serif', sizeAdjust: 0.929, lineHeight: 1.8 },
+      'literata': { family: 'var(--font-literata), Georgia, serif', sizeAdjust: 1, lineHeight: 1.75 },
+      'inter': { family: 'var(--font-inter), system-ui, sans-serif', sizeAdjust: 0.945, lineHeight: 1.7 },
+      'source-sans': { family: 'var(--font-source-sans), system-ui, sans-serif', sizeAdjust: 1.061, lineHeight: 1.7 }
+    };
+    var baseSizes = { 'small': 0.875, 'medium': 1, 'large': 1.125, 'x-large': 1.25 };
+
+    var fontConfig = fontConfigs[settings.fontFamily] || fontConfigs['system'];
+    var baseSize = baseSizes[settings.textSize] || 1;
+    var adjustedSize = baseSize * fontConfig.sizeAdjust;
+
+    // Set CSS custom properties for entry text styling
+    var style = document.documentElement.style;
+    style.setProperty('--entry-font-family', fontConfig.family);
+    style.setProperty('--entry-font-size', adjustedSize + 'rem');
+    style.setProperty('--entry-line-height', fontConfig.lineHeight);
+    style.setProperty('--entry-text-align', settings.textJustification);
   } catch (e) {}
 })();
 `;
@@ -96,7 +137,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: appearanceScript }} />
         <script dangerouslySetInnerHTML={{ __html: swScript }} />
       </head>
       <body

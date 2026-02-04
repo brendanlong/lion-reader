@@ -178,6 +178,10 @@ const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
  * Hook to get text style classes for entry content.
  *
  * Returns Tailwind classes and inline styles for applying text appearance settings.
+ *
+ * Uses CSS custom properties set by the head script for initial render to avoid
+ * flash of wrong styles during hydration. The React state is still tracked to
+ * update the CSS vars when settings change.
  */
 export function useEntryTextStyles(): {
   className: string;
@@ -185,27 +189,40 @@ export function useEntryTextStyles(): {
 } {
   const { settings } = useAppearance();
 
-  return useMemo(() => {
-    // Base font sizes in rem for each size option
+  // Update CSS custom properties when settings change (for client-side updates)
+  useEffect(() => {
     const baseSizes: Record<TextSize, number> = {
-      small: 0.875, // 14px
-      medium: 1, // 16px
-      large: 1.125, // 18px
-      "x-large": 1.25, // 20px
+      small: 0.875,
+      medium: 1,
+      large: 1.125,
+      "x-large": 1.25,
     };
 
     const fontConfig = FONT_CONFIGS[settings.fontFamily] || FONT_CONFIGS.system;
     const baseSize = baseSizes[settings.textSize] || baseSizes.medium;
     const adjustedSize = baseSize * fontConfig.sizeAdjust;
 
-    const style: React.CSSProperties = {
-      fontFamily: fontConfig.family,
-      fontSize: `${adjustedSize}rem`,
-      lineHeight: fontConfig.lineHeight,
-      textAlign: settings.textJustification === "justify" ? "justify" : "left",
-    };
-
-    // Use prose for base styling but override font-size via inline style
-    return { className: "prose prose-zinc dark:prose-invert", style };
+    const style = document.documentElement.style;
+    style.setProperty("--entry-font-family", fontConfig.family);
+    style.setProperty("--entry-font-size", `${adjustedSize}rem`);
+    style.setProperty("--entry-line-height", String(fontConfig.lineHeight));
+    style.setProperty(
+      "--entry-text-align",
+      settings.textJustification === "justify" ? "justify" : "left"
+    );
   }, [settings.textSize, settings.fontFamily, settings.textJustification]);
+
+  // Return styles that use CSS custom properties (set by head script on initial load)
+  return useMemo(
+    () => ({
+      className: "prose prose-zinc dark:prose-invert",
+      style: {
+        fontFamily: "var(--entry-font-family, inherit)",
+        fontSize: "var(--entry-font-size, 1rem)",
+        lineHeight: "var(--entry-line-height, 1.7)",
+        textAlign: "var(--entry-text-align, left)" as React.CSSProperties["textAlign"],
+      },
+    }),
+    []
+  );
 }
