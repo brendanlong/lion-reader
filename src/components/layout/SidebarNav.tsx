@@ -18,40 +18,42 @@ interface SidebarNavProps {
 }
 
 /**
- * Suspending component that fetches and displays a single count.
+ * Styled count badge for nav links. Returns null if count is 0.
  */
-function AllItemsCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({});
-  return <>{data.unread}</>;
-}
-
-function StarredCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({ starredOnly: true });
-  return <>{data.unread}</>;
-}
-
-function SavedCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({ type: "saved" });
-  return <>{data.unread}</>;
-}
-
-/**
- * Minimal loading indicator for counts.
- */
-function CountSkeleton() {
+function CountBadge({ count }: { count: number }) {
+  if (count === 0) return null;
   return (
-    <span className="inline-block h-4 w-4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+    <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">({count})</span>
   );
 }
 
 /**
+ * Suspending component that fetches and displays a single count.
+ * Returns null when count is 0 (no badge shown).
+ */
+function AllItemsCount() {
+  const [data] = trpc.entries.count.useSuspenseQuery({});
+  return <CountBadge count={data.unread} />;
+}
+
+function StarredCount() {
+  const [data] = trpc.entries.count.useSuspenseQuery({ starredOnly: true });
+  return <CountBadge count={data.unread} />;
+}
+
+function SavedCount() {
+  const [data] = trpc.entries.count.useSuspenseQuery({ type: "saved" });
+  return <CountBadge count={data.unread} />;
+}
+
+/**
  * Wraps a count component with ErrorBoundary and Suspense.
- * If the count fails to load, shows nothing (graceful degradation).
+ * Shows nothing during loading or on error (graceful degradation).
  */
 function SuspenseCount({ children }: { children: React.ReactNode }) {
   return (
     <ErrorBoundary fallback={null}>
-      <Suspense fallback={<CountSkeleton />}>{children}</Suspense>
+      <Suspense fallback={null}>{children}</Suspense>
     </ErrorBoundary>
   );
 }

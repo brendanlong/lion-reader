@@ -18,14 +18,10 @@ export interface NavLinkProps {
   isActive: boolean;
   /** Link content (text, icons, etc.) */
   children: ReactNode;
-  /** Optional count to display (e.g., unread count) */
-  count?: number;
-  /** Optional custom element for count (for Suspense streaming) */
+  /** Optional count element (renders as-is, typically from Suspense) */
   countElement?: ReactNode;
   /** Called when link is clicked */
   onClick?: () => void;
-  /** Whether to show count even when zero */
-  showZeroCount?: boolean;
   /** Additional class name */
   className?: string;
 }
@@ -36,7 +32,11 @@ export interface NavLinkProps {
  *
  * @example
  * ```tsx
- * <NavLink href="/all" isActive={pathname === "/all"} count={10}>
+ * <NavLink
+ *   href="/all"
+ *   isActive={pathname === "/all"}
+ *   countElement={<UnreadCount />}
+ * >
  *   All Items
  * </NavLink>
  * ```
@@ -45,14 +45,10 @@ export function NavLink({
   href,
   isActive,
   children,
-  count,
   countElement,
   onClick,
-  showZeroCount = false,
   className = "",
 }: NavLinkProps) {
-  const showCount = count !== undefined && (count > 0 || showZeroCount);
-
   return (
     <Link
       href={href}
@@ -65,17 +61,7 @@ export function NavLink({
       } ${className}`}
     >
       <span className="truncate">{children}</span>
-      {countElement ? (
-        <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-          ({countElement})
-        </span>
-      ) : (
-        showCount && (
-          <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-            ({count})
-          </span>
-        )
-      )}
+      {countElement}
     </Link>
   );
 }
@@ -83,11 +69,13 @@ export function NavLink({
 /**
  * Props for NavLinkWithIcon - NavLink with leading icon or indicator
  */
-export interface NavLinkWithIconProps extends Omit<NavLinkProps, "children"> {
+export interface NavLinkWithIconProps extends Omit<NavLinkProps, "children" | "countElement"> {
   /** Icon or indicator element to show before the label */
   icon?: ReactNode;
   /** Text label */
   label: string;
+  /** Optional count to display (only shown if > 0) */
+  count?: number;
 }
 
 /**
@@ -99,7 +87,7 @@ export interface NavLinkWithIconProps extends Omit<NavLinkProps, "children"> {
  * <NavLinkWithIcon
  *   href={`/tag/${tag.id}`}
  *   isActive={pathname === `/tag/${tag.id}`}
- *   icon={<span className="h-3 w-3 rounded-full" style={{ backgroundColor: tag.color }} />}
+ *   icon={<ColorDot color={tag.color} />}
  *   label={tag.name}
  *   count={tag.unreadCount}
  * />
@@ -112,11 +100,8 @@ export function NavLinkWithIcon({
   label,
   count,
   onClick,
-  showZeroCount = false,
   className = "",
 }: NavLinkWithIconProps) {
-  const showCount = count !== undefined && (count > 0 || showZeroCount);
-
   return (
     <Link
       href={href}
@@ -130,7 +115,7 @@ export function NavLinkWithIcon({
     >
       {icon && <span className="shrink-0">{icon}</span>}
       <span className="truncate">{label}</span>
-      {showCount && (
+      {count !== undefined && count > 0 && (
         <span className="ui-text-xs ml-auto shrink-0 text-zinc-500 dark:text-zinc-400">
           ({count})
         </span>
