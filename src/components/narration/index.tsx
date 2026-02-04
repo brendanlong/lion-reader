@@ -11,11 +11,22 @@
 
 import dynamic from "next/dynamic";
 
+/**
+ * Skeleton placeholder for NarrationControls while it loads client-side.
+ * Matches the dimensions of the "Listen" button (secondary variant, sm size).
+ */
+function NarrationControlsSkeleton() {
+  return (
+    <div className="min-h-[36px] w-[88px] animate-pulse rounded-lg bg-zinc-100 sm:min-h-[32px] dark:bg-zinc-800" />
+  );
+}
+
 // NarrationControls depends on browser-only APIs (speechSynthesis, localStorage).
 // Using ssr: false avoids hydration mismatches and the flash of the button appearing.
+// The skeleton placeholder prevents layout shift while the component loads.
 export const NarrationControls = dynamic(
   () => import("./NarrationControls").then((mod) => mod.NarrationControlsImpl),
-  { ssr: false }
+  { ssr: false, loading: () => <NarrationControlsSkeleton /> }
 );
 export { useNarration } from "./useNarration";
 export { useNarrationHighlight } from "./useNarrationHighlight";
