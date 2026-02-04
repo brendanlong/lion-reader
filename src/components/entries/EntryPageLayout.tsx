@@ -2,14 +2,18 @@
  * EntryPageLayout Component
  *
  * Shared layout component for entry list pages (All, Starred, Saved, Subscription, Tag, Uncategorized).
- * Handles the common structure: EntryContent when viewing, header with title and actions, EntryList.
+ * Handles the header with title and actions. Entry content and list are passed as slots.
+ *
+ * The buttons use non-suspending hooks directly, so they render immediately
+ * while the entry list can suspend independently.
  */
 
 "use client";
 
-import { type UseEntryPageResult, type MarkAllReadOptions } from "@/lib/hooks";
-import { EntryList } from "./EntryList";
-import { EntryContent } from "./EntryContent";
+import { type ReactNode } from "react";
+import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks";
+import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
+import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { UnreadToggle } from "./UnreadToggle";
 import { SortToggle } from "./SortToggle";
 import { MarkAllReadButton } from "./MarkAllReadButton";
@@ -18,22 +22,30 @@ import { FileUploadButton } from "@/components/saved";
 /**
  * Loading skeleton for the page title.
  */
-function TitleSkeleton() {
+export function TitleSkeleton() {
   return <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />;
 }
 
+/**
+ * Title text component - renders the h1 with proper styling.
+ */
+export function TitleText({ children }: { children: ReactNode }) {
+  return (
+    <h1 className="ui-text-xl sm:ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+      {children}
+    </h1>
+  );
+}
+
 interface EntryPageLayoutProps {
-  /** The page state from useEntryPage */
-  page: UseEntryPageResult;
+  /** Title slot - typically a Suspense-wrapped title component */
+  titleSlot: ReactNode;
 
-  /** Page title - pass null to show loading skeleton */
-  title: string | null;
+  /** Entry content slot - full screen view when an entry is open */
+  entryContentSlot: ReactNode;
 
-  /** Empty message when showing unread only */
-  emptyMessageUnread: string;
-
-  /** Empty message when showing all entries */
-  emptyMessageAll: string;
+  /** Entry list slot - wrapped in Suspense by caller */
+  entryListSlot: ReactNode;
 
   /** Context description for the mark all read dialog (e.g., "all feeds", "this subscription") */
   markAllReadDescription: string;
@@ -46,48 +58,43 @@ interface EntryPageLayoutProps {
 }
 
 export function EntryPageLayout({
-  page,
-  title,
-  emptyMessageUnread,
-  emptyMessageAll,
+  titleSlot,
+  entryContentSlot,
+  entryListSlot,
   markAllReadDescription,
   markAllReadOptions,
   showUploadButton = false,
 }: EntryPageLayoutProps) {
+  // Use non-suspending hooks directly so buttons render immediately
+  const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
+    useUrlViewPreferences();
+  const { markAllRead, isMarkAllReadPending } = useEntryMutations();
+  const { openEntryId } = useEntryUrlState();
+
   return (
     <>
-      {page.entryContentProps && (
-        <EntryContent key={page.entryContentProps.entryId} {...page.entryContentProps} />
-      )}
+      {/* Entry content - full screen when viewing an entry */}
+      {entryContentSlot}
 
-      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${page.openEntryId ? "hidden" : ""}`}>
+      {/* Main content area - hidden when viewing an entry */}
+      <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
+        {/* Header with title and buttons */}
         <div className="mb-4 flex items-center justify-between sm:mb-6">
-          {title === null ? (
-            <TitleSkeleton />
-          ) : (
-            <h1 className="ui-text-xl sm:ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-              {title}
-            </h1>
-          )}
+          {titleSlot}
           <div className="flex gap-2">
             {showUploadButton && <FileUploadButton />}
             <MarkAllReadButton
               contextDescription={markAllReadDescription}
-              isLoading={page.isMarkAllReadPending}
-              onConfirm={() => page.handleMarkAllRead(markAllReadOptions)}
+              isLoading={isMarkAllReadPending}
+              onConfirm={() => markAllRead(markAllReadOptions)}
             />
-            <SortToggle sortOrder={page.sortOrder} onToggle={page.toggleSortOrder} />
-            <UnreadToggle
-              showUnreadOnly={page.showUnreadOnly}
-              onToggle={page.toggleShowUnreadOnly}
-            />
+            <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
+            <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
           </div>
         </div>
 
-        <EntryList
-          {...page.entryListProps}
-          emptyMessage={page.showUnreadOnly ? emptyMessageUnread : emptyMessageAll}
-        />
+        {/* Entry list */}
+        {entryListSlot}
       </div>
     </>
   );

@@ -14,15 +14,18 @@
 
 "use client";
 
-import { Suspense, useCallback, useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { EntryPageLayout } from "./EntryPageLayout";
+import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
+import { EntryContent } from "./EntryContent";
+import { SuspendingEntryList } from "./SuspendingEntryList";
 import { EntryListFallback } from "./EntryListFallback";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui";
-import { useEntryPage, type UseEntryPageOptions } from "@/lib/hooks";
+import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
+import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache";
@@ -190,74 +193,82 @@ function useRouteInfo(): RouteInfo {
 }
 
 /**
+ * Title component for subscription pages.
+ * Uses useSuspenseQuery so it suspends until data is available.
+ */
+function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
+  const [subscription] = trpc.subscriptions.get.useSuspenseQuery({ id: subscriptionId });
+  if (!subscription) {
+    // This shouldn't happen with suspense, but handle it gracefully
+    return <TitleText>Untitled Feed</TitleText>;
+  }
+  return (
+    <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
+  );
+}
+
+/**
+ * Title component for tag pages.
+ * Uses useSuspenseQuery so it suspends until data is available.
+ */
+function TagTitle({ tagId }: { tagId: string }) {
+  const [tagsData] = trpc.tags.list.useSuspenseQuery();
+  const tag = tagsData?.items.find((t) => t.id === tagId);
+  return <TitleText>{tag?.name ?? "Unknown Tag"}</TitleText>;
+}
+
+/**
+ * Title component that handles all route types.
+ * Static titles render immediately; dynamic titles suspend until data loads.
+ */
+function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
+  // Static title - render immediately
+  if (routeInfo.title !== null) {
+    return <TitleText>{routeInfo.title}</TitleText>;
+  }
+
+  // Subscription title - suspends until subscription data loads
+  if (routeInfo.subscriptionId) {
+    return <SubscriptionTitle subscriptionId={routeInfo.subscriptionId} />;
+  }
+
+  // Tag title - suspends until tags data loads
+  if (routeInfo.tagId) {
+    return <TagTitle tagId={routeInfo.tagId} />;
+  }
+
+  return <TitleText>All Items</TitleText>;
+}
+
+/**
  * Inner content component that renders based on route.
+ * Entry content and entry list have independent Suspense boundaries.
  */
 function UnifiedEntriesContentInner() {
   const routeInfo = useRouteInfo();
-  const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
+  const { showUnreadOnly } = useUrlViewPreferences();
+  const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
-  // Build useEntryPage options
-  const pageOptions: UseEntryPageOptions = useMemo(
-    () => ({
-      viewId: routeInfo.viewId,
-      viewScopeId: routeInfo.subscriptionId ?? routeInfo.tagId,
-      filters: routeInfo.filters,
-    }),
-    [routeInfo.viewId, routeInfo.subscriptionId, routeInfo.tagId, routeInfo.filters]
-  );
+  // Get query input based on current URL - shared with SuspendingEntryList
+  const queryInput = useEntriesListInput();
 
-  const page = useEntryPage(pageOptions);
+  // Non-suspending query for navigation - shares cache with SuspendingEntryList
+  const entriesQuery = trpc.entries.list.useInfiniteQuery(queryInput, {
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
 
-  // Fetch subscription data if needed (for title)
-  const getPlaceholderData = useCallback(() => {
-    if (!routeInfo.subscriptionId) return undefined;
-    return findCachedSubscription(utils, queryClient, routeInfo.subscriptionId);
-  }, [utils, queryClient, routeInfo.subscriptionId]);
-
+  // Fetch subscription data for validation
   const subscriptionQuery = trpc.subscriptions.get.useQuery(
     { id: routeInfo.subscriptionId ?? "" },
-    {
-      enabled: !!routeInfo.subscriptionId,
-      placeholderData: getPlaceholderData,
-    }
+    { enabled: !!routeInfo.subscriptionId }
   );
 
-  // Fetch tag data if needed (for title)
+  // Fetch tag data for validation and empty message customization
   const tagsQuery = trpc.tags.list.useQuery(undefined, {
     enabled: !!routeInfo.tagId,
   });
-
-  // Derive title based on route
-  const title = useMemo(() => {
-    // Static title
-    if (routeInfo.title !== null) {
-      return routeInfo.title;
-    }
-
-    // Subscription title
-    if (routeInfo.subscriptionId) {
-      const subscription = subscriptionQuery.data;
-      if (subscription) {
-        return subscription.title ?? subscription.originalTitle ?? "Untitled Feed";
-      }
-      return null; // Still loading
-    }
-
-    // Tag title
-    if (routeInfo.tagId) {
-      const tag = tagsQuery.data?.items.find((t) => t.id === routeInfo.tagId);
-      if (tag) {
-        return tag.name;
-      }
-      if (!tagsQuery.isLoading) {
-        return null; // Tag not found, will show error below
-      }
-      return null; // Still loading
-    }
-
-    return "All Items";
-  }, [routeInfo, subscriptionQuery.data, tagsQuery.data, tagsQuery.isLoading]);
 
   // Update empty messages with actual tag name if available
   const emptyMessages = useMemo(() => {
@@ -298,6 +309,35 @@ function UnifiedEntriesContentInner() {
     return options;
   }, [routeInfo.filters]);
 
+  // Get adjacent entry IDs from query data for navigation
+  const pages = entriesQuery.data?.pages;
+  const { nextEntryId, previousEntryId } = useMemo(() => {
+    if (!openEntryId || !pages) {
+      return { nextEntryId: undefined, previousEntryId: undefined };
+    }
+    const allEntries = pages.flatMap((page) => page.items);
+    const currentIndex = allEntries.findIndex((e) => e.id === openEntryId);
+    if (currentIndex === -1) {
+      return { nextEntryId: undefined, previousEntryId: undefined };
+    }
+    return {
+      nextEntryId:
+        currentIndex < allEntries.length - 1 ? allEntries[currentIndex + 1].id : undefined,
+      previousEntryId: currentIndex > 0 ? allEntries[currentIndex - 1].id : undefined,
+    };
+  }, [openEntryId, pages]);
+
+  // Navigation callbacks - just update URL, React re-renders
+  const handleSwipeNext = useMemo(() => {
+    if (!nextEntryId) return undefined;
+    return () => setOpenEntryId(nextEntryId);
+  }, [nextEntryId, setOpenEntryId]);
+
+  const handleSwipePrevious = useMemo(() => {
+    if (!previousEntryId) return undefined;
+    return () => setOpenEntryId(previousEntryId);
+  }, [previousEntryId, setOpenEntryId]);
+
   // Show error if subscription query completed but subscription not found
   if (routeInfo.subscriptionId && !subscriptionQuery.isLoading && !subscriptionQuery.data) {
     return (
@@ -319,12 +359,57 @@ function UnifiedEntriesContentInner() {
     );
   }
 
+  // Title has its own Suspense boundary
+  const titleSlot = (
+    <Suspense fallback={<TitleSkeleton />}>
+      <EntryListTitle routeInfo={routeInfo} />
+    </Suspense>
+  );
+
+  // Entry content - has its own internal Suspense boundary
+  const entryContentSlot = openEntryId ? (
+    <EntryContent
+      key={openEntryId}
+      entryId={openEntryId}
+      onBack={closeEntry}
+      onSwipeNext={handleSwipeNext}
+      onSwipePrevious={handleSwipePrevious}
+      nextEntryId={nextEntryId}
+      previousEntryId={previousEntryId}
+    />
+  ) : null;
+
+  // Entry list - has its own Suspense boundary
+  const entryListSlot = (
+    <Suspense
+      fallback={
+        <EntryListFallback
+          filters={{
+            subscriptionId: queryInput.subscriptionId,
+            tagId: queryInput.tagId,
+            uncategorized: queryInput.uncategorized,
+            starredOnly: queryInput.starredOnly,
+            type: queryInput.type,
+            unreadOnly: queryInput.unreadOnly,
+            sortOrder: queryInput.sortOrder,
+          }}
+          skeletonCount={5}
+        />
+      }
+    >
+      <SuspendingEntryList
+        emptyMessage={
+          showUnreadOnly ? emptyMessages.emptyMessageUnread : emptyMessages.emptyMessageAll
+        }
+      />
+    </Suspense>
+  );
+
   return (
     <EntryPageLayout
-      page={page}
-      title={title}
-      emptyMessageUnread={emptyMessages.emptyMessageUnread}
-      emptyMessageAll={emptyMessages.emptyMessageAll}
+      titleSlot={titleSlot}
+      entryContentSlot={entryContentSlot}
+      entryListSlot={entryListSlot}
       markAllReadDescription={emptyMessages.markAllReadDescription}
       markAllReadOptions={markAllReadOptions}
       showUploadButton={routeInfo.showUploadButton}
@@ -335,15 +420,50 @@ function UnifiedEntriesContentInner() {
 /**
  * Fallback component that shows cached entries or skeleton.
  * Reads URL to match the filters the main component will use.
+ *
+ * Tries to show the real title when possible:
+ * - Static titles (All Items, Starred, Saved) are shown immediately
+ * - Subscription/tag titles are shown if available in cache
  */
 function UnifiedEntriesFallback() {
   const routeInfo = useRouteInfo();
   const { showUnreadOnly, sortOrder } = useUrlViewPreferences();
+  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
+
+  // Derive the title from static route info or cache
+  const title = useMemo(() => {
+    // Static title (All Items, Starred, Saved, Uncategorized)
+    if (routeInfo.title !== null) {
+      return routeInfo.title;
+    }
+
+    // Subscription title from cache
+    if (routeInfo.subscriptionId) {
+      const subscription = findCachedSubscription(utils, queryClient, routeInfo.subscriptionId);
+      if (subscription) {
+        return subscription.title ?? subscription.originalTitle ?? "Untitled Feed";
+      }
+      return null; // Not in cache
+    }
+
+    // Tag title from cache
+    if (routeInfo.tagId) {
+      const tagsData = utils.tags.list.getData();
+      const tag = tagsData?.items.find((t) => t.id === routeInfo.tagId);
+      if (tag) {
+        return tag.name;
+      }
+      return null; // Not in cache
+    }
+
+    return "All Items";
+  }, [routeInfo, utils, queryClient]);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="mb-4 sm:mb-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+        {title === null ? <TitleSkeleton /> : <TitleText>{title}</TitleText>}
       </div>
       <EntryListFallback
         filters={{ ...routeInfo.filters, unreadOnly: showUnreadOnly, sortOrder }}

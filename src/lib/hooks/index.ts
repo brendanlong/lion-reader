@@ -18,6 +18,8 @@ export { useExpandedTags } from "./useExpandedTags";
 
 export { useEntryListQuery, type EntryListData } from "./useEntryListQuery";
 
+export { useEntriesListInput } from "./useEntriesListInput";
+
 export { useShowOriginalPreference } from "./useShowOriginalPreference";
 
 export { useEntryPage, type UseEntryPageOptions, type UseEntryPageResult } from "./useEntryPage";
