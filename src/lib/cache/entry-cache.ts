@@ -479,6 +479,66 @@ interface SubscriptionInfo {
 }
 
 /**
+ * Data format for regular queries.
+ */
+interface SubscriptionListData {
+  items: SubscriptionInfo[];
+  nextCursor?: string;
+}
+
+/**
+ * Data format for infinite queries.
+ */
+interface SubscriptionInfiniteData {
+  pages: SubscriptionListData[];
+  pageParams: unknown[];
+}
+
+/**
+ * Looks up subscriptions from the cache for tag/uncategorized filtering.
+ * Handles both regular queries and infinite queries (used by sidebar).
+ * Returns undefined if not cached.
+ */
+function getSubscriptionsFromCache(queryClient: QueryClient): SubscriptionInfo[] | undefined {
+  // Look up subscriptions.list cache - handles both query and infinite query formats
+  const queries = queryClient.getQueriesData<SubscriptionListData | SubscriptionInfiniteData>({
+    queryKey: [["subscriptions", "list"]],
+  });
+
+  const allSubscriptions: SubscriptionInfo[] = [];
+  const seenIds = new Set<string>();
+
+  for (const [, data] of queries) {
+    if (!data) continue;
+
+    // Check if it's infinite query format (has pages array)
+    if ("pages" in data && Array.isArray(data.pages)) {
+      for (const page of data.pages) {
+        if (page?.items) {
+          for (const sub of page.items) {
+            if (!seenIds.has(sub.id)) {
+              seenIds.add(sub.id);
+              allSubscriptions.push(sub);
+            }
+          }
+        }
+      }
+    }
+    // Regular query format (has items directly)
+    else if ("items" in data && Array.isArray(data.items)) {
+      for (const sub of data.items) {
+        if (!seenIds.has(sub.id)) {
+          seenIds.add(sub.id);
+          allSubscriptions.push(sub);
+        }
+      }
+    }
+  }
+
+  return allSubscriptions.length > 0 ? allSubscriptions : undefined;
+}
+
+/**
  * Query key structure for tRPC infinite queries.
  * The key is [["entries", "list"], { input: {...}, type: "infinite" }]
  */
@@ -701,16 +761,26 @@ function filtersEqual(a: EntryListFilters, b: EntryListFilters): boolean {
  *
  * Within each level, prefers exact unreadOnly/starredOnly match, then falls back to compatible.
  *
+ * For tag/uncategorized filtering, automatically looks up subscriptions from the cache.
+ *
  * @param queryClient - React Query client for cache access
  * @param filters - Requested filters for the entry list
- * @param subscriptions - Subscription data for tag filtering
  * @returns Placeholder data in infinite query format, or undefined if no suitable parent found
  */
 export function findParentListPlaceholderData(
   queryClient: QueryClient,
-  filters: EntryListFilters,
-  subscriptions?: SubscriptionInfo[]
+  filters: EntryListFilters
 ): TypedInfiniteData | undefined {
+  // Look up subscriptions from cache for tag/uncategorized filtering
+  // Note: subscriptionId filtering doesn't need the subscriptions cache - it filters directly by entry.subscriptionId
+  const needsSubscriptions = filters.tagId || filters.uncategorized;
+  const subscriptions = needsSubscriptions ? getSubscriptionsFromCache(queryClient) : undefined;
+
+  // If we need subscriptions for filtering but can't find them, show skeleton
+  // rather than showing incorrect/unfiltered data
+  if (needsSubscriptions && !subscriptions) {
+    return undefined;
+  }
   const queries = queryClient.getQueriesData<InfiniteData>({
     queryKey: [["entries", "list"]],
   });

@@ -27,19 +27,9 @@ interface EntryListFilters {
   type?: "web" | "email" | "saved";
 }
 
-/**
- * Subscription info for tag filtering in placeholder data.
- */
-interface SubscriptionForPlaceholder {
-  id: string;
-  tags: Array<{ id: string }>;
-}
-
 interface EntryListFallbackProps {
   /** Filters for finding matching cached data */
   filters: EntryListFilters;
-  /** Subscriptions for tag filtering (optional) */
-  subscriptions?: SubscriptionForPlaceholder[];
   /** Number of skeleton items if no placeholder data */
   skeletonCount?: number;
   /** Currently selected entry ID */
@@ -59,7 +49,6 @@ interface EntryListFallbackProps {
  */
 export function EntryListFallback({
   filters,
-  subscriptions,
   skeletonCount = 5,
   selectedEntryId,
   onEntryClick,
@@ -67,7 +56,8 @@ export function EntryListFallback({
   const queryClient = useQueryClient();
 
   // Try to find placeholder data from cached parent lists
-  const placeholderData = findParentListPlaceholderData(queryClient, filters, subscriptions);
+  // Subscriptions are automatically looked up from cache for tag/uncategorized filtering
+  const placeholderData = findParentListPlaceholderData(queryClient, filters);
 
   // No cached data - show skeleton
   if (!placeholderData || placeholderData.pages[0]?.items.length === 0) {
