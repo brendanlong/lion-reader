@@ -3,23 +3,21 @@
  *
  * Displays the full content of a single entry.
  * Fetches entry data and delegates rendering to the shared EntryContentBody.
+ *
+ * Uses Suspense for data fetching with a smart fallback that shows cached
+ * entry metadata from the list while full content loads.
  */
 
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Suspense, useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations, useShowOriginalPreference } from "@/lib/hooks";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
-import { findEntryInListCache, listItemToPlaceholderEntry } from "@/lib/cache/entry-cache";
-import {
-  EntryContentBody,
-  EntryContentSkeleton,
-  EntryContentError,
-  getDomain,
-} from "./EntryContentBody";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { EntryContentBody, getDomain } from "./EntryContentBody";
+import { EntryContentFallback } from "./EntryContentFallback";
 
 /**
  * Props for the EntryContent component.
@@ -57,12 +55,10 @@ interface EntryContentProps {
 }
 
 /**
- * EntryContent component.
- *
- * Fetches and displays the full content of an entry.
- * Marks the entry as read on mount.
+ * Inner component that fetches and displays entry content.
+ * Uses useSuspenseQuery so the parent Suspense boundary handles loading state.
  */
-export function EntryContent({
+function EntryContentInner({
   entryId,
   onBack,
   onSwipeNext,
@@ -70,39 +66,23 @@ export function EntryContent({
   nextEntryId,
   previousEntryId,
 }: EntryContentProps) {
-  const queryClient = useQueryClient();
   const utils = trpc.useUtils();
 
   // Track whether we've sent the auto-mark-read mutation
   const hasSentMarkReadMutation = useRef(false);
 
-  // Fetch the entry with placeholderData from list cache for progressive rendering
-  // This shows the header immediately while full content loads
-  const { data, isLoading, isPlaceholderData, isError, error, refetch } = trpc.entries.get.useQuery(
-    { id: entryId },
-    {
-      placeholderData: () => {
-        const listItem = findEntryInListCache(queryClient, entryId);
-        if (listItem) {
-          return listItemToPlaceholderEntry(listItem);
-        }
-        return undefined;
-      },
-    }
-  );
+  // Fetch the entry - useSuspenseQuery throws promise until data ready
+  // Fallback component shows cached header while this suspends
+  const [data] = trpc.entries.get.useSuspenseQuery({ id: entryId });
 
-  // Use entry data directly (no delta merging)
-  const entry = data?.entry ?? null;
-
-  // Show content skeleton while using placeholder data (header visible, content loading)
-  const isContentLoading = isPlaceholderData;
+  // Entry is guaranteed to exist after suspense resolves
+  const entry = data.entry;
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
 
-  // Prefetch next and previous entries with active observers to keep them in cache
-  // These queries run in parallel and don't block the main entry fetch
-  // We don't use their loading states, so they're invisible to the UI
+  // Prefetch next and previous entries - use regular useQuery since these are optional
+  // and should not suspend the UI
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
@@ -326,25 +306,11 @@ export function EntryContent({
     [entryId, setScore]
   );
 
-  // Determine content based on loading/error/success state
-  // Progressive rendering: show header immediately if we have entry data (even if seeded from list)
-  let content: React.ReactNode;
-  if (isLoading && !entry) {
-    // No cached data at all - show full skeleton
-    content = <EntryContentSkeleton />;
-  } else if (isError && !entry) {
-    // Error with no cached data to show
-    content = (
-      <EntryContentError
-        message={error?.message ?? "Failed to load entry"}
-        onRetry={() => refetch()}
-      />
-    );
-  } else if (!entry) {
-    content = <EntryContentError message="Entry not found" onRetry={() => refetch()} />;
-  } else {
-    // Have entry data (full or seeded from list) - render progressively
-    content = (
+  // Entry is guaranteed to exist after suspense resolves
+  // Wrap in scroll container - each entry gets its own container that starts at scroll 0
+  // ScrollContainer provides context so useImagePrefetch can observe this container
+  return (
+    <ScrollContainer className="h-full overflow-y-auto">
       <EntryContentBody
         articleId={entryId}
         title={entry.title ?? "Untitled"}
@@ -384,17 +350,27 @@ export function EntryContent({
         onSummarize={handleSummarize}
         onSummaryClose={handleSummaryClose}
         onSummaryRegenerate={handleSummaryRegenerate}
-        // Progressive loading - show content skeleton while fetching full data
-        isContentLoading={isContentLoading}
         // Score props
         score={entry.score ?? null}
         implicitScore={entry.implicitScore ?? 0}
         onSetScore={handleSetScore}
       />
-    );
-  }
+    </ScrollContainer>
+  );
+}
 
-  // Wrap in scroll container - each entry gets its own container that starts at scroll 0
-  // ScrollContainer provides context so useImagePrefetch can observe this container
-  return <ScrollContainer className="h-full overflow-y-auto">{content}</ScrollContainer>;
+/**
+ * EntryContent component.
+ *
+ * Wrapper that provides Suspense boundary with smart fallback and error handling.
+ * The fallback shows cached entry metadata from the list while full content loads.
+ */
+export function EntryContent(props: EntryContentProps) {
+  return (
+    <ErrorBoundary message="Failed to load entry">
+      <Suspense fallback={<EntryContentFallback entryId={props.entryId} onBack={props.onBack} />}>
+        <EntryContentInner {...props} />
+      </Suspense>
+    </ErrorBoundary>
+  );
 }
