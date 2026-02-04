@@ -3,6 +3,9 @@
  *
  * Main account settings page content showing user info, linked accounts,
  * change password form, and OPML import/export functionality.
+ *
+ * Each section handles its own loading state to show static content (titles,
+ * descriptions) immediately while dynamic content loads.
  */
 
 "use client";
@@ -23,9 +26,12 @@ import {
 // Import directly from file to avoid barrel export pulling in piper-tts-web
 import { NarrationSettings } from "@/components/narration/NarrationSettings";
 
-function AccountSettingsContentInner() {
+/**
+ * Handles OAuth link success/error messages from query params.
+ * Wrapped in Suspense because useSearchParams requires it.
+ */
+function OAuthMessages() {
   const searchParams = useSearchParams();
-  const userQuery = trpc.auth.me.useQuery();
 
   // Handle link success/error query params
   const linkedProvider = searchParams.get("linked");
@@ -66,123 +72,89 @@ function AccountSettingsContentInner() {
     }
   }, [linkedProvider, linkError]);
 
+  if (!linkSuccessMessage && !linkErrorMessage) {
+    return null;
+  }
+
   return (
-    <div className="space-y-8">
-      {/* Link Success/Error Messages */}
+    <>
       {linkSuccessMessage && <Alert variant="success">{linkSuccessMessage}</Alert>}
-
       {linkErrorMessage && <Alert variant="error">{linkErrorMessage}</Alert>}
+    </>
+  );
+}
 
-      {/* Account Information Section */}
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-          Account Information
-        </h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          {userQuery.isLoading ? (
-            <div className="space-y-4">
-              <div className="h-5 w-48 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-              <div className="h-5 w-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-            </div>
-          ) : userQuery.error ? (
-            <p className="ui-text-sm text-red-600 dark:text-red-400">
-              Failed to load account information
-            </p>
-          ) : (
-            <dl className="space-y-4">
-              <div>
-                <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">Email</dt>
-                <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
-                  {userQuery.data?.user.email}
-                </dd>
-              </div>
-              <div>
-                <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                  Member since
-                </dt>
-                <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
-                  {userQuery.data?.user.createdAt
-                    ? new Date(userQuery.data.user.createdAt).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })
-                    : "Unknown"}
-                </dd>
-              </div>
-              <div>
-                <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                  Email verified
-                </dt>
-                <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
-                  {userQuery.data?.user.emailVerifiedAt ? (
-                    <span className="inline-flex items-center text-green-600 dark:text-green-400">
-                      <svg
-                        className="mr-1 h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      Verified
-                    </span>
-                  ) : (
-                    <span className="text-zinc-500 dark:text-zinc-400">Not verified</span>
-                  )}
-                </dd>
-              </div>
-            </dl>
-          )}
-        </div>
-      </section>
+function AccountInfoSection() {
+  const userQuery = trpc.auth.me.useQuery();
 
-      {/* Linked Accounts Section */}
-      <LinkedAccounts />
-
-      {/* Tags Section */}
-      <TagManagement />
-
-      {/* Password Section */}
-      <PasswordSection />
-
-      {/* OPML Import/Export Section */}
-      <OpmlImportExport />
-
-      {/* Narration Section */}
-      <NarrationSettings />
-
-      {/* Keyboard Shortcuts Section */}
-      <KeyboardShortcutsSettings />
-
-      {/* Privacy & Legal Section */}
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-          Privacy & Legal
-        </h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-            Learn more about how we collect, use, and protect your data.
-          </p>
-          <div className="mt-4">
-            <a
-              href="/privacy"
-              className="ui-text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-            >
-              View Privacy Policy &rarr;
-            </a>
+  return (
+    <section>
+      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
+        Account Information
+      </h2>
+      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        {userQuery.isLoading ? (
+          <div className="space-y-4">
+            <div className="h-5 w-48 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="h-5 w-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
           </div>
-        </div>
-      </section>
-
-      {/* About Section */}
-      <AboutSection />
-    </div>
+        ) : userQuery.error ? (
+          <p className="ui-text-sm text-red-600 dark:text-red-400">
+            Failed to load account information
+          </p>
+        ) : (
+          <dl className="space-y-4">
+            <div>
+              <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">Email</dt>
+              <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
+                {userQuery.data?.user.email}
+              </dd>
+            </div>
+            <div>
+              <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Member since
+              </dt>
+              <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
+                {userQuery.data?.user.createdAt
+                  ? new Date(userQuery.data.user.createdAt).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })
+                  : "Unknown"}
+              </dd>
+            </div>
+            <div>
+              <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Email verified
+              </dt>
+              <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
+                {userQuery.data?.user.emailVerifiedAt ? (
+                  <span className="inline-flex items-center text-green-600 dark:text-green-400">
+                    <svg
+                      className="mr-1 h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                    Verified
+                  </span>
+                ) : (
+                  <span className="text-zinc-500 dark:text-zinc-400">Not verified</span>
+                )}
+              </dd>
+            </div>
+          </dl>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -374,15 +346,55 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
 
 export default function AccountSettingsContent() {
   return (
-    <Suspense
-      fallback={
-        <div className="space-y-6">
-          <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-          <div className="h-48 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
+    <div className="space-y-8">
+      {/* OAuth link success/error messages (needs Suspense for useSearchParams) */}
+      <Suspense fallback={null}>
+        <OAuthMessages />
+      </Suspense>
+
+      {/* Account Information Section - shows title immediately, content loads inline */}
+      <AccountInfoSection />
+
+      {/* Linked Accounts Section - uses SettingsSection which shows title during load */}
+      <LinkedAccounts />
+
+      {/* Tags Section - uses SettingsSection which shows title during load */}
+      <TagManagement />
+
+      {/* Password Section - shows title immediately, content loads inline */}
+      <PasswordSection />
+
+      {/* OPML Import/Export Section - fully static, no data fetching */}
+      <OpmlImportExport />
+
+      {/* Narration Section - fully static/client-side */}
+      <NarrationSettings />
+
+      {/* Keyboard Shortcuts Section - fully static */}
+      <KeyboardShortcutsSettings />
+
+      {/* Privacy & Legal Section - fully static */}
+      <section>
+        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
+          Privacy & Legal
+        </h2>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+            Learn more about how we collect, use, and protect your data.
+          </p>
+          <div className="mt-4">
+            <a
+              href="/privacy"
+              className="ui-text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              View Privacy Policy &rarr;
+            </a>
+          </div>
         </div>
-      }
-    >
-      <AccountSettingsContentInner />
-    </Suspense>
+      </section>
+
+      {/* About Section - fully static */}
+      <AboutSection />
+    </div>
   );
 }
