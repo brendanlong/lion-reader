@@ -16,9 +16,7 @@
 "use client";
 
 import { useMemo, useCallback, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
-import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
 import { type EntryType } from "./useEntryMutations";
 import { buildEntriesListInput } from "@/lib/queries/entries-list-input";
 
@@ -59,14 +57,6 @@ export interface EntryListData {
 }
 
 /**
- * Subscription info for tag filtering in placeholder data.
- */
-interface SubscriptionForPlaceholder {
-  id: string;
-  tags: Array<{ id: string }>;
-}
-
-/**
  * Options for the useEntryListQuery hook.
  */
 export interface UseEntryListQueryOptions {
@@ -91,13 +81,6 @@ export interface UseEntryListQueryOptions {
    * @default 3
    */
   prefetchThreshold?: number;
-
-  /**
-   * Subscription data for tag filtering in placeholder data.
-   * Pass the result of subscriptions.list query to enable placeholder data
-   * for tag-filtered and uncategorized views.
-   */
-  subscriptions?: SubscriptionForPlaceholder[];
 }
 
 /**
@@ -111,18 +94,21 @@ export interface UseEntryListQueryResult {
 
   /**
    * Whether the initial load is in progress.
+   * Always false with suspense queries (component suspends instead).
    */
-  isLoading: boolean;
+  isLoading: false;
 
   /**
    * Whether there was an error loading entries.
+   * Always false with suspense queries (errors thrown to ErrorBoundary).
    */
-  isError: boolean;
+  isError: false;
 
   /**
    * Error message if isError is true.
+   * Always undefined with suspense queries.
    */
-  errorMessage?: string;
+  errorMessage: undefined;
 
   /**
    * Whether more entries are being fetched.
@@ -170,15 +156,15 @@ export interface UseEntryListQueryResult {
 /**
  * Hook for managing entry list queries with navigation support.
  *
+ * Uses useSuspenseInfiniteQuery for proper streaming SSR - the component
+ * will suspend until data is ready, preventing hydration mismatches.
+ *
  * Unlike using the infinite query directly in EntryList, this hook
  * stays mounted even when viewing an entry, enabling seamless
  * navigation beyond initially loaded entries.
  */
 export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryListQueryResult {
-  const { filters, pageSize = 10, openEntryId, prefetchThreshold = 3, subscriptions } = options;
-
-  // Get query client for placeholder data lookup
-  const queryClient = useQueryClient();
+  const { filters, pageSize = 10, openEntryId, prefetchThreshold = 3 } = options;
 
   // Build input using shared function to ensure cache key matches server prefetch
   const queryInput = useMemo(
@@ -200,29 +186,16 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
     [filters, pageSize]
   );
 
-  // Use infinite query for cursor-based pagination
-  // Note: refetchOnMount is false - we handle refetch on pathname change via effect below
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    refetch,
-  } = trpc.entries.list.useInfiniteQuery(queryInput, {
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    // Never automatically mark as stale - sidebar navigation explicitly marks queries stale
-    // This prevents read entries from disappearing while browsing within a view
-    staleTime: Infinity,
-    // Refetch on mount if data is stale (sidebar marks stale on navigation)
-    refetchOnMount: true,
-    refetchOnWindowFocus: false,
-    // Use parent list as placeholder data for immediate display while fetching
-    // This provides entries from a broader cached list (e.g., "All" list for subscription view)
-    placeholderData: () => findParentListPlaceholderData(queryClient, filters, subscriptions),
-  });
+  // Use suspense infinite query for proper streaming SSR
+  // This suspends until data is ready, preventing hydration mismatches
+  const [data, { fetchNextPage, hasNextPage, isFetchingNextPage, refetch }] =
+    trpc.entries.list.useSuspenseInfiniteQuery(queryInput, {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      // Never automatically mark as stale - sidebar navigation explicitly marks queries stale
+      // This prevents read entries from disappearing while browsing within a view
+      staleTime: Infinity,
+      refetchOnWindowFocus: false,
+    });
 
   // Flatten all pages into a single array of entries
   const entries: EntryListData[] = useMemo(() => {
@@ -337,9 +310,11 @@ export function useEntryListQuery(options: UseEntryListQueryOptions): UseEntryLi
 
   return {
     entries,
-    isLoading,
-    isError,
-    errorMessage: error?.message,
+    // With suspense queries, component suspends instead of showing loading state
+    isLoading: false as const,
+    // With suspense queries, errors are thrown to ErrorBoundary
+    isError: false as const,
+    errorMessage: undefined,
     isFetchingNextPage,
     hasNextPage: hasNextPage ?? false,
     fetchNextPage,

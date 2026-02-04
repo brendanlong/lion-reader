@@ -161,16 +161,11 @@ export function useEntryPage(options: UseEntryPageOptions): UseEntryPageResult {
     [filters, showUnreadOnly, sortOrder]
   );
 
-  // Get cached subscriptions for placeholder data (don't trigger fetch)
-  // Only use subscriptions if already cached from server prefetch or sidebar
-  const cachedSubscriptions = utils.subscriptions.list.getData();
-
-  // Entry list query
+  // Entry list query - uses suspense, so will suspend until data is ready
+  // Placeholder data is handled by the Suspense fallback component
   const entryListQuery = useEntryListQuery({
     filters: combinedFilters,
     openEntryId,
-    // Pass cached subscriptions for tag filtering in placeholder data
-    subscriptions: cachedSubscriptions?.items,
   });
 
   // Use entries directly from query (no delta merging)

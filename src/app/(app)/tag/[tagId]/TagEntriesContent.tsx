@@ -3,17 +3,24 @@
  *
  * Client component that displays entries from a specific tag or uncategorized feeds.
  * Used by the page.tsx server component which handles SSR prefetching.
+ *
+ * Uses Suspense with a smart fallback that shows cached entries while loading.
  */
 
 "use client";
 
 import { Suspense } from "react";
 import { useParams } from "next/navigation";
-import { EntryPageLayout } from "@/components/entries";
+import { EntryPageLayout, EntryListFallback } from "@/components/entries";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui";
 import { useEntryPage } from "@/lib/hooks";
+import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { trpc } from "@/lib/trpc/client";
-import { UncategorizedEntriesContentInner } from "@/app/(app)/uncategorized/UncategorizedEntriesContent";
+import {
+  UncategorizedEntriesContentInner,
+  UncategorizedEntriesFallback,
+} from "@/app/(app)/uncategorized/UncategorizedEntriesContent";
 
 /**
  * Content for regular tag entries.
@@ -25,7 +32,7 @@ function TagContent({ tagId }: { tagId: string }) {
     filters: { tagId },
   });
 
-  // Fetch tag info
+  // Fetch tag info (should be cached from layout prefetch)
   const tagsQuery = trpc.tags.list.useQuery();
   const tag = tagsQuery.data?.items.find((t) => t.id === tagId);
   const tagName = tag?.name ?? null;
@@ -61,10 +68,35 @@ function TagEntriesContentInner() {
   return <TagContent tagId={tagId} />;
 }
 
+function TagEntriesFallback() {
+  const params = useParams<{ tagId: string }>();
+  const tagId = params.tagId;
+  const isUncategorized = tagId === "uncategorized";
+  const { showUnreadOnly, sortOrder } = useUrlViewPreferences();
+
+  if (isUncategorized) {
+    return <UncategorizedEntriesFallback />;
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+      </div>
+      <EntryListFallback
+        filters={{ tagId, unreadOnly: showUnreadOnly, sortOrder }}
+        skeletonCount={5}
+      />
+    </div>
+  );
+}
+
 export function TagEntriesContent() {
   return (
-    <Suspense>
-      <TagEntriesContentInner />
-    </Suspense>
+    <ErrorBoundary message="Failed to load entries">
+      <Suspense fallback={<TagEntriesFallback />}>
+        <TagEntriesContentInner />
+      </Suspense>
+    </ErrorBoundary>
   );
 }

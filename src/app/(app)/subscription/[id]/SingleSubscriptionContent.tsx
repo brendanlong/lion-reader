@@ -3,6 +3,8 @@
  *
  * Client component that displays entries from a specific subscription.
  * Used by the page.tsx server component which handles SSR prefetching.
+ *
+ * Uses Suspense with a smart fallback that shows cached entries while loading.
  */
 
 "use client";
@@ -10,9 +12,11 @@
 import { Suspense, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { EntryPageLayout } from "@/components/entries";
+import { EntryPageLayout, EntryListFallback } from "@/components/entries";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui";
 import { useEntryPage } from "@/lib/hooks";
+import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache";
 
@@ -70,10 +74,30 @@ function SingleSubscriptionContentInner() {
   );
 }
 
+function SingleSubscriptionFallback() {
+  const params = useParams<{ id: string }>();
+  const subscriptionId = params.id;
+  const { showUnreadOnly, sortOrder } = useUrlViewPreferences();
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+      </div>
+      <EntryListFallback
+        filters={{ subscriptionId, unreadOnly: showUnreadOnly, sortOrder }}
+        skeletonCount={5}
+      />
+    </div>
+  );
+}
+
 export function SingleSubscriptionContent() {
   return (
-    <Suspense>
-      <SingleSubscriptionContentInner />
-    </Suspense>
+    <ErrorBoundary message="Failed to load entries">
+      <Suspense fallback={<SingleSubscriptionFallback />}>
+        <SingleSubscriptionContentInner />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
