@@ -315,7 +315,7 @@ function ImportSection() {
       {(importState.type === "queuing" || importState.type === "importing") && (
         <div className="py-4">
           <div className="mb-2 flex items-center">
-            <SpinnerIcon className="h-5 w-5 text-blue-500" />
+            <SpinnerIcon className="text-accent h-5 w-5" />
             <span className="ui-text-sm ml-2 font-medium text-zinc-700 dark:text-zinc-300">
               Importing feeds...
             </span>
@@ -324,7 +324,7 @@ function ImportSection() {
             <div className="mb-2">
               <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                 <div
-                  className="h-full bg-blue-500 transition-all duration-300"
+                  className="bg-accent h-full transition-all duration-300"
                   style={{
                     width: `${((importQuery.data.importedCount + importQuery.data.skippedCount + importQuery.data.failedCount) / importState.totalFeeds) * 100}%`,
                   }}
