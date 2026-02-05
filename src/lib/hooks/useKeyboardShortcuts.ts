@@ -21,15 +21,7 @@
 
 "use client";
 
-import {
-  useState,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useMemo,
-  type RefObject,
-} from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type EntryType } from "./useEntryMutations";
 import { clientPush } from "@/lib/navigation";
@@ -119,13 +111,6 @@ export interface UseKeyboardShortcutsOptions {
    * The parent computes the previous entry ID from the entries list.
    */
   onNavigatePrevious?: () => void;
-
-  /**
-   * Reference to the scroll container element.
-   * Used to correctly calculate whether the selected entry is visible
-   * and to scroll it into view.
-   */
-  scrollContainerRef?: RefObject<HTMLElement | null> | null;
 }
 
 /**
@@ -212,7 +197,6 @@ export function useKeyboardShortcuts(
     onToggleStar,
     onRefresh,
     onToggleUnreadOnly,
-    scrollContainerRef,
   } = options;
 
   // When an entry is open, sync selectedEntryId to openEntryId
@@ -326,37 +310,6 @@ export function useKeyboardShortcuts(
   // If not, we use null instead. This avoids setting state in an effect.
   const isSelectedEntryValid = selectedEntryId === null || entryIds.includes(selectedEntryId);
   const effectiveSelectedEntryId = isSelectedEntryValid ? selectedEntryId : null;
-
-  // Scroll selected entry into view when returning from entry view, but only if
-  // the entry isn't already visible. This handles the case where the user navigated
-  // with j/k while viewing entries, so the list needs to scroll to match.
-  // When selecting from the list directly, the entry is already visible so no scroll occurs.
-  useLayoutEffect(() => {
-    if (effectiveSelectedEntryId && !isEntryOpen) {
-      const element = document.querySelector(`[data-entry-id="${effectiveSelectedEntryId}"]`);
-      if (element) {
-        const scrollContainer = scrollContainerRef?.current;
-        const rect = element.getBoundingClientRect();
-
-        let isInView: boolean;
-        if (scrollContainer) {
-          // Calculate visibility relative to the scroll container
-          const containerRect = scrollContainer.getBoundingClientRect();
-          isInView = rect.top >= containerRect.top && rect.bottom <= containerRect.bottom;
-        } else {
-          // Fallback to viewport if no scroll container
-          isInView = rect.top >= 0 && rect.bottom <= window.innerHeight;
-        }
-
-        if (!isInView) {
-          element.scrollIntoView({
-            behavior: "instant",
-            block: "center",
-          });
-        }
-      }
-    }
-  }, [effectiveSelectedEntryId, isEntryOpen, scrollContainerRef]);
 
   // Keyboard shortcuts
   // j - next entry (select in list, or navigate to next when viewing)

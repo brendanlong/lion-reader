@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useMemo, useCallback, useEffect, useRef } from "react";
+import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -103,6 +103,37 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     prevDistanceToEnd.current = distanceToEnd;
   }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  // Scroll to last viewed entry when returning from entry view to list
+  // We track the previous openEntryId to know which entry to scroll to
+  const prevOpenEntryIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const prevOpenEntryId = prevOpenEntryIdRef.current;
+    const isClosing = prevOpenEntryId && !openEntryId;
+
+    if (isClosing) {
+      const element = document.querySelector(`[data-entry-id="${prevOpenEntryId}"]`);
+      if (element) {
+        const scrollContainer = scrollContainerRef?.current;
+        const rect = element.getBoundingClientRect();
+
+        let isInView: boolean;
+        if (scrollContainer) {
+          const containerRect = scrollContainer.getBoundingClientRect();
+          isInView = rect.top >= containerRect.top && rect.bottom <= containerRect.bottom;
+        } else {
+          isInView = rect.top >= 0 && rect.bottom <= window.innerHeight;
+        }
+
+        if (!isInView) {
+          element.scrollIntoView({ behavior: "instant", block: "center" });
+        }
+      }
+    }
+
+    // Update ref after the effect runs (this is allowed in effects)
+    prevOpenEntryIdRef.current = openEntryId;
+  }, [openEntryId, scrollContainerRef]);
+
   // Navigation callbacks for keyboard shortcuts (j/k when viewing an entry)
   const goToNextEntry = useCallback(() => {
     if (nextEntryId) {
@@ -148,7 +179,6 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     onToggleUnreadOnly: toggleShowUnreadOnly,
     onNavigateNext: goToNextEntry,
     onNavigatePrevious: goToPreviousEntry,
-    scrollContainerRef,
   });
 
   // External query state for EntryList
