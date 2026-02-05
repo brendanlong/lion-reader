@@ -49,7 +49,7 @@ export default async function ExtensionCallbackPage({ searchParams }: PageProps)
               Something Went Wrong
             </h1>
             <p className="mb-4 text-zinc-600 dark:text-zinc-400">
-              {error || "Failed to complete the save operation."}
+              {error ?? "Failed to complete the save operation."}
             </p>
             <p className="ui-text-sm text-zinc-400 dark:text-zinc-600">
               Please close this tab and try again.

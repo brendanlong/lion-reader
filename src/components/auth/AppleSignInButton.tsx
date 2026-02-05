@@ -64,7 +64,7 @@ export function AppleSignInButton({
       const result = await appleAuthUrlQuery.refetch();
 
       if (result.error) {
-        const errorMessage = result.error.message || "Failed to start Apple sign-in";
+        const errorMessage = result.error.message ?? "Failed to start Apple sign-in";
         onError?.(errorMessage);
         setIsLoading(false);
         return;

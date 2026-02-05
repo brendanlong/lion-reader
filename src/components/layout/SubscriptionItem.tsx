@@ -36,7 +36,7 @@ export function SubscriptionItem({
   onEdit,
   onUnsubscribe,
 }: SubscriptionItemProps) {
-  const displayTitle = subscription.title || "Untitled Feed";
+  const displayTitle = subscription.title ?? "Untitled Feed";
   const subHref = `/subscription/${subscription.id}`;
 
   return (

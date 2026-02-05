@@ -199,7 +199,7 @@ function SaveContent() {
   const isAuthError = activeMutation.error?.data?.code === "UNAUTHORIZED";
 
   // Check if error is a Google Docs permission error
-  const errorMessage = activeMutation.error?.message || "";
+  const errorMessage = activeMutation.error?.message;
   const needsDocsPermission = errorMessage === "NEEDS_DOCS_PERMISSION";
   const needsGoogleSignin = errorMessage === "NEEDS_GOOGLE_SIGNIN";
   const needsGoogleReauth = errorMessage === "NEEDS_GOOGLE_REAUTH";
@@ -233,7 +233,7 @@ function SaveContent() {
             </h1>
             <Alert variant="error" className="mt-4">
               {shareError
-                ? errorMessages[shareError] || "An error occurred."
+                ? (errorMessages[shareError] ?? "An error occurred.")
                 : "No URL or file provided. Use the bookmarklet or share from another app."}
             </Alert>
             <Button variant="secondary" className="mt-4 w-full" onClick={handleClose}>

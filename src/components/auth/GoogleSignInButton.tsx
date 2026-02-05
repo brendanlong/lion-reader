@@ -54,7 +54,7 @@ export function GoogleSignInButton({
       const result = await googleAuthUrlQuery.refetch();
 
       if (result.error) {
-        const errorMessage = result.error.message || "Failed to start Google sign-in";
+        const errorMessage = result.error.message ?? "Failed to start Google sign-in";
         onError?.(errorMessage);
         setIsLoading(false);
         return;

@@ -148,7 +148,7 @@ export function AppearanceSettings() {
                   ? "Following system preference"
                   : undefined
             }
-            value={theme || "system"}
+            value={theme ?? "system"}
             options={THEME_OPTIONS}
             onChange={setTheme}
           />

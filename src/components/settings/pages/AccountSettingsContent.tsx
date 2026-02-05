@@ -48,7 +48,7 @@ function OAuthMessages() {
       already_linked: "This account is already linked to another user.",
     };
 
-    return errorMessages[linkError] || "An error occurred while linking your account.";
+    return errorMessages[linkError] ?? "An error occurred while linking your account.";
   }, [linkError]);
 
   const linkSuccessMessage = useMemo(() => {
@@ -204,7 +204,7 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
       onSuccess();
     },
     onError: (error) => {
-      setErrors({ form: error.message || "Failed to set password" });
+      setErrors({ form: error.message ?? "Failed to set password" });
       setSuccessMessage("");
       toast.error("Failed to set password");
     },
@@ -222,7 +222,7 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
       if (error.message.includes("Current password is incorrect")) {
         setErrors({ currentPassword: "Current password is incorrect" });
       } else {
-        setErrors({ form: error.message || "Failed to change password" });
+        setErrors({ form: error.message ?? "Failed to change password" });
       }
       setSuccessMessage("");
       toast.error("Failed to change password");

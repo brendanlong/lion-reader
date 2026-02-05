@@ -54,7 +54,7 @@ export function DiscordSignInButton({
       const result = await discordAuthUrlQuery.refetch();
 
       if (result.error) {
-        const errorMessage = result.error.message || "Failed to start Discord sign-in";
+        const errorMessage = result.error.message ?? "Failed to start Discord sign-in";
         onError?.(errorMessage);
         setIsLoading(false);
         return;

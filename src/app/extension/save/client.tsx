@@ -33,7 +33,7 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
             Failed to Save
           </h1>
           <p className="mb-4 text-zinc-600 dark:text-zinc-400">
-            {error || "An error occurred while saving the article."}
+            {error ?? "An error occurred while saving the article."}
           </p>
           {url && (
             <p className="ui-text-sm mb-4 break-all text-zinc-500 dark:text-zinc-500">{url}</p>

@@ -204,7 +204,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
       toast.success("Address updated");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to update address");
+      toast.error(error.message ?? "Failed to update address");
     },
   });
 
@@ -215,7 +215,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
       toast.success("Address deleted");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to delete address");
+      toast.error(error.message ?? "Failed to delete address");
     },
   });
 

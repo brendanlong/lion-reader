@@ -12,7 +12,7 @@ import { Dialog, DialogTitle, DialogDescription, DialogFooter, Button } from "@/
 
 interface UnsubscribeDialogProps {
   isOpen: boolean;
-  feedTitle: string;
+  feedTitle: string | null;
   isLoading: boolean;
   onConfirm: () => void;
   onCancel: () => void;

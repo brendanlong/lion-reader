@@ -62,7 +62,7 @@ function RegisterForm() {
         }
       } else {
         setErrors({
-          form: error.message || "An error occurred. Please try again.",
+          form: error.message ?? "An error occurred. Please try again.",
         });
       }
     },

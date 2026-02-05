@@ -76,7 +76,7 @@ export function LinkedAccounts() {
       utils.users["me.linkedAccounts"].invalidate();
     },
     onError: (err) => {
-      showError(err.message || "Failed to unlink account");
+      showError(err.message ?? "Failed to unlink account");
       setUnlinkingProvider(null);
       toast.error("Failed to unlink account");
     },

@@ -94,7 +94,7 @@ export default function SessionsSettingsContent() {
       utils.users["me.sessions"].invalidate();
     },
     onError: (error) => {
-      setRevokeError(error.message || "Failed to revoke session");
+      setRevokeError(error.message ?? "Failed to revoke session");
       setRevokeSuccess(null);
       toast.error("Failed to revoke session");
     },
@@ -210,7 +210,7 @@ export default function SessionsSettingsContent() {
                           </span>
                         )}
                         <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-                          {session.ipAddress || "Unknown IP"}
+                          {session.ipAddress ?? "Unknown IP"}
                         </p>
                       </div>
                     </div>

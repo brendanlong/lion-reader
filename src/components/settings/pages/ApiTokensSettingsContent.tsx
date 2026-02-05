@@ -75,7 +75,7 @@ export default function ApiTokensSettingsContent() {
       toast.success("API token created");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to create token");
+      toast.error(error.message ?? "Failed to create token");
     },
   });
 
@@ -85,7 +85,7 @@ export default function ApiTokensSettingsContent() {
       toast.success("Token revoked");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to revoke token");
+      toast.error(error.message ?? "Failed to revoke token");
     },
   });
 
@@ -331,7 +331,7 @@ export default function ApiTokensSettingsContent() {
 
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-zinc-900 dark:text-zinc-50">
-                          {token.name || "Unnamed Token"}
+                          {token.name ?? "Unnamed Token"}
                         </p>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {token.scopes.map((scope) => (
@@ -420,7 +420,7 @@ export default function ApiTokensSettingsContent() {
                   </div>
                   <div>
                     <p className="font-medium text-zinc-700 dark:text-zinc-400">
-                      {token.name || "Unnamed Token"}
+                      {token.name ?? "Unnamed Token"}
                     </p>
                     <p className="ui-text-xs text-zinc-500 dark:text-zinc-500">
                       {token.revokedAt

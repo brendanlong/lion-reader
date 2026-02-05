@@ -252,7 +252,7 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
       toast.success("Feed fetch scheduled");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to retry fetch");
+      toast.error(error.message ?? "Failed to retry fetch");
     },
     onSettled: () => {
       setIsRetrying(false);

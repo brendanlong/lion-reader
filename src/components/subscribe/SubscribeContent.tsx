@@ -315,7 +315,7 @@ export function SubscribeContent() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-zinc-900 dark:text-zinc-50">
-                          {feed.title || "Untitled Feed"}
+                          {feed.title ?? "Untitled Feed"}
                         </p>
                         <span className="ui-text-xs inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
                           {getFeedTypeLabel(feed.type)}

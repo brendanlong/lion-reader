@@ -112,7 +112,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
       utils.tags.list.invalidate();
     },
     onError: (err) => {
-      onError(err.message || "Failed to create tag");
+      onError(err.message ?? "Failed to create tag");
       toast.error("Failed to create tag");
     },
   });
@@ -204,7 +204,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
       utils.tags.list.invalidate();
     },
     onError: (err) => {
-      onError(err.message || "Failed to update tag");
+      onError(err.message ?? "Failed to update tag");
       toast.error("Failed to update tag");
     },
   });
@@ -216,7 +216,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
       utils.tags.list.invalidate();
     },
     onError: (err) => {
-      onError(err.message || "Failed to delete tag");
+      onError(err.message ?? "Failed to delete tag");
       toast.error("Failed to delete tag");
     },
   });

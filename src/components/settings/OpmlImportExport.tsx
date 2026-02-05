@@ -161,7 +161,7 @@ function ImportSection() {
       }
     },
     onError: (err) => {
-      setError(err.message || "Failed to import feeds");
+      setError(err.message ?? "Failed to import feeds");
       setBaseState({ type: "idle" });
       toast.error("Failed to import feeds");
     },
@@ -388,7 +388,7 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
           {displayedFeeds.map((feed, index) => (
             <li key={`${feed.xmlUrl}-${index}`} className="px-4 py-3">
               <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {feed.title || "Untitled Feed"}
+                {feed.title ?? "Untitled Feed"}
               </p>
               <p className="ui-text-xs mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
                 {feed.xmlUrl}
@@ -479,7 +479,7 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
                         <p className="ui-text-sm truncate font-medium text-zinc-900 dark:text-zinc-50">
-                          {result.title || "Untitled Feed"}
+                          {result.title ?? "Untitled Feed"}
                         </p>
                         <p className="ui-text-xs truncate text-zinc-500 dark:text-zinc-400">
                           {result.url}

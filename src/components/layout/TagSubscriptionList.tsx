@@ -100,7 +100,7 @@ export function TagSubscriptionList({
           onEdit={() =>
             onEdit({
               id: sub.id,
-              title: sub.title || "Untitled Feed",
+              title: sub.title ?? "Untitled Feed",
               customTitle: sub.title !== sub.originalTitle ? sub.title : null,
               tagIds: sub.tags.map((t) => t.id),
             })
@@ -108,7 +108,7 @@ export function TagSubscriptionList({
           onUnsubscribe={() =>
             onUnsubscribe({
               id: sub.id,
-              title: sub.title || "Untitled Feed",
+              title: sub.title ?? "Untitled Feed",
             })
           }
         />

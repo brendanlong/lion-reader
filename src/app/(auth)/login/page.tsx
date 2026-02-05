@@ -83,7 +83,7 @@ function LoginForm() {
       invite_already_used: "This invite has already been used. Please request a new invite.",
     };
 
-    return errorMessages[oauthError] || "An error occurred during sign-in. Please try again.";
+    return errorMessages[oauthError] ?? "An error occurred during sign-in. Please try again.";
   }, [oauthError]);
 
   const loginMutation = trpc.auth.login.useMutation({
@@ -101,7 +101,7 @@ function LoginForm() {
       if (error.data?.code === "UNAUTHORIZED") {
         setErrors({ form: "Invalid email or password" });
       } else {
-        setErrors({ form: error.message || "An error occurred. Please try again." });
+        setErrors({ form: error.message ?? "An error occurred. Please try again." });
       }
     },
   });

@@ -18,9 +18,9 @@ import DOMPurify from "isomorphic-dompurify";
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   // Add target="_blank" for external links
   if (node.tagName === "A" && node.hasAttribute("href")) {
-    const href = node.getAttribute("href") ?? "";
+    const href = node.getAttribute("href");
     // Only add target="_blank" for http/https links (external links)
-    if (href.startsWith("http://") || href.startsWith("https://")) {
+    if (href?.startsWith("http://") || href?.startsWith("https://")) {
       node.setAttribute("target", "_blank");
       node.setAttribute("rel", "noopener noreferrer");
     }
@@ -603,8 +603,8 @@ export function EntryContentBody({
       {/* Show regenerate button on error (to retry) or when settings have changed */}
       {showSummary && (summary || summaryError || isSummarizing) && (
         <SummaryCard
-          summary={summary?.text ?? ""}
-          modelId={summary?.modelId ?? ""}
+          summary={summary?.text}
+          modelId={summary?.modelId}
           generatedAt={summary?.generatedAt ?? null}
           isLoading={isSummarizing}
           error={summaryError}
