@@ -204,7 +204,7 @@ function removeSubscriptionFromInfiniteQueries(
  * - entries.count({ type: "saved" }) for saved entries
  *
  * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
- * useEntryListQuery refetches on pathname change, so lists update on next navigation.
+ * SuspendingEntryList refetches on pathname change, so lists update on next navigation.
  *
  * @param utils - tRPC utils for cache access
  * @param entries - Entries with their context (subscriptionId, starred, type)
@@ -507,7 +507,7 @@ export function handleSubscriptionDeleted(
  * Does NOT invalidate entries.list - new entries appear on next navigation.
  * Note: We don't have full entry data from SSE events, so we can't update
  * entries.get or entries.list caches. That's OK - entries will be fetched
- * when user navigates to that view (useEntryListQuery refetches on pathname change).
+ * when user navigates to that view (SuspendingEntryList refetches on pathname change).
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionId - Subscription the entry belongs to

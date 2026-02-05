@@ -6,7 +6,7 @@
  * Strategy:
  * - For individual entry views (entries.get): update directly
  * - For entry lists (entries.list): update in place without invalidation
- *   (entries stay visible until navigation; useEntryListQuery refetches on pathname change)
+ *   (entries stay visible until navigation; SuspendingEntryList refetches on pathname change)
  * - For counts (subscriptions, tags): update directly via count-cache helpers
  */
 

@@ -88,16 +88,10 @@ hooks: {
     tooltip: "Mutations with direct cache updates"
   }
 
-  useEntryListQuery: {
-    label: useEntryListQuery
+  useKeyboardShortcuts: {
+    label: useKeyboardShortcuts
     shape: rectangle
-    tooltip: "Infinite query with navigation helpers"
-  }
-
-  useEntryPage: {
-    label: useEntryPage
-    shape: rectangle
-    tooltip: "Combines queries, mutations, view state"
+    tooltip: "Keyboard navigation and entry selection"
   }
 }
 
@@ -113,6 +107,18 @@ ui: {
     label: Sidebar
     shape: rectangle
     tooltip: "Subscription list with unread counts"
+  }
+
+  unified_entries: {
+    label: UnifiedEntriesContent
+    shape: rectangle
+    tooltip: "Unified entry page with navigation and swipe support"
+  }
+
+  suspending_list: {
+    label: SuspendingEntryList
+    shape: rectangle
+    tooltip: "Entry list with Suspense and keyboard navigation"
   }
 
   entry_list: {
@@ -164,11 +170,15 @@ client.cache_helpers -> client.react_query: "Direct cache updates" {
 # Connections - Query Data Flow
 # ==============================================================================
 
-client.react_query -> hooks.useEntryListQuery: "Paginated entries" {
+client.react_query -> ui.unified_entries: "Paginated entries\n(non-suspending)" {
   style.stroke: "#7b1fa2"
 }
 
-hooks.useEntryListQuery -> ui.entry_list: "Entries with\nread/starred state" {
+client.react_query -> ui.suspending_list: "Paginated entries\n(suspending)" {
+  style.stroke: "#7b1fa2"
+}
+
+ui.suspending_list -> ui.entry_list: "Entries with\nread/starred state" {
   style.stroke: "#7b1fa2"
   style.stroke-width: 2
 }
@@ -205,20 +215,15 @@ hooks.useEntryMutations -> client.react_query: "4. Invalidate\nentry lists" {
 }
 
 # ==============================================================================
-# Connections - Page Hook
+# Connections - Navigation and Keyboard
 # ==============================================================================
 
-hooks.useEntryPage -> hooks.useEntryMutations {
+ui.suspending_list -> hooks.useKeyboardShortcuts: "Keyboard navigation" {
   style.stroke: "#9e9e9e"
   style.stroke-dash: 3
 }
 
-hooks.useEntryPage -> hooks.useEntryListQuery {
-  style.stroke: "#9e9e9e"
-  style.stroke-dash: 3
-}
-
-hooks.useEntryPage -> ui.entry_content {
+ui.unified_entries -> ui.entry_content: "Entry view with\nswipe navigation" {
   style.stroke: "#9e9e9e"
   style.stroke-dash: 3
 }

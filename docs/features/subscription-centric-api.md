@@ -347,7 +347,7 @@ Files changed:
 
 Files changed:
 
-- `src/lib/hooks/useEntryListQuery.ts` - Use `subscriptionId` instead of `feedId`
+- `src/lib/hooks/useEntriesListInput.ts` - Use `subscriptionId` instead of `feedId`
 - `src/lib/hooks/useEntryMutations.ts` - Update cache keys if needed
 
 ### Commit 7: Update entry components for subscriptionId
@@ -402,7 +402,7 @@ Files changed:
 | File                                           | Change                      |
 | ---------------------------------------------- | --------------------------- |
 | `src/components/layout/Sidebar.tsx`            | Use flat subscription shape |
-| `src/lib/hooks/useEntryListQuery.ts`           | Use subscriptionId          |
+| `src/lib/hooks/useEntriesListInput.ts`         | Use subscriptionId          |
 | `src/lib/hooks/useEntryMutations.ts`           | Update cache handling       |
 | `src/components/entries/EntryList.tsx`         | Use subscriptionId          |
 | `src/components/entries/EntryListItem.tsx`     | Use subscriptionId          |

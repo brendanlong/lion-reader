@@ -14,7 +14,7 @@
 
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
@@ -347,22 +347,40 @@ function UnifiedEntriesContentInner() {
   }, [routeInfo.filters]);
 
   // Get adjacent entry IDs from query data for navigation
+  // Also compute distance to end for pagination triggering
   const pages = entriesQuery.data?.pages;
-  const { nextEntryId, previousEntryId } = useMemo(() => {
+  const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(() => {
     if (!openEntryId || !pages) {
-      return { nextEntryId: undefined, previousEntryId: undefined };
+      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
     }
     const allEntries = pages.flatMap((page) => page.items);
     const currentIndex = allEntries.findIndex((e) => e.id === openEntryId);
     if (currentIndex === -1) {
-      return { nextEntryId: undefined, previousEntryId: undefined };
+      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
     }
     return {
       nextEntryId:
         currentIndex < allEntries.length - 1 ? allEntries[currentIndex + 1].id : undefined,
       previousEntryId: currentIndex > 0 ? allEntries[currentIndex - 1].id : undefined,
+      distanceToEnd: allEntries.length - 1 - currentIndex,
     };
   }, [openEntryId, pages]);
+
+  // Trigger pagination when navigating close to the end of loaded entries
+  // This ensures swipe navigation can continue beyond the initial page
+  const prevDistanceToEnd = useRef(distanceToEnd);
+  useEffect(() => {
+    const PAGINATION_THRESHOLD = 3;
+    if (
+      distanceToEnd <= PAGINATION_THRESHOLD &&
+      distanceToEnd < prevDistanceToEnd.current &&
+      entriesQuery.hasNextPage &&
+      !entriesQuery.isFetchingNextPage
+    ) {
+      entriesQuery.fetchNextPage();
+    }
+    prevDistanceToEnd.current = distanceToEnd;
+  }, [distanceToEnd, entriesQuery]);
 
   // Navigation callbacks - just update URL, React re-renders
   const handleSwipeNext = useMemo(() => {

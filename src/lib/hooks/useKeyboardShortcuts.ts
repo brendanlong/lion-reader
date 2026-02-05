@@ -21,7 +21,7 @@
 
 "use client";
 
-import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type EntryType } from "./useEntryMutations";
 import { clientPush } from "@/lib/navigation";
@@ -102,13 +102,13 @@ export interface UseKeyboardShortcutsOptions {
 
   /**
    * Callback when user presses j to navigate to next entry (while viewing).
-   * The parent should use useEntryListQuery's getNextEntryId() to compute the next entry.
+   * The parent computes the next entry ID from the entries list.
    */
   onNavigateNext?: () => void;
 
   /**
    * Callback when user presses k to navigate to previous entry (while viewing).
-   * The parent should use useEntryListQuery's getPreviousEntryId() to compute the previous entry.
+   * The parent computes the previous entry ID from the entries list.
    */
   onNavigatePrevious?: () => void;
 }
@@ -310,27 +310,6 @@ export function useKeyboardShortcuts(
   // If not, we use null instead. This avoids setting state in an effect.
   const isSelectedEntryValid = selectedEntryId === null || entryIds.includes(selectedEntryId);
   const effectiveSelectedEntryId = isSelectedEntryValid ? selectedEntryId : null;
-
-  // Scroll selected entry into view when returning from entry view, but only if
-  // the entry isn't already visible. This handles the case where the user navigated
-  // with j/k while viewing entries, so the list needs to scroll to match.
-  // When selecting from the list directly, the entry is already visible so no scroll occurs.
-  useLayoutEffect(() => {
-    if (effectiveSelectedEntryId && !isEntryOpen) {
-      const element = document.querySelector(`[data-entry-id="${effectiveSelectedEntryId}"]`);
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        const isInView = rect.top >= 0 && rect.bottom <= window.innerHeight;
-
-        if (!isInView) {
-          element.scrollIntoView({
-            behavior: "instant",
-            block: "center",
-          });
-        }
-      }
-    }
-  }, [effectiveSelectedEntryId, isEntryOpen]);
 
   // Keyboard shortcuts
   // j - next entry (select in list, or navigate to next when viewing)

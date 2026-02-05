@@ -16,20 +16,12 @@ export { useEntryUrlState } from "./useEntryUrlState";
 
 export { useExpandedTags } from "./useExpandedTags";
 
-export { useEntryListQuery, type EntryListData } from "./useEntryListQuery";
+export { type EntryListData } from "./types";
 
 export { useEntriesListInput } from "./useEntriesListInput";
 
 export { useShowOriginalPreference } from "./useShowOriginalPreference";
 
-export { useEntryPage, type UseEntryPageOptions, type UseEntryPageResult } from "./useEntryPage";
-
 export { useImagePrefetch } from "./useImagePrefetch";
-
-export {
-  useInfiniteScrollConfig,
-  type InfiniteScrollConfig,
-  type UseInfiniteScrollConfigOptions,
-} from "./useInfiniteScrollConfig";
 
 export { useFormMessages } from "./useFormMessages";
