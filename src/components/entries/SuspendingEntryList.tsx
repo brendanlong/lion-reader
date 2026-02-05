@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -19,6 +19,7 @@ import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
+import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
 
 interface SuspendingEntryListProps {
@@ -30,6 +31,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
+  const scrollContainerRef = useScrollContainer();
 
   // Get query input from URL - shared with parent's non-suspending query
   const queryInput = useEntriesListInput();
@@ -68,19 +70,38 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
   );
 
   // Compute next/previous entry IDs for keyboard navigation
-  const { nextEntryId, previousEntryId } = useMemo(() => {
+  // Also compute how close we are to the pagination boundary
+  const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(() => {
     if (!openEntryId || entries.length === 0) {
-      return { nextEntryId: undefined, previousEntryId: undefined };
+      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
     }
     const currentIndex = entries.findIndex((e) => e.id === openEntryId);
     if (currentIndex === -1) {
-      return { nextEntryId: undefined, previousEntryId: undefined };
+      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
     }
     return {
       nextEntryId: currentIndex < entries.length - 1 ? entries[currentIndex + 1].id : undefined,
       previousEntryId: currentIndex > 0 ? entries[currentIndex - 1].id : undefined,
+      distanceToEnd: entries.length - 1 - currentIndex,
     };
   }, [openEntryId, entries]);
+
+  // Trigger pagination when navigating close to the end of loaded entries
+  const prevDistanceToEnd = useRef(distanceToEnd);
+  useEffect(() => {
+    // Only trigger when we're getting closer to the end (moving forward)
+    // and we're within 3 entries of the end
+    const PAGINATION_THRESHOLD = 3;
+    if (
+      distanceToEnd <= PAGINATION_THRESHOLD &&
+      distanceToEnd < prevDistanceToEnd.current &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      fetchNextPage();
+    }
+    prevDistanceToEnd.current = distanceToEnd;
+  }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Navigation callbacks for keyboard shortcuts (j/k when viewing an entry)
   const goToNextEntry = useCallback(() => {
@@ -127,6 +148,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     onToggleUnreadOnly: toggleShowUnreadOnly,
     onNavigateNext: goToNextEntry,
     onNavigatePrevious: goToPreviousEntry,
+    scrollContainerRef,
   });
 
   // External query state for EntryList

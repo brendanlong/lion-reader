@@ -21,7 +21,15 @@
 
 "use client";
 
-import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useMemo,
+  type RefObject,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type EntryType } from "./useEntryMutations";
 import { clientPush } from "@/lib/navigation";
@@ -111,6 +119,13 @@ export interface UseKeyboardShortcutsOptions {
    * The parent should use useEntryListQuery's getPreviousEntryId() to compute the previous entry.
    */
   onNavigatePrevious?: () => void;
+
+  /**
+   * Reference to the scroll container element.
+   * Used to correctly calculate whether the selected entry is visible
+   * and to scroll it into view.
+   */
+  scrollContainerRef?: RefObject<HTMLElement | null> | null;
 }
 
 /**
@@ -197,6 +212,7 @@ export function useKeyboardShortcuts(
     onToggleStar,
     onRefresh,
     onToggleUnreadOnly,
+    scrollContainerRef,
   } = options;
 
   // When an entry is open, sync selectedEntryId to openEntryId
@@ -319,8 +335,18 @@ export function useKeyboardShortcuts(
     if (effectiveSelectedEntryId && !isEntryOpen) {
       const element = document.querySelector(`[data-entry-id="${effectiveSelectedEntryId}"]`);
       if (element) {
+        const scrollContainer = scrollContainerRef?.current;
         const rect = element.getBoundingClientRect();
-        const isInView = rect.top >= 0 && rect.bottom <= window.innerHeight;
+
+        let isInView: boolean;
+        if (scrollContainer) {
+          // Calculate visibility relative to the scroll container
+          const containerRect = scrollContainer.getBoundingClientRect();
+          isInView = rect.top >= containerRect.top && rect.bottom <= containerRect.bottom;
+        } else {
+          // Fallback to viewport if no scroll container
+          isInView = rect.top >= 0 && rect.bottom <= window.innerHeight;
+        }
 
         if (!isInView) {
           element.scrollIntoView({
@@ -330,7 +356,7 @@ export function useKeyboardShortcuts(
         }
       }
     }
-  }, [effectiveSelectedEntryId, isEntryOpen]);
+  }, [effectiveSelectedEntryId, isEntryOpen, scrollContainerRef]);
 
   // Keyboard shortcuts
   // j - next entry (select in list, or navigate to next when viewing)
