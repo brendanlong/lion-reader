@@ -83,7 +83,7 @@ Hooks that use React Query need a test wrapper with `QueryClientProvider`.
 | Hook                   | Complexity | Test focus                                 |
 | ---------------------- | ---------- | ------------------------------------------ |
 | `useEntryMutations`    | Medium     | Mutations trigger correct cache operations |
-| `useKeyboardShortcuts` | High       | Navigation, scroll sync, pagination        |
+| `useKeyboardShortcuts` | Medium     | Keyboard navigation, entry selection       |
 | `useNarrationSettings` | Low        | localStorage persistence                   |
 
 **Testing approach**: Use `renderHook` with a custom wrapper that provides test `QueryClient`.

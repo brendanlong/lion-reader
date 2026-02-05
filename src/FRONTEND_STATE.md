@@ -314,7 +314,7 @@ Returns the updated entry with score fields:
 | `src/lib/cache/count-cache.ts`                     | Low-level subscription/tag count update helpers   |
 | `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with cache updates                |
 | `src/lib/hooks/useRealtimeUpdates.ts`              | SSE connection and cache updates                  |
-| `src/lib/hooks/useKeyboardShortcuts.ts`            | Keyboard navigation with scroll sync              |
+| `src/lib/hooks/useKeyboardShortcuts.ts`            | Keyboard navigation and entry selection           |
 | `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination |
 | `src/components/entries/SuspendingEntryList.tsx`   | Entry list wrapper with Suspense and pagination   |
 | `src/components/layout/Sidebar.tsx`                | Subscription delete with optimistic update        |
