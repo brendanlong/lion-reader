@@ -72,7 +72,7 @@ function getAllCachedSubscriptions(
 ): Map<string, CachedSubscription> {
   const subscriptionMap = new Map<string, CachedSubscription>();
 
-  // Check the unparameterized query (used by useEntryPage/EntryContent)
+  // Check the unparameterized query (used by UnifiedEntriesContent/EntryContent)
   const subscriptionsData = utils.subscriptions.list.getData();
   if (subscriptionsData) {
     for (const s of subscriptionsData.items) {
@@ -158,7 +158,7 @@ export function findCachedSubscription(
 
 /**
  * Adjusts unread counts for subscriptions in the cache.
- * Updates both the unparameterized query (used by useEntryPage/EntryContent)
+ * Updates both the unparameterized query (used by UnifiedEntriesContent/EntryContent)
  * and all per-tag infinite queries (used by TagSubscriptionList in sidebar).
  *
  * @param utils - tRPC utils for cache access
@@ -172,7 +172,7 @@ export function adjustSubscriptionUnreadCounts(
 ): void {
   if (subscriptionDeltas.size === 0) return;
 
-  // Update the unparameterized query (used by useEntryPage/EntryContent)
+  // Update the unparameterized query (used by UnifiedEntriesContent/EntryContent)
   utils.subscriptions.list.setData(undefined, (oldData) => {
     if (!oldData) return oldData;
 

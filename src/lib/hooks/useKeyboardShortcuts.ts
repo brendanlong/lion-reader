@@ -110,13 +110,13 @@ export interface UseKeyboardShortcutsOptions {
 
   /**
    * Callback when user presses j to navigate to next entry (while viewing).
-   * The parent should use useEntryListQuery's getNextEntryId() to compute the next entry.
+   * The parent computes the next entry ID from the entries list.
    */
   onNavigateNext?: () => void;
 
   /**
    * Callback when user presses k to navigate to previous entry (while viewing).
-   * The parent should use useEntryListQuery's getPreviousEntryId() to compute the previous entry.
+   * The parent computes the previous entry ID from the entries list.
    */
   onNavigatePrevious?: () => void;
 
