@@ -47,18 +47,18 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Entry Queries
 
-| Query                     | Used In                                          | Filters                                                                                               | Description                    |
-| ------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `entries.list` (infinite) | `EntryList`, `useEntryListQuery`, `useEntryPage` | `subscriptionId`, `tagId`, `uncategorized`, `unreadOnly`, `starredOnly`, `sortOrder`, `type`, `limit` | Paginated entry list           |
-| `entries.get`             | `EntryContent`                                   | `{ id }`                                                                                              | Single entry with full content |
-| `entries.count`           | `Sidebar`                                        | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }`                                                 | Unread count for badges        |
+| Query                     | Used In                                                     | Filters                                                                                               | Description                    |
+| ------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `entries.list` (infinite) | `EntryList`, `SuspendingEntryList`, `UnifiedEntriesContent` | `subscriptionId`, `tagId`, `uncategorized`, `unreadOnly`, `starredOnly`, `sortOrder`, `type`, `limit` | Paginated entry list           |
+| `entries.get`             | `EntryContent`                                              | `{ id }`                                                                                              | Single entry with full content |
+| `entries.count`           | `Sidebar`                                                   | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }`                                                 | Unread count for badges        |
 
 ### Subscription Queries
 
-| Query                           | Used In                         | Filters                            | Description                                      |
-| ------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------------------------ |
-| `subscriptions.list`            | `EntryContent`, `useEntryPage`  | None                               | First page of subscriptions for placeholder data |
-| `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar) | `{ tagId }` or `{ uncategorized }` | Per-tag paginated subscriptions                  |
+| Query                           | Used In                                 | Filters                            | Description                                      |
+| ------------------------------- | --------------------------------------- | ---------------------------------- | ------------------------------------------------ |
+| `subscriptions.list`            | `EntryContent`, `UnifiedEntriesContent` | None                               | First page of subscriptions for placeholder data |
+| `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar)         | `{ tagId }` or `{ uncategorized }` | Per-tag paginated subscriptions                  |
 
 ### Tag Queries
 
@@ -306,19 +306,20 @@ Returns the updated entry with score fields:
 
 ## Key Files
 
-| File                                      | Purpose                                          |
-| ----------------------------------------- | ------------------------------------------------ |
-| `src/lib/cache/index.ts`                  | Cache helper exports                             |
-| `src/lib/cache/operations.ts`             | High-level cache operations (primary API)        |
-| `src/lib/cache/entry-cache.ts`            | Low-level entry cache update helpers             |
-| `src/lib/cache/count-cache.ts`            | Low-level subscription/tag count update helpers  |
-| `src/lib/hooks/useEntryMutations.ts`      | Entry mutations with cache updates               |
-| `src/lib/hooks/useRealtimeUpdates.ts`     | SSE connection and cache updates                 |
-| `src/lib/hooks/useEntryListQuery.ts`      | Infinite query with navigation                   |
-| `src/lib/hooks/useEntryPage.ts`           | Higher-order hook combining all entry page logic |
-| `src/components/layout/Sidebar.tsx`       | Subscription delete with optimistic update       |
-| `src/components/entries/EntryContent.tsx` | Entry display with mutations                     |
-| `src/components/entries/EntryList.tsx`    | Entry list with infinite scroll                  |
+| File                                               | Purpose                                           |
+| -------------------------------------------------- | ------------------------------------------------- |
+| `src/lib/cache/index.ts`                           | Cache helper exports                              |
+| `src/lib/cache/operations.ts`                      | High-level cache operations (primary API)         |
+| `src/lib/cache/entry-cache.ts`                     | Low-level entry cache update helpers              |
+| `src/lib/cache/count-cache.ts`                     | Low-level subscription/tag count update helpers   |
+| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with cache updates                |
+| `src/lib/hooks/useRealtimeUpdates.ts`              | SSE connection and cache updates                  |
+| `src/lib/hooks/useKeyboardShortcuts.ts`            | Keyboard navigation with scroll sync              |
+| `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination |
+| `src/components/entries/SuspendingEntryList.tsx`   | Entry list wrapper with Suspense and pagination   |
+| `src/components/layout/Sidebar.tsx`                | Subscription delete with optimistic update        |
+| `src/components/entries/EntryContent.tsx`          | Entry display with mutations                      |
+| `src/components/entries/EntryList.tsx`             | Entry list with infinite scroll                   |
 
 ## Adding New Cache Updates
 

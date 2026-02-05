@@ -6,7 +6,7 @@ This document outlines the strategy for adding frontend tests to Lion Reader.
 
 The codebase already follows good patterns for testability:
 
-1. **Business logic is extracted** into hooks (`useEntryMutations`, `useEntryListQuery`) and cache operations (`src/lib/cache/`)
+1. **Business logic is extracted** into hooks (`useEntryMutations`, `useKeyboardShortcuts`) and cache operations (`src/lib/cache/`)
 2. **Components are mostly presentational** - data flows through props and callbacks
 3. **UI components are pure** - no data fetching, just props
 
@@ -83,7 +83,7 @@ Hooks that use React Query need a test wrapper with `QueryClientProvider`.
 | Hook                   | Complexity | Test focus                                 |
 | ---------------------- | ---------- | ------------------------------------------ |
 | `useEntryMutations`    | Medium     | Mutations trigger correct cache operations |
-| `useEntryListQuery`    | High       | Pagination, prefetching thresholds         |
+| `useKeyboardShortcuts` | High       | Navigation, scroll sync, pagination        |
 | `useNarrationSettings` | Low        | localStorage persistence                   |
 
 **Testing approach**: Use `renderHook` with a custom wrapper that provides test `QueryClient`.
