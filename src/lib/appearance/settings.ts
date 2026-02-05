@@ -1,21 +1,15 @@
 /**
  * Appearance settings management.
  *
- * Provides utilities for loading, saving, and managing appearance preferences
- * including theme mode, text size, text justification, and font family.
+ * Provides utilities for loading, saving, and managing text appearance preferences
+ * including text size, text justification, and font family.
+ *
+ * Note: Theme (dark/light mode) is managed separately by next-themes.
  */
 
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-
-/**
- * Theme mode options.
- * - "auto": Follow system preference (prefers-color-scheme)
- * - "light": Always use light theme
- * - "dark": Always use dark theme
- */
-export type ThemeMode = "auto" | "light" | "dark";
 
 /**
  * Text size options for entry content.
@@ -33,14 +27,11 @@ export type TextJustification = "left" | "justify";
 export type FontFamily = "system" | "merriweather" | "literata" | "inter" | "source-sans";
 
 /**
- * User preferences for appearance.
+ * User preferences for text appearance.
+ *
+ * Note: Theme (dark/light mode) is managed by next-themes, not here.
  */
 export interface AppearanceSettings {
-  /**
-   * Theme mode: auto, light, or dark.
-   */
-  themeMode: ThemeMode;
-
   /**
    * Text size for entry content.
    */
@@ -61,7 +52,6 @@ export interface AppearanceSettings {
  * Default appearance settings.
  */
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
-  themeMode: "auto",
   textSize: "medium",
   textJustification: "left",
   fontFamily: "system",
@@ -95,7 +85,6 @@ export function loadAppearanceSettings(): AppearanceSettings {
     const parsed = JSON.parse(stored) as Partial<AppearanceSettings>;
 
     // Validate and merge with defaults
-    const validThemeModes: ThemeMode[] = ["auto", "light", "dark"];
     const validTextSizes: TextSize[] = ["small", "medium", "large", "x-large"];
     const validJustifications: TextJustification[] = ["left", "justify"];
     const validFontFamilies: FontFamily[] = [
@@ -107,9 +96,6 @@ export function loadAppearanceSettings(): AppearanceSettings {
     ];
 
     return {
-      themeMode: validThemeModes.includes(parsed.themeMode as ThemeMode)
-        ? (parsed.themeMode as ThemeMode)
-        : DEFAULT_APPEARANCE_SETTINGS.themeMode,
       textSize: validTextSizes.includes(parsed.textSize as TextSize)
         ? (parsed.textSize as TextSize)
         : DEFAULT_APPEARANCE_SETTINGS.textSize,

@@ -3,7 +3,6 @@
  */
 
 export {
-  type ThemeMode,
   type TextSize,
   type TextJustification,
   type FontFamily,

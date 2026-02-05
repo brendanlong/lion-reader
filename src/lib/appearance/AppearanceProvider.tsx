@@ -1,22 +1,14 @@
 /**
  * AppearanceProvider Component
  *
- * Provides appearance settings context and applies theme to the document.
- * - Manages the `dark` class on `<html>` for theme switching
- * - Provides settings to child components via context
+ * Provides text appearance settings context (font, size, justification).
+ * Theme (dark/light mode) is handled by next-themes at the root layout level.
  */
 
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useCallback,
-  useMemo,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { useTheme } from "next-themes";
 import {
   useAppearanceSettings,
   type AppearanceSettings,
@@ -27,8 +19,10 @@ import {
 interface AppearanceContextValue {
   settings: AppearanceSettings;
   updateSettings: (settings: Partial<AppearanceSettings>) => void;
-  /** The resolved theme (always "light" or "dark", never "auto"). Null during SSR. */
-  resolvedTheme: "light" | "dark" | null;
+  /** The resolved theme (always "light" or "dark", never "system"). Undefined during SSR. */
+  resolvedTheme: "light" | "dark" | undefined;
+  /** Set the theme ("light", "dark", or "system") */
+  setTheme: (theme: string) => void;
 }
 
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
@@ -37,66 +31,9 @@ interface AppearanceProviderProps {
   children: ReactNode;
 }
 
-/**
- * Subscribe to system color scheme changes.
- */
-function subscribeToSystemPreference(callback: () => void): () => void {
-  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  mediaQuery.addEventListener("change", callback);
-  return () => mediaQuery.removeEventListener("change", callback);
-}
-
-/**
- * Get current system preference (client only).
- */
-function getSystemPreference(): boolean {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
-}
-
-/**
- * Server snapshot - return null to indicate SSR.
- */
-function getServerSystemPreference(): boolean | null {
-  return null;
-}
-
-/**
- * Hook to track system color scheme preference.
- * Returns true for dark, false for light, null during SSR.
- */
-function useSystemPreference(): boolean | null {
-  return useSyncExternalStore(
-    subscribeToSystemPreference,
-    getSystemPreference,
-    getServerSystemPreference
-  );
-}
-
 export function AppearanceProvider({ children }: AppearanceProviderProps) {
   const [settings, setSettings] = useAppearanceSettings();
-  const systemPrefersDark = useSystemPreference();
-
-  // Compute resolved theme based on mode and system preference
-  const resolvedTheme = useMemo((): "light" | "dark" | null => {
-    if (settings.themeMode === "auto") {
-      // During SSR, return null (we don't know system preference)
-      if (systemPrefersDark === null) return null;
-      return systemPrefersDark ? "dark" : "light";
-    }
-    return settings.themeMode;
-  }, [settings.themeMode, systemPrefersDark]);
-
-  // Apply theme class to document
-  useEffect(() => {
-    if (resolvedTheme === null) return; // SSR, do nothing
-
-    const html = document.documentElement;
-    if (resolvedTheme === "dark") {
-      html.classList.add("dark");
-    } else {
-      html.classList.remove("dark");
-    }
-  }, [resolvedTheme]);
+  const { resolvedTheme, setTheme } = useTheme();
 
   const updateSettings = useCallback(
     (partial: Partial<AppearanceSettings>) => {
@@ -106,8 +43,13 @@ export function AppearanceProvider({ children }: AppearanceProviderProps) {
   );
 
   const value = useMemo(
-    () => ({ settings, updateSettings, resolvedTheme }),
-    [settings, updateSettings, resolvedTheme]
+    () => ({
+      settings,
+      updateSettings,
+      resolvedTheme: resolvedTheme as "light" | "dark" | undefined,
+      setTheme,
+    }),
+    [settings, updateSettings, resolvedTheme, setTheme]
   );
 
   return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;
