@@ -23,7 +23,7 @@ import { SuspendingEntryList } from "./SuspendingEntryList";
 import { EntryListFallback } from "./EntryListFallback";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui";
-import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
+import { useOpenEntry } from "@/lib/hooks/useOpenEntry";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
@@ -284,7 +284,7 @@ function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
 function UnifiedEntriesContentInner() {
   const routeInfo = useRouteInfo();
   const { showUnreadOnly } = useUrlViewPreferences();
-  const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
+  const { openEntryId, openEntry, closeEntry } = useOpenEntry();
 
   // Get query input based on current URL - shared with SuspendingEntryList
   const queryInput = useEntriesListInput();
@@ -385,13 +385,13 @@ function UnifiedEntriesContentInner() {
   // Navigation callbacks - just update URL, React re-renders
   const handleSwipeNext = useMemo(() => {
     if (!nextEntryId) return undefined;
-    return () => setOpenEntryId(nextEntryId);
-  }, [nextEntryId, setOpenEntryId]);
+    return () => openEntry(nextEntryId);
+  }, [nextEntryId, openEntry]);
 
   const handleSwipePrevious = useMemo(() => {
     if (!previousEntryId) return undefined;
-    return () => setOpenEntryId(previousEntryId);
-  }, [previousEntryId, setOpenEntryId]);
+    return () => openEntry(previousEntryId);
+  }, [previousEntryId, openEntry]);
 
   // Show error if subscription query completed but subscription not found
   if (routeInfo.subscriptionId && !subscriptionQuery.isLoading && !subscriptionQuery.data) {

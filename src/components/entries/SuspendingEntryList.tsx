@@ -14,7 +14,7 @@
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks";
-import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
+import { useOpenEntry } from "@/lib/hooks/useOpenEntry";
 import { useKeyboardShortcutsContext } from "@/components/keyboard";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
@@ -27,7 +27,7 @@ interface SuspendingEntryListProps {
 }
 
 export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) {
-  const { openEntryId, setOpenEntryId } = useEntryUrlState();
+  const { openEntryId, openEntry, closeEntry } = useOpenEntry();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
@@ -137,15 +137,15 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
   // Navigation callbacks for keyboard shortcuts (j/k when viewing an entry)
   const goToNextEntry = useCallback(() => {
     if (nextEntryId) {
-      setOpenEntryId(nextEntryId);
+      openEntry(nextEntryId);
     }
-  }, [nextEntryId, setOpenEntryId]);
+  }, [nextEntryId, openEntry]);
 
   const goToPreviousEntry = useCallback(() => {
     if (previousEntryId) {
-      setOpenEntryId(previousEntryId);
+      openEntry(previousEntryId);
     }
-  }, [previousEntryId, setOpenEntryId]);
+  }, [previousEntryId, openEntry]);
 
   // Entry mutations
   const { toggleRead: rawToggleRead, toggleStar } = useEntryMutations();
@@ -160,16 +160,16 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
   // Entry click handler
   const handleEntryClick = useCallback(
     (entryId: string) => {
-      setOpenEntryId(entryId);
+      openEntry(entryId);
     },
-    [setOpenEntryId]
+    [openEntry]
   );
 
   // Keyboard shortcuts
   const { selectedEntryId } = useKeyboardShortcuts({
     entries,
-    onOpenEntry: setOpenEntryId,
-    onClose: () => setOpenEntryId(null),
+    onOpenEntry: openEntry,
+    onClose: closeEntry,
     isEntryOpen: !!openEntryId,
     openEntryId,
     enabled: keyboardShortcutsEnabled,

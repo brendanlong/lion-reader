@@ -49,6 +49,7 @@ export {
   updateEntriesInListCache,
   updateEntriesInAffectedListCaches,
   updateEntryMetadataInCache,
+  findEntryInListCache,
   type EntryMetadataUpdate,
   type EntryContext,
   type AffectedScope,

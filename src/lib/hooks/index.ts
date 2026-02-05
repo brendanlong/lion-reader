@@ -14,6 +14,8 @@ export { useEntryMutations, type EntryType, type MarkAllReadOptions } from "./us
 
 export { useEntryUrlState } from "./useEntryUrlState";
 
+export { useOpenEntry } from "./useOpenEntry";
+
 export { useExpandedTags } from "./useExpandedTags";
 
 export { type EntryListData } from "./types";
