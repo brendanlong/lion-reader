@@ -37,11 +37,10 @@ import {
   StarFilledIcon,
   CircleIcon,
   CircleFilledIcon,
-  ExternalLinkIcon,
-  ArrowLeftIcon,
   SpinnerIcon,
   SparklesIcon,
   AlertIcon,
+  ArrowLeftIcon,
 } from "@/components/ui";
 import { SummaryCard } from "@/components/summarization";
 import {
@@ -54,9 +53,8 @@ import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance";
 import { useImagePrefetch } from "@/lib/hooks";
-import { formatDate, getDomain, SWIPE_CONFIG } from "./EntryContentHelpers";
-import { ContentSkeleton } from "./EntryContentStates";
-import { EntryContentRenderer } from "./EntryContentRenderer";
+import { SWIPE_CONFIG } from "./EntryContentHelpers";
+import { EntryArticle } from "./EntryArticle";
 import { VoteControls } from "./VoteControls";
 
 // Re-export components and helpers for backwards compatibility
@@ -146,6 +144,8 @@ export interface EntryContentBodyProps {
   onSummaryRegenerate?: () => void;
   /** Whether the main content is still loading (for progressive rendering) */
   isContentLoading?: boolean;
+  /** Whether to hide narration controls (e.g., in demo mode) */
+  hideNarration?: boolean;
   // Score fields
   /** The explicit score (null if not voted) */
   score?: number | null;
@@ -199,6 +199,8 @@ export function EntryContentBody({
   onSummaryRegenerate,
   // Progressive loading
   isContentLoading,
+  // Narration toggle
+  hideNarration,
   // Score props
   score,
   implicitScore,
@@ -388,91 +390,46 @@ export function EntryContentBody({
     [onToggleRead]
   );
 
-  // Determine footer link domain
-  const displayFooterDomain = footerLinkDomain ?? (url ? getDomain(url) : "original site");
-
   return (
-    <article
-      className="mx-auto max-w-3xl px-4 py-6 sm:py-8"
+    <EntryArticle
+      title={title}
+      url={url}
+      source={source}
+      author={author}
+      date={date}
+      datePrefix={datePrefix}
+      contentHtml={sanitizedContent}
+      fallbackContent={fallbackContent}
+      textSizeClass={textSizeClass}
+      textStyle={textStyle}
+      footerLinkDomain={footerLinkDomain}
+      isContentLoading={isContentLoading}
+      contentRef={contentRef}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-    >
-      {/* Back button */}
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-          <span>Back to list</span>
-        </button>
-      )}
-
-      {/* Header */}
-      <header className="mb-6 sm:mb-8">
-        {/* Title row: title+meta on left, vote controls on right */}
-        <div className="mb-4 flex gap-4 sm:mb-6">
-          {/* Left column: title and meta */}
-          <div className="min-w-0 flex-1">
-            {/* Title */}
-            <div className="mb-2">
-              {url ? (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ui-text-xl sm:ui-text-2xl block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:text-blue-600 hover:underline md:text-3xl dark:text-zinc-100 dark:hover:text-blue-400"
-                >
-                  {title}
-                </a>
-              ) : (
-                <h1 className="ui-text-xl sm:ui-text-2xl leading-tight font-bold text-zinc-900 md:text-3xl dark:text-zinc-100">
-                  {title}
-                </h1>
-              )}
-            </div>
-
-            {/* Meta row: Source, Author, Date */}
-            <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
-              <span className="font-medium">{source}</span>
-              {author && (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
-                  >
-                    |
-                  </span>
-                  <span className="hidden sm:inline">by {author}</span>
-                  <span className="sm:hidden">- {author}</span>
-                </>
-              )}
-              <span
-                aria-hidden="true"
-                className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
-              >
-                |
-              </span>
-              <time dateTime={date.toISOString()} className="basis-full sm:basis-auto">
-                {datePrefix ? `${datePrefix} ` : ""}
-                {formatDate(date)}
-              </time>
-            </div>
+      backButton={
+        onBack ? (
+          <button
+            onClick={onBack}
+            className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
+          >
+            <ArrowLeftIcon className="h-4 w-4" />
+            <span>Back to list</span>
+          </button>
+        ) : undefined
+      }
+      voteControls={
+        onSetScore ? (
+          <div className="-mt-[24px] shrink-0">
+            <VoteControls
+              score={score ?? null}
+              implicitScore={implicitScore ?? 0}
+              onSetScore={onSetScore}
+            />
           </div>
-
-          {/* Right column: vote controls, aligned so score is at title level */}
-          {onSetScore && (
-            <div className="-mt-[24px] shrink-0">
-              <VoteControls
-                score={score ?? null}
-                implicitScore={implicitScore ?? 0}
-                onSetScore={onSetScore}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Action buttons */}
+        ) : undefined
+      }
+      actionButtons={
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Star button */}
           <Button
@@ -554,12 +511,14 @@ export function EntryContentBody({
           )}
 
           {/* Narration controls - pass narration state for controlled mode */}
-          <NarrationControls
-            articleId={articleId}
-            title={title}
-            feedTitle={source}
-            narration={narration}
-          />
+          {!hideNarration && (
+            <NarrationControls
+              articleId={articleId}
+              title={title}
+              feedTitle={source}
+              narration={narration}
+            />
+          )}
 
           {/* Summarize button */}
           {isSummarizationAvailable && onSummarize && (
@@ -594,60 +553,33 @@ export function EntryContentBody({
             </Button>
           )}
         </div>
-      </header>
+      }
+      beforeContent={
+        <>
+          {/* Summary card - shown above content when available */}
+          {showSummary && (summary || summaryError || isSummarizing) && (
+            <SummaryCard
+              summary={summary?.text ?? ""}
+              modelId={summary?.modelId ?? ""}
+              generatedAt={summary?.generatedAt ?? null}
+              isLoading={isSummarizing}
+              error={summaryError}
+              onClose={onSummaryClose}
+              onRegenerate={
+                summaryError || summary?.settingsChanged ? onSummaryRegenerate : undefined
+              }
+            />
+          )}
 
-      {/* Divider */}
-      <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
-
-      {/* Summary card - shown above content when available */}
-      {/* Show regenerate button on error (to retry) or when settings have changed */}
-      {showSummary && (summary || summaryError || isSummarizing) && (
-        <SummaryCard
-          summary={summary?.text ?? ""}
-          modelId={summary?.modelId ?? ""}
-          generatedAt={summary?.generatedAt ?? null}
-          isLoading={isSummarizing}
-          error={summaryError}
-          onClose={onSummaryClose}
-          onRegenerate={summaryError || summary?.settingsChanged ? onSummaryRegenerate : undefined}
-        />
-      )}
-
-      {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
-      {shouldProcessForHighlighting && (
-        <NarrationHighlightStyles
-          highlightedParagraphIds={highlightedParagraphIds}
-          enabled={narrationSettings.highlightEnabled}
-        />
-      )}
-
-      {/* Content - show skeleton during progressive loading, otherwise render content */}
-      {isContentLoading ? (
-        <ContentSkeleton />
-      ) : (
-        <EntryContentRenderer
-          sanitizedContent={sanitizedContent}
-          fallbackContent={fallbackContent}
-          contentRef={contentRef}
-          textSizeClass={textSizeClass}
-          textStyle={textStyle}
-        />
-      )}
-
-      {/* Footer with original link */}
-      {url && (
-        <footer className="mt-8 border-t border-zinc-200 pt-6 sm:mt-12 sm:pt-8 dark:border-zinc-700">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
-          >
-            <ExternalLinkIcon className="h-4 w-4" />
-            Read on {displayFooterDomain}
-          </a>
-        </footer>
-      )}
-    </article>
+          {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
+          {!hideNarration && shouldProcessForHighlighting && (
+            <NarrationHighlightStyles
+              highlightedParagraphIds={highlightedParagraphIds}
+              enabled={narrationSettings.highlightEnabled}
+            />
+          )}
+        </>
+      }
+    />
   );
 }
