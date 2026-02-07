@@ -110,6 +110,25 @@ export function RealtimeProvider({
     router.replace(url.pathname + url.search, { scroll: false });
   }, [searchParams, router]);
 
+  // Set up launchQueue consumer for focus-existing launch_handler.
+  // When the PWA is already open and receives a share target launch,
+  // the browser focuses this window and enqueues a LaunchParams instead of
+  // navigating. The service worker's fetch handler does the actual saving
+  // and sends a postMessage (handled below). We just need to consume the
+  // launch event so the browser doesn't fall back to default behavior.
+  useEffect(() => {
+    if (!("launchQueue" in window)) return;
+
+    (
+      window as {
+        launchQueue: { setConsumer: (cb: (params: { targetURL?: string }) => void) => void };
+      }
+    ).launchQueue.setConsumer(() => {
+      // The service worker handles the actual save via its fetch event
+      // handler and notifies us via postMessage. Nothing to do here.
+    });
+  }, []);
+
   // Listen for messages from service worker (e.g., share target results)
   useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {

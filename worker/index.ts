@@ -7,12 +7,15 @@
  * 2. Offline fallback for navigation requests
  *
  * For URL shares, the service worker saves directly via the API without
- * showing any intermediate UI, then redirects back into the app. Open tabs
- * are notified via postMessage so the RealtimeProvider can show a toast.
+ * showing any intermediate UI. Open tabs are notified via postMessage so
+ * the RealtimeProvider can show a toast.
  *
- * This is important because Android's share target destroys the PWA's
- * current navigation state — there's no "back" to go to. Redirecting
- * to the app root restores the app so the user can continue.
+ * With launch_handler: focus-existing in the manifest, Chrome on Android
+ * focuses the existing PWA window instead of navigating it. The service
+ * worker's fetch handler still fires for the POST, and the postMessage
+ * reaches the focused window. When the app is NOT already open,
+ * focus-existing falls back to navigate-new, and the service worker
+ * redirects to the app root with query params for the toast.
  *
  * File shares still redirect to /save because they require more complex processing.
  *
