@@ -10,6 +10,17 @@ const article: DemoArticle = {
   summary: "Install Lion Reader on your phone or desktop for a native app-like experience.",
   publishedAt: new Date("2026-01-08T12:00:00Z"),
   starred: false,
+  summaryHtml: `<p><strong>Lion Reader is a Progressive Web App (PWA)</strong> that can be installed on any device—desktop or mobile—without app stores, providing a native app-like experience.</p>
+<p><strong>Key features:</strong></p>
+<ul>
+<li><p><strong>Share target integration</strong>: Install on your phone to save articles directly from any app&#39;s native share menu. It accepts not just URLs, but also PDFs, Markdown, and Word files.</p>
+</li>
+<li><p><strong>Mobile optimizations</strong>: Portrait orientation lock for distraction-free reading and push notifications for new entries.</p>
+</li>
+<li><p><strong>Single codebase</strong>: Updates deploy simultaneously across all platforms without app store reviews. Features and fixes ship instantly to web, desktop, and mobile.</p>
+</li>
+</ul>
+<p>Lion Reader functions as a universal inbox for anything you want to read later, combining native app convenience with web flexibility.</p>`,
   contentHtml: `
     <h2>Install Anywhere</h2>
 

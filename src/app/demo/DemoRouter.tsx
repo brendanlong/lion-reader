@@ -11,18 +11,20 @@
 
 "use client";
 
-import { useMemo, useEffect, useCallback, useRef, Suspense } from "react";
+import { useMemo, useEffect, useCallback, useRef, useState, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ClientLink,
   Button,
+  SparklesIcon,
   StarIcon,
   StarFilledIcon,
   CircleIcon,
   CircleFilledIcon,
 } from "@/components/ui";
 import { EntryArticle } from "@/components/entries/EntryArticle";
+import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { SWIPE_CONFIG } from "@/components/entries/EntryContentHelpers";
 import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
@@ -47,6 +49,7 @@ function DemoRouterContent() {
   const searchParams = useSearchParams();
   const entryId = searchParams.get("entry");
   const demoState = useDemoState();
+  const [showSummaryForEntry, setShowSummaryForEntry] = useState<string | null>(null);
 
   // Parse the pathname to determine the current view
   const subscriptionMatch = pathname.match(/^\/demo\/subscription\/([^/]+)/);
@@ -305,25 +308,59 @@ function DemoRouterContent() {
               )}
               <span className="ml-2">{selectedEntry.read ? "Read" : "Unread"}</span>
             </Button>
+
+            {/* Summarize button */}
+            <Button
+              variant={showSummaryForEntry === selectedEntry.id ? "primary" : "secondary"}
+              size="sm"
+              onClick={() =>
+                setShowSummaryForEntry(
+                  showSummaryForEntry === selectedEntry.id ? null : selectedEntry.id
+                )
+              }
+              className={
+                showSummaryForEntry === selectedEntry.id
+                  ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                  : ""
+              }
+              aria-label={
+                showSummaryForEntry === selectedEntry.id ? "Hide summary" : "Show AI summary"
+              }
+            >
+              <SparklesIcon className="h-4 w-4" />
+              <span className="ml-2">
+                {showSummaryForEntry === selectedEntry.id ? "Hide Summary" : "Summarize"}
+              </span>
+            </Button>
           </div>
         }
         beforeContent={
-          selectedEntry.id === "welcome" ? (
-            <div className="mb-6 flex flex-col items-center gap-4 rounded-lg border border-zinc-200 bg-white p-6 sm:flex-row sm:justify-center dark:border-zinc-800 dark:bg-zinc-900">
-              <Link
-                href="/register"
-                className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md bg-zinc-900 px-6 font-medium text-white transition-colors hover:bg-zinc-800 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Get started
-              </Link>
-              <Link
-                href="/login"
-                className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md border border-zinc-300 bg-white px-6 font-medium text-zinc-900 transition-colors hover:bg-zinc-50 sm:w-auto dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                Sign in
-              </Link>
-            </div>
-          ) : undefined
+          <>
+            {showSummaryForEntry === selectedEntry.id && (
+              <SummaryCard
+                summary={selectedEntry.summaryHtml}
+                modelId="claude-sonnet-4-5-20250929"
+                generatedAt={new Date("2026-02-07")}
+                onClose={() => setShowSummaryForEntry(null)}
+              />
+            )}
+            {selectedEntry.id === "welcome" && (
+              <div className="mb-6 flex flex-col items-center gap-4 rounded-lg border border-zinc-200 bg-white p-6 sm:flex-row sm:justify-center dark:border-zinc-800 dark:bg-zinc-900">
+                <Link
+                  href="/register"
+                  className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md bg-zinc-900 px-6 font-medium text-white transition-colors hover:bg-zinc-800 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                >
+                  Get started
+                </Link>
+                <Link
+                  href="/login"
+                  className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md border border-zinc-300 bg-white px-6 font-medium text-zinc-900 transition-colors hover:bg-zinc-50 sm:w-auto dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  Sign in
+                </Link>
+              </div>
+            )}
+          </>
         }
       />
     );

@@ -10,6 +10,11 @@ const article: DemoArticle = {
   summary: "Sign in with email, Google, Apple, or Discord. API tokens for extensions and MCP.",
   publishedAt: new Date("2025-12-26T11:00:00Z"),
   starred: false,
+  summaryHtml: `<p>Lion Reader offers multiple authentication methods including email/password (with Argon2 hashing), Google OAuth, Apple Sign-In, and Discord OAuth. All OAuth providers are optional per deployment.</p>
+<p><strong>Session Management:</strong> Sessions use SHA-256 hashed tokens with Redis caching, active session tracking showing device/IP/timestamp, and instant revocation capabilities.</p>
+<p><strong>API Tokens:</strong> Connect external tools with scoped permissions, expiration dates, and usage tracking—ideal for browser extensions, MCP server, or Discord bot integration.</p>
+<p><strong>Security Features:</strong> Rate limiting via Redis, per-domain feed fetching throttling, HMAC webhook verification, XSS content sanitization, and optional invite-only mode.</p>
+<p><strong>Privacy:</strong> Subscription-based entry visibility (only see content fetched after subscribing), starred entries remain visible after unsubscribing, soft deletes preserve read state, and no tracking or data sharing with third parties.</p>`,
   contentHtml: `
     <h2>Authentication &amp; Security</h2>
 

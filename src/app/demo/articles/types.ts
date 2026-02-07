@@ -15,4 +15,6 @@ export interface DemoArticle {
   publishedAt: Date;
   starred: boolean;
   contentHtml: string;
+  /** Pre-generated AI summary HTML (from Claude Sonnet) for the demo summary card */
+  summaryHtml: string;
 }

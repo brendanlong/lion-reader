@@ -10,6 +10,14 @@ const article: DemoArticle = {
   summary: "See new entries appear instantly with Server-Sent Events and smart cache invalidation.",
   publishedAt: new Date("2025-12-28T16:00:00Z"),
   starred: false,
+  summaryHtml: `<p>Lion Reader uses <strong>Server-Sent Events (SSE)</strong> with Redis pub/sub for real-time updates without polling. When feed workers fetch new content, they publish to Redis channels that browsers listen to via open SSE connections.</p>
+<p><strong>Channel architecture:</strong></p>
+<ul>
+<li><strong>Per-feed channels</strong> — Each feed has its own channel; connections only subscribe to feeds you follow</li>
+<li><strong>Per-user channels</strong> — Account-level events like subscription changes sync across devices</li>
+</ul>
+<p><strong>Event types</strong> include new entries, content updates, subscription changes, and OPML import progress.</p>
+<p>When events arrive, Lion Reader triggers <strong>targeted React Query cache invalidations</strong> for automatic UI updates. Optimistic updates make actions like starring feel instant. The system includes heartbeat keepalives for reliability and gracefully degrades to timestamp-based sync if Redis fails. Adding new subscriptions dynamically updates your SSE channel subscriptions without reconnecting.</p>`,
   contentHtml: `
     <h2>Server-Sent Events Architecture</h2>
 

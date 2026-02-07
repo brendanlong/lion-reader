@@ -33,6 +33,8 @@ export interface DemoSubscription {
 export interface DemoEntry extends EntryListData {
   /** Pre-sanitized HTML content for the detail view */
   contentHtml: string;
+  /** Pre-generated AI summary HTML for the summary card */
+  summaryHtml: string;
 }
 
 // ============================================================================
