@@ -1,15 +1,15 @@
 /**
  * DemoSidebar Component
  *
- * Static sidebar for the demo landing page.
+ * Static sidebar for the demo pages.
  * Uses the same UI primitives as the real sidebar (NavLink, NavLinkWithIcon,
- * SubscriptionItem, ColorDot) with query-param navigation.
+ * SubscriptionItem, ColorDot) with path-based navigation.
  */
 
 "use client";
 
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   NavLink,
   NavLinkWithIcon,
@@ -32,10 +32,7 @@ interface DemoSidebarProps {
 }
 
 export function DemoSidebar({ onClose }: DemoSidebarProps) {
-  const searchParams = useSearchParams();
-  const currentView = searchParams.get("view");
-  const currentSub = searchParams.get("sub");
-  const currentTag = searchParams.get("tag");
+  const pathname = usePathname();
 
   // Features expanded by default, About collapsed
   const [expandedTags, setExpandedTags] = useState<Set<string>>(() => new Set(["features"]));
@@ -52,20 +49,16 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
     });
   };
 
-  const isViewActive = (view: string | null) => {
-    // "all" is active when no view param or view=all, and no sub or tag is selected
-    if (view === null || view === "all") {
-      return (!currentView || currentView === "all") && !currentSub && !currentTag;
-    }
-    return currentView === view && !currentSub && !currentTag;
-  };
+  // Active state based on pathname
+  const isAllActive = pathname === "/demo/all" || pathname === "/demo";
+  const isHighlightsActive = pathname === "/demo/highlights";
 
   const isTagActive = (tagId: string) => {
-    return currentTag === tagId;
+    return pathname === `/demo/tag/${tagId}`;
   };
 
   const isSubActive = (subId: string) => {
-    return currentSub === subId;
+    return pathname === `/demo/subscription/${subId}`;
   };
 
   return (
@@ -73,8 +66,8 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
       {/* Top navigation */}
       <div className="space-y-1 p-3">
         <NavLink
-          href="/?view=all"
-          isActive={isViewActive("all")}
+          href="/demo/all"
+          isActive={isAllActive}
           countElement={
             <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
               ({DEMO_TOTAL_COUNT})
@@ -86,8 +79,8 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
         </NavLink>
 
         <NavLink
-          href="/?view=highlights"
-          isActive={isViewActive("highlights")}
+          href="/demo/highlights"
+          isActive={isHighlightsActive}
           countElement={
             <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
               ({getDemoHighlightEntries().length})
@@ -125,9 +118,9 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
                     {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                   </button>
 
-                  {/* Tag link - not navigable in demo, just shows context */}
+                  {/* Tag link */}
                   <NavLinkWithIcon
-                    href={`/?tag=${tag.id}`}
+                    href={`/demo/tag/${tag.id}`}
                     isActive={isTagActive(tag.id)}
                     icon={<ColorDot color={tag.color} size="sm" />}
                     label={tag.name}
@@ -151,7 +144,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
                           unreadCount: getDemoEntriesForSubscription(sub.id).length,
                         }}
                         isActive={isSubActive(sub.id)}
-                        href={`/?sub=${sub.id}`}
+                        href={`/demo/subscription/${sub.id}`}
                         onClose={onClose}
                         onEdit={() => {}}
                         onUnsubscribe={() => {}}
