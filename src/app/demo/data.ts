@@ -449,6 +449,16 @@ export const DEMO_ENTRIES: DemoEntry[] = [
 // Lookup helpers
 // ============================================================================
 
+/** Sort entries newest-first by publishedAt date */
+function sortNewestFirst(entries: DemoEntry[]): DemoEntry[] {
+  return [...entries].sort(
+    (a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0)
+  );
+}
+
+/** All entries sorted newest-first for display */
+export const DEMO_ENTRIES_SORTED = sortNewestFirst(DEMO_ENTRIES);
+
 const entriesBySubscription = new Map<string, DemoEntry[]>();
 for (const entry of DEMO_ENTRIES) {
   const subId = entry.subscriptionId!;
@@ -468,7 +478,7 @@ for (const sub of DEMO_SUBSCRIPTIONS) {
 }
 
 export function getDemoEntriesForSubscription(subscriptionId: string): DemoEntry[] {
-  return entriesBySubscription.get(subscriptionId) ?? [];
+  return sortNewestFirst(entriesBySubscription.get(subscriptionId) ?? []);
 }
 
 /** Get entries for a tag (entries from all subscriptions in that tag) */
@@ -476,7 +486,9 @@ export function getDemoEntriesForTag(tagId: string): DemoEntry[] {
   const tag = DEMO_TAGS.find((t) => t.id === tagId);
   if (!tag) return [];
   const subIds = new Set(tag.subscriptionIds);
-  return DEMO_ENTRIES.filter((e) => e.subscriptionId && subIds.has(e.subscriptionId));
+  return sortNewestFirst(
+    DEMO_ENTRIES.filter((e) => e.subscriptionId && subIds.has(e.subscriptionId))
+  );
 }
 
 export function getDemoTag(tagId: string): DemoTag | undefined {
@@ -493,7 +505,7 @@ export function getDemoSubscription(subscriptionId: string): DemoSubscription | 
 
 /** Get entries that would appear in the "Highlights" view (starred entries) */
 export function getDemoHighlightEntries(): DemoEntry[] {
-  return DEMO_ENTRIES.filter((e) => e.starred);
+  return sortNewestFirst(DEMO_ENTRIES.filter((e) => e.starred));
 }
 
 /** Total entry count */

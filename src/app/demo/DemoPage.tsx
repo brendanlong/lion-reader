@@ -22,7 +22,7 @@ import { TRPCProvider } from "@/lib/trpc/provider";
 import { AppearanceProvider } from "@/lib/appearance";
 import { DemoSidebar } from "./DemoSidebar";
 import {
-  DEMO_ENTRIES,
+  DEMO_ENTRIES_SORTED,
   getDemoEntriesForSubscription,
   getDemoEntriesForTag,
   getDemoEntry,
@@ -79,7 +79,7 @@ function DemoPageContent() {
       case "highlights":
         return getDemoHighlightEntries();
       default:
-        return DEMO_ENTRIES;
+        return DEMO_ENTRIES_SORTED;
     }
   }, [view, subId, tagId]);
 
