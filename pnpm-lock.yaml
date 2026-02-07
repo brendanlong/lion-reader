@@ -86,6 +86,9 @@ importers:
       isomorphic-dompurify:
         specifier: ^2.35.0
         version: 2.35.0
+      jsdom:
+        specifier: ^27.4.0
+        version: 27.4.0
       linkedom:
         specifier: ^0.18.12
         version: 0.18.12
@@ -186,9 +189,6 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
-      jsdom:
-        specifier: ^27.4.0
-        version: 27.4.0
       knip:
         specifier: ^5.82.0
         version: 5.82.0(@types/node@20.19.30)(typescript@5.9.3)
