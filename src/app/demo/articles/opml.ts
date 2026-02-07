@@ -11,24 +11,7 @@ const article: DemoArticle = {
     "Migrate to or from Lion Reader with standard OPML files, or back up your subscriptions.",
   publishedAt: new Date("2025-12-28T14:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader supports OPML (Outline Processor Markup Language) for seamless subscription portability between feed readers.</p>
-<p><strong>Import Features:</strong></p>
-<ul>
-<li>Upload OPML files from any reader (Feedly, Inoreader, NetNewsWire, etc.)</li>
-<li>Background processing with real-time progress via Server-Sent Events</li>
-<li>Automatic feed validation and active status checking</li>
-<li>Preserves folder/tag structure from original reader</li>
-<li>Smart duplicate detection to skip existing subscriptions</li>
-<li>Detailed per-feed status reports (success, skipped, errors)</li>
-<li>Includes dedicated Feedbin migration support</li>
-</ul>
-<p><strong>Export Features:</strong></p>
-<ul>
-<li>One-click OPML 2.0 export of all subscriptions</li>
-<li>Includes custom titles and complete tag/folder hierarchy</li>
-<li>Compatible with any OPML-supporting reader</li>
-<li>Ideal for backups, migrations, or sharing curated lists</li>
-</ul>`,
+  summaryHtml: `<p>Lion Reader supports full OPML import and export for migrating feed subscriptions between readers. Import processes run in the background with real-time progress updates, preserving folder/tag structure while validating feeds. Export generates OPML 2.0 with custom titles and complete hierarchy, compatible with any OPML-supporting reader.</p>`,
   contentHtml: `
     <h2>Portable Subscriptions</h2>
 

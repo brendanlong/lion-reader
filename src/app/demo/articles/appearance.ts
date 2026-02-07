@@ -10,15 +10,7 @@ const article: DemoArticle = {
   summary: "Customize fonts, text size, alignment, and switch between light and dark themes.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader provides comprehensive customization options to create your ideal reading environment. <strong>Dark mode</strong> fully integrates with system preferences or manual toggle using next-themes.</p>
-<p><strong>Typography controls</strong> include:</p>
-<ul>
-<li>Multiple font families (System, Merriweather, Literata, Inter, Source Sans)</li>
-<li>Text size options from small to extra-large with responsive scaling</li>
-<li>Choice between left-aligned or justified text alignment</li>
-</ul>
-<p>All settings save locally and apply instantly.</p>
-<p>As a <strong>Progressive Web App</strong>, Lion Reader can be installed on desktop or mobile devices for a native app-like experience, with portrait orientation lock on mobile for optimal reading comfort.</p>`,
+  summaryHtml: `<p>Lion Reader provides comprehensive appearance customization including <strong>dark mode</strong> support, multiple font families (serif and sans-serif options), adjustable text sizes, and alignment choices. All settings save locally and apply instantly. The app functions as a Progressive Web App, installable on desktop and mobile devices.</p>`,
   contentHtml: `
     <h2>Appearance &amp; Themes</h2>
 

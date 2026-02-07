@@ -10,16 +10,7 @@ const article: DemoArticle = {
   summary: "Search across all your entries by title, content, or both with instant results.",
   publishedAt: new Date("2025-12-28T10:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader&#39;s full-text search uses PostgreSQL with English language stemming to deliver fast, relevant results across your entire archive. You can search by title, content, or both, with configurable scope to narrow your focus.</p>
-<p><strong>Key Features:</strong></p>
-<ul>
-<li><strong>Flexible filtering</strong> — Combine search with subscription, tag, read/unread state, starred status, or entry type</li>
-<li><strong>Relevance ranking</strong> — Results ranked by PostgreSQL&#39;s ts_rank algorithm, prioritizing title matches over body text</li>
-<li><strong>High performance</strong> — Database-level full-text indexing ensures speed even with thousands of entries</li>
-<li><strong>Cursor-based pagination</strong> — Scroll through unlimited results without performance degradation</li>
-<li><strong>Universal availability</strong> — Search works in the web UI, tRPC API, and MCP server for AI assistant integrations</li>
-</ul>
-<p>The search makes it easy to find specific content within a newsletter, across saved articles, or just your starred items.</p>`,
+  summaryHtml: `<p>Lion Reader provides <strong>fast full-text search</strong> across your entire archive using PostgreSQL with English stemming. Search is <strong>scope-configurable</strong> (title, content, or both) and combines with filters like subscriptions, tags, and read state. Results are <strong>relevance-ranked</strong> and available via web UI, API, and MCP server.</p>`,
   contentHtml: `
     <h2>Search Everything, Instantly</h2>
 

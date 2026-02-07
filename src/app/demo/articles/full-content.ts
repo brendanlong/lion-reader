@@ -10,17 +10,7 @@ const article: DemoArticle = {
   summary: "Read complete articles inside Lion Reader, even when feeds only provide excerpts.",
   publishedAt: new Date("2026-01-15T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p><strong>Lion Reader</strong> automatically fetches full article content from RSS feeds that only provide excerpts, eliminating the need to switch between your feed reader and a web browser.</p>
-<p><strong>Key features:</strong></p>
-<ul>
-<li><strong>On-demand fetching</strong>: Get complete articles with a single button press</li>
-<li><strong>Mozilla Readability</strong>: Uses Firefox Reader View&#39;s algorithm to extract clean article text while removing ads and navigation clutter</li>
-<li><strong>Flexible options</strong>: Enable automatic full-content fetching per subscription or toggle manually as needed</li>
-<li><strong>Content preservation</strong>: Maintains images, code blocks, formatting, and document structure</li>
-<li><strong>Markdown support</strong>: Converts Markdown to HTML using the marked library</li>
-<li><strong>Graceful fallback</strong>: Displays original feed content if extraction fails</li>
-</ul>
-<p>This keeps you in your reading flow without context switching, helping you stay focused on the content that matters.</p>`,
+  summaryHtml: `<p>Lion Reader fetches full article content on demand using Mozilla&#39;s Readability algorithm, eliminating the need to leave your reader. Enable automatic fetching per subscription or toggle manually to get clean, distraction-free articles with preserved formatting, images, and code blocks.</p>`,
   contentHtml: `
     <h2>Full Content Fetching</h2>
 
