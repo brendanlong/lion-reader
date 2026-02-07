@@ -15,6 +15,7 @@
 
 import { type ReactNode, useEffect } from "react";
 import { toast } from "sonner";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useRealtimeUpdates, type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
 import { ConnectionStatusIndicator } from "./ConnectionStatusIndicator";
 
@@ -79,6 +80,35 @@ export function RealtimeProvider({
   showStatusIndicator = true,
 }: RealtimeProviderProps) {
   const { status, reconnect } = useRealtimeUpdates(initialCursors);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Check for share result query params (set by service worker redirect after
+  // Android share target). Android destroys the PWA's navigation state on share,
+  // so postMessage may not reach the new page. The SW passes the result via URL.
+  useEffect(() => {
+    const shared = searchParams.get("shared");
+    if (!shared) return;
+
+    if (shared === "saved") {
+      const title = searchParams.get("sharedTitle");
+      toast.success("Article saved", {
+        description: title || undefined,
+      });
+    } else if (shared === "error") {
+      const error = searchParams.get("sharedError");
+      toast.error("Failed to save article", {
+        description: error || undefined,
+      });
+    }
+
+    // Clean up query params without a full navigation
+    const url = new URL(window.location.href);
+    url.searchParams.delete("shared");
+    url.searchParams.delete("sharedTitle");
+    url.searchParams.delete("sharedError");
+    router.replace(url.pathname + url.search, { scroll: false });
+  }, [searchParams, router]);
 
   // Listen for messages from service worker (e.g., share target results)
   useEffect(() => {
