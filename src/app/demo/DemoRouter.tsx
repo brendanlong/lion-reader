@@ -11,10 +11,17 @@
 
 "use client";
 
-import { useMemo, useEffect, Suspense } from "react";
+import { useMemo, useEffect, useRef, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ClientLink } from "@/components/ui";
+import {
+  ClientLink,
+  Button,
+  StarIcon,
+  StarFilledIcon,
+  CircleIcon,
+  CircleFilledIcon,
+} from "@/components/ui";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
@@ -124,6 +131,17 @@ function DemoRouterContent() {
         ? "/demo/highlights"
         : "/demo/all";
 
+  // Auto-mark entry as read when viewing it (like the real app)
+  const hasSentMarkRead = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedEntry) return;
+    if (hasSentMarkRead.current === selectedEntry.id) return;
+    hasSentMarkRead.current = selectedEntry.id;
+    if (!selectedEntry.read) {
+      demoState.markRead(selectedEntry.id, true);
+    }
+  }, [selectedEntry, demoState]);
+
   if (selectedEntry) {
     return (
       <EntryArticle
@@ -143,6 +161,44 @@ function DemoRouterContent() {
             </svg>
             <span>Back to list</span>
           </ClientLink>
+        }
+        actionButtons={
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {/* Star button */}
+            <Button
+              variant={selectedEntry.starred ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => demoState.toggleStar(selectedEntry.id)}
+              className={
+                selectedEntry.starred
+                  ? "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-500 dark:text-white dark:hover:bg-amber-600"
+                  : ""
+              }
+              aria-label={selectedEntry.starred ? "Remove from starred" : "Add to starred"}
+            >
+              {selectedEntry.starred ? (
+                <StarFilledIcon className="h-5 w-5" />
+              ) : (
+                <StarIcon className="h-5 w-5" />
+              )}
+              <span className="ml-2">{selectedEntry.starred ? "Starred" : "Star"}</span>
+            </Button>
+
+            {/* Mark read/unread button */}
+            <Button
+              variant={!selectedEntry.read ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => demoState.toggleRead(selectedEntry.id)}
+              aria-label={selectedEntry.read ? "Mark as unread" : "Mark as read"}
+            >
+              {selectedEntry.read ? (
+                <CircleIcon className="h-4 w-4" />
+              ) : (
+                <CircleFilledIcon className="h-4 w-4" />
+              )}
+              <span className="ml-2">{selectedEntry.read ? "Read" : "Unread"}</span>
+            </Button>
+          </div>
         }
         beforeContent={
           selectedEntry.id === "welcome" ? (

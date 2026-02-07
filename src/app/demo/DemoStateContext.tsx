@@ -42,6 +42,9 @@ interface DemoStateContextValue {
   /** Toggle starred status for an entry */
   toggleStar: (entryId: string) => void;
 
+  /** Set read status for an entry (non-toggle, explicit value) */
+  markRead: (entryId: string, read: boolean) => void;
+
   /** Mark all provided entries as read */
   markAllRead: (entryIds: string[]) => void;
 
@@ -65,6 +68,9 @@ interface DemoStateContextValue {
 
   /** Get all currently-starred entries (with state applied) */
   getStarredEntries: () => DemoEntry[];
+
+  /** Count unread starred entries (for sidebar Highlights count) */
+  countUnreadStarred: () => number;
 }
 
 // ============================================================================
@@ -112,6 +118,15 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       const newStates = new Map(prev.entryStates);
       const current = newStates.get(entryId) ?? { read: false, starred: false };
       newStates.set(entryId, { ...current, starred: !current.starred });
+      return { ...prev, entryStates: newStates };
+    });
+  }, []);
+
+  const markRead = useCallback((entryId: string, read: boolean) => {
+    setState((prev) => {
+      const newStates = new Map(prev.entryStates);
+      const current = newStates.get(entryId) ?? { read: false, starred: false };
+      newStates.set(entryId, { ...current, read });
       return { ...prev, entryStates: newStates };
     });
   }, []);
@@ -188,11 +203,21 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
     });
   }, [state.entryStates]);
 
+  const countUnreadStarred = useCallback((): number => {
+    return DEMO_ENTRIES.filter((e) => {
+      const entryState = state.entryStates.get(e.id);
+      const starred = entryState ? entryState.starred : e.starred;
+      const read = entryState ? entryState.read : e.read;
+      return starred && !read;
+    }).length;
+  }, [state.entryStates]);
+
   const value = useMemo<DemoStateContextValue>(
     () => ({
       getEntryState,
       toggleRead,
       toggleStar,
+      markRead,
       markAllRead,
       sortOrder: state.sortOrder,
       toggleSortOrder,
@@ -201,11 +226,13 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       applyState,
       countUnread,
       getStarredEntries,
+      countUnreadStarred,
     }),
     [
       getEntryState,
       toggleRead,
       toggleStar,
+      markRead,
       markAllRead,
       state.sortOrder,
       toggleSortOrder,
@@ -214,6 +241,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       applyState,
       countUnread,
       getStarredEntries,
+      countUnreadStarred,
     ]
   );
 

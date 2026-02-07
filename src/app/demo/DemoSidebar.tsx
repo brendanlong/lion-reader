@@ -61,7 +61,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
 
   // Reactive counts from demo state
   const totalUnread = demoState.countUnread(DEMO_ENTRIES);
-  const highlightCount = demoState.getStarredEntries().length;
+  const highlightCount = demoState.countUnreadStarred();
 
   return (
     <nav className="flex h-full flex-col bg-white dark:bg-zinc-900">
@@ -71,9 +71,11 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           href="/demo/all"
           isActive={isAllActive}
           countElement={
-            <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-              ({totalUnread})
-            </span>
+            totalUnread > 0 ? (
+              <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
+                ({totalUnread})
+              </span>
+            ) : undefined
           }
           onClick={onClose}
         >
@@ -84,9 +86,11 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           href="/demo/highlights"
           isActive={isHighlightsActive}
           countElement={
-            <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-              ({highlightCount})
-            </span>
+            highlightCount > 0 ? (
+              <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
+                ({highlightCount})
+              </span>
+            ) : undefined
           }
           onClick={onClose}
         >
