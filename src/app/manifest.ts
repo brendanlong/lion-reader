@@ -7,6 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "A modern feed reader",
     start_url: "/",
     display: "standalone",
+    orientation: "portrait",
     background_color: "#ffffff",
     theme_color: "#f97316",
     icons: [
