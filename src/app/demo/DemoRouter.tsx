@@ -14,11 +14,13 @@ import Link from "next/link";
 import { ClientLink } from "@/components/ui";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { DemoEntryList } from "./DemoEntryList";
+import { DemoListSkeleton } from "./DemoListSkeleton";
 import {
   DEMO_ENTRIES_SORTED,
   getDemoEntriesForSubscription,
   getDemoEntriesForTag,
   getDemoEntry,
+  getDemoEntryArticleProps,
   getDemoHighlightEntries,
   getDemoSubscription,
   getDemoTag,
@@ -85,13 +87,7 @@ function DemoRouterContent() {
   if (selectedEntry) {
     return (
       <EntryArticle
-        title={selectedEntry.title ?? "Untitled"}
-        url={selectedEntry.url}
-        source={selectedEntry.feedTitle ?? "Lion Reader"}
-        author={selectedEntry.author}
-        date={selectedEntry.publishedAt ?? selectedEntry.fetchedAt}
-        contentHtml={selectedEntry.contentHtml}
-        fallbackContent={selectedEntry.summary}
+        {...getDemoEntryArticleProps(selectedEntry)}
         backButton={
           <ClientLink
             href={backHref}
@@ -147,20 +143,7 @@ function DemoRouterContent() {
 
 export function DemoRouter() {
   return (
-    <Suspense
-      fallback={
-        <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-          <div className="mb-4 sm:mb-6">
-            <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-          </div>
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
-            ))}
-          </div>
-        </div>
-      }
-    >
+    <Suspense fallback={<DemoListSkeleton />}>
       <DemoRouterContent />
     </Suspense>
   );

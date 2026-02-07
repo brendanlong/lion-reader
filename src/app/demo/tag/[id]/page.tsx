@@ -1,11 +1,14 @@
 /**
  * /demo/tag/[id] — Tag demo page
  *
- * Route stub with dynamic metadata; content rendered by DemoRouter in the parent layout.
+ * Server component that renders EntryArticle with static demo data when
+ * ?entry= is present, enabling SSR of entry content for SEO. After
+ * hydration, DemoLayoutContent switches to DemoRouter for interactivity.
  */
 
 import { type Metadata } from "next";
-import { getDemoEntry, getDemoTag } from "../../data";
+import { EntryArticle } from "@/components/entries/EntryArticle";
+import { getDemoEntry, getDemoEntryArticleProps, getDemoTag } from "../../data";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -25,6 +28,12 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   };
 }
 
-export default function DemoTagPage() {
-  return null;
+export default async function DemoTagPage({ searchParams }: Props) {
+  const sp = await searchParams;
+  const entryId = typeof sp.entry === "string" ? sp.entry : undefined;
+  const entry = entryId ? getDemoEntry(entryId) : undefined;
+
+  if (!entry) return null;
+
+  return <EntryArticle {...getDemoEntryArticleProps(entry)} />;
 }

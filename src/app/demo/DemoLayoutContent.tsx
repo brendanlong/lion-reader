@@ -3,11 +3,15 @@
  *
  * Client component wrapping the demo layout with providers and LayoutShell.
  * Mirrors the pattern used by AppLayoutContent for the real app.
+ *
+ * Uses hydration-based switching: server HTML shows children (which contain
+ * SSR-rendered EntryArticle content from page.tsx), then switches to DemoRouter
+ * after hydration for full client-side interactivity.
  */
 
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { LayoutShell } from "@/components/layout/LayoutShell";
 import {
@@ -18,13 +22,19 @@ import { TRPCProvider } from "@/lib/trpc/provider";
 import { AppearanceProvider } from "@/lib/appearance";
 import { DemoSidebar } from "./DemoSidebar";
 import { DemoRouter } from "./DemoRouter";
+import { DemoListSkeleton } from "./DemoListSkeleton";
 
 interface DemoLayoutContentProps {
   children: ReactNode;
 }
 
+const emptySubscribe = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const hydrated = useSyncExternalStore(emptySubscribe, getClientSnapshot, getServerSnapshot);
 
   return (
     <TRPCProvider>
@@ -90,11 +100,9 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
             }
           >
             <MainScrollContainer className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
-              <DemoRouter />
+              {hydrated ? <DemoRouter /> : (children ?? <DemoListSkeleton />)}
             </MainScrollContainer>
           </LayoutShell>
-          {/* Hidden children from Next.js route stubs (same pattern as real app layout) */}
-          <div hidden>{children}</div>
         </ScrollContainerProvider>
       </AppearanceProvider>
     </TRPCProvider>
