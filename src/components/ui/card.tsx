@@ -127,7 +127,7 @@ export function StatusCard({ children, variant, padding = "md", className = "" }
   };
 
   const variantStyles = {
-    info: "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20",
+    info: "border-info-border bg-info-subtle",
     success: "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20",
     warning: "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20",
     error: "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20",

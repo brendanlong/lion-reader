@@ -17,7 +17,7 @@ export function Alert({ variant = "info", children, className = "" }: AlertProps
     error: "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200",
     success: "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200",
     warning: "bg-yellow-50 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200",
-    info: "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200",
+    info: "bg-info-subtle text-info-foreground",
   };
 
   return (

@@ -59,7 +59,7 @@ export function IntegrationsSettings() {
             href="https://modelcontextprotocol.io/"
             target="_blank"
             rel="noopener noreferrer"
-            className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            className="text-accent hover:text-accent-hover font-medium"
           >
             MCP (Model Context Protocol)
           </a>
@@ -151,7 +151,7 @@ export function IntegrationsSettings() {
           </p>
           <ClientLink
             href="/settings/api-tokens"
-            className="ui-text-sm mt-2 inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            className="ui-text-sm text-accent hover:text-accent-hover mt-2 inline-flex items-center gap-1 font-medium"
           >
             Manage API Tokens
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

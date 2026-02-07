@@ -227,7 +227,7 @@ export default function ApiTokensSettingsContent() {
                       type="checkbox"
                       checked={selectedScopes.includes(scope)}
                       onChange={() => toggleScope(scope)}
-                      className="mt-1 h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800"
+                      className="text-accent focus:ring-accent mt-1 h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800"
                     />
                     <div className="flex-1">
                       <p className="font-medium text-zinc-900 dark:text-zinc-50">{label}</p>
@@ -337,7 +337,7 @@ export default function ApiTokensSettingsContent() {
                           {token.scopes.map((scope) => (
                             <span
                               key={scope}
-                              className="ui-text-xs inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                              className="ui-text-xs bg-info-subtle text-info-foreground inline-flex items-center rounded-full px-2 py-0.5 font-medium"
                             >
                               {scopeLabels[scope]?.label ?? scope}
                             </span>
