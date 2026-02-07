@@ -24,9 +24,11 @@ import { DemoSidebar } from "./DemoSidebar";
 import {
   DEMO_ENTRIES,
   getDemoEntriesForSubscription,
+  getDemoEntriesForTag,
   getDemoEntry,
   getDemoHighlightEntries,
   getDemoSubscription,
+  getDemoTag,
 } from "./data";
 
 // Static query state for the demo - no fetching, all data loaded
@@ -49,7 +51,10 @@ function DemoPageContent() {
 
   // Redirect bare / to /?view=all&entry=welcome
   const hasParams =
-    searchParams.has("view") || searchParams.has("sub") || searchParams.has("entry");
+    searchParams.has("view") ||
+    searchParams.has("sub") ||
+    searchParams.has("tag") ||
+    searchParams.has("entry");
   useEffect(() => {
     if (!hasParams) {
       router.replace("/?view=all&entry=welcome");
@@ -59,6 +64,7 @@ function DemoPageContent() {
   // Derive current state from URL search params
   const view = searchParams.get("view") ?? "all";
   const subId = searchParams.get("sub");
+  const tagId = searchParams.get("tag");
   const entryId = searchParams.get("entry") ?? (!hasParams ? "welcome" : null);
 
   // Compute the entries to show based on current navigation
@@ -66,13 +72,16 @@ function DemoPageContent() {
     if (subId) {
       return getDemoEntriesForSubscription(subId);
     }
+    if (tagId) {
+      return getDemoEntriesForTag(tagId);
+    }
     switch (view) {
       case "highlights":
         return getDemoHighlightEntries();
       default:
         return DEMO_ENTRIES;
     }
-  }, [view, subId]);
+  }, [view, subId, tagId]);
 
   // Get the selected entry for detail view
   const selectedEntry = entryId ? getDemoEntry(entryId) : null;
@@ -82,16 +91,19 @@ function DemoPageContent() {
     if (subId) {
       return getDemoSubscription(subId)?.title ?? "Unknown";
     }
+    if (tagId) {
+      return getDemoTag(tagId)?.name ?? "Unknown";
+    }
     switch (view) {
       case "highlights":
         return "Highlights";
       default:
         return "All Features";
     }
-  }, [view, subId]);
+  }, [view, subId, tagId]);
 
   // Build the back-to-list href
-  const backHref = subId ? `/?sub=${subId}` : `/?view=${view}`;
+  const backHref = subId ? `/?sub=${subId}` : tagId ? `/?tag=${tagId}` : `/?view=${view}`;
 
   return (
     <LayoutShell
@@ -179,9 +191,9 @@ function DemoPageContent() {
                 <span>Back to list</span>
               </ClientLink>
             }
-            afterContent={
+            beforeContent={
               selectedEntry.id === "welcome" ? (
-                <div className="mt-8 flex flex-col items-center gap-4 rounded-lg border border-zinc-200 bg-white p-6 sm:flex-row sm:justify-center dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="mb-6 flex flex-col items-center gap-4 rounded-lg border border-zinc-200 bg-white p-6 sm:flex-row sm:justify-center dark:border-zinc-800 dark:bg-zinc-900">
                   <Link
                     href="/register"
                     className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md bg-zinc-900 px-6 font-medium text-white transition-colors hover:bg-zinc-800 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -214,6 +226,7 @@ function DemoPageContent() {
               onEntryClick={(id) => {
                 const params = new URLSearchParams();
                 if (subId) params.set("sub", subId);
+                else if (tagId) params.set("tag", tagId);
                 else if (view !== "all") params.set("view", view);
                 params.set("entry", id);
                 window.history.pushState(null, "", `/?${params.toString()}`);

@@ -35,6 +35,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
   const searchParams = useSearchParams();
   const currentView = searchParams.get("view");
   const currentSub = searchParams.get("sub");
+  const currentTag = searchParams.get("tag");
 
   // Features expanded by default, About collapsed
   const [expandedTags, setExpandedTags] = useState<Set<string>>(() => new Set(["features"]));
@@ -52,11 +53,15 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
   };
 
   const isViewActive = (view: string | null) => {
-    // "all" is active when no view param or view=all, and no sub is selected
+    // "all" is active when no view param or view=all, and no sub or tag is selected
     if (view === null || view === "all") {
-      return (!currentView || currentView === "all") && !currentSub;
+      return (!currentView || currentView === "all") && !currentSub && !currentTag;
     }
-    return currentView === view && !currentSub;
+    return currentView === view && !currentSub && !currentTag;
+  };
+
+  const isTagActive = (tagId: string) => {
+    return currentTag === tagId;
   };
 
   const isSubActive = (subId: string) => {
@@ -123,7 +128,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
                   {/* Tag link - not navigable in demo, just shows context */}
                   <NavLinkWithIcon
                     href={`/?tag=${tag.id}`}
-                    isActive={false}
+                    isActive={isTagActive(tag.id)}
                     icon={<ColorDot color={tag.color} size="sm" />}
                     label={tag.name}
                     count={

@@ -61,15 +61,27 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
 ];
 
 // ============================================================================
-// Helper to create consistent dates
+// Feature implementation dates (approximate, from git history)
 // ============================================================================
 
-const BASE_DATE = new Date("2025-01-15T12:00:00Z");
-function demoDate(daysAgo: number): Date {
-  const d = new Date(BASE_DATE);
-  d.setDate(d.getDate() - daysAgo);
-  return d;
-}
+/** Today's date for the welcome entry */
+const TODAY = new Date();
+
+const FEATURE_DATES: Record<string, Date> = {
+  "rss-atom": new Date("2025-12-26T12:00:00Z"),
+  "json-feed": new Date("2025-12-26T14:00:00Z"),
+  "email-newsletters": new Date("2025-12-30T12:00:00Z"),
+  "save-for-later": new Date("2025-12-27T16:00:00Z"),
+  "mcp-server": new Date("2026-01-14T12:00:00Z"),
+  websub: new Date("2025-12-27T10:00:00Z"),
+  "keyboard-shortcuts": new Date("2025-12-27T14:00:00Z"),
+  "text-to-speech": new Date("2025-12-27T18:00:00Z"),
+  "ai-summaries": new Date("2026-01-16T12:00:00Z"),
+  "full-content": new Date("2026-01-15T12:00:00Z"),
+  appearance: new Date("2025-12-28T12:00:00Z"),
+  welcome: TODAY,
+  "open-source": new Date("2025-12-26T10:00:00Z"),
+};
 
 // ============================================================================
 // Entries
@@ -86,8 +98,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "RSS & Atom Feeds",
     author: null,
     summary: "Subscribe to any RSS 2.0, Atom, or JSON Feed. Lion Reader handles all the parsing.",
-    publishedAt: demoDate(0),
-    fetchedAt: demoDate(0),
+    publishedAt: FEATURE_DATES["rss-atom"],
+    fetchedAt: FEATURE_DATES["rss-atom"],
     read: false,
     starred: false,
     feedTitle: "Feed Types",
@@ -112,8 +124,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "JSON Feed Support",
     author: null,
     summary: "Native support for the JSON Feed format, a modern alternative to XML-based feeds.",
-    publishedAt: demoDate(1),
-    fetchedAt: demoDate(1),
+    publishedAt: FEATURE_DATES["json-feed"],
+    fetchedAt: FEATURE_DATES["json-feed"],
     read: false,
     starred: false,
     feedTitle: "Feed Types",
@@ -139,8 +151,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     author: null,
     summary:
       "Subscribe to newsletters with a unique email address. They appear right alongside your feeds.",
-    publishedAt: demoDate(2),
-    fetchedAt: demoDate(2),
+    publishedAt: FEATURE_DATES["email-newsletters"],
+    fetchedAt: FEATURE_DATES["email-newsletters"],
     read: false,
     starred: false,
     feedTitle: "Feed Types",
@@ -160,8 +172,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "Save for Later",
     author: null,
     summary: "Save any web page for later reading with the bookmarklet or API.",
-    publishedAt: demoDate(3),
-    fetchedAt: demoDate(3),
+    publishedAt: FEATURE_DATES["save-for-later"],
+    fetchedAt: FEATURE_DATES["save-for-later"],
     read: false,
     starred: false,
     feedTitle: "Feed Types",
@@ -188,8 +200,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "MCP Server",
     author: null,
     summary: "Control Lion Reader from AI assistants like Claude using the Model Context Protocol.",
-    publishedAt: demoDate(0),
-    fetchedAt: demoDate(0),
+    publishedAt: FEATURE_DATES["mcp-server"],
+    fetchedAt: FEATURE_DATES["mcp-server"],
     read: false,
     starred: false,
     feedTitle: "Integrations",
@@ -216,8 +228,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "WebSub Push Notifications",
     author: null,
     summary: "Instant updates via WebSub (PubSubHubbub) for feeds that support push delivery.",
-    publishedAt: demoDate(1),
-    fetchedAt: demoDate(1),
+    publishedAt: FEATURE_DATES["websub"],
+    fetchedAt: FEATURE_DATES["websub"],
     read: false,
     starred: false,
     feedTitle: "Integrations",
@@ -242,8 +254,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "Keyboard Shortcuts",
     author: null,
     summary: "Navigate and manage entries entirely from the keyboard for a fast reading workflow.",
-    publishedAt: demoDate(2),
-    fetchedAt: demoDate(2),
+    publishedAt: FEATURE_DATES["keyboard-shortcuts"],
+    fetchedAt: FEATURE_DATES["keyboard-shortcuts"],
     read: false,
     starred: false,
     feedTitle: "Integrations",
@@ -273,8 +285,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     author: null,
     summary:
       "Listen to articles with natural-sounding text-to-speech, with paragraph highlighting.",
-    publishedAt: demoDate(0),
-    fetchedAt: demoDate(0),
+    publishedAt: FEATURE_DATES["text-to-speech"],
+    fetchedAt: FEATURE_DATES["text-to-speech"],
     read: false,
     starred: false,
     feedTitle: "Reading Experience",
@@ -302,8 +314,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     author: null,
     summary:
       "Get AI-generated summaries to quickly decide which articles are worth reading in full.",
-    publishedAt: demoDate(1),
-    fetchedAt: demoDate(1),
+    publishedAt: FEATURE_DATES["ai-summaries"],
+    fetchedAt: FEATURE_DATES["ai-summaries"],
     read: false,
     starred: false,
     feedTitle: "Reading Experience",
@@ -328,8 +340,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "Full Content Fetching",
     author: null,
     summary: "Fetch full article content even when feeds only provide excerpts or summaries.",
-    publishedAt: demoDate(2),
-    fetchedAt: demoDate(2),
+    publishedAt: FEATURE_DATES["full-content"],
+    fetchedAt: FEATURE_DATES["full-content"],
     read: false,
     starred: false,
     feedTitle: "Reading Experience",
@@ -355,8 +367,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "Appearance & Themes",
     author: null,
     summary: "Customize your reading experience with fonts, text sizes, and dark mode.",
-    publishedAt: demoDate(3),
-    fetchedAt: demoDate(3),
+    publishedAt: FEATURE_DATES["appearance"],
+    fetchedAt: FEATURE_DATES["appearance"],
     read: false,
     starred: false,
     feedTitle: "Reading Experience",
@@ -383,8 +395,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "Welcome to Lion Reader",
     author: null,
     summary: "A modern, fast, and open-source feed reader. Explore the demo to see what it can do.",
-    publishedAt: demoDate(0),
-    fetchedAt: demoDate(0),
+    publishedAt: FEATURE_DATES["welcome"],
+    fetchedAt: FEATURE_DATES["welcome"],
     read: false,
     starred: true,
     feedTitle: "Lion Reader",
@@ -411,8 +423,8 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     title: "Open Source",
     author: null,
     summary: "Lion Reader is fully open source. Self-host it or contribute on GitHub.",
-    publishedAt: demoDate(1),
-    fetchedAt: demoDate(1),
+    publishedAt: FEATURE_DATES["open-source"],
+    fetchedAt: FEATURE_DATES["open-source"],
     read: false,
     starred: false,
     feedTitle: "Lion Reader",
@@ -457,6 +469,18 @@ for (const sub of DEMO_SUBSCRIPTIONS) {
 
 export function getDemoEntriesForSubscription(subscriptionId: string): DemoEntry[] {
   return entriesBySubscription.get(subscriptionId) ?? [];
+}
+
+/** Get entries for a tag (entries from all subscriptions in that tag) */
+export function getDemoEntriesForTag(tagId: string): DemoEntry[] {
+  const tag = DEMO_TAGS.find((t) => t.id === tagId);
+  if (!tag) return [];
+  const subIds = new Set(tag.subscriptionIds);
+  return DEMO_ENTRIES.filter((e) => e.subscriptionId && subIds.has(e.subscriptionId));
+}
+
+export function getDemoTag(tagId: string): DemoTag | undefined {
+  return DEMO_TAGS.find((t) => t.id === tagId);
 }
 
 export function getDemoEntry(entryId: string): DemoEntry | undefined {
