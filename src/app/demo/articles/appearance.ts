@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "appearance",
   subscriptionId: "reading-experience",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/304",
   title: "Appearance & Themes",
   author: null,
   summary: "Customize fonts, text size, alignment, and switch between light and dark themes.",

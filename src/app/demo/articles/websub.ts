@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "websub",
   subscriptionId: "integrations",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/271",
   title: "WebSub Push Notifications",
   author: null,
   summary: "Receive instant updates from feeds that support the W3C WebSub push protocol.",

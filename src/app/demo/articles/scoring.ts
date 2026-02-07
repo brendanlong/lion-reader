@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "scoring",
   subscriptionId: "organization",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/450",
   title: "Entry Scoring & Recommendations",
   author: null,
   summary:

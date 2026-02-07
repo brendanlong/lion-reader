@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "json-feed",
   subscriptionId: "feed-types",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/188",
   title: "JSON Feed Support",
   author: null,
   summary:

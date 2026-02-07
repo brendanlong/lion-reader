@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "full-content",
   subscriptionId: "reading-experience",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/287",
   title: "Full Content Fetching",
   author: null,
   summary: "Read complete articles inside Lion Reader, even when feeds only provide excerpts.",

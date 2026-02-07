@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "pwa",
   subscriptionId: "integrations",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/413",
   title: "Progressive Web App",
   author: null,
   summary: "Install Lion Reader on your phone or desktop for a native app-like experience.",

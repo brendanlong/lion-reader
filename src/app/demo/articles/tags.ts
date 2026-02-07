@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "tags",
   subscriptionId: "organization",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/92",
   title: "Tags & Folders",
   author: null,
   summary: "Organize subscriptions with color-coded tags and browse entries by category.",
