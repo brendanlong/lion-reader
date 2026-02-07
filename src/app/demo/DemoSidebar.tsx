@@ -1,9 +1,12 @@
 /**
  * DemoSidebar Component
  *
- * Static sidebar for the demo pages.
+ * Sidebar for the demo pages with reactive unread/starred counts.
  * Uses the same UI primitives as the real sidebar (NavLink, NavLinkWithIcon,
  * SubscriptionItem, ColorDot) with path-based navigation.
+ *
+ * Reads from DemoStateContext so counts update when entries are
+ * marked read/unread or starred/unstarred.
  */
 
 "use client";
@@ -18,14 +21,8 @@ import {
   ChevronRightIcon,
 } from "@/components/ui";
 import { SubscriptionItem } from "@/components/layout/SubscriptionItem";
-import {
-  DEMO_TAGS,
-  DEMO_SUBSCRIPTIONS,
-  DEMO_ENTRIES,
-  DEMO_TOTAL_COUNT,
-  getDemoHighlightEntries,
-  getDemoEntriesForSubscription,
-} from "./data";
+import { DEMO_TAGS, DEMO_SUBSCRIPTIONS, DEMO_ENTRIES, getDemoEntriesForSubscription } from "./data";
+import { useDemoState } from "./DemoStateContext";
 
 interface DemoSidebarProps {
   onClose: () => void;
@@ -33,6 +30,7 @@ interface DemoSidebarProps {
 
 export function DemoSidebar({ onClose }: DemoSidebarProps) {
   const pathname = usePathname();
+  const demoState = useDemoState();
 
   // Features expanded by default, About collapsed
   const [expandedTags, setExpandedTags] = useState<Set<string>>(() => new Set(["features"]));
@@ -61,6 +59,10 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
     return pathname === `/demo/subscription/${subId}`;
   };
 
+  // Reactive counts from demo state
+  const totalUnread = demoState.countUnread(DEMO_ENTRIES);
+  const highlightCount = demoState.getStarredEntries().length;
+
   return (
     <nav className="flex h-full flex-col bg-white dark:bg-zinc-900">
       {/* Top navigation */}
@@ -70,7 +72,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           isActive={isAllActive}
           countElement={
             <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-              ({DEMO_TOTAL_COUNT})
+              ({totalUnread})
             </span>
           }
           onClick={onClose}
@@ -83,7 +85,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           isActive={isHighlightsActive}
           countElement={
             <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-              ({getDemoHighlightEntries().length})
+              ({highlightCount})
             </span>
           }
           onClick={onClose}
@@ -101,6 +103,10 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           {DEMO_TAGS.map((tag) => {
             const expanded = expandedTags.has(tag.id);
             const tagSubs = DEMO_SUBSCRIPTIONS.filter((s) => s.tagId === tag.id);
+            const tagEntries = DEMO_ENTRIES.filter((e) =>
+              tagSubs.some((s) => s.id === e.subscriptionId)
+            );
+            const tagUnread = demoState.countUnread(tagEntries);
 
             return (
               <li key={tag.id}>
@@ -124,10 +130,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
                     isActive={isTagActive(tag.id)}
                     icon={<ColorDot color={tag.color} size="sm" />}
                     label={tag.name}
-                    count={
-                      DEMO_ENTRIES.filter((e) => tagSubs.some((s) => s.id === e.subscriptionId))
-                        .length
-                    }
+                    count={tagUnread}
                     onClick={onClose}
                   />
                 </div>
@@ -135,21 +138,25 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
                 {/* Nested subscriptions */}
                 {expanded && (
                   <ul className="ml-6 space-y-0.5">
-                    {tagSubs.map((sub) => (
-                      <SubscriptionItem
-                        key={sub.id}
-                        subscription={{
-                          id: sub.id,
-                          title: sub.title,
-                          unreadCount: getDemoEntriesForSubscription(sub.id).length,
-                        }}
-                        isActive={isSubActive(sub.id)}
-                        href={`/demo/subscription/${sub.id}`}
-                        onClose={onClose}
-                        onEdit={() => {}}
-                        onUnsubscribe={() => {}}
-                      />
-                    ))}
+                    {tagSubs.map((sub) => {
+                      const subEntries = getDemoEntriesForSubscription(sub.id);
+                      const subUnread = demoState.countUnread(subEntries);
+                      return (
+                        <SubscriptionItem
+                          key={sub.id}
+                          subscription={{
+                            id: sub.id,
+                            title: sub.title,
+                            unreadCount: subUnread,
+                          }}
+                          isActive={isSubActive(sub.id)}
+                          href={`/demo/subscription/${sub.id}`}
+                          onClose={onClose}
+                          onEdit={() => {}}
+                          onUnsubscribe={() => {}}
+                        />
+                      );
+                    })}
                   </ul>
                 )}
               </li>

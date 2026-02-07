@@ -4,6 +4,9 @@
  * Client-side router for the demo pages. Reads usePathname() and
  * useSearchParams() to determine which content to render, mirroring
  * the pattern used by AppRouter for the real app.
+ *
+ * Integrates with DemoStateContext for interactive read/starred state,
+ * sort order, unread-only filtering, and mark-all-read functionality.
  */
 
 "use client";
@@ -13,15 +16,18 @@ import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ClientLink } from "@/components/ui";
 import { EntryArticle } from "@/components/entries/EntryArticle";
+import { SortToggle } from "@/components/entries/SortToggle";
+import { UnreadToggle } from "@/components/entries/UnreadToggle";
+import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
 import { DemoEntryList } from "./DemoEntryList";
 import { DemoListSkeleton } from "./DemoListSkeleton";
+import { useDemoState } from "./DemoStateContext";
 import {
-  DEMO_ENTRIES_SORTED,
+  DEMO_ENTRIES,
   getDemoEntriesForSubscription,
   getDemoEntriesForTag,
   getDemoEntry,
   getDemoEntryArticleProps,
-  getDemoHighlightEntries,
   getDemoSubscription,
   getDemoTag,
 } from "./data";
@@ -30,6 +36,7 @@ function DemoRouterContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const entryId = searchParams.get("entry");
+  const demoState = useDemoState();
 
   // Parse the pathname to determine the current view
   const subscriptionMatch = pathname.match(/^\/demo\/subscription\/([^/]+)/);
@@ -38,8 +45,8 @@ function DemoRouterContent() {
   const tagId = tagMatch?.[1] ?? null;
   const isHighlights = pathname.startsWith("/demo/highlights");
 
-  // Compute the entries to show based on current navigation
-  const entries = useMemo(() => {
+  // Compute the base entries (before state overrides) based on current navigation
+  const baseEntries = useMemo(() => {
     if (subId) {
       return getDemoEntriesForSubscription(subId);
     }
@@ -47,13 +54,35 @@ function DemoRouterContent() {
       return getDemoEntriesForTag(tagId);
     }
     if (isHighlights) {
-      return getDemoHighlightEntries();
+      // Highlights uses live starred state from context
+      return demoState.getStarredEntries();
     }
-    return DEMO_ENTRIES_SORTED;
-  }, [subId, tagId, isHighlights]);
+    return [...DEMO_ENTRIES];
+  }, [subId, tagId, isHighlights, demoState]);
 
-  // Get the selected entry for detail view
-  const selectedEntry = entryId ? getDemoEntry(entryId) : null;
+  // Apply state overrides (read/starred, sort, unread filter)
+  // For highlights, skip unread filter and just apply sort/state
+  const entries = useMemo(() => {
+    if (isHighlights) {
+      // For highlights, entries are already filtered to starred only
+      // Just sort them
+      return [...baseEntries].sort((a, b) => {
+        const timeA = a.publishedAt?.getTime() ?? 0;
+        const timeB = b.publishedAt?.getTime() ?? 0;
+        return demoState.sortOrder === "newest" ? timeB - timeA : timeA - timeB;
+      });
+    }
+    return demoState.applyState(baseEntries);
+  }, [baseEntries, isHighlights, demoState]);
+
+  // Get the selected entry for detail view (with live state)
+  const selectedEntry = useMemo(() => {
+    if (!entryId) return null;
+    const entry = getDemoEntry(entryId);
+    if (!entry) return null;
+    const state = demoState.getEntryState(entryId);
+    return { ...entry, read: state.read, starred: state.starred };
+  }, [entryId, demoState]);
 
   // Compute the page title
   const pageTitle = useMemo(() => {
@@ -68,6 +97,17 @@ function DemoRouterContent() {
     }
     return "All Features";
   }, [subId, tagId, isHighlights]);
+
+  // Context description for mark-all-read dialog
+  const markAllReadDescription = useMemo(() => {
+    if (subId) {
+      return getDemoSubscription(subId)?.title ?? "this subscription";
+    }
+    if (tagId) {
+      return getDemoTag(tagId)?.name ?? "this tag";
+    }
+    return "all features";
+  }, [subId, tagId]);
 
   // Keep document.title in sync during client-side navigation
   useEffect(() => {
@@ -128,11 +168,29 @@ function DemoRouterContent() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      {/* Header with title */}
-      <div className="mb-4 sm:mb-6">
+      {/* Header with title and action buttons */}
+      <div className="mb-4 flex items-center justify-between sm:mb-6">
         <h1 className="ui-text-xl sm:ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">
           {pageTitle}
         </h1>
+        {!isHighlights && (
+          <div className="flex gap-2">
+            <MarkAllReadButton
+              contextDescription={markAllReadDescription}
+              isLoading={false}
+              onConfirm={() => {
+                // Mark all currently-visible base entries as read
+                const ids = baseEntries.map((e) => e.id);
+                demoState.markAllRead(ids);
+              }}
+            />
+            <SortToggle sortOrder={demoState.sortOrder} onToggle={demoState.toggleSortOrder} />
+            <UnreadToggle
+              showUnreadOnly={demoState.showUnreadOnly}
+              onToggle={demoState.toggleShowUnreadOnly}
+            />
+          </div>
+        )}
       </div>
 
       {/* Entry list */}
