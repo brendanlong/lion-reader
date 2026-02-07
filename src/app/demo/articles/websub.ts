@@ -10,15 +10,7 @@ const article: DemoArticle = {
   summary: "Receive instant updates from feeds that support the W3C WebSub push protocol.",
   publishedAt: new Date("2025-12-27T10:00:00Z"),
   starred: false,
-  summaryHtml: `<p><strong>WebSub</strong> is a W3C standard that enables real-time content delivery by pushing updates directly to subscribers instead of requiring repeated polling. When you subscribe to a compatible feed, Lion Reader automatically detects the WebSub hub URL, subscribes via a verification handshake, and receives instant notifications when new content is published.</p>
-<p><strong>Key benefits:</strong></p>
-<ul>
-<li><strong>Near-instant delivery</strong> — content arrives in seconds</li>
-<li><strong>Reduced server load</strong> — fewer requests for both readers and publishers</li>
-<li><strong>Lower bandwidth usage</strong> — no repeated fetching of unchanged feeds</li>
-<li><strong>Better user experience</strong> — immediate updates for time-sensitive content</li>
-</ul>
-<p>Lion Reader handles WebSub detection, subscription, renewal, and error handling automatically. For feeds without WebSub support, the app seamlessly falls back to traditional polling.</p>`,
+  summaryHtml: `<p>WebSub (formerly PubSubHubbub) is a W3C standard that enables <strong>real-time content delivery</strong> by pushing updates directly to Lion Reader the moment they&#39;re published, instead of repeatedly polling feeds. This provides <strong>near-instant delivery</strong>, reduces server load, and lowers bandwidth usage. Lion Reader automatically discovers and subscribes to WebSub hubs when available, seamlessly falling back to polling otherwise.</p>`,
   contentHtml: `
     <h2>What is WebSub?</h2>
 

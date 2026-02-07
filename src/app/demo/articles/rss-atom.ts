@@ -10,11 +10,7 @@ const article: DemoArticle = {
   summary: "Subscribe to any RSS 2.0 or Atom feed with automatic detection and efficient polling.",
   publishedAt: new Date("2025-12-26T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader provides comprehensive RSS/Atom feed support with intelligent fetching and efficient parsing:</p>
-<p><strong>Feed Format Support</strong>: Compatible with RSS 2.0, Atom 1.0, and JSON Feed. Automatically discovers feeds by checking HTML link tags and common paths like /feed, /rss, and /atom.xml.</p>
-<p><strong>Smart Polling</strong>: Uses HTTP conditional requests (ETag, If-Modified-Since headers) to minimize bandwidth, receiving 304 Not Modified responses when content is unchanged. Respects Cache-Control headers while maintaining 1-minute to 7-day polling bounds.</p>
-<p><strong>Error Resilience</strong>: Intelligently handles redirects—tracking 301 permanent redirects and updating URLs after 3 confirmations, while following temporary redirects without changing stored URLs. Applies exponential backoff (max 7 days) for failed fetches.</p>
-<p><strong>Performance</strong>: Leverages fast-xml-parser in SAX streaming mode for memory-efficient parsing of feeds of any size.</p>`,
+  summaryHtml: `<p>Lion Reader supports <strong>RSS 2.0, Atom 1.0, and JSON Feed</strong> formats with automatic feed discovery. It uses <strong>HTTP conditional requests</strong> and respects Cache-Control headers while polling between once per minute and once every 7 days. The system handles redirects intelligently and applies exponential backoff for failed fetches.</p>`,
   contentHtml: `
     <h2>Modern Syndication with RSS &amp; Atom</h2>
 

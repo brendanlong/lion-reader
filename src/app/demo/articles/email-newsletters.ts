@@ -10,23 +10,7 @@ const article: DemoArticle = {
   summary: "Read newsletters alongside your feeds with unique ingest email addresses.",
   publishedAt: new Date("2025-12-30T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader solves the problem of email-only content by allowing users to <strong>create unique ingest email addresses</strong> (up to 5 per account) for subscribing to newsletters. Each newsletter sender automatically becomes a separate subscription in your feed reader.</p>
-<p><strong>Key features:</strong></p>
-<ul>
-<li>Subscribe to any email newsletter using generated addresses</li>
-<li>Newsletters are processed via Mailgun webhook integration and appear as regular feed entries</li>
-<li>Full feature parity with RSS feeds: starring, read/unread status, search, and tagging</li>
-<li>Label addresses for organization (e.g., &quot;Tech Newsletters&quot;)</li>
-</ul>
-<p><strong>Security measures:</strong></p>
-<ul>
-<li>HMAC signature verification ensures email authenticity</li>
-<li>Message-ID deduplication prevents duplicates</li>
-<li>Provider-level spam filtering</li>
-<li>Ability to block specific senders</li>
-<li>Supports List-Unsubscribe headers for one-click unsubscribe</li>
-</ul>
-<p>Email newsletters are treated as first-class subscriptions, unifying email and web content in a single timeline.</p>`,
+  summaryHtml: `<p>Lion Reader generates unique ingest email addresses that convert newsletters into feed entries. Subscribe to Substack, Ghost, or any newsletter using these addresses, and they appear in your unified timeline with full RSS-like features: starring, search, tags, and reading controls. Built-in security includes HMAC verification and spam filtering.</p>`,
   contentHtml: `
     <h2>Email Newsletters: Bring Inbox Content to Your Feed Reader</h2>
 

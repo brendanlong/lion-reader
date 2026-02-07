@@ -10,11 +10,7 @@ const article: DemoArticle = {
   summary: "Navigate your entire reading workflow without touching the mouse.",
   publishedAt: new Date("2025-12-27T14:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader offers comprehensive keyboard navigation inspired by Vim, enabling fast, mouse-free reading workflows.</p>
-<p><strong>List Navigation:</strong> Use <code>j</code>/<code>k</code> to move down/up through entries, <code>Enter</code> to open, <code>n</code>/<code>p</code> to jump between articles, and <code>Escape</code> to close.</p>
-<p><strong>Entry Actions:</strong> Press <code>m</code> to mark read/unread, <code>s</code> to star/unstar, and <code>v</code> to open the original URL in a new tab.</p>
-<p><strong>Section Navigation:</strong> Two-key combinations starting with <code>g</code> jump between major sections: <code>g+a</code> for All Items, <code>g+s</code> for Starred, <code>g+l</code> for Saved articles.</p>
-<p><strong>Smart Design:</strong> Shortcuts automatically disable when typing in search fields or text inputs, preventing accidental navigation. Touch devices feature 44px minimum touch targets following WCAG accessibility guidelines, ensuring the interface works seamlessly with both keyboard and touch input methods.</p>`,
+  summaryHtml: `<p>Lion Reader offers <strong>Vim-inspired keyboard shortcuts</strong> for faster navigation. Use <strong>j/k</strong> to move through entries, <strong>m</strong> to mark read/unread, <strong>s</strong> to star items, and <strong>g+letter combinations</strong> to jump between sections like All Items, Starred, and Saved articles.</p>`,
   contentHtml: `
     <h2>Keyboard Shortcuts</h2>
 

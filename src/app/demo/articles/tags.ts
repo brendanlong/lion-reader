@@ -10,21 +10,7 @@ const article: DemoArticle = {
   summary: "Organize subscriptions with color-coded tags and browse entries by category.",
   publishedAt: new Date("2025-12-27T10:00:00Z"),
   starred: false,
-  summaryHtml: `<p><strong>Lion Reader</strong> provides flexible organization tools for managing subscriptions across RSS feeds, email newsletters, and saved articles:</p>
-<p><strong>Tagging System:</strong></p>
-<ul>
-<li>Create custom tags with names and colors using a hex color picker</li>
-<li>Tags are many-to-many—each subscription can belong to multiple categories</li>
-<li>Browse entries filtered by tag with real-time unread counts in the sidebar</li>
-<li>Uncategorized subscriptions remain accessible in a dedicated section</li>
-</ul>
-<p><strong>Subscription Management:</strong></p>
-<ul>
-<li>Rename any subscription to your preferred title, overriding the original feed name</li>
-<li>Soft deletion preserves your read and starred history when unsubscribing</li>
-<li>Resubscribing later restores your complete reading history</li>
-</ul>
-<p>The system provides real-time updates across all features, ensuring unread counts and tag organization stay current as you read and as new content arrives.</p>`,
+  summaryHtml: `<p>Lion Reader lets you organize subscriptions with <strong>custom tags</strong> (many-to-many relationships) featuring personalized names and colors. Browse entries by tag with real-time unread counts, rename any subscription, and enjoy soft deletion that preserves your read/starred history across all feed types.</p>`,
   contentHtml: `
     <h2>Organize Your Way</h2>
 

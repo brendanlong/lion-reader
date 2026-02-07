@@ -10,18 +10,7 @@ const article: DemoArticle = {
   summary: "Save any web page, upload documents, or capture articles for later reading.",
   publishedAt: new Date("2025-12-27T16:00:00Z"),
   starred: false,
-  summaryHtml: `<p><strong>Lion Reader&#39;s Save for Later</strong> feature captures web pages, documents, and articles for distraction-free reading using Mozilla&#39;s Readability algorithm to extract clean content.</p>
-<p><strong>Multiple saving methods:</strong></p>
-<ul>
-<li>Browser bookmarklet for one-click saving</li>
-<li>PWA share target for mobile devices</li>
-<li>MCP integration with AI assistants</li>
-<li>tRPC API for automation</li>
-<li>Discord bot commands</li>
-<li>Direct file uploads (PDFs, Markdown, Word docs)</li>
-<li>Google Docs import with OAuth</li>
-</ul>
-<p><strong>Organization features:</strong><br>Customize metadata (title, description, author) when saving. Saved articles integrate fully with Lion Reader—star, tag, search, and browse chronologically. Content is preserved permanently, preventing link rot common with traditional bookmarks. All saved items appear in a dedicated sidebar section while remaining part of your complete reading archive.</p>`,
+  summaryHtml: `<p>Lion Reader&#39;s Save for Later uses Mozilla&#39;s Readability algorithm to extract clean content from web pages. Save via bookmarklet, PWA share, MCP, API, Discord, or upload PDFs/Docs directly. Saved articles integrate fully with starring, tagging, and search, preserving content even if original pages disappear.</p>`,
   contentHtml: `
     <h2>Save for Later: Your Personal Reading Archive</h2>
 
