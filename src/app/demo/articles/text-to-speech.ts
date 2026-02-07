@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "text-to-speech",
   subscriptionId: "reading-experience",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/15",
   title: "Text-to-Speech Narration",
   author: null,
   summary:

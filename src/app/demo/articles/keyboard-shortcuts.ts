@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "keyboard-shortcuts",
   subscriptionId: "reading-experience",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/68",
   title: "Keyboard Shortcuts",
   author: null,
   summary: "Navigate your entire reading workflow without touching the mouse.",

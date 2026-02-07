@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "mcp-server",
   subscriptionId: "integrations",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/285",
   title: "MCP Server",
   author: null,
   summary: "Connect Lion Reader to AI assistants like Claude via the Model Context Protocol.",

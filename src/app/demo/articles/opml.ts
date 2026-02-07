@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "opml",
   subscriptionId: "organization",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/74",
   title: "OPML Import & Export",
   author: null,
   summary:

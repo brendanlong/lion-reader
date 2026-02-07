@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "email-newsletters",
   subscriptionId: "feed-types",
   type: "email",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/47",
   title: "Email Newsletters",
   author: null,
   summary: "Read newsletters alongside your feeds with unique ingest email addresses.",

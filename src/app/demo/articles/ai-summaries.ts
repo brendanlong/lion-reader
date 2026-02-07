@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "ai-summaries",
   subscriptionId: "reading-experience",
   type: "web",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/298",
   title: "AI Summaries",
   author: null,
   summary: "Generate concise AI summaries to quickly triage your reading list.",

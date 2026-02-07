@@ -4,7 +4,7 @@ const article: DemoArticle = {
   id: "save-for-later",
   subscriptionId: "feed-types",
   type: "saved",
-  url: null,
+  url: "https://github.com/brendanlong/lion-reader/pull/57",
   title: "Save for Later",
   author: null,
   summary: "Save any web page, upload documents, or capture articles for later reading.",
