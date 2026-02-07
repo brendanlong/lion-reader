@@ -35,7 +35,6 @@ import {
   Button,
   StarIcon,
   StarFilledIcon,
-  CircleIcon,
   CircleFilledIcon,
   ExternalLinkIcon,
   ArrowLeftIcon,
@@ -492,13 +491,13 @@ export function EntryContentBody({
 
           {/* Mark read/unread button */}
           <Button
-            variant="secondary"
+            variant={read ? "primary" : "secondary"}
             size="sm"
             onClick={onToggleRead}
             aria-label={read ? "Mark as unread" : "Mark as read"}
             title="Keyboard shortcut: m"
           >
-            {read ? <CircleIcon className="h-4 w-4" /> : <CircleFilledIcon className="h-4 w-4" />}
+            <CircleFilledIcon className="h-4 w-4" />
             <span className="ml-2">{read ? "Read" : "Unread"}</span>
           </Button>
 
