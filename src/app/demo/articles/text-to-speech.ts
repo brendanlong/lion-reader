@@ -11,6 +11,26 @@ const article: DemoArticle = {
     "Listen to articles read aloud with AI-enhanced text preprocessing and paragraph highlighting.",
   publishedAt: new Date("2025-12-27T18:00:00Z"),
   starred: false,
+  summaryHtml: `<p>Lion Reader converts articles into natural-sounding audio through a two-stage process:</p>
+<p><strong>Stage 1: AI Text Preprocessing</strong></p>
+<ul>
+<li>Article content is processed by an LLM (Llama 3.1 via Groq) to optimize for speech</li>
+<li>Expands abbreviations, converts URLs to readable phrases, and formats lists/tables naturally</li>
+<li>Maintains paragraph-level mapping for synchronized highlighting</li>
+<li>Results are cached by content hash to avoid reprocessing</li>
+</ul>
+<p><strong>Stage 2: Audio Synthesis</strong></p>
+<ul>
+<li><strong>Web Speech API</strong>: Instant narration using browser&#39;s built-in voices (free)</li>
+<li><strong>Piper TTS</strong>: Higher-quality neural voices running locally via WebAssembly (no server costs)</li>
+</ul>
+<p><strong>Features</strong></p>
+<ul>
+<li>Synchronized paragraph highlighting and auto-scrolling</li>
+<li>Playback speed control and paragraph-level navigation</li>
+<li>Media session integration for lock screen controls</li>
+<li>Graceful fallback to plain text if AI service is unavailable</li>
+</ul>`,
   contentHtml: `
     <h2>Text-to-Speech Narration</h2>
 

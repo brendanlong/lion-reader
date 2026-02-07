@@ -10,6 +10,17 @@ const article: DemoArticle = {
   summary: "A modern, fast, and open-source feed reader. Explore the demo to see what it can do.",
   publishedAt: new Date(),
   starred: true,
+  summaryHtml: `<p>Lion Reader is a modern, self-hostable RSS feed reader that consolidates content from RSS/Atom/JSON feeds, email newsletters, and saved articles into a unified interface.</p>
+<p><strong>Key capabilities:</strong></p>
+<ul>
+<li><strong>AI-powered features</strong> — Claude-powered summaries, text-to-speech narration, and on-device ML predictions for article relevance</li>
+<li><strong>MCP integration</strong> — Connect AI assistants like Claude Desktop to search and manage your feeds via the Model Context Protocol</li>
+<li><strong>Keyboard-first navigation</strong> — Complete control without using a mouse</li>
+<li><strong>Real-time updates</strong> — Instant content delivery via Server-Sent Events</li>
+<li><strong>Progressive Web App</strong> — Install on desktop or mobile for native app experience</li>
+<li><strong>Privacy-focused</strong> — Open source and self-hostable with no tracking or ads</li>
+</ul>
+<p>The demo showcases feed types, reading experience features, organization tools, and integration capabilities. Users can sign up for the hosted version or self-host their own instance.</p>`,
   contentHtml: `
     <h2>Welcome to Lion Reader</h2>
 

@@ -11,6 +11,28 @@ const article: DemoArticle = {
     "Rate articles and get personalized score predictions powered by on-device machine learning.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
   starred: false,
+  summaryHtml: `<p><strong>Lion Reader</strong> uses a hybrid approach to learn your reading preferences and recommend content:</p>
+<p><strong>Explicit Ratings</strong></p>
+<ul>
+<li>Rate articles on a 5-point scale (−2 to +2) using LessWrong-style voting controls</li>
+<li>Directly shapes your preference profile</li>
+</ul>
+<p><strong>Implicit Signals</strong></p>
+<ul>
+<li>Starring entries: +2 (strong interest)</li>
+<li>Marking unread: +1 (moderate interest)</li>
+<li>Marking read without opening: −1 (low interest)</li>
+</ul>
+<p><strong>On-Device ML Model</strong></p>
+<ul>
+<li>Trains locally after you&#39;ve rated 20+ entries</li>
+<li>Uses TF-IDF vectorization with Ridge Regression</li>
+<li>Titles weighted 2x; includes per-feed features to capture source-level trust</li>
+<li>Runs entirely in-browser via ONNX Runtime WebAssembly</li>
+<li>Complete privacy—no data leaves your device</li>
+<li>Automatically scores new entries with confidence indicators</li>
+<li>Cross-validated for prediction quality (MAE and Pearson correlation)</li>
+</ul>`,
   contentHtml: `
     <h2>Rate Your Reading</h2>
 

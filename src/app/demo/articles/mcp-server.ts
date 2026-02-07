@@ -10,6 +10,14 @@ const article: DemoArticle = {
   summary: "Connect Lion Reader to AI assistants like Claude via the Model Context Protocol.",
   publishedAt: new Date("2026-01-14T12:00:00Z"),
   starred: false,
+  summaryHtml: `<p>The <strong>Model Context Protocol (MCP)</strong> is an open standard that enables AI assistants like Claude to connect directly to applications and data sources. Lion Reader&#39;s MCP server provides secure, local access to your feed reader data without sending information to external servers.</p>
+<p>The server offers comprehensive tools including:</p>
+<ul>
+<li><strong>Entry management</strong>: list, search, read, star, and count entries</li>
+<li><strong>Article saving</strong>: save URLs or upload Markdown content for later reading</li>
+<li><strong>Subscription management</strong>: list, search, and view subscription details</li>
+</ul>
+<p>Built with the official MCP TypeScript SDK, the server uses the same services layer as the web UI, ensuring consistent behavior across interfaces. Access is secured through API tokens with configurable scoped permissions, compatible with Claude Desktop and other MCP-supporting assistants.</p>`,
   contentHtml: `
     <h2>What is MCP?</h2>
 

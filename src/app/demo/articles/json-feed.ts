@@ -11,6 +11,15 @@ const article: DemoArticle = {
     "Native support for JSON Feed, a modern syndication format that uses JSON instead of XML.",
   publishedAt: new Date("2025-12-26T14:00:00Z"),
   starred: false,
+  summaryHtml: `<p><strong>JSON Feed</strong> is a modern syndication format that uses JSON instead of XML, making feed creation and parsing significantly simpler. Launched in 2017 as an alternative to RSS and Atom, it was designed with contemporary web development practices in mind.</p>
+<p><strong>Key advantages:</strong></p>
+<ul>
+<li><strong>Developer-friendly</strong>: No complex XML parsing libraries needed—just use built-in JSON encoders/decoders</li>
+<li><strong>Feature-complete</strong>: Supports attachments, multiple authors, tags, HTML and plain text content, and custom extensions</li>
+<li><strong>Reduced complexity</strong>: Eliminates XML&#39;s verbose schemas and namespace handling</li>
+</ul>
+<p><strong>For Lion Reader users</strong>, JSON Feed works seamlessly alongside RSS and Atom—the app auto-detects and treats all formats equally. Simply paste any URL to subscribe.</p>
+<p><strong>For publishers</strong>, generating a JSON Feed is straightforward using any language&#39;s native JSON support, reducing bugs and making syndication more reliable.</p>`,
   contentHtml: `
     <h2>JSON Feed: Syndication for the Modern Web</h2>
 

@@ -10,6 +10,15 @@ const article: DemoArticle = {
   summary: "Generate concise AI summaries to quickly triage your reading list.",
   publishedAt: new Date("2026-01-16T12:00:00Z"),
   starred: false,
+  summaryHtml: `<p>Lion Reader&#39;s AI summarization feature helps you triage unread articles by generating concise overviews only when requested. <strong>Key features:</strong></p>
+<ul>
+<li><strong>Privacy-first approach</strong>: Summaries are generated on-demand when you click &quot;Summarize,&quot; not automatically, avoiding unnecessary API costs and data sharing</li>
+<li><strong>2-3 paragraph overviews</strong> powered by Anthropic Claude that highlight main topics, key findings, and conclusions</li>
+<li><strong>Intelligent caching</strong>: Summaries are cached by content hash and shared across users, providing instant results for previously summarized articles</li>
+<li><strong>Configurable models</strong>: Choose between quality and speed based on your preferences</li>
+<li><strong>Full content support</strong>: Works with both feed excerpts and full-fetched articles, ensuring complete context</li>
+</ul>
+<p>Particularly useful for working through large backlogs—scan summaries to identify must-reads versus skippable content, then focus your attention on what matters most.</p>`,
   contentHtml: `
     <h2>AI Summaries</h2>
 
