@@ -6,9 +6,16 @@
  * 1. Share Target API for URLs and files
  * 2. Offline fallback for navigation requests
  *
- * For URL shares, the service worker attempts to save directly via the API
- * without navigation, then notifies open tabs via postMessage. This allows
- * sharing to Lion Reader from within Lion Reader without losing the current page.
+ * For URL shares, the service worker saves directly via the API without
+ * showing any intermediate UI. Open tabs are notified via postMessage so
+ * the RealtimeProvider can show a toast.
+ *
+ * With launch_handler: focus-existing in the manifest, Chrome on Android
+ * focuses the existing PWA window instead of navigating it. The service
+ * worker's fetch handler still fires for the POST, and the postMessage
+ * reaches the focused window. When the app is NOT already open,
+ * focus-existing falls back to navigate-new, and the service worker
+ * redirects to the app root with query params for the toast.
  *
  * File shares still redirect to /save because they require more complex processing.
  *
@@ -90,89 +97,26 @@ async function saveUrlDirectly(url: string, origin: string): Promise<{ title: st
 }
 
 /**
- * Returns an HTML page that shows a success/error message and closes itself.
- * Used as a fallback when the share was handled in the service worker.
+ * Returns the best URL to redirect to after a share completes.
+ * Android's share target destroys the PWA's navigation state, so we
+ * redirect back into the app. We check existing clients for an app page
+ * URL to restore, falling back to the root.
  */
-function createResultPage(success: boolean, message: string, details?: string): Response {
-  const bgColor = success ? "#16a34a" : "#dc2626";
-  const icon = success ? "✓" : "✕";
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${success ? "Saved" : "Error"} - Lion Reader</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #18181b;
-      color: #fafafa;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
+async function getRedirectUrl(origin: string): Promise<string> {
+  const clients = await sw.clients.matchAll({ type: "window" });
+  // Look for an existing client on an app page (not /api/share, /save, etc.)
+  for (const client of clients) {
+    const clientUrl = new URL(client.url);
+    if (
+      clientUrl.origin === origin &&
+      !clientUrl.pathname.startsWith("/api/") &&
+      !clientUrl.pathname.startsWith("/save") &&
+      !clientUrl.pathname.startsWith("/login")
+    ) {
+      return client.url;
     }
-    .container {
-      max-width: 320px;
-      width: 100%;
-      text-align: center;
-    }
-    .icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      background: ${bgColor};
-      color: white;
-      font-size: 24px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 1rem;
-    }
-    h1 {
-      font-size: 1.125rem;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-    }
-    .details {
-      font-size: 0.875rem;
-      color: #a1a1aa;
-      word-break: break-word;
-    }
-    .closing {
-      margin-top: 1rem;
-      font-size: 0.75rem;
-      color: #71717a;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="icon">${icon}</div>
-    <h1>${message}</h1>
-    ${details ? `<p class="details">${details}</p>` : ""}
-    <p class="closing">Closing...</p>
-  </div>
-  <script>
-    // Try to close the window/tab, or go back
-    setTimeout(() => {
-      if (window.opener || window.history.length <= 1) {
-        window.close();
-      } else {
-        window.history.back();
-      }
-    }, 1500);
-  </script>
-</body>
-</html>`;
-
-  return new Response(html, {
-    status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
+  }
+  return `${origin}/`;
 }
 
 // Handle share target POST requests
@@ -264,7 +208,7 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
             try {
               const result = await saveUrlDirectly(urlToSave, url.origin);
 
-              // Notify all open tabs about the successful save
+              // Notify any existing tabs (may not be received if this is the only window)
               await notifyClients({
                 type: "share-result",
                 success: true,
@@ -272,8 +216,16 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
                 title: result.title || undefined,
               });
 
-              // Return a success page that auto-closes
-              return createResultPage(true, "Saved!", result.title || urlToSave);
+              // Redirect back into the app with share result in query params.
+              // The postMessage above may not be received because Android's share
+              // target destroys the current page, so we pass the result via URL
+              // for the app to show a toast after loading.
+              const redirectUrl = new URL(await getRedirectUrl(url.origin));
+              redirectUrl.searchParams.set("shared", "saved");
+              if (result.title) {
+                redirectUrl.searchParams.set("sharedTitle", result.title);
+              }
+              return Response.redirect(redirectUrl.toString(), 303);
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
@@ -285,7 +237,7 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
                 return Response.redirect(saveUrl.toString(), 303);
               }
 
-              // Notify all open tabs about the error
+              // Notify any existing tabs
               await notifyClients({
                 type: "share-result",
                 success: false,
@@ -293,8 +245,11 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
                 error: errorMessage,
               });
 
-              // Return an error page
-              return createResultPage(false, "Failed to save", errorMessage);
+              // Redirect back into the app with error in query params
+              const redirectUrl = new URL(await getRedirectUrl(url.origin));
+              redirectUrl.searchParams.set("shared", "error");
+              redirectUrl.searchParams.set("sharedError", errorMessage);
+              return Response.redirect(redirectUrl.toString(), 303);
             }
           } else {
             // No file or URL found
