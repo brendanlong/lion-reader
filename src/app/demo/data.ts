@@ -5,6 +5,7 @@
  * structured as tags, subscriptions, and entries.
  */
 
+import { type EntryArticleProps } from "@/components/entries/EntryArticle";
 import { type EntryListData } from "@/lib/hooks";
 
 // ============================================================================
@@ -506,6 +507,24 @@ export function getDemoSubscription(subscriptionId: string): DemoSubscription | 
 /** Get entries that would appear in the "Highlights" view (starred entries) */
 export function getDemoHighlightEntries(): DemoEntry[] {
   return sortNewestFirst(DEMO_ENTRIES.filter((e) => e.starred));
+}
+
+/** Get EntryArticle props for a demo entry */
+export function getDemoEntryArticleProps(
+  entry: DemoEntry
+): Pick<
+  EntryArticleProps,
+  "title" | "url" | "source" | "author" | "date" | "contentHtml" | "fallbackContent"
+> {
+  return {
+    title: entry.title ?? "Untitled",
+    url: entry.url,
+    source: entry.feedTitle ?? "Lion Reader",
+    author: entry.author,
+    date: entry.publishedAt ?? entry.fetchedAt,
+    contentHtml: entry.contentHtml,
+    fallbackContent: entry.summary,
+  };
 }
 
 /** Total entry count */
