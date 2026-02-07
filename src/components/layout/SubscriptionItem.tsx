@@ -23,6 +23,8 @@ export interface SubscriptionItemProps {
   onClose: () => void;
   onEdit: () => void;
   onUnsubscribe: () => void;
+  /** Optional href override (e.g., for demo page query-param navigation) */
+  href?: string;
 }
 
 // ============================================================================
@@ -35,9 +37,10 @@ export function SubscriptionItem({
   onClose,
   onEdit,
   onUnsubscribe,
+  href,
 }: SubscriptionItemProps) {
   const displayTitle = subscription.title || "Untitled Feed";
-  const subHref = `/subscription/${subscription.id}`;
+  const subHref = href ?? `/subscription/${subscription.id}`;
 
   return (
     <li className="group relative">
