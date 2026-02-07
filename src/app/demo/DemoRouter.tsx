@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useMemo, useEffect, useRef, Suspense } from "react";
+import { useMemo, useEffect, useCallback, useRef, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -23,9 +23,12 @@ import {
   CircleFilledIcon,
 } from "@/components/ui";
 import { EntryArticle } from "@/components/entries/EntryArticle";
+import { SWIPE_CONFIG } from "@/components/entries/EntryContentHelpers";
 import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
 import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
+import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
+import { clientPush } from "@/lib/navigation";
 import { DemoEntryList } from "./DemoEntryList";
 import { DemoListSkeleton } from "./DemoListSkeleton";
 import { useDemoState } from "./DemoStateContext";
@@ -131,6 +134,108 @@ function DemoRouterContent() {
         ? "/demo/highlights"
         : "/demo/all";
 
+  // Compute next/previous entry IDs for keyboard/swipe navigation
+  const { nextEntryId, previousEntryId } = useMemo(() => {
+    if (!entryId || entries.length === 0) {
+      return { nextEntryId: undefined, previousEntryId: undefined };
+    }
+    const currentIndex = entries.findIndex((e) => e.id === entryId);
+    if (currentIndex === -1) {
+      return { nextEntryId: undefined, previousEntryId: undefined };
+    }
+    return {
+      nextEntryId: currentIndex < entries.length - 1 ? entries[currentIndex + 1].id : undefined,
+      previousEntryId: currentIndex > 0 ? entries[currentIndex - 1].id : undefined,
+    };
+  }, [entryId, entries]);
+
+  // Navigation callbacks for keyboard shortcuts and swipe gestures
+  const openEntry = useCallback(
+    (id: string) => {
+      clientPush(`${backHref}?entry=${id}`);
+    },
+    [backHref]
+  );
+
+  const closeEntry = useCallback(() => {
+    clientPush(backHref);
+  }, [backHref]);
+
+  const goToNextEntry = useCallback(() => {
+    if (nextEntryId) {
+      openEntry(nextEntryId);
+    }
+  }, [nextEntryId, openEntry]);
+
+  const goToPreviousEntry = useCallback(() => {
+    if (previousEntryId) {
+      openEntry(previousEntryId);
+    }
+  }, [previousEntryId, openEntry]);
+
+  // Toggle handlers for keyboard shortcuts
+  const handleToggleRead = useCallback(
+    (id: string) => {
+      demoState.toggleRead(id);
+    },
+    [demoState]
+  );
+
+  const handleToggleStar = useCallback(
+    (id: string) => {
+      demoState.toggleStar(id);
+    },
+    [demoState]
+  );
+
+  // Keyboard shortcuts (j/k navigation, o/Enter to open, Escape to close, etc.)
+  const { selectedEntryId } = useKeyboardShortcuts({
+    entries,
+    onOpenEntry: openEntry,
+    onClose: closeEntry,
+    isEntryOpen: !!entryId,
+    openEntryId: entryId,
+    enabled: true,
+    onToggleRead: handleToggleRead,
+    onToggleStar: handleToggleStar,
+    onToggleUnreadOnly: isHighlights ? undefined : demoState.toggleShowUnreadOnly,
+    onNavigateNext: goToNextEntry,
+    onNavigatePrevious: goToPreviousEntry,
+  });
+
+  // Swipe gesture handlers for entry detail view
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (!entryId) return;
+      const touch = e.touches[0];
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    },
+    [entryId]
+  );
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (!touchStartRef.current) return;
+
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - touchStartRef.current.x;
+      const deltaY = touch.clientY - touchStartRef.current.y;
+      touchStartRef.current = null;
+
+      if (Math.abs(deltaY) > SWIPE_CONFIG.MAX_VERTICAL_DISTANCE) return;
+      if (Math.abs(deltaX) < SWIPE_CONFIG.SWIPE_THRESHOLD) return;
+
+      if (deltaX < 0 && nextEntryId) {
+        openEntry(nextEntryId);
+      } else if (deltaX > 0 && previousEntryId) {
+        openEntry(previousEntryId);
+      }
+    },
+    [nextEntryId, previousEntryId, openEntry]
+  );
+
   // Auto-mark entry as read when viewing it (like the real app)
   const hasSentMarkRead = useRef<string | null>(null);
   useEffect(() => {
@@ -146,6 +251,8 @@ function DemoRouterContent() {
     return (
       <EntryArticle
         {...getDemoEntryArticleProps(selectedEntry)}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         backButton={
           <ClientLink
             href={backHref}
@@ -250,7 +357,7 @@ function DemoRouterContent() {
       </div>
 
       {/* Entry list */}
-      <DemoEntryList entries={entries} backHref={backHref} />
+      <DemoEntryList entries={entries} backHref={backHref} selectedEntryId={selectedEntryId} />
     </div>
   );
 }

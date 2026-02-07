@@ -27,9 +27,10 @@ const STATIC_QUERY_STATE: ExternalQueryState = {
 interface DemoEntryListProps {
   entries: DemoEntry[];
   backHref: string;
+  selectedEntryId?: string | null;
 }
 
-export function DemoEntryList({ entries, backHref }: DemoEntryListProps) {
+export function DemoEntryList({ entries, backHref, selectedEntryId }: DemoEntryListProps) {
   const demoState = useDemoState();
 
   const handleToggleRead = useCallback(
@@ -50,6 +51,7 @@ export function DemoEntryList({ entries, backHref }: DemoEntryListProps) {
     <EntryList
       externalEntries={entries}
       externalQueryState={STATIC_QUERY_STATE}
+      selectedEntryId={selectedEntryId}
       onEntryClick={(id) => {
         clientPush(`${backHref}?entry=${id}`);
       }}
