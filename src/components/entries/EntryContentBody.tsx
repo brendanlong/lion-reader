@@ -492,7 +492,7 @@ export function EntryContentBody({
 
           {/* Mark read/unread button */}
           <Button
-            variant="secondary"
+            variant={!read ? "primary" : "secondary"}
             size="sm"
             onClick={onToggleRead}
             aria-label={read ? "Mark as unread" : "Mark as read"}
