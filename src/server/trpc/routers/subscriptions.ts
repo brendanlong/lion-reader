@@ -86,109 +86,6 @@ const subscriptionOutputSchema = z.object({
 });
 
 // ============================================================================
-// Base Query Helpers
-// ============================================================================
-
-/**
- * Builds the base query for fetching subscriptions using the user_feeds view.
- * Includes unread counts and tags. Used by both .list and .get.
- *
- * The user_feeds view already joins subscriptions with feeds and filters
- * out unsubscribed entries, so we only need to add unread counts and tags.
- *
- * @param db - Database instance
- * @param userId - User ID for filtering and unread counts
- * @returns Query builder with select, joins, and groupBy configured
- */
-function buildSubscriptionBaseQuery(db: typeof import("@/server/db").db, userId: string) {
-  // Subquery to get unread counts per feed
-  const unreadCountsSubquery = db
-    .select({
-      feedId: entries.feedId,
-      unreadCount: sql<number>`count(*)::int`.as("unread_count"),
-    })
-    .from(entries)
-    .innerJoin(
-      userEntries,
-      and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-    )
-    .where(eq(userEntries.read, false))
-    .groupBy(entries.feedId)
-    .as("unread_counts");
-
-  return db
-    .select({
-      // From user_feeds view - subscription fields
-      id: userFeeds.id,
-      subscribedAt: userFeeds.subscribedAt,
-      feedId: userFeeds.feedId, // internal use only
-      fetchFullContent: userFeeds.fetchFullContent,
-      // From user_feeds view - feed fields (already merged)
-      type: userFeeds.type,
-      url: userFeeds.url,
-      title: userFeeds.title, // already resolved (COALESCE of customTitle and original)
-      originalTitle: userFeeds.originalTitle,
-      description: userFeeds.description,
-      siteUrl: userFeeds.siteUrl,
-      // Unread count from subquery
-      unreadCount: sql<number>`COALESCE(${unreadCountsSubquery.unreadCount}, 0)`,
-      // Tags aggregated as JSON array
-      tags: sql<Array<{ id: string; name: string; color: string | null }>>`
-        COALESCE(
-          json_agg(
-            json_build_object('id', ${tags.id}, 'name', ${tags.name}, 'color', ${tags.color})
-          ) FILTER (WHERE ${tags.id} IS NOT NULL),
-          '[]'::json
-        )
-      `,
-    })
-    .from(userFeeds)
-    .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.feedId, userFeeds.feedId))
-    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
-    .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
-    .groupBy(
-      userFeeds.id,
-      userFeeds.subscribedAt,
-      userFeeds.feedId,
-      userFeeds.fetchFullContent,
-      userFeeds.type,
-      userFeeds.url,
-      userFeeds.title,
-      userFeeds.originalTitle,
-      userFeeds.description,
-      userFeeds.siteUrl,
-      unreadCountsSubquery.unreadCount
-    );
-}
-
-/**
- * Type for a row returned by buildSubscriptionBaseQuery.
- */
-type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBaseQuery>>[number];
-
-/**
- * Transforms a subscription query row into the flat output format.
- * The user_feeds view already merges subscription and feed data.
- */
-function formatSubscriptionRow(
-  row: SubscriptionQueryRow
-): z.infer<typeof subscriptionOutputSchema> {
-  return {
-    id: row.id,
-    type: row.type,
-    url: row.url,
-    title: row.title, // already resolved by view
-    originalTitle: row.originalTitle,
-    description: row.description,
-    siteUrl: row.siteUrl,
-    subscribedAt: row.subscribedAt,
-    unreadCount: row.unreadCount,
-    tags: row.tags,
-    fetchFullContent: row.fetchFullContent,
-  };
-}
-
-// ============================================================================
 // Subscription Helpers
 // ============================================================================
 
@@ -747,17 +644,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .output(subscriptionOutputSchema)
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-
-      // user_feeds view already filters out unsubscribed
-      const results = await buildSubscriptionBaseQuery(ctx.db, userId)
-        .where(and(eq(userFeeds.id, input.id), eq(userFeeds.userId, userId)))
-        .limit(1);
-
-      if (results.length === 0) {
-        throw errors.subscriptionNotFound();
-      }
-
-      return formatSubscriptionRow(results[0]);
+      return subscriptionsService.getSubscription(ctx.db, userId, input.id);
     }),
 
   /**
