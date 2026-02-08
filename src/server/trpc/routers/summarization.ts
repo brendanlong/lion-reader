@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { entries, entrySummaries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -96,10 +96,14 @@ export const summarizationRouter = createTRPCRouter({
     .output(generateOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const userAnthropicApiKey = ctx.session.user.anthropicApiKey;
+      const userSummarizationModel = ctx.session.user.summarizationModel;
 
-      // Check if summarization is available
-      if (!isSummarizationAvailable()) {
-        throw errors.internal("AI summarization is not configured on this server");
+      // Check if summarization is available (user key or server key)
+      if (!isSummarizationAvailable(userAnthropicApiKey)) {
+        throw errors.internal(
+          "AI summarization is not configured. Add an Anthropic API key in Settings to enable it."
+        );
       }
 
       // Fetch the entry with visibility check via user_entries join
@@ -157,7 +161,7 @@ export const summarizationRouter = createTRPCRouter({
 
           const fullRecord = fullSummary[0];
           if (fullRecord?.summaryText) {
-            const currentModelId = getSummarizationModelId();
+            const currentModelId = getSummarizationModelId(userSummarizationModel);
             const promptVersionChanged = fullRecord.promptVersion !== CURRENT_PROMPT_VERSION;
             const modelChanged =
               fullRecord.modelId !== null && fullRecord.modelId !== currentModelId;
@@ -180,7 +184,7 @@ export const summarizationRouter = createTRPCRouter({
 
         const feedRecord = feedSummary[0];
         if (feedRecord?.summaryText) {
-          const currentModelId = getSummarizationModelId();
+          const currentModelId = getSummarizationModelId(userSummarizationModel);
           const promptVersionChanged = feedRecord.promptVersion !== CURRENT_PROMPT_VERSION;
           const modelChanged = feedRecord.modelId !== null && feedRecord.modelId !== currentModelId;
           return {
@@ -261,7 +265,10 @@ export const summarizationRouter = createTRPCRouter({
         const preparedContent = prepareContentForSummarization(sourceContent);
 
         // Generate via LLM
-        const result = await generateSummary(preparedContent, entry.title ?? "");
+        const result = await generateSummary(preparedContent, entry.title ?? "", {
+          userApiKey: userAnthropicApiKey,
+          userModel: userSummarizationModel,
+        });
 
         // Cache in entry_summaries table, clear any previous error
         await ctx.db
@@ -308,9 +315,10 @@ export const summarizationRouter = createTRPCRouter({
   /**
    * Check if AI summarization is available.
    *
-   * Returns true if ANTHROPIC_API_KEY is configured.
+   * Returns true if either the user has configured an Anthropic API key
+   * or the server has ANTHROPIC_API_KEY configured.
    */
-  isAvailable: publicProcedure
+  isAvailable: protectedProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -321,7 +329,7 @@ export const summarizationRouter = createTRPCRouter({
     })
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
-    .query(() => {
-      return { available: isSummarizationAvailable() };
+    .query(({ ctx }) => {
+      return { available: isSummarizationAvailable(ctx.session.user.anthropicApiKey) };
     }),
 });

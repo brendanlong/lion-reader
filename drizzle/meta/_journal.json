@@ -344,6 +344,13 @@
       "when": 1769988810156,
       "tag": "0048_tags_updated_at",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1770508800000,
+      "tag": "0049_user_api_keys",
+      "breakpoints": true
     }
   ]
 }

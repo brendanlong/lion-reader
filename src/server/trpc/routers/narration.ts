@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { entries, narrationContent, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -113,6 +113,7 @@ export const narrationRouter = createTRPCRouter({
     .output(generateOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const userGroqApiKey = ctx.session.user.groqApiKey;
 
       // Fetch the entry with visibility check via user_entries join
       // Both regular entries and saved articles are in the entries table now
@@ -208,7 +209,7 @@ export const narrationRouter = createTRPCRouter({
         !narrationRecord.errorAt || Date.now() - narrationRecord.errorAt.getTime() > RETRY_AFTER_MS;
 
       // If user disabled LLM normalization, Groq is not configured, or we had a recent error, fall back to plain text
-      if (!input.useLlmNormalization || !isGroqAvailable() || !canRetryLLM) {
+      if (!input.useLlmNormalization || !isGroqAvailable(userGroqApiKey) || !canRetryLLM) {
         // Generate narration with paragraph mapping using the same path as LLM
         const { paragraphs } = htmlToNarrationInput(sourceContent);
         const paragraphMap: ParagraphMapEntry[] = paragraphs.map((p, idx) => ({
@@ -230,7 +231,7 @@ export const narrationRouter = createTRPCRouter({
 
       try {
         // Generate via LLM
-        const result = await generateNarration(sourceContent);
+        const result = await generateNarration(sourceContent, userGroqApiKey);
 
         // Stop the timer after generation completes
         stopTimer();
@@ -307,10 +308,10 @@ export const narrationRouter = createTRPCRouter({
   /**
    * Check if AI text processing is available.
    *
-   * Returns true if GROQ_API_KEY is configured, meaning users can use
-   * LLM-based text normalization for higher quality narration.
+   * Returns true if either the user has configured a Groq API key
+   * or the server has GROQ_API_KEY configured.
    */
-  isAiTextProcessingAvailable: publicProcedure
+  isAiTextProcessingAvailable: protectedProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -321,7 +322,7 @@ export const narrationRouter = createTRPCRouter({
     })
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
-    .query(() => {
-      return { available: isGroqAvailable() };
+    .query(({ ctx }) => {
+      return { available: isGroqAvailable(ctx.session.user.groqApiKey) };
     }),
 });

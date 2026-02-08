@@ -419,6 +419,9 @@ function SpamPreferenceSection() {
       // Optimistically update
       utils.users["me.preferences"].setData(undefined, (old) => ({
         showSpam: newPrefs.showSpam ?? old?.showSpam ?? false,
+        hasGroqApiKey: old?.hasGroqApiKey ?? false,
+        hasAnthropicApiKey: old?.hasAnthropicApiKey ?? false,
+        summarizationModel: old?.summarizationModel ?? null,
       }));
 
       return { previousPrefs };

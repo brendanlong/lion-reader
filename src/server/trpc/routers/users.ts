@@ -321,12 +321,19 @@ export const usersRouter = createTRPCRouter({
     .output(
       z.object({
         showSpam: z.boolean(),
+        hasGroqApiKey: z.boolean(),
+        hasAnthropicApiKey: z.boolean(),
+        summarizationModel: z.string().nullable(),
       })
     )
     .query(async ({ ctx }) => {
       // Return preferences from session (cached from database)
+      // Never expose raw API keys — only whether they are set
       return {
         showSpam: ctx.session.user.showSpam,
+        hasGroqApiKey: !!ctx.session.user.groqApiKey,
+        hasAnthropicApiKey: !!ctx.session.user.anthropicApiKey,
+        summarizationModel: ctx.session.user.summarizationModel,
       };
     }),
 
@@ -347,23 +354,48 @@ export const usersRouter = createTRPCRouter({
     .input(
       z.object({
         showSpam: z.boolean().optional(),
+        // API keys: empty string clears the key, non-empty sets it
+        groqApiKey: z.string().optional(),
+        anthropicApiKey: z.string().optional(),
+        summarizationModel: z.string().optional(),
       })
     )
     .output(
       z.object({
         showSpam: z.boolean(),
+        hasGroqApiKey: z.boolean(),
+        hasAnthropicApiKey: z.boolean(),
+        summarizationModel: z.string().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
       // Build update object with only provided fields
-      const updateData: { showSpam?: boolean; updatedAt: Date } = {
+      const updateData: {
+        showSpam?: boolean;
+        groqApiKey?: string | null;
+        anthropicApiKey?: string | null;
+        summarizationModel?: string | null;
+        updatedAt: Date;
+      } = {
         updatedAt: new Date(),
       };
 
       if (input.showSpam !== undefined) {
         updateData.showSpam = input.showSpam;
+      }
+
+      if (input.groqApiKey !== undefined) {
+        updateData.groqApiKey = input.groqApiKey || null; // empty string → null
+      }
+
+      if (input.anthropicApiKey !== undefined) {
+        updateData.anthropicApiKey = input.anthropicApiKey || null;
+      }
+
+      if (input.summarizationModel !== undefined) {
+        updateData.summarizationModel = input.summarizationModel || null;
       }
 
       // Update user preferences in database
@@ -374,13 +406,21 @@ export const usersRouter = createTRPCRouter({
 
       // Fetch updated preferences to return
       const updatedUser = await ctx.db
-        .select({ showSpam: users.showSpam })
+        .select({
+          showSpam: users.showSpam,
+          groqApiKey: users.groqApiKey,
+          anthropicApiKey: users.anthropicApiKey,
+          summarizationModel: users.summarizationModel,
+        })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
 
       return {
         showSpam: updatedUser[0]?.showSpam ?? false,
+        hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
+        hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,
+        summarizationModel: updatedUser[0]?.summarizationModel ?? null,
       };
     }),
 });

@@ -22,6 +22,8 @@ import {
   KeyboardShortcutsSettings,
   TagManagement,
   AboutSection,
+  GroqApiKeySettings,
+  SummarizationApiKeySettings,
 } from "@/components/settings";
 // Import directly from file to avoid barrel export pulling in piper-tts-web
 import { NarrationSettings } from "@/components/narration/NarrationSettings";
@@ -367,8 +369,14 @@ export default function AccountSettingsContent() {
       {/* OPML Import/Export Section - fully static, no data fetching */}
       <OpmlImportExport />
 
+      {/* AI Text Processing (Groq API key) - near narration */}
+      <GroqApiKeySettings />
+
       {/* Narration Section - fully static/client-side */}
       <NarrationSettings />
+
+      {/* Summaries (Anthropic API key + model) */}
+      <SummarizationApiKeySettings />
 
       {/* Keyboard Shortcuts Section - fully static */}
       <KeyboardShortcutsSettings />
