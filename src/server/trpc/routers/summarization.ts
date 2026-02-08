@@ -18,6 +18,7 @@ import {
   prepareContentForSummarization,
   CURRENT_PROMPT_VERSION,
   getSummarizationModelId,
+  listModels,
 } from "@/server/services/summarization";
 import { logger } from "@/lib/logger";
 
@@ -331,5 +332,36 @@ export const summarizationRouter = createTRPCRouter({
     .output(z.object({ available: z.boolean() }))
     .query(({ ctx }) => {
       return { available: isSummarizationAvailable(ctx.session.user.anthropicApiKey) };
+    }),
+
+  /**
+   * List available Anthropic models for summarization.
+   *
+   * Uses the user's API key if configured, otherwise falls back to the server key.
+   * Returns an empty array if no key is available.
+   */
+  listModels: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/summarization/models",
+        tags: ["Summarization"],
+        summary: "List available models for summarization",
+      },
+    })
+    .input(z.void())
+    .output(
+      z.object({
+        models: z.array(
+          z.object({
+            id: z.string(),
+            displayName: z.string(),
+          })
+        ),
+      })
+    )
+    .query(async ({ ctx }) => {
+      const models = await listModels(ctx.session.user.anthropicApiKey);
+      return { models };
     }),
 });

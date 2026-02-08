@@ -241,3 +241,42 @@ export function isSummarizationAvailable(userApiKey?: string | null): boolean {
 export function getSummarizationModelId(userModel?: string | null): string {
   return userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_MODEL;
 }
+
+/**
+ * Model info returned from the list models API.
+ */
+export interface SummarizationModel {
+  id: string;
+  displayName: string;
+}
+
+/**
+ * Lists available Anthropic models.
+ *
+ * @param userApiKey - Optional user-configured API key
+ * @returns Array of available models, sorted by newest first
+ */
+export async function listModels(userApiKey?: string | null): Promise<SummarizationModel[]> {
+  const client = getAnthropicClient(userApiKey);
+
+  if (!client) {
+    return [];
+  }
+
+  try {
+    const models: SummarizationModel[] = [];
+    // Fetch all models using auto-pagination
+    for await (const model of client.models.list({ limit: 100 })) {
+      models.push({
+        id: model.id,
+        displayName: model.display_name,
+      });
+    }
+    return models;
+  } catch (error) {
+    logger.error("Failed to list Anthropic models", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}

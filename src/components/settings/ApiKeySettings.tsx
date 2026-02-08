@@ -12,21 +12,6 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input } from "@/components/ui";
 
-/**
- * Well-known Anthropic models for summarization.
- * Sorted by recommendation (latest Sonnet first).
- */
-const ANTHROPIC_MODELS = [
-  { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5 (latest)" },
-  { id: "claude-sonnet-4-0", label: "Claude Sonnet 4" },
-  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
-  { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
-  { id: "claude-opus-4-0", label: "Claude Opus 4" },
-  { id: "claude-3-7-sonnet-latest", label: "Claude 3.7 Sonnet" },
-  { id: "claude-3-5-haiku-latest", label: "Claude 3.5 Haiku" },
-  { id: "claude-3-opus-latest", label: "Claude 3 Opus" },
-];
-
 const DEFAULT_MODEL = "claude-sonnet-4-5";
 
 /**
@@ -181,10 +166,15 @@ export function GroqApiKeySettings() {
 export function SummarizationApiKeySettings() {
   const utils = trpc.useUtils();
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
+  const modelsQuery = trpc.summarization.listModels.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
   const updatePreferences = trpc.users["me.updatePreferences"].useMutation({
     onSuccess: () => {
       utils.users["me.preferences"].invalidate();
       utils.summarization.isAvailable.invalidate();
+      // Refetch models list since the API key may have changed
+      utils.summarization.listModels.invalidate();
     },
   });
 
@@ -193,6 +183,7 @@ export function SummarizationApiKeySettings() {
 
   const hasKey = preferencesQuery.data?.hasAnthropicApiKey ?? false;
   const currentModel = preferencesQuery.data?.summarizationModel ?? null;
+  const models = modelsQuery.data?.models ?? [];
 
   const handleSave = useCallback(() => {
     updatePreferences.mutate(
@@ -348,14 +339,27 @@ export function SummarizationApiKeySettings() {
                 id="summarization-model"
                 value={currentModel ?? DEFAULT_MODEL}
                 onChange={handleModelChange}
-                disabled={updatePreferences.isPending}
+                disabled={updatePreferences.isPending || modelsQuery.isLoading}
                 className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
               >
-                {ANTHROPIC_MODELS.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
-                  </option>
-                ))}
+                {modelsQuery.isLoading ? (
+                  <option value={currentModel ?? DEFAULT_MODEL}>Loading models...</option>
+                ) : models.length > 0 ? (
+                  models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.displayName}
+                    </option>
+                  ))
+                ) : (
+                  <option value={DEFAULT_MODEL}>Claude Sonnet 4.5</option>
+                )}
+                {/* Show custom value if it's not in the models list */}
+                {currentModel &&
+                  !modelsQuery.isLoading &&
+                  models.length > 0 &&
+                  !models.some((m) => m.id === currentModel) && (
+                    <option value={currentModel}>{currentModel}</option>
+                  )}
               </select>
               <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
                 Choose the Anthropic model used for generating article summaries. Sonnet models
