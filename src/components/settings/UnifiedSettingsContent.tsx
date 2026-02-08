@@ -105,14 +105,14 @@ export function UnifiedSettingsContent() {
       <div className="flex flex-col gap-8 md:flex-row">
         {/* Sidebar Navigation */}
         <nav className="w-full shrink-0 md:w-48">
-          <ul className="flex gap-1 md:flex-col">
+          <ul className="flex flex-wrap gap-1 overflow-x-auto md:flex-col md:flex-nowrap md:overflow-x-visible">
             {settingsLinks.map((link) => {
               const isActive = pathname === link.href;
               return (
                 <li key={link.href}>
                   <ClientLink
                     href={link.href}
-                    className={`ui-text-sm block rounded-md px-3 py-2 font-medium transition-colors ${
+                    className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap transition-colors ${
                       isActive
                         ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                         : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
