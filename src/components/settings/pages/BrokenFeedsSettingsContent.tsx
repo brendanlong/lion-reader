@@ -15,6 +15,7 @@ import { handleSubscriptionDeleted } from "@/lib/cache/operations";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
+import { CheckIcon, AlertCircleIcon } from "@/components/ui/icon-button";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 
 // ============================================================================
@@ -118,14 +119,7 @@ function EmptyState() {
   return (
     <div className="p-8 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-        <svg
-          className="h-6 w-6 text-green-600 dark:text-green-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
+        <CheckIcon className="h-6 w-6 text-green-600 dark:text-green-400" />
       </div>
       <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
         All feeds are working
@@ -200,19 +194,7 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
           {/* Metadata */}
           <div className="ui-text-sm mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
             <span className="flex items-center gap-1">
-              <svg
-                className="h-4 w-4 text-red-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+              <AlertCircleIcon className="h-4 w-4 text-red-500" />
               {feed.consecutiveFailures} consecutive failure
               {feed.consecutiveFailures === 1 ? "" : "s"}
             </span>

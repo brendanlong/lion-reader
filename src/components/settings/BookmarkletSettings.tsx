@@ -8,6 +8,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import { BookmarkIcon, ChevronRightIcon } from "@/components/ui/icon-button";
 
 export function BookmarkletSettings() {
   const [showCode, setShowCode] = useState(false);
@@ -91,19 +92,7 @@ export function BookmarkletSettings() {
             draggable
             className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 font-medium text-amber-800 shadow-sm transition-all hover:border-amber-400 hover:bg-amber-100 hover:shadow active:scale-95 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:border-amber-600 dark:hover:bg-amber-900"
           >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-              />
-            </svg>
+            <BookmarkIcon className="h-4 w-4" />
             Save to Lion Reader
           </a>
         </div>
@@ -136,14 +125,9 @@ export function BookmarkletSettings() {
             onClick={() => setShowCode(!showCode)}
             className="ui-text-sm inline-flex items-center gap-2 font-medium text-zinc-700 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50"
           >
-            <svg
+            <ChevronRightIcon
               className={`h-4 w-4 transition-transform ${showCode ? "rotate-90" : ""}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            />
             {showCode ? "Hide bookmarklet code" : "Show bookmarklet code"}
           </button>
 

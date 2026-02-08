@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
+import { CloseIcon, KeyIcon } from "@/components/ui/icon-button";
 import { formatRelativeTime } from "@/lib/format";
 
 /**
@@ -296,19 +297,7 @@ export default function ApiTokensSettingsContent() {
               >
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800">
-                    <svg
-                      className="h-4 w-4 text-zinc-400 dark:text-zinc-600"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
+                    <CloseIcon className="h-4 w-4 text-zinc-400 dark:text-zinc-600" />
                   </div>
                   <div>
                     <p className="font-medium text-zinc-700 dark:text-zinc-400">
@@ -355,19 +344,7 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
           <div className="flex items-center gap-2">
             {/* Key icon */}
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-              <svg
-                className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-                />
-              </svg>
+              <KeyIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
             </div>
 
             <div className="min-w-0 flex-1">

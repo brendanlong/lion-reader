@@ -21,6 +21,13 @@
 
 import { useCallback } from "react";
 
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  DoubleChevronDownIcon,
+  DoubleChevronUpIcon,
+} from "@/components/ui/icon-button";
+
 interface VoteControlsProps {
   /** Explicit score set by user (-2 to +2), null if not voted */
   score: number | null;
@@ -51,58 +58,6 @@ function computeNextScore(displayScore: number, direction: "up" | "down"): numbe
   }
 }
 
-/**
- * Single chevron up icon - matches the standard icon viewBox.
- */
-function SingleChevronUpIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-    </svg>
-  );
-}
-
-/**
- * Single chevron down icon - matches the standard icon viewBox.
- */
-function SingleChevronDownIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-    </svg>
-  );
-}
-
-/**
- * Double chevron up icon for strong votes (+2).
- * Bottom arrow matches single chevron position, top arrow appears above.
- */
-function DoubleChevronUpIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      {/* Top arrow (additional) */}
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 9l7-7 7 7" />
-      {/* Bottom arrow (same position as single chevron) */}
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-    </svg>
-  );
-}
-
-/**
- * Double chevron down icon for strong votes (-2).
- * Top arrow matches single chevron position, bottom arrow appears below.
- */
-function DoubleChevronDownIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      {/* Top arrow (same position as single chevron) */}
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      {/* Bottom arrow (additional) */}
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 15l-7 7-7-7" />
-    </svg>
-  );
-}
-
 export function VoteControls({ score, implicitScore, onSetScore }: VoteControlsProps) {
   const displayScore = score ?? implicitScore ?? 0;
 
@@ -121,8 +76,8 @@ export function VoteControls({ score, implicitScore, onSetScore }: VoteControlsP
   const strongDown = displayScore <= -2;
 
   // Choose icons based on score magnitude
-  const UpIcon = strongUp ? DoubleChevronUpIcon : SingleChevronUpIcon;
-  const DownIcon = strongDown ? DoubleChevronDownIcon : SingleChevronDownIcon;
+  const UpIcon = strongUp ? DoubleChevronUpIcon : ChevronUpIcon;
+  const DownIcon = strongDown ? DoubleChevronDownIcon : ChevronDownIcon;
 
   return (
     <div className="inline-flex flex-col items-center">

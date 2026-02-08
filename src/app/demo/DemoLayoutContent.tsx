@@ -13,6 +13,7 @@
 
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
+import { CloseIcon, MenuIcon } from "@/components/ui/icon-button";
 import { LayoutShell } from "@/components/layout/LayoutShell";
 import {
   ScrollContainerProvider,
@@ -58,14 +59,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
                   className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                   aria-label="Close navigation menu"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
+                  <CloseIcon className="h-5 w-5" />
                 </button>
               }
               mobileMenuButton={
@@ -74,14 +68,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
                   className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                   aria-label="Open navigation menu"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 12h16M4 18h16"
-                    />
-                  </svg>
+                  <MenuIcon className="h-5 w-5" />
                 </button>
               }
               headerRight={

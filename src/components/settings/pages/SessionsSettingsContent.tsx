@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
+import { MobileIcon, DesktopIcon } from "@/components/ui/icon-button";
 import { formatRelativeTime } from "@/lib/format";
 
 /**
@@ -164,33 +165,9 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
             {/* Device icon */}
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
               {platform === "iOS" || platform === "Android" ? (
-                <svg
-                  className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
-                  />
-                </svg>
+                <MobileIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
               ) : (
-                <svg
-                  className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                  />
-                </svg>
+                <DesktopIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
               )}
             </div>
 
