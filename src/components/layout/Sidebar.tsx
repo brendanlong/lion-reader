@@ -57,12 +57,11 @@ export function Sidebar({ onClose }: SidebarProps) {
   });
 
   const handleNavigate = () => {
-    // Mark entry list queries as stale so they refetch when mounted
-    // Use refetchType: 'none' to avoid refetching the current (soon-to-be-unmounted) query
-    // The new view's query will refetch on mount because it's now stale
+    // Mark entry list queries as stale and refetch active ones.
+    // This ensures clicking the current page's link refreshes the list,
+    // while cross-page navigation also works (new query fetches on mount).
     queryClient.invalidateQueries({
       queryKey: [["entries", "list"]],
-      refetchType: "none",
     });
     onClose?.();
   };
