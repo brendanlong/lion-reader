@@ -19,6 +19,7 @@ const article: DemoArticle = {
     <p>Lion Reader offers flexibility in how you capture content for later reading:</p>
 
     <ul>
+      <li><strong>Browser extension</strong> &mdash; Save from Firefox or Chrome with a click, keyboard shortcut, or context menu</li>
       <li><strong>Browser bookmarklet</strong> &mdash; One-click saving from any page while browsing</li>
       <li><strong>PWA share target</strong> &mdash; Use your phone&rsquo;s native share menu to send articles directly to Lion Reader</li>
       <li><strong>MCP integration</strong> &mdash; Save articles via AI assistants like Claude</li>
