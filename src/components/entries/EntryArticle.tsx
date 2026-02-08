@@ -9,7 +9,8 @@
 
 import { type ReactNode, type CSSProperties, type RefObject } from "react";
 import { ExternalLinkIcon } from "@/components/ui";
-import { formatDate, getDomain } from "./EntryContentHelpers";
+import { getDomain } from "@/lib/format";
+import { formatDate } from "./EntryContentHelpers";
 import { EntryContentRenderer } from "./EntryContentRenderer";
 import { ContentSkeleton } from "./EntryContentStates";
 

@@ -16,7 +16,8 @@ import { toast } from "sonner";
 import { useEntryMutations, useShowOriginalPreference } from "@/lib/hooks";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
-import { EntryContentBody, getDomain } from "./EntryContentBody";
+import { getDomain } from "@/lib/format";
+import { EntryContentBody } from "./EntryContentBody";
 import { EntryContentFallback } from "./EntryContentFallback";
 
 /**

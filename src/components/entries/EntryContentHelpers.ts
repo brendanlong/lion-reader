@@ -19,17 +19,6 @@ export function formatDate(date: Date): string {
 }
 
 /**
- * Extract domain from URL for display.
- */
-export function getDomain(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-}
-
-/**
  * Swipe gesture configuration constants.
  */
 export const SWIPE_CONFIG = {
