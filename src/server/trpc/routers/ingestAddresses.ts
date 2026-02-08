@@ -12,6 +12,7 @@ import { randomBytes } from "crypto";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
+import { uuidSchema } from "../validation";
 import { ingestAddresses } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { ingestConfig } from "@/server/config/env";
@@ -34,11 +35,6 @@ const TOKEN_BYTES = 16;
 // ============================================================================
 // Validation Schemas
 // ============================================================================
-
-/**
- * UUID validation schema for ingest address IDs.
- */
-const uuidSchema = z.string().uuid("Invalid ingest address ID");
 
 /**
  * Label validation schema.

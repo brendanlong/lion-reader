@@ -10,16 +10,8 @@ import { eq, and, desc } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
+import { uuidSchema } from "../validation";
 import { opmlImports } from "@/server/db/schema";
-
-// ============================================================================
-// Validation Schemas
-// ============================================================================
-
-/**
- * UUID validation schema for import IDs.
- */
-const uuidSchema = z.string().uuid("Invalid import ID");
 
 // ============================================================================
 // Output Schemas

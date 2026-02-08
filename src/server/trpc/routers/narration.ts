@@ -10,6 +10,7 @@ import { eq, and } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
+import { uuidSchema } from "../validation";
 import { entries, narrationContent, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
@@ -37,11 +38,6 @@ const RETRY_AFTER_MS = 60 * 60 * 1000;
 // ============================================================================
 // Validation Schemas
 // ============================================================================
-
-/**
- * UUID validation schema.
- */
-const uuidSchema = z.string().uuid("Invalid ID");
 
 /**
  * Input for narration generation.

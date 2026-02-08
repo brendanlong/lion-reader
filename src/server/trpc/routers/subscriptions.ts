@@ -10,7 +10,7 @@ import { eq, and, isNull, sql, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import { feedUrlSchema } from "../validation";
+import { feedUrlSchema, uuidSchema } from "../validation";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import {
   feeds,
@@ -40,11 +40,6 @@ import * as subscriptionsService from "@/server/services/subscriptions";
 // ============================================================================
 // Validation Schemas
 // ============================================================================
-
-/**
- * UUID validation schema for subscription IDs.
- */
-const uuidSchema = z.string().uuid("Invalid subscription ID");
 
 /**
  * Custom title validation schema.

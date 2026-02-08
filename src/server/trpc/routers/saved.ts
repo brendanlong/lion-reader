@@ -25,6 +25,7 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure, scopedProtectedProcedure } from "../trpc";
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
+import { uuidSchema } from "../validation";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { markdownToHtml } from "@/server/markdown";
 import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
@@ -60,11 +61,6 @@ import { generateContentHash, createUploadedArticle } from "@/server/services/sa
 // ============================================================================
 // Validation Schemas
 // ============================================================================
-
-/**
- * UUID validation schema for saved article IDs.
- */
-const uuidSchema = z.string().uuid("Invalid saved article ID");
 
 /**
  * URL validation schema.
