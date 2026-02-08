@@ -23,134 +23,111 @@ import {
 // ============================================================================
 
 /**
- * Entry metadata for entry_updated events.
+ * Base fields present on all sync events.
+ * `updatedAt` is used for cursor tracking (ISO string from database updated_at).
  */
-export interface EntryMetadata {
-  title: string | null;
-  author: string | null;
-  summary: string | null;
-  url: string | null;
-  publishedAt: string | null;
+interface BaseSyncEvent {
+  timestamp: string;
+  updatedAt: string;
 }
 
 /**
  * new_entry event.
  */
-export interface NewEntryEvent {
+interface NewEntryEvent extends BaseSyncEvent {
   type: "new_entry";
   subscriptionId: string | null;
   entryId: string;
-  timestamp: string;
   feedType?: "web" | "email" | "saved";
 }
 
 /**
  * entry_updated event.
  */
-export interface EntryUpdatedEvent {
+interface EntryUpdatedEvent extends BaseSyncEvent {
   type: "entry_updated";
   subscriptionId: string | null;
   entryId: string;
-  timestamp: string;
-  metadata: EntryMetadata;
+  metadata: {
+    title: string | null;
+    author: string | null;
+    summary: string | null;
+    url: string | null;
+    publishedAt: string | null;
+  };
 }
 
 /**
  * entry_state_changed event.
  */
-export interface EntryStateChangedEvent {
+interface EntryStateChangedEvent extends BaseSyncEvent {
   type: "entry_state_changed";
   entryId: string;
   read: boolean;
   starred: boolean;
-  timestamp: string;
-}
-
-/**
- * Subscription data for subscription_created events.
- */
-export interface SubscriptionCreatedData {
-  id: string;
-  feedId: string;
-  customTitle: string | null;
-  subscribedAt: string;
-  unreadCount: number;
-  tags: Array<{ id: string; name: string; color: string | null }>;
-}
-
-/**
- * Feed data for subscription_created events.
- */
-export interface FeedCreatedData {
-  id: string;
-  type: "web" | "email" | "saved";
-  url: string | null;
-  title: string | null;
-  description: string | null;
-  siteUrl: string | null;
 }
 
 /**
  * subscription_created event.
  */
-export interface SubscriptionCreatedEvent {
+interface SubscriptionCreatedEvent extends BaseSyncEvent {
   type: "subscription_created";
   subscriptionId: string;
   feedId: string;
-  timestamp: string;
-  subscription: SubscriptionCreatedData;
-  feed: FeedCreatedData;
+  subscription: {
+    id: string;
+    feedId: string;
+    customTitle: string | null;
+    subscribedAt: string;
+    unreadCount: number;
+    tags: Array<{ id: string; name: string; color: string | null }>;
+  };
+  feed: {
+    id: string;
+    type: "web" | "email" | "saved";
+    url: string | null;
+    title: string | null;
+    description: string | null;
+    siteUrl: string | null;
+  };
 }
 
 /**
  * subscription_deleted event.
  */
-export interface SubscriptionDeletedEvent {
+interface SubscriptionDeletedEvent extends BaseSyncEvent {
   type: "subscription_deleted";
   subscriptionId: string;
-  timestamp: string;
-}
-
-/**
- * Tag data for tag events.
- */
-export interface TagData {
-  id: string;
-  name: string;
-  color: string | null;
 }
 
 /**
  * tag_created event.
  */
-export interface TagCreatedEvent {
+interface TagCreatedEvent extends BaseSyncEvent {
   type: "tag_created";
-  tag: TagData;
-  timestamp: string;
+  tag: { id: string; name: string; color: string | null };
 }
 
 /**
  * tag_updated event.
  */
-export interface TagUpdatedEvent {
+interface TagUpdatedEvent extends BaseSyncEvent {
   type: "tag_updated";
-  tag: TagData;
-  timestamp: string;
+  tag: { id: string; name: string; color: string | null };
 }
 
 /**
  * tag_deleted event.
  */
-export interface TagDeletedEvent {
+interface TagDeletedEvent extends BaseSyncEvent {
   type: "tag_deleted";
   tagId: string;
-  timestamp: string;
 }
 
 /**
  * import_progress event.
  */
-export interface ImportProgressEvent {
+interface ImportProgressEvent extends BaseSyncEvent {
   type: "import_progress";
   importId: string;
   feedUrl: string;
@@ -159,20 +136,18 @@ export interface ImportProgressEvent {
   skipped: number;
   failed: number;
   total: number;
-  timestamp: string;
 }
 
 /**
  * import_completed event.
  */
-export interface ImportCompletedEvent {
+interface ImportCompletedEvent extends BaseSyncEvent {
   type: "import_completed";
   importId: string;
   imported: number;
   skipped: number;
   failed: number;
   total: number;
-  timestamp: string;
 }
 
 /**
@@ -297,68 +272,5 @@ export function handleSyncEvent(
       utils.imports.get.invalidate({ id: event.importId });
       utils.imports.list.invalidate();
       break;
-  }
-}
-
-/**
- * Type guard to check if a parsed object is a valid SyncEvent.
- */
-export function isSyncEvent(obj: unknown): obj is SyncEvent {
-  if (typeof obj !== "object" || obj === null || !("type" in obj)) {
-    return false;
-  }
-
-  const event = obj as Record<string, unknown>;
-
-  switch (event.type) {
-    case "new_entry":
-      return (
-        (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
-        typeof event.entryId === "string"
-      );
-
-    case "entry_updated":
-      return (
-        (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
-        typeof event.entryId === "string" &&
-        typeof event.metadata === "object" &&
-        event.metadata !== null
-      );
-
-    case "entry_state_changed":
-      return (
-        typeof event.entryId === "string" &&
-        typeof event.read === "boolean" &&
-        typeof event.starred === "boolean"
-      );
-
-    case "subscription_created":
-      return (
-        typeof event.subscriptionId === "string" &&
-        typeof event.feedId === "string" &&
-        typeof event.subscription === "object" &&
-        event.subscription !== null &&
-        typeof event.feed === "object" &&
-        event.feed !== null
-      );
-
-    case "subscription_deleted":
-      return typeof event.subscriptionId === "string";
-
-    case "tag_created":
-    case "tag_updated":
-      return typeof event.tag === "object" && event.tag !== null;
-
-    case "tag_deleted":
-      return typeof event.tagId === "string";
-
-    case "import_progress":
-      return typeof event.importId === "string" && typeof event.feedUrl === "string";
-
-    case "import_completed":
-      return typeof event.importId === "string";
-
-    default:
-      return false;
   }
 }

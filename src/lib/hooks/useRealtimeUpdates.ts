@@ -94,161 +94,20 @@ const POLL_INTERVAL_MS = 30_000;
 const SSE_RETRY_INTERVAL_MS = 60_000;
 
 // ============================================================================
-// Event Types
+// SSE Event Parsing
 // ============================================================================
 
 /**
- * Entry metadata included in entry_updated events.
+ * SSE events include extra fields from the server (userId, feedId) that
+ * aren't part of the SyncEvent type. The parser extracts the SyncEvent-compatible
+ * fields and validates the structure.
  */
-interface EntryUpdatedMetadata {
-  title: string | null;
-  author: string | null;
-  summary: string | null;
-  url: string | null;
-  publishedAt: string | null; // ISO string
-}
 
 /**
- * new_entry event from SSE.
+ * Parses SSE event data from a JSON string into a SyncEvent.
+ * Returns null if the data is invalid or doesn't match a known event type.
  */
-interface NewEntryEventData {
-  type: "new_entry";
-  subscriptionId: string | null;
-  entryId: string;
-  timestamp: string;
-  updatedAt: string; // Database updated_at for cursor tracking (entries cursor)
-  feedType?: "web" | "email" | "saved";
-}
-
-/**
- * entry_updated event from SSE.
- */
-interface EntryUpdatedEventData {
-  type: "entry_updated";
-  subscriptionId: string | null;
-  entryId: string;
-  timestamp: string;
-  updatedAt: string; // Database updated_at for cursor tracking (entries cursor)
-  metadata: EntryUpdatedMetadata;
-}
-
-/**
- * Entry events from SSE, transformed to include subscriptionId.
- * These are published at the feed level internally but transformed
- * by the SSE endpoint to be subscription-centric for clients.
- *
- * For saved articles, subscriptionId is null since they don't have subscriptions.
- */
-type SubscriptionEntryEventData = NewEntryEventData | EntryUpdatedEventData;
-
-interface SubscriptionCreatedEventSubscription {
-  id: string;
-  feedId: string;
-  customTitle: string | null;
-  subscribedAt: string;
-  unreadCount: number;
-  tags: Array<{ id: string; name: string; color: string | null }>;
-}
-
-interface SubscriptionCreatedEventFeed {
-  id: string;
-  type: "web" | "email" | "saved";
-  url: string | null;
-  title: string | null;
-  description: string | null;
-  siteUrl: string | null;
-}
-
-interface SubscriptionCreatedEventData {
-  type: "subscription_created";
-  userId: string;
-  feedId: string;
-  subscriptionId: string;
-  timestamp: string;
-  updatedAt: string; // Database updated_at for cursor tracking (subscriptions cursor)
-  subscription: SubscriptionCreatedEventSubscription;
-  feed: SubscriptionCreatedEventFeed;
-}
-
-interface SubscriptionDeletedEventData {
-  type: "subscription_deleted";
-  userId: string;
-  feedId: string;
-  subscriptionId: string;
-  timestamp: string;
-  updatedAt: string; // Database updated_at for cursor tracking (subscriptions cursor)
-}
-
-interface ImportProgressEventData {
-  type: "import_progress";
-  userId: string;
-  importId: string;
-  feedUrl: string;
-  feedStatus: "imported" | "skipped" | "failed";
-  imported: number;
-  skipped: number;
-  failed: number;
-  total: number;
-  timestamp: string;
-}
-
-interface ImportCompletedEventData {
-  type: "import_completed";
-  userId: string;
-  importId: string;
-  imported: number;
-  skipped: number;
-  failed: number;
-  total: number;
-  timestamp: string;
-}
-
-interface EntryStateChangedEventData {
-  type: "entry_state_changed";
-  entryId: string;
-  read: boolean;
-  starred: boolean;
-  timestamp: string;
-  updatedAt: string; // Database updated_at for cursor tracking (entries cursor)
-}
-
-interface TagCreatedEventData {
-  type: "tag_created";
-  tag: { id: string; name: string; color: string | null };
-  timestamp: string;
-  updatedAt: string; // Database updated_at for cursor tracking (tags cursor)
-}
-
-interface TagUpdatedEventData {
-  type: "tag_updated";
-  tag: { id: string; name: string; color: string | null };
-  timestamp: string;
-  updatedAt: string; // Database updated_at for cursor tracking (tags cursor)
-}
-
-interface TagDeletedEventData {
-  type: "tag_deleted";
-  tagId: string;
-  timestamp: string;
-  updatedAt: string; // Database updated_at for cursor tracking (tags cursor)
-}
-
-type UserEventData =
-  | SubscriptionCreatedEventData
-  | SubscriptionDeletedEventData
-  | ImportProgressEventData
-  | ImportCompletedEventData
-  | EntryStateChangedEventData
-  | TagCreatedEventData
-  | TagUpdatedEventData
-  | TagDeletedEventData;
-
-type SSEEventData = SubscriptionEntryEventData | UserEventData;
-
-/**
- * Parses SSE event data from a JSON string.
- */
-function parseEventData(data: string): SSEEventData | null {
+function parseEventData(data: string): SyncEvent | null {
   try {
     const parsed: unknown = JSON.parse(data);
 
@@ -314,12 +173,30 @@ function parseEventData(data: string): SSEEventData | null {
       }
     }
 
-    // Handle user events - subscription_created
+    // Handle entry_state_changed events
+    if (
+      event.type === "entry_state_changed" &&
+      typeof event.entryId === "string" &&
+      typeof event.read === "boolean" &&
+      typeof event.starred === "boolean" &&
+      typeof event.updatedAt === "string"
+    ) {
+      return {
+        type: event.type,
+        entryId: event.entryId,
+        read: event.read,
+        starred: event.starred,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        updatedAt: event.updatedAt,
+      };
+    }
+
+    // Handle subscription_created events
     if (
       event.type === "subscription_created" &&
-      typeof event.userId === "string" &&
-      typeof event.feedId === "string" &&
       typeof event.subscriptionId === "string" &&
+      typeof event.feedId === "string" &&
+      typeof event.updatedAt === "string" &&
       typeof event.subscription === "object" &&
       event.subscription !== null &&
       typeof event.feed === "object" &&
@@ -352,16 +229,10 @@ function parseEventData(data: string): SSEEventData | null {
         return null;
       }
 
-      // Require updatedAt for cursor tracking
-      if (typeof event.updatedAt !== "string") {
-        return null;
-      }
-
       return {
         type: event.type,
-        userId: event.userId,
-        feedId: event.feedId,
         subscriptionId: event.subscriptionId,
+        feedId: event.feedId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
         updatedAt: event.updatedAt,
         subscription: {
@@ -383,87 +254,15 @@ function parseEventData(data: string): SSEEventData | null {
       };
     }
 
-    // Handle user events - subscription_deleted
+    // Handle subscription_deleted events
     if (
       event.type === "subscription_deleted" &&
-      typeof event.userId === "string" &&
-      typeof event.feedId === "string" &&
       typeof event.subscriptionId === "string" &&
       typeof event.updatedAt === "string"
     ) {
       return {
         type: event.type,
-        userId: event.userId,
-        feedId: event.feedId,
         subscriptionId: event.subscriptionId,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        updatedAt: event.updatedAt,
-      };
-    }
-
-    // Handle user events - import_progress
-    if (
-      event.type === "import_progress" &&
-      typeof event.userId === "string" &&
-      typeof event.importId === "string" &&
-      typeof event.feedUrl === "string" &&
-      (event.feedStatus === "imported" ||
-        event.feedStatus === "skipped" ||
-        event.feedStatus === "failed") &&
-      typeof event.imported === "number" &&
-      typeof event.skipped === "number" &&
-      typeof event.failed === "number" &&
-      typeof event.total === "number"
-    ) {
-      return {
-        type: event.type,
-        userId: event.userId,
-        importId: event.importId,
-        feedUrl: event.feedUrl,
-        feedStatus: event.feedStatus,
-        imported: event.imported,
-        skipped: event.skipped,
-        failed: event.failed,
-        total: event.total,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-      };
-    }
-
-    // Handle user events - import_completed
-    if (
-      event.type === "import_completed" &&
-      typeof event.userId === "string" &&
-      typeof event.importId === "string" &&
-      typeof event.imported === "number" &&
-      typeof event.skipped === "number" &&
-      typeof event.failed === "number" &&
-      typeof event.total === "number"
-    ) {
-      return {
-        type: event.type,
-        userId: event.userId,
-        importId: event.importId,
-        imported: event.imported,
-        skipped: event.skipped,
-        failed: event.failed,
-        total: event.total,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-      };
-    }
-
-    // Handle entry_state_changed events
-    if (
-      event.type === "entry_state_changed" &&
-      typeof event.entryId === "string" &&
-      typeof event.read === "boolean" &&
-      typeof event.starred === "boolean" &&
-      typeof event.updatedAt === "string"
-    ) {
-      return {
-        type: event.type,
-        entryId: event.entryId,
-        read: event.read,
-        starred: event.starred,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
         updatedAt: event.updatedAt,
       };
@@ -534,6 +333,66 @@ function parseEventData(data: string): SSEEventData | null {
         tagId: event.tagId,
         timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
         updatedAt: event.updatedAt,
+      };
+    }
+
+    // Handle import_progress events
+    if (
+      event.type === "import_progress" &&
+      typeof event.importId === "string" &&
+      typeof event.feedUrl === "string" &&
+      (event.feedStatus === "imported" ||
+        event.feedStatus === "skipped" ||
+        event.feedStatus === "failed") &&
+      typeof event.imported === "number" &&
+      typeof event.skipped === "number" &&
+      typeof event.failed === "number" &&
+      typeof event.total === "number"
+    ) {
+      return {
+        type: event.type,
+        importId: event.importId,
+        feedUrl: event.feedUrl,
+        feedStatus: event.feedStatus,
+        imported: event.imported,
+        skipped: event.skipped,
+        failed: event.failed,
+        total: event.total,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        // Import events don't have updatedAt from the server, use timestamp
+        updatedAt:
+          typeof event.updatedAt === "string"
+            ? event.updatedAt
+            : typeof event.timestamp === "string"
+              ? event.timestamp
+              : new Date().toISOString(),
+      };
+    }
+
+    // Handle import_completed events
+    if (
+      event.type === "import_completed" &&
+      typeof event.importId === "string" &&
+      typeof event.imported === "number" &&
+      typeof event.skipped === "number" &&
+      typeof event.failed === "number" &&
+      typeof event.total === "number"
+    ) {
+      return {
+        type: event.type,
+        importId: event.importId,
+        imported: event.imported,
+        skipped: event.skipped,
+        failed: event.failed,
+        total: event.total,
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
+        // Import events don't have updatedAt from the server, use timestamp
+        updatedAt:
+          typeof event.updatedAt === "string"
+            ? event.updatedAt
+            : typeof event.timestamp === "string"
+              ? event.timestamp
+              : new Date().toISOString(),
       };
     }
 
@@ -628,37 +487,31 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
    * Updates the appropriate cursor based on the event type.
    * Only updates if the new timestamp is greater than the current cursor.
    */
-  const updateCursorForEvent = useCallback((data: SSEEventData) => {
-    // Extract updatedAt and determine which cursor to update
-    let updatedAt: string | undefined;
+  const updateCursorForEvent = useCallback((event: SyncEvent) => {
     let cursorType: "entries" | "subscriptions" | "tags" | null = null;
 
     if (
-      data.type === "new_entry" ||
-      data.type === "entry_updated" ||
-      data.type === "entry_state_changed"
+      event.type === "new_entry" ||
+      event.type === "entry_updated" ||
+      event.type === "entry_state_changed"
     ) {
-      updatedAt = data.updatedAt;
       cursorType = "entries";
-    } else if (data.type === "subscription_created" || data.type === "subscription_deleted") {
-      updatedAt = data.updatedAt;
+    } else if (event.type === "subscription_created" || event.type === "subscription_deleted") {
       cursorType = "subscriptions";
     } else if (
-      data.type === "tag_created" ||
-      data.type === "tag_updated" ||
-      data.type === "tag_deleted"
+      event.type === "tag_created" ||
+      event.type === "tag_updated" ||
+      event.type === "tag_deleted"
     ) {
-      updatedAt = data.updatedAt;
       cursorType = "tags";
     }
 
-    // Update the cursor if we have a valid updatedAt and it's newer than current
-    if (cursorType && updatedAt) {
+    if (cursorType) {
       const currentCursor = cursorsRef.current[cursorType];
-      if (!currentCursor || new Date(updatedAt) > new Date(currentCursor)) {
+      if (!currentCursor || new Date(event.updatedAt) > new Date(currentCursor)) {
         cursorsRef.current = {
           ...cursorsRef.current,
-          [cursorType]: updatedAt,
+          [cursorType]: event.updatedAt,
         };
       }
     }
@@ -679,22 +532,23 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       // Update the appropriate cursor based on event type
       updateCursorForEvent(data);
 
-      // Convert SSE event to SyncEvent format and delegate to shared handler
-      handleSyncEvent(utils, queryClient, data as SyncEvent);
+      // Delegate to shared handler for cache updates
+      handleSyncEvent(utils, queryClient, data);
     },
     [utils, queryClient, updateCursorForEvent]
   );
 
   /**
-   * Performs a sync and updates caches appropriately.
-   * Uses the sync.changes endpoint with three separate cursors to track each entity type.
+   * Performs a sync to catch up on missed changes.
+   * Uses the sync.events endpoint which returns events in the same format as SSE,
+   * allowing us to reuse the same handleSyncEvent logic for both paths.
    * Used during polling mode and for catch-up sync after SSE reconnection.
    */
   const performSync = useCallback(async () => {
     try {
       const currentCursors = cursorsRef.current;
 
-      const result = await utils.client.sync.changes.query({
+      const result = await utils.client.sync.events.query({
         cursors: {
           entries: currentCursors.entries ?? undefined,
           subscriptions: currentCursors.subscriptions ?? undefined,
@@ -702,43 +556,24 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         },
       });
 
-      // Invalidate relevant queries based on changes
-      // Note: The changes endpoint returns different data format than events endpoint
-      // We handle cache updates differently here since changes are batched by type
-
-      // Handle new/updated entries - invalidate entry lists
-      if (result.entries.created.length > 0 || result.entries.updated.length > 0) {
-        void utils.entries.list.invalidate();
-        void utils.entries.count.invalidate();
+      // Process each event through the shared handler (same as SSE path)
+      for (const event of result.events) {
+        updateCursorForEvent(event);
+        handleSyncEvent(utils, queryClient, event);
       }
 
-      // Handle subscription changes
-      if (result.subscriptions.created.length > 0 || result.subscriptions.removed.length > 0) {
-        void utils.subscriptions.list.invalidate();
+      // If there are more events, schedule another sync soon
+      if (result.hasMore) {
+        // Use setTimeout to avoid blocking - the next poll or manual sync will pick up more
+        setTimeout(() => performSync(), 100);
       }
-
-      // Handle tag changes
-      if (
-        result.tags.created.length > 0 ||
-        result.tags.updated.length > 0 ||
-        result.tags.removed.length > 0
-      ) {
-        void utils.tags.list.invalidate();
-      }
-
-      // Update cursors from the response (sync.changes returns granular cursors)
-      cursorsRef.current = {
-        entries: result.cursors.entries,
-        subscriptions: result.cursors.subscriptions,
-        tags: result.cursors.tags,
-      };
 
       return cursorsRef.current;
     } catch (error) {
       console.error("Sync failed:", error);
       return null;
     }
-  }, [utils]);
+  }, [utils, queryClient, updateCursorForEvent]);
 
   /**
    * Starts polling mode when SSE is unavailable.

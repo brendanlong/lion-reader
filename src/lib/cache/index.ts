@@ -68,22 +68,4 @@ export {
 } from "./count-cache";
 
 // Shared event handlers for SSE and sync
-export {
-  handleSyncEvent,
-  isSyncEvent,
-  type SyncEvent,
-  type NewEntryEvent,
-  type EntryUpdatedEvent,
-  type EntryStateChangedEvent,
-  type SubscriptionCreatedEvent,
-  type SubscriptionDeletedEvent,
-  type TagCreatedEvent,
-  type TagUpdatedEvent,
-  type TagDeletedEvent,
-  type ImportProgressEvent,
-  type ImportCompletedEvent,
-  type EntryMetadata,
-  type SubscriptionCreatedData,
-  type FeedCreatedData,
-  type TagData,
-} from "./event-handlers";
+export { handleSyncEvent, type SyncEvent } from "./event-handlers";
