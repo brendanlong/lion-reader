@@ -34,7 +34,7 @@ const article: DemoArticle = {
     <ul>
       <li><strong>Secure storage</strong> &mdash; Session tokens are stored as SHA-256 hashes, never in plain text</li>
       <li><strong>Redis caching</strong> &mdash; Sessions are cached for fast validation with a 5-minute TTL</li>
-      <li><strong>Active session tracking</strong> &mdash; View all your sessions with device type, IP address, and last active timestamp</li>
+      <li><strong>Active session tracking</strong> &mdash; View all your sessions with browser, platform, IP address, and last active timestamp</li>
       <li><strong>Revocation</strong> &mdash; Revoke any session instantly from the settings page</li>
     </ul>
 
@@ -53,7 +53,7 @@ const article: DemoArticle = {
 
     <ul>
       <li><strong>Rate limiting</strong> &mdash; Per-user rate limiting via Redis token bucket prevents abuse</li>
-      <li><strong>Outbound throttling</strong> &mdash; Feed fetching respects per-domain rate limits (1 req/sec) to be a good internet citizen</li>
+      <li><strong>Respectful fetching</strong> &mdash; Feed fetching uses exponential backoff and respects server Cache-Control headers, Retry-After directives, and HTTP 429 responses</li>
       <li><strong>Webhook verification</strong> &mdash; Email webhooks use HMAC signature verification</li>
       <li><strong>Content sanitization</strong> &mdash; All feed content is sanitized to prevent XSS attacks</li>
       <li><strong>Invite-only mode</strong> &mdash; Deploy with invite-only registration to control access</li>
@@ -65,7 +65,7 @@ const article: DemoArticle = {
       <li><strong>Subscription-based visibility</strong> &mdash; You only see entries fetched after you subscribed, preventing access to historical private content</li>
       <li><strong>Starred entry preservation</strong> &mdash; Entries you&rsquo;ve starred remain visible even after unsubscribing</li>
       <li><strong>Soft deletes</strong> &mdash; Unsubscribing preserves your read state and preferences for seamless resubscription</li>
-      <li><strong>No tracking</strong> &mdash; Lion Reader doesn&rsquo;t track your reading habits, show ads, or share data with third parties</li>
+      <li><strong>Your data stays yours</strong> &mdash; No ads, no data selling, no third-party analytics. Reading behavior is used only to power features like article scoring, and self-hosting gives you full control</li>
     </ul>
   `,
 };

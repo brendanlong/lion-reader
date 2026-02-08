@@ -10,7 +10,7 @@ const article: DemoArticle = {
   summary: "Read newsletters alongside your feeds with unique ingest email addresses.",
   publishedAt: new Date("2025-12-30T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader generates unique ingest email addresses that convert newsletters into feed entries. Subscribe to Substack, Ghost, or any newsletter using these addresses, and they appear in your unified timeline with full RSS-like features: starring, search, tags, and reading controls. Built-in security includes HMAC verification and spam filtering.</p>`,
+  summaryHtml: `<p>Lion Reader generates unique ingest email addresses that convert newsletters into feed entries. Subscribe to Substack, Ghost, or any newsletter using these addresses, and they appear in your unified timeline with full RSS-like features: starring, search, tags, and reading controls. Built-in security includes HMAC verification and sender blocking.</p>`,
   contentHtml: `
     <h2>Email Newsletters: Bring Inbox Content to Your Feed Reader</h2>
 
@@ -22,7 +22,7 @@ const article: DemoArticle = {
 
     <h3>Security &amp; Spam Protection</h3>
 
-    <p>Ingest addresses include built-in security measures: HMAC signature verification ensures emails are genuinely from the mail provider, Message-ID deduplication prevents duplicates, and provider-level spam filtering blocks junk before it reaches your feed. You can block specific senders at any time, and Lion Reader respects List-Unsubscribe headers for one-click unsubscribe functionality when newsletters support it.</p>
+    <p>Ingest addresses include built-in security measures: HMAC signature verification ensures emails are genuinely from the mail provider, and Message-ID deduplication prevents duplicates. You can block specific senders at any time, and Lion Reader respects List-Unsubscribe headers for one-click unsubscribe functionality when newsletters support it.</p>
 
     <p>Email newsletters in Lion Reader are treated as first-class subscriptions &mdash; they appear in your timeline, support all the same reading features as RSS feeds, and can be organized with the same tools. No more switching between your email client and feed reader to keep up with your favorite writers.</p>
   `,

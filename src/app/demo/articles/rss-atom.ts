@@ -10,7 +10,7 @@ const article: DemoArticle = {
   summary: "Subscribe to any RSS 2.0 or Atom feed with automatic detection and efficient polling.",
   publishedAt: new Date("2025-12-26T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader supports <strong>RSS 2.0, Atom 1.0, and JSON Feed</strong> formats with automatic feed discovery. It uses <strong>HTTP conditional requests</strong> and respects Cache-Control headers while polling between once per minute and once every 7 days. The system handles redirects intelligently and applies exponential backoff for failed fetches.</p>`,
+  summaryHtml: `<p>Lion Reader supports <strong>RSS 2.0 and Atom 1.0</strong> formats with automatic feed discovery. It uses <strong>HTTP conditional requests</strong> and respects Cache-Control headers while polling between once every 10 minutes and once every 7 days. The system handles redirects intelligently and applies exponential backoff for failed fetches.</p>`,
   contentHtml: `
     <h2>Modern Syndication with RSS &amp; Atom</h2>
 
@@ -18,15 +18,15 @@ const article: DemoArticle = {
 
     <h3>Efficient Polling &amp; Smart Scheduling</h3>
 
-    <p>Lion Reader uses HTTP conditional requests to avoid wasting bandwidth on unchanged content. When checking for updates, it sends <code>ETag</code>, <code>If-Modified-Since</code>, and <code>If-None-Match</code> headers so servers can respond with a lightweight 304 Not Modified status if nothing has changed. The polling schedule respects <code>Cache-Control</code> headers from the server while enforcing reasonable bounds: feeds are checked between once per minute and once every 7 days.</p>
+    <p>Lion Reader uses HTTP conditional requests to avoid wasting bandwidth on unchanged content. When checking for updates, it sends <code>If-Modified-Since</code> and <code>If-None-Match</code> headers so servers can respond with a lightweight 304 Not Modified status if nothing has changed. The polling schedule respects <code>Cache-Control</code> headers from the server while enforcing reasonable bounds: feeds are checked between once every 10 minutes (with a server-provided cache hint) and once every 7 days.</p>
 
     <h3>Graceful Error Handling</h3>
 
-    <p>Lion Reader handles HTTP redirects intelligently: it tracks 301 permanent redirects and updates the feed URL after 3 confirmations, while following 302 and 307 temporary redirects without updating the stored URL. If a feed fails to fetch, exponential backoff is applied with a maximum retry interval of 7 days. This approach ensures Lion Reader is a good citizen of the web while keeping your feeds up to date.</p>
+    <p>Lion Reader handles HTTP redirects intelligently: it tracks 301 permanent redirects and updates the feed URL after a 7-day confirmation period, while following 302 and 307 temporary redirects without updating the stored URL. HTTP-to-HTTPS upgrades are applied immediately. If a feed fails to fetch, exponential backoff is applied with a maximum retry interval of 7 days. This approach ensures Lion Reader is a good citizen of the web while keeping your feeds up to date.</p>
 
     <h3>Fast &amp; Memory-Efficient Parsing</h3>
 
-    <p>All feeds are parsed using <code>fast-xml-parser</code> in SAX (streaming) mode, which provides excellent performance and low memory usage even for large feeds. This architectural choice allows Lion Reader to handle feeds of any size efficiently.</p>
+    <p>All feeds are parsed using <code>htmlparser2</code> in SAX (streaming) mode, which provides excellent performance and low memory usage even for large feeds. This architectural choice allows Lion Reader to handle feeds of any size efficiently.</p>
 
     <ul>
       <li><a href="https://www.rssboard.org/rss-specification" target="_blank" rel="noopener noreferrer">RSS 2.0 Specification</a></li>

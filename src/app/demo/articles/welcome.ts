@@ -10,7 +10,7 @@ const article: DemoArticle = {
   summary: "A modern, fast, and open-source feed reader. Explore the demo to see what it can do.",
   publishedAt: new Date(),
   starred: true,
-  summaryHtml: `<p><strong>Lion Reader</strong> is a self-hostable RSS reader that combines feeds, email newsletters, and saved articles in one interface. It features <strong>AI-powered summaries</strong> via Claude, text-to-speech narration, keyboard-first navigation, real-time updates, and <strong>MCP integration</strong> for connecting AI assistants. Privacy-focused with on-device ML scoring.</p>`,
+  summaryHtml: `<p><strong>Lion Reader</strong> is a self-hostable RSS reader that combines feeds, email newsletters, and saved articles in one interface. It features <strong>AI-powered summaries</strong> via Claude, text-to-speech narration, keyboard-first navigation, real-time updates, and <strong>MCP integration</strong> for connecting AI assistants. Self-hostable and open source with ML-powered article scoring.</p>`,
   contentHtml: `
     <h2>Welcome to Lion Reader</h2>
 
@@ -22,13 +22,13 @@ const article: DemoArticle = {
 
     <ul>
       <li><strong>All your content in one place</strong> &mdash; Subscribe to RSS, Atom, and JSON feeds, receive email newsletters directly into your reader, and save articles from around the web for later reading.</li>
-      <li><strong>AI-powered reading</strong> &mdash; Get instant article summaries powered by Claude, listen to entries with high-quality text-to-speech narration, and let on-device ML predict which articles you&rsquo;ll love.</li>
+      <li><strong>AI-powered reading</strong> &mdash; Get instant article summaries powered by Claude, listen to entries with high-quality text-to-speech narration, and let ML-powered scoring predict which articles you&rsquo;ll love.</li>
       <li><strong>MCP integration</strong> &mdash; Connect AI assistants like Claude Desktop directly to your feeds via the Model Context Protocol. Let your AI help you search, organize, and manage your reading list.</li>
       <li><strong>Keyboard-first design</strong> &mdash; Navigate your entire reading experience without touching your mouse. Every action has a keyboard shortcut.</li>
       <li><strong>Real-time updates</strong> &mdash; New entries appear instantly via Server-Sent Events. No refreshing, no polling, just seamless updates as content arrives.</li>
       <li><strong>Progressive Web App</strong> &mdash; Install Lion Reader on desktop or mobile for a native app experience. Share articles directly from your phone.</li>
-      <li><strong>Privacy-focused</strong> &mdash; Self-hostable and open source. No tracking, no ads, no data mining. Your reading habits are yours alone.</li>
-      <li><strong>On-device ML</strong> &mdash; Score predictions run locally in your browser via ONNX Runtime. Your reading patterns never leave your device.</li>
+      <li><strong>Privacy-focused</strong> &mdash; Self-hostable and open source. No ads, no data selling, no third-party analytics. You control your data completely.</li>
+      <li><strong>Smart scoring</strong> &mdash; Rate articles and Lion Reader learns your preferences using TF-IDF and Ridge Regression to predict scores for new content.</li>
     </ul>
 
     <h3>Explore the Demo</h3>

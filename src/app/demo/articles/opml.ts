@@ -21,7 +21,7 @@ const article: DemoArticle = {
 
     <p>Upload an OPML file from any feed reader &mdash; Feedly, Inoreader, NetNewsWire, or dozens of others. Lion Reader processes imports in the background with real-time progress updates delivered via Server-Sent Events. Each feed is validated and fetched during import to ensure it&rsquo;s still active. The importer preserves folder and tag structure from your original reader, translating folder hierarchies into Lion Reader&rsquo;s tag system.</p>
 
-    <p>The import process is smart: it automatically skips feeds you&rsquo;re already subscribed to and provides detailed per-feed status reports. You&rsquo;ll see which feeds were successfully imported, which were skipped, and which failed with specific error messages. Lion Reader also supports service-specific migrations, including a dedicated Feedbin importer.</p>
+    <p>The import process is smart: it automatically skips feeds you&rsquo;re already subscribed to and provides detailed per-feed status reports. You&rsquo;ll see which feeds were successfully imported, which were skipped, and which failed with specific error messages.</p>
 
     <h3>Export Your Library</h3>
 
@@ -34,7 +34,7 @@ const article: DemoArticle = {
       <li><strong>Folder preservation</strong> &mdash; Tag structure imported from source reader</li>
       <li><strong>Per-feed status</strong> &mdash; Imported, skipped, or failed with error details</li>
       <li><strong>One-click export</strong> &mdash; OPML 2.0 with custom titles and tags</li>
-      <li><strong>Service migrations</strong> &mdash; Dedicated importers for Feedbin and more</li>
+      <li><strong>Standard format</strong> &mdash; Compatible with any OPML-supporting feed reader</li>
     </ul>
   `,
 };
