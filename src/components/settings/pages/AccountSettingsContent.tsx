@@ -16,17 +16,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { clientReplace } from "@/lib/navigation";
 import { Button, Input, Alert } from "@/components/ui";
-import {
-  OpmlImportExport,
-  LinkedAccounts,
-  KeyboardShortcutsSettings,
-  TagManagement,
-  AboutSection,
-  GroqApiKeySettings,
-  SummarizationApiKeySettings,
-} from "@/components/settings";
-// Import directly from file to avoid barrel export pulling in piper-tts-web
-import { NarrationSettings } from "@/components/narration/NarrationSettings";
+import { LinkedAccounts, KeyboardShortcutsSettings, AboutSection } from "@/components/settings";
 
 /**
  * Handles OAuth link success/error messages from query params.
@@ -82,23 +72,6 @@ function OAuthMessages() {
     <>
       {linkSuccessMessage && <Alert variant="success">{linkSuccessMessage}</Alert>}
       {linkErrorMessage && <Alert variant="error">{linkErrorMessage}</Alert>}
-    </>
-  );
-}
-
-function ApiKeySettingsSections() {
-  const preferencesQuery = trpc.users["me.preferences"].useQuery();
-  const canConfigure = preferencesQuery.data?.canConfigureApiKeys ?? false;
-
-  if (preferencesQuery.isLoading || !canConfigure) return null;
-
-  return (
-    <>
-      {/* AI Text Processing (Groq API key) - near narration */}
-      <GroqApiKeySettings />
-
-      {/* Summaries (Anthropic API key + model) */}
-      <SummarizationApiKeySettings />
     </>
   );
 }
@@ -377,20 +350,8 @@ export default function AccountSettingsContent() {
       {/* Linked Accounts Section - uses SettingsSection which shows title during load */}
       <LinkedAccounts />
 
-      {/* Tags Section - uses SettingsSection which shows title during load */}
-      <TagManagement />
-
       {/* Password Section - shows title immediately, content loads inline */}
       <PasswordSection />
-
-      {/* OPML Import/Export Section - fully static, no data fetching */}
-      <OpmlImportExport />
-
-      {/* AI API key settings - only shown when encryption is configured */}
-      <ApiKeySettingsSections />
-
-      {/* Narration Section - fully static/client-side */}
-      <NarrationSettings />
 
       {/* Keyboard Shortcuts Section - fully static */}
       <KeyboardShortcutsSettings />

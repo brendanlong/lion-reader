@@ -23,24 +23,22 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 // like titles renders immediately while data loads
 import AccountSettingsContent from "./pages/AccountSettingsContent";
 import { AppearanceSettings as AppearanceSettingsContent } from "./AppearanceSettings";
-import SessionsSettingsContent from "./pages/SessionsSettingsContent";
-import ApiTokensSettingsContent from "./pages/ApiTokensSettingsContent";
-import IntegrationsSettingsContent from "./pages/IntegrationsSettingsContent";
+import SubscriptionsSettingsContent from "./pages/SubscriptionsSettingsContent";
 import EmailSettingsContent from "./pages/EmailSettingsContent";
-import BlockedSendersSettingsContent from "./pages/BlockedSendersSettingsContent";
-import BrokenFeedsSettingsContent from "./pages/BrokenFeedsSettingsContent";
-import FeedStatsSettingsContent from "./pages/FeedStatsSettingsContent";
+import AiSettingsContent from "./pages/AiSettingsContent";
+import IntegrationsSettingsContent from "./pages/IntegrationsSettingsContent";
+import FeedHealthSettingsContent from "./pages/FeedHealthSettingsContent";
+import SessionsSettingsContent from "./pages/SessionsSettingsContent";
 
 const settingsLinks = [
   { href: "/settings", label: "Account" },
   { href: "/settings/appearance", label: "Appearance" },
-  { href: "/settings/sessions", label: "Sessions" },
-  { href: "/settings/api-tokens", label: "API Tokens" },
+  { href: "/settings/subscriptions", label: "Subscriptions" },
+  { href: "/settings/email", label: "Email" },
+  { href: "/settings/ai", label: "AI & Narration" },
   { href: "/settings/integrations", label: "Integrations" },
-  { href: "/settings/email", label: "Email Subscriptions" },
-  { href: "/settings/blocked-senders", label: "Blocked Senders" },
-  { href: "/settings/broken-feeds", label: "Broken Feeds" },
-  { href: "/settings/feed-stats", label: "Feed Stats" },
+  { href: "/settings/feed-health", label: "Feed Health" },
+  { href: "/settings/sessions", label: "Sessions" },
 ];
 
 /**
@@ -55,20 +53,18 @@ function SettingsContentRouter() {
       return <AccountSettingsContent />;
     case "/settings/appearance":
       return <AppearanceSettingsContent />;
-    case "/settings/sessions":
-      return <SessionsSettingsContent />;
-    case "/settings/api-tokens":
-      return <ApiTokensSettingsContent />;
-    case "/settings/integrations":
-      return <IntegrationsSettingsContent />;
+    case "/settings/subscriptions":
+      return <SubscriptionsSettingsContent />;
     case "/settings/email":
       return <EmailSettingsContent />;
-    case "/settings/blocked-senders":
-      return <BlockedSendersSettingsContent />;
-    case "/settings/broken-feeds":
-      return <BrokenFeedsSettingsContent />;
-    case "/settings/feed-stats":
-      return <FeedStatsSettingsContent />;
+    case "/settings/ai":
+      return <AiSettingsContent />;
+    case "/settings/integrations":
+      return <IntegrationsSettingsContent />;
+    case "/settings/feed-health":
+      return <FeedHealthSettingsContent />;
+    case "/settings/sessions":
+      return <SessionsSettingsContent />;
     default:
       // Default to account settings for unknown paths
       return <AccountSettingsContent />;

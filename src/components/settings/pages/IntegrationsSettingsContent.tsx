@@ -1,7 +1,8 @@
 /**
  * Integrations Settings Content
  *
- * Page for browser extensions, bookmarklets, Discord bot, and AI integrations.
+ * Page for browser extensions, bookmarklets, Discord bot, AI integrations,
+ * and API token management.
  */
 
 "use client";
@@ -11,6 +12,7 @@ import {
   DiscordBotSettings,
   IntegrationsSettings,
 } from "@/components/settings";
+import ApiTokensSettingsContent from "./ApiTokensSettingsContent";
 
 export default function IntegrationsSettingsContent() {
   return (
@@ -23,6 +25,9 @@ export default function IntegrationsSettingsContent() {
 
       {/* AI Integrations (MCP) */}
       <IntegrationsSettings />
+
+      {/* API Tokens */}
+      <ApiTokensSettingsContent />
     </div>
   );
 }

@@ -29,7 +29,7 @@ Connect to your Lion Reader account at **lionreader.com** (or `localhost:3000` f
 
 #### Step 1: Create an API Token
 
-1. Go to **lionreader.com/settings/api-tokens** (or `localhost:3000/settings/api-tokens`)
+1. Go to **lionreader.com/settings/integrations** (or `localhost:3000/settings/integrations`)
 2. Click "Create API Token"
 3. Name it "Claude Desktop" or "MCP"
 4. Select scope: **`mcp`** (full MCP access)
