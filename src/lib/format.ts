@@ -43,3 +43,18 @@ export function getDomain(url: string): string {
     return url;
   }
 }
+
+/**
+ * Get display name for a feed, using a fallback chain:
+ * customTitle → title → URL domain → "Unknown Feed"
+ */
+export function getFeedDisplayName(feed: {
+  customTitle?: string | null;
+  title: string | null;
+  url: string | null;
+}): string {
+  if (feed.customTitle) return feed.customTitle;
+  if (feed.title) return feed.title;
+  if (feed.url) return getDomain(feed.url);
+  return "Unknown Feed";
+}

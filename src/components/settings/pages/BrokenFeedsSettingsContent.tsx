@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { handleSubscriptionDeleted } from "@/lib/cache";
+import { getFeedDisplayName } from "@/lib/format";
 import { Button, Alert } from "@/components/ui";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 
@@ -92,22 +93,6 @@ function formatFutureDate(date: Date | null): string {
   } else {
     return `In ${diffDays} day${diffDays === 1 ? "" : "s"}`;
   }
-}
-
-/**
- * Get display name for a feed
- */
-function getFeedDisplayName(feed: BrokenFeed): string {
-  if (feed.title) return feed.title;
-  if (feed.url) {
-    try {
-      const url = new URL(feed.url);
-      return url.hostname;
-    } catch {
-      return feed.url;
-    }
-  }
-  return "Unknown Feed";
 }
 
 // ============================================================================
