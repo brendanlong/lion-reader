@@ -125,7 +125,7 @@ function DemoRouterContent() {
   // Keep document.title in sync during client-side navigation
   useEffect(() => {
     const title = selectedEntry?.title ?? pageTitle;
-    document.title = `${title} - Lion Reader Demo`;
+    document.title = `${title} - Lion Reader`;
   }, [selectedEntry, pageTitle]);
 
   // Build the back-to-list href (pathname without query params)

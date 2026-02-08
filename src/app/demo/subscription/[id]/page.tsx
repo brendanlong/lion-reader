@@ -21,10 +21,14 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const entryId = typeof sp.entry === "string" ? sp.entry : undefined;
   const entry = entryId ? getDemoEntry(entryId) : undefined;
   const subscription = getDemoSubscription(id);
+  const title = entry?.title
+    ? `${entry.title} - Lion Reader`
+    : `${subscription?.title ?? "Subscription"} - Lion Reader`;
+  const description = entry?.summary ?? subscription?.description;
   return {
-    title: entry?.title
-      ? `${entry.title} - Lion Reader Demo`
-      : `${subscription?.title ?? "Subscription"} - Lion Reader Demo`,
+    title,
+    description,
+    openGraph: { title, description },
   };
 }
 

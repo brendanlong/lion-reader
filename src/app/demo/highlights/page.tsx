@@ -18,8 +18,12 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const sp = await searchParams;
   const entryId = typeof sp.entry === "string" ? sp.entry : undefined;
   const entry = entryId ? getDemoEntry(entryId) : undefined;
+  const title = entry?.title ? `${entry.title} - Lion Reader` : "Highlights - Lion Reader";
+  const description = entry?.summary ?? "Starred and highlighted articles in Lion Reader.";
   return {
-    title: entry?.title ? `${entry.title} - Lion Reader Demo` : "Highlights - Lion Reader Demo",
+    title,
+    description,
+    openGraph: { title, description },
   };
 }
 

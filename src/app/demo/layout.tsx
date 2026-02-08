@@ -10,9 +10,8 @@ import { type Metadata } from "next";
 import { DemoLayoutContent } from "./DemoLayoutContent";
 
 export const metadata: Metadata = {
-  title: "Lion Reader Demo",
-  description:
-    "Explore Lion Reader's features with this interactive demo. A modern, fast, and open-source feed reader.",
+  title: "Lion Reader",
+  description: "A modern, fast, and open-source feed reader you can self-host.",
 };
 
 export default function DemoLayout({ children }: { children: ReactNode }) {
