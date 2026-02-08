@@ -6,7 +6,8 @@
 
 "use client";
 
-import { OpmlImportExport, TagManagement } from "@/components/settings";
+import { OpmlImportExport } from "@/components/settings/OpmlImportExport";
+import { TagManagement } from "@/components/settings/TagManagement";
 
 export default function SubscriptionsSettingsContent() {
   return (

@@ -22,7 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { validateGoogleCallback, isGoogleOAuthEnabled } from "@/server/auth/oauth/google";
-import { processOAuthCallback } from "@/server/auth";
+import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
 import {

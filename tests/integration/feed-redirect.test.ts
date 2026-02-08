@@ -23,9 +23,9 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { createOrEnableFeedJob } from "../../src/server/jobs";
+import { createOrEnableFeedJob } from "../../src/server/jobs/queue";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers";
-import { createUserEntriesForFeed } from "../../src/server/feed";
+import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 
 // ============================================================================
 // Test Helpers

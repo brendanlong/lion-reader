@@ -9,8 +9,9 @@
 
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { TRPCError } from "@trpc/server";
-import { appRouter, createContext } from "@/server/trpc";
-import { startHttpTimer } from "@/server/metrics";
+import { appRouter } from "@/server/trpc/root";
+import { createContext } from "@/server/trpc/context";
+import { startHttpTimer } from "@/server/metrics/metrics";
 
 /**
  * Extracts rate limit headers from a tRPC error (if present).

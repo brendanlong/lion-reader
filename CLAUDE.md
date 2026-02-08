@@ -27,6 +27,7 @@ Read these if you need context on features or specific references.
 - **UI**: Use optimistic updates for responsive UX
 - **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes
 - Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/clawed-burrow
+- Don't create barrel files, prefer direct imports within our code
 
 ## UI Components
 

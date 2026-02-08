@@ -9,8 +9,8 @@
 
 import { memo } from "react";
 import { formatRelativeTime } from "@/lib/format";
-import { type EntryType } from "@/lib/hooks";
-import { StarIcon, StarFilledIcon } from "@/components/ui";
+import type { EntryType } from "@/lib/hooks/useEntryMutations";
+import { StarIcon, StarFilledIcon } from "@/components/ui/icon-button";
 
 /**
  * Entry data for list display (lightweight, no full content).

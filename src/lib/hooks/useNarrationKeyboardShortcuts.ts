@@ -18,7 +18,7 @@
 "use client";
 
 import { useHotkeys } from "react-hotkeys-hook";
-import { useKeyboardShortcutsContext } from "@/components/keyboard";
+import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 
 /**
  * Narration state for determining shortcut behavior.

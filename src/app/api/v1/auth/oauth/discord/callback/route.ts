@@ -12,7 +12,7 @@
 
 import { NextRequest } from "next/server";
 import { validateDiscordCallback, isDiscordOAuthEnabled } from "@/server/auth/oauth/discord";
-import { processOAuthCallback } from "@/server/auth";
+import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
   createSessionResponse,
   createErrorRedirect,

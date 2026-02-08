@@ -4,7 +4,7 @@
 
 ## UI Components
 
-Reusable UI primitives are in `src/components/ui/`. **Always check for existing components before creating new ones.** Import via `import { Button, Dialog, Card, NavLink } from "@/components/ui";`
+Reusable UI primitives are in `src/components/ui/`. **Always check for existing components before creating new ones.** Import directly from source files, e.g. `import { Button } from "@/components/ui/button";`
 
 ### Available Components
 
@@ -25,7 +25,7 @@ Reusable UI primitives are in `src/components/ui/`. **Always check for existing 
 
 ### Common Icons
 
-Icons are exported from `@/components/ui`. Use these instead of duplicating SVGs:
+Icons are in `@/components/ui/icon-button`. Use these instead of duplicating SVGs:
 
 - **Navigation**: `CloseIcon`, `ChevronDownIcon`, `ChevronUpIcon`, `ChevronLeftIcon`, `ChevronRightIcon`, `ArrowLeftIcon`
 - **Actions**: `EditIcon`, `TrashIcon`, `CheckIcon`, `PlusIcon`

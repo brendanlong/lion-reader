@@ -10,7 +10,7 @@ import { cache } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { createHydrationHelpers } from "@trpc/react-query/rsc";
 import { db } from "@/server/db";
-import { validateSession } from "@/server/auth";
+import { validateSession } from "@/server/auth/session";
 import { createCaller, type AppRouter } from "@/server/trpc/root";
 import type { Context } from "@/server/trpc/context";
 import { getQueryClient } from "./query-client";

@@ -13,7 +13,7 @@
  *   DISCORD_SAVE_EMOJI - Emoji to trigger saving (default: 🦁)
  */
 
-import { startDiscordBot } from "../src/server/discord";
+import { startDiscordBot } from "../src/server/discord/bot";
 import { startMetricsServer } from "../src/server/metrics/server";
 import { notifyWorkerStarted } from "../src/server/notifications/discord-webhook";
 import { logger } from "../src/lib/logger";

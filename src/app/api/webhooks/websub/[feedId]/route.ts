@@ -11,13 +11,10 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { feeds } from "@/server/db/schema";
-import {
-  handleVerificationChallenge,
-  verifyHmacSignature,
-  parseFeed,
-  processEntries,
-  WEBSUB_BACKUP_POLL_INTERVAL_SECONDS,
-} from "@/server/feed";
+import { handleVerificationChallenge, verifyHmacSignature } from "@/server/feed/websub";
+import { parseFeed } from "@/server/feed/parser";
+import { processEntries } from "@/server/feed/entry-processor";
+import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "@/server/feed/scheduling";
 import { updateFeedJobNextRun } from "@/server/jobs/queue";
 import { trackWebsubNotificationReceived } from "@/server/metrics/metrics";
 import { logger } from "@/lib/logger";

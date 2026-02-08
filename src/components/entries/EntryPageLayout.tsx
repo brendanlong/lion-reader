@@ -11,13 +11,13 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks";
+import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { UnreadToggle } from "./UnreadToggle";
 import { SortToggle } from "./SortToggle";
 import { MarkAllReadButton } from "./MarkAllReadButton";
-import { FileUploadButton } from "@/components/saved";
+import { FileUploadButton } from "@/components/saved/FileUploadButton";
 
 /**
  * Loading skeleton for the page title.

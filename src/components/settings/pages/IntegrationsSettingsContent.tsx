@@ -7,11 +7,9 @@
 
 "use client";
 
-import {
-  BookmarkletSettings,
-  DiscordBotSettings,
-  IntegrationsSettings,
-} from "@/components/settings";
+import { BookmarkletSettings } from "@/components/settings/BookmarkletSettings";
+import { DiscordBotSettings } from "@/components/settings/DiscordBotSettings";
+import { IntegrationsSettings } from "@/components/settings/IntegrationsSettings";
 import ApiTokensSettingsContent from "./ApiTokensSettingsContent";
 
 export default function IntegrationsSettingsContent() {

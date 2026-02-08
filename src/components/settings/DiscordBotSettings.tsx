@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { DiscordIcon, ExternalLinkIcon } from "@/components/ui";
+import { DiscordIcon, ExternalLinkIcon } from "@/components/ui/icon-button";
 
 /**
  * Check if a string is a custom Discord emoji name (word) vs a unicode emoji.

@@ -10,7 +10,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ClientLink } from "@/components/ui";
+import { ClientLink } from "@/components/ui/client-link";
 import { Toaster, toast } from "sonner";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { UserEmail } from "@/components/layout/UserEmail";
@@ -21,10 +21,10 @@ import {
   ScrollContainerProvider,
   MainScrollContainer,
 } from "@/components/layout/ScrollContainerContext";
-import { KeyboardShortcutsProvider } from "@/components/keyboard";
-import { AppRouter } from "@/components/app";
+import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { AppRouter } from "@/components/app/AppRouter";
 import { trpc } from "@/lib/trpc/client";
-import { AppearanceProvider } from "@/lib/appearance";
+import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
 
 interface AppLayoutContentProps {

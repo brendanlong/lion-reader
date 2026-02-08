@@ -10,7 +10,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 import type { Context } from "./context";
 import type { OpenApiMeta } from "trpc-to-openapi";
-import type { ApiTokenScope } from "@/server/auth";
+import type { ApiTokenScope } from "@/server/auth/api-token";
 import {
   checkRateLimit,
   getClientIdentifier,

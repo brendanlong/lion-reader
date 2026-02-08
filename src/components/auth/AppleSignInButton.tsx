@@ -16,7 +16,7 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { AppleIcon, SpinnerIcon } from "@/components/ui";
+import { AppleIcon, SpinnerIcon } from "@/components/ui/icon-button";
 
 interface AppleSignInButtonProps {
   /** Text to display on the button */

@@ -9,15 +9,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  Dialog,
-  DialogHeader,
-  DialogBody,
-  DialogFooter,
-  Button,
-  IconButton,
-  CloseIcon,
-} from "@/components/ui";
+import { Dialog, DialogHeader, DialogBody, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { IconButton, CloseIcon } from "@/components/ui/icon-button";
 
 /**
  * Shortcut definition for display

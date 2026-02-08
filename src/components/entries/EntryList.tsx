@@ -9,7 +9,8 @@
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { type EntryListData, type EntryType } from "@/lib/hooks";
+import type { EntryListData } from "@/lib/hooks/types";
+import type { EntryType } from "@/lib/hooks/useEntryMutations";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";

@@ -8,7 +8,10 @@
 "use client";
 
 import { trpc } from "@/lib/trpc/client";
-import { GroqApiKeySettings, SummarizationApiKeySettings } from "@/components/settings";
+import {
+  GroqApiKeySettings,
+  SummarizationApiKeySettings,
+} from "@/components/settings/ApiKeySettings";
 // Import directly from file to avoid barrel export pulling in piper-tts-web
 import { NarrationSettings } from "@/components/narration/NarrationSettings";
 

@@ -9,8 +9,8 @@
 
 import { trpc } from "@/lib/trpc/client";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
-import { Alert } from "@/components/ui";
-import { SettingsListSkeleton } from "@/components/settings";
+import { Alert } from "@/components/ui/alert";
+import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
 
 // ============================================================================
 // Types

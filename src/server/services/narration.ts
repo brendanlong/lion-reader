@@ -9,7 +9,7 @@ import Groq from "groq-sdk";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
-import { trackNarrationHighlightFallback } from "@/server/metrics";
+import { trackNarrationHighlightFallback } from "@/server/metrics/metrics";
 
 // Re-export pure functions for backward compatibility
 export { htmlToNarrationInput };

@@ -13,9 +13,9 @@
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { useEntryMutations } from "@/lib/hooks";
+import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
-import { useKeyboardShortcutsContext } from "@/components/keyboard";
+import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";

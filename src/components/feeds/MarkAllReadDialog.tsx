@@ -8,7 +8,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Dialog, DialogTitle, DialogDescription, DialogFooter, Button } from "@/components/ui";
+import { Dialog, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface MarkAllReadDialogProps {
   isOpen: boolean;

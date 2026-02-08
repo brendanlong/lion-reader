@@ -7,7 +7,7 @@
  */
 
 import { type ReactNode } from "react";
-import { ClientLink } from "@/components/ui";
+import { ClientLink } from "@/components/ui/client-link";
 
 export interface LayoutShellProps {
   /** Whether the mobile sidebar is open */

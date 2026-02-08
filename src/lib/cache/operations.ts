@@ -16,6 +16,8 @@ import {
   updateEntriesReadStatus,
   updateEntryStarredStatus,
   updateEntryScoreInCache,
+} from "./entry-cache";
+import {
   adjustSubscriptionUnreadCounts,
   adjustTagUnreadCounts,
   adjustEntriesCount,
@@ -23,7 +25,7 @@ import {
   addSubscriptionToCache,
   removeSubscriptionFromCache,
   findCachedSubscription,
-} from "./index";
+} from "./count-cache";
 
 /**
  * Entry type (matches feed type schema).

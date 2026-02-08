@@ -19,7 +19,7 @@ import {
   ensureFeedJob,
   updateFeedJobNextRun,
   claimFeedJob,
-} from "../../src/server/jobs";
+} from "../../src/server/jobs/queue";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
 // A valid UUID that doesn't exist in the database

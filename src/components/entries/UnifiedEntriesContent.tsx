@@ -22,13 +22,13 @@ import { EntryContent } from "./EntryContent";
 import { SuspendingEntryList } from "./SuspendingEntryList";
 import { EntryListFallback } from "./EntryListFallback";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
-import { NotFoundCard } from "@/components/ui";
+import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
-import { findCachedSubscription } from "@/lib/cache";
+import { findCachedSubscription } from "@/lib/cache/count-cache";
 import { type EntryType } from "@/lib/hooks/useEntryMutations";
 
 /**

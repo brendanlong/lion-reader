@@ -14,15 +14,9 @@ import { feedUrlSchema } from "../validation";
 import { fetchUrl, isHtmlContent, FEED_FETCH_TIMEOUT_MS } from "@/server/http/fetch";
 import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";
-import {
-  parseFeed,
-  discoverFeeds,
-  detectFeedType,
-  getCommonFeedUrls,
-  getDomainFromUrl,
-  type ParsedEntry,
-  type DiscoveredFeed,
-} from "@/server/feed";
+import { parseFeed, detectFeedType } from "@/server/feed/parser";
+import { discoverFeeds, getCommonFeedUrls, type DiscoveredFeed } from "@/server/feed/discovery";
+import { getDomainFromUrl, type ParsedEntry } from "@/server/feed/types";
 import { isLessWrongFeed, cleanLessWrongContent } from "@/server/feed/content-cleaner";
 import {
   isLessWrongUserUrl,

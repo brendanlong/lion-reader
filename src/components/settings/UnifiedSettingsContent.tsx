@@ -16,7 +16,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { ClientLink } from "@/components/ui";
+import { ClientLink } from "@/components/ui/client-link";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 // Settings page components - directly imported (not lazy) so static content

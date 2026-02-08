@@ -13,7 +13,8 @@
 import { Suspense, useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
-import { useEntryMutations, useShowOriginalPreference } from "@/lib/hooks";
+import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
+import { useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { getDomain } from "@/lib/format";

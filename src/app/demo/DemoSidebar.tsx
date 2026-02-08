@@ -13,13 +13,9 @@
 
 import { useState } from "react";
 import { usePathname } from "next/navigation";
-import {
-  NavLink,
-  NavLinkWithIcon,
-  ColorDot,
-  ChevronDownIcon,
-  ChevronRightIcon,
-} from "@/components/ui";
+import { NavLink, NavLinkWithIcon } from "@/components/ui/nav-link";
+import { ColorDot } from "@/components/ui/color-picker";
+import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icon-button";
 import { SubscriptionItem } from "@/components/layout/SubscriptionItem";
 import { DEMO_TAGS, DEMO_SUBSCRIPTIONS, DEMO_ENTRIES, getDemoEntriesForSubscription } from "./data";
 import { useDemoState } from "./DemoStateContext";

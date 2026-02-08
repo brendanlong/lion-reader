@@ -14,17 +14,17 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { findEntryInListCache } from "@/lib/cache/entry-cache";
-import { useEntryMutations } from "@/lib/hooks";
+import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
+import { Button } from "@/components/ui/button";
 import {
-  Button,
   ArrowLeftIcon,
   StarIcon,
   StarFilledIcon,
   CircleIcon,
   CircleFilledIcon,
   ExternalLinkIcon,
-} from "@/components/ui";
+} from "@/components/ui/icon-button";
 import { EntryContentSkeleton, ContentSkeleton } from "./EntryContentStates";
 import { getDomain } from "@/lib/format";
 import { formatDate } from "./EntryContentHelpers";

@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionDeleted } from "@/lib/cache";
+import { handleSubscriptionDeleted } from "@/lib/cache/operations";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 import { SidebarNav } from "./SidebarNav";

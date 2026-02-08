@@ -6,25 +6,23 @@
  */
 
 import { createTRPCRouter, createCallerFactory } from "./trpc";
-import {
-  adminRouter,
-  apiTokensRouter,
-  authRouter,
-  usersRouter,
-  subscriptionsRouter,
-  entriesRouter,
-  feedsRouter,
-  tagsRouter,
-  savedRouter,
-  narrationRouter,
-  summarizationRouter,
-  ingestAddressesRouter,
-  blockedSendersRouter,
-  brokenFeedsRouter,
-  feedStatsRouter,
-  importsRouter,
-  syncRouter,
-} from "./routers";
+import { adminRouter } from "./routers/admin";
+import { apiTokensRouter } from "./routers/api-tokens";
+import { authRouter } from "./routers/auth";
+import { usersRouter } from "./routers/users";
+import { subscriptionsRouter } from "./routers/subscriptions";
+import { entriesRouter } from "./routers/entries";
+import { feedsRouter } from "./routers/feeds";
+import { tagsRouter } from "./routers/tags";
+import { savedRouter } from "./routers/saved";
+import { narrationRouter } from "./routers/narration";
+import { summarizationRouter } from "./routers/summarization";
+import { ingestAddressesRouter } from "./routers/ingestAddresses";
+import { blockedSendersRouter } from "./routers/blockedSenders";
+import { brokenFeedsRouter } from "./routers/brokenFeeds";
+import { feedStatsRouter } from "./routers/feedStats";
+import { importsRouter } from "./routers/imports";
+import { syncRouter } from "./routers/sync";
 
 /**
  * The root router that combines all sub-routers.

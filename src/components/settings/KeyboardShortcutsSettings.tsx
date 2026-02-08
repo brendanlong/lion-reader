@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useKeyboardShortcutsContext } from "@/components/keyboard";
+import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 
 export function KeyboardShortcutsSettings() {
   const { enabled, setEnabled, openShortcutsModal } = useKeyboardShortcutsContext();

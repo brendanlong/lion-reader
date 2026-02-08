@@ -21,20 +21,18 @@ import {
   type OpmlImportFeedResult,
 } from "../db/schema";
 import { fetchFullContent } from "../services/full-content";
+import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../feed/fetcher";
+import { parseFeed } from "../feed/parser";
+import { processEntries } from "../feed/entry-processor";
+import { calculateNextFetch } from "../feed/scheduling";
 import {
-  fetchFeed,
-  parseFeed,
-  processEntries,
-  calculateNextFetch,
   renewExpiringSubscriptions,
   canUseWebSub,
   subscribeToHub,
   deactivateWebsub,
-  getDomainFromUrl,
-  type FetchFeedResult,
-  type ParsedCacheHeaders,
-  type RedirectInfo,
-} from "../feed";
+} from "../feed/websub";
+import { getDomainFromUrl } from "../feed/types";
+import type { ParsedCacheHeaders } from "../feed/cache-headers";
 import { type JobPayloads, ensureFeedJob } from "./queue";
 import { logger } from "@/lib/logger";
 import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from "../metrics/metrics";

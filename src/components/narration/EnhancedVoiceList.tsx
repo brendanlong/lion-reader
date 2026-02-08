@@ -10,7 +10,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { Button } from "@/components/ui";
+import { Button } from "@/components/ui/button";
 import type { NarrationSettings } from "@/lib/narration/settings";
 import { useEnhancedVoices, type EnhancedVoiceState } from "./useEnhancedVoices";
 import { trackEnhancedVoiceSelected } from "@/lib/telemetry";

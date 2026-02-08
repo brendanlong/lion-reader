@@ -25,7 +25,10 @@ import {
   type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { parseFeed, discoverFeeds, deriveGuid, getDomainFromUrl } from "@/server/feed";
+import { parseFeed } from "@/server/feed/parser";
+import { discoverFeeds } from "@/server/feed/discovery";
+import { deriveGuid } from "@/server/feed/entry-processor";
+import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import { ensureFeedJob, createJob } from "@/server/jobs/queue";

@@ -10,8 +10,11 @@ import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Input, Alert } from "@/components/ui";
-import { OAuthButtons, AuthFooter } from "@/components/auth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
+import { OAuthButtons } from "@/components/auth/OAuthButtons";
+import { AuthFooter } from "@/components/auth/AuthFooter";
 import {
   subscribeToOAuthCompletion,
   checkOAuthOnVisibilityChange,

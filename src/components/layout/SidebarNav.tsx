@@ -10,7 +10,7 @@
 import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
-import { NavLink } from "@/components/ui";
+import { NavLink } from "@/components/ui/nav-link";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface SidebarNavProps {
