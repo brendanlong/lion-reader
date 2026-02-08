@@ -10,7 +10,15 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Alert } from "@/components/ui";
+import {
+  Button,
+  Alert,
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui";
 import { SettingsListSkeleton } from "@/components/settings";
 
 // ============================================================================
@@ -159,38 +167,33 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
   return (
     <div className="p-4">
       {/* Unblock Confirmation Dialog */}
-      {showUnblockConfirm && (
-        <>
-          <div
-            className="fixed inset-0 z-50 bg-black/50"
+      <Dialog
+        isOpen={showUnblockConfirm}
+        onClose={() => setShowUnblockConfirm(false)}
+        title="Unblock Sender"
+        size="sm"
+      >
+        <DialogHeader>
+          <DialogTitle>Unblock Sender</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to unblock{" "}
+            <span className="font-medium">{sender.senderEmail}</span>? Future emails from this
+            sender will be accepted again.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="secondary"
             onClick={() => setShowUnblockConfirm(false)}
-          />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-              <h3 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                Unblock Sender
-              </h3>
-              <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
-                Are you sure you want to unblock{" "}
-                <span className="font-medium">{sender.senderEmail}</span>? Future emails from this
-                sender will be accepted again.
-              </p>
-              <div className="mt-4 flex justify-end gap-3">
-                <Button
-                  variant="secondary"
-                  onClick={() => setShowUnblockConfirm(false)}
-                  disabled={unblockMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleUnblock} loading={unblockMutation.isPending}>
-                  Unblock
-                </Button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+            disabled={unblockMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleUnblock} loading={unblockMutation.isPending}>
+            Unblock
+          </Button>
+        </DialogFooter>
+      </Dialog>
 
       {/* Main Row Content */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
