@@ -8,17 +8,20 @@ Reusable UI primitives are in `src/components/ui/`. **Always check for existing 
 
 ### Available Components
 
-| Component      | Purpose                                                   |
-| -------------- | --------------------------------------------------------- |
-| **Button**     | Primary, secondary, ghost variants with loading state     |
-| **Input**      | Text input with label and error handling                  |
-| **Alert**      | Status messages (error, success, warning, info)           |
-| **Dialog**     | Modal dialogs with backdrop, focus trap, escape handling  |
-| **Card**       | Container with border, background, and consistent padding |
-| **StatusCard** | Colored card for info/success/warning/error states        |
-| **ClientLink** | Internal navigation links (use instead of Next.js Link)   |
-| **NavLink**    | Sidebar navigation links with active state and counts     |
-| **IconButton** | Small icon-only action buttons (edit, close, etc.)        |
+| Component             | Purpose                                                   |
+| --------------------- | --------------------------------------------------------- |
+| **Button**            | Primary, secondary, ghost variants with loading state     |
+| **Input**             | Text input with label and error handling                  |
+| **Alert**             | Status messages (error, success, warning, info)           |
+| **Dialog**            | Modal dialogs with backdrop, focus trap, escape handling  |
+| **Card**              | Container with border, background, and consistent padding |
+| **StatusCard**        | Colored card for info/success/warning/error states        |
+| **ClientLink**        | Internal navigation links (use instead of Next.js Link)   |
+| **NavLink**           | Sidebar navigation links with active state and counts     |
+| **IconButton**        | Small icon-only action buttons (edit, close, etc.)        |
+| **NotFoundCard**      | Card for 404/missing content states                       |
+| **ColorPicker**       | Color selection with `ColorDot` preview                   |
+| **StateToggleButton** | Toggle button with visual state indicator                 |
 
 ### Common Icons
 
@@ -27,9 +30,13 @@ Icons are exported from `@/components/ui`. Use these instead of duplicating SVGs
 - **Navigation**: `CloseIcon`, `ChevronDownIcon`, `ChevronUpIcon`, `ChevronLeftIcon`, `ChevronRightIcon`, `ArrowLeftIcon`
 - **Actions**: `EditIcon`, `TrashIcon`, `CheckIcon`, `PlusIcon`
 - **Status**: `StarIcon`, `StarFilledIcon`, `CircleIcon`, `CircleFilledIcon`, `AlertIcon`, `SparklesIcon`
-- **Media**: `PlayIcon`, `PauseIcon`
+- **Media**: `PlayIcon`, `PauseIcon`, `SkipBackwardIcon`, `SkipForwardIcon`, `NarrationIcon`
 - **Visibility**: `EyeIcon`, `EyeSlashIcon`
-- **Files**: `UploadIcon`, `DownloadIcon`, `ExternalLinkIcon`
+- **Files**: `UploadIcon`, `DownloadIcon`, `ExternalLinkIcon`, `DocumentIcon`
+- **Sort**: `SortDescendingIcon`, `SortAscendingIcon`
+- **Empty state**: `DefaultEmptyIcon`
+- **Brand**: `GoogleIcon`, `AppleIcon`, `DiscordIcon`
+- **Network**: `WifiOffIcon`, `WifiOnIcon`
 - **Loading**: `SpinnerIcon` (animated)
 
 ### Text Sizing

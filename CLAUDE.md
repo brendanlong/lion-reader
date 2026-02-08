@@ -5,7 +5,6 @@
 Aggressively keep this up-to-date if you notice anything outdated!
 
 - @docs/DESIGN.md - Aggressively keep this up-to-date if you notice anything outdated!
-- @docs/README.md - High-level project info
 - @docs/diagrams/ - Flow diagrams for various systems
 
 ALWAYS read the relevant documentation before working.
@@ -56,7 +55,8 @@ src/server/
   services/      # Reusable business logic (shared across APIs)
   db/            # Database schemas and client
   jobs/          # Background job queue
-  mcp/           # MCP server (if present)
+  plugins/       # Content source plugins (LessWrong, Google Docs, ArXiv, GitHub)
+  mcp/           # MCP server
 src/lib/         # Shared utilities (client and server)
 src/components/  # React components
 src/app/         # Next.js routes

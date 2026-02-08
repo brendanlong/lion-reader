@@ -91,12 +91,14 @@ To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playgroun
 
 ### Component Responsibilities
 
-| Component         | Responsibilities                                      |
-| ----------------- | ----------------------------------------------------- |
-| **App Server**    | HTTP API, SSE connections, background job execution   |
-| **Postgres**      | Persistent storage, job queue (pg-boss style)         |
-| **Redis**         | Session cache, rate limiting, pub/sub for real-time   |
-| **Email Service** | Inbound email processing for newsletter subscriptions |
+| Component         | Responsibilities                                         |
+| ----------------- | -------------------------------------------------------- |
+| **App Server**    | HTTP API, SSE connections                                |
+| **Worker**        | Background job execution (feed fetching, score training) |
+| **Discord Bot**   | Save articles via emoji reactions in Discord             |
+| **Postgres**      | Persistent storage, job queue (pg-boss style)            |
+| **Redis**         | Session cache, rate limiting, pub/sub for real-time      |
+| **Email Service** | Inbound email processing for newsletter subscriptions    |
 
 ---
 
@@ -126,6 +128,13 @@ The schema is defined in `drizzle/` migrations. Key tables:
 - **ingest_addresses** - Per-user email addresses for newsletter ingestion
 - **narration_content** - Cached LLM-processed narration text
 - **entry_summaries** - Cached AI-generated article summaries
+- **tags** / **subscription_tags** - User-created tags with many-to-many subscription mapping
+- **api_tokens** - Scoped API tokens for external access
+- **invites** - Invite codes for invite-only registration mode
+- **blocked_senders** - Blocked email senders for newsletter ingestion
+- **opml_imports** - OPML import job tracking
+- **user_score_models** / **entry_score_predictions** - ML model storage and per-entry score predictions
+- **oauth_accounts** / **oauth_clients** / **oauth_authorization_codes** / **oauth_access_tokens** - OAuth provider links and OAuth server implementation
 
 ### Database Views
 
@@ -142,7 +151,7 @@ See `docs/features/subscription-centric-api.md` for design details.
 
 **Soft Deletes**: Subscriptions use `unsubscribed_at` for soft delete, allowing users to resubscribe and maintain their read state.
 
-**Version Tracking**: When entry content changes, we increment `version`, update the main entry, and store the previous version in `entry_versions`.
+**Content Change Detection**: Entries store a `content_hash` to detect when content changes on the source feed. Updated content overwrites the previous version.
 
 **UUIDv7 Ordering**: Since UUIDv7 is time-ordered, `ORDER BY id DESC` gives us reverse chronological order without needing a separate timestamp column for sorting.
 
@@ -255,11 +264,19 @@ Routers are organized by resource:
 - `auth` - Registration, login, logout, OAuth
 - `users` - Profile, sessions, settings
 - `subscriptions` - CRUD for feed subscriptions (primary user-facing API)
-- `entries` - List, read, star, mark read
+- `entries` - List, read, star, mark read, score
 - `feeds` - Preview, discover feeds (pre-subscription only)
+- `tags` - Tag CRUD, subscription-tag assignments
 - `narration` - Text-to-speech generation
 - `summarization` - AI article summarization
-- `imports` - OPML import/export
+- `imports` - OPML import/export, Feedbin migration
+- `saved` - Save/delete/upload articles (read-it-later)
+- `apiTokens` - Scoped API token management
+- `feedStats` - Per-feed statistics and health monitoring
+- `brokenFeeds` - List feeds with consecutive fetch failures
+- `blockedSenders` - Block email senders, attempt unsubscribe
+- `ingestAddresses` - Manage per-user newsletter ingest email addresses
+- `sync` - Cursor-based delta sync for offline clients
 - `admin` - Invite management (invite-only mode)
 
 ### Pagination
@@ -295,6 +312,8 @@ Business logic is extracted into reusable service functions in `src/server/servi
 | `entries.ts`          | `listEntries`, `searchEntries`, `getEntry`, `markEntriesRead`, `countEntries`, `setEntryScore` |
 | `subscriptions.ts`    | `listSubscriptions`, `getSubscription`                                                         |
 | `saved.ts`            | Save/delete/upload articles                                                                    |
+| `counts.ts`           | `getEntryRelatedCounts`, `getBulkEntryRelatedCounts`, `getNewEntryRelatedCounts`               |
+| `entry-filters.ts`    | `buildEntryFeedFilter` - shared filter construction for entries queries                        |
 | `narration.ts`        | Text-to-speech operations                                                                      |
 | `full-content.ts`     | Fetch full article content from URLs                                                           |
 | `summarization.ts`    | AI-powered article summarization                                                               |
@@ -333,12 +352,22 @@ app/
     all/                      # All entries timeline
     starred/                  # Starred entries
     saved/                    # Saved articles
+    uncategorized/            # Entries from untagged subscriptions
     subscription/[id]/        # Single subscription entries (uses subscription ID)
-    tag/[id]/                 # Entries filtered by tag
-    entry/[id]/               # Full entry view
+    tag/[tagId]/              # Entries filtered by tag
     settings/                 # User settings
+      appearance/             # Theme, font, text size
+      sessions/               # Active session management
+      api-tokens/             # API token management
+      email/                  # Newsletter ingest addresses
+      blocked-senders/        # Blocked email senders
+      broken-feeds/           # Feeds with fetch failures
+      feed-stats/             # Per-feed statistics
+      integrations/           # Integration settings
     subscribe/                # Add subscription flow
-    save/                     # Bookmarklet landing page
+  save/                       # Bookmarklet landing page (top-level, no auth layout)
+  extension/save/             # Browser extension save page
+  demo/                       # Interactive demo (no auth required)
 ```
 
 ### Component Architecture
@@ -348,6 +377,12 @@ app/
 - `components/feeds/` - Feed list, add feed dialog
 - `components/narration/` - Audio playback controls
 - `components/saved/` - Saved article views
+- `components/settings/` - Settings page components
+- `components/subscribe/` - Subscription flow components
+- `components/summarization/` - AI summary display
+- `components/keyboard/` - Keyboard shortcut handling
+- `components/auth/` - Authentication forms
+- `components/app/` - App-level components
 - `components/ui/` - Generic UI primitives
 
 ---
@@ -403,14 +438,40 @@ The server uses stdio transport and can be configured in AI assistant tools that
 
 ---
 
+## Plugin System
+
+Lion Reader has an extensible plugin system for integrating with external content sources.
+
+### Architecture
+
+Plugins are registered in `src/server/plugins/registry.ts` and declare capabilities:
+
+- **`feed`** capability: Transform feed URLs, clean entry content (e.g., LessWrong GraphQL API)
+- **`savedArticle`** capability: Fetch and process content from URLs (e.g., Google Docs, ArXiv)
+
+### Available Plugins
+
+| Plugin          | Capabilities   | Description                                        |
+| --------------- | -------------- | -------------------------------------------------- |
+| **LessWrong**   | `feed`         | GraphQL API for posts/comments, user profile feeds |
+| **Google Docs** | `savedArticle` | Fetch Google Docs content via API                  |
+| **ArXiv**       | `savedArticle` | Fetch ArXiv paper content                          |
+| **GitHub**      | `savedArticle` | Fetch GitHub content                               |
+
+---
+
 ## Infrastructure
 
 ### Fly.io Deployment
 
-- Single region (iad) with auto-scaling
+- Single region (lax) with canary deployment strategy
+- Three process types:
+  - `app` - Next.js web server (min 2 machines for zero-downtime deploys)
+  - `worker` - Background job processor (feed fetching, model training)
+  - `discord` - Discord bot (lightweight, single Gateway connection)
 - Postgres managed database
 - Redis for caching and pub/sub
-- Release command runs migrations automatically
+- Release command runs migrations automatically before deploy
 
 ### Local Development
 
@@ -419,7 +480,7 @@ Docker Compose provides Postgres and Redis for local development. See README for
 ### CI/CD
 
 - GitHub Actions for CI (typecheck, lint, test)
-- Automatic deploy to Fly.io on push to main
+- Automatic deploy to Fly.io on push to master
 
 ---
 
@@ -428,6 +489,7 @@ Docker Compose provides Postgres and Redis for local development. See README for
 ### Stack
 
 - **Errors**: Sentry
+- **Metrics**: Prometheus via `prom-client` (each process exposes `/metrics` on its own port)
 - **Logging**: Structured JSON logs
 
 ### Key Metrics
