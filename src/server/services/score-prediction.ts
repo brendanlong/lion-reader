@@ -138,7 +138,7 @@ function extractEntryText(entry: {
  * Fetches training data for a user.
  * Returns entries that have either explicit scores or implicit signals.
  */
-export async function getTrainingData(db: typeof dbType, userId: string): Promise<TrainingData[]> {
+async function getTrainingData(db: typeof dbType, userId: string): Promise<TrainingData[]> {
   // Query entries with scores or implicit signals
   const rows = await db
     .select({
@@ -177,30 +177,6 @@ export async function getTrainingData(db: typeof dbType, userId: string): Promis
     text: extractEntryText(row),
     score: computeEffectiveScore(row),
   }));
-}
-
-/**
- * Checks if a user has enough training data for model training.
- */
-export async function hasEnoughTrainingData(db: typeof dbType, userId: string): Promise<boolean> {
-  const [result] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(userEntries)
-    .innerJoin(entries, eq(entries.id, userEntries.entryId))
-    .where(
-      and(
-        eq(userEntries.userId, userId),
-        or(
-          isNotNull(userEntries.score),
-          eq(userEntries.hasStarred, true),
-          eq(userEntries.hasMarkedUnread, true),
-          eq(userEntries.hasMarkedReadOnList, true),
-          eq(entries.type, "saved")
-        )
-      )
-    );
-
-  return (result?.count ?? 0) >= MIN_TRAINING_ENTRIES;
 }
 
 // ============================================================================
@@ -536,77 +512,6 @@ export async function predictScores(
   return {
     success: true,
     predictedCount: predictions.length,
-  };
-}
-
-/**
- * Gets predicted score for a single entry.
- * Returns null if no prediction exists.
- */
-export async function getPredictedScore(
-  db: typeof dbType,
-  userId: string,
-  entryId: string
-): Promise<ScorePrediction | null> {
-  const [prediction] = await db
-    .select({
-      entryId: entryScorePredictions.entryId,
-      predictedScore: entryScorePredictions.predictedScore,
-      confidence: entryScorePredictions.confidence,
-    })
-    .from(entryScorePredictions)
-    .where(
-      and(eq(entryScorePredictions.userId, userId), eq(entryScorePredictions.entryId, entryId))
-    )
-    .limit(1);
-
-  return prediction ?? null;
-}
-
-/**
- * Deletes all predictions for a user (e.g., when retraining).
- */
-export async function clearPredictions(db: typeof dbType, userId: string): Promise<void> {
-  await db.delete(entryScorePredictions).where(eq(entryScorePredictions.userId, userId));
-}
-
-/**
- * Gets model info for a user.
- */
-export async function getModelInfo(
-  db: typeof dbType,
-  userId: string
-): Promise<{
-  hasModel: boolean;
-  trainingCount?: number;
-  modelVersion?: number;
-  trainedAt?: Date;
-  cvMae?: number;
-  cvCorrelation?: number;
-}> {
-  const [model] = await db
-    .select({
-      trainingCount: userScoreModels.trainingCount,
-      modelVersion: userScoreModels.modelVersion,
-      trainedAt: userScoreModels.trainedAt,
-      cvMae: userScoreModels.cvMae,
-      cvCorrelation: userScoreModels.cvCorrelation,
-    })
-    .from(userScoreModels)
-    .where(eq(userScoreModels.userId, userId))
-    .limit(1);
-
-  if (!model) {
-    return { hasModel: false };
-  }
-
-  return {
-    hasModel: true,
-    trainingCount: model.trainingCount,
-    modelVersion: model.modelVersion,
-    trainedAt: model.trainedAt,
-    cvMae: model.cvMae ?? undefined,
-    cvCorrelation: model.cvCorrelation ?? undefined,
   };
 }
 

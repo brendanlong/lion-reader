@@ -18,9 +18,6 @@ import { useSearchParams, usePathname } from "next/navigation";
 import { clientReplace } from "@/lib/navigation";
 import { parseViewPreferencesFromParams } from "./viewPreferences";
 
-// Re-export for backwards compatibility
-export { parseViewPreferencesFromParams } from "./viewPreferences";
-
 /**
  * Result of the useUrlViewPreferences hook.
  */

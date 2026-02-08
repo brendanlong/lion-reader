@@ -1,5 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignore": ["extension/**", "src/lib/stubs/**"],
-  "ignoreDependencies": ["postcss", "jsdom"]
+  "ignore": [
+    "extension/**",
+    "src/lib/stubs/**",
+    "worker/index.ts",
+    "src/app/demo/articles/scoring.ts"
+  ],
+  "ignoreDependencies": ["postcss"]
 }

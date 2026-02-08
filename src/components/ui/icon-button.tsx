@@ -135,28 +135,6 @@ export function CheckIcon({ className = "h-3.5 w-3.5" }: IconProps) {
 }
 
 /**
- * Chevron left icon
- */
-export function ChevronLeftIcon({ className = "h-4 w-4" }: IconProps) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-    </svg>
-  );
-}
-
-/**
- * Chevron up icon
- */
-export function ChevronUpIcon({ className = "h-4 w-4" }: IconProps) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-    </svg>
-  );
-}
-
-/**
  * Arrow left icon (for back navigation)
  */
 export function ArrowLeftIcon({ className = "h-4 w-4" }: IconProps) {
@@ -367,17 +345,6 @@ export function PauseIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <svg className={className} fill="currentColor" viewBox="0 0 24 24">
       <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-    </svg>
-  );
-}
-
-/**
- * Plus icon
- */
-export function PlusIcon({ className = "h-4 w-4" }: IconProps) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
     </svg>
   );
 }

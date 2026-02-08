@@ -341,7 +341,7 @@ export async function listEntries(
 /**
  * Searches entries by title and/or content.
  */
-export async function searchEntries(
+async function searchEntries(
   db: typeof dbType,
   params: SearchEntriesParams
 ): Promise<{ items: EntryListItem[]; nextCursor?: string }> {

@@ -348,7 +348,7 @@ export async function publishNewEntry(
  * @param metadata - Entry metadata for direct cache updates
  * @returns The number of subscribers that received the message
  */
-export async function publishEntryUpdated(
+async function publishEntryUpdated(
   feedId: string,
   entryId: string,
   updatedAt: Date,

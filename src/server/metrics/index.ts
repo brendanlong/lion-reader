@@ -9,7 +9,6 @@
 export {
   // Core
   metricsEnabled,
-  registry,
 
   // HTTP metrics
   startHttpTimer,
@@ -39,7 +38,3 @@ export {
   trackNarrationHighlightFallback,
   trackNarrationHighlightScroll,
 } from "./metrics";
-
-export { collectAllMetrics } from "./collect";
-
-export { startMetricsServer, stopMetricsServer } from "./server";

@@ -19,13 +19,6 @@ export {
   updateFeedJobNextRun,
   claimFeedJob,
 
-  // Score training job functions (data-driven)
-  ensureScoreTrainingJob,
-  claimScoreTrainingJob,
-
-  // Singleton job functions
-  claimSingletonJob,
-
   // Types
   type JobPayloads,
   type JobType,

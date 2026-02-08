@@ -6,8 +6,6 @@
  * ## Usage
  *
  * Use the high-level operations for mutations and SSE handlers:
- * - `handleEntriesMarkedRead` - When entries are marked read/unread
- * - `handleEntryStarred` / `handleEntryUnstarred` - When entries are starred/unstarred
  * - `handleSubscriptionCreated` / `handleSubscriptionDeleted` - For subscription changes
  * - `handleNewEntry` - When a new entry is created (from SSE events)
  *
@@ -19,9 +17,6 @@
 
 // High-level operations (primary API)
 export {
-  handleEntriesMarkedRead,
-  handleEntryStarred,
-  handleEntryUnstarred,
   handleEntryScoreChanged,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
@@ -30,9 +25,7 @@ export {
   setBulkCounts,
   // Optimistic update helpers
   applyOptimisticReadUpdate,
-  rollbackOptimisticReadUpdate,
   applyOptimisticStarredUpdate,
-  rollbackOptimisticStarredUpdate,
   type EntryWithContext,
   type SubscriptionData,
   type UnreadCounts,

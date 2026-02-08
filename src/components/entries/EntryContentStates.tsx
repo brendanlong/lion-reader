@@ -4,8 +4,6 @@
  * Loading skeleton and error state components for entry content.
  */
 
-import { Button, AlertIcon } from "@/components/ui";
-
 /**
  * Loading skeleton for entry content.
  * Used when there's no cached data available.
@@ -52,21 +50,6 @@ export function EntryContentSkeleton() {
 
       {/* Content placeholders */}
       <ContentSkeleton />
-    </div>
-  );
-}
-
-/**
- * Error state component for entry content.
- */
-export function EntryContentError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <AlertIcon className="mb-4 h-16 w-16 text-red-400 dark:text-red-500" />
-      <p className="ui-text-base mb-4 text-zinc-600 dark:text-zinc-400">{message}</p>
-      <Button onClick={onRetry} variant="secondary">
-        Try again
-      </Button>
     </div>
   );
 }

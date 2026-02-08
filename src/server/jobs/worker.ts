@@ -77,7 +77,7 @@ const defaultLogger: WorkerLogger = {
  * @param config - Worker configuration
  * @returns Worker instance
  */
-export function createWorker(config: WorkerConfig = {}): Worker {
+function createWorker(config: WorkerConfig = {}): Worker {
   const {
     pollIntervalMs = 5000,
     concurrency = 5,

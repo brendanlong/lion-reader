@@ -3,7 +3,7 @@
  *
  * Re-export all UI components for convenient imports.
  *
- * Usage: import { Button, Dialog, Card, NavLink } from "@/components/ui";
+ * Usage: import { Button, Dialog, NavLink } from "@/components/ui";
  */
 
 export { Button } from "./button";
@@ -17,15 +17,6 @@ export {
   DialogBody,
   DialogFooter,
 } from "./dialog";
-export {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardBody,
-  CardFooter,
-  StatusCard,
-} from "./card";
 export { NavLink, NavLinkWithIcon } from "./nav-link";
 export { ClientLink } from "./client-link";
 export { NotFoundCard } from "./not-found-card";
@@ -36,15 +27,12 @@ export {
   // Navigation icons
   CloseIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
-  ChevronLeftIcon,
   ChevronRightIcon,
   ArrowLeftIcon,
   // Action icons
   EditIcon,
   TrashIcon,
   CheckIcon,
-  PlusIcon,
   // Status icons
   StarIcon,
   StarFilledIcon,

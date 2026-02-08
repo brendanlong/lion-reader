@@ -57,8 +57,6 @@ import { SWIPE_CONFIG } from "./EntryContentHelpers";
 import { EntryArticle } from "./EntryArticle";
 import { VoteControls } from "./VoteControls";
 
-// Re-export components and helpers for backwards compatibility
-export { EntryContentSkeleton, EntryContentError } from "./EntryContentStates";
 export { getDomain } from "./EntryContentHelpers";
 
 /**

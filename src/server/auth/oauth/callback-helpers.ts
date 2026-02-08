@@ -54,7 +54,7 @@ const INVITE_ERROR_MAP: Record<InviteErrorCode, string> = {
  * @param request - The incoming request
  * @returns Client info object with userAgent and ipAddress
  */
-export function extractClientInfo(request: NextRequest): ClientInfo {
+function extractClientInfo(request: NextRequest): ClientInfo {
   const userAgent = request.headers.get("user-agent") ?? undefined;
   const ipAddress =
     request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??

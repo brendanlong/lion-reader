@@ -148,9 +148,6 @@ function sortNewestFirst(entries: DemoEntry[]): DemoEntry[] {
   );
 }
 
-/** All entries sorted newest-first for display */
-export const DEMO_ENTRIES_SORTED = sortNewestFirst(DEMO_ENTRIES);
-
 const entriesBySubscription = new Map<string, DemoEntry[]>();
 for (const entry of DEMO_ENTRIES) {
   const subId = entry.subscriptionId!;
@@ -195,11 +192,6 @@ export function getDemoSubscription(subscriptionId: string): DemoSubscription | 
   return subscriptionsById.get(subscriptionId);
 }
 
-/** Get entries that would appear in the "Highlights" view (starred entries) */
-export function getDemoHighlightEntries(): DemoEntry[] {
-  return sortNewestFirst(DEMO_ENTRIES.filter((e) => e.starred));
-}
-
 /** Get EntryArticle props for a demo entry */
 export function getDemoEntryArticleProps(
   entry: DemoEntry
@@ -217,6 +209,3 @@ export function getDemoEntryArticleProps(
     fallbackContent: entry.summary,
   };
 }
-
-/** Total entry count */
-export const DEMO_TOTAL_COUNT = DEMO_ENTRIES.length;

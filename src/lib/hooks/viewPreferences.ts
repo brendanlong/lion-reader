@@ -28,7 +28,7 @@ export interface ViewPreferences {
 /**
  * Default preferences for all views.
  */
-export const DEFAULT_PREFERENCES: ViewPreferences = {
+const DEFAULT_PREFERENCES: ViewPreferences = {
   showUnreadOnly: true,
   sortOrder: "newest",
 };

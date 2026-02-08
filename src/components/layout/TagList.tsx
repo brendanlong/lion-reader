@@ -167,7 +167,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
 /**
  * Skeleton fallback for TagList while suspending.
  */
-export function TagListSkeleton() {
+function TagListSkeleton() {
   return (
     <div className="space-y-2">
       {[1, 2, 3].map((i) => (
