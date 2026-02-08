@@ -12,6 +12,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
+import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
 
 // ============================================================================
 // Types
@@ -48,6 +49,9 @@ export default function EmailSettingsContent() {
 
       {/* Spam Preference Section */}
       <SpamPreferenceSection />
+
+      {/* Blocked Senders Section */}
+      <BlockedSendersSettingsContent />
     </div>
   );
 }

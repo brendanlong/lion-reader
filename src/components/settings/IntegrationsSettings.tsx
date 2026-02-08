@@ -8,7 +8,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ClientLink } from "@/components/ui";
 
 export function IntegrationsSettings() {
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
@@ -142,22 +141,6 @@ export function IntegrationsSettings() {
               {copiedSection === "claude-desktop" ? "Copied!" : "Copy"}
             </button>
           </div>
-        </div>
-
-        {/* API Tokens Link */}
-        <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-            Need to manage API tokens or create custom integrations?
-          </p>
-          <ClientLink
-            href="/settings/api-tokens"
-            className="ui-text-sm mt-2 inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-          >
-            Manage API Tokens
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </ClientLink>
         </div>
 
         {/* Note about MCP URL */}
