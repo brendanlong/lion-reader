@@ -9,6 +9,7 @@ import type { db as dbType } from "@/server/db";
 import * as entriesService from "@/server/services/entries";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
+import * as tagsService from "@/server/services/tags";
 
 // ============================================================================
 // Types
@@ -303,6 +304,95 @@ export function registerTools(): Tool[] {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
         return subscriptionsService.getSubscription(db, args.userId, args.subscriptionId);
+      },
+    },
+
+    // ========================================================================
+    // Tags Tools
+    // ========================================================================
+
+    {
+      name: "list_tags",
+      description:
+        "List all tags with feed counts and unread counts. Also returns uncategorized subscription counts.",
+      inputSchema: {
+        type: "object",
+        properties: {},
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (db, args: any) => {
+        return tagsService.listTags(db, args.userId);
+      },
+    },
+
+    {
+      name: "create_tag",
+      description: "Create a new tag for organizing subscriptions.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Tag name (max 50 characters, must be unique per user)",
+          },
+          color: {
+            type: "string",
+            description: "Optional hex color (e.g., #ff6b6b). Null to remove color.",
+          },
+        },
+        required: ["name"],
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (db, args: any) => {
+        return tagsService.createTag(db, args.userId, {
+          name: args.name,
+          color: args.color,
+        });
+      },
+    },
+
+    {
+      name: "update_tag",
+      description: "Update an existing tag's name or color.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          tagId: { type: "string", description: "Tag ID" },
+          name: {
+            type: "string",
+            description: "New tag name (max 50 characters, must be unique per user)",
+          },
+          color: {
+            type: "string",
+            description: "New hex color (e.g., #ff6b6b). Null to remove color.",
+          },
+        },
+        required: ["tagId"],
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (db, args: any) => {
+        return tagsService.updateTag(db, args.userId, args.tagId, {
+          name: args.name,
+          color: args.color,
+        });
+      },
+    },
+
+    {
+      name: "delete_tag",
+      description:
+        "Delete a tag. Uses soft delete for sync tracking. Subscription-tag associations are removed immediately.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          tagId: { type: "string", description: "Tag ID to delete" },
+        },
+        required: ["tagId"],
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (db, args: any) => {
+        await tagsService.deleteTag(db, args.userId, args.tagId);
+        return { success: true };
       },
     },
   ];
