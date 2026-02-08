@@ -10,7 +10,7 @@ const article: DemoArticle = {
   summary: "Install Lion Reader on your phone or desktop for a native app-like experience.",
   publishedAt: new Date("2026-01-08T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader is a Progressive Web App (PWA) that can be installed on any device without app stores. Once installed, it acts as a <strong>share target</strong> on mobile, allowing you to save URLs, PDFs, Markdown, and Word files directly from any app&#39;s native share menu, making it a universal read-it-later inbox.</p>`,
+  summaryHtml: `<p>Lion Reader is a Progressive Web App (PWA) that can be installed on any device without app stores. Once installed, it acts as a <strong>share target</strong> on mobile, allowing you to save URLs, Markdown, and Word files directly from any app&#39;s native share menu, making it a universal read-it-later inbox.</p>`,
   contentHtml: `
     <h2>Install Anywhere</h2>
 
@@ -20,11 +20,11 @@ const article: DemoArticle = {
 
     <p>One of the most powerful PWA features is share target integration. When you install Lion Reader on your phone, it registers as a share target with your operating system. This means you can save articles directly to Lion Reader using your phone&rsquo;s native share menu from any app &mdash; your browser, Twitter, Reddit, or anywhere else.</p>
 
-    <p>But it goes beyond just URLs. Lion Reader&rsquo;s share target also accepts files, so you can share PDFs, Markdown documents, or even Word files directly into your saved articles. The app automatically detects the content type and processes each file appropriately. This makes Lion Reader a universal inbox for anything you want to read later, not just web content.</p>
+    <p>But it goes beyond just URLs. Lion Reader&rsquo;s share target also accepts files, so you can share Markdown documents, HTML files, or even Word documents directly into your saved articles. The app automatically detects the content type and processes each file appropriately. This makes Lion Reader a universal inbox for anything you want to read later, not just web content.</p>
 
     <h3>Mobile Optimizations</h3>
 
-    <p>On mobile devices, the app locks to portrait orientation for optimal reading. This prevents the screen from rotating while you&rsquo;re reading long articles, reducing distractions and maintaining a consistent layout. Combined with push notifications for new entries, the mobile experience rivals dedicated feed reader apps.</p>
+    <p>On mobile devices, the app locks to portrait orientation for optimal reading. This prevents the screen from rotating while you&rsquo;re reading long articles, reducing distractions and maintaining a consistent layout. Combined with real-time updates via Server-Sent Events, the mobile experience rivals dedicated feed reader apps.</p>
 
     <h3>Single Codebase</h3>
 

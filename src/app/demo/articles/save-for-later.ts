@@ -10,7 +10,7 @@ const article: DemoArticle = {
   summary: "Save any web page, upload documents, or capture articles for later reading.",
   publishedAt: new Date("2025-12-27T16:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader&#39;s Save for Later uses Mozilla&#39;s Readability algorithm to extract clean content from web pages. Save via bookmarklet, PWA share, MCP, API, Discord, or upload PDFs/Docs directly. Saved articles integrate fully with starring, tagging, and search, preserving content even if original pages disappear.</p>`,
+  summaryHtml: `<p>Lion Reader&#39;s Save for Later uses Mozilla&#39;s Readability algorithm to extract clean content from web pages. Save via bookmarklet, PWA share, MCP, API, Discord, or upload Markdown/Word/HTML files directly. Saved articles integrate fully with starring, tagging, and search, preserving content even if original pages disappear.</p>`,
   contentHtml: `
     <h2>Save for Later: Your Personal Reading Archive</h2>
 
@@ -25,14 +25,14 @@ const article: DemoArticle = {
       <li><strong>PWA share target</strong> &mdash; Use your phone&rsquo;s native share menu to send articles directly to Lion Reader</li>
       <li><strong>MCP integration</strong> &mdash; Save articles via AI assistants like Claude</li>
       <li><strong>tRPC API</strong> &mdash; Programmatic saving for automation and integrations</li>
-      <li><strong>Discord bot</strong> &mdash; Save articles via Discord commands</li>
-      <li><strong>File upload</strong> &mdash; Upload PDFs, Markdown files, Word documents, and other file types directly</li>
+      <li><strong>Discord bot</strong> &mdash; Save articles shared in Discord channels</li>
+      <li><strong>File upload</strong> &mdash; Upload Markdown files, Word documents, and HTML files directly</li>
       <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope</li>
     </ul>
 
     <h3>Custom Metadata &amp; Organization</h3>
 
-    <p>When saving articles, you can set custom metadata including title, description, and author &mdash; perfect for adding context or fixing incorrect extraction. Saved articles appear in a dedicated &ldquo;Saved&rdquo; section in your sidebar, but they&rsquo;re fully integrated with the rest of Lion Reader: star important articles, tag them for organization, search across saved content, and browse your reading archive chronologically. Unlike traditional bookmarks that rot over time as pages disappear, your saved articles are preserved with full content extraction, ensuring your reading list remains accessible indefinitely.</p>
+    <p>When saving articles, you can provide a custom title to override automatic extraction. Saved articles appear in a dedicated &ldquo;Saved&rdquo; section in your sidebar, but they&rsquo;re fully integrated with the rest of Lion Reader: star important articles, tag them for organization, search across saved content, and browse your reading archive chronologically. Unlike traditional bookmarks that rot over time as pages disappear, your saved articles are preserved with full content extraction, ensuring your reading list remains accessible indefinitely.</p>
   `,
 };
 

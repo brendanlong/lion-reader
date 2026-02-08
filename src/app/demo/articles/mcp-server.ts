@@ -23,17 +23,16 @@ const article: DemoArticle = {
     <p>The Lion Reader MCP server exposes a comprehensive set of tools that mirror the web UI&rsquo;s capabilities:</p>
 
     <ul>
-      <li><strong>list_entries</strong> &mdash; List feed entries with filters and pagination</li>
-      <li><strong>search_entries</strong> &mdash; Full-text search across all entries</li>
+      <li><strong>list_entries</strong> &mdash; List feed entries with filters, search, and pagination</li>
       <li><strong>get_entry</strong> &mdash; Get a single entry with full content</li>
       <li><strong>mark_entries_read</strong> &mdash; Mark entries as read or unread in bulk</li>
       <li><strong>star_entries</strong> &mdash; Star or unstar entries</li>
+      <li><strong>set_entry_score</strong> &mdash; Rate entries on a &minus;2 to +2 scale</li>
       <li><strong>count_entries</strong> &mdash; Get entry counts with filters</li>
       <li><strong>save_article</strong> &mdash; Save a URL for later reading</li>
       <li><strong>delete_saved_article</strong> &mdash; Remove a saved article</li>
       <li><strong>upload_article</strong> &mdash; Upload Markdown content as an article</li>
-      <li><strong>list_subscriptions</strong> &mdash; List all active subscriptions</li>
-      <li><strong>search_subscriptions</strong> &mdash; Search subscriptions by title</li>
+      <li><strong>list_subscriptions</strong> &mdash; List and search active subscriptions</li>
       <li><strong>get_subscription</strong> &mdash; Get subscription details</li>
     </ul>
 
@@ -43,7 +42,7 @@ const article: DemoArticle = {
 
     <h3>Security and Usage</h3>
 
-    <p>Access is secured via API tokens with scoped permissions. You can generate tokens from your account settings and configure which operations each token can perform. The server is compatible with Claude Desktop and other MCP-supporting assistants. To run the server locally, use <code>pnpm mcp:serve</code> and configure your AI assistant to connect to it.</p>
+    <p>Access is secured via API tokens. Generate a token with the <code>mcp</code> scope from your account settings. The server is compatible with Claude Desktop and other MCP-supporting assistants. To run the server locally, use <code>pnpm mcp:serve</code> and configure your AI assistant to connect to it.</p>
   `,
 };
 

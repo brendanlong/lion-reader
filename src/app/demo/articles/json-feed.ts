@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Native support for JSON Feed, a modern syndication format that uses JSON instead of XML.",
   publishedAt: new Date("2025-12-26T14:00:00Z"),
   starred: false,
-  summaryHtml: `<p>JSON Feed is a modern syndication format using JSON instead of XML, making it easier to produce and consume. It supports attachments, multiple authors, tags, and both HTML and plain text content. Lion Reader provides <strong>full native support</strong> for JSON Feed versions 1.0 and 1.1 alongside RSS and Atom.</p>`,
+  summaryHtml: `<p>JSON Feed is a modern syndication format using JSON instead of XML, making it easier to produce and consume. It supports multiple authors, tags, and both HTML and plain text content. Lion Reader provides <strong>full native support</strong> for JSON Feed versions 1.0 and 1.1 alongside RSS and Atom.</p>`,
   contentHtml: `
     <h2>JSON Feed: Syndication for the Modern Web</h2>
 
@@ -19,7 +19,7 @@ const article: DemoArticle = {
 
     <h3>Why JSON Feed?</h3>
 
-    <p>If you&rsquo;ve ever worked with XML parsing, you know the pain: verbose schemas, namespace handling, and complex parsing libraries. JSON Feed eliminates this complexity by using a format that JavaScript developers already know and love. It supports everything you need from a modern feed: attachments, multiple authors, tags, both HTML and plain text content, and extensibility through custom fields. Lion Reader auto-detects JSON Feed just like RSS and Atom feeds, so subscribing is as simple as pasting any URL.</p>
+    <p>If you&rsquo;ve ever worked with XML parsing, you know the pain: verbose schemas, namespace handling, and complex parsing libraries. JSON Feed eliminates this complexity by using a format that JavaScript developers already know and love. It supports everything you need from a modern feed: multiple authors, tags, both HTML and plain text content, and extensibility through custom fields. Lion Reader auto-detects JSON Feed just like RSS and Atom feeds, so subscribing is as simple as pasting any URL.</p>
 
     <h3>Developer-Friendly Syndication</h3>
 

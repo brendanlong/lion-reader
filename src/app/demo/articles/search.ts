@@ -16,7 +16,7 @@ const article: DemoArticle = {
 
     <p>Lion Reader&rsquo;s full-text search is powered by PostgreSQL with English language stemming, giving you fast, relevant results across your entire archive. Search by title, content, or both &mdash; the search scope is fully configurable, so you can narrow down exactly what you&rsquo;re looking for.</p>
 
-    <p>Search results can be combined with any other filter in Lion Reader: subscription, tag, read/unread state, starred entries, or entry type. This makes it easy to search within a specific newsletter, across all saved articles, or just your starred items. Results are ranked by relevance using PostgreSQL&rsquo;s <code>ts_rank</code> algorithm, which weights matches in titles higher than those in body text.</p>
+    <p>Search results can be combined with any other filter in Lion Reader: subscription, tag, read/unread state, starred entries, or entry type. This makes it easy to search within a specific newsletter, across all saved articles, or just your starred items. Results are ranked by relevance using PostgreSQL&rsquo;s <code>ts_rank</code> algorithm.</p>
 
     <h3>Performance and Availability</h3>
 

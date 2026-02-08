@@ -18,7 +18,7 @@ const article: DemoArticle = {
 
     <h3>List Navigation</h3>
 
-    <p>Navigate your entry list with <kbd>j</kbd> and <kbd>k</kbd> to move down and up respectively. Press <kbd>Enter</kbd> to open the selected entry. Once you&rsquo;re reading, <kbd>n</kbd> and <kbd>p</kbd> jump to the next and previous articles. Hit <kbd>Escape</kbd> to close the article and return to the list.</p>
+    <p>Navigate your entry list with <kbd>j</kbd> and <kbd>k</kbd> to move down and up respectively. Press <kbd>Enter</kbd> or <kbd>o</kbd> to open the selected entry. When you&rsquo;re reading an article, <kbd>j</kbd> and <kbd>k</kbd> also jump to the next and previous articles. Hit <kbd>Escape</kbd> to close the article and return to the list.</p>
 
     <h3>Entry Actions</h3>
 

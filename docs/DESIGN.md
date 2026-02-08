@@ -35,8 +35,8 @@ To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playgroun
 
 ```
                                     ┌──────────────────┐
-                                    │  Cloudflare      │
-                                    │  Email Worker    │
+                                    │  Mailgun         │
+                                    │  Email Webhooks  │
                                     └────────┬─────────┘
                                              │ webhook
 ┌─────────────────┐                          │
@@ -194,11 +194,11 @@ Session tokens are 32 random bytes, base64url encoded. We store SHA-256 hash in 
 4. Handle response:
    - 304 Not Modified: update `next_fetch_at`, done
    - 200 OK: parse feed, process entries
-   - 301 Permanent Redirect: track, update URL after 3 confirmations
+   - 301 Permanent Redirect: track, update URL after 7-day wait period (HTTP-to-HTTPS applied immediately)
    - 302/307 Temporary Redirect: follow without updating URL
    - 429 Too Many Requests: respect `Retry-After`
    - 4xx/5xx: increment failures, backoff
-5. Calculate `next_fetch_at` based on Cache-Control (1min - 7day bounds)
+5. Calculate `next_fetch_at` based on Cache-Control (10min with cache hint, 60min default min, 7day max)
 
 ### Feed Types
 
@@ -206,9 +206,9 @@ Session tokens are 32 random bytes, base64url encoded. We store SHA-256 hash in 
 - **Email**: Newsletters received via ingest email addresses
 - **Saved**: User-saved articles (read-it-later)
 
-### Rate Limiting Outbound Requests
+### Respectful Fetching
 
-Per-domain rate limiting (1 req/sec default) to be a good citizen.
+Lion Reader respects server Cache-Control headers, Retry-After directives, and HTTP 429 responses. Exponential backoff is applied for failed fetches.
 
 ---
 
@@ -290,13 +290,15 @@ Token bucket via Redis, per-user. Different buckets for different operations (e.
 
 Business logic is extracted into reusable service functions in `src/server/services/`:
 
-| Service            | Functions                                                                     |
-| ------------------ | ----------------------------------------------------------------------------- |
-| `entries.ts`       | `listEntries`, `searchEntries`, `getEntry`, `markEntriesRead`, `countEntries` |
-| `subscriptions.ts` | `listSubscriptions`, `searchSubscriptions`, `getSubscription`                 |
-| `narration.ts`     | Text-to-speech operations                                                     |
-| `full-content.ts`  | Fetch full article content from URLs                                          |
-| `summarization.ts` | AI-powered article summarization                                              |
+| Service               | Functions                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| `entries.ts`          | `listEntries`, `searchEntries`, `getEntry`, `markEntriesRead`, `countEntries`, `setEntryScore` |
+| `subscriptions.ts`    | `listSubscriptions`, `getSubscription`                                                         |
+| `saved.ts`            | Save/delete/upload articles                                                                    |
+| `narration.ts`        | Text-to-speech operations                                                                      |
+| `full-content.ts`     | Fetch full article content from URLs                                                           |
+| `summarization.ts`    | AI-powered article summarization                                                               |
+| `score-prediction.ts` | TF-IDF + Ridge Regression model training and prediction                                        |
 
 **Pattern**: Pure functions accepting `db` and parameters, returning data objects. Shared across tRPC routers, MCP server, and background jobs.
 
@@ -377,19 +379,19 @@ Lion Reader exposes functionality to AI assistants via the [Model Context Protoc
 
 ### Available Tools
 
-| Tool                   | Description                                   |
-| ---------------------- | --------------------------------------------- |
-| `list_entries`         | List feed entries with filters and pagination |
-| `search_entries`       | Full-text search across entries               |
-| `get_entry`            | Get single entry with full content            |
-| `mark_entries_read`    | Mark entries as read/unread (bulk)            |
-| `star_entries`         | Star/unstar entries                           |
-| `count_entries`        | Get entry counts with filters                 |
-| `save_article`         | Save a URL for later reading                  |
-| `delete_saved_article` | Delete a saved article                        |
-| `list_subscriptions`   | List all active subscriptions                 |
-| `search_subscriptions` | Search subscriptions by title                 |
-| `get_subscription`     | Get subscription details                      |
+| Tool                   | Description                                            |
+| ---------------------- | ------------------------------------------------------ |
+| `list_entries`         | List feed entries with filters, search, and pagination |
+| `get_entry`            | Get single entry with full content                     |
+| `mark_entries_read`    | Mark entries as read/unread (bulk)                     |
+| `star_entries`         | Star/unstar entries                                    |
+| `set_entry_score`      | Rate entries on a -2 to +2 scale                       |
+| `count_entries`        | Get entry counts with filters                          |
+| `save_article`         | Save a URL for later reading                           |
+| `delete_saved_article` | Delete a saved article                                 |
+| `upload_article`       | Upload Markdown content as an article                  |
+| `list_subscriptions`   | List and search active subscriptions                   |
+| `get_subscription`     | Get subscription details                               |
 
 ### Running the MCP Server
 
