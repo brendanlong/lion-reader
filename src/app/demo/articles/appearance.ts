@@ -12,8 +12,6 @@ const article: DemoArticle = {
   starred: false,
   summaryHtml: `<p>Lion Reader provides comprehensive appearance customization including <strong>dark mode</strong> support, multiple font families (serif and sans-serif options), adjustable text sizes, and alignment choices. All settings save locally and apply instantly. The app functions as a Progressive Web App, installable on desktop and mobile devices.</p>`,
   contentHtml: `
-    <h2>Appearance &amp; Themes</h2>
-
     <p>Reading comfort is personal. What works for one person might strain another&rsquo;s eyes. That&rsquo;s why Lion Reader gives you comprehensive control over how your content appears, letting you create the perfect reading environment for your preferences and lighting conditions.</p>
 
     <h3>Dark Mode</h3>

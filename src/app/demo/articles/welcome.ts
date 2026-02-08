@@ -12,8 +12,6 @@ const article: DemoArticle = {
   starred: true,
   summaryHtml: `<p><strong>Lion Reader</strong> is a self-hostable RSS reader that combines feeds, email newsletters, and saved articles in one interface. It features <strong>AI-powered summaries</strong> via Claude, text-to-speech narration, keyboard-first navigation, real-time updates, and <strong>MCP integration</strong> for connecting AI assistants. Self-hostable and open source with ML-powered article scoring.</p>`,
   contentHtml: `
-    <h2>Welcome to Lion Reader</h2>
-
     <p>Lion Reader is a modern, self-hostable feed reader built for people who care about their reading experience. Whether you&rsquo;re following hundreds of feeds or just a handful, Lion Reader brings all your content together in one fast, elegant interface.</p>
 
     <p>This interactive demo shows the real Lion Reader UI &mdash; browse the sidebar to explore different features and see what makes this reader special. Everything you see here works exactly like the production app.</p>
@@ -43,6 +41,7 @@ const article: DemoArticle = {
     </ul>
 
     <p>Ready to take control of your reading? Sign up to start using the full app, or <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">check out the source code on GitHub</a> to self-host your own instance.</p>
+
   `,
 };
 

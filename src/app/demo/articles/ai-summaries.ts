@@ -12,8 +12,6 @@ const article: DemoArticle = {
   starred: false,
   summaryHtml: `<p>Lion Reader offers <strong>on-demand AI summaries</strong> to help triage unread articles. Unlike auto-summarizing readers, summaries are only generated when you click &quot;Summarize.&quot; Results are <strong>cached and shared across users</strong> to reduce costs, letting you quickly scan summaries to prioritize your reading list.</p>`,
   contentHtml: `
-    <h2>AI Summaries</h2>
-
     <p>A busy morning can leave you with dozens of unread articles. Which ones are worth your time? AI summaries help you triage your reading list by generating concise overviews on demand, letting you quickly decide what deserves your full attention.</p>
 
     <h3>Privacy-Respecting Design</h3>

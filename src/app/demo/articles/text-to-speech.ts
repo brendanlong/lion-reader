@@ -13,8 +13,6 @@ const article: DemoArticle = {
   starred: false,
   summaryHtml: `<p>Lion Reader converts articles to audio using a two-stage process: an <strong>AI preprocessor</strong> (Llama 3.1) transforms HTML into narration-friendly text by expanding abbreviations and formatting complex elements, then either Web Speech API or local <strong>Piper TTS</strong> synthesizes speech. Features include synchronized paragraph highlighting, playback controls, and offline capability.</p>`,
   contentHtml: `
-    <h2>Text-to-Speech Narration</h2>
-
     <p>Sometimes you want to listen instead of read &mdash; while cooking, commuting, or just giving your eyes a rest. Lion Reader&rsquo;s narration feature transforms articles into natural-sounding audio using a two-stage pipeline that combines AI preprocessing with on-device speech synthesis.</p>
 
     <h3>Stage 1: AI Text Preprocessing</h3>

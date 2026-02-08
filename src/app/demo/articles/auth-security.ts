@@ -12,8 +12,6 @@ const article: DemoArticle = {
   starred: false,
   summaryHtml: `<p>Lion Reader offers <strong>multiple sign-in methods</strong> including email/password and OAuth providers (Google, Apple, Discord), with secure <strong>session management</strong> using SHA-256 hashes and Redis caching. Features include <strong>API tokens</strong> with scoped permissions, rate limiting, webhook verification, and subscription-based entry visibility to protect privacy.</p>`,
   contentHtml: `
-    <h2>Authentication &amp; Security</h2>
-
     <p>Lion Reader takes security and privacy seriously. Whether you&rsquo;re signing in with email or OAuth, managing API tokens, or connecting AI assistants, your data is protected with industry-standard security practices.</p>
 
     <h3>Multiple Sign-In Methods</h3>

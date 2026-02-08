@@ -12,8 +12,6 @@ const article: DemoArticle = {
   starred: false,
   summaryHtml: `<p>Lion Reader offers <strong>Vim-inspired keyboard shortcuts</strong> for faster navigation. Use <strong>j/k</strong> to move through entries, <strong>m</strong> to mark read/unread, <strong>s</strong> to star items, and <strong>g+letter combinations</strong> to jump between sections like All Items, Starred, and Saved articles.</p>`,
   contentHtml: `
-    <h2>Keyboard Shortcuts</h2>
-
     <p>Mouse or touch interfaces work fine, but keyboard navigation is faster once you learn it. Lion Reader follows a keyboard-first design philosophy inspired by Vim, giving every core action a keyboard shortcut so you can blaze through your reading workflow without touching the mouse.</p>
 
     <h3>List Navigation</h3>

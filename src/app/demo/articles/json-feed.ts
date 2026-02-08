@@ -13,8 +13,6 @@ const article: DemoArticle = {
   starred: false,
   summaryHtml: `<p>JSON Feed is a modern syndication format using JSON instead of XML, making it easier to produce and consume. It supports multiple authors, tags, and both HTML and plain text content. Lion Reader provides <strong>full native support</strong> for JSON Feed versions 1.0 and 1.1 alongside RSS and Atom.</p>`,
   contentHtml: `
-    <h2>JSON Feed: Syndication for the Modern Web</h2>
-
     <p>JSON Feed is a modern syndication format that uses JSON instead of XML, making it dramatically easier to produce and consume programmatically. Launched in 2017 as a simpler alternative to RSS and Atom, JSON Feed was designed with modern web development practices in mind. Lion Reader provides full native support for JSON Feed versions 1.0 and 1.1, treating it as a first-class citizen alongside RSS and Atom.</p>
 
     <h3>Why JSON Feed?</h3>
