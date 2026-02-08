@@ -21,7 +21,7 @@ export function IntegrationsSettings() {
     );
   }, []);
 
-  const mcpUrl = `${baseUrl}/mcp`;
+  const mcpUrl = `${baseUrl}/api/mcp`;
 
   const claudeDesktopConfig = useMemo(() => {
     return JSON.stringify(
