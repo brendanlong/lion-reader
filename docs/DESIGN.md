@@ -312,6 +312,7 @@ Business logic is extracted into reusable service functions in `src/server/servi
 | `entries.ts`          | `listEntries`, `searchEntries`, `getEntry`, `markEntriesRead`, `countEntries`, `setEntryScore` |
 | `subscriptions.ts`    | `listSubscriptions`, `getSubscription`                                                         |
 | `saved.ts`            | Save/delete/upload articles                                                                    |
+| `tags.ts`             | `listTags`, `createTag`, `updateTag`, `deleteTag`                                              |
 | `counts.ts`           | `getEntryRelatedCounts`, `getBulkEntryRelatedCounts`, `getNewEntryRelatedCounts`               |
 | `entry-filters.ts`    | `buildEntryFeedFilter` - shared filter construction for entries queries                        |
 | `narration.ts`        | Text-to-speech operations                                                                      |
@@ -427,6 +428,10 @@ Lion Reader exposes functionality to AI assistants via the [Model Context Protoc
 | `upload_article`       | Upload Markdown content as an article                  |
 | `list_subscriptions`   | List and search active subscriptions                   |
 | `get_subscription`     | Get subscription details                               |
+| `list_tags`            | List tags with feed/unread counts                      |
+| `create_tag`           | Create a new tag                                       |
+| `update_tag`           | Update a tag's name or color                           |
+| `delete_tag`           | Delete a tag (soft delete)                             |
 
 ### Running the MCP Server
 
