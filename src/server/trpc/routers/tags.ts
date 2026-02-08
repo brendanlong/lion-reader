@@ -12,6 +12,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { tags, subscriptionTags, subscriptions, entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { publishTagCreated, publishTagUpdated, publishTagDeleted } from "@/server/redis/pubsub";
 
 // ============================================================================
 // Validation Schemas
@@ -216,6 +217,7 @@ export const tagsRouter = createTRPCRouter({
           name: tags.name,
           color: tags.color,
           createdAt: tags.createdAt,
+          updatedAt: tags.updatedAt,
         });
 
       // If no row returned, tag with this name already exists
@@ -223,14 +225,30 @@ export const tagsRouter = createTRPCRouter({
         throw errors.validation("A tag with this name already exists");
       }
 
+      const createdTag = result[0];
+
+      // Publish tag created event for multi-tab/device sync
+      // Fire and forget - don't block the response
+      publishTagCreated(
+        userId,
+        {
+          id: createdTag.id,
+          name: createdTag.name,
+          color: createdTag.color,
+        },
+        createdTag.updatedAt
+      ).catch(() => {
+        // Ignore publish errors - SSE is best-effort
+      });
+
       return {
         tag: {
-          id: result[0].id,
-          name: result[0].name,
-          color: result[0].color,
+          id: createdTag.id,
+          name: createdTag.name,
+          color: createdTag.color,
           feedCount: 0,
           unreadCount: 0,
-          createdAt: result[0].createdAt,
+          createdAt: createdTag.createdAt,
         },
       };
     }),
@@ -315,6 +333,7 @@ export const tagsRouter = createTRPCRouter({
             name: tags.name,
             color: tags.color,
             createdAt: tags.createdAt,
+            updatedAt: tags.updatedAt,
             feedCount: sql<number>`count(${subscriptionTags.subscriptionId})::int`,
           })
           .from(tags)
@@ -351,14 +370,30 @@ export const tagsRouter = createTRPCRouter({
         throw errors.tagNotFound();
       }
 
+      const tag = updatedTag[0];
+
+      // Publish tag updated event for multi-tab/device sync
+      // Fire and forget - don't block the response
+      publishTagUpdated(
+        userId,
+        {
+          id: tag.id,
+          name: tag.name,
+          color: tag.color,
+        },
+        tag.updatedAt
+      ).catch(() => {
+        // Ignore publish errors - SSE is best-effort
+      });
+
       return {
         tag: {
-          id: updatedTag[0].id,
-          name: updatedTag[0].name,
-          color: updatedTag[0].color,
-          feedCount: updatedTag[0].feedCount,
+          id: tag.id,
+          name: tag.name,
+          color: tag.color,
+          feedCount: tag.feedCount,
           unreadCount: unreadResult[0]?.unreadCount ?? 0,
-          createdAt: updatedTag[0].createdAt,
+          createdAt: tag.createdAt,
         },
       };
     }),
@@ -398,7 +433,7 @@ export const tagsRouter = createTRPCRouter({
         .update(tags)
         .set({ deletedAt: now, updatedAt: now })
         .where(and(eq(tags.id, input.id), eq(tags.userId, userId), isNull(tags.deletedAt)))
-        .returning({ id: tags.id });
+        .returning({ id: tags.id, updatedAt: tags.updatedAt });
 
       if (deleted.length === 0) {
         throw errors.tagNotFound();
@@ -406,6 +441,12 @@ export const tagsRouter = createTRPCRouter({
 
       // Remove subscription_tags associations (these aren't synced, so hard delete is fine)
       await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.tagId, input.id));
+
+      // Publish tag deleted event for multi-tab/device sync
+      // Fire and forget - don't block the response
+      publishTagDeleted(userId, input.id, deleted[0].updatedAt).catch(() => {
+        // Ignore publish errors - SSE is best-effort
+      });
 
       return { success: true };
     }),

@@ -391,7 +391,7 @@ export async function saveArticle(
   });
 
   // Publish event to notify other browser windows/tabs
-  await publishNewEntry(savedFeedId, entryId, "saved");
+  await publishNewEntry(savedFeedId, entryId, now, "saved");
 
   logger.info("Saved article via service", {
     entryId,
@@ -514,7 +514,7 @@ export async function createUploadedArticle(
   });
 
   // Publish event to notify other browser windows/tabs
-  await publishNewEntry(savedFeedId, entryId, "saved");
+  await publishNewEntry(savedFeedId, entryId, now, "saved");
 
   logger.info("Created uploaded article", {
     entryId,

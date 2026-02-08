@@ -7,8 +7,14 @@
  * Events:
  * - new_entry: A new entry was added to a subscribed feed (or saved article)
  * - entry_updated: An existing entry's content was updated
+ * - entry_state_changed: Entry read/starred state changed
  * - subscription_created: User subscribed to a new feed
  * - subscription_deleted: User unsubscribed from a feed
+ * - tag_created: User created a new tag
+ * - tag_updated: User updated a tag
+ * - tag_deleted: User deleted a tag
+ * - import_progress: OPML import progress update
+ * - import_completed: OPML import completed
  *
  * Heartbeat: Sent every 30 seconds as a comment (: heartbeat)
  */
@@ -346,6 +352,18 @@ export async function GET(req: Request): Promise<Response> {
               // Forward import events to the client
               send(formatSSEUserEvent(event));
               trackSSEEventSent(event.type);
+            } else if (event.type === "entry_state_changed") {
+              // Forward entry state change events to the client
+              send(formatSSEUserEvent(event));
+              trackSSEEventSent(event.type);
+            } else if (
+              event.type === "tag_created" ||
+              event.type === "tag_updated" ||
+              event.type === "tag_deleted"
+            ) {
+              // Forward tag events to the client
+              send(formatSSEUserEvent(event));
+              trackSSEEventSent(event.type);
             }
             return;
           }
@@ -367,6 +385,7 @@ export async function GET(req: Request): Promise<Response> {
               subscriptionId,
               entryId: event.entryId,
               timestamp: event.timestamp,
+              updatedAt: event.updatedAt, // Database updated_at for cursor tracking
               feedType: event.feedType,
             };
 

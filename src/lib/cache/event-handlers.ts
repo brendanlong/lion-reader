@@ -1,0 +1,276 @@
+/**
+ * Shared Event Handlers
+ *
+ * Provides unified event handling for both SSE and sync endpoints.
+ * Both SSE real-time events and sync polling use the same event types,
+ * so we can share the cache update logic between them.
+ */
+
+import type { QueryClient } from "@tanstack/react-query";
+import type { TRPCClientUtils } from "@/lib/trpc/client";
+import {
+  handleSubscriptionCreated,
+  handleSubscriptionDeleted,
+  handleNewEntry,
+  updateEntriesInListCache,
+  updateEntryMetadataInCache,
+  applySyncTagChanges,
+  removeSyncTags,
+} from "./index";
+
+// ============================================================================
+// Event Types
+// ============================================================================
+
+/**
+ * Base fields present on all sync events.
+ * `updatedAt` is used for cursor tracking (ISO string from database updated_at).
+ */
+interface BaseSyncEvent {
+  timestamp: string;
+  updatedAt: string;
+}
+
+/**
+ * new_entry event.
+ */
+interface NewEntryEvent extends BaseSyncEvent {
+  type: "new_entry";
+  subscriptionId: string | null;
+  entryId: string;
+  feedType?: "web" | "email" | "saved";
+}
+
+/**
+ * entry_updated event.
+ */
+interface EntryUpdatedEvent extends BaseSyncEvent {
+  type: "entry_updated";
+  subscriptionId: string | null;
+  entryId: string;
+  metadata: {
+    title: string | null;
+    author: string | null;
+    summary: string | null;
+    url: string | null;
+    publishedAt: string | null;
+  };
+}
+
+/**
+ * entry_state_changed event.
+ */
+interface EntryStateChangedEvent extends BaseSyncEvent {
+  type: "entry_state_changed";
+  entryId: string;
+  read: boolean;
+  starred: boolean;
+}
+
+/**
+ * subscription_created event.
+ */
+interface SubscriptionCreatedEvent extends BaseSyncEvent {
+  type: "subscription_created";
+  subscriptionId: string;
+  feedId: string;
+  subscription: {
+    id: string;
+    feedId: string;
+    customTitle: string | null;
+    subscribedAt: string;
+    unreadCount: number;
+    tags: Array<{ id: string; name: string; color: string | null }>;
+  };
+  feed: {
+    id: string;
+    type: "web" | "email" | "saved";
+    url: string | null;
+    title: string | null;
+    description: string | null;
+    siteUrl: string | null;
+  };
+}
+
+/**
+ * subscription_deleted event.
+ */
+interface SubscriptionDeletedEvent extends BaseSyncEvent {
+  type: "subscription_deleted";
+  subscriptionId: string;
+}
+
+/**
+ * tag_created event.
+ */
+interface TagCreatedEvent extends BaseSyncEvent {
+  type: "tag_created";
+  tag: { id: string; name: string; color: string | null };
+}
+
+/**
+ * tag_updated event.
+ */
+interface TagUpdatedEvent extends BaseSyncEvent {
+  type: "tag_updated";
+  tag: { id: string; name: string; color: string | null };
+}
+
+/**
+ * tag_deleted event.
+ */
+interface TagDeletedEvent extends BaseSyncEvent {
+  type: "tag_deleted";
+  tagId: string;
+}
+
+/**
+ * import_progress event.
+ */
+interface ImportProgressEvent extends BaseSyncEvent {
+  type: "import_progress";
+  importId: string;
+  feedUrl: string;
+  feedStatus: "imported" | "skipped" | "failed";
+  imported: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+/**
+ * import_completed event.
+ */
+interface ImportCompletedEvent extends BaseSyncEvent {
+  type: "import_completed";
+  importId: string;
+  imported: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+/**
+ * Union type for all sync events.
+ */
+export type SyncEvent =
+  | NewEntryEvent
+  | EntryUpdatedEvent
+  | EntryStateChangedEvent
+  | SubscriptionCreatedEvent
+  | SubscriptionDeletedEvent
+  | TagCreatedEvent
+  | TagUpdatedEvent
+  | TagDeletedEvent
+  | ImportProgressEvent
+  | ImportCompletedEvent;
+
+// ============================================================================
+// Event Handler
+// ============================================================================
+
+/**
+ * Handles a sync event by updating the appropriate caches.
+ *
+ * This is the unified event handler used by both SSE and sync endpoints.
+ * It dispatches to the appropriate cache update functions based on event type.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param queryClient - React Query client for cache updates
+ * @param event - The event to handle
+ */
+export function handleSyncEvent(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  event: SyncEvent
+): void {
+  switch (event.type) {
+    case "new_entry":
+      // Update unread counts without invalidating entries.list
+      if (event.feedType) {
+        handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient);
+      }
+      break;
+
+    case "entry_updated":
+      // Update entry metadata directly in caches
+      updateEntryMetadataInCache(
+        utils,
+        event.entryId,
+        {
+          title: event.metadata.title,
+          author: event.metadata.author,
+          summary: event.metadata.summary,
+          url: event.metadata.url,
+          publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
+        },
+        queryClient
+      );
+      break;
+
+    case "entry_state_changed":
+      // Update read/starred state in cache
+      updateEntriesInListCache(queryClient, [event.entryId], {
+        read: event.read,
+        starred: event.starred,
+      });
+      break;
+
+    case "subscription_created": {
+      const { subscription, feed } = event;
+      handleSubscriptionCreated(
+        utils,
+        {
+          id: subscription.id,
+          type: feed.type,
+          url: feed.url,
+          title: subscription.customTitle ?? feed.title,
+          originalTitle: feed.title,
+          description: feed.description,
+          siteUrl: feed.siteUrl,
+          subscribedAt: new Date(subscription.subscribedAt),
+          unreadCount: subscription.unreadCount,
+          tags: subscription.tags,
+          fetchFullContent: false,
+        },
+        queryClient
+      );
+      break;
+    }
+
+    case "subscription_deleted":
+      // Check if already removed (optimistic update from same tab)
+      {
+        const currentData = utils.subscriptions.list.getData();
+        const alreadyRemoved =
+          currentData && !currentData.items.some((s) => s.id === event.subscriptionId);
+
+        if (!alreadyRemoved) {
+          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient);
+        }
+      }
+      break;
+
+    case "tag_created":
+      applySyncTagChanges(utils, [event.tag], []);
+      break;
+
+    case "tag_updated":
+      applySyncTagChanges(utils, [], [event.tag]);
+      break;
+
+    case "tag_deleted":
+      removeSyncTags(utils, [event.tagId]);
+      break;
+
+    case "import_progress":
+      utils.imports.get.invalidate({ id: event.importId });
+      utils.imports.list.invalidate();
+      break;
+
+    case "import_completed":
+      utils.imports.get.invalidate({ id: event.importId });
+      utils.imports.list.invalidate();
+      break;
+  }
+}

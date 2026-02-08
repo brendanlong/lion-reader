@@ -261,7 +261,7 @@ export async function processEntry(
 
     // Publish new_entry event for real-time updates
     // Fire and forget - we don't want publishing failures to affect entry processing
-    publishNewEntry(feedId, entry.id, feedType).catch((err) => {
+    publishNewEntry(feedId, entry.id, entry.updatedAt, feedType).catch((err) => {
       console.error("Failed to publish new_entry event:", err);
     });
 
@@ -345,7 +345,7 @@ async function processEntryWithCache(
 
     // Publish new_entry event for real-time updates
     // Fire and forget - we don't want publishing failures to affect entry processing
-    publishNewEntry(feedId, entry.id, feedType).catch((err) => {
+    publishNewEntry(feedId, entry.id, entry.updatedAt, feedType).catch((err) => {
       console.error("Failed to publish new_entry event:", err);
     });
 

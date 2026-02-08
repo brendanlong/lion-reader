@@ -406,6 +406,7 @@ async function subscribeToExistingFeed(
     userId,
     feedId,
     result.subscriptionId,
+    result.subscribedAt, // subscribedAt is used for both subscribedAt and updatedAt
     sseSubscriptionData,
     feedData
   ).catch((err) => {
@@ -586,6 +587,7 @@ async function subscribeToNewOrUnfetchedFeed(
     userId,
     feedId,
     result.subscriptionId,
+    result.subscribedAt, // subscribedAt is used for both subscribedAt and updatedAt
     sseSubscriptionData,
     feedData
   ).catch((err) => {
@@ -986,7 +988,7 @@ export const subscriptionsRouter = createTRPCRouter({
         .where(eq(subscriptions.id, input.id));
 
       // Publish subscription_deleted event so other tabs/windows can update
-      publishSubscriptionDeleted(userId, feed.id, input.id).catch((err) => {
+      publishSubscriptionDeleted(userId, feed.id, input.id, now).catch((err) => {
         logger.error("Failed to publish subscription_deleted event", {
           err,
           userId,

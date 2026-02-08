@@ -22,6 +22,8 @@ interface BaseFeedEvent {
   feedId: string;
   entryId: string;
   timestamp: string;
+  /** Database updated_at for cursor tracking (entries cursor) */
+  updatedAt: string;
   feedType?: "web" | "email" | "saved"; // Added to new_entry for cache updates
 }
 
@@ -99,6 +101,8 @@ export interface SubscriptionCreatedEvent {
   feedId: string;
   subscriptionId: string;
   timestamp: string;
+  /** Database updated_at for cursor tracking (subscriptions cursor) */
+  updatedAt: string;
   /** Full subscription data for optimistic cache update */
   subscription: SubscriptionCreatedEventSubscription;
   /** Full feed data for optimistic cache update */
@@ -117,6 +121,8 @@ export interface SubscriptionDeletedEvent {
   feedId: string;
   subscriptionId: string;
   timestamp: string;
+  /** Database updated_at for cursor tracking (subscriptions cursor) */
+  updatedAt: string;
 }
 
 /**
@@ -155,13 +161,68 @@ export interface ImportCompletedEvent {
 }
 
 /**
+ * Event published when an entry's read/starred state changes.
+ * This is sent to all of the user's active SSE connections for multi-tab/device sync.
+ */
+export interface EntryStateChangedEvent {
+  type: "entry_state_changed";
+  userId: string;
+  entryId: string;
+  read: boolean;
+  starred: boolean;
+  timestamp: string;
+  /** Database updated_at for cursor tracking (entries cursor) */
+  updatedAt: string;
+}
+
+/**
+ * Event published when a tag is created.
+ */
+export interface TagCreatedEvent {
+  type: "tag_created";
+  userId: string;
+  tag: { id: string; name: string; color: string | null };
+  timestamp: string;
+  /** Database updated_at for cursor tracking (tags cursor) */
+  updatedAt: string;
+}
+
+/**
+ * Event published when a tag is updated.
+ */
+export interface TagUpdatedEvent {
+  type: "tag_updated";
+  userId: string;
+  tag: { id: string; name: string; color: string | null };
+  timestamp: string;
+  /** Database updated_at for cursor tracking (tags cursor) */
+  updatedAt: string;
+}
+
+/**
+ * Event published when a tag is deleted.
+ */
+export interface TagDeletedEvent {
+  type: "tag_deleted";
+  userId: string;
+  tagId: string;
+  timestamp: string;
+  /** Database updated_at for cursor tracking (tags cursor) */
+  updatedAt: string;
+}
+
+/**
  * Union type for all user events.
  */
 export type UserEvent =
   | SubscriptionCreatedEvent
   | SubscriptionDeletedEvent
   | ImportProgressEvent
-  | ImportCompletedEvent;
+  | ImportCompletedEvent
+  | EntryStateChangedEvent
+  | TagCreatedEvent
+  | TagUpdatedEvent
+  | TagDeletedEvent;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -257,11 +318,14 @@ async function publishFeedEvent(event: FeedEvent): Promise<number> {
  *
  * @param feedId - The ID of the feed containing the entry
  * @param entryId - The ID of the newly created entry
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @param feedType - The feed type (web, email, or saved)
  * @returns The number of subscribers that received the message
  */
 export async function publishNewEntry(
   feedId: string,
   entryId: string,
+  updatedAt: Date,
   feedType?: "web" | "email" | "saved"
 ): Promise<number> {
   const event: NewEntryEvent = {
@@ -269,6 +333,7 @@ export async function publishNewEntry(
     feedId,
     entryId,
     timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
     feedType,
   };
   return publishFeedEvent(event);
@@ -279,12 +344,14 @@ export async function publishNewEntry(
  *
  * @param feedId - The ID of the feed containing the entry
  * @param entryId - The ID of the updated entry
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @param metadata - Entry metadata for direct cache updates
  * @returns The number of subscribers that received the message
  */
 export async function publishEntryUpdated(
   feedId: string,
   entryId: string,
+  updatedAt: Date,
   metadata: EntryUpdatedMetadata
 ): Promise<number> {
   const event: EntryUpdatedEvent = {
@@ -292,6 +359,7 @@ export async function publishEntryUpdated(
     feedId,
     entryId,
     timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
     metadata,
   };
   return publishFeedEvent(event);
@@ -308,6 +376,7 @@ interface EntryLike {
   summary: string | null;
   url: string | null;
   publishedAt: Date | null;
+  updatedAt: Date;
 }
 
 /**
@@ -322,7 +391,7 @@ export async function publishEntryUpdatedFromEntry(
   feedId: string,
   entry: EntryLike
 ): Promise<number> {
-  return publishEntryUpdated(feedId, entry.id, {
+  return publishEntryUpdated(feedId, entry.id, entry.updatedAt, {
     title: entry.title,
     author: entry.author,
     summary: entry.summary,
@@ -340,6 +409,7 @@ export async function publishEntryUpdatedFromEntry(
  * @param userId - The ID of the user who subscribed
  * @param feedId - The ID of the feed they subscribed to
  * @param subscriptionId - The ID of the new subscription
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @param subscription - Full subscription data for optimistic cache update
  * @param feed - Full feed data for optimistic cache update
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
@@ -348,6 +418,7 @@ export async function publishSubscriptionCreated(
   userId: string,
   feedId: string,
   subscriptionId: string,
+  updatedAt: Date,
   subscription: SubscriptionCreatedEventSubscription,
   feed: SubscriptionCreatedEventFeed
 ): Promise<number> {
@@ -361,6 +432,7 @@ export async function publishSubscriptionCreated(
     feedId,
     subscriptionId,
     timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
     subscription,
     feed,
   };
@@ -377,12 +449,14 @@ export async function publishSubscriptionCreated(
  * @param userId - The ID of the user who unsubscribed
  * @param feedId - The ID of the feed they unsubscribed from
  * @param subscriptionId - The ID of the subscription that was deleted
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSubscriptionDeleted(
   userId: string,
   feedId: string,
-  subscriptionId: string
+  subscriptionId: string,
+  updatedAt: Date
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -394,6 +468,7 @@ export async function publishSubscriptionDeleted(
     feedId,
     subscriptionId,
     timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
   };
   const channel = getUserEventsChannel(userId);
   return client.publish(channel, JSON.stringify(event));
@@ -456,6 +531,125 @@ export async function publishImportCompleted(
     failed: counts.failed,
     total: counts.total,
     timestamp: new Date().toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes an entry_state_changed event when read/starred state changes.
+ * This notifies all of the user's SSE connections for multi-tab/device sync.
+ *
+ * @param userId - The ID of the user whose entry state changed
+ * @param entryId - The ID of the entry
+ * @param read - Current read state
+ * @param starred - Current starred state
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishEntryStateChanged(
+  userId: string,
+  entryId: string,
+  read: boolean,
+  starred: boolean,
+  updatedAt: Date
+): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: EntryStateChangedEvent = {
+    type: "entry_state_changed",
+    userId,
+    entryId,
+    read,
+    starred,
+    timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes a tag_created event when a tag is created.
+ *
+ * @param userId - The ID of the user who created the tag
+ * @param tag - The tag data
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishTagCreated(
+  userId: string,
+  tag: { id: string; name: string; color: string | null },
+  updatedAt: Date
+): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: TagCreatedEvent = {
+    type: "tag_created",
+    userId,
+    tag,
+    timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes a tag_updated event when a tag is updated.
+ *
+ * @param userId - The ID of the user who updated the tag
+ * @param tag - The updated tag data
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishTagUpdated(
+  userId: string,
+  tag: { id: string; name: string; color: string | null },
+  updatedAt: Date
+): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: TagUpdatedEvent = {
+    type: "tag_updated",
+    userId,
+    tag,
+    timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes a tag_deleted event when a tag is deleted.
+ *
+ * @param userId - The ID of the user who deleted the tag
+ * @param tagId - The ID of the deleted tag
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishTagDeleted(
+  userId: string,
+  tagId: string,
+  updatedAt: Date
+): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: TagDeletedEvent = {
+    type: "tag_deleted",
+    userId,
+    tagId,
+    timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
   };
   const channel = getUserEventsChannel(userId);
   return client.publish(channel, JSON.stringify(event));
@@ -575,6 +769,7 @@ export function parseUserEvent(message: string): UserEvent | null {
         typeof event.feedId === "string" &&
         typeof event.subscriptionId === "string" &&
         typeof event.timestamp === "string" &&
+        typeof event.updatedAt === "string" &&
         typeof event.subscription === "object" &&
         event.subscription !== null &&
         typeof event.feed === "object" &&
@@ -613,6 +808,7 @@ export function parseUserEvent(message: string): UserEvent | null {
           feedId: event.feedId,
           subscriptionId: event.subscriptionId,
           timestamp: event.timestamp,
+          updatedAt: event.updatedAt,
           subscription: {
             id: sub.id,
             feedId: sub.feedId,
@@ -637,7 +833,8 @@ export function parseUserEvent(message: string): UserEvent | null {
         typeof event.userId === "string" &&
         typeof event.feedId === "string" &&
         typeof event.subscriptionId === "string" &&
-        typeof event.timestamp === "string"
+        typeof event.timestamp === "string" &&
+        typeof event.updatedAt === "string"
       ) {
         return {
           type: "subscription_deleted",
@@ -645,6 +842,7 @@ export function parseUserEvent(message: string): UserEvent | null {
           feedId: event.feedId,
           subscriptionId: event.subscriptionId,
           timestamp: event.timestamp,
+          updatedAt: event.updatedAt,
         };
       }
 
@@ -695,6 +893,98 @@ export function parseUserEvent(message: string): UserEvent | null {
           failed: event.failed,
           total: event.total,
           timestamp: event.timestamp,
+        };
+      }
+
+      if (
+        event.type === "entry_state_changed" &&
+        typeof event.userId === "string" &&
+        typeof event.entryId === "string" &&
+        typeof event.read === "boolean" &&
+        typeof event.starred === "boolean" &&
+        typeof event.timestamp === "string" &&
+        typeof event.updatedAt === "string"
+      ) {
+        return {
+          type: "entry_state_changed",
+          userId: event.userId,
+          entryId: event.entryId,
+          read: event.read,
+          starred: event.starred,
+          timestamp: event.timestamp,
+          updatedAt: event.updatedAt,
+        };
+      }
+
+      if (
+        event.type === "tag_created" &&
+        typeof event.userId === "string" &&
+        typeof event.tag === "object" &&
+        event.tag !== null &&
+        typeof event.timestamp === "string" &&
+        typeof event.updatedAt === "string"
+      ) {
+        const tag = event.tag as Record<string, unknown>;
+        if (
+          typeof tag.id === "string" &&
+          typeof tag.name === "string" &&
+          (tag.color === null || typeof tag.color === "string")
+        ) {
+          return {
+            type: "tag_created",
+            userId: event.userId,
+            tag: {
+              id: tag.id,
+              name: tag.name,
+              color: tag.color as string | null,
+            },
+            timestamp: event.timestamp,
+            updatedAt: event.updatedAt,
+          };
+        }
+      }
+
+      if (
+        event.type === "tag_updated" &&
+        typeof event.userId === "string" &&
+        typeof event.tag === "object" &&
+        event.tag !== null &&
+        typeof event.timestamp === "string" &&
+        typeof event.updatedAt === "string"
+      ) {
+        const tag = event.tag as Record<string, unknown>;
+        if (
+          typeof tag.id === "string" &&
+          typeof tag.name === "string" &&
+          (tag.color === null || typeof tag.color === "string")
+        ) {
+          return {
+            type: "tag_updated",
+            userId: event.userId,
+            tag: {
+              id: tag.id,
+              name: tag.name,
+              color: tag.color as string | null,
+            },
+            timestamp: event.timestamp,
+            updatedAt: event.updatedAt,
+          };
+        }
+      }
+
+      if (
+        event.type === "tag_deleted" &&
+        typeof event.userId === "string" &&
+        typeof event.tagId === "string" &&
+        typeof event.timestamp === "string" &&
+        typeof event.updatedAt === "string"
+      ) {
+        return {
+          type: "tag_deleted",
+          userId: event.userId,
+          tagId: event.tagId,
+          timestamp: event.timestamp,
+          updatedAt: event.updatedAt,
         };
       }
     }

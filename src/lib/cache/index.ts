@@ -66,3 +66,6 @@ export {
   removeSyncTags,
   type SyncTag,
 } from "./count-cache";
+
+// Shared event handlers for SSE and sync
+export { handleSyncEvent, type SyncEvent } from "./event-handlers";
