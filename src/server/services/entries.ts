@@ -4,7 +4,7 @@
  * Business logic for entry operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, desc, asc, inArray, notInArray, sql, isNull, lte } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, sql, isNull, lte } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   entries,
@@ -15,7 +15,7 @@ import {
   visibleEntries,
 } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
-import { buildEntryFeedFilter } from "./entry-filters";
+import { buildEntryFeedFilter, buildEntryFilterConditions } from "./entry-filters";
 
 // ============================================================================
 // Types
@@ -226,27 +226,8 @@ export async function listEntries(
     conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
   }
 
-  // Apply filters
-  if (params.unreadOnly) {
-    conditions.push(eq(visibleEntries.read, false));
-  }
-
-  if (params.starredOnly) {
-    conditions.push(eq(visibleEntries.starred, true));
-  }
-
-  if (params.type) {
-    conditions.push(eq(visibleEntries.type, params.type));
-  }
-
-  if (params.excludeTypes && params.excludeTypes.length > 0) {
-    conditions.push(notInArray(visibleEntries.type, params.excludeTypes));
-  }
-
-  // Spam filter
-  if (!params.showSpam) {
-    conditions.push(eq(visibleEntries.isSpam, false));
-  }
+  // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
+  conditions.push(...buildEntryFilterConditions(params));
 
   // Sort column
   const sortColumn = sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
@@ -384,25 +365,8 @@ async function searchEntries(
     conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
   }
 
-  if (params.unreadOnly) {
-    conditions.push(eq(visibleEntries.read, false));
-  }
-
-  if (params.starredOnly) {
-    conditions.push(eq(visibleEntries.starred, true));
-  }
-
-  if (params.type) {
-    conditions.push(eq(visibleEntries.type, params.type));
-  }
-
-  if (params.excludeTypes && params.excludeTypes.length > 0) {
-    conditions.push(notInArray(visibleEntries.type, params.excludeTypes));
-  }
-
-  if (!params.showSpam) {
-    conditions.push(eq(visibleEntries.isSpam, false));
-  }
+  // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
+  conditions.push(...buildEntryFilterConditions(params));
 
   // Cursor for search results (based on rank)
   if (params.cursor) {
@@ -735,25 +699,8 @@ export async function countEntries(
     conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
   }
 
-  if (params.unreadOnly) {
-    conditions.push(eq(visibleEntries.read, false));
-  }
-
-  if (params.starredOnly) {
-    conditions.push(eq(visibleEntries.starred, true));
-  }
-
-  if (params.type) {
-    conditions.push(eq(visibleEntries.type, params.type));
-  }
-
-  if (params.excludeTypes && params.excludeTypes.length > 0) {
-    conditions.push(notInArray(visibleEntries.type, params.excludeTypes));
-  }
-
-  if (!params.showSpam) {
-    conditions.push(eq(visibleEntries.isSpam, false));
-  }
+  // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
+  conditions.push(...buildEntryFilterConditions(params));
 
   const result = await db
     .select({

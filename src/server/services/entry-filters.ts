@@ -5,9 +5,9 @@
  * countEntries, and markAllRead.
  */
 
-import { eq, and, notInArray, sql } from "drizzle-orm";
+import { eq, and, notInArray, sql, type SQL } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { subscriptionTags, tags, userFeeds } from "@/server/db/schema";
+import { subscriptionTags, tags, userFeeds, visibleEntries } from "@/server/db/schema";
 
 // ============================================================================
 // Types
@@ -17,6 +17,14 @@ export interface EntryFilterParams {
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
+}
+
+export interface EntryConditionParams {
+  unreadOnly?: boolean;
+  starredOnly?: boolean;
+  type?: "web" | "email" | "saved";
+  excludeTypes?: Array<"web" | "email" | "saved">;
+  showSpam: boolean;
 }
 
 /**
@@ -135,4 +143,39 @@ export async function buildEntryFeedFilter(
 
   // No feed filter needed
   return { feedIdsCondition: null, isEmpty: false };
+}
+
+// ============================================================================
+// Entry Condition Builder
+// ============================================================================
+
+/**
+ * Builds shared filter conditions for entry queries (unreadOnly, starredOnly,
+ * type, excludeTypes, showSpam). Used by listEntries, searchEntries, and
+ * countEntries to avoid duplicating the same filter logic.
+ */
+export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] {
+  const conditions: SQL[] = [];
+
+  if (params.unreadOnly) {
+    conditions.push(eq(visibleEntries.read, false));
+  }
+
+  if (params.starredOnly) {
+    conditions.push(eq(visibleEntries.starred, true));
+  }
+
+  if (params.type) {
+    conditions.push(eq(visibleEntries.type, params.type));
+  }
+
+  if (params.excludeTypes && params.excludeTypes.length > 0) {
+    conditions.push(notInArray(visibleEntries.type, params.excludeTypes));
+  }
+
+  if (!params.showSpam) {
+    conditions.push(eq(visibleEntries.isSpam, false));
+  }
+
+  return conditions;
 }
