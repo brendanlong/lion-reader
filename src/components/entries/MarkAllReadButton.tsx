@@ -8,6 +8,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircleIcon } from "@/components/ui/icon-button";
 import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
 
 interface MarkAllReadButtonProps {
@@ -35,20 +36,7 @@ export function MarkAllReadButton({
         title="Mark all as read"
         aria-label="Mark all as read"
       >
-        <svg
-          className="h-5 w-5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={1.5}
-          aria-hidden="true"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+        <CheckCircleIcon className="h-5 w-5" />
         <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
       </button>
 

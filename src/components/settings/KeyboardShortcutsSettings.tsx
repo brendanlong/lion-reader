@@ -8,6 +8,7 @@
 "use client";
 
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { InfoCircleIcon } from "@/components/ui/icon-button";
 
 export function KeyboardShortcutsSettings() {
   const { enabled, setEnabled, openShortcutsModal } = useKeyboardShortcutsContext();
@@ -52,14 +53,7 @@ export function KeyboardShortcutsSettings() {
             onClick={openShortcutsModal}
             className="ui-text-sm inline-flex items-center gap-2 font-medium text-zinc-700 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <InfoCircleIcon className="h-4 w-4" />
             View all keyboard shortcuts
             {enabled && (
               <kbd className="ui-text-xs ml-1 rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-mono font-medium text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">

@@ -22,6 +22,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
+import { PlusIcon, CheckIcon, CopyIcon, EditIcon } from "@/components/ui/icon-button";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
 
 // ============================================================================
@@ -170,19 +171,7 @@ function IngestAddressesSection() {
             {!isCreating && addresses.length < 5 && (
               <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
                 <Button variant="secondary" onClick={() => setIsCreating(true)}>
-                  <svg
-                    className="mr-2 h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
+                  <PlusIcon className="mr-2 h-4 w-4" />
                   Create New Address
                 </Button>
               </div>
@@ -309,28 +298,9 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
               title="Copy email address"
             >
               {copied ? (
-                <svg
-                  className="h-4 w-4 text-green-600 dark:text-green-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
+                <CheckIcon className="h-4 w-4 text-green-600 dark:text-green-400" />
               ) : (
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
+                <CopyIcon className="h-4 w-4" />
               )}
             </button>
           </div>
@@ -371,14 +341,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
                 className="rounded p-0.5 text-zinc-400 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
                 title="Edit label"
               >
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                  />
-                </svg>
+                <EditIcon className="h-3.5 w-3.5" />
               </button>
             </div>
           )}

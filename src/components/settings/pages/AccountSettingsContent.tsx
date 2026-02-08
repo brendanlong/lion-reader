@@ -18,6 +18,7 @@ import { clientReplace } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { CheckIcon } from "@/components/ui/icon-button";
 import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { KeyboardShortcutsSettings } from "@/components/settings/KeyboardShortcutsSettings";
 import { AboutSection } from "@/components/settings/AboutSection";
@@ -127,19 +128,7 @@ function AccountInfoSection() {
               <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
                 {userQuery.data?.user.emailVerifiedAt ? (
                   <span className="inline-flex items-center text-green-600 dark:text-green-400">
-                    <svg
-                      className="mr-1 h-4 w-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
+                    <CheckIcon className="mr-1 h-4 w-4" />
                     Verified
                   </span>
                 ) : (

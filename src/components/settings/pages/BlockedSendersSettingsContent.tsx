@@ -19,6 +19,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
+import { ProhibitionIcon, CheckIcon } from "@/components/ui/icon-button";
 import { formatRelativeTime } from "@/lib/format";
 
 // ============================================================================
@@ -77,19 +78,7 @@ function EmptyState() {
   return (
     <div className="p-8 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-        <svg
-          className="h-6 w-6 text-zinc-400 dark:text-zinc-500"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-          />
-        </svg>
+        <ProhibitionIcon className="h-6 w-6 text-zinc-400 dark:text-zinc-500" />
       </div>
       <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
         No blocked senders
@@ -172,19 +161,7 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
             <span>Blocked {formatRelativeTime(sender.blockedAt)}</span>
             {sender.unsubscribeSentAt && (
               <span className="flex items-center gap-1">
-                <svg
-                  className="h-3.5 w-3.5 text-green-600 dark:text-green-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
+                <CheckIcon className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
                 Unsubscribe sent
               </span>
             )}

@@ -10,6 +10,7 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { CheckIcon } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -122,19 +123,7 @@ export function GroqApiKeySettings() {
             {hasKey ? (
               <>
                 <span className="ui-text-sm inline-flex items-center text-green-600 dark:text-green-400">
-                  <svg
-                    className="mr-1 h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
+                  <CheckIcon className="mr-1 h-4 w-4" />
                   API key configured
                 </span>
                 <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
@@ -371,19 +360,7 @@ export function SummarizationApiKeySettings() {
                 {hasKey ? (
                   <>
                     <span className="ui-text-sm inline-flex items-center text-green-600 dark:text-green-400">
-                      <svg
-                        className="mr-1 h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
+                      <CheckIcon className="mr-1 h-4 w-4" />
                       API key configured
                     </span>
                     <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>

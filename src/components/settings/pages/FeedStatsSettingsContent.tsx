@@ -11,6 +11,7 @@ import { trpc } from "@/lib/trpc/client";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Alert } from "@/components/ui/alert";
 import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
+import { RssIcon, ClockIcon, CalendarIcon, RefreshIcon } from "@/components/ui/icon-button";
 
 // ============================================================================
 // Types
@@ -151,19 +152,7 @@ function EmptyState() {
   return (
     <div className="p-8 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-        <svg
-          className="h-6 w-6 text-zinc-400 dark:text-zinc-500"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z"
-          />
-        </svg>
+        <RssIcon className="h-6 w-6 text-zinc-400 dark:text-zinc-500" />
       </div>
       <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
         No feeds subscribed
@@ -266,48 +255,5 @@ function StatItem({ icon, label, value }: StatItemProps) {
         <span className="font-medium text-zinc-700 dark:text-zinc-300">{label}:</span> {value}
       </span>
     </div>
-  );
-}
-
-// ============================================================================
-// Icons
-// ============================================================================
-
-function ClockIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-      />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-      />
-    </svg>
-  );
-}
-
-function RefreshIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-      />
-    </svg>
   );
 }

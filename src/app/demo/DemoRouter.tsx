@@ -17,6 +17,7 @@ import Link from "next/link";
 import { ClientLink } from "@/components/ui/client-link";
 import { Button } from "@/components/ui/button";
 import {
+  ArrowLeftIcon,
   SparklesIcon,
   StarIcon,
   StarFilledIcon,
@@ -261,14 +262,7 @@ function DemoRouterContent() {
             href={backHref}
             className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10 19l-7-7m0 0l7-7m-7 7h18"
-              />
-            </svg>
+            <ArrowLeftIcon className="h-4 w-4" />
             <span>Back to list</span>
           </ClientLink>
         }

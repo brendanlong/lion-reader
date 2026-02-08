@@ -11,6 +11,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ClientLink } from "@/components/ui/client-link";
+import {
+  CloseIcon,
+  MenuIcon,
+  PlusIcon,
+  UserIcon,
+  ChevronDownIcon,
+} from "@/components/ui/icon-button";
 import { Toaster, toast } from "sonner";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { UserEmail } from "@/components/layout/UserEmail";
@@ -74,14 +81,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                   aria-label="Close navigation menu"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
+                  <CloseIcon className="h-5 w-5" />
                 </button>
               }
               mobileMenuButton={
@@ -90,14 +90,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                   aria-label="Open navigation menu"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 12h16M4 18h16"
-                    />
-                  </svg>
+                  <MenuIcon className="h-5 w-5" />
                 </button>
               }
               headerRight={
@@ -107,14 +100,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                     href="/subscribe"
                     className="ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-900 px-3 font-medium text-white transition-colors hover:bg-zinc-800 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:active:bg-zinc-300"
                   >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 4v16m8-8H4"
-                      />
-                    </svg>
+                    <PlusIcon className="h-4 w-4" />
                     <span className="hidden sm:inline">Subscribe</span>
                   </ClientLink>
 
@@ -130,33 +116,11 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                         <UserEmail />
                       </span>
                       <span className="sm:hidden" aria-label="Account menu">
-                        <svg
-                          className="h-5 w-5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                          />
-                        </svg>
+                        <UserIcon className="h-5 w-5" />
                       </span>
-                      <svg
+                      <ChevronDownIcon
                         className={`h-4 w-4 transition-transform ${userMenuOpen ? "rotate-180" : ""}`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
+                      />
                     </button>
 
                     {/* Dropdown menu */}

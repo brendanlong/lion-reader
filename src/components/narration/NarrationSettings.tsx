@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
+import { AlertIcon, InfoCircleIcon } from "@/components/ui/icon-button";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
@@ -182,19 +183,7 @@ export function NarrationSettings() {
         <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-start gap-3">
-            <svg
-              className="mt-0.5 h-5 w-5 flex-shrink-0 text-zinc-400 dark:text-zinc-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
+            <AlertIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-zinc-400 dark:text-zinc-500" />
             <div>
               <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
                 Narration Unavailable
@@ -567,19 +556,7 @@ export function NarrationSettings() {
             {/* Firefox Warning */}
             {isFirefoxBrowser && (
               <div className="ui-text-xs flex items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                <svg
-                  className="mt-0.5 h-4 w-4 flex-shrink-0"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  />
-                </svg>
+                <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <span>
                   Firefox has limited support for pausing narration. When you pause and resume,
                   playback will restart from the beginning of the current paragraph.
@@ -593,19 +570,7 @@ export function NarrationSettings() {
         {settings.enabled && supportInfo.mediaSession && (
           <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
             <div className="ui-text-xs flex items-start gap-2 text-zinc-500 dark:text-zinc-400">
-              <svg
-                className="mt-0.5 h-4 w-4 flex-shrink-0"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+              <InfoCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span>
                 Your browser supports media controls. You can control playback using your keyboard
                 media keys or lock screen controls.

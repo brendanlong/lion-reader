@@ -10,6 +10,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDownIcon, QuestionCircleIcon } from "@/components/ui/icon-button";
 
 /**
  * FAQ item definition.
@@ -78,16 +79,11 @@ function FAQItemComponent({
         <span className="ui-text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {item.question}
         </span>
-        <svg
+        <ChevronDownIcon
           className={`h-4 w-4 flex-shrink-0 text-zinc-500 transition-transform duration-200 dark:text-zinc-400 ${
             isOpen ? "rotate-180" : ""
           }`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </button>
       {isOpen && (
         <div className="pr-8 pb-3">
@@ -136,33 +132,16 @@ export function EnhancedVoicesHelp() {
         aria-expanded={isExpanded}
       >
         <div className="flex items-center gap-2">
-          <svg
-            className="h-4 w-4 text-zinc-500 dark:text-zinc-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
+          <QuestionCircleIcon className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           <span className="ui-text-sm font-medium text-zinc-700 dark:text-zinc-300">
             Help with enhanced voices
           </span>
         </div>
-        <svg
+        <ChevronDownIcon
           className={`h-4 w-4 text-zinc-500 transition-transform duration-200 dark:text-zinc-400 ${
             isExpanded ? "rotate-180" : ""
           }`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </button>
 
       {/* Expandable FAQ content */}

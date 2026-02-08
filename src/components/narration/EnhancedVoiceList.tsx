@@ -11,6 +11,18 @@
 
 import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  CheckIcon,
+  AlertCircleIcon,
+  SpinnerIcon,
+  StopIcon,
+  PlayIcon,
+  TrashIcon,
+  RefreshIcon,
+  DownloadIcon,
+  CloseIcon,
+  AlertIcon,
+} from "@/components/ui/icon-button";
 import type { NarrationSettings } from "@/lib/narration/settings";
 import { useEnhancedVoices, type EnhancedVoiceState } from "./useEnhancedVoices";
 import { trackEnhancedVoiceSelected } from "@/lib/telemetry";
@@ -162,32 +174,13 @@ function VoiceItem({
               <ProgressBar progress={progress} size={voice.sizeBytes} />
             ) : isDownloaded ? (
               <div className="ui-text-xs mt-1 flex items-center gap-1 text-green-600 dark:text-green-400">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
+                <CheckIcon className="h-3.5 w-3.5" />
                 Downloaded
               </div>
             ) : hasError ? (
               <div className="mt-1 space-y-1">
                 <div className="ui-text-xs flex items-center gap-1 text-red-600 dark:text-red-400">
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
+                  <AlertCircleIcon className="h-3.5 w-3.5" />
                   {errorInfo.message}
                 </div>
                 {errorInfo.suggestion && (
@@ -209,21 +202,7 @@ function VoiceItem({
           {isDownloading ? (
             // Cancel button during download (optional - just showing spinner for now)
             <div className="ui-text-xs flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
-              <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
+              <SpinnerIcon className="h-4 w-4" />
               Downloading...
             </div>
           ) : isDownloaded ? (
@@ -245,32 +224,12 @@ function VoiceItem({
               >
                 {isThisVoicePreviewing ? (
                   <>
-                    <svg
-                      className="mr-1 h-3.5 w-3.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
-                      />
-                    </svg>
+                    <StopIcon className="mr-1 h-3.5 w-3.5" />
                     Stop
                   </>
                 ) : (
                   <>
-                    <svg className="mr-1 h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
+                    <PlayIcon className="mr-1 h-3.5 w-3.5" />
                     Preview
                   </>
                 )}
@@ -286,50 +245,19 @@ function VoiceItem({
                 className="rounded-md p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                 title="Delete voice"
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
+                <TrashIcon className="h-4 w-4" />
               </button>
             </>
           ) : hasError && errorInfo.retryable ? (
             /* Retry button for retryable errors */
             <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
-              <svg
-                className="mr-1 h-3.5 w-3.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
+              <RefreshIcon className="mr-1 h-3.5 w-3.5" />
               Retry
             </Button>
           ) : (
             /* Download button */
             <Button type="button" variant="secondary" size="sm" onClick={onDownload}>
-              <svg
-                className="mr-1 h-3.5 w-3.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                />
-              </svg>
+              <DownloadIcon className="mr-1 h-3.5 w-3.5" />
               Download
             </Button>
           )}
@@ -431,21 +359,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <svg className="h-6 w-6 animate-spin text-zinc-400" fill="none" viewBox="0 0 24 24">
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-          />
-        </svg>
+        <SpinnerIcon className="h-6 w-6 text-zinc-400" />
         <span className="ui-text-sm ml-2 text-zinc-500 dark:text-zinc-400">Loading voices...</span>
       </div>
     );
@@ -457,19 +371,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       {error && (
         <div className="rounded-md bg-red-50 p-3 dark:bg-red-900/20">
           <div className="ui-text-xs flex items-start gap-2 text-red-800 dark:text-red-200">
-            <svg
-              className="mt-0.5 h-4 w-4 flex-shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <AlertCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <div className="flex-1 space-y-1">
               <p>{error}</p>
               {lastErrorInfo?.suggestion && (
@@ -491,14 +393,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
                 onClick={clearError}
                 className="text-red-600 hover:text-red-800 dark:text-red-300 dark:hover:text-red-100"
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
+                <CloseIcon className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -508,19 +403,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       {/* Storage limit warning */}
       {isStorageLimitExceeded && (
         <div className="ui-text-xs flex items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-          <svg
-            className="mt-0.5 h-4 w-4 flex-shrink-0"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-            />
-          </svg>
+          <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <span className="flex-1">
             Voice storage exceeds 200 MB. Consider removing unused voices to free up space.
           </span>
