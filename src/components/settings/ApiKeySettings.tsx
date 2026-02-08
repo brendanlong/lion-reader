@@ -193,6 +193,7 @@ export function SummarizationApiKeySettings() {
   const currentMaxWords = preferencesQuery.data?.summarizationMaxWords ?? null;
   const currentPrompt = preferencesQuery.data?.summarizationPrompt ?? null;
   const models = modelsQuery.data?.models ?? [];
+  const defaultModelId = modelsQuery.data?.defaultModelId ?? DEFAULT_MODEL;
   const defaultPrompt = defaultPromptQuery.data?.prompt ?? "";
 
   const handleSave = useCallback(() => {
@@ -414,13 +415,13 @@ export function SummarizationApiKeySettings() {
               </label>
               <select
                 id="summarization-model"
-                value={currentModel ?? DEFAULT_MODEL}
+                value={currentModel ?? defaultModelId}
                 onChange={handleModelChange}
                 disabled={updatePreferences.isPending || modelsQuery.isLoading}
                 className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
               >
                 {modelsQuery.isLoading ? (
-                  <option value={currentModel ?? DEFAULT_MODEL}>Loading models...</option>
+                  <option value={currentModel ?? defaultModelId}>Loading models...</option>
                 ) : models.length > 0 ? (
                   models.map((model) => (
                     <option key={model.id} value={model.id}>
@@ -428,7 +429,7 @@ export function SummarizationApiKeySettings() {
                     </option>
                   ))
                 ) : (
-                  <option value={DEFAULT_MODEL}>Claude Sonnet 4.5</option>
+                  <option value={defaultModelId}>{defaultModelId}</option>
                 )}
                 {/* Show custom value if it's not in the models list */}
                 {currentModel &&
