@@ -326,6 +326,8 @@ export const usersRouter = createTRPCRouter({
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
         summarizationModel: z.string().nullable(),
+        summarizationMaxWords: z.number().nullable(),
+        summarizationPrompt: z.string().nullable(),
       })
     )
     .query(async ({ ctx }) => {
@@ -337,6 +339,8 @@ export const usersRouter = createTRPCRouter({
         hasGroqApiKey: !!ctx.session.user.groqApiKey,
         hasAnthropicApiKey: !!ctx.session.user.anthropicApiKey,
         summarizationModel: ctx.session.user.summarizationModel,
+        summarizationMaxWords: ctx.session.user.summarizationMaxWords,
+        summarizationPrompt: ctx.session.user.summarizationPrompt,
       };
     }),
 
@@ -361,6 +365,9 @@ export const usersRouter = createTRPCRouter({
         groqApiKey: z.string().optional(),
         anthropicApiKey: z.string().optional(),
         summarizationModel: z.string().optional(),
+        // Summarization settings: null clears (reverts to default)
+        summarizationMaxWords: z.number().int().min(1).max(10000).nullable().optional(),
+        summarizationPrompt: z.string().max(10000).nullable().optional(),
       })
     )
     .output(
@@ -370,6 +377,8 @@ export const usersRouter = createTRPCRouter({
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
         summarizationModel: z.string().nullable(),
+        summarizationMaxWords: z.number().nullable(),
+        summarizationPrompt: z.string().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -391,6 +400,8 @@ export const usersRouter = createTRPCRouter({
         groqApiKey?: string | null;
         anthropicApiKey?: string | null;
         summarizationModel?: string | null;
+        summarizationMaxWords?: number | null;
+        summarizationPrompt?: string | null;
         updatedAt: Date;
       } = {
         updatedAt: new Date(),
@@ -415,6 +426,14 @@ export const usersRouter = createTRPCRouter({
         updateData.summarizationModel = input.summarizationModel || null;
       }
 
+      if (input.summarizationMaxWords !== undefined) {
+        updateData.summarizationMaxWords = input.summarizationMaxWords;
+      }
+
+      if (input.summarizationPrompt !== undefined) {
+        updateData.summarizationPrompt = input.summarizationPrompt;
+      }
+
       // Update user preferences in database
       await ctx.db.update(users).set(updateData).where(eq(users.id, userId));
 
@@ -428,6 +447,8 @@ export const usersRouter = createTRPCRouter({
           groqApiKey: users.groqApiKey,
           anthropicApiKey: users.anthropicApiKey,
           summarizationModel: users.summarizationModel,
+          summarizationMaxWords: users.summarizationMaxWords,
+          summarizationPrompt: users.summarizationPrompt,
         })
         .from(users)
         .where(eq(users.id, userId))
@@ -439,6 +460,8 @@ export const usersRouter = createTRPCRouter({
         hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
         hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
+        summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
+        summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,
       };
     }),
 });

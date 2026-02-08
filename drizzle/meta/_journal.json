@@ -351,6 +351,13 @@
       "when": 1770508800000,
       "tag": "0049_user_api_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1770518800000,
+      "tag": "0050_user_summary_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,7 @@ import {
   CURRENT_PROMPT_VERSION,
   getSummarizationModelId,
   listModels,
+  DEFAULT_SUMMARIZATION_PROMPT,
 } from "@/server/services/summarization";
 import { logger } from "@/lib/logger";
 
@@ -99,6 +100,8 @@ export const summarizationRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const userAnthropicApiKey = ctx.session.user.anthropicApiKey;
       const userSummarizationModel = ctx.session.user.summarizationModel;
+      const userMaxWords = ctx.session.user.summarizationMaxWords;
+      const userPrompt = ctx.session.user.summarizationPrompt;
 
       // Check if summarization is available (user key or server key)
       if (!isSummarizationAvailable(userAnthropicApiKey)) {
@@ -157,7 +160,12 @@ export const summarizationRouter = createTRPCRouter({
           const fullSummary = await ctx.db
             .select()
             .from(entrySummaries)
-            .where(eq(entrySummaries.contentHash, entry.fullContentHash))
+            .where(
+              and(
+                eq(entrySummaries.userId, userId),
+                eq(entrySummaries.contentHash, entry.fullContentHash)
+              )
+            )
             .limit(1);
 
           const fullRecord = fullSummary[0];
@@ -180,7 +188,12 @@ export const summarizationRouter = createTRPCRouter({
         const feedSummary = await ctx.db
           .select()
           .from(entrySummaries)
-          .where(eq(entrySummaries.contentHash, entry.contentHash))
+          .where(
+            and(
+              eq(entrySummaries.userId, userId),
+              eq(entrySummaries.contentHash, entry.contentHash)
+            )
+          )
           .limit(1);
 
         const feedRecord = feedSummary[0];
@@ -207,11 +220,11 @@ export const summarizationRouter = createTRPCRouter({
         throw errors.validation("Entry has no content to summarize");
       }
 
-      // Look up existing summary by content hash
+      // Look up existing summary by user + content hash
       let summary = await ctx.db
         .select()
         .from(entrySummaries)
-        .where(eq(entrySummaries.contentHash, contentHash))
+        .where(and(eq(entrySummaries.userId, userId), eq(entrySummaries.contentHash, contentHash)))
         .limit(1);
 
       // Create placeholder record if not found
@@ -219,6 +232,7 @@ export const summarizationRouter = createTRPCRouter({
         const newId = generateUuidv7();
         await ctx.db.insert(entrySummaries).values({
           id: newId,
+          userId,
           contentHash,
           promptVersion: CURRENT_PROMPT_VERSION,
           createdAt: new Date(),
@@ -234,7 +248,7 @@ export const summarizationRouter = createTRPCRouter({
       const summaryRecord = summary[0];
 
       // Check if settings have changed since this summary was generated
-      const currentModelId = getSummarizationModelId();
+      const currentModelId = getSummarizationModelId(userSummarizationModel);
       const promptVersionChanged = summaryRecord.promptVersion !== CURRENT_PROMPT_VERSION;
       const modelChanged =
         summaryRecord.modelId !== null && summaryRecord.modelId !== currentModelId;
@@ -269,6 +283,8 @@ export const summarizationRouter = createTRPCRouter({
         const result = await generateSummary(preparedContent, entry.title ?? "", {
           userApiKey: userAnthropicApiKey,
           userModel: userSummarizationModel,
+          userMaxWords: userMaxWords,
+          userPrompt: userPrompt,
         });
 
         // Cache in entry_summaries table, clear any previous error
@@ -363,5 +379,26 @@ export const summarizationRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const models = await listModels(ctx.session.user.anthropicApiKey);
       return { models };
+    }),
+
+  /**
+   * Get the default summarization prompt template.
+   *
+   * Returns the built-in prompt so the frontend can display it as a placeholder
+   * when the user hasn't set a custom prompt.
+   */
+  defaultPrompt: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/summarization/default-prompt",
+        tags: ["Summarization"],
+        summary: "Get default summarization prompt template",
+      },
+    })
+    .input(z.void())
+    .output(z.object({ prompt: z.string() }))
+    .query(() => {
+      return { prompt: DEFAULT_SUMMARIZATION_PROMPT };
     }),
 });

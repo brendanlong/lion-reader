@@ -70,6 +70,8 @@ interface CachedSession {
   userGroqApiKey: string | null;
   userAnthropicApiKey: string | null;
   userSummarizationModel: string | null;
+  userSummarizationMaxWords: number | null;
+  userSummarizationPrompt: string | null;
 }
 
 // ============================================================================
@@ -207,6 +209,8 @@ function serializeForCache(data: SessionData): string {
     userGroqApiKey: data.user.groqApiKey ?? null,
     userAnthropicApiKey: data.user.anthropicApiKey ?? null,
     userSummarizationModel: data.user.summarizationModel ?? null,
+    userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
+    userSummarizationPrompt: data.user.summarizationPrompt ?? null,
   };
   return JSON.stringify(cached);
 }
@@ -240,6 +244,8 @@ function deserializeFromCache(data: string): SessionData {
       groqApiKey: cached.userGroqApiKey ?? null,
       anthropicApiKey: cached.userAnthropicApiKey ?? null,
       summarizationModel: cached.userSummarizationModel ?? null,
+      summarizationMaxWords: cached.userSummarizationMaxWords ?? null,
+      summarizationPrompt: cached.userSummarizationPrompt ?? null,
     },
   };
 }

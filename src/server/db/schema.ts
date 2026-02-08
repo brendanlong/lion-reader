@@ -67,6 +67,8 @@ export const users = pgTable("users", {
   groqApiKey: text("groq_api_key"), // For narration LLM preprocessing
   anthropicApiKey: text("anthropic_api_key"), // For AI summarization
   summarizationModel: text("summarization_model"), // Anthropic model for summaries
+  summarizationMaxWords: integer("summarization_max_words"), // Override SUMMARIZATION_MAX_WORDS
+  summarizationPrompt: text("summarization_prompt"), // Custom summarization prompt
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -877,13 +879,15 @@ export const entryScorePredictions = pgTable(
 
 /**
  * Entry summaries table - stores AI-generated article summaries.
- * Keyed by content hash for deduplication across entries.
+ * Keyed by (user_id, content_hash) for per-user caching since different
+ * users may have different models, max words, or custom prompts.
  */
 export const entrySummaries = pgTable(
   "entry_summaries",
   {
     id: uuid("id").primaryKey(), // UUIDv7
-    contentHash: text("content_hash").unique().notNull(), // SHA256 of source content
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    contentHash: text("content_hash").notNull(), // SHA256 of source content
 
     summaryText: text("summary_text"), // null until generated
     modelId: text("model_id"), // e.g., "claude-sonnet-4-20250514"
@@ -899,6 +903,8 @@ export const entrySummaries = pgTable(
   (table) => [
     // Index for finding stale summaries
     index("idx_entry_summaries_prompt_version").on(table.promptVersion),
+    // Unique constraint for per-user summary caching
+    unique("entry_summaries_user_content_unique").on(table.userId, table.contentHash),
   ]
 );
 
