@@ -380,11 +380,12 @@ export const summarizationRouter = createTRPCRouter({
             displayName: z.string(),
           })
         ),
+        defaultModelId: z.string(),
       })
     )
     .query(async ({ ctx }) => {
       const models = await listModels(ctx.session.user.anthropicApiKey);
-      return { models };
+      return { models, defaultModelId: getSummarizationModelId() };
     }),
 
   /**
