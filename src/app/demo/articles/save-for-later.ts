@@ -25,8 +25,12 @@ const article: DemoArticle = {
       <li><strong>tRPC API</strong> &mdash; Programmatic saving for automation and integrations</li>
       <li><strong>Discord bot</strong> &mdash; Save articles shared in Discord channels</li>
       <li><strong>File upload</strong> &mdash; Upload Markdown files, Word documents, and HTML files directly</li>
-      <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope</li>
+      <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope (powered by the <strong>Plugin System</strong>)</li>
     </ul>
+
+    <h3>Smart Content Extraction</h3>
+
+    <p>When you save a URL from a supported platform &mdash; like ArXiv, GitHub, Google Docs, or LessWrong &mdash; Lion Reader&rsquo;s <strong>Plugin System</strong> uses platform-specific APIs to extract cleaner, more complete content than generic web scraping. For everything else, Readability handles the extraction. See the <strong>Plugin System</strong> article for details on supported platforms.</p>
 
     <h3>Custom Metadata &amp; Organization</h3>
 
