@@ -2,6 +2,7 @@
  * tRPC Provider
  *
  * Wraps the application with React Query and tRPC providers.
+ * Also initializes TanStack DB collections for normalized client-side state.
  * This must be used at the root of the app for tRPC hooks to work.
  */
 
@@ -9,10 +10,13 @@
 
 import { useState, useEffect, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
+import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 import { trpc } from "./client";
 import { getQueryClient } from "./query-client";
+import type { AppRouter } from "@/server/trpc/root";
+import { createCollections, type Collections } from "@/lib/collections";
+import { CollectionsProvider } from "@/lib/collections/context";
 
 /**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
@@ -82,8 +86,27 @@ interface TRPCProviderProps {
 }
 
 /**
+ * Creates the shared httpBatchLink configuration.
+ * Used by both the React tRPC client and the vanilla tRPC client.
+ */
+function createBatchLink() {
+  return httpBatchLink({
+    url: `${getBaseUrl()}/api/trpc`,
+    transformer: superjson,
+    // Include credentials for cookie-based auth
+    fetch(url, options) {
+      return fetch(url, {
+        ...options,
+        credentials: "include",
+      });
+    },
+  });
+}
+
+/**
  * TRPC Provider component.
  * Wrap your app with this to enable tRPC hooks.
+ * Also initializes TanStack DB collections for normalized client-side state.
  *
  * @example
  * ```tsx
@@ -131,27 +154,43 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
     };
   }, [queryClient]);
 
+  // Create the React tRPC client (for hooks)
   const [trpcClient] = useState(() =>
     trpc.createClient({
-      links: [
-        httpBatchLink({
-          url: `${getBaseUrl()}/api/trpc`,
-          transformer: superjson,
-          // Include credentials for cookie-based auth
-          fetch(url, options) {
-            return fetch(url, {
-              ...options,
-              credentials: "include",
-            });
-          },
-        }),
-      ],
+      links: [createBatchLink()],
     })
   );
 
+  // Create a vanilla tRPC client (for collection queryFn calls)
+  // and initialize TanStack DB collections
+  const [collections] = useState<Collections>(() => {
+    const vanillaClient = createTRPCClient<AppRouter>({
+      links: [createBatchLink()],
+    });
+
+    return createCollections(queryClient, {
+      fetchSubscriptions: async () => {
+        // Fetch all subscriptions (unpaginated) for the eager collection
+        const result = await vanillaClient.subscriptions.list.query({});
+        return result.items;
+      },
+      fetchTags: async () => {
+        const result = await vanillaClient.tags.list.query();
+        return result.items;
+      },
+      fetchEntries: async () => {
+        // Phase 0: return empty array. In Phase 2, this will use on-demand
+        // sync with loadSubsetOptions to fetch paginated entries.
+        return [];
+      },
+    });
+  });
+
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <CollectionsProvider value={collections}>{children}</CollectionsProvider>
+      </QueryClientProvider>
     </trpc.Provider>
   );
 }
