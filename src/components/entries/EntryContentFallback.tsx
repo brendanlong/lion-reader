@@ -135,18 +135,19 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
               {/* Meta row: Source, Author, Date */}
               <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
                 <span className="font-medium">{source}</span>
-                {cachedEntry.author && (
-                  <>
-                    <span
-                      aria-hidden="true"
-                      className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
-                    >
-                      |
-                    </span>
-                    <span className="hidden sm:inline">by {cachedEntry.author}</span>
-                    <span className="sm:hidden">- {cachedEntry.author}</span>
-                  </>
-                )}
+                {cachedEntry.author &&
+                  cachedEntry.author.toLowerCase().trim() !== source.toLowerCase().trim() && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
+                      >
+                        |
+                      </span>
+                      <span className="hidden sm:inline">by {cachedEntry.author}</span>
+                      <span className="sm:hidden">- {cachedEntry.author}</span>
+                    </>
+                  )}
                 <span
                   aria-hidden="true"
                   className="hidden text-zinc-400 sm:inline dark:text-zinc-600"

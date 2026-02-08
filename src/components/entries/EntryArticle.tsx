@@ -116,7 +116,7 @@ export function EntryArticle({
             {/* Meta row: Source, Author, Date */}
             <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
               <span className="font-medium">{source}</span>
-              {author && (
+              {author && author.toLowerCase().trim() !== source.toLowerCase().trim() && (
                 <>
                   <span
                     aria-hidden="true"
