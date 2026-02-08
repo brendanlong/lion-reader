@@ -10,6 +10,7 @@ import { eq, and, isNull, desc } from "drizzle-orm";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { createApiToken, API_TOKEN_SCOPES, type ApiTokenScope } from "@/server/auth/api-token";
 import { apiTokens } from "@/server/db/schema";
+import { errors } from "../errors";
 
 // ============================================================================
 // Validation Schemas
@@ -114,7 +115,7 @@ export const apiTokensRouter = createTRPCRouter({
         .limit(1);
 
       if (!tokenInfo[0]) {
-        throw new Error("Failed to retrieve created token");
+        throw errors.tokenCreationFailed();
       }
 
       return {
@@ -145,7 +146,7 @@ export const apiTokensRouter = createTRPCRouter({
         .returning({ id: apiTokens.id });
 
       if (result.length === 0) {
-        throw new Error("Token not found or already revoked");
+        throw errors.tokenNotFound();
       }
 
       return { success: true };
