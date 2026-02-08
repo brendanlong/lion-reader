@@ -426,6 +426,7 @@ export function SummarizationApiKeySettings() {
                   models.map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.displayName}
+                      {model.id === defaultModelId ? " (default)" : ""}
                     </option>
                   ))
                 ) : (
