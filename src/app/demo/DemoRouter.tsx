@@ -350,7 +350,7 @@ function DemoRouterContent() {
                   href="/register"
                   className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md bg-zinc-900 px-6 font-medium text-white transition-colors hover:bg-zinc-800 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
-                  Get started
+                  Sign Up
                 </Link>
                 <Link
                   href="/login"
