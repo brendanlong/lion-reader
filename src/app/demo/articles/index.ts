@@ -5,6 +5,7 @@ import rssAtom from "./rss-atom";
 import jsonFeed from "./json-feed";
 import emailNewsletters from "./email-newsletters";
 import saveForLater from "./save-for-later";
+import fileUpload from "./file-upload";
 
 // Reading Experience
 import fullContent from "./full-content";
@@ -38,6 +39,7 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   jsonFeed,
   emailNewsletters,
   saveForLater,
+  fileUpload,
   // Reading Experience
   fullContent,
   appearance,
