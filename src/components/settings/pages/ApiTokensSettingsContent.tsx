@@ -12,34 +12,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
 import { SettingsListSkeleton } from "@/components/settings";
-
-/**
- * Format relative time ago
- */
-function formatTimeAgo(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSecs = Math.floor(diffMs / 1000);
-  const diffMins = Math.floor(diffSecs / 60);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffSecs < 60) {
-    return "Just now";
-  } else if (diffMins < 60) {
-    return `${diffMins} minute${diffMins === 1 ? "" : "s"} ago`;
-  } else if (diffHours < 24) {
-    return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
-  } else if (diffDays < 7) {
-    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
-  } else {
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: diffDays > 365 ? "numeric" : undefined,
-    });
-  }
-}
+import { formatRelativeTime } from "@/lib/format";
 
 /**
  * Get scope labels for display
@@ -350,7 +323,7 @@ export default function ApiTokensSettingsContent() {
                         })}
                       </span>
                       {token.lastUsedAt && (
-                        <span>Last used: {formatTimeAgo(new Date(token.lastUsedAt))}</span>
+                        <span>Last used: {formatRelativeTime(new Date(token.lastUsedAt))}</span>
                       )}
                       {token.expiresAt && (
                         <span>
@@ -418,8 +391,8 @@ export default function ApiTokensSettingsContent() {
                     </p>
                     <p className="ui-text-xs text-zinc-500 dark:text-zinc-500">
                       {token.revokedAt
-                        ? `Revoked ${formatTimeAgo(new Date(token.revokedAt))}`
-                        : `Expired ${formatTimeAgo(new Date(token.expiresAt!))}`}
+                        ? `Revoked ${formatRelativeTime(new Date(token.revokedAt))}`
+                        : `Expired ${formatRelativeTime(new Date(token.expiresAt!))}`}
                     </p>
                   </div>
                 </div>

@@ -8,7 +8,7 @@
 "use client";
 
 import { trpc } from "@/lib/trpc/client";
-import { getFeedDisplayName } from "@/lib/format";
+import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Alert } from "@/components/ui";
 import { SettingsListSkeleton } from "@/components/settings";
 
@@ -35,66 +35,6 @@ interface FeedStats {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Format a date relative to now (e.g., "2 hours ago", "Jan 15, 2024")
- */
-function formatRelativeDate(date: Date | null): string {
-  if (!date) return "Never";
-
-  const now = new Date();
-  const dateObj = new Date(date);
-  const diffMs = now.getTime() - dateObj.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffMins < 1) {
-    return "Just now";
-  } else if (diffMins < 60) {
-    return `${diffMins} minute${diffMins === 1 ? "" : "s"} ago`;
-  } else if (diffHours < 24) {
-    return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
-  } else if (diffDays === 1) {
-    return "Yesterday";
-  } else if (diffDays < 7) {
-    return `${diffDays} days ago`;
-  } else {
-    return dateObj.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  }
-}
-
-/**
- * Format a future date (for next fetch time)
- */
-function formatFutureDate(date: Date | null): string {
-  if (!date) return "Not scheduled";
-
-  const now = new Date();
-  const dateObj = new Date(date);
-  const diffMs = dateObj.getTime() - now.getTime();
-
-  // If in the past, it's scheduled to run soon
-  if (diffMs <= 0) {
-    return "Pending";
-  }
-
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffMins < 60) {
-    return `In ${diffMins} minute${diffMins === 1 ? "" : "s"}`;
-  } else if (diffHours < 24) {
-    return `In ${diffHours} hour${diffHours === 1 ? "" : "s"}`;
-  } else {
-    return `In ${diffDays} day${diffDays === 1 ? "" : "s"}`;
-  }
-}
 
 /**
  * Get status badge for feed
@@ -283,17 +223,23 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
             <StatItem
               icon={<ClockIcon />}
               label="Last fetch"
-              value={formatRelativeDate(feed.lastFetchedAt)}
+              value={
+                feed.lastFetchedAt ? formatRelativeTime(new Date(feed.lastFetchedAt)) : "Never"
+              }
             />
             <StatItem
               icon={<CalendarIcon />}
               label="Next fetch"
-              value={formatFutureDate(feed.nextFetchAt)}
+              value={formatFutureTime(feed.nextFetchAt)}
             />
             <StatItem
               icon={<RefreshIcon />}
               label="Last update"
-              value={formatRelativeDate(feed.lastEntriesUpdatedAt)}
+              value={
+                feed.lastEntriesUpdatedAt
+                  ? formatRelativeTime(new Date(feed.lastEntriesUpdatedAt))
+                  : "Never"
+              }
             />
           </div>
         </div>
