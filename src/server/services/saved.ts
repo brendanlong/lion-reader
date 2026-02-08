@@ -171,6 +171,87 @@ export function generateContentHash(title: string | null, content: string | null
 }
 
 // ============================================================================
+// Shared Insert Helper
+// ============================================================================
+
+interface InsertSavedEntryParams {
+  guid: string;
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  contentOriginal: string;
+  contentCleaned: string;
+  summary: string | null;
+  siteName: string | null;
+  imageUrl: string | null;
+  contentHash: string;
+}
+
+/**
+ * Insert a saved entry into the database and publish a new-entry event.
+ *
+ * Handles the shared boilerplate for both saveArticle and createUploadedArticle:
+ * entry insert, user_entries insert, SSE publish, and SavedArticle construction.
+ */
+async function insertSavedEntry(
+  db: typeof dbType,
+  userId: string,
+  savedFeedId: string,
+  params: InsertSavedEntryParams
+): Promise<SavedArticle> {
+  const now = new Date();
+  const entryId = generateUuidv7();
+
+  await db.insert(entries).values({
+    id: entryId,
+    feedId: savedFeedId,
+    type: "saved",
+    guid: params.guid,
+    url: params.url,
+    title: params.title,
+    author: params.author,
+    contentOriginal: params.contentOriginal,
+    contentCleaned: params.contentCleaned,
+    summary: params.summary,
+    siteName: params.siteName,
+    imageUrl: params.imageUrl,
+    publishedAt: null,
+    fetchedAt: now,
+    contentHash: params.contentHash,
+    spamScore: null,
+    isSpam: false,
+    listUnsubscribeMailto: null,
+    listUnsubscribeHttps: null,
+    listUnsubscribePost: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await db.insert(userEntries).values({
+    userId,
+    entryId,
+    read: false,
+    starred: false,
+  });
+
+  await publishNewEntry(savedFeedId, entryId, now, "saved");
+
+  return {
+    id: entryId,
+    url: params.url,
+    title: params.title,
+    siteName: params.siteName,
+    author: params.author,
+    imageUrl: params.imageUrl,
+    contentCleaned: params.contentCleaned,
+    excerpt: params.summary,
+    read: false,
+    starred: false,
+    savedAt: now,
+  };
+}
+
+// ============================================================================
 // Service Functions
 // ============================================================================
 
@@ -188,7 +269,6 @@ export async function saveArticle(
   userId: string,
   params: SaveArticleParams
 ): Promise<SavedArticle> {
-  const now = new Date();
   const normalizedUrl = normalizeUrl(params.url);
 
   // Get or create the user's saved feed
@@ -355,12 +435,7 @@ export async function saveArticle(
   // Compute content hash for narration deduplication
   const contentHash = generateContentHash(finalTitle, finalContentCleaned || html!);
 
-  // Create new saved article entry
-  const entryId = generateUuidv7();
-  await db.insert(entries).values({
-    id: entryId,
-    feedId: savedFeedId,
-    type: "saved",
+  const saved = await insertSavedEntry(db, userId, savedFeedId, {
     guid: normalizedUrl,
     url: normalizedUrl,
     title: finalTitle,
@@ -368,51 +443,19 @@ export async function saveArticle(
     contentOriginal: html!,
     contentCleaned: finalContentCleaned,
     summary: excerpt,
-    siteName: finalSiteName,
+    siteName: finalSiteName ?? null,
     imageUrl: metadata.imageUrl,
-    publishedAt: null,
-    fetchedAt: now,
     contentHash,
-    spamScore: null,
-    isSpam: false,
-    listUnsubscribeMailto: null,
-    listUnsubscribeHttps: null,
-    listUnsubscribePost: null,
-    createdAt: now,
-    updatedAt: now,
   });
-
-  // Create user_entries row
-  await db.insert(userEntries).values({
-    userId,
-    entryId,
-    read: false,
-    starred: false,
-  });
-
-  // Publish event to notify other browser windows/tabs
-  await publishNewEntry(savedFeedId, entryId, now, "saved");
 
   logger.info("Saved article via service", {
-    entryId,
+    entryId: saved.id,
     url: normalizedUrl,
     title: finalTitle,
     plugin: plugin?.name,
   });
 
-  return {
-    id: entryId,
-    url: normalizedUrl,
-    title: finalTitle,
-    siteName: finalSiteName ?? null,
-    author: finalAuthor,
-    imageUrl: metadata.imageUrl,
-    contentCleaned: finalContentCleaned,
-    excerpt,
-    read: false,
-    starred: false,
-    savedAt: now,
-  };
+  return saved;
 }
 
 /**
@@ -463,8 +506,6 @@ export async function createUploadedArticle(
   userId: string,
   params: CreateUploadedArticleParams
 ): Promise<SavedArticle> {
-  const now = new Date();
-
   // Get or create the user's saved feed
   const savedFeedId = await getOrCreateSavedFeed(db, userId);
 
@@ -473,68 +514,31 @@ export async function createUploadedArticle(
 
   // Generate a unique guid for uploaded articles (no URL)
   // Format: uploaded:{uuid} to distinguish from URL-based saved articles
-  const entryId = generateUuidv7();
-  const guid = `uploaded:${entryId}`;
+  const guid = `uploaded:${generateUuidv7()}`;
 
   // Compute content hash for narration deduplication
   const contentHash = generateContentHash(params.title, params.contentHtml);
 
-  // Create the entry
-  await db.insert(entries).values({
-    id: entryId,
-    feedId: savedFeedId,
-    type: "saved",
+  const saved = await insertSavedEntry(db, userId, savedFeedId, {
     guid,
-    url: null, // Uploaded articles don't have URLs
+    url: null,
     title: params.title,
     author: params.author ?? null,
-    contentOriginal: params.contentHtml, // Store processed content as original too
+    contentOriginal: params.contentHtml,
     contentCleaned: params.contentHtml,
     summary: excerpt,
     siteName: params.siteName,
     imageUrl: null,
-    publishedAt: null,
-    fetchedAt: now,
     contentHash,
-    spamScore: null,
-    isSpam: false,
-    listUnsubscribeMailto: null,
-    listUnsubscribeHttps: null,
-    listUnsubscribePost: null,
-    createdAt: now,
-    updatedAt: now,
   });
-
-  // Create user_entries row
-  await db.insert(userEntries).values({
-    userId,
-    entryId,
-    read: false,
-    starred: false,
-  });
-
-  // Publish event to notify other browser windows/tabs
-  await publishNewEntry(savedFeedId, entryId, now, "saved");
 
   logger.info("Created uploaded article", {
-    entryId,
+    entryId: saved.id,
     title: params.title,
     siteName: params.siteName,
   });
 
-  return {
-    id: entryId,
-    url: null,
-    title: params.title,
-    siteName: params.siteName,
-    author: params.author ?? null,
-    imageUrl: null,
-    contentCleaned: params.contentHtml,
-    excerpt,
-    read: false,
-    starred: false,
-    savedAt: now,
-  };
+  return saved;
 }
 
 /**
