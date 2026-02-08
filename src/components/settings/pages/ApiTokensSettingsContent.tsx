@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
+import { SettingsListSkeleton } from "@/components/settings";
 
 /**
  * Format relative time ago
@@ -289,14 +290,7 @@ export default function ApiTokensSettingsContent() {
         </h3>
         <div className="space-y-3">
           {tokensQuery.isLoading ? (
-            <>
-              {[1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="h-24 animate-pulse rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-                />
-              ))}
-            </>
+            <SettingsListSkeleton count={2} variant="card" />
           ) : tokensQuery.error ? (
             <Alert variant="error">Failed to load tokens. Please try again.</Alert>
           ) : activeTokens.length === 0 ? (

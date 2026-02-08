@@ -12,6 +12,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Input, Alert } from "@/components/ui";
+import { SettingsListSkeleton } from "@/components/settings";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
 
 // ============================================================================
@@ -105,14 +106,7 @@ function IngestAddressesSection() {
       <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         {/* Address List */}
         {addressesQuery.isLoading ? (
-          <div className="p-6">
-            {[1, 2].map((i) => (
-              <div
-                key={i}
-                className="mb-4 h-16 animate-pulse rounded bg-zinc-100 last:mb-0 dark:bg-zinc-800"
-              />
-            ))}
-          </div>
+          <SettingsListSkeleton count={2} height="h-16" />
         ) : addressesQuery.error ? (
           <div className="p-6">
             <Alert variant="error">Failed to load ingest addresses. Please try again.</Alert>

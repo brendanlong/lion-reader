@@ -13,3 +13,4 @@ export { IntegrationsSettings } from "./IntegrationsSettings";
 export { DiscordBotSettings } from "./DiscordBotSettings";
 export { AboutSection } from "./AboutSection";
 export { GroqApiKeySettings, SummarizationApiKeySettings } from "./ApiKeySettings";
+export { SettingsListSkeleton } from "./SettingsListSkeleton";

@@ -9,6 +9,7 @@
 
 import { trpc } from "@/lib/trpc/client";
 import { Alert } from "@/components/ui";
+import { SettingsListSkeleton } from "@/components/settings";
 
 // ============================================================================
 // Types
@@ -173,14 +174,7 @@ export default function FeedStatsSettingsContent() {
       {/* Feed Stats List */}
       <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         {statsQuery.isLoading ? (
-          <div className="p-6">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="mb-4 h-24 animate-pulse rounded bg-zinc-100 last:mb-0 dark:bg-zinc-800"
-              />
-            ))}
-          </div>
+          <SettingsListSkeleton />
         ) : statsQuery.error ? (
           <div className="p-6">
             <Alert variant="error">Failed to load feed statistics. Please try again.</Alert>

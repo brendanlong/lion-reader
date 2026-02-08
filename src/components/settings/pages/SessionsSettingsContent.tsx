@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
+import { SettingsListSkeleton } from "@/components/settings";
 
 /**
  * Parse user agent string to extract browser and platform info.
@@ -136,14 +137,7 @@ export default function SessionsSettingsContent() {
 
       <div className="space-y-3">
         {sessionsQuery.isLoading ? (
-          <>
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="h-24 animate-pulse rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-              />
-            ))}
-          </>
+          <SettingsListSkeleton variant="card" />
         ) : sessionsQuery.error ? (
           <Alert variant="error">Failed to load sessions. Please try again.</Alert>
         ) : sessionsQuery.data?.sessions.length === 0 ? (
