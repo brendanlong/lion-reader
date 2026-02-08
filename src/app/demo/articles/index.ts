@@ -16,7 +16,8 @@ import keyboardShortcuts from "./keyboard-shortcuts";
 // Organization & Search
 import tags from "./tags";
 import search from "./search";
-import scoring from "./scoring";
+// TODO Publish this once the feature is actually finished: https://github.com/brendanlong/lion-reader/issues/323
+// import scoring from "./scoring";
 import opml from "./opml";
 
 // Integrations & Sync
@@ -46,7 +47,7 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   // Organization & Search
   tags,
   search,
-  scoring,
+  // scoring,
   opml,
   // Integrations & Sync
   mcpServer,

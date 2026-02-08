@@ -1,5 +1,6 @@
 import { type DemoArticle } from "./types";
 
+// TODO Publish this once the feature is actually finished: https://github.com/brendanlong/lion-reader/issues/323
 const article: DemoArticle = {
   id: "scoring",
   subscriptionId: "organization",
