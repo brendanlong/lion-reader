@@ -10,7 +10,18 @@
 import { useState, useRef, useCallback, type ChangeEvent, type DragEvent } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Alert, UploadIcon, DocumentIcon } from "@/components/ui";
+import {
+  Button,
+  Alert,
+  UploadIcon,
+  DocumentIcon,
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui";
 
 // ============================================================================
 // Constants
@@ -176,110 +187,84 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       </button>
 
       {/* Upload Dialog */}
-      {isOpen && (
-        <>
-          {/* Backdrop */}
+      <Dialog isOpen={isOpen} onClose={handleClose} title="Upload File">
+        <DialogHeader>
+          <DialogTitle>Upload File</DialogTitle>
+          <DialogDescription>
+            Upload a document to save for later reading. Supported formats: Word (.docx), HTML, and
+            Markdown (.md).
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogBody>
+          {error && (
+            <Alert variant="error" className="mb-4">
+              {error}
+            </Alert>
+          )}
+
+          {/* Drop Zone */}
           <div
-            className="fixed inset-0 z-50 bg-black/50 transition-opacity"
-            onClick={handleClose}
-            aria-hidden="true"
-          />
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={handleBrowseClick}
+            className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+              isDragging
+                ? "border-zinc-500 bg-zinc-100 dark:border-zinc-400 dark:bg-zinc-800"
+                : selectedFile
+                  ? "border-green-500 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
+                  : "border-zinc-300 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={SUPPORTED_EXTENSIONS.join(",")}
+              onChange={handleInputChange}
+              className="hidden"
+            />
 
-          {/* Dialog */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="upload-dialog-title"
-            >
-              <h2
-                id="upload-dialog-title"
-                className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50"
-              >
-                Upload File
-              </h2>
-
-              <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
-                Upload a document to save for later reading. Supported formats: Word (.docx), HTML,
-                and Markdown (.md).
-              </p>
-
-              {error && (
-                <Alert variant="error" className="mb-4">
-                  {error}
-                </Alert>
-              )}
-
-              {/* Drop Zone */}
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={handleBrowseClick}
-                className={`mb-4 cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
-                  isDragging
-                    ? "border-zinc-500 bg-zinc-100 dark:border-zinc-400 dark:bg-zinc-800"
-                    : selectedFile
-                      ? "border-green-500 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
-                      : "border-zinc-300 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={SUPPORTED_EXTENSIONS.join(",")}
-                  onChange={handleInputChange}
-                  className="hidden"
-                />
-
-                {selectedFile ? (
-                  <div className="flex flex-col items-center">
-                    <DocumentIcon className="h-10 w-10 text-green-600 dark:text-green-500" />
-                    <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-50">
-                      {selectedFile.name}
-                    </p>
-                    <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-                      {formatFileSize(selectedFile.size)}
-                    </p>
-                    <p className="ui-text-xs mt-2 text-zinc-400 dark:text-zinc-500">
-                      Click or drop a different file to replace
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center">
-                    <UploadIcon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />
-                    <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-50">
-                      Drop file here or click to browse
-                    </p>
-                    <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-                      .docx, .html, .md up to 10MB
-                    </p>
-                  </div>
-                )}
+            {selectedFile ? (
+              <div className="flex flex-col items-center">
+                <DocumentIcon className="h-10 w-10 text-green-600 dark:text-green-500" />
+                <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-50">
+                  {selectedFile.name}
+                </p>
+                <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+                  {formatFileSize(selectedFile.size)}
+                </p>
+                <p className="ui-text-xs mt-2 text-zinc-400 dark:text-zinc-500">
+                  Click or drop a different file to replace
+                </p>
               </div>
-
-              {/* Actions */}
-              <div className="flex justify-end gap-3">
-                <Button
-                  variant="secondary"
-                  onClick={handleClose}
-                  disabled={uploadMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleUpload}
-                  disabled={!selectedFile || uploadMutation.isPending}
-                  loading={uploadMutation.isPending}
-                >
-                  Upload
-                </Button>
+            ) : (
+              <div className="flex flex-col items-center">
+                <UploadIcon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />
+                <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-50">
+                  Drop file here or click to browse
+                </p>
+                <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+                  .docx, .html, .md up to 10MB
+                </p>
               </div>
-            </div>
+            )}
           </div>
-        </>
-      )}
+        </DialogBody>
+
+        <DialogFooter>
+          <Button variant="secondary" onClick={handleClose} disabled={uploadMutation.isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUpload}
+            disabled={!selectedFile || uploadMutation.isPending}
+            loading={uploadMutation.isPending}
+          >
+            Upload
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </>
   );
 }

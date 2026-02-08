@@ -11,7 +11,16 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Input, Alert } from "@/components/ui";
+import {
+  Button,
+  Input,
+  Alert,
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui";
 import { SettingsListSkeleton } from "@/components/settings";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
 
@@ -247,42 +256,37 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
   return (
     <div className="p-4">
       {/* Delete Confirmation Dialog */}
-      {showDeleteConfirm && (
-        <>
-          <div
-            className="fixed inset-0 z-50 bg-black/50"
+      <Dialog
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        title="Delete Ingest Address"
+        size="sm"
+      >
+        <DialogHeader>
+          <DialogTitle>Delete Ingest Address</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete this address? Future emails sent to{" "}
+            <span className="font-medium">{address.email}</span> will be rejected. Existing feeds
+            and entries will not be affected.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="secondary"
             onClick={() => setShowDeleteConfirm(false)}
-          />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-              <h3 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                Delete Ingest Address
-              </h3>
-              <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
-                Are you sure you want to delete this address? Future emails sent to{" "}
-                <span className="font-medium">{address.email}</span> will be rejected. Existing
-                feeds and entries will not be affected.
-              </p>
-              <div className="mt-4 flex justify-end gap-3">
-                <Button
-                  variant="secondary"
-                  onClick={() => setShowDeleteConfirm(false)}
-                  disabled={deleteMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleDelete}
-                  loading={deleteMutation.isPending}
-                  className="bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+            disabled={deleteMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDelete}
+            loading={deleteMutation.isPending}
+            className="bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
+          >
+            Delete
+          </Button>
+        </DialogFooter>
+      </Dialog>
 
       {/* Main Row Content */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
