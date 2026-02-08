@@ -15,24 +15,31 @@ const article: DemoArticle = {
   contentHtml: `
     <h2>Save Articles from Discord</h2>
 
-    <p>The Lion Reader Discord bot lets you save articles without leaving Discord. When someone shares a link in a channel, just react to the message with the save emoji and the article is automatically saved to your Lion Reader account. The bot extracts URLs from message content, fetches the article, and adds it to your Saved section.</p>
+    <p>The Lion Reader Discord bot lets you save articles without leaving Discord. When someone shares a link in a channel, just react to the message with the save emoji and the article is automatically saved to your Lion Reader account. The bot extracts URLs from message content, fetches the article, and adds it to your Saved articles.</p>
 
     <h3>Custom Lion Reader Emojis</h3>
 
-    <p>The bot uses a set of custom Lion Reader emojis to communicate save results. These emojis are designed to match Lion Reader&rsquo;s branding and provide clear visual feedback right in Discord.</p>
+    <p>The bot uses a set of custom Lion Reader emojis to communicate save results.</p>
 
-    <div style="display: flex; gap: 2rem; align-items: flex-start; flex-wrap: wrap; margin: 1.5rem 0;">
+    <div style="display: flex; gap: 2rem; align-items: flex-start; justify-content: center; flex-wrap: wrap; margin: 1.5rem 0;">
       <div style="text-align: center;">
-        <img src="/emojis/saluting-lion-reader.png" alt="Saluting Lion Reader emoji" style="width: 64px; height: 64px;" />
+        <img src="/emojis/savetolionreader.png" alt="Save to Lion Reader emoji" style="display: block; margin: 0 auto; width: 64px; height: 64px;" />
+        <div style="margin-top: 0.5rem;"><strong>Save</strong></div>
+        <div><code>:savetolionreader:</code></div>
+      </div>
+      <div style="text-align: center;">
+        <img src="/emojis/saluting-lion-reader.png" alt="Saluting Lion Reader emoji" style="display: block; margin: 0 auto; width: 64px; height: 64px;" />
         <div style="margin-top: 0.5rem;"><strong>Success</strong></div>
         <div><code>:salutinglionreader:</code></div>
       </div>
       <div style="text-align: center;">
-        <img src="/emojis/crying-lion-reader.png" alt="Crying Lion Reader emoji" style="width: 64px; height: 64px;" />
+        <img src="/emojis/crying-lion-reader.png" alt="Crying Lion Reader emoji" style="display: block; margin: 0 auto; width: 64px; height: 64px;" />
         <div style="margin-top: 0.5rem;"><strong>Error</strong></div>
         <div><code>:cryinglionreader:</code></div>
       </div>
     </div>
+
+    <p>We recommend uploading the Lion Reader logo as a custom emoji named <code>:savetolionreader:</code> and using it as the save trigger instead of the default lion emoji.</p>
 
     <h3>Linking Your Account</h3>
 
@@ -43,15 +50,13 @@ const article: DemoArticle = {
       <li><strong>API token</strong> &mdash; Use the <code>/link</code> slash command with an API token generated from Settings &gt; API Tokens. This works even if you signed up with email or a different OAuth provider.</li>
     </ul>
 
-    <p>The bot checks OAuth account links first, then falls back to API tokens stored in Redis. If neither is found, reactions are silently ignored &mdash; the bot won&rsquo;t send error messages to users who haven&rsquo;t linked their accounts.</p>
-
     <h3>How It Works</h3>
 
     <ol>
       <li>React to any message containing a URL with the save emoji (default: <span style="font-size: 1.25rem;">&#x1F981;</span>)</li>
       <li>The bot extracts URLs from the message, filtering out Discord CDN links, Tenor, Giphy, and media file URLs</li>
       <li>Each URL is saved using the same <code>saveArticle</code> service as the web UI and MCP server</li>
-      <li>The bot reacts with <img src="/emojis/saluting-lion-reader.png" alt="saluting lion" style="width: 1.25em; height: 1.25em; vertical-align: middle;" /> on success or <span style="font-size: 1.25rem;">&#x1F63F;</span> on failure</li>
+      <li>The bot reacts with <img src="/emojis/saluting-lion-reader.png" alt="saluting lion" style="display: inline; margin: 0; width: 1.25em; height: 1.25em; vertical-align: middle;" /> on success or <img src="/emojis/crying-lion-reader.png" alt="crying lion" style="display: inline; margin: 0; width: 1.25em; height: 1.25em; vertical-align: middle;" /> on failure</li>
     </ol>
 
     <h3>Slash Commands</h3>
@@ -75,9 +80,9 @@ const article: DemoArticle = {
     <p>Server administrators can customize the bot&rsquo;s behavior through environment variables:</p>
 
     <ul>
-      <li><code>DISCORD_SAVE_EMOJI</code> &mdash; The emoji that triggers saving (default: <span style="font-size: 1.25rem;">&#x1F981;</span>)</li>
-      <li><code>DISCORD_SUCCESS_EMOJI</code> &mdash; Custom emoji name for successful saves (default: <code>salutinglionreader</code>)</li>
-      <li><code>DISCORD_ERROR_EMOJI</code> &mdash; Emoji for failed saves (default: <span style="font-size: 1.25rem;">&#x1F63F;</span>)</li>
+      <li><code>DISCORD_SAVE_EMOJI</code> &mdash; The emoji that triggers saving (default: <span style="font-size: 1.25rem;">&#x1F981;</span>). We recommend using <code>:savetolionreader:</code> with the Lion Reader logo emoji instead, but this must be configured for each server.</li>
+      <li><code>DISCORD_SUCCESS_EMOJI</code> &mdash; Custom emoji name for successful saves (default: <code>:salutinglionreader:</code>)</li>
+      <li><code>DISCORD_ERROR_EMOJI</code> &mdash; Custom emoji name for failed saves (default: <code>:cryinglionreader:</code>)</li>
     </ul>
 
     <p>The bot is built with <a href="https://discord.js.org/" target="_blank" rel="noopener noreferrer">discord.js</a> and runs as a standalone process alongside the main application server.</p>
