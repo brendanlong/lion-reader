@@ -75,6 +75,8 @@ function createAuthContext(userId: string): Context {
         groqApiKey: null,
         anthropicApiKey: null,
         summarizationModel: null,
+        summarizationMaxWords: null,
+        summarizationPrompt: null,
         createdAt: now,
         updatedAt: now,
       },

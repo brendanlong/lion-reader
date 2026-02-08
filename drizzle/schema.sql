@@ -95,7 +95,8 @@ CREATE TABLE public.entry_summaries (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     generated_at timestamp with time zone,
     error text,
-    error_at timestamp with time zone
+    error_at timestamp with time zone,
+    user_id uuid
 );
 
 CREATE TABLE public.feeds (
@@ -361,7 +362,12 @@ CREATE TABLE public.users (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     invite_id uuid,
-    show_spam boolean DEFAULT false NOT NULL
+    show_spam boolean DEFAULT false NOT NULL,
+    groq_api_key text,
+    anthropic_api_key text,
+    summarization_model text,
+    summarization_max_words integer,
+    summarization_prompt text
 );
 
 CREATE VIEW public.visible_entries AS
@@ -440,10 +446,10 @@ ALTER TABLE ONLY public.entry_score_predictions
     ADD CONSTRAINT entry_score_predictions_pkey PRIMARY KEY (user_id, entry_id);
 
 ALTER TABLE ONLY public.entry_summaries
-    ADD CONSTRAINT entry_summaries_content_hash_key UNIQUE (content_hash);
+    ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.entry_summaries
-    ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT entry_summaries_user_content_unique UNIQUE (user_id, content_hash);
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_pkey PRIMARY KEY (id);
@@ -691,6 +697,9 @@ ALTER TABLE ONLY public.entry_score_predictions
 
 ALTER TABLE ONLY public.entry_score_predictions
     ADD CONSTRAINT entry_score_predictions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.entry_summaries
+    ADD CONSTRAINT entry_summaries_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

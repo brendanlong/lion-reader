@@ -161,13 +161,16 @@ export function GroqApiKeySettings() {
 }
 
 /**
- * Anthropic API key and model settings for summarization.
+ * Anthropic API key, model, and summarization settings.
  */
 export function SummarizationApiKeySettings() {
   const utils = trpc.useUtils();
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const modelsQuery = trpc.summarization.listModels.useQuery(undefined, {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+  const defaultPromptQuery = trpc.summarization.defaultPrompt.useQuery(undefined, {
+    staleTime: 60 * 60 * 1000, // Cache for 1 hour (rarely changes)
   });
   const updatePreferences = trpc.users["me.updatePreferences"].useMutation({
     onSuccess: () => {
@@ -180,10 +183,17 @@ export function SummarizationApiKeySettings() {
 
   const [apiKey, setApiKey] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const [maxWordsInput, setMaxWordsInput] = useState("");
+  const [isEditingMaxWords, setIsEditingMaxWords] = useState(false);
+  const [promptInput, setPromptInput] = useState("");
+  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
 
   const hasKey = preferencesQuery.data?.hasAnthropicApiKey ?? false;
   const currentModel = preferencesQuery.data?.summarizationModel ?? null;
+  const currentMaxWords = preferencesQuery.data?.summarizationMaxWords ?? null;
+  const currentPrompt = preferencesQuery.data?.summarizationPrompt ?? null;
   const models = modelsQuery.data?.models ?? [];
+  const defaultPrompt = defaultPromptQuery.data?.prompt ?? "";
 
   const handleSave = useCallback(() => {
     updatePreferences.mutate(
@@ -233,6 +243,73 @@ export function SummarizationApiKeySettings() {
     },
     [updatePreferences]
   );
+
+  const handleMaxWordsSave = useCallback(() => {
+    const parsed = parseInt(maxWordsInput, 10);
+    if (isNaN(parsed) || parsed < 1) {
+      toast.error("Max words must be a positive number");
+      return;
+    }
+    updatePreferences.mutate(
+      { summarizationMaxWords: parsed },
+      {
+        onSuccess: () => {
+          toast.success("Max words updated");
+          setIsEditingMaxWords(false);
+        },
+        onError: (error) => {
+          toast.error("Failed to update max words", { description: error.message });
+        },
+      }
+    );
+  }, [maxWordsInput, updatePreferences]);
+
+  const handleMaxWordsReset = useCallback(() => {
+    updatePreferences.mutate(
+      { summarizationMaxWords: null },
+      {
+        onSuccess: () => {
+          toast.success("Max words reset to default");
+          setMaxWordsInput("");
+          setIsEditingMaxWords(false);
+        },
+        onError: (error) => {
+          toast.error("Failed to reset max words", { description: error.message });
+        },
+      }
+    );
+  }, [updatePreferences]);
+
+  const handlePromptSave = useCallback(() => {
+    updatePreferences.mutate(
+      { summarizationPrompt: promptInput || null },
+      {
+        onSuccess: () => {
+          toast.success("Custom prompt saved");
+          setIsEditingPrompt(false);
+        },
+        onError: (error) => {
+          toast.error("Failed to save prompt", { description: error.message });
+        },
+      }
+    );
+  }, [promptInput, updatePreferences]);
+
+  const handlePromptReset = useCallback(() => {
+    updatePreferences.mutate(
+      { summarizationPrompt: null },
+      {
+        onSuccess: () => {
+          toast.success("Prompt reset to default");
+          setPromptInput("");
+          setIsEditingPrompt(false);
+        },
+        onError: (error) => {
+          toast.error("Failed to reset prompt", { description: error.message });
+        },
+      }
+    );
+  }, [updatePreferences]);
 
   return (
     <section>
@@ -364,6 +441,164 @@ export function SummarizationApiKeySettings() {
               <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
                 Choose the Anthropic model used for generating article summaries. Sonnet models
                 offer the best balance of quality and cost.
+              </p>
+            </div>
+
+            {/* Max Words */}
+            <div>
+              <label
+                htmlFor="summarization-max-words"
+                className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Max words
+              </label>
+              {isEditingMaxWords ? (
+                <div className="space-y-3">
+                  <Input
+                    id="summarization-max-words"
+                    type="number"
+                    min={1}
+                    max={10000}
+                    placeholder="150"
+                    value={maxWordsInput}
+                    onChange={(e) => setMaxWordsInput(e.target.value)}
+                    disabled={updatePreferences.isPending}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleMaxWordsSave}
+                      loading={updatePreferences.isPending}
+                      disabled={!maxWordsInput.trim()}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setIsEditingMaxWords(false);
+                        setMaxWordsInput(currentMaxWords?.toString() ?? "");
+                      }}
+                      disabled={updatePreferences.isPending}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+                    {currentMaxWords ?? "150 (default)"}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setMaxWordsInput(currentMaxWords?.toString() ?? "");
+                      setIsEditingMaxWords(true);
+                    }}
+                  >
+                    Change
+                  </Button>
+                  {currentMaxWords !== null && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleMaxWordsReset}
+                      loading={updatePreferences.isPending}
+                    >
+                      Reset
+                    </Button>
+                  )}
+                </div>
+              )}
+              <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+                Maximum number of words for generated summaries.
+              </p>
+            </div>
+
+            {/* Custom Prompt */}
+            <div>
+              <label
+                htmlFor="summarization-prompt"
+                className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Custom prompt
+              </label>
+              {isEditingPrompt ? (
+                <div className="space-y-3">
+                  <textarea
+                    id="summarization-prompt"
+                    rows={10}
+                    placeholder={defaultPrompt}
+                    value={promptInput}
+                    onChange={(e) => setPromptInput(e.target.value)}
+                    disabled={updatePreferences.isPending}
+                    className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  />
+                  <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                    Available template variables:{" "}
+                    <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
+                      {"{{content}}"}
+                    </code>
+                    ,{" "}
+                    <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{{title}}"}</code>
+                    ,{" "}
+                    <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
+                      {"{{maxWords}}"}
+                    </code>
+                    . The response should be wrapped in{" "}
+                    <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"<summary>"}</code>{" "}
+                    tags.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handlePromptSave}
+                      loading={updatePreferences.isPending}
+                      disabled={!promptInput.trim()}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setIsEditingPrompt(false);
+                        setPromptInput(currentPrompt ?? "");
+                      }}
+                      disabled={updatePreferences.isPending}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+                    {currentPrompt ? "Custom prompt configured" : "Using default prompt"}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setPromptInput(currentPrompt ?? "");
+                      setIsEditingPrompt(true);
+                    }}
+                  >
+                    {currentPrompt ? "Edit" : "Customize"}
+                  </Button>
+                  {currentPrompt && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handlePromptReset}
+                      loading={updatePreferences.isPending}
+                    >
+                      Reset
+                    </Button>
+                  )}
+                </div>
+              )}
+              <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+                Override the default prompt sent to the AI model when generating summaries.
               </p>
             </div>
           </div>

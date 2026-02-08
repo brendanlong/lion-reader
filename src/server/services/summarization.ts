@@ -45,8 +45,12 @@ const MAX_OUTPUT_TOKENS = 1024;
 
 /**
  * Gets the configured max words for summaries.
+ * Priority: user setting > environment variable > default.
  */
-function getMaxWords(): number {
+function getMaxWords(userMaxWords?: number | null): number {
+  if (userMaxWords && userMaxWords > 0) {
+    return userMaxWords;
+  }
   const envValue = process.env.SUMMARIZATION_MAX_WORDS;
   if (envValue) {
     const parsed = parseInt(envValue, 10);
@@ -58,19 +62,18 @@ function getMaxWords(): number {
 }
 
 /**
- * Builds the user prompt for summarization.
+ * The default summarization prompt template.
+ * Exported for use in the frontend as a placeholder/default.
  */
-function buildSummarizationPrompt(content: string, title: string): string {
-  const maxWords = getMaxWords();
-  return `You will be summarizing content from a blog post or web page for display in an RSS reader app. Your goal is to create a concise, informative summary that captures the main points and helps readers quickly understand what the content is about.
+export const DEFAULT_SUMMARIZATION_PROMPT = `You will be summarizing content from a blog post or web page for display in an RSS reader app. Your goal is to create a concise, informative summary that captures the main points and helps readers quickly understand what the content is about.
 
 Here is the content to summarize:
 
 <content>
-${content}
+{{content}}
 </content>
 
-Your summary should be no longer than ${maxWords} words.
+Your summary should be no longer than {{maxWords}} words.
 
 Please follow these guidelines when creating your summary:
 
@@ -83,11 +86,29 @@ Please follow these guidelines when creating your summary:
 - Write in clear, straightforward language that is easy to scan quickly
 - Ensure the summary is self-contained and understandable without needing to read the full content
 - Format your summary using Markdown for better readability (use bullet points, bold text, etc. where appropriate)
-- Don't include a title (the article already has one: ${title})
+- Don't include a title (the article already has one: {{title}})
 
-Your summary must not exceed ${maxWords} words. If the content is very short and already concise, your summary may be shorter than the maximum length.
+Your summary must not exceed {{maxWords}} words. If the content is very short and already concise, your summary may be shorter than the maximum length.
 
 Write your summary inside <summary> tags.`;
+
+/**
+ * Builds the user prompt for summarization.
+ * Uses the user's custom prompt if provided, otherwise falls back to the default.
+ * Template variables: {{content}}, {{title}}, {{maxWords}}
+ */
+function buildSummarizationPrompt(
+  content: string,
+  title: string,
+  options?: { userMaxWords?: number | null; userPrompt?: string | null }
+): string {
+  const maxWords = getMaxWords(options?.userMaxWords);
+  const template = options?.userPrompt || DEFAULT_SUMMARIZATION_PROMPT;
+
+  return template
+    .replaceAll("{{content}}", content)
+    .replaceAll("{{title}}", title)
+    .replaceAll("{{maxWords}}", String(maxWords));
 }
 
 /**
@@ -176,7 +197,12 @@ export function prepareContentForSummarization(htmlContent: string): string {
 export async function generateSummary(
   content: string,
   title: string,
-  options?: { userApiKey?: string | null; userModel?: string | null }
+  options?: {
+    userApiKey?: string | null;
+    userModel?: string | null;
+    userMaxWords?: number | null;
+    userPrompt?: string | null;
+  }
 ): Promise<GenerateSummaryResult> {
   const client = getAnthropicClient(options?.userApiKey);
 
@@ -194,7 +220,10 @@ export async function generateSummary(
       messages: [
         {
           role: "user",
-          content: buildSummarizationPrompt(content, title),
+          content: buildSummarizationPrompt(content, title, {
+            userMaxWords: options?.userMaxWords,
+            userPrompt: options?.userPrompt,
+          }),
         },
       ],
     });

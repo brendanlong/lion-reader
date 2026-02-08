@@ -423,6 +423,8 @@ function SpamPreferenceSection() {
         hasGroqApiKey: old?.hasGroqApiKey ?? false,
         hasAnthropicApiKey: old?.hasAnthropicApiKey ?? false,
         summarizationModel: old?.summarizationModel ?? null,
+        summarizationMaxWords: old?.summarizationMaxWords ?? null,
+        summarizationPrompt: old?.summarizationPrompt ?? null,
       }));
 
       return { previousPrefs };
