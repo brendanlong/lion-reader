@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { GoogleIcon, SpinnerIcon } from "@/components/ui";
+import { GoogleIcon, SpinnerIcon } from "@/components/ui/icon-button";
 
 interface GoogleSignInButtonProps {
   /** Text to display on the button */

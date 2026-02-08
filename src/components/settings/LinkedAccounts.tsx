@@ -15,8 +15,9 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { useFormMessages } from "@/lib/hooks";
-import { Button, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui";
+import { useFormMessages } from "@/lib/hooks/useFormMessages";
+import { Button } from "@/components/ui/button";
+import { GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icon-button";
 import { SettingsSection } from "./SettingsSection";
 
 // ============================================================================

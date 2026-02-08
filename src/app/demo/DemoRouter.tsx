@@ -14,15 +14,15 @@
 import { useMemo, useEffect, useCallback, useRef, useState, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { ClientLink } from "@/components/ui/client-link";
+import { Button } from "@/components/ui/button";
 import {
-  ClientLink,
-  Button,
   SparklesIcon,
   StarIcon,
   StarFilledIcon,
   CircleIcon,
   CircleFilledIcon,
-} from "@/components/ui";
+} from "@/components/ui/icon-button";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { SWIPE_CONFIG } from "@/components/entries/EntryContentHelpers";

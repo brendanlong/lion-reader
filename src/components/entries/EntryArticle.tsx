@@ -8,7 +8,7 @@
  */
 
 import { type ReactNode, type CSSProperties, type RefObject } from "react";
-import { ExternalLinkIcon } from "@/components/ui";
+import { ExternalLinkIcon } from "@/components/ui/icon-button";
 import { getDomain } from "@/lib/format";
 import { formatDate } from "./EntryContentHelpers";
 import { EntryContentRenderer } from "./EntryContentRenderer";

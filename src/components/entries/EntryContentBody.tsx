@@ -31,8 +31,8 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
     node.setAttribute("loading", "lazy");
   }
 });
+import { Button } from "@/components/ui/button";
 import {
-  Button,
   StarIcon,
   StarFilledIcon,
   CircleIcon,
@@ -41,18 +41,16 @@ import {
   SparklesIcon,
   AlertIcon,
   ArrowLeftIcon,
-} from "@/components/ui";
-import { SummaryCard } from "@/components/summarization";
-import {
-  NarrationControls,
-  NarrationHighlightStyles,
-  useNarration,
-  useNarrationHighlight,
-} from "@/components/narration";
+} from "@/components/ui/icon-button";
+import { SummaryCard } from "@/components/summarization/SummaryCard";
+import { NarrationControls } from "@/components/narration";
+import { NarrationHighlightStyles } from "@/components/narration/NarrationHighlightStyles";
+import { useNarration } from "@/components/narration/useNarration";
+import { useNarrationHighlight } from "@/components/narration/useNarrationHighlight";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { useNarrationSettings } from "@/lib/narration/settings";
-import { useEntryTextStyles } from "@/lib/appearance";
-import { useImagePrefetch } from "@/lib/hooks";
+import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
+import { useImagePrefetch } from "@/lib/hooks/useImagePrefetch";
 import { SWIPE_CONFIG } from "./EntryContentHelpers";
 import { EntryArticle } from "./EntryArticle";
 import { VoteControls } from "./VoteControls";

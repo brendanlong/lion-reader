@@ -9,7 +9,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { EntryList, type ExternalQueryState } from "@/components/entries";
+import { EntryList, type ExternalQueryState } from "@/components/entries/EntryList";
 import { clientPush } from "@/lib/navigation";
 import { type DemoEntry } from "./data";
 import { useDemoState } from "./DemoStateContext";

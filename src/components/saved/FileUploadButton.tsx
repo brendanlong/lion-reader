@@ -10,18 +10,17 @@
 import { useState, useRef, useCallback, type ChangeEvent, type DragEvent } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
+import { UploadIcon, DocumentIcon } from "@/components/ui/icon-button";
 import {
-  Button,
-  Alert,
-  UploadIcon,
-  DocumentIcon,
   Dialog,
   DialogHeader,
   DialogTitle,
   DialogDescription,
   DialogBody,
   DialogFooter,
-} from "@/components/ui";
+} from "@/components/ui/dialog";
 
 // ============================================================================
 // Constants

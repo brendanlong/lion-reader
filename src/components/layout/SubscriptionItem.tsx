@@ -7,7 +7,8 @@
 
 "use client";
 
-import { IconButton, EditIcon, CloseIcon, ClientLink } from "@/components/ui";
+import { IconButton, EditIcon, CloseIcon } from "@/components/ui/icon-button";
+import { ClientLink } from "@/components/ui/client-link";
 
 // ============================================================================
 // Types

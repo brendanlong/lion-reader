@@ -19,7 +19,7 @@ import {
   MainScrollContainer,
 } from "@/components/layout/ScrollContainerContext";
 import { TRPCProvider } from "@/lib/trpc/provider";
-import { AppearanceProvider } from "@/lib/appearance";
+import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { DemoSidebar } from "./DemoSidebar";
 import { DemoRouter } from "./DemoRouter";
 import { DemoListSkeleton } from "./DemoListSkeleton";

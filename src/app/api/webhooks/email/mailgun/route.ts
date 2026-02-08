@@ -13,7 +13,7 @@
  */
 
 import { createHmac, timingSafeEqual } from "crypto";
-import { processInboundEmail, type InboundEmail } from "@/server/email";
+import { processInboundEmail, type InboundEmail } from "@/server/email/process-inbound";
 import { ingestConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
 import { parseFromAddress } from "@/server/email/parse-utils";

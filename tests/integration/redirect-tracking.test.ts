@@ -11,7 +11,7 @@ import { db } from "../../src/server/db";
 import { feeds, subscriptions, users, jobs } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
-import { ensureFeedJob, getJobPayload, claimFeedJob } from "../../src/server/jobs";
+import { ensureFeedJob, getJobPayload, claimFeedJob } from "../../src/server/jobs/queue";
 
 describe("Redirect Tracking", () => {
   // Clean up before each test

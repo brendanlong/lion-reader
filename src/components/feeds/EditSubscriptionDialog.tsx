@@ -10,19 +10,14 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { type Tag } from "@/lib/types";
-import {
-  Dialog,
-  DialogTitle,
-  DialogBody,
-  DialogFooter,
-  Button,
-  Input,
-  Alert,
-  CheckIcon,
-  ColorDot,
-  ClientLink,
-} from "@/components/ui";
+import type { Tag } from "@/lib/types/tag";
+import { Dialog, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
+import { CheckIcon } from "@/components/ui/icon-button";
+import { ColorDot } from "@/components/ui/color-picker";
+import { ClientLink } from "@/components/ui/client-link";
 
 // ============================================================================
 // Types

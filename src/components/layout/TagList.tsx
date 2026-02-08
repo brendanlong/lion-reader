@@ -9,10 +9,12 @@
 
 import { Suspense } from "react";
 import { usePathname } from "next/navigation";
-import { ClientLink } from "@/components/ui";
+import { ClientLink } from "@/components/ui/client-link";
 import { trpc } from "@/lib/trpc/client";
-import { useExpandedTags } from "@/lib/hooks";
-import { NavLinkWithIcon, ChevronDownIcon, ChevronRightIcon, ColorDot } from "@/components/ui";
+import { useExpandedTags } from "@/lib/hooks/useExpandedTags";
+import { NavLinkWithIcon } from "@/components/ui/nav-link";
+import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icon-button";
+import { ColorDot } from "@/components/ui/color-picker";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { TagSubscriptionList } from "./TagSubscriptionList";
 

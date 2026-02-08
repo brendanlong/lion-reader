@@ -27,13 +27,15 @@ import {
   handleEntryScoreChanged,
   setCounts,
   setBulkCounts,
+  applyOptimisticReadUpdate,
+  applyOptimisticStarredUpdate,
+} from "@/lib/cache/operations";
+import {
   updateEntriesReadStatus,
   updateEntryStarredStatus,
   updateEntriesInListCache,
   updateEntriesInAffectedListCaches,
-  applyOptimisticReadUpdate,
-  applyOptimisticStarredUpdate,
-} from "@/lib/cache";
+} from "@/lib/cache/entry-cache";
 
 /**
  * Entry type for routing.

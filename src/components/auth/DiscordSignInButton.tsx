@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { DiscordIcon, SpinnerIcon } from "@/components/ui";
+import { DiscordIcon, SpinnerIcon } from "@/components/ui/icon-button";
 
 interface DiscordSignInButtonProps {
   /** Text to display on the button */

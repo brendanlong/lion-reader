@@ -17,7 +17,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
-import { handleSyncEvent, type SyncEvent } from "@/lib/cache";
+import { handleSyncEvent, type SyncEvent } from "@/lib/cache/event-handlers";
 
 /**
  * Sync cursors for each entity type.

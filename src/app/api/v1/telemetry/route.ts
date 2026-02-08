@@ -24,7 +24,7 @@ import {
   trackNarrationHighlightActive,
   trackNarrationHighlightScroll,
   type EnhancedVoiceDownloadErrorType,
-} from "@/server/metrics";
+} from "@/server/metrics/metrics";
 
 // ============================================================================
 // Schemas

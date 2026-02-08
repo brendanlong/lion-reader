@@ -5,7 +5,7 @@
  * Handles loading, error, and success states with standard patterns.
  */
 
-import { Alert } from "@/components/ui";
+import { Alert } from "@/components/ui/alert";
 import type { ReactNode } from "react";
 
 // ============================================================================

@@ -7,7 +7,7 @@
  */
 
 import { type EntryArticleProps } from "@/components/entries/EntryArticle";
-import { type EntryListData } from "@/lib/hooks";
+import type { EntryListData } from "@/lib/hooks/types";
 import { DEMO_ARTICLES, type DemoArticle } from "./articles";
 
 // ============================================================================

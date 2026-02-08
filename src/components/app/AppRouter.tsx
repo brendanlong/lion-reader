@@ -12,7 +12,7 @@
 
 import { Suspense } from "react";
 import { usePathname } from "next/navigation";
-import { UnifiedEntriesContent } from "@/components/entries";
+import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
 import { UnifiedSettingsContent } from "@/components/settings/UnifiedSettingsContent";
 import { SubscribeContent } from "@/components/subscribe/SubscribeContent";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";

@@ -11,13 +11,8 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import {
-  useAppearance,
-  useEntryTextStyles,
-  type TextSize,
-  type TextJustification,
-  type FontFamily,
-} from "@/lib/appearance";
+import { useAppearance, useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
+import type { TextSize, TextJustification, FontFamily } from "@/lib/appearance/settings";
 
 interface OptionButtonProps<T extends string> {
   value: T;

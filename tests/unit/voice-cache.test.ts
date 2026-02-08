@@ -12,7 +12,11 @@ import { indexedDB } from "fake-indexeddb";
 vi.stubGlobal("window", { indexedDB });
 vi.stubGlobal("indexedDB", indexedDB);
 
-import { VoiceCache, STORAGE_LIMIT_BYTES, type VoiceCacheEntry } from "../../src/lib/narration";
+import {
+  VoiceCache,
+  STORAGE_LIMIT_BYTES,
+  type VoiceCacheEntry,
+} from "../../src/lib/narration/voice-cache";
 
 /**
  * Helper to create a test voice cache entry.

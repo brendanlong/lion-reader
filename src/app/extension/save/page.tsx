@@ -13,18 +13,14 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import {
-  validateSession,
-  createApiToken,
-  API_TOKEN_SCOPES,
-  createGoogleAuthUrl,
-  GOOGLE_DOCS_READONLY_SCOPE,
-} from "@/server/auth";
+import { validateSession } from "@/server/auth/session";
+import { createApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
+import { createGoogleAuthUrl, GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth/oauth/google";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
-import { createCaller } from "@/server/trpc";
+import { createCaller } from "@/server/trpc/root";
 import { ExtensionSaveClient } from "./client";
 
 // Both scopes are needed for full Google Docs support:

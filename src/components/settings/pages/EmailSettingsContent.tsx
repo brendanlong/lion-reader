@@ -11,17 +11,17 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 import {
-  Button,
-  Input,
-  Alert,
   Dialog,
   DialogHeader,
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui";
-import { SettingsListSkeleton } from "@/components/settings";
+} from "@/components/ui/dialog";
+import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
 
 // ============================================================================

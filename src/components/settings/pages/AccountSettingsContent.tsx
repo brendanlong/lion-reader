@@ -15,8 +15,12 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { clientReplace } from "@/lib/navigation";
-import { Button, Input, Alert } from "@/components/ui";
-import { LinkedAccounts, KeyboardShortcutsSettings, AboutSection } from "@/components/settings";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
+import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
+import { KeyboardShortcutsSettings } from "@/components/settings/KeyboardShortcutsSettings";
+import { AboutSection } from "@/components/settings/AboutSection";
 
 /**
  * Handles OAuth link success/error messages from query params.

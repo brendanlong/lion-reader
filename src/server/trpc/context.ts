@@ -7,13 +7,8 @@
 
 import { type FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { db, type Database } from "@/server/db";
-import {
-  validateSession,
-  validateApiToken,
-  type SessionData,
-  type ApiTokenData,
-  type ApiTokenScope,
-} from "@/server/auth";
+import { validateSession, type SessionData } from "@/server/auth/session";
+import { validateApiToken, type ApiTokenData, type ApiTokenScope } from "@/server/auth/api-token";
 
 // Re-export types for use in other modules
 /**

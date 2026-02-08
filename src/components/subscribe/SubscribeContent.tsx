@@ -12,9 +12,11 @@ import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionCreated } from "@/lib/cache";
+import { handleSubscriptionCreated } from "@/lib/cache/operations";
 import { clientPush } from "@/lib/navigation";
-import { Button, Input, Alert } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 
 // ============================================================================
 // Types

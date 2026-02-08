@@ -21,7 +21,7 @@
 
 import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
-import { validateSession } from "@/server/auth";
+import { validateSession } from "@/server/auth/session";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
 import {
   createSubscriberClient,

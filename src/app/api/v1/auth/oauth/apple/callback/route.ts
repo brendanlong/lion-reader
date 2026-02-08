@@ -16,7 +16,7 @@
 
 import { NextRequest } from "next/server";
 import { validateAppleCallback, isAppleOAuthEnabled } from "@/server/auth/oauth/apple";
-import { processOAuthCallback } from "@/server/auth";
+import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
   createSessionResponse,
   createErrorRedirect,

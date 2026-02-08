@@ -5,7 +5,7 @@
  * Uses the predefined TAG_COLORS palette.
  */
 
-import { TAG_COLORS } from "@/lib/types";
+import { TAG_COLORS } from "@/lib/types/tag";
 
 // ============================================================================
 // ColorDot Component

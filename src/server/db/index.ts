@@ -50,5 +50,3 @@ export const db = drizzle(pool, {
 });
 
 export type Database = typeof db;
-
-export * from "./schema";

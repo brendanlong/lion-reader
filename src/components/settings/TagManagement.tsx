@@ -14,17 +14,12 @@
 import { useState, Suspense } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { useFormMessages } from "@/lib/hooks";
-import { type Tag, TAG_COLORS, DEFAULT_TAG_COLOR } from "@/lib/types";
-import {
-  Button,
-  Input,
-  ChevronDownIcon,
-  EditIcon,
-  TrashIcon,
-  ColorPicker,
-  ColorDot,
-} from "@/components/ui";
+import { useFormMessages } from "@/lib/hooks/useFormMessages";
+import { type Tag, TAG_COLORS, DEFAULT_TAG_COLOR } from "@/lib/types/tag";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ChevronDownIcon, EditIcon, TrashIcon } from "@/components/ui/icon-button";
+import { ColorPicker, ColorDot } from "@/components/ui/color-picker";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { SettingsSection } from "./SettingsSection";
 

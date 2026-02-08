@@ -9,8 +9,9 @@
 
 import { createOpenApiFetchHandler } from "trpc-to-openapi";
 import { TRPCError } from "@trpc/server";
-import { appRouter, createContext } from "@/server/trpc";
-import { startHttpTimer } from "@/server/metrics";
+import { appRouter } from "@/server/trpc/root";
+import { createContext } from "@/server/trpc/context";
+import { startHttpTimer } from "@/server/metrics/metrics";
 
 /**
  * CORS headers for the /saved endpoint.

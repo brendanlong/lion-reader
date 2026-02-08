@@ -23,7 +23,7 @@ import {
   trackNarrationGenerated,
   trackNarrationGenerationError,
   startNarrationGenerationTimer,
-} from "@/server/metrics";
+} from "@/server/metrics/metrics";
 
 // ============================================================================
 // Constants

@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEntryTextStyles } from "@/lib/appearance";
+import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 
 /**
  * Sparkles icon for AI indicator.

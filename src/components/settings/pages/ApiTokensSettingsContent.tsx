@@ -10,8 +10,10 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { Button, Input, Alert } from "@/components/ui";
-import { SettingsListSkeleton } from "@/components/settings";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
+import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
 import { formatRelativeTime } from "@/lib/format";
 
 /**

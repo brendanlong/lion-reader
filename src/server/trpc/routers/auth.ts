@@ -20,23 +20,26 @@ import { errors } from "../errors";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { createSession, revokeSessionByToken } from "@/server/auth/session";
+import { getEnabledProviders } from "@/server/auth/oauth/config";
 import {
-  createSession,
-  revokeSessionByToken,
-  getEnabledProviders,
   createGoogleAuthUrl,
   validateGoogleCallback,
   isGoogleOAuthEnabled,
+  GOOGLE_DOCS_READONLY_SCOPE,
+} from "@/server/auth/oauth/google";
+import {
   createAppleAuthUrl,
   validateAppleCallback,
   isAppleOAuthEnabled,
+} from "@/server/auth/oauth/apple";
+import {
   createDiscordAuthUrl,
   validateDiscordCallback,
   isDiscordOAuthEnabled,
-  GOOGLE_DOCS_READONLY_SCOPE,
-  createUser,
-  processOAuthCallback,
-} from "@/server/auth";
+} from "@/server/auth/oauth/discord";
+import { createUser } from "@/server/auth/signup";
+import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import {
   DISCORD_BOT_ENABLED,

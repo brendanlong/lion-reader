@@ -8,15 +8,9 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import {
-  handleSubscriptionCreated,
-  handleSubscriptionDeleted,
-  handleNewEntry,
-  updateEntriesInListCache,
-  updateEntryMetadataInCache,
-  applySyncTagChanges,
-  removeSyncTags,
-} from "./index";
+import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "./operations";
+import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
+import { applySyncTagChanges, removeSyncTags } from "./count-cache";
 
 // ============================================================================
 // Event Types

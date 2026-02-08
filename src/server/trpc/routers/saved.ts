@@ -23,7 +23,7 @@ import { Parser } from "htmlparser2";
 import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, protectedProcedure, scopedProtectedProcedure } from "../trpc";
-import { API_TOKEN_SCOPES } from "@/server/auth";
+import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { markdownToHtml } from "@/server/markdown";
@@ -45,7 +45,7 @@ import {
   type GoogleDocsContent,
 } from "@/server/google/docs";
 import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
-import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth";
+import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth/oauth/google";
 import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
 import * as countsService from "@/server/services/counts";

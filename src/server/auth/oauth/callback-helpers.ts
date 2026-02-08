@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSession } from "@/server/auth";
+import { createSession } from "@/server/auth/session";
 import { db } from "@/server/db";
 
 // ============================================================================

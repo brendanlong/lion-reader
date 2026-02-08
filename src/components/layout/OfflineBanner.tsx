@@ -130,7 +130,7 @@ interface OfflineBannerProps {
   className?: string;
 }
 
-import { WifiOffIcon, WifiOnIcon } from "@/components/ui";
+import { WifiOffIcon, WifiOnIcon } from "@/components/ui/icon-button";
 
 /**
  * OfflineBanner component.

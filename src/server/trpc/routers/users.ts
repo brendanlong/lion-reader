@@ -11,7 +11,7 @@ import { eq, and, isNull, gt, desc } from "drizzle-orm";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
-import { revokeSession, invalidateUserSessionCaches } from "@/server/auth";
+import { revokeSession, invalidateUserSessionCaches } from "@/server/auth/session";
 import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 
 // ============================================================================

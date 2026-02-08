@@ -8,7 +8,8 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { Button, AlertIcon, SpinnerIcon, DefaultEmptyIcon } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { AlertIcon, SpinnerIcon, DefaultEmptyIcon } from "@/components/ui/icon-button";
 
 /**
  * Props for the EntryListEmpty component.

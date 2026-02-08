@@ -28,15 +28,15 @@
 
 import { useNarration } from "./useNarration";
 import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
+import { Button } from "@/components/ui/button";
 import {
-  Button,
   PlayIcon,
   PauseIcon,
   SpinnerIcon,
   SkipBackwardIcon,
   SkipForwardIcon,
   NarrationIcon,
-} from "@/components/ui";
+} from "@/components/ui/icon-button";
 
 /**
  * Props for the NarrationControls component.
