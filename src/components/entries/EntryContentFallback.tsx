@@ -26,7 +26,8 @@ import {
   ExternalLinkIcon,
 } from "@/components/ui";
 import { EntryContentSkeleton, ContentSkeleton } from "./EntryContentStates";
-import { formatDate, getDomain } from "./EntryContentHelpers";
+import { getDomain } from "@/lib/format";
+import { formatDate } from "./EntryContentHelpers";
 import { VoteControls } from "./VoteControls";
 
 interface EntryContentFallbackProps {

@@ -57,8 +57,6 @@ import { SWIPE_CONFIG } from "./EntryContentHelpers";
 import { EntryArticle } from "./EntryArticle";
 import { VoteControls } from "./VoteControls";
 
-export { getDomain } from "./EntryContentHelpers";
-
 /**
  * Props for the EntryContentBody component.
  */
