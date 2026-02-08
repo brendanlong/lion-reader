@@ -14,6 +14,7 @@ import { trpc } from "@/lib/trpc/client";
 import { handleSubscriptionDeleted } from "@/lib/cache";
 import { getFeedDisplayName } from "@/lib/format";
 import { Button, Alert } from "@/components/ui";
+import { SettingsListSkeleton } from "@/components/settings";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 
 // ============================================================================
@@ -148,14 +149,7 @@ export default function BrokenFeedsSettingsContent() {
       {/* Broken Feeds List */}
       <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         {brokenQuery.isLoading ? (
-          <div className="p-6">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="mb-4 h-24 animate-pulse rounded bg-zinc-100 last:mb-0 dark:bg-zinc-800"
-              />
-            ))}
-          </div>
+          <SettingsListSkeleton />
         ) : brokenQuery.error ? (
           <div className="p-6">
             <Alert variant="error">Failed to load broken feeds. Please try again.</Alert>

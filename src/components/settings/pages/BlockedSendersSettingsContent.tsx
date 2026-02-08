@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
+import { SettingsListSkeleton } from "@/components/settings";
 
 // ============================================================================
 // Types
@@ -75,14 +76,7 @@ export default function BlockedSendersSettingsContent() {
       {/* Blocked Senders List */}
       <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         {blockedQuery.isLoading ? (
-          <div className="p-6">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="mb-4 h-16 animate-pulse rounded bg-zinc-100 last:mb-0 dark:bg-zinc-800"
-              />
-            ))}
-          </div>
+          <SettingsListSkeleton count={3} height="h-16" />
         ) : blockedQuery.error ? (
           <div className="p-6">
             <Alert variant="error">Failed to load blocked senders. Please try again.</Alert>
