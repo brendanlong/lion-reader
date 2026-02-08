@@ -7,9 +7,7 @@
 
 "use client";
 
-import { GoogleSignInButton } from "./GoogleSignInButton";
-import { AppleSignInButton } from "./AppleSignInButton";
-import { DiscordSignInButton } from "./DiscordSignInButton";
+import { OAuthSignInButton } from "./OAuthSignInButton";
 
 interface OAuthButtonsProps {
   /** Whether this is for sign-in or sign-up (affects button labels) */
@@ -19,6 +17,8 @@ interface OAuthButtonsProps {
   /** Optional invite token for new user registration */
   inviteToken?: string;
 }
+
+const providers = ["google", "apple", "discord"] as const;
 
 /**
  * Renders all OAuth provider buttons.
@@ -32,21 +32,15 @@ export function OAuthButtons({ mode, onError, inviteToken }: OAuthButtonsProps) 
 
   return (
     <div className="space-y-3">
-      <GoogleSignInButton
-        label={`${labelPrefix} Google`}
-        onError={onError}
-        inviteToken={inviteToken}
-      />
-      <AppleSignInButton
-        label={`${labelPrefix} Apple`}
-        onError={onError}
-        inviteToken={inviteToken}
-      />
-      <DiscordSignInButton
-        label={`${labelPrefix} Discord`}
-        onError={onError}
-        inviteToken={inviteToken}
-      />
+      {providers.map((provider) => (
+        <OAuthSignInButton
+          key={provider}
+          provider={provider}
+          label={`${labelPrefix} ${provider.charAt(0).toUpperCase() + provider.slice(1)}`}
+          onError={onError}
+          inviteToken={inviteToken}
+        />
+      ))}
     </div>
   );
 }
