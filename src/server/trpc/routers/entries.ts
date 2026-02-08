@@ -249,6 +249,85 @@ async function getSubscriptionFeedIds(
 }
 
 // ============================================================================
+// Shared Select Fields
+// ============================================================================
+
+/**
+ * Fields to select when fetching a full entry from visibleEntries + feeds + subscriptions.
+ * Used by both `get` and `fetchFullContent` to avoid duplicating the 20+ field list.
+ */
+const fullEntrySelectFields = {
+  id: visibleEntries.id,
+  feedId: visibleEntries.feedId,
+  type: visibleEntries.type,
+  url: visibleEntries.url,
+  title: visibleEntries.title,
+  author: visibleEntries.author,
+  contentOriginal: visibleEntries.contentOriginal,
+  contentCleaned: visibleEntries.contentCleaned,
+  summary: visibleEntries.summary,
+  publishedAt: visibleEntries.publishedAt,
+  fetchedAt: visibleEntries.fetchedAt,
+  read: visibleEntries.read,
+  starred: visibleEntries.starred,
+  updatedAt: visibleEntries.updatedAt,
+  subscriptionId: visibleEntries.subscriptionId,
+  siteName: visibleEntries.siteName,
+  feedTitle: feeds.title,
+  feedUrl: feeds.url,
+  fullContentOriginal: visibleEntries.fullContentOriginal,
+  fullContentCleaned: visibleEntries.fullContentCleaned,
+  fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+  fullContentError: visibleEntries.fullContentError,
+  score: visibleEntries.score,
+  contentHash: visibleEntries.contentHash,
+  hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+  hasMarkedUnread: visibleEntries.hasMarkedUnread,
+  hasStarred: visibleEntries.hasStarred,
+  fetchFullContent: subscriptions.fetchFullContent,
+};
+
+/**
+ * Fetch a single full entry by ID for a user.
+ * Queries visibleEntries joined with feeds and subscriptions.
+ * Returns null if the entry is not found or not visible to the user.
+ */
+async function selectFullEntry(
+  db: typeof import("@/server/db").db,
+  userId: string,
+  entryId: string
+) {
+  const result = await db
+    .select(fullEntrySelectFields)
+    .from(visibleEntries)
+    .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
+    .where(and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+/**
+ * Transform a raw full entry row into the entryFullSchema shape.
+ * Computes implicitScore from the boolean signal flags and defaults fetchFullContent.
+ */
+function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { hasStarred, hasMarkedUnread, hasMarkedReadOnList, contentHash, ...rest } = row;
+  return {
+    ...rest,
+    implicitScore: entriesService.computeImplicitScore(
+      hasStarred,
+      hasMarkedUnread,
+      hasMarkedReadOnList,
+      row.type
+    ),
+    fetchFullContent: row.fetchFullContent ?? false,
+  };
+}
+
+// ============================================================================
 // Mutation Helpers
 // ============================================================================
 
@@ -439,87 +518,12 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Get the entry using visible_entries view with subscription data
-      // The view already enforces visibility and includes subscription_id
-      // We join with subscriptions to get fetchFullContent setting
-      const result = await ctx.db
-        .select({
-          id: visibleEntries.id,
-          feedId: visibleEntries.feedId,
-          type: visibleEntries.type,
-          url: visibleEntries.url,
-          title: visibleEntries.title,
-          author: visibleEntries.author,
-          contentOriginal: visibleEntries.contentOriginal,
-          contentCleaned: visibleEntries.contentCleaned,
-          summary: visibleEntries.summary,
-          publishedAt: visibleEntries.publishedAt,
-          fetchedAt: visibleEntries.fetchedAt,
-          read: visibleEntries.read,
-          starred: visibleEntries.starred,
-          updatedAt: visibleEntries.updatedAt,
-          subscriptionId: visibleEntries.subscriptionId,
-          siteName: visibleEntries.siteName,
-          feedTitle: feeds.title,
-          feedUrl: feeds.url,
-          fullContentOriginal: visibleEntries.fullContentOriginal,
-          fullContentCleaned: visibleEntries.fullContentCleaned,
-          fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
-          fullContentError: visibleEntries.fullContentError,
-          score: visibleEntries.score,
-          hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-          hasMarkedUnread: visibleEntries.hasMarkedUnread,
-          hasStarred: visibleEntries.hasStarred,
-          // Subscription fields - null for orphaned starred entries
-          fetchFullContent: subscriptions.fetchFullContent,
-        })
-        .from(visibleEntries)
-        .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-        .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
-        .where(and(eq(visibleEntries.id, input.id), eq(visibleEntries.userId, userId)))
-        .limit(1);
-
-      if (result.length === 0) {
+      const row = await selectFullEntry(ctx.db, userId, input.id);
+      if (!row) {
         throw errors.entryNotFound();
       }
 
-      const entry = result[0];
-
-      return {
-        entry: {
-          id: entry.id,
-          subscriptionId: entry.subscriptionId,
-          feedId: entry.feedId,
-          type: entry.type,
-          url: entry.url,
-          title: entry.title,
-          author: entry.author,
-          contentOriginal: entry.contentOriginal,
-          contentCleaned: entry.contentCleaned,
-          summary: entry.summary,
-          publishedAt: entry.publishedAt,
-          fetchedAt: entry.fetchedAt,
-          read: entry.read,
-          starred: entry.starred,
-          updatedAt: entry.updatedAt,
-          feedTitle: entry.feedTitle,
-          feedUrl: entry.feedUrl,
-          siteName: entry.siteName,
-          fullContentOriginal: entry.fullContentOriginal,
-          fullContentCleaned: entry.fullContentCleaned,
-          fullContentFetchedAt: entry.fullContentFetchedAt,
-          fullContentError: entry.fullContentError,
-          score: entry.score,
-          implicitScore: entriesService.computeImplicitScore(
-            entry.hasStarred,
-            entry.hasMarkedUnread,
-            entry.hasMarkedReadOnList,
-            entry.type
-          ),
-          // Subscription field - default for orphaned starred entries
-          fetchFullContent: entry.fetchFullContent ?? false,
-        },
-      };
+      return { entry: toFullEntry(row) };
     }),
 
   /**
@@ -1028,64 +1032,15 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       // First, verify the entry exists and user has access
-      const existingEntry = await ctx.db
-        .select({
-          id: visibleEntries.id,
-          feedId: visibleEntries.feedId,
-          type: visibleEntries.type,
-          url: visibleEntries.url,
-          title: visibleEntries.title,
-          author: visibleEntries.author,
-          contentOriginal: visibleEntries.contentOriginal,
-          contentCleaned: visibleEntries.contentCleaned,
-          contentHash: visibleEntries.contentHash,
-          summary: visibleEntries.summary,
-          publishedAt: visibleEntries.publishedAt,
-          fetchedAt: visibleEntries.fetchedAt,
-          read: visibleEntries.read,
-          starred: visibleEntries.starred,
-          updatedAt: visibleEntries.updatedAt,
-          subscriptionId: visibleEntries.subscriptionId,
-          siteName: visibleEntries.siteName,
-          fullContentOriginal: visibleEntries.fullContentOriginal,
-          fullContentCleaned: visibleEntries.fullContentCleaned,
-          fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
-          fullContentError: visibleEntries.fullContentError,
-          feedTitle: feeds.title,
-          feedUrl: feeds.url,
-          score: visibleEntries.score,
-          hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-          hasMarkedUnread: visibleEntries.hasMarkedUnread,
-          hasStarred: visibleEntries.hasStarred,
-          fetchFullContent: subscriptions.fetchFullContent,
-        })
-        .from(visibleEntries)
-        .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-        .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
-        .where(and(eq(visibleEntries.id, input.id), eq(visibleEntries.userId, userId)))
-        .limit(1);
+      const rawEntry = await selectFullEntry(ctx.db, userId, input.id);
 
-      if (existingEntry.length === 0) {
+      if (!rawEntry) {
         throw errors.entryNotFound();
       }
 
-      const rawEntry = existingEntry[0];
-      const implicitScore = entriesService.computeImplicitScore(
-        rawEntry.hasStarred,
-        rawEntry.hasMarkedUnread,
-        rawEntry.hasMarkedReadOnList,
-        rawEntry.type
-      );
-
-      // Strip boolean flags from the entry, compute implicitScore
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { hasMarkedReadOnList, hasMarkedUnread, hasStarred, contentHash, ...entryFields } =
-        rawEntry;
       const entry = {
-        ...entryFields,
-        implicitScore,
-        contentHash,
-        fetchFullContent: rawEntry.fetchFullContent ?? false,
+        ...toFullEntry(rawEntry),
+        contentHash: rawEntry.contentHash,
       };
 
       // Check if entry has a URL to fetch

@@ -47,6 +47,23 @@ const createTokenOutputSchema = z.object({
 });
 
 // ============================================================================
+// Shared Select Fields
+// ============================================================================
+
+/**
+ * Fields to select when returning API token info (excludes the raw token hash).
+ */
+const apiTokenSelectFields = {
+  id: apiTokens.id,
+  name: apiTokens.name,
+  scopes: apiTokens.scopes,
+  createdAt: apiTokens.createdAt,
+  expiresAt: apiTokens.expiresAt,
+  lastUsedAt: apiTokens.lastUsedAt,
+  revokedAt: apiTokens.revokedAt,
+};
+
+// ============================================================================
 // Router
 // ============================================================================
 
@@ -56,15 +73,7 @@ export const apiTokensRouter = createTRPCRouter({
    */
   list: protectedProcedure.output(z.array(apiTokenOutputSchema)).query(async ({ ctx }) => {
     const tokens = await ctx.db
-      .select({
-        id: apiTokens.id,
-        name: apiTokens.name,
-        scopes: apiTokens.scopes,
-        createdAt: apiTokens.createdAt,
-        expiresAt: apiTokens.expiresAt,
-        lastUsedAt: apiTokens.lastUsedAt,
-        revokedAt: apiTokens.revokedAt,
-      })
+      .select(apiTokenSelectFields)
       .from(apiTokens)
       .where(eq(apiTokens.userId, ctx.session.user.id))
       .orderBy(desc(apiTokens.createdAt));
@@ -99,15 +108,7 @@ export const apiTokensRouter = createTRPCRouter({
 
       // Fetch the token info (without the raw token)
       const tokenInfo = await ctx.db
-        .select({
-          id: apiTokens.id,
-          name: apiTokens.name,
-          scopes: apiTokens.scopes,
-          createdAt: apiTokens.createdAt,
-          expiresAt: apiTokens.expiresAt,
-          lastUsedAt: apiTokens.lastUsedAt,
-          revokedAt: apiTokens.revokedAt,
-        })
+        .select(apiTokenSelectFields)
         .from(apiTokens)
         .where(and(eq(apiTokens.userId, ctx.session.user.id), isNull(apiTokens.revokedAt)))
         .orderBy(desc(apiTokens.createdAt))
