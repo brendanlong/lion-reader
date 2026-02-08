@@ -243,6 +243,7 @@ function EntryContentInner({
     summarizationMutation.mutate({
       entryId,
       useFullContent: isShowingFullContent,
+      regenerate: true,
     });
   }, [summarizationMutation, entryId, isShowingFullContent]);
 

@@ -53,6 +53,11 @@ const generateInputSchema = z.object({
    * - `undefined`/omitted: Return cached summary if available, otherwise summarize feed content
    */
   useFullContent: z.boolean().optional(),
+  /**
+   * When true, skip the cache and regenerate the summary even if one exists.
+   * Used when the user explicitly clicks "Regenerate" (e.g., after changing model/settings).
+   */
+  regenerate: z.boolean().optional(),
 });
 
 // ============================================================================
@@ -254,8 +259,9 @@ export const summarizationRouter = createTRPCRouter({
         summaryRecord.modelId !== null && summaryRecord.modelId !== currentModelId;
       const settingsChanged = promptVersionChanged || modelChanged;
 
-      // Return cached summary if available and not stale (prompt version unchanged)
-      if (summaryRecord.summaryText && !promptVersionChanged) {
+      // Return cached summary if available and not stale (prompt version unchanged),
+      // unless the user explicitly requested regeneration
+      if (summaryRecord.summaryText && !promptVersionChanged && !input.regenerate) {
         return {
           summary: summaryRecord.summaryText,
           cached: true,
