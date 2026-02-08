@@ -8,6 +8,7 @@
 
 import { type Metadata } from "next";
 import { EntryArticle } from "@/components/entries/EntryArticle";
+import { defaultOpenGraph } from "@/lib/metadata";
 import { getDemoEntry, getDemoEntryArticleProps, getDemoTag } from "../../data";
 
 interface Props {
@@ -28,7 +29,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   return {
     title,
     description,
-    openGraph: { title, description },
+    openGraph: { ...defaultOpenGraph, title, description },
   };
 }
 

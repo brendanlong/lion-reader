@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
+import { defaultOpenGraph } from "@/lib/metadata";
 import { ThemeProvider } from "@/lib/theme";
 import "./globals.css";
 
@@ -45,9 +46,7 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-touch-icon.png",
   },
-  openGraph: {
-    images: [{ url: "/social-preview.png" }],
-  },
+  openGraph: defaultOpenGraph,
 };
 
 /**
