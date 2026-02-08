@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useFormMessages } from "@/lib/hooks";
@@ -25,6 +25,7 @@ import {
   ColorPicker,
   ColorDot,
 } from "@/components/ui";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { SettingsSection } from "./SettingsSection";
 
 // ============================================================================
@@ -41,28 +42,19 @@ interface EditingTag {
 // TagManagement Component
 // ============================================================================
 
-export function TagManagement() {
+function TagManagementContent() {
   const { error, success, showError, showSuccess } = useFormMessages();
 
-  // Fetch tags
-  const { data: tagsData, isLoading, error: queryError } = trpc.tags.list.useQuery();
+  // Use useSuspenseQuery to match the server-prefetched tags.list query,
+  // preventing hydration mismatches between loading/loaded states
+  const [tagsData] = trpc.tags.list.useSuspenseQuery();
 
-  const tags = tagsData?.items ?? [];
-
-  if (queryError) {
-    return (
-      <SettingsSection title="Tags" error="Failed to load tags">
-        <div />
-      </SettingsSection>
-    );
-  }
+  const tags = tagsData.items ?? [];
 
   return (
     <SettingsSection
       title="Tags"
       description="Create and manage tags to organize your feed subscriptions."
-      isLoading={isLoading}
-      skeletonRows={3}
       error={error}
       success={success}
     >
@@ -84,6 +76,32 @@ export function TagManagement() {
         )}
       </div>
     </SettingsSection>
+  );
+}
+
+function TagManagementError() {
+  return (
+    <SettingsSection title="Tags" error="Failed to load tags">
+      <div />
+    </SettingsSection>
+  );
+}
+
+function TagManagementSkeleton() {
+  return (
+    <SettingsSection title="Tags" isLoading skeletonRows={3}>
+      <div />
+    </SettingsSection>
+  );
+}
+
+export function TagManagement() {
+  return (
+    <ErrorBoundary fallback={<TagManagementError />}>
+      <Suspense fallback={<TagManagementSkeleton />}>
+        <TagManagementContent />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
