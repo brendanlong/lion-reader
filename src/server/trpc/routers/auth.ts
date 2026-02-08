@@ -91,6 +91,73 @@ const loginInputSchema = z.object({
 });
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Extract client info (user agent and IP address) from request headers.
+ */
+function getClientInfo(headers: Headers): {
+  userAgent: string | undefined;
+  ipAddress: string | undefined;
+} {
+  const userAgent = headers.get("user-agent") ?? undefined;
+  const ipAddress =
+    headers.get("x-forwarded-for")?.split(",")[0].trim() ?? headers.get("x-real-ip") ?? undefined;
+  return { userAgent, ipAddress };
+}
+
+/**
+ * Wrap an OAuth validation function with shared error handling.
+ * Catches errors and rethrows as appropriate tRPC errors.
+ */
+async function validateOAuthCallback<T>(validateFn: () => Promise<T>): Promise<T> {
+  try {
+    return await validateFn();
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes("Invalid or expired OAuth state")) {
+        throw errors.oauthStateInvalid();
+      }
+      throw errors.oauthCallbackFailed(error.message);
+    }
+    throw errors.oauthCallbackFailed("Unknown error");
+  }
+}
+
+/**
+ * Handle the common post-validation OAuth callback flow:
+ * create a session and return the standard response.
+ */
+async function handleOAuthCallback(
+  db: Parameters<typeof createSession>[0],
+  headers: Headers,
+  oauthResult: { userId: string; email: string; createdAt: Date; isNewUser: boolean }
+): Promise<{
+  user: { id: string; email: string; createdAt: Date };
+  sessionToken: string;
+  isNewUser: boolean;
+}> {
+  const { userAgent, ipAddress } = getClientInfo(headers);
+
+  const { token } = await createSession(db, {
+    userId: oauthResult.userId,
+    userAgent,
+    ipAddress,
+  });
+
+  return {
+    user: {
+      id: oauthResult.userId,
+      email: oauthResult.email,
+      createdAt: oauthResult.createdAt,
+    },
+    sessionToken: token,
+    isNewUser: oauthResult.isNewUser,
+  };
+}
+
+// ============================================================================
 // Router
 // ============================================================================
 
@@ -142,12 +209,7 @@ export const authRouter = createTRPCRouter({
       // Hash the password with argon2
       const passwordHash = await argon2.hash(password);
 
-      // Get client info from headers
-      const userAgent = ctx.headers.get("user-agent") ?? undefined;
-      const ipAddress =
-        ctx.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-        ctx.headers.get("x-real-ip") ??
-        undefined;
+      const { userAgent, ipAddress } = getClientInfo(ctx.headers);
 
       // Create user and session in a transaction
       const result = await ctx.db.transaction(async (tx) => {
@@ -234,12 +296,7 @@ export const authRouter = createTRPCRouter({
         throw errors.invalidCredentials();
       }
 
-      // Get client info from headers
-      const userAgent = ctx.headers.get("user-agent") ?? undefined;
-      const ipAddress =
-        ctx.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-        ctx.headers.get("x-real-ip") ??
-        undefined;
+      const { userAgent, ipAddress } = getClientInfo(ctx.headers);
 
       // Create new session
       const { token } = await createSession(ctx.db, {
@@ -389,23 +446,10 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Google");
       }
 
-      // Validate the OAuth callback
-      let googleResult;
-      try {
-        googleResult = await validateGoogleCallback(code, state);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message.includes("Invalid or expired OAuth state")) {
-            throw errors.oauthStateInvalid();
-          }
-          throw errors.oauthCallbackFailed(error.message);
-        }
-        throw errors.oauthCallbackFailed("Unknown error");
-      }
+      const googleResult = await validateOAuthCallback(() => validateGoogleCallback(code, state));
 
       const { userInfo, tokens, scopes, inviteToken } = googleResult;
 
-      // Process OAuth callback - handles existing accounts, linking, and new user creation
       const oauthResult = await processOAuthCallback({
         provider: "google",
         providerAccountId: userInfo.sub,
@@ -417,29 +461,7 @@ export const authRouter = createTRPCRouter({
         inviteToken,
       });
 
-      // Get client info from headers
-      const userAgent = ctx.headers.get("user-agent") ?? undefined;
-      const ipAddress =
-        ctx.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-        ctx.headers.get("x-real-ip") ??
-        undefined;
-
-      // Create session
-      const { token } = await createSession(ctx.db, {
-        userId: oauthResult.userId,
-        userAgent,
-        ipAddress,
-      });
-
-      return {
-        user: {
-          id: oauthResult.userId,
-          email: oauthResult.email,
-          createdAt: oauthResult.createdAt,
-        },
-        sessionToken: token,
-        isNewUser: oauthResult.isNewUser,
-      };
+      return handleOAuthCallback(ctx.db, ctx.headers, oauthResult);
     }),
 
   /**
@@ -562,19 +584,9 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Apple");
       }
 
-      // Validate the OAuth callback
-      let appleResult;
-      try {
-        appleResult = await validateAppleCallback(code, state, userDataInput);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message.includes("Invalid or expired OAuth state")) {
-            throw errors.oauthStateInvalid();
-          }
-          throw errors.oauthCallbackFailed(error.message);
-        }
-        throw errors.oauthCallbackFailed("Unknown error");
-      }
+      const appleResult = await validateOAuthCallback(() =>
+        validateAppleCallback(code, state, userDataInput)
+      );
 
       const { userInfo, firstAuthData, tokens, inviteToken } = appleResult;
 
@@ -582,7 +594,6 @@ export const authRouter = createTRPCRouter({
       // Apple always includes email in JWT on first auth, may not on subsequent auths
       const email = userInfo.email ?? firstAuthData?.email;
 
-      // Process OAuth callback - handles existing accounts, linking, and new user creation
       const oauthResult = await processOAuthCallback({
         provider: "apple",
         providerAccountId: userInfo.sub,
@@ -593,29 +604,7 @@ export const authRouter = createTRPCRouter({
         inviteToken,
       });
 
-      // Get client info from headers
-      const userAgent = ctx.headers.get("user-agent") ?? undefined;
-      const ipAddress =
-        ctx.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-        ctx.headers.get("x-real-ip") ??
-        undefined;
-
-      // Create session
-      const { token } = await createSession(ctx.db, {
-        userId: oauthResult.userId,
-        userAgent,
-        ipAddress,
-      });
-
-      return {
-        user: {
-          id: oauthResult.userId,
-          email: oauthResult.email,
-          createdAt: oauthResult.createdAt,
-        },
-        sessionToken: token,
-        isNewUser: oauthResult.isNewUser,
-      };
+      return handleOAuthCallback(ctx.db, ctx.headers, oauthResult);
     }),
 
   /**
@@ -714,23 +703,10 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Discord");
       }
 
-      // Validate the OAuth callback
-      let discordResult;
-      try {
-        discordResult = await validateDiscordCallback(code, state);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message.includes("Invalid or expired OAuth state")) {
-            throw errors.oauthStateInvalid();
-          }
-          throw errors.oauthCallbackFailed(error.message);
-        }
-        throw errors.oauthCallbackFailed("Unknown error");
-      }
+      const discordResult = await validateOAuthCallback(() => validateDiscordCallback(code, state));
 
       const { userInfo, tokens, inviteToken } = discordResult;
 
-      // Process OAuth callback - handles existing accounts, linking, and new user creation
       const oauthResult = await processOAuthCallback({
         provider: "discord",
         providerAccountId: userInfo.id,
@@ -741,29 +717,7 @@ export const authRouter = createTRPCRouter({
         inviteToken,
       });
 
-      // Get client info from headers
-      const userAgent = ctx.headers.get("user-agent") ?? undefined;
-      const ipAddress =
-        ctx.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-        ctx.headers.get("x-real-ip") ??
-        undefined;
-
-      // Create session
-      const { token } = await createSession(ctx.db, {
-        userId: oauthResult.userId,
-        userAgent,
-        ipAddress,
-      });
-
-      return {
-        user: {
-          id: oauthResult.userId,
-          email: oauthResult.email,
-          createdAt: oauthResult.createdAt,
-        },
-        sessionToken: token,
-        isNewUser: oauthResult.isNewUser,
-      };
+      return handleOAuthCallback(ctx.db, ctx.headers, oauthResult);
     }),
 
   /**
@@ -933,18 +887,7 @@ export const authRouter = createTRPCRouter({
       }
 
       // Validate the OAuth callback first (need userInfo to check account match)
-      let googleResult;
-      try {
-        googleResult = await validateGoogleCallback(code, state);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message.includes("Invalid or expired OAuth state")) {
-            throw errors.oauthStateInvalid();
-          }
-          throw errors.oauthCallbackFailed(error.message);
-        }
-        throw errors.oauthCallbackFailed("Unknown error");
-      }
+      const googleResult = await validateOAuthCallback(() => validateGoogleCallback(code, state));
 
       const { userInfo, tokens, scopes } = googleResult;
       const now = new Date();
@@ -1074,19 +1017,9 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthAlreadyLinked("Apple");
       }
 
-      // Validate the OAuth callback
-      let appleResult;
-      try {
-        appleResult = await validateAppleCallback(code, state, userDataInput);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message.includes("Invalid or expired OAuth state")) {
-            throw errors.oauthStateInvalid();
-          }
-          throw errors.oauthCallbackFailed(error.message);
-        }
-        throw errors.oauthCallbackFailed("Unknown error");
-      }
+      const appleResult = await validateOAuthCallback(() =>
+        validateAppleCallback(code, state, userDataInput)
+      );
 
       const { userInfo, tokens } = appleResult;
       const now = new Date();
@@ -1168,19 +1101,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthAlreadyLinked("Discord");
       }
 
-      // Validate the OAuth callback
-      let discordResult;
-      try {
-        discordResult = await validateDiscordCallback(code, state);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message.includes("Invalid or expired OAuth state")) {
-            throw errors.oauthStateInvalid();
-          }
-          throw errors.oauthCallbackFailed(error.message);
-        }
-        throw errors.oauthCallbackFailed("Unknown error");
-      }
+      const discordResult = await validateOAuthCallback(() => validateDiscordCallback(code, state));
 
       const { userInfo, tokens } = discordResult;
       const now = new Date();
