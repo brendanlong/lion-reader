@@ -10,16 +10,8 @@ import { eq, and, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
+import { uuidSchema } from "../validation";
 import { blockedSenders } from "@/server/db/schema";
-
-// ============================================================================
-// Validation Schemas
-// ============================================================================
-
-/**
- * UUID validation schema for blocked sender IDs.
- */
-const uuidSchema = z.string().uuid("Invalid blocked sender ID");
 
 // ============================================================================
 // Output Schemas

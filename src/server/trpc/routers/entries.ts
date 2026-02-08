@@ -15,6 +15,7 @@ import { createHash } from "crypto";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
+import { uuidSchema } from "../validation";
 import {
   entries,
   feeds,
@@ -44,11 +45,6 @@ const MAX_LIMIT = 100;
 // ============================================================================
 // Validation Schemas
 // ============================================================================
-
-/**
- * UUID validation schema for entry IDs.
- */
-const uuidSchema = z.string().uuid("Invalid entry ID");
 
 /**
  * Cursor validation schema (base64-encoded entry ID).

@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { uuidSchema } from "../validation";
 import * as tagsService from "@/server/services/tags";
 
 // ============================================================================
@@ -32,11 +33,6 @@ const tagColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, "Color must be a valid hex color (e.g., #ff6b6b)")
   .nullable();
-
-/**
- * UUID validation schema for tag IDs.
- */
-const uuidSchema = z.string().uuid("Invalid tag ID");
 
 // ============================================================================
 // Output Schemas
