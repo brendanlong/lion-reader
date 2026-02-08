@@ -280,29 +280,26 @@ export interface SummarizationModel {
 }
 
 /**
- * Derives alias model IDs from versioned IDs.
+ * Strips date suffixes from versioned model IDs, keeping only the first
+ * (newest) version of each model.
  *
- * The Anthropic API returns versioned IDs like "claude-sonnet-4-5-20250929" but
- * accepts shorter aliases like "claude-sonnet-4-5". We insert alias entries so
- * that default/user model IDs (which may be aliases) appear in the list.
+ * The Anthropic API returns versioned IDs like "claude-sonnet-4-5-20250929"
+ * but accepts shorter aliases like "claude-sonnet-4-5". Since the API returns
+ * models newest-first, we keep the first occurrence of each alias and drop
+ * subsequent versions.
  */
-export function addModelAliases(models: SummarizationModel[]): SummarizationModel[] {
-  const existingIds = new Set(models.map((m) => m.id));
+export function simplifyModelIds(models: SummarizationModel[]): SummarizationModel[] {
+  const seen = new Set<string>();
   const result: SummarizationModel[] = [];
 
   for (const model of models) {
-    // Match versioned IDs like "claude-sonnet-4-5-20250929" (date suffix).
-    // Insert an alias entry (e.g. "claude-sonnet-4-5") before the first
-    // versioned entry so the alias appears next to its versioned counterpart.
-    const match = model.id.match(/^(.+)-(\d{8})$/);
-    if (match) {
-      const alias = match[1];
-      if (!existingIds.has(alias)) {
-        result.push({ id: alias, displayName: `${model.displayName} (latest)` });
-        existingIds.add(alias);
-      }
+    const match = model.id.match(/^(.+)-\d{8}$/);
+    const alias = match ? match[1] : model.id;
+
+    if (!seen.has(alias)) {
+      seen.add(alias);
+      result.push({ id: alias, displayName: model.displayName });
     }
-    result.push(model);
   }
 
   return result;
@@ -330,7 +327,7 @@ export async function listModels(userApiKey?: string | null): Promise<Summarizat
         displayName: model.display_name,
       });
     }
-    return addModelAliases(models);
+    return simplifyModelIds(models);
   } catch (error) {
     logger.error("Failed to list Anthropic models", {
       error: error instanceof Error ? error.message : String(error),
