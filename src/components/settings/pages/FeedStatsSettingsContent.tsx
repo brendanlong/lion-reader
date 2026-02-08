@@ -8,6 +8,7 @@
 "use client";
 
 import { trpc } from "@/lib/trpc/client";
+import { getFeedDisplayName } from "@/lib/format";
 import { Alert } from "@/components/ui";
 
 // ============================================================================
@@ -92,23 +93,6 @@ function formatFutureDate(date: Date | null): string {
   } else {
     return `In ${diffDays} day${diffDays === 1 ? "" : "s"}`;
   }
-}
-
-/**
- * Get display name for a feed
- */
-function getFeedDisplayName(feed: FeedStats): string {
-  if (feed.customTitle) return feed.customTitle;
-  if (feed.title) return feed.title;
-  if (feed.url) {
-    try {
-      const url = new URL(feed.url);
-      return url.hostname;
-    } catch {
-      return feed.url;
-    }
-  }
-  return "Unknown Feed";
 }
 
 /**
