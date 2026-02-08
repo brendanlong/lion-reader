@@ -15,6 +15,7 @@ import { db, type Database } from "@/server/db";
 import { sessions, users, type User, type Session } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
+import { decryptApiKey } from "@/lib/encryption";
 
 // ============================================================================
 // Constants
@@ -298,6 +299,14 @@ export async function validateSession(token: string): Promise<SessionData | null
   }
 
   const sessionData = result[0];
+
+  // Decrypt API keys loaded from the database
+  if (sessionData.user.groqApiKey) {
+    sessionData.user.groqApiKey = decryptApiKey(sessionData.user.groqApiKey);
+  }
+  if (sessionData.user.anthropicApiKey) {
+    sessionData.user.anthropicApiKey = decryptApiKey(sessionData.user.anthropicApiKey);
+  }
 
   // Cache the result in Redis (if available)
   if (redis) {

@@ -12,6 +12,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import { revokeSession, invalidateUserSessionCaches } from "@/server/auth";
+import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 
 // ============================================================================
 // Schemas
@@ -321,6 +322,7 @@ export const usersRouter = createTRPCRouter({
     .output(
       z.object({
         showSpam: z.boolean(),
+        canConfigureApiKeys: z.boolean(),
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
         summarizationModel: z.string().nullable(),
@@ -331,6 +333,7 @@ export const usersRouter = createTRPCRouter({
       // Never expose raw API keys — only whether they are set
       return {
         showSpam: ctx.session.user.showSpam,
+        canConfigureApiKeys: isEncryptionConfigured(),
         hasGroqApiKey: !!ctx.session.user.groqApiKey,
         hasAnthropicApiKey: !!ctx.session.user.anthropicApiKey,
         summarizationModel: ctx.session.user.summarizationModel,
@@ -363,6 +366,7 @@ export const usersRouter = createTRPCRouter({
     .output(
       z.object({
         showSpam: z.boolean(),
+        canConfigureApiKeys: z.boolean(),
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
         summarizationModel: z.string().nullable(),
@@ -370,6 +374,16 @@ export const usersRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+
+      // Reject API key storage if encryption is not configured
+      const settingApiKey =
+        (input.groqApiKey !== undefined && input.groqApiKey !== "") ||
+        (input.anthropicApiKey !== undefined && input.anthropicApiKey !== "");
+      if (settingApiKey && !isEncryptionConfigured()) {
+        throw errors.validation(
+          "API key encryption is not configured on this server. Contact your administrator."
+        );
+      }
 
       // Build update object with only provided fields
       const updateData: {
@@ -387,11 +401,14 @@ export const usersRouter = createTRPCRouter({
       }
 
       if (input.groqApiKey !== undefined) {
-        updateData.groqApiKey = input.groqApiKey || null; // empty string → null
+        // empty string → null (clear key), otherwise encrypt
+        updateData.groqApiKey = input.groqApiKey ? encryptApiKey(input.groqApiKey) : null;
       }
 
       if (input.anthropicApiKey !== undefined) {
-        updateData.anthropicApiKey = input.anthropicApiKey || null;
+        updateData.anthropicApiKey = input.anthropicApiKey
+          ? encryptApiKey(input.anthropicApiKey)
+          : null;
       }
 
       if (input.summarizationModel !== undefined) {
@@ -418,6 +435,7 @@ export const usersRouter = createTRPCRouter({
 
       return {
         showSpam: updatedUser[0]?.showSpam ?? false,
+        canConfigureApiKeys: isEncryptionConfigured(),
         hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
         hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,

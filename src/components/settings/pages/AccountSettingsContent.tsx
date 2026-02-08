@@ -86,6 +86,23 @@ function OAuthMessages() {
   );
 }
 
+function ApiKeySettingsSections() {
+  const preferencesQuery = trpc.users["me.preferences"].useQuery();
+  const canConfigure = preferencesQuery.data?.canConfigureApiKeys ?? false;
+
+  if (preferencesQuery.isLoading || !canConfigure) return null;
+
+  return (
+    <>
+      {/* AI Text Processing (Groq API key) - near narration */}
+      <GroqApiKeySettings />
+
+      {/* Summaries (Anthropic API key + model) */}
+      <SummarizationApiKeySettings />
+    </>
+  );
+}
+
 function AccountInfoSection() {
   const userQuery = trpc.auth.me.useQuery();
 
@@ -369,14 +386,11 @@ export default function AccountSettingsContent() {
       {/* OPML Import/Export Section - fully static, no data fetching */}
       <OpmlImportExport />
 
-      {/* AI Text Processing (Groq API key) - near narration */}
-      <GroqApiKeySettings />
+      {/* AI API key settings - only shown when encryption is configured */}
+      <ApiKeySettingsSections />
 
       {/* Narration Section - fully static/client-side */}
       <NarrationSettings />
-
-      {/* Summaries (Anthropic API key + model) */}
-      <SummarizationApiKeySettings />
 
       {/* Keyboard Shortcuts Section - fully static */}
       <KeyboardShortcutsSettings />
