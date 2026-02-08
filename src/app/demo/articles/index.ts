@@ -24,6 +24,7 @@ import opml from "./opml";
 // Integrations & Sync
 import mcpServer from "./mcp-server";
 import discordBot from "./discord-bot";
+import browserExtension from "./browser-extension";
 import plugins from "./plugins";
 import websub from "./websub";
 import pwa from "./pwa";
@@ -55,6 +56,7 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   // Integrations & Sync
   mcpServer,
   discordBot,
+  browserExtension,
   plugins,
   websub,
   pwa,
