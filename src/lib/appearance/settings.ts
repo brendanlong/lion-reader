@@ -51,7 +51,7 @@ export interface AppearanceSettings {
 /**
  * Default appearance settings.
  */
-export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
+const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   textSize: "medium",
   textJustification: "left",
   fontFamily: "system",
@@ -71,7 +71,7 @@ const STORAGE_KEY = "lion-reader-appearance-settings";
  *
  * @returns The loaded appearance settings.
  */
-export function loadAppearanceSettings(): AppearanceSettings {
+function loadAppearanceSettings(): AppearanceSettings {
   if (typeof window === "undefined") {
     return DEFAULT_APPEARANCE_SETTINGS;
   }
@@ -117,7 +117,7 @@ export function loadAppearanceSettings(): AppearanceSettings {
  *
  * @param settings - The settings to save.
  */
-export function saveAppearanceSettings(settings: AppearanceSettings): void {
+function saveAppearanceSettings(settings: AppearanceSettings): void {
   if (typeof window === "undefined") {
     return;
   }

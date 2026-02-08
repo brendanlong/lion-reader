@@ -14,7 +14,6 @@ import {
   oauthRefreshTokens,
   oauthConsentGrants,
   users,
-  type OAuthClient,
   type User,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -440,36 +439,6 @@ export async function rotateRefreshToken(
   return newTokens;
 }
 
-/**
- * Revokes all tokens for a user-client pair.
- */
-export async function revokeClientTokens(userId: string, clientId: string): Promise<void> {
-  const now = new Date();
-
-  await Promise.all([
-    db
-      .update(oauthAccessTokens)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(oauthAccessTokens.userId, userId),
-          eq(oauthAccessTokens.clientId, clientId),
-          isNull(oauthAccessTokens.revokedAt)
-        )
-      ),
-    db
-      .update(oauthRefreshTokens)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(oauthRefreshTokens.userId, userId),
-          eq(oauthRefreshTokens.clientId, clientId),
-          isNull(oauthRefreshTokens.revokedAt)
-        )
-      ),
-  ]);
-}
-
 // ============================================================================
 // Consent Management
 // ============================================================================
@@ -527,76 +496,6 @@ export async function recordConsent(
         revokedAt: null, // Clear any previous revocation
       },
     });
-}
-
-/**
- * Revokes user consent for a client.
- */
-export async function revokeConsent(userId: string, clientId: string): Promise<void> {
-  await Promise.all([
-    db
-      .update(oauthConsentGrants)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId))),
-    revokeClientTokens(userId, clientId),
-  ]);
-}
-
-/**
- * Gets all active consent grants for a user.
- */
-export async function getUserConsents(userId: string) {
-  return db
-    .select()
-    .from(oauthConsentGrants)
-    .where(and(eq(oauthConsentGrants.userId, userId), isNull(oauthConsentGrants.revokedAt)));
-}
-
-// ============================================================================
-// Client Management
-// ============================================================================
-
-/**
- * Creates or updates an OAuth client (for pre-registration).
- */
-export async function upsertClient(client: {
-  clientId: string;
-  name: string;
-  redirectUris: string[];
-  grantTypes?: string[];
-  scopes?: string[];
-  isPublic?: boolean;
-  clientSecret?: string;
-}): Promise<OAuthClient> {
-  const clientSecretHash = client.clientSecret ? hashToken(client.clientSecret) : null;
-
-  const result = await db
-    .insert(oauthClients)
-    .values({
-      id: generateUuidv7(),
-      clientId: client.clientId,
-      name: client.name,
-      redirectUris: client.redirectUris,
-      grantTypes: client.grantTypes ?? ["authorization_code", "refresh_token"],
-      scopes: client.scopes,
-      isPublic: client.isPublic ?? true,
-      clientSecretHash,
-    })
-    .onConflictDoUpdate({
-      target: [oauthClients.clientId],
-      set: {
-        name: client.name,
-        redirectUris: client.redirectUris,
-        grantTypes: client.grantTypes ?? ["authorization_code", "refresh_token"],
-        scopes: client.scopes,
-        isPublic: client.isPublic ?? true,
-        clientSecretHash,
-        updatedAt: new Date(),
-      },
-    })
-    .returning();
-
-  return result[0];
 }
 
 // ============================================================================

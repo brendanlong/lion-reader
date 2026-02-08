@@ -14,35 +14,6 @@ export function getIssuer(): string {
 }
 
 /**
- * Get the authorization endpoint URL.
- */
-export function getAuthorizationEndpoint(): string {
-  return `${getIssuer()}/oauth/authorize`;
-}
-
-/**
- * Get the token endpoint URL.
- */
-export function getTokenEndpoint(): string {
-  return `${getIssuer()}/oauth/token`;
-}
-
-/**
- * Get the client registration endpoint URL (RFC 7591).
- */
-export function getRegistrationEndpoint(): string {
-  return `${getIssuer()}/oauth/register`;
-}
-
-/**
- * Get the MCP resource URL.
- * This is the resource identifier for the MCP API.
- */
-export function getMcpResource(): string {
-  return getIssuer();
-}
-
-/**
  * OAuth 2.0 Authorization Server Metadata (RFC 8414)
  * Used by /.well-known/oauth-authorization-server
  */

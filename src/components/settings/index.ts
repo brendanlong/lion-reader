@@ -12,8 +12,4 @@ export { BookmarkletSettings } from "./BookmarkletSettings";
 export { IntegrationsSettings } from "./IntegrationsSettings";
 export { DiscordBotSettings } from "./DiscordBotSettings";
 export { AboutSection } from "./AboutSection";
-export { SettingsSection } from "./SettingsSection";
 export { GroqApiKeySettings, SummarizationApiKeySettings } from "./ApiKeySettings";
-// Import directly from file to avoid barrel export pulling in piper-tts-web
-// which has Node.js-only code that breaks the client bundle
-export { NarrationSettings } from "@/components/narration/NarrationSettings";

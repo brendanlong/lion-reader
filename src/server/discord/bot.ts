@@ -489,11 +489,3 @@ async function addResultReaction(
     }
   }
 }
-
-export async function stopDiscordBot(): Promise<void> {
-  if (client) {
-    client.destroy();
-    client = null;
-    logger.info("Discord bot stopped");
-  }
-}

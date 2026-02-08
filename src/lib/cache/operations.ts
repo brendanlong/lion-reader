@@ -860,26 +860,6 @@ export async function applyOptimisticReadUpdate(
 }
 
 /**
- * Rolls back an optimistic read update.
- * Should be called in onError with the context from applyOptimisticReadUpdate.
- *
- * @param utils - tRPC utils for cache access
- * @param queryClient - React Query client for cache access
- * @param context - Context from applyOptimisticReadUpdate
- */
-export function rollbackOptimisticReadUpdate(
-  utils: TRPCClientUtils,
-  queryClient: QueryClient,
-  context: OptimisticReadContext
-): void {
-  for (const [entryId, prevState] of context.previousEntries) {
-    if (prevState !== undefined) {
-      updateEntriesReadStatus(utils, [entryId], prevState.read, queryClient);
-    }
-  }
-}
-
-/**
  * Context returned by optimistic starred update for rollback.
  */
 export interface OptimisticStarredContext {
@@ -916,20 +896,4 @@ export async function applyOptimisticStarredUpdate(
   updateEntryStarredStatus(utils, entryId, starred, queryClient);
 
   return { entryId, wasStarred };
-}
-
-/**
- * Rolls back an optimistic starred update.
- * Should be called in onError with the context from applyOptimisticStarredUpdate.
- *
- * @param utils - tRPC utils for cache access
- * @param queryClient - React Query client for cache access
- * @param context - Context from applyOptimisticStarredUpdate
- */
-export function rollbackOptimisticStarredUpdate(
-  utils: TRPCClientUtils,
-  queryClient: QueryClient,
-  context: OptimisticStarredContext
-): void {
-  updateEntryStarredStatus(utils, context.entryId, context.wasStarred, queryClient);
 }

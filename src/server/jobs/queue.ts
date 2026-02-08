@@ -556,35 +556,3 @@ export async function claimScoreTrainingJob(): Promise<Job | null> {
 
   return rowToJob(result.rows[0]);
 }
-
-/**
- * Ensures a training job exists for a user.
- * Idempotent - if a job already exists, returns it.
- *
- * @param userId The user ID
- * @param nextRunAt When the job should run (default: now)
- * @returns The job (created or existing)
- */
-export async function ensureScoreTrainingJob(userId: string, nextRunAt?: Date): Promise<Job> {
-  const now = new Date();
-  const runAt = nextRunAt ?? now;
-
-  // Check if job exists
-  const result = await db.execute<RawJobRow>(sql`
-    SELECT * FROM ${jobs}
-    WHERE type = 'train_score_model'
-      AND payload->>'userId' = ${userId}
-    LIMIT 1
-  `);
-
-  if (result.rows.length > 0) {
-    return rowToJob(result.rows[0]);
-  }
-
-  // Create new job
-  return createJob({
-    type: "train_score_model",
-    payload: { userId },
-    nextRunAt: runAt,
-  });
-}

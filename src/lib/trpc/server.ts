@@ -28,7 +28,7 @@ async function getSessionToken(): Promise<string | null> {
  * Creates a server-side tRPC context with session from cookies.
  * Cached per request to avoid redundant session validation.
  */
-export const createServerContext = cache(async (): Promise<Context> => {
+const createServerContext = cache(async (): Promise<Context> => {
   const sessionToken = await getSessionToken();
 
   if (!sessionToken) {
@@ -73,19 +73,10 @@ export const createServerContext = cache(async (): Promise<Context> => {
  * Uses the session from cookies for authentication.
  * Cached per request.
  */
-export const createServerCaller = cache(async () => {
+const createServerCaller = cache(async () => {
   const ctx = await createServerContext();
   return createCaller(ctx);
 });
-
-/**
- * Creates a QueryClient for server-side prefetching.
- * Uses React's cache() to share the QueryClient within a request,
- * ensuring client components during SSR see the prefetched data.
- *
- * Re-exports from query-client.ts for backwards compatibility.
- */
-export { getQueryClient as createServerQueryClient } from "./query-client";
 
 /**
  * Creates tRPC hydration helpers for RSC prefetching.

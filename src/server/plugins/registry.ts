@@ -3,7 +3,7 @@ import type { UrlPlugin, PluginCapabilities } from "./types";
 /**
  * Plugin registry with hostname-indexed lookup for O(1) performance.
  */
-export class PluginRegistry {
+class PluginRegistry {
   private hostIndex = new Map<string, UrlPlugin[]>();
 
   register(plugin: UrlPlugin): void {

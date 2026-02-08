@@ -70,7 +70,7 @@ export function detectFileType(filename: string): SupportedFileType | null {
 /**
  * Extracts a title from a filename by removing the extension.
  */
-export function titleFromFilename(filename: string): string {
+function titleFromFilename(filename: string): string {
   // Remove extension
   let title = filename.replace(/\.(docx|html?|md|markdown|txt)$/i, "");
 
@@ -232,13 +232,6 @@ export async function processUploadedFile(
       return processMarkdown(mdContent, filename);
     }
   }
-}
-
-/**
- * Gets the list of supported file extensions for display.
- */
-export function getSupportedExtensions(): string[] {
-  return [".docx", ".html", ".htm", ".md", ".markdown", ".txt"];
 }
 
 /**

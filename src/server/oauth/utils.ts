@@ -13,17 +13,17 @@ import crypto from "crypto";
 /**
  * Access token expiry in seconds (1 hour)
  */
-export const ACCESS_TOKEN_EXPIRY_SECONDS = 3600;
+const ACCESS_TOKEN_EXPIRY_SECONDS = 3600;
 
 /**
  * Refresh token expiry in days (30 days)
  */
-export const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 
 /**
  * Authorization code expiry in seconds (10 minutes)
  */
-export const AUTH_CODE_EXPIRY_SECONDS = 600;
+const AUTH_CODE_EXPIRY_SECONDS = 600;
 
 /**
  * Available OAuth scopes
@@ -217,18 +217,6 @@ export function getAuthCodeExpiry(): Date {
 // ============================================================================
 // Client ID Validation
 // ============================================================================
-
-/**
- * Checks if a client_id is a URL (for Client ID Metadata Documents).
- */
-export function isClientIdUrl(clientId: string): boolean {
-  try {
-    const url = new URL(clientId);
-    return url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
 
 // ============================================================================
 // Error Types
