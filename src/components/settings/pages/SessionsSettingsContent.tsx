@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button, Alert } from "@/components/ui";
 import { SettingsListSkeleton } from "@/components/settings";
+import { formatRelativeTime } from "@/lib/format";
 
 /**
  * Parse user agent string to extract browser and platform info.
@@ -51,34 +52,6 @@ function parseUserAgent(userAgent: string | null): { browser: string; platform: 
   }
 
   return { browser, platform };
-}
-
-/**
- * Format relative time ago
- */
-function formatTimeAgo(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSecs = Math.floor(diffMs / 1000);
-  const diffMins = Math.floor(diffSecs / 60);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffSecs < 60) {
-    return "Just now";
-  } else if (diffMins < 60) {
-    return `${diffMins} minute${diffMins === 1 ? "" : "s"} ago`;
-  } else if (diffHours < 24) {
-    return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
-  } else if (diffDays < 7) {
-    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
-  } else {
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: diffDays > 365 ? "numeric" : undefined,
-    });
-  }
 }
 
 export default function SessionsSettingsContent() {
@@ -210,7 +183,7 @@ export default function SessionsSettingsContent() {
                     </div>
 
                     <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
-                      <span>Last active: {formatTimeAgo(lastActive)}</span>
+                      <span>Last active: {formatRelativeTime(lastActive)}</span>
                       <span>
                         Created:{" "}
                         {new Date(session.createdAt).toLocaleDateString("en-US", {

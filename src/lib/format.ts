@@ -34,6 +34,35 @@ export function formatRelativeTime(date: Date): string {
 }
 
 /**
+ * Format a future date as a relative time string (e.g., "In 2 hours").
+ * Returns "Not scheduled" for null, "Pending" for past dates.
+ */
+export function formatFutureTime(date: Date | null): string {
+  if (!date) return "Not scheduled";
+
+  const now = new Date();
+  const dateObj = new Date(date);
+  const diffMs = dateObj.getTime() - now.getTime();
+
+  // If in the past, it's scheduled to run soon
+  if (diffMs <= 0) {
+    return "Pending";
+  }
+
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 60) {
+    return `In ${diffMins} minute${diffMins === 1 ? "" : "s"}`;
+  } else if (diffHours < 24) {
+    return `In ${diffHours} hour${diffHours === 1 ? "" : "s"}`;
+  } else {
+    return `In ${diffDays} day${diffDays === 1 ? "" : "s"}`;
+  }
+}
+
+/**
  * Extract domain from URL for display.
  */
 export function getDomain(url: string): string {

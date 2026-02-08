@@ -20,6 +20,7 @@ import {
   DialogFooter,
 } from "@/components/ui";
 import { SettingsListSkeleton } from "@/components/settings";
+import { formatRelativeTime } from "@/lib/format";
 
 // ============================================================================
 // Types
@@ -30,33 +31,6 @@ interface BlockedSender {
   senderEmail: string;
   blockedAt: Date;
   unsubscribeSentAt: Date | null;
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Format a date relative to now (e.g., "2 days ago", "Jan 15, 2024")
- */
-function formatRelativeDate(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - new Date(date).getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) {
-    return "Today";
-  } else if (diffDays === 1) {
-    return "Yesterday";
-  } else if (diffDays < 7) {
-    return `${diffDays} days ago`;
-  } else {
-    return new Date(date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  }
 }
 
 // ============================================================================
@@ -203,7 +177,7 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
 
           {/* Metadata */}
           <div className="ui-text-sm mt-1 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
-            <span>Blocked {formatRelativeDate(sender.blockedAt)}</span>
+            <span>Blocked {formatRelativeTime(sender.blockedAt)}</span>
             {sender.unsubscribeSentAt && (
               <span className="flex items-center gap-1">
                 <svg
