@@ -1,0 +1,4 @@
+- If you write a new article, ALWAYS have an Opus sub-agent explore the codebase and confirm that everything in the article is accurate
+- To generate a summary, use the real summary prompt from src/server/services/summarization.ts and pass it to a Sonnet subagent. Ask the agent for a 30-50 word summary (one paragraph).
+- Use the PR that implemented a feature as the article URL if possible
+- Use the date the feature was implemented as the article date
