@@ -75,13 +75,14 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Auth Queries
 
-| Query                | Used In                                                  | Description               |
-| -------------------- | -------------------------------------------------------- | ------------------------- |
-| `auth.me`            | `AppLayoutContent`, settings pages, `useRealtimeUpdates` | Current user info         |
-| `auth.providers`     | OAuth buttons, `LinkedAccounts`                          | Available OAuth providers |
-| `auth.googleAuthUrl` | `GoogleSignInButton`, `LinkedAccounts`                   | Google OAuth URL          |
-| `auth.appleAuthUrl`  | `AppleSignInButton`, `LinkedAccounts`                    | Apple OAuth URL           |
-| `auth.signupConfig`  | Login/Register pages                                     | Signup configuration      |
+| Query                 | Used In                                                  | Description               |
+| --------------------- | -------------------------------------------------------- | ------------------------- |
+| `auth.me`             | `AppLayoutContent`, settings pages, `useRealtimeUpdates` | Current user info         |
+| `auth.providers`      | OAuth buttons, `LinkedAccounts`                          | Available OAuth providers |
+| `auth.googleAuthUrl`  | `OAuthSignInButton`, `LinkedAccounts`                    | Google OAuth URL          |
+| `auth.appleAuthUrl`   | `OAuthSignInButton`, `LinkedAccounts`                    | Apple OAuth URL           |
+| `auth.discordAuthUrl` | `OAuthSignInButton`, `LinkedAccounts`                    | Discord OAuth URL         |
+| `auth.signupConfig`   | Login/Register pages                                     | Signup configuration      |
 
 ### Settings Queries
 
