@@ -14,8 +14,7 @@ import { trpc } from "@/lib/trpc/client";
 import { handleSubscriptionDeleted } from "@/lib/cache/operations";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
-import { Alert } from "@/components/ui/alert";
-import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
+import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 
 // ============================================================================
@@ -84,23 +83,16 @@ export default function BrokenFeedsSettingsContent() {
       </div>
 
       {/* Broken Feeds List */}
-      <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        {brokenQuery.isLoading ? (
-          <SettingsListSkeleton />
-        ) : brokenQuery.error ? (
-          <div className="p-6">
-            <Alert variant="error">Failed to load broken feeds. Please try again.</Alert>
-          </div>
-        ) : feeds.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {feeds.map((feed) => (
-              <BrokenFeedRow key={feed.feedId} feed={feed} onUnsubscribe={handleUnsubscribe} />
-            ))}
-          </div>
+      <SettingsListContainer
+        items={feeds}
+        isLoading={brokenQuery.isLoading}
+        error={brokenQuery.error}
+        errorMessage="Failed to load broken feeds. Please try again."
+        emptyState={<EmptyState />}
+        renderItem={(feed) => (
+          <BrokenFeedRow key={feed.feedId} feed={feed} onUnsubscribe={handleUnsubscribe} />
         )}
-      </div>
+      />
 
       {/* Unsubscribe Confirmation Dialog */}
       <UnsubscribeDialog

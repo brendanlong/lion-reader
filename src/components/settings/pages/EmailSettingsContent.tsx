@@ -21,7 +21,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
+import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
 
 // ============================================================================
@@ -112,78 +112,84 @@ function IngestAddressesSection() {
         <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">{addresses.length} / 5</span>
       </div>
 
-      <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        {/* Address List */}
-        {addressesQuery.isLoading ? (
-          <SettingsListSkeleton count={2} height="h-16" />
-        ) : addressesQuery.error ? (
-          <div className="p-6">
-            <Alert variant="error">Failed to load ingest addresses. Please try again.</Alert>
-          </div>
-        ) : addresses.length === 0 && !isCreating ? (
-          <div className="p-6 text-center">
-            <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-              No ingest addresses yet. Create one to start receiving newsletter emails.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {addresses.map((address) => (
-              <IngestAddressRow key={address.id} address={address} />
-            ))}
-          </div>
-        )}
-
-        {/* Create Form */}
-        {isCreating && (
-          <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-            {createError && (
-              <Alert variant="error" className="mb-4">
-                {createError}
-              </Alert>
+      <SettingsListContainer
+        items={addresses}
+        isLoading={addressesQuery.isLoading}
+        error={addressesQuery.error}
+        errorMessage="Failed to load ingest addresses. Please try again."
+        skeletonCount={2}
+        skeletonHeight="h-16"
+        emptyState={
+          isCreating ? (
+            <></>
+          ) : (
+            <div className="p-6 text-center">
+              <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+                No ingest addresses yet. Create one to start receiving newsletter emails.
+              </p>
+            </div>
+          )
+        }
+        renderItem={(address) => <IngestAddressRow key={address.id} address={address} />}
+        footer={
+          <>
+            {/* Create Form */}
+            {isCreating && (
+              <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
+                {createError && (
+                  <Alert variant="error" className="mb-4">
+                    {createError}
+                  </Alert>
+                )}
+                <div className="space-y-4">
+                  <Input
+                    id="new-address-label"
+                    label="Label (optional)"
+                    placeholder="e.g., Tech newsletters, Personal"
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                    disabled={createMutation.isPending}
+                  />
+                  <div className="flex gap-3">
+                    <Button
+                      variant="secondary"
+                      onClick={handleCancelCreate}
+                      disabled={createMutation.isPending}
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={handleCreate} loading={createMutation.isPending}>
+                      Create Address
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )}
-            <div className="space-y-4">
-              <Input
-                id="new-address-label"
-                label="Label (optional)"
-                placeholder="e.g., Tech newsletters, Personal"
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                disabled={createMutation.isPending}
-              />
-              <div className="flex gap-3">
-                <Button
-                  variant="secondary"
-                  onClick={handleCancelCreate}
-                  disabled={createMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleCreate} loading={createMutation.isPending}>
-                  Create Address
+
+            {/* Create Button */}
+            {!isCreating && addresses.length < 5 && (
+              <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
+                <Button variant="secondary" onClick={() => setIsCreating(true)}>
+                  <svg
+                    className="mr-2 h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                  Create New Address
                 </Button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Create Button */}
-        {!isCreating && addresses.length < 5 && (
-          <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-            <Button variant="secondary" onClick={() => setIsCreating(true)}>
-              <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-              Create New Address
-            </Button>
-          </div>
-        )}
-      </div>
+            )}
+          </>
+        }
+      />
     </section>
   );
 }
