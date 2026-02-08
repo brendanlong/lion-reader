@@ -23,6 +23,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
 import {
   handleEntryScoreChanged,
   setCounts,
@@ -159,6 +160,7 @@ interface EntryMutationTracking {
 export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
+  const collections = useCollections();
 
   // Track pending mutations per entry for timestamp-based state merging
   const entryTracking = useRef(new Map<string, EntryMutationTracking>());
@@ -331,7 +333,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
       );
 
       // Update counts (always apply, not dependent on timestamp)
-      setBulkCounts(utils, data.counts, queryClient);
+      setBulkCounts(utils, data.counts, queryClient, collections);
     },
 
     onError: (error, variables) => {
@@ -421,7 +423,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
       updateEntriesInListCache(queryClient, [data.entry.id], { starred: data.entry.starred });
 
       // Update counts (always apply)
-      setCounts(utils, data.counts, queryClient);
+      setCounts(utils, data.counts, queryClient, collections);
     },
 
     onError: (error, variables) => {

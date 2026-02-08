@@ -169,15 +169,7 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
     });
 
     return createCollections(queryClient, {
-      fetchSubscriptions: async () => {
-        // Fetch all subscriptions (unpaginated) for the eager collection
-        const result = await vanillaClient.subscriptions.list.query({});
-        return result.items;
-      },
-      fetchTags: async () => {
-        const result = await vanillaClient.tags.list.query();
-        return result.items;
-      },
+      fetchTagsAndUncategorized: () => vanillaClient.tags.list.query(),
       fetchEntries: async () => {
         // Phase 0: return empty array. In Phase 2, this will use on-demand
         // sync with loadSubsetOptions to fetch paginated entries.

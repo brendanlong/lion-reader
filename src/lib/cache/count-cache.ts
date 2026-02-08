@@ -7,6 +7,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
+import type { Collections } from "@/lib/collections";
 
 /**
  * Full subscription type as returned by subscriptions.list/get.
@@ -137,8 +138,15 @@ function forEachCachedSubscription(
 export function findCachedSubscription(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  subscriptionId: string
+  subscriptionId: string,
+  collections?: Collections | null
 ): CachedSubscription | undefined {
+  // Check TanStack DB collection first (synchronous, has all data)
+  if (collections) {
+    const sub = collections.subscriptions.get(subscriptionId);
+    if (sub) return sub as CachedSubscription;
+  }
+
   // Check the unparameterized query first (cheaper lookup)
   const listData = utils.subscriptions.list.getData();
   if (listData) {

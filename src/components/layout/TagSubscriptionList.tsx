@@ -4,12 +4,17 @@
  * Renders subscriptions within a tag section using infinite scrolling.
  * Subscriptions are fetched per-tag (or uncategorized) when the section is expanded,
  * with more pages loaded automatically as the user scrolls.
+ *
+ * Loaded subscriptions are also written into the TanStack DB subscriptions collection
+ * for fast lookups and optimistic updates elsewhere in the app.
  */
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
+import { upsertSubscriptionsInCollection } from "@/lib/collections/writes";
 import { SubscriptionItem } from "./SubscriptionItem";
 
 interface TagSubscriptionListProps {
@@ -41,6 +46,7 @@ export function TagSubscriptionList({
   onUnsubscribe,
 }: TagSubscriptionListProps) {
   const sentinelRef = useRef<HTMLLIElement>(null);
+  const collections = useCollections();
 
   const subscriptionsQuery = trpc.subscriptions.list.useInfiniteQuery(
     { tagId, uncategorized, limit: 50 },
@@ -49,9 +55,19 @@ export function TagSubscriptionList({
     }
   );
 
-  const allSubscriptions = subscriptionsQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  const allSubscriptions = useMemo(
+    () => subscriptionsQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    [subscriptionsQuery.data]
+  );
 
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = subscriptionsQuery;
+
+  // Write loaded subscriptions into the TanStack DB collection for fast lookups
+  useEffect(() => {
+    if (allSubscriptions.length > 0) {
+      upsertSubscriptionsInCollection(collections, allSubscriptions);
+    }
+  }, [collections, allSubscriptions]);
 
   // Infinite scroll: observe sentinel element to load more
   useEffect(() => {

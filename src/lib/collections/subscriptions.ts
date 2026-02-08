@@ -1,36 +1,32 @@
 /**
  * Subscriptions Collection
  *
- * Eager-synced collection of user subscriptions.
- * Small dataset (<1000 items), needed everywhere (sidebar, entry views).
- * Loads all subscriptions upfront via a single query.
+ * Local-only collection of user subscriptions.
+ * Populated incrementally as sidebar tag sections load pages via useInfiniteQuery,
+ * and by SSE/sync events (addSubscriptionToCollection, removeSubscriptionFromCollection).
+ *
+ * Used for:
+ * - Fast synchronous lookups by ID (collection.get(id))
+ * - Optimistic unread count updates (writeUpdate)
+ * - findCachedSubscription fallback
  */
 
-import { createCollection } from "@tanstack/react-db";
-import { queryCollectionOptions } from "@tanstack/query-db-collection";
-import type { QueryClient } from "@tanstack/react-query";
+import { createCollection, localOnlyCollectionOptions } from "@tanstack/react-db";
 import type { Subscription } from "./types";
 
 /**
- * Creates the subscriptions collection backed by TanStack Query.
+ * Creates the subscriptions collection as a local-only store.
  *
- * Uses `select` to extract the `items` array from the paginated response.
- * The queryKey matches what tRPC uses for `subscriptions.list` with no params,
- * so the collection automatically picks up data prefetched by SSR.
- *
- * @param queryClient - The shared QueryClient instance
- * @param fetchSubscriptions - Function to fetch all subscriptions from the API
+ * Unlike query-backed collections, this doesn't fetch data automatically.
+ * Data flows in from:
+ * 1. TagSubscriptionList useInfiniteQuery pages (via writeInsert/writeUpdate)
+ * 2. SSE subscription_created events (via addSubscriptionToCollection)
+ * 3. SSE subscription_deleted events (via removeSubscriptionFromCollection)
  */
-export function createSubscriptionsCollection(
-  queryClient: QueryClient,
-  fetchSubscriptions: () => Promise<Subscription[]>
-) {
+export function createSubscriptionsCollection() {
   return createCollection(
-    queryCollectionOptions({
+    localOnlyCollectionOptions({
       id: "subscriptions",
-      queryKey: ["subscriptions", "listAll"] as const,
-      queryFn: fetchSubscriptions,
-      queryClient,
       getKey: (item: Subscription) => item.id,
     })
   );

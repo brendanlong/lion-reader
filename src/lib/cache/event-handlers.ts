@@ -8,9 +8,15 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
+import type { Collections } from "@/lib/collections";
 import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "./operations";
 import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
 import { applySyncTagChanges, removeSyncTags } from "./count-cache";
+import {
+  addTagToCollection,
+  updateTagInCollection,
+  removeTagFromCollection,
+} from "@/lib/collections/writes";
 
 // ============================================================================
 // Event Types
@@ -176,13 +182,14 @@ export type SyncEvent =
 export function handleSyncEvent(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  event: SyncEvent
+  event: SyncEvent,
+  collections?: Collections | null
 ): void {
   switch (event.type) {
     case "new_entry":
       // Update unread counts without invalidating entries.list
       if (event.feedType) {
-        handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient);
+        handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient, collections);
       }
       break;
 
@@ -227,7 +234,8 @@ export function handleSyncEvent(
           tags: subscription.tags,
           fetchFullContent: false,
         },
-        queryClient
+        queryClient,
+        collections
       );
       break;
     }
@@ -235,26 +243,32 @@ export function handleSyncEvent(
     case "subscription_deleted":
       // Check if already removed (optimistic update from same tab)
       {
+        // Check both the old cache and the TanStack DB collection
         const currentData = utils.subscriptions.list.getData();
-        const alreadyRemoved =
+        const alreadyRemovedFromCache =
           currentData && !currentData.items.some((s) => s.id === event.subscriptionId);
+        const alreadyRemovedFromCollection =
+          collections && !collections.subscriptions.has(event.subscriptionId);
 
-        if (!alreadyRemoved) {
-          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient);
+        if (!alreadyRemovedFromCache || !alreadyRemovedFromCollection) {
+          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, collections);
         }
       }
       break;
 
     case "tag_created":
       applySyncTagChanges(utils, [event.tag], []);
+      addTagToCollection(collections ?? null, event.tag);
       break;
 
     case "tag_updated":
       applySyncTagChanges(utils, [], [event.tag]);
+      updateTagInCollection(collections ?? null, event.tag);
       break;
 
     case "tag_deleted":
       removeSyncTags(utils, [event.tagId]);
+      removeTagFromCollection(collections ?? null, event.tagId);
       break;
 
     case "import_progress":

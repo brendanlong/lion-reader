@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
 import { handleSubscriptionDeleted } from "@/lib/cache/operations";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ interface BrokenFeed {
 
 export default function BrokenFeedsSettingsContent() {
   const queryClient = useQueryClient();
+  const collections = useCollections();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
@@ -50,7 +52,7 @@ export default function BrokenFeedsSettingsContent() {
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
     onMutate: (variables) => {
       // Use centralized cache operation for optimistic removal
-      handleSubscriptionDeleted(utils, variables.id, queryClient);
+      handleSubscriptionDeleted(utils, variables.id, queryClient, collections);
     },
     onSuccess: () => {
       utils.brokenFeeds.list.invalidate();

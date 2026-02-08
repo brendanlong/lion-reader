@@ -2,15 +2,17 @@
  * TagList Component
  *
  * Renders the list of tags with unread counts in the sidebar.
- * Uses useSuspenseQuery so it can stream with Suspense boundaries.
+ * Uses TanStack DB live queries for reactive updates from the tags collection.
+ * Uncategorized counts come from the counts collection (populated by the tags fetch).
  */
 
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useMemo } from "react";
 import { usePathname } from "next/navigation";
+import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db";
 import { ClientLink } from "@/components/ui/client-link";
-import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
 import { useExpandedTags } from "@/lib/hooks/useExpandedTags";
 import { NavLinkWithIcon } from "@/components/ui/nav-link";
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icon-button";
@@ -30,22 +32,31 @@ interface TagListProps {
 }
 
 /**
- * Inner component that suspends on tags.list query.
+ * Inner component that suspends on tags collection.
  */
 function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
   const pathname = usePathname();
-  const [tagsData] = trpc.tags.list.useSuspenseQuery();
+  const { tags: tagsCollection, counts: countsCollection } = useCollections();
+  const { data: tags } = useLiveSuspenseQuery(tagsCollection);
+  const { data: allCounts } = useLiveQuery(countsCollection);
   const { isExpanded, toggleExpanded } = useExpandedTags();
 
-  const tags = tagsData.items;
-  const uncategorized = tagsData.uncategorized;
+  // Get uncategorized counts from the counts collection
+  const uncategorized = useMemo(() => {
+    const record = allCounts.find((c) => c.id === "uncategorized");
+    return {
+      feedCount: record?.total ?? 0,
+      unreadCount: record?.unread ?? 0,
+    };
+  }, [allCounts]);
 
   // Tags sorted alphabetically, showing only tags that have subscriptions
-  const sortedTags = [...(tags ?? [])]
-    .filter((tag) => tag.feedCount > 0)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const sortedTags = useMemo(
+    () => [...tags].filter((tag) => tag.feedCount > 0).sort((a, b) => a.name.localeCompare(b.name)),
+    [tags]
+  );
 
-  const hasUncategorized = (uncategorized?.feedCount ?? 0) > 0;
+  const hasUncategorized = uncategorized.feedCount > 0;
   const hasTags = sortedTags.length > 0 || hasUncategorized;
 
   const isActiveLink = (href: string) => {
@@ -145,7 +156,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
               isActive={isActiveLink("/uncategorized")}
               icon={<ColorDot color={null} size="sm" />}
               label="Uncategorized"
-              count={uncategorized?.unreadCount ?? 0}
+              count={uncategorized.unreadCount}
               onClick={onNavigate}
             />
           </div>

@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
 import { handleSubscriptionDeleted } from "@/lib/cache/operations";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
@@ -27,6 +28,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const queryClient = useQueryClient();
+  const collections = useCollections();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
@@ -44,15 +46,17 @@ export function Sidebar({ onClose }: SidebarProps) {
     onMutate: async (variables) => {
       // Close dialog immediately for responsive feel
       setUnsubscribeTarget(null);
-      // Use centralized cache operation for optimistic removal
-      handleSubscriptionDeleted(utils, variables.id, queryClient);
+      // Use centralized cache operation for optimistic removal (dual-write to collections)
+      handleSubscriptionDeleted(utils, variables.id, queryClient, collections);
     },
     onError: () => {
       toast.error("Failed to unsubscribe from feed");
-      // On error, invalidate to refetch correct state
+      // On error, invalidate to refetch correct state.
+      // Subscription infinite queries will re-populate the subscriptions collection.
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
       utils.entries.count.invalidate();
+      collections.tags.utils.refetch();
     },
   });
 
@@ -120,8 +124,11 @@ export function Sidebar({ onClose }: SidebarProps) {
         currentTagIds={editTarget?.tagIds ?? []}
         onClose={() => {
           setEditTarget(null);
+          // Invalidate subscription queries to refetch with new data.
+          // Subscription infinite queries will re-populate the subscriptions collection.
           utils.subscriptions.list.invalidate();
           utils.tags.list.invalidate();
+          collections.tags.utils.refetch();
         }}
       />
     </>

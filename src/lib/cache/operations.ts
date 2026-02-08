@@ -12,6 +12,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
+import type { Collections, Subscription } from "@/lib/collections";
 import {
   updateEntriesReadStatus,
   updateEntryStarredStatus,
@@ -26,6 +27,18 @@ import {
   removeSubscriptionFromCache,
   findCachedSubscription,
 } from "./count-cache";
+import {
+  adjustSubscriptionUnreadInCollection,
+  adjustTagUnreadInCollection,
+  adjustUncategorizedUnreadInCollection,
+  addSubscriptionToCollection,
+  removeSubscriptionFromCollection,
+  setSubscriptionUnreadInCollection,
+  setTagUnreadInCollection,
+  setBulkSubscriptionUnreadInCollection,
+  adjustTagFeedCountInCollection,
+  adjustUncategorizedFeedCountInCollection,
+} from "@/lib/collections/writes";
 
 /**
  * Entry type (matches feed type schema).
@@ -75,7 +88,8 @@ export interface SubscriptionData {
 function updateSubscriptionAndTagCounts(
   utils: TRPCClientUtils,
   subscriptionDeltas: Map<string, number>,
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  collections?: Collections | null
 ): void {
   adjustSubscriptionUnreadCounts(utils, subscriptionDeltas, queryClient);
   const { tagDeltas, uncategorizedDelta } = calculateTagDeltasFromSubscriptions(
@@ -84,6 +98,11 @@ function updateSubscriptionAndTagCounts(
     queryClient
   );
   adjustTagUnreadCounts(utils, tagDeltas, uncategorizedDelta);
+
+  // Also update TanStack DB collections (dual-write during migration)
+  adjustSubscriptionUnreadInCollection(collections ?? null, subscriptionDeltas);
+  adjustTagUnreadInCollection(collections ?? null, tagDeltas);
+  adjustUncategorizedUnreadInCollection(collections ?? null, uncategorizedDelta);
 }
 
 /**
@@ -217,7 +236,8 @@ export function handleEntriesMarkedRead(
   utils: TRPCClientUtils,
   entries: EntryWithContext[],
   read: boolean,
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  collections?: Collections | null
 ): void {
   if (entries.length === 0) return;
 
@@ -242,7 +262,7 @@ export function handleEntriesMarkedRead(
   }
 
   // 3. Update subscription and tag unread counts (including per-tag infinite queries)
-  updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
+  updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient, collections);
 
   // 4. Update All Articles unread count
   adjustEntriesCount(utils, {}, delta * entries.length);
@@ -359,9 +379,14 @@ export function handleEntryScoreChanged(
 export function handleSubscriptionCreated(
   utils: TRPCClientUtils,
   subscription: SubscriptionData,
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  collections?: Collections | null
 ): void {
   addSubscriptionToCache(utils, subscription);
+
+  // Also add to TanStack DB collection (dual-write during migration)
+  // Cast to Subscription type - the SubscriptionData shape matches what the collection expects
+  addSubscriptionToCollection(collections ?? null, subscription as unknown as Subscription);
 
   // Invalidate only the affected subscription list queries
   // - The unparameterized query (no input) for entry content pages
@@ -412,6 +437,18 @@ export function handleSubscriptionCreated(
 
   // Directly update entries.count for All Articles
   adjustEntriesCount(utils, {}, subscription.unreadCount, subscription.unreadCount);
+
+  // Update tag/uncategorized feedCount and unreadCount in TanStack DB collections
+  if (subscription.tags.length === 0) {
+    adjustUncategorizedFeedCountInCollection(collections ?? null, 1);
+    adjustUncategorizedUnreadInCollection(collections ?? null, subscription.unreadCount);
+  } else {
+    for (const tag of subscription.tags) {
+      adjustTagFeedCountInCollection(collections ?? null, tag.id, 1);
+      const tagDeltas = new Map([[tag.id, subscription.unreadCount]]);
+      adjustTagUnreadInCollection(collections ?? null, tagDeltas);
+    }
+  }
 }
 
 /**
@@ -431,13 +468,15 @@ export function handleSubscriptionCreated(
 export function handleSubscriptionDeleted(
   utils: TRPCClientUtils,
   subscriptionId: string,
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  collections?: Collections | null
 ): void {
   // Look up subscription data before removing from cache
   // This lets us do targeted updates instead of broad invalidations
-  const subscription = queryClient
-    ? findCachedSubscription(utils, queryClient, subscriptionId)
-    : undefined;
+  // Check TanStack DB collection first (has all data, synchronous lookup)
+  const subscription =
+    collections?.subscriptions.get(subscriptionId) ??
+    (queryClient ? findCachedSubscription(utils, queryClient, subscriptionId) : undefined);
 
   // Remove from all subscription caches
   removeSubscriptionFromCache(utils, subscriptionId);
@@ -496,6 +535,21 @@ export function handleSubscriptionDeleted(
 
   // Always invalidate entries.list - entries from this subscription should be filtered out
   utils.entries.list.invalidate();
+
+  // Remove from TanStack DB collection and adjust tag/uncategorized counts
+  if (subscription) {
+    if (subscription.tags.length === 0) {
+      adjustUncategorizedFeedCountInCollection(collections ?? null, -1);
+      adjustUncategorizedUnreadInCollection(collections ?? null, -subscription.unreadCount);
+    } else {
+      for (const tag of subscription.tags) {
+        adjustTagFeedCountInCollection(collections ?? null, tag.id, -1);
+        const tagDeltas = new Map([[tag.id, -subscription.unreadCount]]);
+        adjustTagUnreadInCollection(collections ?? null, tagDeltas);
+      }
+    }
+  }
+  removeSubscriptionFromCollection(collections ?? null, subscriptionId);
 }
 
 /**
@@ -520,7 +574,8 @@ export function handleNewEntry(
   utils: TRPCClientUtils,
   subscriptionId: string | null,
   feedType: "web" | "email" | "saved",
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  collections?: Collections | null
 ): void {
   // Update subscription and tag unread counts (only for non-saved entries)
   if (subscriptionId) {
@@ -529,7 +584,7 @@ export function handleNewEntry(
     subscriptionDeltas.set(subscriptionId, 1); // +1 unread
 
     // Update subscription and tag unread counts (including per-tag infinite queries)
-    updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
+    updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient, collections);
   }
 
   // Update All Articles unread count (+1 unread, +1 total)
@@ -580,7 +635,8 @@ export interface BulkUnreadCounts {
 export function setCounts(
   utils: TRPCClientUtils,
   counts: UnreadCounts,
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  collections?: Collections | null
 ): void {
   // Set global counts
   utils.entries.count.setData({}, counts.all);
@@ -611,6 +667,20 @@ export function setCounts(
   if (counts.uncategorized) {
     setUncategorizedUnreadCount(utils, counts.uncategorized.unread);
   }
+
+  // Also update TanStack DB collections (dual-write during migration)
+  if (counts.subscription) {
+    setSubscriptionUnreadInCollection(
+      collections ?? null,
+      counts.subscription.id,
+      counts.subscription.unread
+    );
+  }
+  if (counts.tags) {
+    for (const tag of counts.tags) {
+      setTagUnreadInCollection(collections ?? null, tag.id, tag.unread);
+    }
+  }
 }
 
 /**
@@ -624,7 +694,8 @@ export function setCounts(
 export function setBulkCounts(
   utils: TRPCClientUtils,
   counts: BulkUnreadCounts,
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  collections?: Collections | null
 ): void {
   // Set global counts
   utils.entries.count.setData({}, counts.all);
@@ -654,6 +725,12 @@ export function setBulkCounts(
   // Set uncategorized count
   if (counts.uncategorized) {
     setUncategorizedUnreadCount(utils, counts.uncategorized.unread);
+  }
+
+  // Also update TanStack DB collections (dual-write during migration)
+  setBulkSubscriptionUnreadInCollection(collections ?? null, subscriptionUpdates);
+  for (const tag of counts.tags) {
+    setTagUnreadInCollection(collections ?? null, tag.id, tag.unread);
   }
 }
 

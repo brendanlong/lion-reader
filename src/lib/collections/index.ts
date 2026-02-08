@@ -22,9 +22,15 @@ import { createSubscriptionsCollection, type SubscriptionsCollection } from "./s
 import { createTagsCollection, type TagsCollection } from "./tags";
 import { createEntriesCollection, type EntriesCollection } from "./entries";
 import { createCountsCollection, type CountsCollection } from "./counts";
-import type { Subscription, EntryListItem, TagItem } from "./types";
+import type { EntryListItem, TagItem, UncategorizedCounts } from "./types";
 
-export type { Subscription, EntryListItem, TagItem, CountRecord } from "./types";
+export type {
+  Subscription,
+  EntryListItem,
+  TagItem,
+  CountRecord,
+  UncategorizedCounts,
+} from "./types";
 export type { SubscriptionsCollection } from "./subscriptions";
 export type { TagsCollection } from "./tags";
 export type { EntriesCollection } from "./entries";
@@ -45,8 +51,10 @@ export interface Collections {
  * These are provided by the TRPCProvider which has access to the tRPC client.
  */
 export interface CollectionFetchers {
-  fetchSubscriptions: () => Promise<Subscription[]>;
-  fetchTags: () => Promise<TagItem[]>;
+  fetchTagsAndUncategorized: () => Promise<{
+    items: TagItem[];
+    uncategorized: UncategorizedCounts;
+  }>;
   fetchEntries: () => Promise<EntryListItem[]>;
 }
 
@@ -63,10 +71,13 @@ export function createCollections(
   queryClient: QueryClient,
   fetchers: CollectionFetchers
 ): Collections {
+  // Create counts first since tags needs it for uncategorized counts
+  const counts = createCountsCollection();
+
   return {
-    subscriptions: createSubscriptionsCollection(queryClient, fetchers.fetchSubscriptions),
-    tags: createTagsCollection(queryClient, fetchers.fetchTags),
+    subscriptions: createSubscriptionsCollection(),
+    tags: createTagsCollection(queryClient, fetchers.fetchTagsAndUncategorized, counts),
     entries: createEntriesCollection(queryClient, fetchers.fetchEntries),
-    counts: createCountsCollection(),
+    counts,
   };
 }
