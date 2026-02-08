@@ -13,7 +13,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
-import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
+import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { formatRelativeTime } from "@/lib/format";
 
 /**
@@ -263,100 +263,23 @@ export default function ApiTokensSettingsContent() {
         <h3 className="ui-text-sm mb-3 font-medium text-zinc-700 dark:text-zinc-300">
           Active Tokens ({activeTokens.length})
         </h3>
-        <div className="space-y-3">
-          {tokensQuery.isLoading ? (
-            <SettingsListSkeleton count={2} variant="card" />
-          ) : tokensQuery.error ? (
-            <Alert variant="error">Failed to load tokens. Please try again.</Alert>
-          ) : activeTokens.length === 0 ? (
-            <p className="ui-text-sm text-center text-zinc-500 dark:text-zinc-400">
-              No active tokens. Create one to get started.
-            </p>
-          ) : (
-            activeTokens.map((token) => (
-              <div
-                key={token.id}
-                className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      {/* Key icon */}
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-                        <svg
-                          className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-                          />
-                        </svg>
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-zinc-900 dark:text-zinc-50">
-                          {token.name || "Unnamed Token"}
-                        </p>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {token.scopes.map((scope) => (
-                            <span
-                              key={scope}
-                              className="ui-text-xs inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                            >
-                              {scopeLabels[scope]?.label ?? scope}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
-                      <span>
-                        Created:{" "}
-                        {new Date(token.createdAt).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </span>
-                      {token.lastUsedAt && (
-                        <span>Last used: {formatRelativeTime(new Date(token.lastUsedAt))}</span>
-                      )}
-                      {token.expiresAt && (
-                        <span>
-                          Expires:{" "}
-                          {new Date(token.expiresAt).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </span>
-                      )}
-                      {!token.lastUsedAt && (
-                        <span className="text-amber-600 dark:text-amber-400">Never used</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRevokeToken(token.id)}
-                    disabled={revokeTokenMutation.isPending}
-                    className="w-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
-                  >
-                    Revoke
-                  </Button>
-                </div>
-              </div>
-            ))
+        <SettingsListContainer
+          items={activeTokens}
+          isLoading={tokensQuery.isLoading}
+          error={tokensQuery.error}
+          errorMessage="Failed to load tokens. Please try again."
+          variant="card"
+          skeletonCount={2}
+          emptyMessage="No active tokens. Create one to get started."
+          renderItem={(token) => (
+            <ActiveTokenCard
+              key={token.id}
+              token={token}
+              onRevoke={handleRevokeToken}
+              isRevoking={revokeTokenMutation.isPending}
+            />
           )}
-        </div>
+        />
       </div>
 
       {/* Revoked/Expired Tokens */}
@@ -403,6 +326,105 @@ export default function ApiTokensSettingsContent() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Active Token Card
+// ============================================================================
+
+interface ActiveTokenCardProps {
+  token: {
+    id: string;
+    name: string | null;
+    scopes: string[];
+    createdAt: Date;
+    expiresAt: Date | null;
+    lastUsedAt: Date | null;
+  };
+  onRevoke: (tokenId: string) => void;
+  isRevoking: boolean;
+}
+
+function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            {/* Key icon */}
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
+              <svg
+                className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                />
+              </svg>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-zinc-900 dark:text-zinc-50">
+                {token.name || "Unnamed Token"}
+              </p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {token.scopes.map((scope) => (
+                  <span
+                    key={scope}
+                    className="ui-text-xs inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                  >
+                    {scopeLabels[scope]?.label ?? scope}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
+            <span>
+              Created:{" "}
+              {new Date(token.createdAt).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+            {token.lastUsedAt && (
+              <span>Last used: {formatRelativeTime(new Date(token.lastUsedAt))}</span>
+            )}
+            {token.expiresAt && (
+              <span>
+                Expires:{" "}
+                {new Date(token.expiresAt).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </span>
+            )}
+            {!token.lastUsedAt && (
+              <span className="text-amber-600 dark:text-amber-400">Never used</span>
+            )}
+          </div>
+        </div>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onRevoke(token.id)}
+          disabled={isRevoking}
+          className="w-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+        >
+          Revoke
+        </Button>
+      </div>
     </div>
   );
 }

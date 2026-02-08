@@ -11,7 +11,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
-import { Alert } from "@/components/ui/alert";
 import {
   Dialog,
   DialogHeader,
@@ -19,7 +18,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
+import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { formatRelativeTime } from "@/lib/format";
 
 // ============================================================================
@@ -56,23 +55,16 @@ export default function BlockedSendersSettingsContent() {
       </div>
 
       {/* Blocked Senders List */}
-      <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        {blockedQuery.isLoading ? (
-          <SettingsListSkeleton count={3} height="h-16" />
-        ) : blockedQuery.error ? (
-          <div className="p-6">
-            <Alert variant="error">Failed to load blocked senders. Please try again.</Alert>
-          </div>
-        ) : senders.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {senders.map((sender) => (
-              <BlockedSenderRow key={sender.id} sender={sender} />
-            ))}
-          </div>
-        )}
-      </div>
+      <SettingsListContainer
+        items={senders}
+        isLoading={blockedQuery.isLoading}
+        error={blockedQuery.error}
+        errorMessage="Failed to load blocked senders. Please try again."
+        skeletonCount={3}
+        skeletonHeight="h-16"
+        emptyState={<EmptyState />}
+        renderItem={(sender) => <BlockedSenderRow key={sender.id} sender={sender} />}
+      />
     </div>
   );
 }

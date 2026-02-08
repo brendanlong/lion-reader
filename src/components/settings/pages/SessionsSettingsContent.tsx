@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
-import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
+import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { formatRelativeTime } from "@/lib/format";
 
 /**
@@ -109,108 +109,129 @@ export default function SessionsSettingsContent() {
         </Alert>
       )}
 
-      <div className="space-y-3">
-        {sessionsQuery.isLoading ? (
-          <SettingsListSkeleton variant="card" />
-        ) : sessionsQuery.error ? (
-          <Alert variant="error">Failed to load sessions. Please try again.</Alert>
-        ) : sessionsQuery.data?.sessions.length === 0 ? (
-          <p className="ui-text-sm text-center text-zinc-500 dark:text-zinc-400">
-            No active sessions
-          </p>
-        ) : (
-          sessionsQuery.data?.sessions.map((session) => {
-            const { browser, platform } = parseUserAgent(session.userAgent);
-            const lastActive = new Date(session.lastActiveAt);
+      <SettingsListContainer
+        items={sessionsQuery.data?.sessions}
+        isLoading={sessionsQuery.isLoading}
+        error={sessionsQuery.error}
+        errorMessage="Failed to load sessions. Please try again."
+        variant="card"
+        emptyMessage="No active sessions"
+        renderItem={(session) => (
+          <SessionCard
+            key={session.id}
+            session={session}
+            onRevoke={handleRevokeSession}
+            isRevoking={revokeSessionMutation.isPending}
+          />
+        )}
+      />
+    </div>
+  );
+}
 
-            return (
-              <div
-                key={session.id}
-                className={`rounded-lg border p-3 sm:p-4 ${
-                  session.isCurrent
-                    ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950"
-                    : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-                }`}
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      {/* Device icon */}
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-                        {platform === "iOS" || platform === "Android" ? (
-                          <svg
-                            className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
-                            />
-                          </svg>
-                        ) : (
-                          <svg
-                            className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                            />
-                          </svg>
-                        )}
-                      </div>
+// ============================================================================
+// Session Card
+// ============================================================================
 
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-zinc-900 dark:text-zinc-50">
-                          {browser} on {platform}
-                        </p>
-                        {session.isCurrent && (
-                          <span className="ui-text-xs mt-0.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
-                            Current session
-                          </span>
-                        )}
-                        <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-                          {session.ipAddress || "Unknown IP"}
-                        </p>
-                      </div>
-                    </div>
+interface SessionCardProps {
+  session: {
+    id: string;
+    userAgent: string | null;
+    ipAddress: string | null;
+    isCurrent: boolean;
+    lastActiveAt: Date;
+    createdAt: Date;
+  };
+  onRevoke: (sessionId: string) => void;
+  isRevoking: boolean;
+}
 
-                    <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
-                      <span>Last active: {formatRelativeTime(lastActive)}</span>
-                      <span>
-                        Created:{" "}
-                        {new Date(session.createdAt).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </span>
-                    </div>
-                  </div>
+function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
+  const { browser, platform } = parseUserAgent(session.userAgent);
+  const lastActive = new Date(session.lastActiveAt);
 
-                  {!session.isCurrent && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRevokeSession(session.id)}
-                      disabled={revokeSessionMutation.isPending}
-                      className="w-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
-                    >
-                      Revoke
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })
+  return (
+    <div
+      className={`rounded-lg border p-3 sm:p-4 ${
+        session.isCurrent
+          ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950"
+          : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+      }`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            {/* Device icon */}
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
+              {platform === "iOS" || platform === "Android" ? (
+                <svg
+                  className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  className="h-4 w-4 text-zinc-600 dark:text-zinc-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-zinc-900 dark:text-zinc-50">
+                {browser} on {platform}
+              </p>
+              {session.isCurrent && (
+                <span className="ui-text-xs mt-0.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                  Current session
+                </span>
+              )}
+              <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+                {session.ipAddress || "Unknown IP"}
+              </p>
+            </div>
+          </div>
+
+          <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
+            <span>Last active: {formatRelativeTime(lastActive)}</span>
+            <span>
+              Created:{" "}
+              {new Date(session.createdAt).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+          </div>
+        </div>
+
+        {!session.isCurrent && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onRevoke(session.id)}
+            disabled={isRevoking}
+            className="w-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+          >
+            Revoke
+          </Button>
         )}
       </div>
     </div>
