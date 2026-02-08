@@ -20,6 +20,7 @@ export interface DemoTag {
   id: string;
   name: string;
   color: string;
+  description: string;
   subscriptionIds: string[];
 }
 
@@ -27,6 +28,7 @@ export interface DemoSubscription {
   id: string;
   title: string;
   tagId: string;
+  description: string;
   entryCount: number;
 }
 
@@ -46,12 +48,15 @@ export const DEMO_TAGS: DemoTag[] = [
     id: "about",
     name: "About",
     color: "#10b981",
+    description: "Learn about Lion Reader — a modern, open-source feed reader you can self-host.",
     subscriptionIds: ["lion-reader"],
   },
   {
     id: "features",
     name: "Features",
     color: "#3b82f6",
+    description:
+      "Explore Lion Reader's features: feed support, reading tools, organization, and integrations.",
     subscriptionIds: ["feed-types", "reading-experience", "organization", "integrations"],
   },
 ];
@@ -60,12 +65,35 @@ export const DEMO_TAGS: DemoTag[] = [
 // Subscription config (title + tag mapping)
 // ============================================================================
 
-const SUBSCRIPTION_CONFIG: Record<string, { title: string; tagId: string }> = {
-  "feed-types": { title: "Feed Types", tagId: "features" },
-  "reading-experience": { title: "Reading Experience", tagId: "features" },
-  organization: { title: "Organization & Search", tagId: "features" },
-  integrations: { title: "Integrations & Sync", tagId: "features" },
-  "lion-reader": { title: "Lion Reader", tagId: "about" },
+const SUBSCRIPTION_CONFIG: Record<string, { title: string; tagId: string; description: string }> = {
+  "feed-types": {
+    title: "Feed Types",
+    tagId: "features",
+    description: "RSS, Atom, JSON Feed, email newsletters, and saved articles — all in one place.",
+  },
+  "reading-experience": {
+    title: "Reading Experience",
+    tagId: "features",
+    description:
+      "Full content fetching, customizable themes, text-to-speech narration, AI summaries, and keyboard shortcuts.",
+  },
+  organization: {
+    title: "Organization & Search",
+    tagId: "features",
+    description:
+      "Tags, full-text search, ML-powered scoring, and OPML import/export for organizing your feeds.",
+  },
+  integrations: {
+    title: "Integrations & Sync",
+    tagId: "features",
+    description:
+      "MCP server for AI assistants, WebSub push, real-time updates, and installable PWA support.",
+  },
+  "lion-reader": {
+    title: "Lion Reader",
+    tagId: "about",
+    description: "A modern, fast, and open-source feed reader you can self-host.",
+  },
 };
 
 // ============================================================================
@@ -87,6 +115,7 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = Object.entries(SUBSCRIPTIO
     id,
     title: config.title,
     tagId: config.tagId,
+    description: config.description,
     entryCount: entryCountBySubscription.get(id) ?? 0,
   })
 );
