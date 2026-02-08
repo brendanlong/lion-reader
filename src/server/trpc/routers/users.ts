@@ -12,6 +12,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import { revokeSession, invalidateUserSessionCaches } from "@/server/auth";
+import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 
 // ============================================================================
 // Schemas
@@ -321,12 +322,21 @@ export const usersRouter = createTRPCRouter({
     .output(
       z.object({
         showSpam: z.boolean(),
+        canConfigureApiKeys: z.boolean(),
+        hasGroqApiKey: z.boolean(),
+        hasAnthropicApiKey: z.boolean(),
+        summarizationModel: z.string().nullable(),
       })
     )
     .query(async ({ ctx }) => {
       // Return preferences from session (cached from database)
+      // Never expose raw API keys — only whether they are set
       return {
         showSpam: ctx.session.user.showSpam,
+        canConfigureApiKeys: isEncryptionConfigured(),
+        hasGroqApiKey: !!ctx.session.user.groqApiKey,
+        hasAnthropicApiKey: !!ctx.session.user.anthropicApiKey,
+        summarizationModel: ctx.session.user.summarizationModel,
       };
     }),
 
@@ -347,23 +357,62 @@ export const usersRouter = createTRPCRouter({
     .input(
       z.object({
         showSpam: z.boolean().optional(),
+        // API keys: empty string clears the key, non-empty sets it
+        groqApiKey: z.string().optional(),
+        anthropicApiKey: z.string().optional(),
+        summarizationModel: z.string().optional(),
       })
     )
     .output(
       z.object({
         showSpam: z.boolean(),
+        canConfigureApiKeys: z.boolean(),
+        hasGroqApiKey: z.boolean(),
+        hasAnthropicApiKey: z.boolean(),
+        summarizationModel: z.string().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
+      // Reject API key storage if encryption is not configured
+      const settingApiKey =
+        (input.groqApiKey !== undefined && input.groqApiKey !== "") ||
+        (input.anthropicApiKey !== undefined && input.anthropicApiKey !== "");
+      if (settingApiKey && !isEncryptionConfigured()) {
+        throw errors.validation(
+          "API key encryption is not configured on this server. Contact your administrator."
+        );
+      }
+
       // Build update object with only provided fields
-      const updateData: { showSpam?: boolean; updatedAt: Date } = {
+      const updateData: {
+        showSpam?: boolean;
+        groqApiKey?: string | null;
+        anthropicApiKey?: string | null;
+        summarizationModel?: string | null;
+        updatedAt: Date;
+      } = {
         updatedAt: new Date(),
       };
 
       if (input.showSpam !== undefined) {
         updateData.showSpam = input.showSpam;
+      }
+
+      if (input.groqApiKey !== undefined) {
+        // empty string → null (clear key), otherwise encrypt
+        updateData.groqApiKey = input.groqApiKey ? encryptApiKey(input.groqApiKey) : null;
+      }
+
+      if (input.anthropicApiKey !== undefined) {
+        updateData.anthropicApiKey = input.anthropicApiKey
+          ? encryptApiKey(input.anthropicApiKey)
+          : null;
+      }
+
+      if (input.summarizationModel !== undefined) {
+        updateData.summarizationModel = input.summarizationModel || null;
       }
 
       // Update user preferences in database
@@ -374,13 +423,22 @@ export const usersRouter = createTRPCRouter({
 
       // Fetch updated preferences to return
       const updatedUser = await ctx.db
-        .select({ showSpam: users.showSpam })
+        .select({
+          showSpam: users.showSpam,
+          groqApiKey: users.groqApiKey,
+          anthropicApiKey: users.anthropicApiKey,
+          summarizationModel: users.summarizationModel,
+        })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
 
       return {
         showSpam: updatedUser[0]?.showSpam ?? false,
+        canConfigureApiKeys: isEncryptionConfigured(),
+        hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
+        hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,
+        summarizationModel: updatedUser[0]?.summarizationModel ?? null,
       };
     }),
 });

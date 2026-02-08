@@ -15,6 +15,7 @@ import { db, type Database } from "@/server/db";
 import { sessions, users, type User, type Session } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
+import { decryptApiKey } from "@/lib/encryption";
 
 // ============================================================================
 // Constants
@@ -66,6 +67,9 @@ interface CachedSession {
   userPasswordHash: string | null;
   userInviteId: string | null;
   userShowSpam: boolean;
+  userGroqApiKey: string | null;
+  userAnthropicApiKey: string | null;
+  userSummarizationModel: string | null;
 }
 
 // ============================================================================
@@ -200,6 +204,9 @@ function serializeForCache(data: SessionData): string {
     userPasswordHash: data.user.passwordHash,
     userInviteId: data.user.inviteId ?? null,
     userShowSpam: data.user.showSpam,
+    userGroqApiKey: data.user.groqApiKey ?? null,
+    userAnthropicApiKey: data.user.anthropicApiKey ?? null,
+    userSummarizationModel: data.user.summarizationModel ?? null,
   };
   return JSON.stringify(cached);
 }
@@ -230,6 +237,9 @@ function deserializeFromCache(data: string): SessionData {
       passwordHash: cached.userPasswordHash,
       inviteId: cached.userInviteId ?? null,
       showSpam: cached.userShowSpam ?? false,
+      groqApiKey: cached.userGroqApiKey ?? null,
+      anthropicApiKey: cached.userAnthropicApiKey ?? null,
+      summarizationModel: cached.userSummarizationModel ?? null,
     },
   };
 }
@@ -289,6 +299,14 @@ export async function validateSession(token: string): Promise<SessionData | null
   }
 
   const sessionData = result[0];
+
+  // Decrypt API keys loaded from the database
+  if (sessionData.user.groqApiKey) {
+    sessionData.user.groqApiKey = decryptApiKey(sessionData.user.groqApiKey);
+  }
+  if (sessionData.user.anthropicApiKey) {
+    sessionData.user.anthropicApiKey = decryptApiKey(sessionData.user.anthropicApiKey);
+  }
 
   // Cache the result in Redis (if available)
   if (redis) {

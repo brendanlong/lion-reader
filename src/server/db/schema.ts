@@ -63,6 +63,11 @@ export const users = pgTable("users", {
   // Preferences
   showSpam: boolean("show_spam").notNull().default(false), // Show spam entries from email feeds
 
+  // User-configured API keys (override server defaults when set)
+  groqApiKey: text("groq_api_key"), // For narration LLM preprocessing
+  anthropicApiKey: text("anthropic_api_key"), // For AI summarization
+  summarizationModel: text("summarization_model"), // Anthropic model for summaries
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

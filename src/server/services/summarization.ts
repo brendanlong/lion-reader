@@ -106,24 +106,30 @@ function extractSummaryFromResponse(responseText: string): string {
 }
 
 /**
- * Anthropic client instance. Only initialized when ANTHROPIC_API_KEY is set.
+ * Global Anthropic client instance. Only initialized when ANTHROPIC_API_KEY env var is set.
  */
-let anthropicClient: Anthropic | null = null;
+let globalAnthropicClient: Anthropic | null = null;
 
 /**
- * Gets or creates the Anthropic client instance.
- * Returns null if ANTHROPIC_API_KEY is not set.
+ * Gets or creates an Anthropic client instance.
+ * If a user API key is provided, creates a new client with that key.
+ * Otherwise falls back to the global client using ANTHROPIC_API_KEY env var.
+ * Returns null if no API key is available.
  */
-function getAnthropicClient(): Anthropic | null {
+function getAnthropicClient(userApiKey?: string | null): Anthropic | null {
+  if (userApiKey) {
+    return new Anthropic({ apiKey: userApiKey });
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) {
     return null;
   }
 
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!globalAnthropicClient) {
+    globalAnthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
 
-  return anthropicClient;
+  return globalAnthropicClient;
 }
 
 /**
@@ -169,16 +175,17 @@ export function prepareContentForSummarization(htmlContent: string): string {
  */
 export async function generateSummary(
   content: string,
-  title: string
+  title: string,
+  options?: { userApiKey?: string | null; userModel?: string | null }
 ): Promise<GenerateSummaryResult> {
-  const client = getAnthropicClient();
+  const client = getAnthropicClient(options?.userApiKey);
 
   if (!client) {
     throw new Error("Anthropic API key not configured");
   }
 
-  // Get model from environment or use default
-  const modelId = process.env.SUMMARIZATION_MODEL || DEFAULT_MODEL;
+  // Priority: user model > environment > default
+  const modelId = options?.userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_MODEL;
 
   try {
     const response = await client.messages.create({
@@ -219,15 +226,57 @@ export async function generateSummary(
 /**
  * Checks if summarization is available.
  *
- * @returns true if ANTHROPIC_API_KEY is set
+ * @param userApiKey - Optional user-configured API key
+ * @returns true if either the user API key or ANTHROPIC_API_KEY env var is set
  */
-export function isSummarizationAvailable(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
+export function isSummarizationAvailable(userApiKey?: string | null): boolean {
+  return !!userApiKey || !!process.env.ANTHROPIC_API_KEY;
 }
 
 /**
  * Gets the model ID for summarization.
+ *
+ * @param userModel - Optional user-configured model
  */
-export function getSummarizationModelId(): string {
-  return process.env.SUMMARIZATION_MODEL || DEFAULT_MODEL;
+export function getSummarizationModelId(userModel?: string | null): string {
+  return userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_MODEL;
+}
+
+/**
+ * Model info returned from the list models API.
+ */
+export interface SummarizationModel {
+  id: string;
+  displayName: string;
+}
+
+/**
+ * Lists available Anthropic models.
+ *
+ * @param userApiKey - Optional user-configured API key
+ * @returns Array of available models, sorted by newest first
+ */
+export async function listModels(userApiKey?: string | null): Promise<SummarizationModel[]> {
+  const client = getAnthropicClient(userApiKey);
+
+  if (!client) {
+    return [];
+  }
+
+  try {
+    const models: SummarizationModel[] = [];
+    // Fetch all models using auto-pagination
+    for await (const model of client.models.list({ limit: 100 })) {
+      models.push({
+        id: model.id,
+        displayName: model.display_name,
+      });
+    }
+    return models;
+  } catch (error) {
+    logger.error("Failed to list Anthropic models", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
 }

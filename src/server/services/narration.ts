@@ -86,24 +86,30 @@ OUTPUT:
 Return ONLY valid JSON.`;
 
 /**
- * Groq client instance. Only initialized when GROQ_API_KEY is set.
+ * Global Groq client instance. Only initialized when GROQ_API_KEY env var is set.
  */
-let groqClient: Groq | null = null;
+let globalGroqClient: Groq | null = null;
 
 /**
- * Gets or creates the Groq client instance.
- * Returns null if GROQ_API_KEY is not set.
+ * Gets or creates a Groq client instance.
+ * If a user API key is provided, creates a new client with that key.
+ * Otherwise falls back to the global client using GROQ_API_KEY env var.
+ * Returns null if no API key is available.
  */
-function getGroqClient(): Groq | null {
+function getGroqClient(userApiKey?: string | null): Groq | null {
+  if (userApiKey) {
+    return new Groq({ apiKey: userApiKey });
+  }
+
   if (!process.env.GROQ_API_KEY) {
     return null;
   }
 
-  if (!groqClient) {
-    groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  if (!globalGroqClient) {
+    globalGroqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
 
-  return groqClient;
+  return globalGroqClient;
 }
 
 /**
@@ -154,8 +160,11 @@ export interface GenerateNarrationResult {
  *   // Use htmlToPlainText as fallback
  * }
  */
-export async function generateNarration(htmlContent: string): Promise<GenerateNarrationResult> {
-  const client = getGroqClient();
+export async function generateNarration(
+  htmlContent: string,
+  userApiKey?: string | null
+): Promise<GenerateNarrationResult> {
+  const client = getGroqClient(userApiKey);
 
   // Convert HTML to structured paragraphs
   const { paragraphs: inputParagraphs } = htmlToNarrationInput(htmlContent);
@@ -296,8 +305,9 @@ export async function generateNarration(htmlContent: string): Promise<GenerateNa
 /**
  * Checks if Groq integration is available.
  *
- * @returns true if GROQ_API_KEY is set
+ * @param userApiKey - Optional user-configured API key
+ * @returns true if either the user API key or GROQ_API_KEY env var is set
  */
-export function isGroqAvailable(): boolean {
-  return !!process.env.GROQ_API_KEY;
+export function isGroqAvailable(userApiKey?: string | null): boolean {
+  return !!userApiKey || !!process.env.GROQ_API_KEY;
 }
