@@ -20,6 +20,8 @@ import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
+import { useCollections } from "@/lib/collections/context";
+import { upsertEntriesInCollection } from "@/lib/collections/writes";
 import { EntryList, type ExternalQueryState } from "./EntryList";
 
 interface SuspendingEntryListProps {
@@ -32,6 +34,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
   const scrollContainerRef = useScrollContainer();
+  const collections = useCollections();
 
   // Get query input from URL - shared with parent's non-suspending query
   const queryInput = useEntriesListInput();
@@ -45,28 +48,38 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
       refetchOnWindowFocus: false,
     });
 
+  // Flatten all page items for collection population
+  const allPageItems = useMemo(
+    () => data?.pages.flatMap((page) => page.items) ?? [],
+    [data?.pages]
+  );
+
+  // Populate entries collection from tRPC pages as they load.
+  // This makes entries available for O(1) lookup by mutations/SSE.
+  useEffect(() => {
+    upsertEntriesInCollection(collections, allPageItems);
+  }, [collections, allPageItems]);
+
   // Flatten entries from all pages
   const entries = useMemo(
     () =>
-      data?.pages.flatMap((page) =>
-        page.items.map((entry) => ({
-          id: entry.id,
-          feedId: entry.feedId,
-          subscriptionId: entry.subscriptionId,
-          type: entry.type,
-          url: entry.url,
-          title: entry.title,
-          author: entry.author,
-          summary: entry.summary,
-          publishedAt: entry.publishedAt,
-          fetchedAt: entry.fetchedAt,
-          read: entry.read,
-          starred: entry.starred,
-          feedTitle: entry.feedTitle,
-          siteName: entry.siteName,
-        }))
-      ) ?? [],
-    [data?.pages]
+      allPageItems.map((entry) => ({
+        id: entry.id,
+        feedId: entry.feedId,
+        subscriptionId: entry.subscriptionId,
+        type: entry.type,
+        url: entry.url,
+        title: entry.title,
+        author: entry.author,
+        summary: entry.summary,
+        publishedAt: entry.publishedAt,
+        fetchedAt: entry.fetchedAt,
+        read: entry.read,
+        starred: entry.starred,
+        feedTitle: entry.feedTitle,
+        siteName: entry.siteName,
+      })),
+    [allPageItems]
   );
 
   // Compute next/previous entry IDs for keyboard navigation

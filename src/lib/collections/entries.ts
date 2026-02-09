@@ -1,40 +1,36 @@
 /**
  * Entries Collection
  *
- * On-demand synced collection of feed entries.
- * Large dataset, paginated. Fetches only what live queries request.
- * Entries fetched for one view (e.g., "All") are reused in other views
- * (e.g., "Subscription X") since they're stored by ID in the collection.
+ * Local-only collection of feed entries, populated incrementally from tRPC
+ * infinite query results. Components use tRPC useInfiniteQuery for paginated
+ * fetching (cursor-based, SSR-prefetchable), then populate the collection
+ * as pages load.
+ *
+ * The collection provides:
+ * - O(1) entry lookup by ID (collection.get(id)) instead of scanning pages
+ * - Centralized writes for mutations/SSE (writeUpdate) instead of updating
+ *   every infinite query cache
+ * - Reactive read via useLiveQuery for components that need live updates
+ *
+ * Data flow:
+ *   tRPC useInfiniteQuery → pages load → upsert into collection
+ *   Mutations/SSE → writeUpdate on collection → components re-read merged data
  */
 
-import { createCollection } from "@tanstack/react-db";
-import { queryCollectionOptions } from "@tanstack/query-db-collection";
-import type { QueryClient } from "@tanstack/react-query";
+import { createCollection, localOnlyCollectionOptions } from "@tanstack/react-db";
 import type { EntryListItem } from "./types";
 
 /**
- * Creates the entries collection backed by TanStack Query.
+ * Creates the entries collection as a local-only store.
  *
- * Uses on-demand sync mode so only entries requested by live queries are fetched.
- * The queryFn receives filter/sort metadata via loadSubsetOptions, which we'll
- * map to our cursor-based tRPC API in later phases.
- *
- * For Phase 0, this collection is created but not yet consumed by components.
- * The queryFn fetches entries via the provided callback.
- *
- * @param queryClient - The shared QueryClient instance
- * @param fetchEntries - Function to fetch entries from the API
+ * Populated incrementally from tRPC infinite query results (similar to
+ * how subscriptions collection is populated from TagSubscriptionList).
+ * Mutations and SSE events write directly to the collection.
  */
-export function createEntriesCollection(
-  queryClient: QueryClient,
-  fetchEntries: () => Promise<EntryListItem[]>
-) {
+export function createEntriesCollection() {
   return createCollection(
-    queryCollectionOptions({
+    localOnlyCollectionOptions({
       id: "entries",
-      queryKey: ["entries", "collection"] as const,
-      queryFn: fetchEntries,
-      queryClient,
       getKey: (item: EntryListItem) => item.id,
     })
   );

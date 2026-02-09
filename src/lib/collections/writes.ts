@@ -11,7 +11,7 @@
  */
 
 import type { Collections } from "./index";
-import type { Subscription, TagItem } from "./types";
+import type { Subscription, TagItem, EntryListItem } from "./types";
 
 // ============================================================================
 // Subscription Collection Writes
@@ -296,5 +296,112 @@ export function adjustUncategorizedFeedCountInCollection(
       id: "uncategorized",
       total: Math.max(0, current.total + delta),
     });
+  }
+}
+
+// ============================================================================
+// Entry Collection Writes
+// ============================================================================
+
+/**
+ * Updates the read status for entries in the collection.
+ * No-ops for entries not currently in the collection.
+ * This is O(1) per entry (by key lookup) — replaces the O(n) page scanning
+ * in the old entry-cache.ts.
+ */
+export function updateEntryReadInCollection(
+  collections: Collections | null,
+  entryIds: string[],
+  read: boolean
+): void {
+  if (!collections || entryIds.length === 0) return;
+
+  const updates: Array<Partial<EntryListItem> & { id: string }> = [];
+  for (const id of entryIds) {
+    if (collections.entries.has(id)) {
+      updates.push({ id, read });
+    }
+  }
+  if (updates.length > 0) {
+    collections.entries.utils.writeUpdate(updates);
+  }
+}
+
+/**
+ * Updates the starred status for an entry in the collection.
+ */
+export function updateEntryStarredInCollection(
+  collections: Collections | null,
+  entryId: string,
+  starred: boolean
+): void {
+  if (!collections) return;
+
+  if (collections.entries.has(entryId)) {
+    collections.entries.utils.writeUpdate({ id: entryId, starred });
+  }
+}
+
+/**
+ * Updates the score fields for an entry in the collection.
+ */
+export function updateEntryScoreInCollection(
+  collections: Collections | null,
+  entryId: string,
+  score: number | null,
+  implicitScore: number
+): void {
+  if (!collections) return;
+
+  if (collections.entries.has(entryId)) {
+    collections.entries.utils.writeUpdate({ id: entryId, score, implicitScore });
+  }
+}
+
+/**
+ * Updates entry metadata (title, author, summary, url, publishedAt) in the collection.
+ * Used for SSE entry_updated events.
+ */
+export function updateEntryMetadataInCollection(
+  collections: Collections | null,
+  entryId: string,
+  metadata: Partial<EntryListItem>
+): void {
+  if (!collections) return;
+
+  if (collections.entries.has(entryId)) {
+    collections.entries.utils.writeUpdate({ id: entryId, ...metadata });
+  }
+}
+
+/**
+ * Upserts entries from tRPC infinite query pages into the collection.
+ * Called as pages load to populate the local-only entries collection.
+ *
+ * Uses insert for new entries and update for existing ones (e.g., when
+ * a refetch returns entries that were already loaded from a previous page).
+ */
+export function upsertEntriesInCollection(
+  collections: Collections | null,
+  entries: EntryListItem[]
+): void {
+  if (!collections || entries.length === 0) return;
+
+  const inserts: EntryListItem[] = [];
+  const updates: Array<Partial<EntryListItem> & { id: string }> = [];
+
+  for (const entry of entries) {
+    if (collections.entries.has(entry.id)) {
+      updates.push(entry);
+    } else {
+      inserts.push(entry);
+    }
+  }
+
+  if (inserts.length > 0) {
+    collections.entries.utils.writeInsert(inserts);
+  }
+  if (updates.length > 0) {
+    collections.entries.utils.writeUpdate(updates);
   }
 }

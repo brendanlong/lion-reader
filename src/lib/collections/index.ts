@@ -22,7 +22,7 @@ import { createSubscriptionsCollection, type SubscriptionsCollection } from "./s
 import { createTagsCollection, type TagsCollection } from "./tags";
 import { createEntriesCollection, type EntriesCollection } from "./entries";
 import { createCountsCollection, type CountsCollection } from "./counts";
-import type { EntryListItem, TagItem, UncategorizedCounts } from "./types";
+import type { TagItem, UncategorizedCounts } from "./types";
 
 export type {
   Subscription,
@@ -55,7 +55,6 @@ export interface CollectionFetchers {
     items: TagItem[];
     uncategorized: UncategorizedCounts;
   }>;
-  fetchEntries: () => Promise<EntryListItem[]>;
 }
 
 /**
@@ -77,7 +76,7 @@ export function createCollections(
   return {
     subscriptions: createSubscriptionsCollection(),
     tags: createTagsCollection(queryClient, fetchers.fetchTagsAndUncategorized, counts),
-    entries: createEntriesCollection(queryClient, fetchers.fetchEntries),
+    entries: createEntriesCollection(),
     counts,
   };
 }

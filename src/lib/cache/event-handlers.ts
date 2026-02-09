@@ -16,6 +16,9 @@ import {
   addTagToCollection,
   updateTagInCollection,
   removeTagFromCollection,
+  updateEntryReadInCollection,
+  updateEntryStarredInCollection,
+  updateEntryMetadataInCollection,
 } from "@/lib/collections/writes";
 
 // ============================================================================
@@ -193,21 +196,20 @@ export function handleSyncEvent(
       }
       break;
 
-    case "entry_updated":
+    case "entry_updated": {
       // Update entry metadata directly in caches
-      updateEntryMetadataInCache(
-        utils,
-        event.entryId,
-        {
-          title: event.metadata.title,
-          author: event.metadata.author,
-          summary: event.metadata.summary,
-          url: event.metadata.url,
-          publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
-        },
-        queryClient
-      );
+      const metadata = {
+        title: event.metadata.title,
+        author: event.metadata.author,
+        summary: event.metadata.summary,
+        url: event.metadata.url,
+        publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
+      };
+      updateEntryMetadataInCache(utils, event.entryId, metadata, queryClient);
+      // Also update entries collection
+      updateEntryMetadataInCollection(collections ?? null, event.entryId, metadata);
       break;
+    }
 
     case "entry_state_changed":
       // Update read/starred state in cache
@@ -215,6 +217,9 @@ export function handleSyncEvent(
         read: event.read,
         starred: event.starred,
       });
+      // Also update entries collection
+      updateEntryReadInCollection(collections ?? null, [event.entryId], event.read);
+      updateEntryStarredInCollection(collections ?? null, event.entryId, event.starred);
       break;
 
     case "subscription_created": {

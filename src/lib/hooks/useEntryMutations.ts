@@ -37,6 +37,11 @@ import {
   updateEntriesInListCache,
   updateEntriesInAffectedListCaches,
 } from "@/lib/cache/entry-cache";
+import {
+  updateEntryReadInCollection,
+  updateEntryStarredInCollection,
+  updateEntryScoreInCollection,
+} from "@/lib/collections/writes";
 
 /**
  * Entry type for routing.
@@ -273,6 +278,16 @@ export function useEntryMutations(): UseEntryMutationsResult {
       winningState.implicitScore,
       queryClient
     );
+
+    // Update entries collection with winning state
+    updateEntryReadInCollection(collections, [entryId], winningState.read);
+    updateEntryStarredInCollection(collections, entryId, winningState.starred);
+    updateEntryScoreInCollection(
+      collections,
+      entryId,
+      winningState.score,
+      winningState.implicitScore
+    );
   };
 
   // markRead mutation - uses optimistic updates for instant UI feedback
@@ -288,6 +303,9 @@ export function useEntryMutations(): UseEntryMutationsResult {
         entryIds,
         variables.read
       );
+
+      // Optimistic update in entries collection
+      updateEntryReadInCollection(collections, entryIds, variables.read);
 
       // Start tracking for each entry
       for (const entryId of entryIds) {
@@ -332,6 +350,12 @@ export function useEntryMutations(): UseEntryMutationsResult {
         scope
       );
 
+      // Update entries in collection with server state
+      for (const entry of data.entries) {
+        updateEntryReadInCollection(collections, [entry.id], entry.read);
+        updateEntryScoreInCollection(collections, entry.id, entry.score, entry.implicitScore);
+      }
+
       // Update counts (always apply, not dependent on timestamp)
       setBulkCounts(utils, data.counts, queryClient, collections);
     },
@@ -351,6 +375,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
             // All mutations failed, rollback to original state from tracking
             // (not from context, which may have captured intermediate state)
             updateEntriesReadStatus(utils, [entryId], result.originalRead, queryClient);
+            updateEntryReadInCollection(collections, [entryId], result.originalRead);
           }
         }
       }
@@ -395,6 +420,9 @@ export function useEntryMutations(): UseEntryMutationsResult {
         variables.starred
       );
 
+      // Optimistic update in entries collection
+      updateEntryStarredInCollection(collections, variables.id, variables.starred);
+
       // Start tracking
       const originalStarred = optimisticContext.wasStarred;
       const cachedData = utils.entries.get.getData({ id: variables.id });
@@ -422,6 +450,15 @@ export function useEntryMutations(): UseEntryMutationsResult {
       // Update list cache with starred status
       updateEntriesInListCache(queryClient, [data.entry.id], { starred: data.entry.starred });
 
+      // Update entries collection with server state
+      updateEntryStarredInCollection(collections, data.entry.id, data.entry.starred);
+      updateEntryScoreInCollection(
+        collections,
+        data.entry.id,
+        data.entry.score,
+        data.entry.implicitScore
+      );
+
       // Update counts (always apply)
       setCounts(utils, data.counts, queryClient, collections);
     },
@@ -436,6 +473,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
           // All mutations failed, rollback to original state from tracking
           // (not from context, which may have captured intermediate state)
           updateEntryStarredStatus(utils, variables.id, result.originalStarred, queryClient);
+          updateEntryStarredInCollection(collections, variables.id, result.originalStarred);
         }
       }
       toast.error(variables.starred ? "Failed to star entry" : "Failed to unstar entry");
@@ -451,6 +489,14 @@ export function useEntryMutations(): UseEntryMutationsResult {
         data.entry.score,
         data.entry.implicitScore,
         queryClient
+      );
+
+      // Update entries collection with score
+      updateEntryScoreInCollection(
+        collections,
+        data.entry.id,
+        data.entry.score,
+        data.entry.implicitScore
       );
     },
     onError: () => {

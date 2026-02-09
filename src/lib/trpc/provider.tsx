@@ -170,11 +170,6 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
 
     return createCollections(queryClient, {
       fetchTagsAndUncategorized: () => vanillaClient.tags.list.query(),
-      fetchEntries: async () => {
-        // Phase 0: return empty array. In Phase 2, this will use on-demand
-        // sync with loadSubsetOptions to fetch paginated entries.
-        return [];
-      },
     });
   });
 
