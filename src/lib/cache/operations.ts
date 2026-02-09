@@ -1,23 +1,14 @@
 /**
  * Cache Operations
  *
- * Higher-level functions for cache updates that handle all the interactions
- * between different caches. These are the primary API for mutations and SSE
- * handlers - they don't need to know which low-level caches to update.
- *
- * Operations look up entry state from cache to handle interactions correctly:
- * - Starring an unread entry affects the starred unread count
- * - Marking a starred entry read affects the starred unread count
+ * Higher-level functions for subscription/count cache updates.
+ * Entry state (read, starred, score) is managed by TanStack DB collections.
+ * These operations handle subscription lifecycle and count updates.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import type { Collections, Subscription } from "@/lib/collections";
-import {
-  updateEntriesReadStatus,
-  updateEntryStarredStatus,
-  updateEntryScoreInCache,
-} from "./entry-cache";
 import {
   adjustSubscriptionUnreadCounts,
   adjustTagUnreadCounts,
@@ -39,22 +30,6 @@ import {
   adjustTagFeedCountInCollection,
   adjustUncategorizedFeedCountInCollection,
 } from "@/lib/collections/writes";
-
-/**
- * Entry type (matches feed type schema).
- */
-export type EntryType = "web" | "email" | "saved";
-
-/**
- * Entry with context, as returned by markRead mutation.
- * Includes all state needed for cache updates.
- */
-export interface EntryWithContext {
-  id: string;
-  subscriptionId: string | null;
-  starred: boolean;
-  type: EntryType;
-}
 
 /**
  * Subscription data for adding to cache.
@@ -211,156 +186,6 @@ function removeSubscriptionFromInfiniteQueries(
       });
     }
   }
-}
-
-/**
- * Handles entries being marked as read or unread.
- *
- * Updates:
- * - entries.get cache for each entry
- * - entries.list cache (updates in place, no refetch)
- * - subscriptions.list unread counts
- * - tags.list unread counts
- * - entries.count({ starredOnly: true }) for starred entries
- * - entries.count({ type: "saved" }) for saved entries
- *
- * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
- * SuspendingEntryList refetches on pathname change, so lists update on next navigation.
- *
- * @param utils - tRPC utils for cache access
- * @param entries - Entries with their context (subscriptionId, starred, type)
- * @param read - New read status
- * @param queryClient - React Query client (optional, for list cache updates)
- */
-export function handleEntriesMarkedRead(
-  utils: TRPCClientUtils,
-  entries: EntryWithContext[],
-  read: boolean,
-  queryClient?: QueryClient,
-  collections?: Collections | null
-): void {
-  if (entries.length === 0) return;
-
-  // 1. Update entry read status in entries.get cache and entries.list cache
-  updateEntriesReadStatus(
-    utils,
-    entries.map((e) => e.id),
-    read,
-    queryClient
-  );
-
-  // 2. Calculate subscription deltas
-  // Marking read: -1, marking unread: +1
-  const delta = read ? -1 : 1;
-  const subscriptionDeltas = new Map<string, number>();
-
-  for (const entry of entries) {
-    if (entry.subscriptionId) {
-      const current = subscriptionDeltas.get(entry.subscriptionId) ?? 0;
-      subscriptionDeltas.set(entry.subscriptionId, current + delta);
-    }
-  }
-
-  // 3. Update subscription and tag unread counts (including per-tag infinite queries)
-  updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient, collections);
-
-  // 4. Update All Articles unread count
-  adjustEntriesCount(utils, {}, delta * entries.length);
-
-  // 5. Update starred unread count - only for entries that are starred
-  const starredCount = entries.filter((e) => e.starred).length;
-  if (starredCount > 0) {
-    adjustEntriesCount(utils, { starredOnly: true }, delta * starredCount);
-  }
-
-  // 6. Update saved unread count - only for saved entries
-  const savedCount = entries.filter((e) => e.type === "saved").length;
-  if (savedCount > 0) {
-    adjustEntriesCount(utils, { type: "saved" }, delta * savedCount);
-  }
-}
-
-/**
- * Handles an entry being starred.
- *
- * Updates:
- * - entries.get cache
- * - entries.list cache (updates in place, no refetch)
- * - entries.count({ starredOnly: true }) - total +1, unread +1 if entry is unread
- *
- * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
- *
- * @param utils - tRPC utils for cache access
- * @param entryId - Entry ID being starred
- * @param read - Whether the entry is read (from server response)
- * @param queryClient - React Query client (optional, for list cache updates)
- */
-export function handleEntryStarred(
-  utils: TRPCClientUtils,
-  entryId: string,
-  read: boolean,
-  queryClient?: QueryClient
-): void {
-  // 1. Update entry starred status
-  updateEntryStarredStatus(utils, entryId, true, queryClient);
-
-  // 2. Update starred count
-  // Total always +1, unread +1 only if entry is unread
-  adjustEntriesCount(utils, { starredOnly: true }, read ? 0 : 1, 1);
-}
-
-/**
- * Handles an entry being unstarred.
- *
- * Updates:
- * - entries.get cache
- * - entries.list cache (updates in place, no refetch)
- * - entries.count({ starredOnly: true }) - total -1, unread -1 if entry is unread
- *
- * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
- *
- * @param utils - tRPC utils for cache access
- * @param entryId - Entry ID being unstarred
- * @param read - Whether the entry is read (from server response)
- * @param queryClient - React Query client (optional, for list cache updates)
- */
-export function handleEntryUnstarred(
-  utils: TRPCClientUtils,
-  entryId: string,
-  read: boolean,
-  queryClient?: QueryClient
-): void {
-  // 1. Update entry starred status
-  updateEntryStarredStatus(utils, entryId, false, queryClient);
-
-  // 2. Update starred count
-  // Total always -1, unread -1 only if entry was unread
-  adjustEntriesCount(utils, { starredOnly: true }, read ? 0 : -1, -1);
-}
-
-/**
- * Handles an entry's score being changed.
- *
- * Updates:
- * - entries.get cache (score, implicitScore)
- * - entries.list cache (score, implicitScore)
- *
- * Score changes don't affect unread counts, subscription counts, or tag counts.
- *
- * @param utils - tRPC utils for cache access
- * @param entryId - Entry ID whose score changed
- * @param score - New explicit score (null if cleared)
- * @param implicitScore - New implicit score
- * @param queryClient - React Query client (optional, for list cache updates)
- */
-export function handleEntryScoreChanged(
-  utils: TRPCClientUtils,
-  entryId: string,
-  score: number | null,
-  implicitScore: number,
-  queryClient?: QueryClient
-): void {
-  updateEntryScoreInCache(utils, entryId, score, implicitScore, queryClient);
 }
 
 /**
@@ -889,90 +714,4 @@ function setUncategorizedUnreadCount(utils: TRPCClientUtils, unread: number): vo
       },
     };
   });
-}
-
-// ============================================================================
-// Optimistic Update Helpers
-// ============================================================================
-
-/**
- * Context returned by optimistic read update for rollback.
- */
-export interface OptimisticReadContext {
-  previousEntries: Map<string, { read: boolean } | undefined>;
-  entryIds: string[];
-}
-
-/**
- * Prepares and applies an optimistic read status update.
- * Should be called in onMutate. Returns context needed for rollback in onError.
- *
- * @param utils - tRPC utils for cache access
- * @param queryClient - React Query client for cache access
- * @param entryIds - Entry IDs to update
- * @param read - New read status
- * @returns Context for rollback
- */
-export async function applyOptimisticReadUpdate(
-  utils: TRPCClientUtils,
-  queryClient: QueryClient,
-  entryIds: string[],
-  read: boolean
-): Promise<OptimisticReadContext> {
-  // We intentionally don't cancel any queries here.
-  // - Cancelling entries.get would abort content fetches, leaving only placeholder data
-  // - Cancelling entries.list would disrupt scrolling/loading while marking entries read
-  // - If a fetch completes with stale read status, onSuccess will correct it immediately
-  // - The race condition window is small (between onMutate and onSuccess)
-
-  // Snapshot the previous state for rollback
-  const previousEntries = new Map<string, { read: boolean } | undefined>();
-  for (const entryId of entryIds) {
-    const data = utils.entries.get.getData({ id: entryId });
-    previousEntries.set(entryId, data?.entry ? { read: data.entry.read } : undefined);
-  }
-
-  // Optimistically update the cache immediately
-  updateEntriesReadStatus(utils, entryIds, read, queryClient);
-
-  return { previousEntries, entryIds };
-}
-
-/**
- * Context returned by optimistic starred update for rollback.
- */
-export interface OptimisticStarredContext {
-  entryId: string;
-  wasStarred: boolean;
-}
-
-/**
- * Prepares and applies an optimistic starred status update.
- * Should be called in onMutate. Returns context needed for rollback in onError.
- *
- * @param utils - tRPC utils for cache access
- * @param queryClient - React Query client for cache access
- * @param entryId - Entry ID to update
- * @param starred - New starred status
- * @returns Context for rollback
- */
-export async function applyOptimisticStarredUpdate(
-  utils: TRPCClientUtils,
-  queryClient: QueryClient,
-  entryId: string,
-  starred: boolean
-): Promise<OptimisticStarredContext> {
-  // We intentionally don't cancel any queries here.
-  // - Cancelling entries.get would abort content fetches, leaving only placeholder data
-  // - Cancelling entries.list would disrupt scrolling/loading
-  // - If a fetch completes with stale starred status, onSuccess will correct it immediately
-
-  // Snapshot previous state for rollback
-  const previousEntry = utils.entries.get.getData({ id: entryId });
-  const wasStarred = previousEntry?.entry?.starred ?? !starred;
-
-  // Optimistically update the cache
-  updateEntryStarredStatus(utils, entryId, starred, queryClient);
-
-  return { entryId, wasStarred };
 }

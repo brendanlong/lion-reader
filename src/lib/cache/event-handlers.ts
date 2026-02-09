@@ -10,7 +10,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import type { Collections } from "@/lib/collections";
 import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "./operations";
-import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
 import { applySyncTagChanges, removeSyncTags } from "./count-cache";
 import {
   addTagToCollection,
@@ -197,7 +196,7 @@ export function handleSyncEvent(
       break;
 
     case "entry_updated": {
-      // Update entry metadata directly in caches
+      // Update entry metadata in entries.get cache (detail view)
       const metadata = {
         title: event.metadata.title,
         author: event.metadata.author,
@@ -205,19 +204,35 @@ export function handleSyncEvent(
         url: event.metadata.url,
         publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
       };
-      updateEntryMetadataInCache(utils, event.entryId, metadata, queryClient);
-      // Also update entries collection
+      utils.entries.get.setData({ id: event.entryId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: {
+            ...oldData.entry,
+            ...(metadata.title !== undefined && { title: metadata.title }),
+            ...(metadata.author !== undefined && { author: metadata.author }),
+            ...(metadata.summary !== undefined && { summary: metadata.summary }),
+            ...(metadata.url !== undefined && { url: metadata.url }),
+            ...(metadata.publishedAt !== undefined && { publishedAt: metadata.publishedAt }),
+          },
+        };
+      });
+      // Update entries collection (list view, via reactive useLiveQuery)
       updateEntryMetadataInCollection(collections ?? null, event.entryId, metadata);
       break;
     }
 
     case "entry_state_changed":
-      // Update read/starred state in cache
-      updateEntriesInListCache(queryClient, [event.entryId], {
-        read: event.read,
-        starred: event.starred,
+      // Update entries.get cache (detail view)
+      utils.entries.get.setData({ id: event.entryId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: { ...oldData.entry, read: event.read, starred: event.starred },
+        };
       });
-      // Also update entries collection
+      // Update entries collection (list view, via reactive useLiveQuery)
       updateEntryReadInCollection(collections ?? null, [event.entryId], event.read);
       updateEntryStarredInCollection(collections ?? null, event.entryId, event.starred);
       break;

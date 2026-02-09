@@ -12,6 +12,7 @@
 "use client";
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useLiveQuery } from "@tanstack/react-db";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -60,26 +61,36 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     upsertEntriesInCollection(collections, allPageItems);
   }, [collections, allPageItems]);
 
-  // Flatten entries from all pages
+  // Reactive subscription to entries collection state.
+  // Re-renders when mutations/SSE call writeUpdate on the collection,
+  // providing live mutable state (read, starred) to overlay on page items.
+  const { state: entriesState } = useLiveQuery(collections.entries);
+
+  // Build entries by merging page items (ordering/identity) with collection state
+  // (mutable fields like read/starred). The collection is the source of truth for
+  // mutable state after optimistic updates, while tRPC pages provide ordering.
   const entries = useMemo(
     () =>
-      allPageItems.map((entry) => ({
-        id: entry.id,
-        feedId: entry.feedId,
-        subscriptionId: entry.subscriptionId,
-        type: entry.type,
-        url: entry.url,
-        title: entry.title,
-        author: entry.author,
-        summary: entry.summary,
-        publishedAt: entry.publishedAt,
-        fetchedAt: entry.fetchedAt,
-        read: entry.read,
-        starred: entry.starred,
-        feedTitle: entry.feedTitle,
-        siteName: entry.siteName,
-      })),
-    [allPageItems]
+      allPageItems.map((entry) => {
+        const live = entriesState.get(entry.id);
+        return {
+          id: entry.id,
+          feedId: entry.feedId,
+          subscriptionId: entry.subscriptionId,
+          type: entry.type,
+          url: entry.url,
+          title: live?.title ?? entry.title,
+          author: live?.author ?? entry.author,
+          summary: live?.summary ?? entry.summary,
+          publishedAt: entry.publishedAt,
+          fetchedAt: entry.fetchedAt,
+          read: live?.read ?? entry.read,
+          starred: live?.starred ?? entry.starred,
+          feedTitle: entry.feedTitle,
+          siteName: entry.siteName,
+        };
+      }),
+    [allPageItems, entriesState]
   );
 
   // Compute next/previous entry IDs for keyboard navigation

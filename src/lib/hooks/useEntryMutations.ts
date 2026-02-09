@@ -24,19 +24,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useCollections } from "@/lib/collections/context";
-import {
-  handleEntryScoreChanged,
-  setCounts,
-  setBulkCounts,
-  applyOptimisticReadUpdate,
-  applyOptimisticStarredUpdate,
-} from "@/lib/cache/operations";
-import {
-  updateEntriesReadStatus,
-  updateEntryStarredStatus,
-  updateEntriesInListCache,
-  updateEntriesInAffectedListCaches,
-} from "@/lib/cache/entry-cache";
+import { setCounts, setBulkCounts } from "@/lib/cache/operations";
 import {
   updateEntryReadInCollection,
   updateEntryStarredInCollection,
@@ -256,6 +244,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
   /**
    * Apply winning state to cache if it's newer than current cache state.
+   * Updates entries.get (detail view) and collection (list view).
    */
   const applyWinningStateToCache = (entryId: string, winningState: MutationResultState) => {
     // Get current cache state to compare timestamps
@@ -268,18 +257,22 @@ export function useEntryMutations(): UseEntryMutationsResult {
       return;
     }
 
-    // Update the cache with winning state
-    updateEntriesReadStatus(utils, [entryId], winningState.read);
-    updateEntryStarredStatus(utils, entryId, winningState.starred, queryClient);
-    handleEntryScoreChanged(
-      utils,
-      entryId,
-      winningState.score,
-      winningState.implicitScore,
-      queryClient
-    );
+    // Update entries.get cache (detail view)
+    utils.entries.get.setData({ id: entryId }, (oldData) => {
+      if (!oldData) return oldData;
+      return {
+        ...oldData,
+        entry: {
+          ...oldData.entry,
+          read: winningState.read,
+          starred: winningState.starred,
+          score: winningState.score,
+          implicitScore: winningState.implicitScore,
+        },
+      };
+    });
 
-    // Update entries collection with winning state
+    // Update entries collection (list view, via reactive useLiveQuery)
     updateEntryReadInCollection(collections, [entryId], winningState.read);
     updateEntryStarredInCollection(collections, entryId, winningState.starred);
     updateEntryScoreInCollection(
@@ -297,26 +290,34 @@ export function useEntryMutations(): UseEntryMutationsResult {
     onMutate: async (variables) => {
       const entryIds = variables.entries.map((e) => e.id);
 
-      const optimisticContext = await applyOptimisticReadUpdate(
-        utils,
-        queryClient,
-        entryIds,
-        variables.read
-      );
+      // Snapshot previous state for rollback
+      const previousEntries = new Map<string, { read: boolean } | undefined>();
+      for (const entryId of entryIds) {
+        const data = utils.entries.get.getData({ id: entryId });
+        previousEntries.set(entryId, data?.entry ? { read: data.entry.read } : undefined);
+      }
 
-      // Optimistic update in entries collection
+      // Optimistically update entries.get cache (detail view)
+      for (const entryId of entryIds) {
+        utils.entries.get.setData({ id: entryId }, (oldData) => {
+          if (!oldData) return oldData;
+          return { ...oldData, entry: { ...oldData.entry, read: variables.read } };
+        });
+      }
+
+      // Optimistic update in entries collection (list view, via reactive useLiveQuery)
       updateEntryReadInCollection(collections, entryIds, variables.read);
 
       // Start tracking for each entry
       for (const entryId of entryIds) {
-        const prevEntry = optimisticContext.previousEntries.get(entryId);
+        const prevEntry = previousEntries.get(entryId);
         const originalRead = prevEntry?.read ?? false;
         const cachedData = utils.entries.get.getData({ id: entryId });
         const originalStarred = cachedData?.entry?.starred ?? false;
         startTracking(entryId, originalRead, originalStarred);
       }
 
-      return optimisticContext;
+      return { previousEntries, entryIds };
     },
 
     onSuccess: (data) => {
@@ -337,20 +338,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
         }
       }
 
-      // Update list caches with read status from server response
-      const scope = {
-        tagIds: new Set(data.counts.tags.map((t) => t.id)),
-        hasUncategorized: data.counts.uncategorized !== undefined,
-      };
-      // All entries in a markRead batch have the same read value
-      updateEntriesInAffectedListCaches(
-        queryClient,
-        data.entries,
-        { read: data.entries[0]?.read ?? false },
-        scope
-      );
-
-      // Update entries in collection with server state
+      // Update entries in collection with server state (read + score)
       for (const entry of data.entries) {
         updateEntryReadInCollection(collections, [entry.id], entry.read);
         updateEntryScoreInCollection(collections, entry.id, entry.score, entry.implicitScore);
@@ -372,9 +360,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
             // Some mutations succeeded, apply winning state
             applyWinningStateToCache(entryId, result.winningState);
           } else {
-            // All mutations failed, rollback to original state from tracking
-            // (not from context, which may have captured intermediate state)
-            updateEntriesReadStatus(utils, [entryId], result.originalRead, queryClient);
+            // All mutations failed, rollback to original state
+            utils.entries.get.setData({ id: entryId }, (oldData) => {
+              if (!oldData) return oldData;
+              return { ...oldData, entry: { ...oldData.entry, read: result.originalRead } };
+            });
             updateEntryReadInCollection(collections, [entryId], result.originalRead);
           }
         }
@@ -413,23 +403,26 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const setStarredMutation = trpc.entries.setStarred.useMutation({
     // Optimistic update: immediately show the entry with new starred status
     onMutate: async (variables) => {
-      const optimisticContext = await applyOptimisticStarredUpdate(
-        utils,
-        queryClient,
-        variables.id,
-        variables.starred
-      );
+      // Snapshot previous state for rollback
+      const previousEntry = utils.entries.get.getData({ id: variables.id });
+      const wasStarred = previousEntry?.entry?.starred ?? !variables.starred;
 
-      // Optimistic update in entries collection
+      // Optimistically update entries.get cache (detail view)
+      utils.entries.get.setData({ id: variables.id }, (oldData) => {
+        if (!oldData) return oldData;
+        return { ...oldData, entry: { ...oldData.entry, starred: variables.starred } };
+      });
+
+      // Optimistic update in entries collection (list view, via reactive useLiveQuery)
       updateEntryStarredInCollection(collections, variables.id, variables.starred);
 
       // Start tracking
-      const originalStarred = optimisticContext.wasStarred;
+      const originalStarred = wasStarred;
       const cachedData = utils.entries.get.getData({ id: variables.id });
       const originalRead = cachedData?.entry?.read ?? false;
       startTracking(variables.id, originalRead, originalStarred);
 
-      return optimisticContext;
+      return { entryId: variables.id, wasStarred };
     },
 
     onSuccess: (data) => {
@@ -447,10 +440,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
         applyWinningStateToCache(data.entry.id, winningState);
       }
 
-      // Update list cache with starred status
-      updateEntriesInListCache(queryClient, [data.entry.id], { starred: data.entry.starred });
-
-      // Update entries collection with server state
+      // Update entries collection with server state (starred + score)
       updateEntryStarredInCollection(collections, data.entry.id, data.entry.starred);
       updateEntryScoreInCollection(
         collections,
@@ -470,9 +460,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
         if (result.winningState) {
           applyWinningStateToCache(variables.id, result.winningState);
         } else {
-          // All mutations failed, rollback to original state from tracking
-          // (not from context, which may have captured intermediate state)
-          updateEntryStarredStatus(utils, variables.id, result.originalStarred, queryClient);
+          // All mutations failed, rollback to original state
+          utils.entries.get.setData({ id: variables.id }, (oldData) => {
+            if (!oldData) return oldData;
+            return { ...oldData, entry: { ...oldData.entry, starred: result.originalStarred } };
+          });
           updateEntryStarredInCollection(collections, variables.id, result.originalStarred);
         }
       }
@@ -483,15 +475,20 @@ export function useEntryMutations(): UseEntryMutationsResult {
   // setScore mutation - updates score cache only (no count changes)
   const setScoreMutation = trpc.entries.setScore.useMutation({
     onSuccess: (data) => {
-      handleEntryScoreChanged(
-        utils,
-        data.entry.id,
-        data.entry.score,
-        data.entry.implicitScore,
-        queryClient
-      );
+      // Update entries.get cache (detail view)
+      utils.entries.get.setData({ id: data.entry.id }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: {
+            ...oldData.entry,
+            score: data.entry.score,
+            implicitScore: data.entry.implicitScore,
+          },
+        };
+      });
 
-      // Update entries collection with score
+      // Update entries collection (list view)
       updateEntryScoreInCollection(
         collections,
         data.entry.id,

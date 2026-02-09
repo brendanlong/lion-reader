@@ -166,8 +166,7 @@ describe("useEntryMutations", () => {
 describe("useEntryMutations behavior", () => {
   /**
    * Note: Full integration testing of useEntryMutations requires a running
-   * tRPC client which needs significant mocking infrastructure. The cache
-   * operations themselves are tested in cache/operations.test.ts.
+   * tRPC client which needs significant mocking infrastructure.
    *
    * These tests document the expected behavior:
    *
@@ -185,10 +184,10 @@ describe("useEntryMutations behavior", () => {
    * 10. isStarPending is true when star or unstar mutation is pending
    *
    * On success:
-   * - markRead calls handleEntriesMarkedRead with returned entries
+   * - markRead updates entries collection + entries.get cache + counts
    * - markAllRead invalidates entries.list, subscriptions.list, tags.list, and starred count
-   * - star calls handleEntryStarred
-   * - unstar calls handleEntryUnstarred
+   * - star updates entries collection + entries.get cache + counts
+   * - unstar updates entries collection + entries.get cache + counts
    *
    * On error:
    * - All mutations show a toast error message
@@ -198,7 +197,7 @@ describe("useEntryMutations behavior", () => {
     // markRead should:
     // 1. Accept array of IDs and boolean read status
     // 2. Call entries.markRead mutation
-    // 3. On success: call handleEntriesMarkedRead with response entries
+    // 3. On success: update entries collection + entries.get cache + counts
     // 4. On error: show toast error "Failed to update read status"
     expect(true).toBe(true);
   });
@@ -224,7 +223,7 @@ describe("useEntryMutations behavior", () => {
     // star should:
     // 1. Accept entryId
     // 2. Call entries.star mutation with { id: entryId }
-    // 3. On success: call handleEntryStarred with entry id and read status
+    // 3. On success: update entries collection + entries.get cache + counts
     // 4. On error: show toast error "Failed to star entry"
     expect(true).toBe(true);
   });
@@ -233,7 +232,7 @@ describe("useEntryMutations behavior", () => {
     // unstar should:
     // 1. Accept entryId
     // 2. Call entries.unstar mutation with { id: entryId }
-    // 3. On success: call handleEntryUnstarred with entry id and read status
+    // 3. On success: update entries collection + entries.get cache + counts
     // 4. On error: show toast error "Failed to unstar entry"
     expect(true).toBe(true);
   });
@@ -259,20 +258,18 @@ describe("useEntryMutations behavior", () => {
 
 describe("cache integration", () => {
   /**
-   * The cache operations called by useEntryMutations are tested in
+   * Entry state (read, starred, score) is managed by TanStack DB collections.
+   * Subscription lifecycle and count operations are tested in
    * tests/unit/frontend/cache/operations.test.ts
    *
    * This documents which operations are called by which mutations:
    */
 
-  it("markRead mutation uses handleEntriesMarkedRead", () => {
-    // handleEntriesMarkedRead updates:
-    // - entries.get cache for each entry
-    // - subscriptions.list unread counts
-    // - tags.list unread counts
-    // - entries.count for starred entries
-    // - entries.count for saved entries (if type is saved)
-    // - entries.list (removes entries if filtering by unread)
+  it("markRead mutation updates entries collection and counts", () => {
+    // markRead updates:
+    // - entries collection via updateEntryReadInCollection (optimistic)
+    // - entries.get cache for detail view
+    // - subscription/tag/entries counts via setBulkCounts on success
     expect(true).toBe(true);
   });
 
@@ -285,19 +282,19 @@ describe("cache integration", () => {
     expect(true).toBe(true);
   });
 
-  it("star mutation uses handleEntryStarred", () => {
-    // handleEntryStarred updates:
+  it("star mutation updates entries collection and counts", () => {
+    // star updates:
+    // - entries collection via updateEntryStarredInCollection (optimistic)
     // - entries.get cache to set starred: true
-    // - entries.count with starredOnly: true (total +1, unread +1 if entry is unread)
-    // - entries.list to add entry to starred list
+    // - subscription/tag/entries counts via setCounts on success
     expect(true).toBe(true);
   });
 
-  it("unstar mutation uses handleEntryUnstarred", () => {
-    // handleEntryUnstarred updates:
+  it("unstar mutation updates entries collection and counts", () => {
+    // unstar updates:
+    // - entries collection via updateEntryStarredInCollection (optimistic)
     // - entries.get cache to set starred: false
-    // - entries.count with starredOnly: true (total -1, unread -1 if entry is unread)
-    // - entries.list to remove entry from starred list
+    // - subscription/tag/entries counts via setCounts on success
     expect(true).toBe(true);
   });
 });
