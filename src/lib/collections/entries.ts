@@ -55,7 +55,7 @@ export interface EntriesViewFilters {
  *
  * Used for:
  * - SSE `entry_state_changed` / `entry_updated` writes
- * - `EntryContentFallback` and `EntryListFallback` lookups
+ * - `EntryContentFallback` lookups
  * - Cross-view state that persists across route changes
  */
 export function createEntriesCollection() {
