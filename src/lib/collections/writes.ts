@@ -354,14 +354,15 @@ export function adjustUncategorizedFeedCountInCollection(
 }
 
 // ============================================================================
-// Entry Collection Writes (local-only)
+// Entry Collection Writes (global local-only + active view collection)
 // ============================================================================
 
 /**
- * Updates the read status for entries in the collection.
- * No-ops for entries not currently in the collection.
- * This is O(1) per entry (by key lookup) — replaces the O(n) page scanning
- * in the old entry-cache.ts.
+ * Updates the read status for entries in both the global entries collection
+ * and the active view collection (if any).
+ *
+ * Global collection: local-only, uses collection.update()
+ * View collection: query-backed, uses collection.utils.writeUpdate()
  */
 export function updateEntryReadInCollection(
   collections: Collections | null,
@@ -377,10 +378,20 @@ export function updateEntryReadInCollection(
       });
     }
   }
+
+  // Also update the active view collection so useLiveInfiniteQuery picks up changes
+  const viewCol = collections.activeViewCollection;
+  if (viewCol) {
+    const updates = entryIds.filter((id) => viewCol.has(id)).map((id) => ({ id, read }));
+    if (updates.length > 0) {
+      viewCol.utils.writeUpdate(updates);
+    }
+  }
 }
 
 /**
- * Updates the starred status for an entry in the collection.
+ * Updates the starred status for an entry in both the global entries collection
+ * and the active view collection (if any).
  */
 export function updateEntryStarredInCollection(
   collections: Collections | null,
@@ -394,10 +405,17 @@ export function updateEntryStarredInCollection(
       draft.starred = starred;
     });
   }
+
+  // Also update the active view collection
+  const viewCol = collections.activeViewCollection;
+  if (viewCol?.has(entryId)) {
+    viewCol.utils.writeUpdate({ id: entryId, starred });
+  }
 }
 
 /**
- * Updates the score fields for an entry in the collection.
+ * Updates the score fields for an entry in both the global entries collection
+ * and the active view collection (if any).
  */
 export function updateEntryScoreInCollection(
   collections: Collections | null,
@@ -413,10 +431,17 @@ export function updateEntryScoreInCollection(
       draft.implicitScore = implicitScore;
     });
   }
+
+  // Also update the active view collection
+  const viewCol = collections.activeViewCollection;
+  if (viewCol?.has(entryId)) {
+    viewCol.utils.writeUpdate({ id: entryId, score, implicitScore });
+  }
 }
 
 /**
- * Updates entry metadata (title, author, summary, url, publishedAt) in the collection.
+ * Updates entry metadata (title, author, summary, url, publishedAt) in both
+ * the global entries collection and the active view collection (if any).
  * Used for SSE entry_updated events.
  */
 export function updateEntryMetadataInCollection(
@@ -430,6 +455,12 @@ export function updateEntryMetadataInCollection(
     collections.entries.update(entryId, (draft) => {
       Object.assign(draft, metadata);
     });
+  }
+
+  // Also update the active view collection
+  const viewCol = collections.activeViewCollection;
+  if (viewCol?.has(entryId)) {
+    viewCol.utils.writeUpdate({ id: entryId, ...metadata });
   }
 }
 

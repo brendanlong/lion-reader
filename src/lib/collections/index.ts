@@ -20,7 +20,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createSubscriptionsCollection, type SubscriptionsCollection } from "./subscriptions";
 import { createTagsCollection, type TagsCollection } from "./tags";
-import { createEntriesCollection, type EntriesCollection } from "./entries";
+import {
+  createEntriesCollection,
+  type EntriesCollection,
+  type ViewEntriesCollection,
+} from "./entries";
 import { createCountsCollection, type CountsCollection } from "./counts";
 import type { TagItem, UncategorizedCounts } from "./types";
 
@@ -34,16 +38,23 @@ export type {
 export type { SubscriptionsCollection } from "./subscriptions";
 export type { TagsCollection } from "./tags";
 export type { EntriesCollection } from "./entries";
+export type { ViewEntriesCollection } from "./entries";
 export type { CountsCollection } from "./counts";
 
 /**
  * All collections grouped together for convenient access.
+ *
+ * `activeViewCollection` is set by the SuspendingEntryList component to register
+ * the current view's on-demand collection. Mutations and SSE handlers write to it
+ * so changes propagate to the live query (in addition to the global entries collection).
  */
 export interface Collections {
   subscriptions: SubscriptionsCollection;
   tags: TagsCollection;
   entries: EntriesCollection;
   counts: CountsCollection;
+  /** The active on-demand view collection, set by useViewEntriesCollection */
+  activeViewCollection: ViewEntriesCollection | null;
 }
 
 /**
@@ -78,5 +89,6 @@ export function createCollections(
     tags: createTagsCollection(queryClient, fetchers.fetchTagsAndUncategorized, counts),
     entries: createEntriesCollection(),
     counts,
+    activeViewCollection: null,
   };
 }

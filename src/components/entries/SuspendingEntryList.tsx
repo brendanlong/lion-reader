@@ -1,18 +1,24 @@
 /**
  * SuspendingEntryList Component
  *
- * A wrapper around EntryList that uses useSuspenseInfiniteQuery.
- * Suspends until entry data is ready, allowing independent loading
- * from other parts of the page (like entry content).
+ * Renders the entry list using a TanStack DB on-demand collection.
+ * The collection fetches pages from the server as the user scrolls,
+ * bridging TanStack DB's offset-based windowing to our cursor-based API.
  *
- * Uses useEntriesListInput to get query input, ensuring cache is shared
- * with the parent's non-suspending query (used for navigation).
+ * Uses useLiveInfiniteQuery for reactive pagination and useStableEntryList
+ * to prevent entries from disappearing when their state changes mid-session
+ * (e.g., marking an entry as read while viewing "unread only").
+ *
+ * Note: Despite the name, this component no longer uses React Suspense.
+ * The name is kept for compatibility with the dynamic import in
+ * UnifiedEntriesContent. Loading state is handled via isLoading/isReady.
  */
 
 "use client";
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { useLiveQuery } from "@tanstack/react-db";
+import { useLiveInfiniteQuery } from "@tanstack/react-db";
+import { eq } from "@tanstack/db";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -23,7 +29,12 @@ import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { useCollections } from "@/lib/collections/context";
 import { upsertEntriesInCollection } from "@/lib/collections/writes";
+import { useViewEntriesCollection } from "@/lib/hooks/useViewEntriesCollection";
+import { useStableEntryList } from "@/lib/hooks/useStableEntryList";
+import { useEntryNavigationUpdater } from "@/lib/hooks/useEntryNavigation";
+import type { EntriesViewFilters } from "@/lib/collections/entries";
 import { EntryList, type ExternalQueryState } from "./EntryList";
+import { EntryListSkeleton } from "./EntryListSkeleton";
 
 interface SuspendingEntryListProps {
   emptyMessage: string;
@@ -37,60 +48,99 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
   const scrollContainerRef = useScrollContainer();
   const collections = useCollections();
 
-  // Get query input from URL - shared with parent's non-suspending query
+  // Get query input from URL
   const queryInput = useEntriesListInput();
 
-  // Suspending query - component suspends until data is ready
-  // Shares cache with parent's useInfiniteQuery via same queryInput
-  const [data, { fetchNextPage, hasNextPage, isFetchingNextPage, refetch }] =
-    trpc.entries.list.useSuspenseInfiniteQuery(queryInput, {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      staleTime: Infinity,
-      refetchOnWindowFocus: false,
-    });
-
-  // Flatten all page items for collection population
-  const allPageItems = useMemo(
-    () => data?.pages.flatMap((page) => page.items) ?? [],
-    [data?.pages]
+  // Build filters for the on-demand view collection
+  const viewFilters: EntriesViewFilters = useMemo(
+    () => ({
+      subscriptionId: queryInput.subscriptionId,
+      tagId: queryInput.tagId,
+      uncategorized: queryInput.uncategorized,
+      unreadOnly: showUnreadOnly,
+      starredOnly: queryInput.starredOnly,
+      sortOrder,
+      type: queryInput.type,
+      limit: queryInput.limit,
+    }),
+    [queryInput, showUnreadOnly, sortOrder]
   );
 
-  // Populate entries collection from tRPC pages as they load.
-  // This makes entries available for O(1) lookup by mutations/SSE.
+  // Create the on-demand view collection (recreates on filter change)
+  const { collection: viewCollection, filterKey } = useViewEntriesCollection(viewFilters);
+
+  const sortDescending = sortOrder === "newest";
+
+  // Live infinite query over the view collection
+  // Client-side where clauses ensure correct hasNextPage / dataNeeded calculation
+  const {
+    data: liveData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isReady,
+  } = useLiveInfiniteQuery(
+    (q) => {
+      let query = q
+        .from({ e: viewCollection })
+        .orderBy(({ e }) => e._sortMs, sortDescending ? "desc" : "asc");
+
+      // Client-side filter matching server-side filter for correct pagination
+      if (showUnreadOnly) {
+        query = query.where(({ e }) => eq(e.read, false));
+      }
+      if (queryInput.starredOnly) {
+        query = query.where(({ e }) => eq(e.starred, true));
+      }
+
+      return query.select(({ e }) => ({ ...e }));
+    },
+    {
+      pageSize: queryInput.limit,
+      getNextPageParam: (lastPage, allPages) =>
+        lastPage.length === queryInput.limit ? allPages.length : undefined,
+    },
+    [filterKey, sortDescending, showUnreadOnly, queryInput.starredOnly]
+  );
+
+  // Display stability: merge live entries with previously-seen entries
+  const stableEntries = useStableEntryList(
+    liveData ?? [],
+    viewCollection,
+    filterKey,
+    sortDescending
+  );
+
+  // Populate global entries collection from live query results.
+  // This keeps entries available for SSE state updates, fallback lookups,
+  // and the detail view overlay.
   useEffect(() => {
-    upsertEntriesInCollection(collections, allPageItems);
-  }, [collections, allPageItems]);
+    if (stableEntries.length > 0) {
+      upsertEntriesInCollection(collections, stableEntries);
+    }
+  }, [collections, stableEntries]);
 
-  // Reactive subscription to entries collection state.
-  // Re-renders when mutations/SSE call writeUpdate on the collection,
-  // providing live mutable state (read, starred) to overlay on page items.
-  const { state: entriesState } = useLiveQuery(collections.entries);
-
-  // Build entries by merging page items (ordering/identity) with collection state
-  // (mutable fields like read/starred). The collection is the source of truth for
-  // mutable state after optimistic updates, while tRPC pages provide ordering.
+  // Map to EntryListItem shape (strip _sortMs for downstream compatibility)
   const entries = useMemo(
     () =>
-      allPageItems.map((entry) => {
-        const live = entriesState.get(entry.id);
-        return {
-          id: entry.id,
-          feedId: entry.feedId,
-          subscriptionId: entry.subscriptionId,
-          type: entry.type,
-          url: entry.url,
-          title: live?.title ?? entry.title,
-          author: live?.author ?? entry.author,
-          summary: live?.summary ?? entry.summary,
-          publishedAt: entry.publishedAt,
-          fetchedAt: entry.fetchedAt,
-          read: live?.read ?? entry.read,
-          starred: live?.starred ?? entry.starred,
-          feedTitle: entry.feedTitle,
-          siteName: entry.siteName,
-        };
-      }),
-    [allPageItems, entriesState]
+      stableEntries.map((entry) => ({
+        id: entry.id,
+        feedId: entry.feedId,
+        subscriptionId: entry.subscriptionId,
+        type: entry.type,
+        url: entry.url,
+        title: entry.title,
+        author: entry.author,
+        summary: entry.summary,
+        publishedAt: entry.publishedAt,
+        fetchedAt: entry.fetchedAt,
+        read: entry.read,
+        starred: entry.starred,
+        feedTitle: entry.feedTitle,
+        siteName: entry.siteName,
+      })),
+    [stableEntries]
   );
 
   // Compute next/previous entry IDs for keyboard navigation
@@ -109,6 +159,12 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
       distanceToEnd: entries.length - 1 - currentIndex,
     };
   }, [openEntryId, entries]);
+
+  // Publish navigation state for swipe gestures in EntryContent
+  const updateNavigation = useEntryNavigationUpdater();
+  useEffect(() => {
+    updateNavigation({ nextEntryId, previousEntryId });
+  }, [updateNavigation, nextEntryId, previousEntryId]);
 
   // Trigger pagination when navigating close to the end of loaded entries
   const prevDistanceToEnd = useRef(distanceToEnd);
@@ -205,19 +261,21 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     onNavigatePrevious: goToPreviousEntry,
   });
 
+  // Show skeleton while first page loads
+  if (isLoading && !isReady) {
+    return <EntryListSkeleton count={5} />;
+  }
+
   // External query state for EntryList
-  const externalQueryState: ExternalQueryState = useMemo(
-    () => ({
-      isLoading: false, // Suspense handles loading
-      isError: false, // ErrorBoundary handles errors
-      errorMessage: undefined,
-      isFetchingNextPage,
-      hasNextPage: hasNextPage ?? false,
-      fetchNextPage,
-      refetch,
-    }),
-    [isFetchingNextPage, hasNextPage, fetchNextPage, refetch]
-  );
+  const externalQueryState: ExternalQueryState = {
+    isLoading: isLoading && !isReady,
+    isError: false,
+    errorMessage: undefined,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch: () => utils.entries.list.invalidate(),
+  };
 
   return (
     <EntryList

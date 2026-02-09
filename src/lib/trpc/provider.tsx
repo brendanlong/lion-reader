@@ -17,6 +17,7 @@ import { getQueryClient } from "./query-client";
 import type { AppRouter } from "@/server/trpc/root";
 import { createCollections, type Collections } from "@/lib/collections";
 import { CollectionsProvider } from "@/lib/collections/context";
+import { VanillaClientProvider, type VanillaClient } from "./vanilla-client";
 
 /**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
@@ -162,12 +163,15 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
   );
 
   // Create a vanilla tRPC client (for collection queryFn calls)
-  // and initialize TanStack DB collections
-  const [collections] = useState<Collections>(() => {
-    const vanillaClient = createTRPCClient<AppRouter>({
+  // Exposed via VanillaClientProvider for use by on-demand collection hooks
+  const [vanillaClient] = useState<VanillaClient>(() =>
+    createTRPCClient<AppRouter>({
       links: [createBatchLink()],
-    });
+    })
+  );
 
+  // Initialize TanStack DB collections
+  const [collections] = useState<Collections>(() => {
     const cols = createCollections(queryClient, {
       fetchTagsAndUncategorized: () => vanillaClient.tags.list.query(),
     });
@@ -196,7 +200,9 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <CollectionsProvider value={collections}>{children}</CollectionsProvider>
+        <VanillaClientProvider value={vanillaClient}>
+          <CollectionsProvider value={collections}>{children}</CollectionsProvider>
+        </VanillaClientProvider>
       </QueryClientProvider>
     </trpc.Provider>
   );
