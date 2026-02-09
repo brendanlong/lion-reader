@@ -12,8 +12,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { findEntryInListCache } from "@/lib/cache/entry-cache";
+import { useCollections } from "@/lib/collections/context";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { Button } from "@/components/ui/button";
@@ -48,10 +47,10 @@ function ButtonShimmer({ width = "w-24" }: { width?: string }) {
  * Star and Read buttons are functional via optimistic updates.
  */
 export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackProps) {
-  const queryClient = useQueryClient();
+  const collections = useCollections();
 
-  // Try to find cached entry data from list queries
-  const cachedEntry = findEntryInListCache(queryClient, entryId);
+  // O(1) lookup from entries collection (populated by SuspendingEntryList)
+  const cachedEntry = collections.entries.get(entryId) ?? null;
 
   // Entry mutations for star/read - these work optimistically even during loading
   const { markRead, star, unstar, setScore } = useEntryMutations();

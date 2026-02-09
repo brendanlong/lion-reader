@@ -16,7 +16,6 @@
 
 import { Suspense, useMemo, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
 import { SuspendingEntryList } from "./SuspendingEntryList";
@@ -28,7 +27,7 @@ import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
-import { findCachedSubscription } from "@/lib/cache/count-cache";
+import { useCollections } from "@/lib/collections/context";
 import { type EntryType } from "@/lib/hooks/useEntryMutations";
 
 /**
@@ -245,17 +244,16 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
  * Used as the Suspense fallback for the title slot.
  */
 function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
-  const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
+  const collections = useCollections();
 
   // Static title - render immediately (shouldn't suspend anyway, but handle it)
   if (routeInfo.title !== null) {
     return <TitleText>{routeInfo.title}</TitleText>;
   }
 
-  // Subscription title from cache
+  // Subscription title from collection (O(1) lookup)
   if (routeInfo.subscriptionId) {
-    const subscription = findCachedSubscription(utils, queryClient, routeInfo.subscriptionId);
+    const subscription = collections.subscriptions.get(routeInfo.subscriptionId);
     if (subscription) {
       return (
         <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
@@ -264,10 +262,9 @@ function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
     return <TitleSkeleton />;
   }
 
-  // Tag title from cache
+  // Tag title from collection (O(1) lookup)
   if (routeInfo.tagId) {
-    const tagsData = utils.tags.list.getData();
-    const tag = tagsData?.items.find((t) => t.id === routeInfo.tagId);
+    const tag = collections.tags.get(routeInfo.tagId);
     if (tag) {
       return <TitleText>{tag.name}</TitleText>;
     }
