@@ -141,7 +141,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   // Initialize with server-provided cursors (granular tracking per entity type)
   const cursorsRef = useRef<SyncCursors>(initialCursors);
   // Ref for performSync to allow self-referencing without violating react-hooks/immutability
-  const performSyncRef = useRef<() => Promise<SyncCursors | null>>();
+  const performSyncRef = useRef<(() => Promise<SyncCursors | null>) | undefined>(undefined);
 
   // State to trigger reconnection
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
