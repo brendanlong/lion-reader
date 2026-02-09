@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
-import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
+import { EntryPageLayout, TitleSkeleton } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 
@@ -28,6 +28,12 @@ const SuspendingEntryList = dynamic(
   () => import("./SuspendingEntryList").then((m) => m.SuspendingEntryList),
   { ssr: false, loading: () => <EntryListSkeleton count={5} /> }
 );
+// EntryListTitle uses useLiveQuery for reactive collection reads, which also
+// uses useSyncExternalStore without getServerSnapshot. Disable SSR.
+const EntryListTitle = dynamic(() => import("./EntryListTitle").then((m) => m.EntryListTitle), {
+  ssr: false,
+  loading: () => <TitleSkeleton />,
+});
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -205,41 +211,6 @@ function useRouteInfo(): RouteInfo {
 }
 
 /**
- * Title component that reads from collections for instant display.
- * Falls back to skeleton if the data isn't in the collection yet.
- */
-function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
-  const collections = useCollections();
-
-  // Static title - render immediately
-  if (routeInfo.title !== null) {
-    return <TitleText>{routeInfo.title}</TitleText>;
-  }
-
-  // Subscription title from collection (O(1) lookup)
-  if (routeInfo.subscriptionId) {
-    const subscription = collections.subscriptions.get(routeInfo.subscriptionId);
-    if (subscription) {
-      return (
-        <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
-      );
-    }
-    return <TitleSkeleton />;
-  }
-
-  // Tag title from collection (O(1) lookup)
-  if (routeInfo.tagId) {
-    const tag = collections.tags.get(routeInfo.tagId);
-    if (tag) {
-      return <TitleText>{tag.name}</TitleText>;
-    }
-    return <TitleSkeleton />;
-  }
-
-  return <TitleText>All Items</TitleText>;
-}
-
-/**
  * Inner content component that renders based on route.
  * Titles read from TanStack DB collections; entry list handles its own loading.
  */
@@ -342,7 +313,7 @@ function UnifiedEntriesContentInner() {
     );
   }
 
-  // Title reads directly from collections - no Suspense needed
+  // Title reactively reads from collections via useLiveQuery
   const titleSlot = <EntryListTitle routeInfo={routeInfo} />;
 
   // Entry content - has its own internal Suspense boundary
