@@ -60,6 +60,12 @@ export interface Collections {
   counts: CountsCollection;
   /** The active on-demand view collection, set by useViewEntriesCollection */
   activeViewCollection: ViewEntriesCollection | null;
+  /**
+   * Invalidate the active view collection's query cache to trigger a refetch.
+   * Set by useViewEntriesCollection; no-op when no view collection is active.
+   * Call this instead of utils.entries.list.invalidate() to refresh the entry list.
+   */
+  invalidateActiveView: () => void;
 }
 
 /**
@@ -144,6 +150,7 @@ export function createCollections(
     entries: createEntriesCollection(),
     counts,
     activeViewCollection: null,
+    invalidateActiveView: () => {},
   };
 
   // Seed uncategorized counts from SSR-prefetched tags.list data

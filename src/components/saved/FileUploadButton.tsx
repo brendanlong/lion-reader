@@ -75,6 +75,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       toast.success("File uploaded successfully");
       // Invalidate entries list and update counts in collection
       utils.entries.list.invalidate({ type: "saved" });
+      collections.invalidateActiveView();
       adjustEntriesCountInCollection(collections, "saved", 1, 1);
       adjustEntriesCountInCollection(collections, "all", 1, 1);
       onSuccess?.();

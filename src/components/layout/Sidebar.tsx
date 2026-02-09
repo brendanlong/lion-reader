@@ -80,10 +80,10 @@ export function Sidebar({ onClose }: SidebarProps) {
   });
 
   const handleNavigate = () => {
-    // Mark entry list queries as stale and refetch active ones.
+    // Invalidate the view collection so the entry list refetches.
     // This ensures clicking the current page's link refreshes the list,
-    // while cross-page navigation also works (new query fetches on mount).
-    utils.entries.list.invalidate();
+    // while cross-page navigation also works (new collection creates on mount).
+    collections.invalidateActiveView();
     onClose?.();
   };
 

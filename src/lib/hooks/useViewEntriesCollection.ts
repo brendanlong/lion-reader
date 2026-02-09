@@ -53,16 +53,22 @@ export function useViewEntriesCollection(filters: EntriesViewFilters) {
     [filterKey, queryClient, vanillaClient]
   );
 
-  // Register as active view collection for mutations/SSE writes
+  // Register as active view collection for mutations/SSE writes,
+  // and set invalidateActiveView to invalidate this collection's backing queries
   useEffect(() => {
     collections.activeViewCollection = collection;
+    const queryKey = ["entries-view", filterKey];
+    collections.invalidateActiveView = () => {
+      queryClient.invalidateQueries({ queryKey });
+    };
     return () => {
       // Only clear if we're still the active one (avoid race with new mount)
       if (collections.activeViewCollection === collection) {
         collections.activeViewCollection = null;
+        collections.invalidateActiveView = () => {};
       }
     };
-  }, [collections, collection]);
+  }, [collections, collection, queryClient, filterKey]);
 
   return { collection, filterKey };
 }

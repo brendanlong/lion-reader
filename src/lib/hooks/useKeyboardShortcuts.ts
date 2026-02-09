@@ -168,7 +168,7 @@ export interface UseKeyboardShortcutsResult {
  *     isEntryOpen: !!openEntryId,
  *     onToggleRead: (id, read) => markReadMutation.mutate({ ids: [id], read: !read }),
  *     onToggleStar: (id, starred) => starred ? unstarMutation.mutate({ id }) : starMutation.mutate({ id }),
- *     onRefresh: () => utils.entries.list.invalidate(),
+ *     onRefresh: () => collections.invalidateActiveView(),
  *   });
  *
  *   return (

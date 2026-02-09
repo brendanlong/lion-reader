@@ -370,6 +370,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
     onSuccess: () => {
       utils.entries.list.invalidate();
+      collections.invalidateActiveView();
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
       collections.tags.utils.refetch();

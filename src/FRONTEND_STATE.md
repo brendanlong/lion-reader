@@ -152,11 +152,11 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 The `useRealtimeUpdates` hook manages SSE connections and updates caches.
 
-**Key principle:** Direct cache updates where possible, invalidation only when necessary. `entries.list` is NOT invalidated for new entries - users see new entries when they navigate (sidebar counts update immediately).
+**Key principle:** Direct cache updates where possible, invalidation only when necessary. The active view collection is invalidated on new entries, subscription deletes, and navigation so the entry list stays current.
 
 | SSE Event              | Cache Updates                                                                                                                                     |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `new_entry`            | Direct: `subscriptions.list` unreadCount, `tags.list` unreadCount, `entries.count`. Does NOT invalidate `entries.list`.                           |
+| `new_entry`            | Direct: `subscriptions.list` unreadCount, `tags.list` unreadCount, `entries.count`. Invalidates active view collection so new entries appear.     |
 | `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). No invalidation - avoids race condition when viewing. |
 | `subscription_created` | Direct: add to `subscriptions.list`, update `tags.list` feedCount/unreadCount, update `entries.count`.                                            |
 | `subscription_deleted` | Direct: remove from `subscriptions.list`, update `tags.list`, update `entries.count`. Invalidate: `entries.list`.                                 |

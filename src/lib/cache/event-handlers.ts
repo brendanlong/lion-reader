@@ -55,6 +55,8 @@ export function handleSyncEvent(
       if (event.feedType) {
         handleNewEntry(utils, event.subscriptionId, event.feedType, collections);
       }
+      // Invalidate view collection so the new entry appears in the list
+      collections?.invalidateActiveView();
       break;
 
     case "entry_updated": {

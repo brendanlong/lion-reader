@@ -19,7 +19,6 @@
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useLiveInfiniteQuery } from "@tanstack/react-db";
 import { eq } from "@tanstack/db";
-import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
@@ -44,7 +43,6 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
   const { openEntryId, setOpenEntryId } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const utils = trpc.useUtils();
   const scrollContainerRef = useScrollContainer();
   const collections = useCollections();
 
@@ -234,7 +232,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     enabled: keyboardShortcutsEnabled,
     onToggleRead: handleToggleRead,
     onToggleStar: toggleStar,
-    onRefresh: () => utils.entries.list.invalidate(),
+    onRefresh: () => collections.invalidateActiveView(),
     onToggleUnreadOnly: toggleShowUnreadOnly,
     onNavigateNext: goToNextEntry,
     onNavigatePrevious: goToPreviousEntry,
@@ -253,7 +251,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     isFetchingNextPage,
     hasNextPage,
     fetchNextPage,
-    refetch: () => utils.entries.list.invalidate(),
+    refetch: () => collections.invalidateActiveView(),
   };
 
   return (

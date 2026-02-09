@@ -123,8 +123,9 @@ export function handleSubscriptionDeleted(
   // Remove from collection
   removeSubscriptionFromCollection(collections ?? null, subscriptionId);
 
-  // Invalidate entries.list - entries from this subscription should be filtered out
+  // Invalidate entries list - entries from this subscription should be filtered out
   utils.entries.list.invalidate();
+  collections?.invalidateActiveView();
 }
 
 /**
