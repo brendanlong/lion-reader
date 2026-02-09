@@ -347,6 +347,7 @@ async function updateEntryStarred(
   changedAt: Date = new Date()
 ): Promise<{
   id: string;
+  subscriptionId: string | null;
   read: boolean;
   starred: boolean;
   updatedAt: Date;
@@ -381,6 +382,7 @@ async function updateEntryStarred(
   const result = await ctx.db
     .select({
       id: visibleEntries.id,
+      subscriptionId: visibleEntries.subscriptionId,
       read: visibleEntries.read,
       starred: visibleEntries.starred,
       updatedAt: visibleEntries.updatedAt,
@@ -400,6 +402,7 @@ async function updateEntryStarred(
   const row = result[0];
   return {
     id: row.id,
+    subscriptionId: row.subscriptionId,
     read: row.read,
     starred: row.starred,
     updatedAt: row.updatedAt,
@@ -673,7 +676,10 @@ export const entriesRouter = createTRPCRouter({
           entry.id,
           entry.read,
           entry.starred,
-          entry.updatedAt
+          entry.updatedAt,
+          entry.subscriptionId,
+          !input.read, // previousRead: opposite of target state
+          entry.starred // previousStarred: unchanged by markRead
         ).catch(() => {
           // Ignore publish errors - SSE is best-effort
         });
@@ -882,11 +888,18 @@ export const entriesRouter = createTRPCRouter({
 
       // Publish entry state change event for multi-tab/device sync
       // Fire and forget - don't block the response
-      publishEntryStateChanged(userId, entry.id, entry.read, entry.starred, entry.updatedAt).catch(
-        () => {
-          // Ignore publish errors - SSE is best-effort
-        }
-      );
+      publishEntryStateChanged(
+        userId,
+        entry.id,
+        entry.read,
+        entry.starred,
+        entry.updatedAt,
+        entry.subscriptionId,
+        entry.read, // previousRead: unchanged by setStarred
+        !input.starred // previousStarred: opposite of target state
+      ).catch(() => {
+        // Ignore publish errors - SSE is best-effort
+      });
 
       return { entry, counts };
     }),

@@ -170,6 +170,12 @@ export interface EntryStateChangedEvent {
   entryId: string;
   read: boolean;
   starred: boolean;
+  /** Subscription ID for count delta computation (null for saved/orphaned entries) */
+  subscriptionId: string | null;
+  /** Previous read state before this change, for computing count deltas */
+  previousRead: boolean;
+  /** Previous starred state before this change, for computing count deltas */
+  previousStarred: boolean;
   timestamp: string;
   /** Database updated_at for cursor tracking (entries cursor) */
   updatedAt: string;
@@ -545,6 +551,9 @@ export async function publishImportCompleted(
  * @param read - Current read state
  * @param starred - Current starred state
  * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @param subscriptionId - The subscription ID (null for saved/orphaned entries)
+ * @param previousRead - The read state before this change
+ * @param previousStarred - The starred state before this change
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishEntryStateChanged(
@@ -552,7 +561,10 @@ export async function publishEntryStateChanged(
   entryId: string,
   read: boolean,
   starred: boolean,
-  updatedAt: Date
+  updatedAt: Date,
+  subscriptionId: string | null,
+  previousRead: boolean,
+  previousStarred: boolean
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -564,6 +576,9 @@ export async function publishEntryStateChanged(
     entryId,
     read,
     starred,
+    subscriptionId,
+    previousRead,
+    previousStarred,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
@@ -903,7 +918,9 @@ export function parseUserEvent(message: string): UserEvent | null {
         typeof event.read === "boolean" &&
         typeof event.starred === "boolean" &&
         typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string"
+        typeof event.updatedAt === "string" &&
+        typeof event.previousRead === "boolean" &&
+        typeof event.previousStarred === "boolean"
       ) {
         return {
           type: "entry_state_changed",
@@ -911,6 +928,9 @@ export function parseUserEvent(message: string): UserEvent | null {
           entryId: event.entryId,
           read: event.read,
           starred: event.starred,
+          subscriptionId: typeof event.subscriptionId === "string" ? event.subscriptionId : null,
+          previousRead: event.previousRead,
+          previousStarred: event.previousStarred,
           timestamp: event.timestamp,
           updatedAt: event.updatedAt,
         };

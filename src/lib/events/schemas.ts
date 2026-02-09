@@ -92,6 +92,12 @@ const entryStateChangedEventSchema = z
     entryId: z.string(),
     read: z.boolean(),
     starred: z.boolean(),
+    /** Subscription ID for count delta computation (null for saved/orphaned entries) */
+    subscriptionId: z.string().nullable().optional(),
+    /** Previous read state before this change (absent in sync polling events) */
+    previousRead: z.boolean().optional(),
+    /** Previous starred state before this change (absent in sync polling events) */
+    previousStarred: z.boolean().optional(),
     timestamp: z.string().default(defaultTimestamp),
     updatedAt: z.string(),
   })

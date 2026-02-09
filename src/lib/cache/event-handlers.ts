@@ -19,7 +19,12 @@ import {
   updateEntryReadInCollection,
   updateEntryStarredInCollection,
   updateEntryMetadataInCollection,
+  adjustSubscriptionUnreadInCollection,
+  adjustTagUnreadInCollection,
+  adjustUncategorizedUnreadInCollection,
+  adjustEntriesCountInCollection,
 } from "@/lib/collections/writes";
+import { calculateTagDeltasFromSubscriptions } from "./count-cache";
 
 // Re-export SyncEvent type from the shared schema
 export type { SyncEvent } from "@/lib/events/schemas";
@@ -80,7 +85,7 @@ export function handleSyncEvent(
       break;
     }
 
-    case "entry_state_changed":
+    case "entry_state_changed": {
       // Update entries.get cache (detail view)
       utils.entries.get.setData({ id: event.entryId }, (oldData) => {
         if (!oldData) return oldData;
@@ -92,7 +97,50 @@ export function handleSyncEvent(
       // Update entries collection (list view, via reactive useLiveQuery)
       updateEntryReadInCollection(collections ?? null, [event.entryId], event.read);
       updateEntryStarredInCollection(collections ?? null, event.entryId, event.starred);
+
+      // Update counts based on state deltas (only when previous state is available,
+      // i.e. from SSE events; sync polling events don't include previous state)
+      const readChanged = event.previousRead !== undefined && event.read !== event.previousRead;
+      const starredChanged =
+        event.previousStarred !== undefined && event.starred !== event.previousStarred;
+
+      if (readChanged) {
+        // delta is -1 when marking read (fewer unread), +1 when marking unread
+        const unreadDelta = event.read ? -1 : 1;
+
+        // Update global "all" unread count
+        adjustEntriesCountInCollection(collections ?? null, "all", 0, unreadDelta);
+
+        // Update subscription unread count
+        if (event.subscriptionId) {
+          const subscriptionDeltas = new Map<string, number>();
+          subscriptionDeltas.set(event.subscriptionId, unreadDelta);
+          adjustSubscriptionUnreadInCollection(collections ?? null, subscriptionDeltas);
+
+          // Update tag/uncategorized unread counts
+          const { tagDeltas, uncategorizedDelta } = calculateTagDeltasFromSubscriptions(
+            subscriptionDeltas,
+            collections ?? null
+          );
+          adjustTagUnreadInCollection(collections ?? null, tagDeltas);
+          adjustUncategorizedUnreadInCollection(collections ?? null, uncategorizedDelta);
+        }
+      }
+
+      if (starredChanged) {
+        // Adjust starred total and unread counts
+        const starredTotalDelta = event.starred ? 1 : -1;
+        // If the entry is unread, it also affects the starred unread count
+        const starredUnreadDelta = !event.read ? starredTotalDelta : 0;
+        adjustEntriesCountInCollection(
+          collections ?? null,
+          "starred",
+          starredTotalDelta,
+          starredUnreadDelta
+        );
+      }
       break;
+    }
 
     case "subscription_created": {
       const { subscription, feed } = event;
