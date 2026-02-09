@@ -121,44 +121,23 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     }
   }, [collections, stableEntries]);
 
-  // Map to EntryListItem shape (strip _sortMs for downstream compatibility)
-  const entries = useMemo(
-    () =>
-      stableEntries.map((entry) => ({
-        id: entry.id,
-        feedId: entry.feedId,
-        subscriptionId: entry.subscriptionId,
-        type: entry.type,
-        url: entry.url,
-        title: entry.title,
-        author: entry.author,
-        summary: entry.summary,
-        publishedAt: entry.publishedAt,
-        fetchedAt: entry.fetchedAt,
-        read: entry.read,
-        starred: entry.starred,
-        feedTitle: entry.feedTitle,
-        siteName: entry.siteName,
-      })),
-    [stableEntries]
-  );
-
   // Compute next/previous entry IDs for keyboard navigation
   // Also compute how close we are to the pagination boundary
   const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(() => {
-    if (!openEntryId || entries.length === 0) {
+    if (!openEntryId || stableEntries.length === 0) {
       return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
     }
-    const currentIndex = entries.findIndex((e) => e.id === openEntryId);
+    const currentIndex = stableEntries.findIndex((e) => e.id === openEntryId);
     if (currentIndex === -1) {
       return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
     }
     return {
-      nextEntryId: currentIndex < entries.length - 1 ? entries[currentIndex + 1].id : undefined,
-      previousEntryId: currentIndex > 0 ? entries[currentIndex - 1].id : undefined,
-      distanceToEnd: entries.length - 1 - currentIndex,
+      nextEntryId:
+        currentIndex < stableEntries.length - 1 ? stableEntries[currentIndex + 1].id : undefined,
+      previousEntryId: currentIndex > 0 ? stableEntries[currentIndex - 1].id : undefined,
+      distanceToEnd: stableEntries.length - 1 - currentIndex,
     };
-  }, [openEntryId, entries]);
+  }, [openEntryId, stableEntries]);
 
   // Publish navigation state for swipe gestures in EntryContent
   const updateNavigation = useEntryNavigationUpdater();
@@ -247,7 +226,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
 
   // Keyboard shortcuts
   const { selectedEntryId } = useKeyboardShortcuts({
-    entries,
+    entries: stableEntries,
     onOpenEntry: setOpenEntryId,
     onClose: () => setOpenEntryId(null),
     isEntryOpen: !!openEntryId,
@@ -292,7 +271,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
       selectedEntryId={selectedEntryId}
       onToggleRead={handleToggleRead}
       onToggleStar={toggleStar}
-      externalEntries={entries}
+      externalEntries={stableEntries}
       externalQueryState={externalQueryState}
       emptyMessage={emptyMessage}
     />
