@@ -15,7 +15,7 @@ import superjson from "superjson";
 import { trpc } from "./client";
 import { getQueryClient } from "./query-client";
 import type { AppRouter } from "@/server/trpc/root";
-import { createCollections, type Collections } from "@/lib/collections";
+import { createCollections } from "@/lib/collections";
 import { CollectionsProvider } from "@/lib/collections/context";
 import { VanillaClientProvider, type VanillaClient } from "./vanilla-client";
 
@@ -170,9 +170,10 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
     })
   );
 
-  // Initialize TanStack DB collections
-  const [collections] = useState<Collections>(() => {
-    const cols = createCollections(queryClient, {
+  // Initialize TanStack DB collections and query cache subscription.
+  // Both are stored together so the cleanup function is accessible for teardown.
+  const [{ collections, cleanup: collectionsCleanup }] = useState(() => {
+    const { collections: cols, cleanup } = createCollections(queryClient, {
       fetchTagsAndUncategorized: () => vanillaClient.tags.list.query(),
     });
 
@@ -194,8 +195,15 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
       }
     }
 
-    return cols;
+    return { collections: cols, cleanup };
   });
+
+  // Clean up the query cache subscription when the provider unmounts
+  useEffect(() => {
+    return () => {
+      collectionsCleanup();
+    };
+  }, [collectionsCleanup]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
