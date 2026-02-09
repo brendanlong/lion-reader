@@ -15,7 +15,6 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useCollections } from "@/lib/collections/context";
 import { handleSyncEvent, type SyncEvent } from "@/lib/cache/event-handlers";
@@ -431,7 +430,6 @@ function parseEventData(data: string): SyncEvent | null {
  */
 export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpdatesResult {
   const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
   const collections = useCollections();
 
   // Connection status state
@@ -534,10 +532,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       // Update the appropriate cursor based on event type
       updateCursorForEvent(data);
 
-      // Delegate to shared handler for cache updates (dual-write to collections)
-      handleSyncEvent(utils, queryClient, data, collections);
+      // Delegate to shared handler for cache/collection updates
+      handleSyncEvent(utils, data, collections);
     },
-    [utils, queryClient, updateCursorForEvent, collections]
+    [utils, updateCursorForEvent, collections]
   );
 
   /**
@@ -558,10 +556,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         },
       });
 
-      // Process each event through the shared handler (same as SSE path, dual-write to collections)
+      // Process each event through the shared handler (same as SSE path)
       for (const event of result.events) {
         updateCursorForEvent(event);
-        handleSyncEvent(utils, queryClient, event, collections);
+        handleSyncEvent(utils, event, collections);
       }
 
       // If there are more events, schedule another sync soon
@@ -575,7 +573,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       console.error("Sync failed:", error);
       return null;
     }
-  }, [utils, queryClient, updateCursorForEvent, collections]);
+  }, [utils, updateCursorForEvent, collections]);
 
   /**
    * Starts polling mode when SSE is unavailable.

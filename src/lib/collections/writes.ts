@@ -1,9 +1,8 @@
 /**
  * Collection Write Utilities
  *
- * Functions that update TanStack DB collections alongside the existing React Query cache.
- * Each function accepts `Collections | null` and no-ops when null, enabling gradual
- * migration where callers can optionally pass collections.
+ * Functions that update TanStack DB collections for client-side state management.
+ * Each function accepts `Collections | null` and no-ops when null.
  *
  * Uses `collection.utils.writeUpdate()` for query-backed collections, which writes
  * directly to the synced data store without triggering onInsert/onUpdate handlers
@@ -258,7 +257,68 @@ export function removeTagFromCollection(collections: Collections | null, tagId: 
 }
 
 // ============================================================================
-// Uncategorized Count Writes (via Counts Collection)
+// Entry Count Writes (via Counts Collection)
+// ============================================================================
+
+/**
+ * Sets absolute entry counts from server response.
+ * Used by setCounts/setBulkCounts when server returns authoritative counts.
+ */
+export function setEntriesCountInCollection(
+  collections: Collections | null,
+  key: "all" | "starred" | "saved",
+  total: number,
+  unread: number
+): void {
+  if (!collections) return;
+
+  if (collections.counts.has(key)) {
+    collections.counts.utils.writeUpdate({ id: key, total, unread });
+  } else {
+    collections.counts.utils.writeInsert({ id: key, total, unread });
+  }
+}
+
+/**
+ * Adjusts entry counts by delta values.
+ * Used by handleNewEntry, handleSubscriptionCreated/Deleted.
+ */
+export function adjustEntriesCountInCollection(
+  collections: Collections | null,
+  key: "all" | "starred" | "saved",
+  totalDelta: number,
+  unreadDelta: number
+): void {
+  if (!collections || (totalDelta === 0 && unreadDelta === 0)) return;
+
+  const current = collections.counts.get(key);
+  if (current) {
+    collections.counts.utils.writeUpdate({
+      id: key,
+      total: Math.max(0, current.total + totalDelta),
+      unread: Math.max(0, current.unread + unreadDelta),
+    });
+  }
+}
+
+/**
+ * Sets the uncategorized unread count to an absolute value.
+ * Used by setCounts/setBulkCounts when server returns authoritative counts.
+ */
+export function setUncategorizedUnreadInCollection(
+  collections: Collections | null,
+  unread: number
+): void {
+  if (!collections) return;
+
+  const current = collections.counts.get("uncategorized");
+  if (current) {
+    collections.counts.utils.writeUpdate({ id: "uncategorized", unread });
+  }
+}
+
+// ============================================================================
+// Uncategorized Count Delta Writes (via Counts Collection)
 // ============================================================================
 
 /**

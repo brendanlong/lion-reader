@@ -1,336 +1,176 @@
 /**
  * Unit tests for cache operations.
  *
- * These tests document the behavior of cache operations without full mocking.
- * For more comprehensive testing, see the integration tests.
- *
- * Note: Entry state (read, starred, score) is managed by TanStack DB collections.
- * These tests cover subscription lifecycle and count update operations.
+ * These operations now update TanStack DB collections only (no React Query cache writes).
+ * Tests verify correct behavior by passing null collections (no-op mode)
+ * and ensuring functions don't throw. Collection state updates are tested
+ * via integration tests.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createMockTrpcUtils } from "../../../utils/trpc-mock";
 import {
   handleNewEntry,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
+  setCounts,
+  setBulkCounts,
   type SubscriptionData,
+  type UnreadCounts,
+  type BulkUnreadCounts,
 } from "@/lib/cache/operations";
 
+function createSubscription(overrides: Partial<SubscriptionData> = {}): SubscriptionData {
+  return {
+    id: "sub-1",
+    type: "web",
+    url: "https://example.com/feed.xml",
+    title: "Example Feed",
+    originalTitle: "Example Feed",
+    description: "An example feed",
+    siteUrl: "https://example.com",
+    subscribedAt: new Date("2024-01-01"),
+    unreadCount: 0,
+    tags: [],
+    fetchFullContent: false,
+    ...overrides,
+  };
+}
+
 describe("handleNewEntry", () => {
-  let mockUtils: ReturnType<typeof createMockTrpcUtils>;
-
-  beforeEach(() => {
-    mockUtils = createMockTrpcUtils();
+  it("handles web entry without collections (no-op)", () => {
+    const mockUtils = createMockTrpcUtils();
+    // Should not throw when collections is null
+    handleNewEntry(mockUtils.utils, "sub-1", "web", null);
   });
 
-  it("increments subscription unread count", () => {
-    handleNewEntry(mockUtils.utils, "sub-1", "web");
-
-    const subOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(subOps.length).toBeGreaterThan(0);
+  it("handles saved entry without collections (no-op)", () => {
+    const mockUtils = createMockTrpcUtils();
+    handleNewEntry(mockUtils.utils, "sub-1", "saved", null);
   });
 
-  it("increments saved unread count for saved entries", () => {
-    handleNewEntry(mockUtils.utils, "sub-1", "saved");
-
-    const countOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
-    );
-    expect(countOps.length).toBeGreaterThan(0);
+  it("handles email entry without collections (no-op)", () => {
+    const mockUtils = createMockTrpcUtils();
+    handleNewEntry(mockUtils.utils, "sub-1", "email", null);
   });
 
-  it("increments All Articles count but not saved count for web entries", () => {
-    handleNewEntry(mockUtils.utils, "sub-1", "web");
-
-    // For web entries, we update All Articles count but not saved count
-    const countOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
-    );
-    // Only 1 operation: All Articles count (no saved count for web entries)
-    expect(countOps.length).toBe(1);
-  });
-
-  it("increments All Articles count but not saved count for email entries", () => {
-    handleNewEntry(mockUtils.utils, "sub-1", "email");
-
-    // Email entries update All Articles count but don't affect saved count
-    const countOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
-    );
-    // Only 1 operation: All Articles count (no saved count for email entries)
-    expect(countOps.length).toBe(1);
+  it("handles null subscriptionId", () => {
+    const mockUtils = createMockTrpcUtils();
+    handleNewEntry(mockUtils.utils, null, "web", null);
   });
 });
 
 describe("handleSubscriptionCreated", () => {
-  let mockUtils: ReturnType<typeof createMockTrpcUtils>;
-
-  beforeEach(() => {
-    mockUtils = createMockTrpcUtils();
-  });
-
-  function createSubscription(overrides: Partial<SubscriptionData> = {}): SubscriptionData {
-    return {
-      id: "sub-1",
-      type: "web",
-      url: "https://example.com/feed.xml",
-      title: "Example Feed",
-      originalTitle: "Example Feed",
-      description: "An example feed",
-      siteUrl: "https://example.com",
-      subscribedAt: new Date("2024-01-01"),
-      unreadCount: 0,
-      tags: [],
-      fetchFullContent: false,
-      ...overrides,
-    };
-  }
-
-  it("adds subscription to subscriptions.list cache", () => {
+  it("handles subscription without collections (no-op)", () => {
+    const mockUtils = createMockTrpcUtils();
     const subscription = createSubscription();
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    handleSubscriptionCreated(mockUtils.utils, subscription, null);
   });
 
-  it("directly updates tags.list cache", () => {
-    const subscription = createSubscription();
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-
-    // Should use setData instead of invalidate for direct cache update
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "tags" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBe(1);
-  });
-
-  it("adds subscription with tags to cache", () => {
+  it("handles subscription with tags without collections", () => {
+    const mockUtils = createMockTrpcUtils();
     const subscription = createSubscription({
       tags: [
         { id: "tag-1", name: "News", color: "#ff0000" },
         { id: "tag-2", name: "Tech", color: null },
       ],
     });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    handleSubscriptionCreated(mockUtils.utils, subscription, null);
   });
 
-  it("adds subscription with non-zero unread count", () => {
+  it("handles subscription with non-zero unread count", () => {
+    const mockUtils = createMockTrpcUtils();
     const subscription = createSubscription({ unreadCount: 42 });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    handleSubscriptionCreated(mockUtils.utils, subscription, null);
   });
 
   it("handles email subscription type", () => {
-    const subscription = createSubscription({
-      type: "email",
-      url: null,
-    });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    const mockUtils = createMockTrpcUtils();
+    const subscription = createSubscription({ type: "email", url: null });
+    handleSubscriptionCreated(mockUtils.utils, subscription, null);
   });
 
   it("handles saved subscription type", () => {
-    const subscription = createSubscription({
-      type: "saved",
-      url: null,
-    });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    const mockUtils = createMockTrpcUtils();
+    const subscription = createSubscription({ type: "saved", url: null });
+    handleSubscriptionCreated(mockUtils.utils, subscription, null);
   });
 
   it("handles subscription with null optional fields", () => {
+    const mockUtils = createMockTrpcUtils();
     const subscription = createSubscription({
       title: null,
       description: null,
       siteUrl: null,
     });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-
-    // Should not throw
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
-  });
-
-  it("does not duplicate subscription if already in cache", () => {
-    const subscription = createSubscription();
-
-    // Set up cache with existing subscription
-    mockUtils.setCache("subscriptions", "list", undefined, {
-      items: [subscription],
-    });
-
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-
-    // The setData is still called, but the updater function should not add a duplicate
-    const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-      items: SubscriptionData[];
-    };
-    expect(cachedData.items.length).toBe(1);
+    handleSubscriptionCreated(mockUtils.utils, subscription, null);
   });
 });
 
 describe("handleSubscriptionDeleted", () => {
-  let mockUtils: ReturnType<typeof createMockTrpcUtils>;
+  it("invalidates entries.list", () => {
+    const mockUtils = createMockTrpcUtils();
+    handleSubscriptionDeleted(mockUtils.utils, "sub-1", null);
 
-  beforeEach(() => {
-    mockUtils = createMockTrpcUtils();
-  });
-
-  it("removes subscription from subscriptions.list cache", () => {
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
-
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBe(1);
-  });
-
-  it("invalidates entries.list cache", () => {
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
-
+    // entries.list invalidation is the only React Query operation remaining
     const invalidateOps = mockUtils.operations.filter(
       (op) => op.type === "invalidate" && op.router === "entries" && op.procedure === "list"
     );
     expect(invalidateOps.length).toBe(1);
   });
 
-  it("invalidates tags.list cache", () => {
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
+  it("handles deletion without collections (no-op for collection writes)", () => {
+    const mockUtils = createMockTrpcUtils();
+    handleSubscriptionDeleted(mockUtils.utils, "sub-1", null);
+  });
+});
 
-    const invalidateOps = mockUtils.operations.filter(
-      (op) => op.type === "invalidate" && op.router === "tags" && op.procedure === "list"
-    );
-    expect(invalidateOps.length).toBe(1);
+describe("setCounts", () => {
+  it("handles counts without collections (no-op)", () => {
+    const counts: UnreadCounts = {
+      all: { total: 100, unread: 50 },
+      starred: { total: 10, unread: 5 },
+      saved: { total: 20, unread: 10 },
+      subscription: { id: "sub-1", unread: 3 },
+      tags: [{ id: "tag-1", unread: 5 }],
+      uncategorized: { unread: 2 },
+    };
+    setCounts(null, counts);
   });
 
-  it("removes subscription from cache when present", () => {
-    // Set up cache with subscriptions
-    mockUtils.setCache("subscriptions", "list", undefined, {
-      items: [
-        { id: "sub-1", unreadCount: 5, tags: [] },
-        { id: "sub-2", unreadCount: 10, tags: [] },
+  it("handles counts without optional fields", () => {
+    const counts: UnreadCounts = {
+      all: { total: 100, unread: 50 },
+      starred: { total: 10, unread: 5 },
+    };
+    setCounts(null, counts);
+  });
+});
+
+describe("setBulkCounts", () => {
+  it("handles bulk counts without collections (no-op)", () => {
+    const counts: BulkUnreadCounts = {
+      all: { total: 100, unread: 50 },
+      starred: { total: 10, unread: 5 },
+      saved: { total: 20, unread: 10 },
+      subscriptions: [
+        { id: "sub-1", unread: 3 },
+        { id: "sub-2", unread: 7 },
       ],
-    });
-
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
-
-    const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-      items: Array<{ id: string }>;
+      tags: [{ id: "tag-1", unread: 5 }],
+      uncategorized: { unread: 2 },
     };
-    expect(cachedData.items.length).toBe(1);
-    expect(cachedData.items[0].id).toBe("sub-2");
+    setBulkCounts(null, counts);
   });
 
-  it("handles deletion of non-existent subscription gracefully", () => {
-    // Set up cache with different subscription
-    mockUtils.setCache("subscriptions", "list", undefined, {
-      items: [{ id: "sub-2", unreadCount: 10, tags: [] }],
-    });
-
-    // Should not throw
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
-
-    const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-      items: Array<{ id: string }>;
+  it("handles bulk counts without uncategorized", () => {
+    const counts: BulkUnreadCounts = {
+      all: { total: 100, unread: 50 },
+      starred: { total: 10, unread: 5 },
+      saved: { total: 20, unread: 10 },
+      subscriptions: [],
+      tags: [],
     };
-    expect(cachedData.items.length).toBe(1);
-  });
-
-  it("handles deletion when cache is empty", () => {
-    mockUtils.setCache("subscriptions", "list", undefined, { items: [] });
-
-    // Should not throw
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
-
-    const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-      items: Array<{ id: string }>;
-    };
-    expect(cachedData.items.length).toBe(0);
-  });
-});
-
-describe("cache update logic verification", () => {
-  let mockUtils: ReturnType<typeof createMockTrpcUtils>;
-
-  beforeEach(() => {
-    mockUtils = createMockTrpcUtils();
-  });
-
-  describe("handleNewEntry cache state updates", () => {
-    it("increments subscription unread count", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 5, tags: [] }],
-      });
-
-      handleNewEntry(mockUtils.utils, "sub-1", "web");
-
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(6);
-    });
-
-    it("increments tag unread count for subscription with tags", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [
-          {
-            id: "sub-1",
-            unreadCount: 5,
-            tags: [{ id: "tag-1", name: "News", color: null }],
-          },
-        ],
-      });
-      mockUtils.setCache("tags", "list", undefined, {
-        items: [{ id: "tag-1", name: "News", color: null, unreadCount: 10 }],
-      });
-
-      handleNewEntry(mockUtils.utils, "sub-1", "web");
-
-      const tagData = mockUtils.getCache("tags", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(tagData.items[0].unreadCount).toBe(11);
-    });
-  });
-});
-
-describe("edge cases", () => {
-  let mockUtils: ReturnType<typeof createMockTrpcUtils>;
-
-  beforeEach(() => {
-    mockUtils = createMockTrpcUtils();
-  });
-
-  describe("null/undefined handling", () => {
-    it("handleNewEntry handles when subscriptions cache is undefined", () => {
-      // Don't set up subscriptions cache - leave it undefined
-      // Should not throw
-      handleNewEntry(mockUtils.utils, "sub-1", "web");
-    });
+    setBulkCounts(null, counts);
   });
 });

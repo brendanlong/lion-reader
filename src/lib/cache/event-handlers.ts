@@ -4,13 +4,14 @@
  * Provides unified event handling for both SSE and sync endpoints.
  * Both SSE real-time events and sync polling use the same event types,
  * so we can share the cache update logic between them.
+ *
+ * State updates flow through TanStack DB collections for sidebar/list views.
+ * React Query entries.get is still updated for the detail view.
  */
 
-import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import type { Collections } from "@/lib/collections";
 import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "./operations";
-import { applySyncTagChanges, removeSyncTags } from "./count-cache";
 import {
   addTagToCollection,
   updateTagInCollection,
@@ -172,26 +173,25 @@ export type SyncEvent =
 // ============================================================================
 
 /**
- * Handles a sync event by updating the appropriate caches.
+ * Handles a sync event by updating the appropriate caches and collections.
  *
  * This is the unified event handler used by both SSE and sync endpoints.
- * It dispatches to the appropriate cache update functions based on event type.
+ * It dispatches to the appropriate update functions based on event type.
  *
- * @param utils - tRPC utils for cache access
- * @param queryClient - React Query client for cache updates
+ * @param utils - tRPC utils for entries.get cache and invalidation
  * @param event - The event to handle
+ * @param collections - TanStack DB collections for state updates
  */
 export function handleSyncEvent(
   utils: TRPCClientUtils,
-  queryClient: QueryClient,
   event: SyncEvent,
   collections?: Collections | null
 ): void {
   switch (event.type) {
     case "new_entry":
-      // Update unread counts without invalidating entries.list
+      // Update unread counts in collections
       if (event.feedType) {
-        handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient, collections);
+        handleNewEntry(utils, event.subscriptionId, event.feedType, collections);
       }
       break;
 
@@ -254,7 +254,6 @@ export function handleSyncEvent(
           tags: subscription.tags,
           fetchFullContent: false,
         },
-        queryClient,
         collections
       );
       break;
@@ -263,31 +262,23 @@ export function handleSyncEvent(
     case "subscription_deleted":
       // Check if already removed (optimistic update from same tab)
       {
-        // Check both the old cache and the TanStack DB collection
-        const currentData = utils.subscriptions.list.getData();
-        const alreadyRemovedFromCache =
-          currentData && !currentData.items.some((s) => s.id === event.subscriptionId);
-        const alreadyRemovedFromCollection =
-          collections && !collections.subscriptions.has(event.subscriptionId);
+        const alreadyRemoved = collections && !collections.subscriptions.has(event.subscriptionId);
 
-        if (!alreadyRemovedFromCache || !alreadyRemovedFromCollection) {
-          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, collections);
+        if (!alreadyRemoved) {
+          handleSubscriptionDeleted(utils, event.subscriptionId, collections);
         }
       }
       break;
 
     case "tag_created":
-      applySyncTagChanges(utils, [event.tag], []);
       addTagToCollection(collections ?? null, event.tag);
       break;
 
     case "tag_updated":
-      applySyncTagChanges(utils, [], [event.tag]);
       updateTagInCollection(collections ?? null, event.tag);
       break;
 
     case "tag_deleted":
-      removeSyncTags(utils, [event.tagId]);
       removeTagFromCollection(collections ?? null, event.tagId);
       break;
 

@@ -47,7 +47,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       // Close dialog immediately for responsive feel
       setUnsubscribeTarget(null);
       // Use centralized cache operation for optimistic removal (dual-write to collections)
-      handleSubscriptionDeleted(utils, variables.id, queryClient, collections);
+      handleSubscriptionDeleted(utils, variables.id, collections);
     },
     onError: () => {
       toast.error("Failed to unsubscribe from feed");
