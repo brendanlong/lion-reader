@@ -18,6 +18,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useCollections } from "@/lib/collections/context";
 import { handleSyncEvent, type SyncEvent } from "@/lib/cache/event-handlers";
+import { syncEventSchema } from "@/lib/events/schemas";
 
 /**
  * Sync cursors for each entity type.
@@ -98,305 +99,17 @@ const SSE_RETRY_INTERVAL_MS = 60_000;
 // ============================================================================
 
 /**
- * SSE events include extra fields from the server (userId, feedId) that
- * aren't part of the SyncEvent type. The parser extracts the SyncEvent-compatible
- * fields and validates the structure.
- */
-
-/**
  * Parses SSE event data from a JSON string into a SyncEvent.
  * Returns null if the data is invalid or doesn't match a known event type.
+ *
+ * Uses the shared Zod schema for validation, replacing ~290 lines of manual
+ * typeof checks. The schema handles defaults (e.g., timestamp) and
+ * passthrough of extra server fields (e.g., userId, feedId).
  */
 function parseEventData(data: string): SyncEvent | null {
   try {
-    const parsed: unknown = JSON.parse(data);
-
-    if (typeof parsed !== "object" || parsed === null || !("type" in parsed)) {
-      return null;
-    }
-
-    const event = parsed as Record<string, unknown>;
-
-    // Handle new_entry events
-    if (
-      event.type === "new_entry" &&
-      (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
-      typeof event.entryId === "string" &&
-      typeof event.updatedAt === "string"
-    ) {
-      return {
-        type: "new_entry" as const,
-        subscriptionId: event.subscriptionId as string | null,
-        entryId: event.entryId,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        updatedAt: event.updatedAt,
-        feedType:
-          typeof event.feedType === "string" && ["web", "email", "saved"].includes(event.feedType)
-            ? (event.feedType as "web" | "email" | "saved")
-            : undefined,
-      };
-    }
-
-    // Handle entry_updated events (includes metadata for cache updates)
-    if (
-      event.type === "entry_updated" &&
-      (typeof event.subscriptionId === "string" || event.subscriptionId === null) &&
-      typeof event.entryId === "string" &&
-      typeof event.updatedAt === "string" &&
-      typeof event.metadata === "object" &&
-      event.metadata !== null
-    ) {
-      const metadata = event.metadata as Record<string, unknown>;
-      // Validate metadata structure
-      if (
-        (metadata.title === null || typeof metadata.title === "string") &&
-        (metadata.author === null || typeof metadata.author === "string") &&
-        (metadata.summary === null || typeof metadata.summary === "string") &&
-        (metadata.url === null || typeof metadata.url === "string") &&
-        (metadata.publishedAt === null || typeof metadata.publishedAt === "string")
-      ) {
-        return {
-          type: "entry_updated" as const,
-          subscriptionId: event.subscriptionId as string | null,
-          entryId: event.entryId,
-          timestamp:
-            typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-          updatedAt: event.updatedAt,
-          metadata: {
-            title: metadata.title as string | null,
-            author: metadata.author as string | null,
-            summary: metadata.summary as string | null,
-            url: metadata.url as string | null,
-            publishedAt: metadata.publishedAt as string | null,
-          },
-        };
-      }
-    }
-
-    // Handle entry_state_changed events
-    if (
-      event.type === "entry_state_changed" &&
-      typeof event.entryId === "string" &&
-      typeof event.read === "boolean" &&
-      typeof event.starred === "boolean" &&
-      typeof event.updatedAt === "string"
-    ) {
-      return {
-        type: event.type,
-        entryId: event.entryId,
-        read: event.read,
-        starred: event.starred,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        updatedAt: event.updatedAt,
-      };
-    }
-
-    // Handle subscription_created events
-    if (
-      event.type === "subscription_created" &&
-      typeof event.subscriptionId === "string" &&
-      typeof event.feedId === "string" &&
-      typeof event.updatedAt === "string" &&
-      typeof event.subscription === "object" &&
-      event.subscription !== null &&
-      typeof event.feed === "object" &&
-      event.feed !== null
-    ) {
-      const sub = event.subscription as Record<string, unknown>;
-      const feed = event.feed as Record<string, unknown>;
-
-      // Validate subscription structure
-      if (
-        typeof sub.id !== "string" ||
-        typeof sub.feedId !== "string" ||
-        (sub.customTitle !== null && typeof sub.customTitle !== "string") ||
-        typeof sub.subscribedAt !== "string" ||
-        typeof sub.unreadCount !== "number" ||
-        !Array.isArray(sub.tags)
-      ) {
-        return null;
-      }
-
-      // Validate feed structure
-      if (
-        typeof feed.id !== "string" ||
-        (feed.type !== "web" && feed.type !== "email" && feed.type !== "saved") ||
-        (feed.url !== null && typeof feed.url !== "string") ||
-        (feed.title !== null && typeof feed.title !== "string") ||
-        (feed.description !== null && typeof feed.description !== "string") ||
-        (feed.siteUrl !== null && typeof feed.siteUrl !== "string")
-      ) {
-        return null;
-      }
-
-      return {
-        type: event.type,
-        subscriptionId: event.subscriptionId,
-        feedId: event.feedId,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        updatedAt: event.updatedAt,
-        subscription: {
-          id: sub.id,
-          feedId: sub.feedId,
-          customTitle: sub.customTitle as string | null,
-          subscribedAt: sub.subscribedAt,
-          unreadCount: sub.unreadCount,
-          tags: sub.tags as Array<{ id: string; name: string; color: string | null }>,
-        },
-        feed: {
-          id: feed.id,
-          type: feed.type,
-          url: feed.url as string | null,
-          title: feed.title as string | null,
-          description: feed.description as string | null,
-          siteUrl: feed.siteUrl as string | null,
-        },
-      };
-    }
-
-    // Handle subscription_deleted events
-    if (
-      event.type === "subscription_deleted" &&
-      typeof event.subscriptionId === "string" &&
-      typeof event.updatedAt === "string"
-    ) {
-      return {
-        type: event.type,
-        subscriptionId: event.subscriptionId,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        updatedAt: event.updatedAt,
-      };
-    }
-
-    // Handle tag_created events
-    if (
-      event.type === "tag_created" &&
-      typeof event.tag === "object" &&
-      event.tag !== null &&
-      typeof event.updatedAt === "string"
-    ) {
-      const tag = event.tag as Record<string, unknown>;
-      if (
-        typeof tag.id === "string" &&
-        typeof tag.name === "string" &&
-        (tag.color === null || typeof tag.color === "string")
-      ) {
-        return {
-          type: event.type,
-          tag: {
-            id: tag.id,
-            name: tag.name,
-            color: tag.color as string | null,
-          },
-          timestamp:
-            typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-          updatedAt: event.updatedAt,
-        };
-      }
-    }
-
-    // Handle tag_updated events
-    if (
-      event.type === "tag_updated" &&
-      typeof event.tag === "object" &&
-      event.tag !== null &&
-      typeof event.updatedAt === "string"
-    ) {
-      const tag = event.tag as Record<string, unknown>;
-      if (
-        typeof tag.id === "string" &&
-        typeof tag.name === "string" &&
-        (tag.color === null || typeof tag.color === "string")
-      ) {
-        return {
-          type: event.type,
-          tag: {
-            id: tag.id,
-            name: tag.name,
-            color: tag.color as string | null,
-          },
-          timestamp:
-            typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-          updatedAt: event.updatedAt,
-        };
-      }
-    }
-
-    // Handle tag_deleted events
-    if (
-      event.type === "tag_deleted" &&
-      typeof event.tagId === "string" &&
-      typeof event.updatedAt === "string"
-    ) {
-      return {
-        type: event.type,
-        tagId: event.tagId,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        updatedAt: event.updatedAt,
-      };
-    }
-
-    // Handle import_progress events
-    if (
-      event.type === "import_progress" &&
-      typeof event.importId === "string" &&
-      typeof event.feedUrl === "string" &&
-      (event.feedStatus === "imported" ||
-        event.feedStatus === "skipped" ||
-        event.feedStatus === "failed") &&
-      typeof event.imported === "number" &&
-      typeof event.skipped === "number" &&
-      typeof event.failed === "number" &&
-      typeof event.total === "number"
-    ) {
-      return {
-        type: event.type,
-        importId: event.importId,
-        feedUrl: event.feedUrl,
-        feedStatus: event.feedStatus,
-        imported: event.imported,
-        skipped: event.skipped,
-        failed: event.failed,
-        total: event.total,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        // Import events don't have updatedAt from the server, use timestamp
-        updatedAt:
-          typeof event.updatedAt === "string"
-            ? event.updatedAt
-            : typeof event.timestamp === "string"
-              ? event.timestamp
-              : new Date().toISOString(),
-      };
-    }
-
-    // Handle import_completed events
-    if (
-      event.type === "import_completed" &&
-      typeof event.importId === "string" &&
-      typeof event.imported === "number" &&
-      typeof event.skipped === "number" &&
-      typeof event.failed === "number" &&
-      typeof event.total === "number"
-    ) {
-      return {
-        type: event.type,
-        importId: event.importId,
-        imported: event.imported,
-        skipped: event.skipped,
-        failed: event.failed,
-        total: event.total,
-        timestamp: typeof event.timestamp === "string" ? event.timestamp : new Date().toISOString(),
-        // Import events don't have updatedAt from the server, use timestamp
-        updatedAt:
-          typeof event.updatedAt === "string"
-            ? event.updatedAt
-            : typeof event.timestamp === "string"
-              ? event.timestamp
-              : new Date().toISOString(),
-      };
-    }
-
-    return null;
+    const result = syncEventSchema.safeParse(JSON.parse(data));
+    return result.success ? result.data : null;
   } catch {
     return null;
   }
@@ -446,6 +159,8 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   const shouldConnectRef = useRef(false);
   // Initialize with server-provided cursors (granular tracking per entity type)
   const cursorsRef = useRef<SyncCursors>(initialCursors);
+  // Ref for performSync to allow self-referencing without violating react-hooks/immutability
+  const performSyncRef = useRef<() => Promise<SyncCursors | null>>();
 
   // State to trigger reconnection
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
@@ -565,7 +280,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       // If there are more events, schedule another sync soon
       if (result.hasMore) {
         // Use setTimeout to avoid blocking - the next poll or manual sync will pick up more
-        setTimeout(() => performSync(), 100);
+        setTimeout(() => performSyncRef.current?.(), 100);
       }
 
       return cursorsRef.current;
@@ -574,6 +289,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       return null;
     }
   }, [utils, updateCursorForEvent, collections]);
+  performSyncRef.current = performSync;
 
   /**
    * Starts polling mode when SSE is unavailable.
