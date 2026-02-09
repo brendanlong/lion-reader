@@ -4,16 +4,18 @@
  * Functions that update TanStack DB collections for client-side state management.
  * Each function accepts `Collections | null` and no-ops when null.
  *
- * Uses `collection.utils.writeUpdate()` for query-backed collections, which writes
- * directly to the synced data store without triggering onInsert/onUpdate handlers
- * or query refetches.
+ * Local-only collections (subscriptions, entries, counts) use direct mutation
+ * methods: collection.insert(), collection.update(), collection.delete().
+ *
+ * Query-backed collections (tags) use collection.utils.writeInsert/writeUpdate/writeDelete
+ * which write directly to the synced data store.
  */
 
 import type { Collections } from "./index";
 import type { Subscription, TagItem, EntryListItem } from "./types";
 
 // ============================================================================
-// Subscription Collection Writes
+// Subscription Collection Writes (local-only)
 // ============================================================================
 
 /**
@@ -26,15 +28,13 @@ export function adjustSubscriptionUnreadInCollection(
 ): void {
   if (!collections || subscriptionDeltas.size === 0) return;
 
-  const updates: Array<Partial<Subscription> & { id: string }> = [];
   for (const [id, delta] of subscriptionDeltas) {
     const current = collections.subscriptions.get(id);
     if (current) {
-      updates.push({ id, unreadCount: Math.max(0, current.unreadCount + delta) });
+      collections.subscriptions.update(id, (draft) => {
+        draft.unreadCount = Math.max(0, current.unreadCount + delta);
+      });
     }
-  }
-  if (updates.length > 0) {
-    collections.subscriptions.utils.writeUpdate(updates);
   }
 }
 
@@ -51,7 +51,9 @@ export function setSubscriptionUnreadInCollection(
 
   const current = collections.subscriptions.get(subscriptionId);
   if (current) {
-    collections.subscriptions.utils.writeUpdate({ id: subscriptionId, unreadCount: unread });
+    collections.subscriptions.update(subscriptionId, (draft) => {
+      draft.unreadCount = unread;
+    });
   }
 }
 
@@ -65,15 +67,13 @@ export function setBulkSubscriptionUnreadInCollection(
 ): void {
   if (!collections || updates.size === 0) return;
 
-  const writeUpdates: Array<Partial<Subscription> & { id: string }> = [];
   for (const [id, unread] of updates) {
     const current = collections.subscriptions.get(id);
     if (current) {
-      writeUpdates.push({ id, unreadCount: unread });
+      collections.subscriptions.update(id, (draft) => {
+        draft.unreadCount = unread;
+      });
     }
-  }
-  if (writeUpdates.length > 0) {
-    collections.subscriptions.utils.writeUpdate(writeUpdates);
   }
 }
 
@@ -90,7 +90,7 @@ export function addSubscriptionToCollection(
   // Check for duplicates (SSE race condition)
   if (collections.subscriptions.has(subscription.id)) return;
 
-  collections.subscriptions.utils.writeInsert(subscription);
+  collections.subscriptions.insert(subscription);
 }
 
 /**
@@ -104,7 +104,7 @@ export function removeSubscriptionFromCollection(
   if (!collections) return;
 
   if (collections.subscriptions.has(subscriptionId)) {
-    collections.subscriptions.utils.writeDelete(subscriptionId);
+    collections.subscriptions.delete(subscriptionId);
   }
 }
 
@@ -119,27 +119,19 @@ export function upsertSubscriptionsInCollection(
 ): void {
   if (!collections || subscriptions.length === 0) return;
 
-  const inserts: Subscription[] = [];
-  const updates: Array<Partial<Subscription> & { id: string }> = [];
-
   for (const sub of subscriptions) {
     if (collections.subscriptions.has(sub.id)) {
-      updates.push(sub);
+      collections.subscriptions.update(sub.id, (draft) => {
+        Object.assign(draft, sub);
+      });
     } else {
-      inserts.push(sub);
+      collections.subscriptions.insert(sub);
     }
-  }
-
-  if (inserts.length > 0) {
-    collections.subscriptions.utils.writeInsert(inserts);
-  }
-  if (updates.length > 0) {
-    collections.subscriptions.utils.writeUpdate(updates);
   }
 }
 
 // ============================================================================
-// Tag Collection Writes
+// Tag Collection Writes (query-backed)
 // ============================================================================
 
 /**
@@ -257,7 +249,7 @@ export function removeTagFromCollection(collections: Collections | null, tagId: 
 }
 
 // ============================================================================
-// Entry Count Writes (via Counts Collection)
+// Entry Count Writes (via Counts Collection, local-only)
 // ============================================================================
 
 /**
@@ -273,9 +265,12 @@ export function setEntriesCountInCollection(
   if (!collections) return;
 
   if (collections.counts.has(key)) {
-    collections.counts.utils.writeUpdate({ id: key, total, unread });
+    collections.counts.update(key, (draft) => {
+      draft.total = total;
+      draft.unread = unread;
+    });
   } else {
-    collections.counts.utils.writeInsert({ id: key, total, unread });
+    collections.counts.insert({ id: key, total, unread });
   }
 }
 
@@ -293,10 +288,9 @@ export function adjustEntriesCountInCollection(
 
   const current = collections.counts.get(key);
   if (current) {
-    collections.counts.utils.writeUpdate({
-      id: key,
-      total: Math.max(0, current.total + totalDelta),
-      unread: Math.max(0, current.unread + unreadDelta),
+    collections.counts.update(key, (draft) => {
+      draft.total = Math.max(0, current.total + totalDelta);
+      draft.unread = Math.max(0, current.unread + unreadDelta);
     });
   }
 }
@@ -313,7 +307,9 @@ export function setUncategorizedUnreadInCollection(
 
   const current = collections.counts.get("uncategorized");
   if (current) {
-    collections.counts.utils.writeUpdate({ id: "uncategorized", unread });
+    collections.counts.update("uncategorized", (draft) => {
+      draft.unread = unread;
+    });
   }
 }
 
@@ -333,9 +329,8 @@ export function adjustUncategorizedUnreadInCollection(
 
   const current = collections.counts.get("uncategorized");
   if (current) {
-    collections.counts.utils.writeUpdate({
-      id: "uncategorized",
-      unread: Math.max(0, current.unread + delta),
+    collections.counts.update("uncategorized", (draft) => {
+      draft.unread = Math.max(0, current.unread + delta);
     });
   }
 }
@@ -352,15 +347,14 @@ export function adjustUncategorizedFeedCountInCollection(
 
   const current = collections.counts.get("uncategorized");
   if (current) {
-    collections.counts.utils.writeUpdate({
-      id: "uncategorized",
-      total: Math.max(0, current.total + delta),
+    collections.counts.update("uncategorized", (draft) => {
+      draft.total = Math.max(0, current.total + delta);
     });
   }
 }
 
 // ============================================================================
-// Entry Collection Writes
+// Entry Collection Writes (local-only)
 // ============================================================================
 
 /**
@@ -376,14 +370,12 @@ export function updateEntryReadInCollection(
 ): void {
   if (!collections || entryIds.length === 0) return;
 
-  const updates: Array<Partial<EntryListItem> & { id: string }> = [];
   for (const id of entryIds) {
     if (collections.entries.has(id)) {
-      updates.push({ id, read });
+      collections.entries.update(id, (draft) => {
+        draft.read = read;
+      });
     }
-  }
-  if (updates.length > 0) {
-    collections.entries.utils.writeUpdate(updates);
   }
 }
 
@@ -398,7 +390,9 @@ export function updateEntryStarredInCollection(
   if (!collections) return;
 
   if (collections.entries.has(entryId)) {
-    collections.entries.utils.writeUpdate({ id: entryId, starred });
+    collections.entries.update(entryId, (draft) => {
+      draft.starred = starred;
+    });
   }
 }
 
@@ -414,7 +408,10 @@ export function updateEntryScoreInCollection(
   if (!collections) return;
 
   if (collections.entries.has(entryId)) {
-    collections.entries.utils.writeUpdate({ id: entryId, score, implicitScore });
+    collections.entries.update(entryId, (draft) => {
+      draft.score = score;
+      draft.implicitScore = implicitScore;
+    });
   }
 }
 
@@ -430,7 +427,9 @@ export function updateEntryMetadataInCollection(
   if (!collections) return;
 
   if (collections.entries.has(entryId)) {
-    collections.entries.utils.writeUpdate({ id: entryId, ...metadata });
+    collections.entries.update(entryId, (draft) => {
+      Object.assign(draft, metadata);
+    });
   }
 }
 
@@ -447,21 +446,13 @@ export function upsertEntriesInCollection(
 ): void {
   if (!collections || entries.length === 0) return;
 
-  const inserts: EntryListItem[] = [];
-  const updates: Array<Partial<EntryListItem> & { id: string }> = [];
-
   for (const entry of entries) {
     if (collections.entries.has(entry.id)) {
-      updates.push(entry);
+      collections.entries.update(entry.id, (draft) => {
+        Object.assign(draft, entry);
+      });
     } else {
-      inserts.push(entry);
+      collections.entries.insert(entry);
     }
-  }
-
-  if (inserts.length > 0) {
-    collections.entries.utils.writeInsert(inserts);
-  }
-  if (updates.length > 0) {
-    collections.entries.utils.writeUpdate(updates);
   }
 }

@@ -15,6 +15,7 @@ import {
   handleSubscriptionDeleted,
   setCounts,
   setBulkCounts,
+  refreshGlobalCounts,
   type SubscriptionData,
   type UnreadCounts,
   type BulkUnreadCounts,
@@ -172,5 +173,14 @@ describe("setBulkCounts", () => {
       tags: [],
     };
     setBulkCounts(null, counts);
+  });
+});
+
+describe("refreshGlobalCounts", () => {
+  it("does nothing with null collections", async () => {
+    const mockUtils = createMockTrpcUtils();
+    await refreshGlobalCounts(mockUtils.utils, null);
+    // No fetch operations should have been issued
+    expect(mockUtils.operations).toHaveLength(0);
   });
 });

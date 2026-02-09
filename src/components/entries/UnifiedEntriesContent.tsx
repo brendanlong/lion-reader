@@ -16,10 +16,18 @@
 
 import { Suspense, useMemo, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
-import { SuspendingEntryList } from "./SuspendingEntryList";
 import { EntryListFallback } from "./EntryListFallback";
+
+// SuspendingEntryList uses useLiveQuery (TanStack DB) which calls useSyncExternalStore
+// without getServerSnapshot, causing SSR to crash. Disable SSR since the entries
+// collection is client-only state populated from tRPC query pages.
+const SuspendingEntryList = dynamic(
+  () => import("./SuspendingEntryList").then((m) => m.SuspendingEntryList),
+  { ssr: false }
+);
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";

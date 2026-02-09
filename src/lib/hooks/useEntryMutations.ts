@@ -23,7 +23,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useCollections } from "@/lib/collections/context";
-import { setCounts, setBulkCounts } from "@/lib/cache/operations";
+import { setCounts, setBulkCounts, refreshGlobalCounts } from "@/lib/cache/operations";
 import {
   updateEntryReadInCollection,
   updateEntryStarredInCollection,
@@ -372,24 +372,16 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  // markAllRead mutation - invalidates caches based on what could be affected
+  // markAllRead mutation - invalidates caches and refreshes counts
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       utils.entries.list.invalidate();
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
+      collections.tags.utils.refetch();
 
-      // All Articles count is always affected
-      utils.entries.count.invalidate({});
-
-      // Starred count is always affected since starred entries can exist in any view
-      utils.entries.count.invalidate({ starredOnly: true });
-
-      // Invalidate saved count if saved entries could be affected
-      // (either type: "saved" was set, or no type filter means all including saved)
-      if (variables.type === "saved" || !variables.type) {
-        utils.entries.count.invalidate({ type: "saved" });
-      }
+      // markAllRead doesn't return counts, so fetch fresh counts from server
+      refreshGlobalCounts(utils, collections);
     },
     onError: () => {
       toast.error("Failed to mark all as read");

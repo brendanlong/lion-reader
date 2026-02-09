@@ -10,6 +10,7 @@
 
 import { Suspense, useMemo } from "react";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db";
 import { ClientLink } from "@/components/ui/client-link";
 import { useCollections } from "@/lib/collections/context";
@@ -197,6 +198,14 @@ function TagListError() {
   return <p className="ui-text-sm px-3 text-red-600 dark:text-red-400">Failed to load feeds</p>;
 }
 
+// TagListContent uses useLiveQuery/useLiveSuspenseQuery (TanStack DB) which calls
+// useSyncExternalStore without getServerSnapshot, causing SSR to crash.
+// Disable SSR since the tags/counts collections are client-only state.
+const DynamicTagListContent = dynamic(() => Promise.resolve({ default: TagListContent }), {
+  ssr: false,
+  loading: () => <TagListSkeleton />,
+});
+
 /**
  * TagList with built-in Suspense and ErrorBoundary.
  */
@@ -204,7 +213,7 @@ export function TagList(props: TagListProps) {
   return (
     <ErrorBoundary fallback={<TagListError />}>
       <Suspense fallback={<TagListSkeleton />}>
-        <TagListContent {...props} />
+        <DynamicTagListContent {...props} />
       </Suspense>
     </ErrorBoundary>
   );

@@ -250,3 +250,22 @@ export function setBulkCounts(collections: Collections | null, counts: BulkUnrea
     setUncategorizedUnreadInCollection(collections, counts.uncategorized.unread);
   }
 }
+
+/**
+ * Fetches fresh global counts from the server and writes to the counts collection.
+ * Used after operations that don't return counts (markAllRead, OPML import, error recovery).
+ */
+export async function refreshGlobalCounts(
+  utils: TRPCClientUtils,
+  collections: Collections | null
+): Promise<void> {
+  if (!collections) return;
+  const [all, starred, saved] = await Promise.all([
+    utils.entries.count.fetch({}),
+    utils.entries.count.fetch({ starredOnly: true }),
+    utils.entries.count.fetch({ type: "saved" }),
+  ]);
+  setEntriesCountInCollection(collections, "all", all.total, all.unread);
+  setEntriesCountInCollection(collections, "starred", starred.total, starred.unread);
+  setEntriesCountInCollection(collections, "saved", saved.total, saved.unread);
+}

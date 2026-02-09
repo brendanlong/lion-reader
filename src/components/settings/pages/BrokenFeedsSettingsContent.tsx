@@ -11,7 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useCollections } from "@/lib/collections/context";
-import { handleSubscriptionDeleted } from "@/lib/cache/operations";
+import { handleSubscriptionDeleted, refreshGlobalCounts } from "@/lib/cache/operations";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
@@ -62,7 +62,7 @@ export default function BrokenFeedsSettingsContent() {
       // On error, invalidate to refetch correct state
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
-      utils.entries.count.invalidate();
+      refreshGlobalCounts(utils, collections);
     },
   });
 

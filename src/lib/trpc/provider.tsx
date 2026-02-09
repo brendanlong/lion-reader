@@ -182,11 +182,11 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
       const keyMeta = queryKey[1] as { input?: Record<string, unknown> } | undefined;
       const input = keyMeta?.input;
       if (!input || Object.keys(input).length === 0) {
-        cols.counts.utils.writeInsert({ id: "all", total: data.total, unread: data.unread });
+        cols.counts.insert({ id: "all", total: data.total, unread: data.unread });
       } else if (input.starredOnly === true) {
-        cols.counts.utils.writeInsert({ id: "starred", total: data.total, unread: data.unread });
+        cols.counts.insert({ id: "starred", total: data.total, unread: data.unread });
       } else if (input.type === "saved") {
-        cols.counts.utils.writeInsert({ id: "saved", total: data.total, unread: data.unread });
+        cols.counts.insert({ id: "saved", total: data.total, unread: data.unread });
       }
     }
 
