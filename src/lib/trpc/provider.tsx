@@ -2,6 +2,7 @@
  * tRPC Provider
  *
  * Wraps the application with React Query and tRPC providers.
+ * Also initializes TanStack DB collections for normalized client-side state.
  * This must be used at the root of the app for tRPC hooks to work.
  */
 
@@ -9,10 +10,14 @@
 
 import { useState, useEffect, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
+import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 import { trpc } from "./client";
 import { getQueryClient } from "./query-client";
+import type { AppRouter } from "@/server/trpc/root";
+import { createCollections, type Collections } from "@/lib/collections";
+import { CollectionsProvider } from "@/lib/collections/context";
+import { VanillaClientProvider, type VanillaClient } from "./vanilla-client";
 
 /**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
@@ -82,8 +87,27 @@ interface TRPCProviderProps {
 }
 
 /**
+ * Creates the shared httpBatchLink configuration.
+ * Used by both the React tRPC client and the vanilla tRPC client.
+ */
+function createBatchLink() {
+  return httpBatchLink({
+    url: `${getBaseUrl()}/api/trpc`,
+    transformer: superjson,
+    // Include credentials for cookie-based auth
+    fetch(url, options) {
+      return fetch(url, {
+        ...options,
+        credentials: "include",
+      });
+    },
+  });
+}
+
+/**
  * TRPC Provider component.
  * Wrap your app with this to enable tRPC hooks.
+ * Also initializes TanStack DB collections for normalized client-side state.
  *
  * @example
  * ```tsx
@@ -131,27 +155,55 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
     };
   }, [queryClient]);
 
+  // Create the React tRPC client (for hooks)
   const [trpcClient] = useState(() =>
     trpc.createClient({
-      links: [
-        httpBatchLink({
-          url: `${getBaseUrl()}/api/trpc`,
-          transformer: superjson,
-          // Include credentials for cookie-based auth
-          fetch(url, options) {
-            return fetch(url, {
-              ...options,
-              credentials: "include",
-            });
-          },
-        }),
-      ],
+      links: [createBatchLink()],
     })
   );
 
+  // Create a vanilla tRPC client (for collection queryFn calls)
+  // Exposed via VanillaClientProvider for use by on-demand collection hooks
+  const [vanillaClient] = useState<VanillaClient>(() =>
+    createTRPCClient<AppRouter>({
+      links: [createBatchLink()],
+    })
+  );
+
+  // Initialize TanStack DB collections
+  const [collections] = useState<Collections>(() => {
+    const cols = createCollections(queryClient, {
+      fetchTagsAndUncategorized: () => vanillaClient.tags.list.query(),
+    });
+
+    // Seed entry counts from SSR-prefetched React Query cache.
+    // Query key format: [["entries", "count"], { input: {...}, type: "query" }]
+    const countQueries = queryClient.getQueriesData<{ total: number; unread: number }>({
+      queryKey: [["entries", "count"]],
+    });
+    for (const [queryKey, data] of countQueries) {
+      if (!data) continue;
+      const keyMeta = queryKey[1] as { input?: Record<string, unknown> } | undefined;
+      const input = keyMeta?.input;
+      if (!input || Object.keys(input).length === 0) {
+        cols.counts.insert({ id: "all", total: data.total, unread: data.unread });
+      } else if (input.starredOnly === true) {
+        cols.counts.insert({ id: "starred", total: data.total, unread: data.unread });
+      } else if (input.type === "saved") {
+        cols.counts.insert({ id: "saved", total: data.total, unread: data.unread });
+      }
+    }
+
+    return cols;
+  });
+
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <VanillaClientProvider value={vanillaClient}>
+          <CollectionsProvider value={collections}>{children}</CollectionsProvider>
+        </VanillaClientProvider>
+      </QueryClientProvider>
     </trpc.Provider>
   );
 }

@@ -8,10 +8,10 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionDeleted } from "@/lib/cache/operations";
+import { useCollections } from "@/lib/collections/context";
+import { handleSubscriptionDeleted, refreshGlobalCounts } from "@/lib/cache/operations";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
@@ -38,7 +38,7 @@ interface BrokenFeed {
 // ============================================================================
 
 export default function BrokenFeedsSettingsContent() {
-  const queryClient = useQueryClient();
+  const collections = useCollections();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
@@ -50,7 +50,7 @@ export default function BrokenFeedsSettingsContent() {
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
     onMutate: (variables) => {
       // Use centralized cache operation for optimistic removal
-      handleSubscriptionDeleted(utils, variables.id, queryClient);
+      handleSubscriptionDeleted(utils, variables.id, collections);
     },
     onSuccess: () => {
       utils.brokenFeeds.list.invalidate();
@@ -62,7 +62,7 @@ export default function BrokenFeedsSettingsContent() {
       // On error, invalidate to refetch correct state
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
-      utils.entries.count.invalidate();
+      refreshGlobalCounts(utils, collections);
     },
   });
 

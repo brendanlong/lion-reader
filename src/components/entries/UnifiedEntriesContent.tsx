@@ -14,13 +14,20 @@
 
 "use client";
 
-import { Suspense, useMemo, useEffect, useRef } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
-import { SuspendingEntryList } from "./SuspendingEntryList";
 import { EntryListFallback } from "./EntryListFallback";
+
+// SuspendingEntryList uses useLiveInfiniteQuery (TanStack DB) which calls useSyncExternalStore
+// without getServerSnapshot, causing SSR to crash. Disable SSR since the on-demand
+// collection is client-only state.
+const SuspendingEntryList = dynamic(
+  () => import("./SuspendingEntryList").then((m) => m.SuspendingEntryList),
+  { ssr: false }
+);
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -28,7 +35,12 @@ import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
-import { findCachedSubscription } from "@/lib/cache/count-cache";
+import { useCollections } from "@/lib/collections/context";
+import {
+  createEntryNavigationStore,
+  EntryNavigationProvider,
+  useEntryNavigationState,
+} from "@/lib/hooks/useEntryNavigation";
 import { type EntryType } from "@/lib/hooks/useEntryMutations";
 
 /**
@@ -245,17 +257,16 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
  * Used as the Suspense fallback for the title slot.
  */
 function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
-  const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
+  const collections = useCollections();
 
   // Static title - render immediately (shouldn't suspend anyway, but handle it)
   if (routeInfo.title !== null) {
     return <TitleText>{routeInfo.title}</TitleText>;
   }
 
-  // Subscription title from cache
+  // Subscription title from collection (O(1) lookup)
   if (routeInfo.subscriptionId) {
-    const subscription = findCachedSubscription(utils, queryClient, routeInfo.subscriptionId);
+    const subscription = collections.subscriptions.get(routeInfo.subscriptionId);
     if (subscription) {
       return (
         <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
@@ -264,10 +275,9 @@ function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
     return <TitleSkeleton />;
   }
 
-  // Tag title from cache
+  // Tag title from collection (O(1) lookup)
   if (routeInfo.tagId) {
-    const tagsData = utils.tags.list.getData();
-    const tag = tagsData?.items.find((t) => t.id === routeInfo.tagId);
+    const tag = collections.tags.get(routeInfo.tagId);
     if (tag) {
       return <TitleText>{tag.name}</TitleText>;
     }
@@ -286,15 +296,11 @@ function UnifiedEntriesContentInner() {
   const { showUnreadOnly } = useUrlViewPreferences();
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
-  // Get query input based on current URL - shared with SuspendingEntryList
+  // Get query input based on current URL
   const queryInput = useEntriesListInput();
 
-  // Non-suspending query for navigation - shares cache with SuspendingEntryList
-  const entriesQuery = trpc.entries.list.useInfiniteQuery(queryInput, {
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-  });
+  // Navigation state published by SuspendingEntryList via useEntryNavigationUpdater
+  const { nextEntryId, previousEntryId } = useEntryNavigationState();
 
   // Fetch subscription data for validation
   const subscriptionQuery = trpc.subscriptions.get.useQuery(
@@ -345,42 +351,6 @@ function UnifiedEntriesContentInner() {
     }
     return options;
   }, [routeInfo.filters]);
-
-  // Get adjacent entry IDs from query data for navigation
-  // Also compute distance to end for pagination triggering
-  const pages = entriesQuery.data?.pages;
-  const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(() => {
-    if (!openEntryId || !pages) {
-      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
-    }
-    const allEntries = pages.flatMap((page) => page.items);
-    const currentIndex = allEntries.findIndex((e) => e.id === openEntryId);
-    if (currentIndex === -1) {
-      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
-    }
-    return {
-      nextEntryId:
-        currentIndex < allEntries.length - 1 ? allEntries[currentIndex + 1].id : undefined,
-      previousEntryId: currentIndex > 0 ? allEntries[currentIndex - 1].id : undefined,
-      distanceToEnd: allEntries.length - 1 - currentIndex,
-    };
-  }, [openEntryId, pages]);
-
-  // Trigger pagination when navigating close to the end of loaded entries
-  // This ensures swipe navigation can continue beyond the initial page
-  const prevDistanceToEnd = useRef(distanceToEnd);
-  useEffect(() => {
-    const PAGINATION_THRESHOLD = 3;
-    if (
-      distanceToEnd <= PAGINATION_THRESHOLD &&
-      distanceToEnd < prevDistanceToEnd.current &&
-      entriesQuery.hasNextPage &&
-      !entriesQuery.isFetchingNextPage
-    ) {
-      entriesQuery.fetchNextPage();
-    }
-    prevDistanceToEnd.current = distanceToEnd;
-  }, [distanceToEnd, entriesQuery]);
 
   // Navigation callbacks - just update URL, React re-renders
   const handleSwipeNext = useMemo(() => {
@@ -479,14 +449,17 @@ function UnifiedEntriesContentInner() {
  * to determine what to render. When navigation happens via pushState, usePathname()
  * updates and this component re-renders with the appropriate content.
  *
- * Note: No outer Suspense needed because UnifiedEntriesContentInner uses only
- * non-suspending queries. All suspending queries are inside child components
- * with their own Suspense boundaries (title, entry list, entry content).
+ * Provides EntryNavigationProvider so SuspendingEntryList can publish
+ * next/previous entry IDs for swipe gesture navigation in EntryContent.
  */
 export function UnifiedEntriesContent() {
+  const [navigationStore] = useState(createEntryNavigationStore);
+
   return (
     <ErrorBoundary message="Failed to load entries">
-      <UnifiedEntriesContentInner />
+      <EntryNavigationProvider value={navigationStore}>
+        <UnifiedEntriesContentInner />
+      </EntryNavigationProvider>
     </ErrorBoundary>
   );
 }

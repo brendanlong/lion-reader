@@ -4,13 +4,22 @@
  * Provides unified event handling for both SSE and sync endpoints.
  * Both SSE real-time events and sync polling use the same event types,
  * so we can share the cache update logic between them.
+ *
+ * State updates flow through TanStack DB collections for sidebar/list views.
+ * React Query entries.get is still updated for the detail view.
  */
 
-import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
+import type { Collections } from "@/lib/collections";
 import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "./operations";
-import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
-import { applySyncTagChanges, removeSyncTags } from "./count-cache";
+import {
+  addTagToCollection,
+  updateTagInCollection,
+  removeTagFromCollection,
+  updateEntryReadInCollection,
+  updateEntryStarredInCollection,
+  updateEntryMetadataInCollection,
+} from "@/lib/collections/writes";
 
 // ============================================================================
 // Event Types
@@ -164,50 +173,68 @@ export type SyncEvent =
 // ============================================================================
 
 /**
- * Handles a sync event by updating the appropriate caches.
+ * Handles a sync event by updating the appropriate caches and collections.
  *
  * This is the unified event handler used by both SSE and sync endpoints.
- * It dispatches to the appropriate cache update functions based on event type.
+ * It dispatches to the appropriate update functions based on event type.
  *
- * @param utils - tRPC utils for cache access
- * @param queryClient - React Query client for cache updates
+ * @param utils - tRPC utils for entries.get cache and invalidation
  * @param event - The event to handle
+ * @param collections - TanStack DB collections for state updates
  */
 export function handleSyncEvent(
   utils: TRPCClientUtils,
-  queryClient: QueryClient,
-  event: SyncEvent
+  event: SyncEvent,
+  collections?: Collections | null
 ): void {
   switch (event.type) {
     case "new_entry":
-      // Update unread counts without invalidating entries.list
+      // Update unread counts in collections
       if (event.feedType) {
-        handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient);
+        handleNewEntry(utils, event.subscriptionId, event.feedType, collections);
       }
       break;
 
-    case "entry_updated":
-      // Update entry metadata directly in caches
-      updateEntryMetadataInCache(
-        utils,
-        event.entryId,
-        {
-          title: event.metadata.title,
-          author: event.metadata.author,
-          summary: event.metadata.summary,
-          url: event.metadata.url,
-          publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
-        },
-        queryClient
-      );
+    case "entry_updated": {
+      // Update entry metadata in entries.get cache (detail view)
+      const metadata = {
+        title: event.metadata.title,
+        author: event.metadata.author,
+        summary: event.metadata.summary,
+        url: event.metadata.url,
+        publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
+      };
+      utils.entries.get.setData({ id: event.entryId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: {
+            ...oldData.entry,
+            ...(metadata.title !== undefined && { title: metadata.title }),
+            ...(metadata.author !== undefined && { author: metadata.author }),
+            ...(metadata.summary !== undefined && { summary: metadata.summary }),
+            ...(metadata.url !== undefined && { url: metadata.url }),
+            ...(metadata.publishedAt !== undefined && { publishedAt: metadata.publishedAt }),
+          },
+        };
+      });
+      // Update entries collection (list view, via reactive useLiveQuery)
+      updateEntryMetadataInCollection(collections ?? null, event.entryId, metadata);
       break;
+    }
 
     case "entry_state_changed":
-      // Update read/starred state in cache
-      updateEntriesInListCache(queryClient, [event.entryId], {
-        read: event.read,
-        starred: event.starred,
+      // Update entries.get cache (detail view)
+      utils.entries.get.setData({ id: event.entryId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: { ...oldData.entry, read: event.read, starred: event.starred },
+        };
       });
+      // Update entries collection (list view, via reactive useLiveQuery)
+      updateEntryReadInCollection(collections ?? null, [event.entryId], event.read);
+      updateEntryStarredInCollection(collections ?? null, event.entryId, event.starred);
       break;
 
     case "subscription_created": {
@@ -227,7 +254,7 @@ export function handleSyncEvent(
           tags: subscription.tags,
           fetchFullContent: false,
         },
-        queryClient
+        collections
       );
       break;
     }
@@ -235,26 +262,24 @@ export function handleSyncEvent(
     case "subscription_deleted":
       // Check if already removed (optimistic update from same tab)
       {
-        const currentData = utils.subscriptions.list.getData();
-        const alreadyRemoved =
-          currentData && !currentData.items.some((s) => s.id === event.subscriptionId);
+        const alreadyRemoved = collections && !collections.subscriptions.has(event.subscriptionId);
 
         if (!alreadyRemoved) {
-          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient);
+          handleSubscriptionDeleted(utils, event.subscriptionId, collections);
         }
       }
       break;
 
     case "tag_created":
-      applySyncTagChanges(utils, [event.tag], []);
+      addTagToCollection(collections ?? null, event.tag);
       break;
 
     case "tag_updated":
-      applySyncTagChanges(utils, [], [event.tag]);
+      updateTagInCollection(collections ?? null, event.tag);
       break;
 
     case "tag_deleted":
-      removeSyncTags(utils, [event.tagId]);
+      removeTagFromCollection(collections ?? null, event.tagId);
       break;
 
     case "import_progress":

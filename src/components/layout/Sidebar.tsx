@@ -12,21 +12,42 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionDeleted } from "@/lib/cache/operations";
+import { useCollections } from "@/lib/collections/context";
+import { handleSubscriptionDeleted, refreshGlobalCounts } from "@/lib/cache/operations";
+import dynamic from "next/dynamic";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
-import { SidebarNav } from "./SidebarNav";
 import { TagList } from "./TagList";
+
+// SidebarNav uses useLiveQuery (TanStack DB) which calls useSyncExternalStore
+// without getServerSnapshot, causing SSR to crash. Disable SSR for this component
+// since the counts collection is client-only state anyway.
+const SidebarNav = dynamic(() => import("./SidebarNav").then((m) => m.SidebarNav), {
+  ssr: false,
+  loading: () => <SidebarNavSkeleton />,
+});
+
+/**
+ * Skeleton placeholder matching SidebarNav's layout (3 nav links).
+ */
+function SidebarNavSkeleton() {
+  return (
+    <div className="space-y-1 p-3">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="h-9 animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-800" />
+      ))}
+    </div>
+  );
+}
 
 interface SidebarProps {
   onClose?: () => void;
 }
 
 export function Sidebar({ onClose }: SidebarProps) {
-  const queryClient = useQueryClient();
+  const collections = useCollections();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
@@ -44,15 +65,17 @@ export function Sidebar({ onClose }: SidebarProps) {
     onMutate: async (variables) => {
       // Close dialog immediately for responsive feel
       setUnsubscribeTarget(null);
-      // Use centralized cache operation for optimistic removal
-      handleSubscriptionDeleted(utils, variables.id, queryClient);
+      // Use centralized cache operation for optimistic removal (dual-write to collections)
+      handleSubscriptionDeleted(utils, variables.id, collections);
     },
     onError: () => {
       toast.error("Failed to unsubscribe from feed");
-      // On error, invalidate to refetch correct state
+      // On error, invalidate to refetch correct state.
+      // Subscription infinite queries will re-populate the subscriptions collection.
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
-      utils.entries.count.invalidate();
+      collections.tags.utils.refetch();
+      refreshGlobalCounts(utils, collections);
     },
   });
 
@@ -60,9 +83,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     // Mark entry list queries as stale and refetch active ones.
     // This ensures clicking the current page's link refreshes the list,
     // while cross-page navigation also works (new query fetches on mount).
-    queryClient.invalidateQueries({
-      queryKey: [["entries", "list"]],
-    });
+    utils.entries.list.invalidate();
     onClose?.();
   };
 
@@ -120,8 +141,11 @@ export function Sidebar({ onClose }: SidebarProps) {
         currentTagIds={editTarget?.tagIds ?? []}
         onClose={() => {
           setEditTarget(null);
+          // Invalidate subscription queries to refetch with new data.
+          // Subscription infinite queries will re-populate the subscriptions collection.
           utils.subscriptions.list.invalidate();
           utils.tags.list.invalidate();
+          collections.tags.utils.refetch();
         }}
       />
     </>

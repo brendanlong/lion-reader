@@ -1,17 +1,18 @@
 /**
  * SidebarNav Component
  *
- * Navigation section of the sidebar with streaming unread counts.
- * Each count suspends independently, allowing the nav structure to render immediately.
+ * Navigation section of the sidebar with reactive unread counts.
+ * Counts are read from the TanStack DB counts collection, which is
+ * seeded from SSR-prefetched data and updated by mutations/SSE events.
  */
 
 "use client";
 
-import { Suspense } from "react";
+import { useMemo } from "react";
 import { usePathname } from "next/navigation";
-import { trpc } from "@/lib/trpc/client";
+import { useLiveQuery } from "@tanstack/react-db";
+import { useCollections } from "@/lib/collections/context";
 import { NavLink } from "@/components/ui/nav-link";
-import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface SidebarNavProps {
   onNavigate: () => void;
@@ -28,41 +29,20 @@ function CountBadge({ count }: { count: number }) {
 }
 
 /**
- * Suspending component that fetches and displays a single count.
- * Returns null when count is 0 (no badge shown).
- */
-function AllItemsCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({});
-  return <CountBadge count={data.unread} />;
-}
-
-function StarredCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({ starredOnly: true });
-  return <CountBadge count={data.unread} />;
-}
-
-function SavedCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({ type: "saved" });
-  return <CountBadge count={data.unread} />;
-}
-
-/**
- * Wraps a count component with ErrorBoundary and Suspense.
- * Shows nothing during loading or on error (graceful degradation).
- */
-function SuspenseCount({ children }: { children: React.ReactNode }) {
-  return (
-    <ErrorBoundary fallback={null}>
-      <Suspense fallback={null}>{children}</Suspense>
-    </ErrorBoundary>
-  );
-}
-
-/**
- * Main navigation links with independently streaming unread counts.
+ * Main navigation links with reactive unread counts from the counts collection.
  */
 export function SidebarNav({ onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
+  const { counts: countsCollection } = useCollections();
+  const { data: allCounts } = useLiveQuery(countsCollection);
+
+  const countMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const record of allCounts) {
+      map.set(record.id, record.unread);
+    }
+    return map;
+  }, [allCounts]);
 
   const isActiveLink = (href: string) => pathname === href;
 
@@ -71,11 +51,7 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
       <NavLink
         href="/all"
         isActive={isActiveLink("/all")}
-        countElement={
-          <SuspenseCount>
-            <AllItemsCount />
-          </SuspenseCount>
-        }
+        countElement={<CountBadge count={countMap.get("all") ?? 0} />}
         onClick={onNavigate}
       >
         All Items
@@ -84,11 +60,7 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
       <NavLink
         href="/starred"
         isActive={isActiveLink("/starred")}
-        countElement={
-          <SuspenseCount>
-            <StarredCount />
-          </SuspenseCount>
-        }
+        countElement={<CountBadge count={countMap.get("starred") ?? 0} />}
         onClick={onNavigate}
       >
         Starred
@@ -97,11 +69,7 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
       <NavLink
         href="/saved"
         isActive={isActiveLink("/saved")}
-        countElement={
-          <SuspenseCount>
-            <SavedCount />
-          </SuspenseCount>
-        }
+        countElement={<CountBadge count={countMap.get("saved") ?? 0} />}
         onClick={onNavigate}
       >
         Saved
