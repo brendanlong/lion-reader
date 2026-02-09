@@ -340,6 +340,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
         customTitle: upsertedSubscription.customTitle,
         subscribedAt: upsertedSubscription.subscribedAt.toISOString(),
         unreadCount: 1,
+        totalCount: 1, // first email entry, total === unread
         tags: [],
       },
       {

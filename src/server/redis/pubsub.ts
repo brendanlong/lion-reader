@@ -70,6 +70,7 @@ export interface SubscriptionCreatedEventSubscription {
   customTitle: string | null;
   subscribedAt: string; // ISO string for serialization
   unreadCount: number;
+  totalCount: number;
   tags: Array<{ id: string; name: string; color: string | null }>;
 }
 
@@ -800,6 +801,7 @@ export function parseUserEvent(message: string): UserEvent | null {
           (sub.customTitle !== null && typeof sub.customTitle !== "string") ||
           typeof sub.subscribedAt !== "string" ||
           typeof sub.unreadCount !== "number" ||
+          typeof sub.totalCount !== "number" ||
           !Array.isArray(sub.tags)
         ) {
           return null;
@@ -830,6 +832,7 @@ export function parseUserEvent(message: string): UserEvent | null {
             customTitle: sub.customTitle as string | null,
             subscribedAt: sub.subscribedAt,
             unreadCount: sub.unreadCount,
+            totalCount: sub.totalCount as number,
             tags: sub.tags as Array<{ id: string; name: string; color: string | null }>,
           },
           feed: {

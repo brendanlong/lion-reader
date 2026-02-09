@@ -156,6 +156,7 @@ export function handleSyncEvent(
           siteUrl: feed.siteUrl,
           subscribedAt: new Date(subscription.subscribedAt),
           unreadCount: subscription.unreadCount,
+          totalCount: subscription.totalCount,
           tags: subscription.tags,
           fetchFullContent: false,
         },

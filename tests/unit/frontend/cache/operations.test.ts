@@ -32,6 +32,7 @@ function createSubscription(overrides: Partial<SubscriptionData> = {}): Subscrip
     siteUrl: "https://example.com",
     subscribedAt: new Date("2024-01-01"),
     unreadCount: 0,
+    totalCount: 0,
     tags: [],
     fetchFullContent: false,
     ...overrides,

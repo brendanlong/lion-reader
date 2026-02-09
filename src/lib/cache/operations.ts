@@ -38,6 +38,7 @@ export interface SubscriptionData {
   siteUrl: string | null;
   subscribedAt: Date;
   unreadCount: number;
+  totalCount: number;
   tags: Array<{ id: string; name: string; color: string | null }>;
   fetchFullContent: boolean;
 }
@@ -74,7 +75,7 @@ export function handleSubscriptionCreated(
   adjustEntriesCountInCollection(
     collections ?? null,
     "all",
-    subscription.unreadCount,
+    subscription.totalCount,
     subscription.unreadCount
   );
 }
@@ -114,7 +115,7 @@ export function handleSubscriptionDeleted(
     adjustEntriesCountInCollection(
       collections ?? null,
       "all",
-      -subscription.unreadCount,
+      -subscription.totalCount,
       -subscription.unreadCount
     );
   }

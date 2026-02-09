@@ -39,6 +39,7 @@ const subscriptionDataSchema = z.object({
   customTitle: z.string().nullable(),
   subscribedAt: z.string(),
   unreadCount: z.number(),
+  totalCount: z.number(),
   tags: z.array(tagSchema),
 });
 
