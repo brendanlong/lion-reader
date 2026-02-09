@@ -6,18 +6,10 @@
  * 1. Share Target API for URLs and files
  * 2. Offline fallback for navigation requests
  *
- * For URL shares, the service worker saves directly via the API without
- * showing any intermediate UI. Open tabs are notified via postMessage so
- * the RealtimeProvider can show a toast.
+ * For URL shares, the service worker redirects to /save which handles
+ * saving the article and auto-closes itself.
  *
- * With launch_handler: focus-existing in the manifest, Chrome on Android
- * focuses the existing PWA window instead of navigating it. The service
- * worker's fetch handler still fires for the POST, and the postMessage
- * reaches the focused window. When the app is NOT already open,
- * focus-existing falls back to navigate-new, and the service worker
- * redirects to the app root with query params for the toast.
- *
- * File shares still redirect to /save because they require more complex processing.
+ * File shares store the file in IndexedDB and redirect to /save for processing.
  *
  * Note: The main caching of Next.js static assets is handled by next-pwa's
  * Workbox configuration in next.config.ts. This file only adds custom handlers.
@@ -35,15 +27,6 @@ interface SWFetchEvent extends Event {
   respondWith(response: Response | Promise<Response>): void;
 }
 
-// Message types for communicating with open tabs
-interface ShareResultMessage {
-  type: "share-result";
-  success: boolean;
-  url?: string;
-  title?: string;
-  error?: string;
-}
-
 // Helper to convert File/Blob to base64
 async function fileToBase64(file: File | Blob): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
@@ -53,70 +36,6 @@ async function fileToBase64(file: File | Blob): Promise<string> {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
-}
-
-/**
- * Notifies all open Lion Reader tabs about a share result.
- * Uses postMessage to send the result to all controlled clients.
- */
-async function notifyClients(message: ShareResultMessage): Promise<void> {
-  const clients = await sw.clients.matchAll({ type: "window" });
-  for (const client of clients) {
-    client.postMessage(message);
-  }
-}
-
-/**
- * Attempts to save a URL directly via the API without navigation.
- * Returns the saved article title on success, or throws an error.
- */
-async function saveUrlDirectly(url: string, origin: string): Promise<{ title: string | null }> {
-  const apiUrl = `${origin}/api/v1/saved`;
-
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include", // Include session cookie
-    body: JSON.stringify({ url }),
-  });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-
-    if (response.status === 401) {
-      throw new Error("NOT_AUTHENTICATED");
-    }
-
-    throw new Error(data.error?.message || `HTTP ${response.status}`);
-  }
-
-  const data = await response.json();
-  return { title: data.article?.title || null };
-}
-
-/**
- * Returns the best URL to redirect to after a share completes.
- * Android's share target destroys the PWA's navigation state, so we
- * redirect back into the app. We check existing clients for an app page
- * URL to restore, falling back to the root.
- */
-async function getRedirectUrl(origin: string): Promise<string> {
-  const clients = await sw.clients.matchAll({ type: "window" });
-  // Look for an existing client on an app page (not /api/share, /save, etc.)
-  for (const client of clients) {
-    const clientUrl = new URL(client.url);
-    if (
-      clientUrl.origin === origin &&
-      !clientUrl.pathname.startsWith("/api/") &&
-      !clientUrl.pathname.startsWith("/save") &&
-      !clientUrl.pathname.startsWith("/login")
-    ) {
-      return client.url;
-    }
-  }
-  return `${origin}/`;
 }
 
 // Handle share target POST requests
@@ -185,7 +104,7 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
 
             return Response.redirect(redirectUrl.toString(), 303);
           } else if (sharedUrl || sharedText) {
-            // URL was shared - try to save directly without navigation
+            // URL was shared - redirect to /save page which handles saving and auto-closes
             let urlToSave = sharedUrl;
 
             if (!urlToSave && sharedText) {
@@ -204,53 +123,10 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
               return Response.redirect(errorUrl.toString(), 303);
             }
 
-            // Try to save directly via API (no navigation)
-            try {
-              const result = await saveUrlDirectly(urlToSave, url.origin);
-
-              // Notify any existing tabs (may not be received if this is the only window)
-              await notifyClients({
-                type: "share-result",
-                success: true,
-                url: urlToSave,
-                title: result.title || undefined,
-              });
-
-              // Redirect back into the app with share result in query params.
-              // The postMessage above may not be received because Android's share
-              // target destroys the current page, so we pass the result via URL
-              // for the app to show a toast after loading.
-              const redirectUrl = new URL(await getRedirectUrl(url.origin));
-              redirectUrl.searchParams.set("shared", "saved");
-              if (result.title) {
-                redirectUrl.searchParams.set("sharedTitle", result.title);
-              }
-              return Response.redirect(redirectUrl.toString(), 303);
-            } catch (error) {
-              const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-              // If not authenticated, redirect to /save for login flow
-              if (errorMessage === "NOT_AUTHENTICATED") {
-                const saveUrl = new URL("/save", url.origin);
-                saveUrl.searchParams.set("url", urlToSave);
-                saveUrl.searchParams.set("shared", "true");
-                return Response.redirect(saveUrl.toString(), 303);
-              }
-
-              // Notify any existing tabs
-              await notifyClients({
-                type: "share-result",
-                success: false,
-                url: urlToSave,
-                error: errorMessage,
-              });
-
-              // Redirect back into the app with error in query params
-              const redirectUrl = new URL(await getRedirectUrl(url.origin));
-              redirectUrl.searchParams.set("shared", "error");
-              redirectUrl.searchParams.set("sharedError", errorMessage);
-              return Response.redirect(redirectUrl.toString(), 303);
-            }
+            const saveUrl = new URL("/save", url.origin);
+            saveUrl.searchParams.set("url", urlToSave);
+            saveUrl.searchParams.set("shared", "true");
+            return Response.redirect(saveUrl.toString(), 303);
           } else {
             // No file or URL found
             const errorUrl = new URL("/save", url.origin);

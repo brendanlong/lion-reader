@@ -10,13 +10,6 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "portrait",
     background_color: "#ffffff",
     theme_color: "#f97316",
-    // When the PWA is launched (e.g., via share target), focus the existing window
-    // instead of navigating it. This prevents Android's share target from destroying
-    // the current app state. The service worker handles the shared data via fetch
-    // event and notifies the window via postMessage for the toast.
-    launch_handler: {
-      client_mode: ["focus-existing", "auto"],
-    },
     icons: [
       {
         src: "/android-chrome-192x192.png",
@@ -42,9 +35,8 @@ export default function manifest(): MetadataRoute.Manifest {
       },
     ],
     // Share Target API: allows other Android apps to share URLs and files to Lion Reader.
-    // With launch_handler focus-existing, the service worker intercepts the POST,
-    // saves URLs directly via API, and notifies the focused window via postMessage.
-    // Files are stored in IndexedDB and the window redirects to /save for processing.
+    // The service worker intercepts the POST and redirects to /save, which handles
+    // saving the article and auto-closes itself.
     share_target: {
       action: "/api/share",
       method: "POST" as const,
