@@ -14,28 +14,28 @@
 
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
-import { EntryListFallback } from "./EntryListFallback";
+import { EntryListSkeleton } from "./EntryListSkeleton";
 
 // SuspendingEntryList uses useLiveInfiniteQuery (TanStack DB) which calls useSyncExternalStore
 // without getServerSnapshot, causing SSR to crash. Disable SSR since the on-demand
 // collection is client-only state.
 const SuspendingEntryList = dynamic(
   () => import("./SuspendingEntryList").then((m) => m.SuspendingEntryList),
-  { ssr: false }
+  { ssr: false, loading: () => <EntryListSkeleton count={5} /> }
 );
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
-import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { useCollections } from "@/lib/collections/context";
+import { upsertSubscriptionsInCollection } from "@/lib/collections/writes";
 import {
   createEntryNavigationStore,
   EntryNavigationProvider,
@@ -205,61 +205,13 @@ function useRouteInfo(): RouteInfo {
 }
 
 /**
- * Title component for subscription pages.
- * Uses useSuspenseQuery so it suspends until data is available.
- */
-function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
-  const [subscription] = trpc.subscriptions.get.useSuspenseQuery({ id: subscriptionId });
-  if (!subscription) {
-    // This shouldn't happen with suspense, but handle it gracefully
-    return <TitleText>Untitled Feed</TitleText>;
-  }
-  return (
-    <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
-  );
-}
-
-/**
- * Title component for tag pages.
- * Uses useSuspenseQuery so it suspends until data is available.
- */
-function TagTitle({ tagId }: { tagId: string }) {
-  const [tagsData] = trpc.tags.list.useSuspenseQuery();
-  const tag = tagsData?.items.find((t) => t.id === tagId);
-  return <TitleText>{tag?.name ?? "Unknown Tag"}</TitleText>;
-}
-
-/**
- * Title component that handles all route types.
- * Static titles render immediately; dynamic titles suspend until data loads.
+ * Title component that reads from collections for instant display.
+ * Falls back to skeleton if the data isn't in the collection yet.
  */
 function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
-  // Static title - render immediately
-  if (routeInfo.title !== null) {
-    return <TitleText>{routeInfo.title}</TitleText>;
-  }
-
-  // Subscription title - suspends until subscription data loads
-  if (routeInfo.subscriptionId) {
-    return <SubscriptionTitle subscriptionId={routeInfo.subscriptionId} />;
-  }
-
-  // Tag title - suspends until tags data loads
-  if (routeInfo.tagId) {
-    return <TagTitle tagId={routeInfo.tagId} />;
-  }
-
-  return <TitleText>All Items</TitleText>;
-}
-
-/**
- * Smart title fallback that tries to show cached title instead of skeleton.
- * Used as the Suspense fallback for the title slot.
- */
-function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
   const collections = useCollections();
 
-  // Static title - render immediately (shouldn't suspend anyway, but handle it)
+  // Static title - render immediately
   if (routeInfo.title !== null) {
     return <TitleText>{routeInfo.title}</TitleText>;
   }
@@ -289,24 +241,30 @@ function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
 
 /**
  * Inner content component that renders based on route.
- * Entry content and entry list have independent Suspense boundaries.
+ * Titles read from TanStack DB collections; entry list handles its own loading.
  */
 function UnifiedEntriesContentInner() {
   const routeInfo = useRouteInfo();
   const { showUnreadOnly } = useUrlViewPreferences();
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
-  // Get query input based on current URL
-  const queryInput = useEntriesListInput();
-
   // Navigation state published by SuspendingEntryList via useEntryNavigationUpdater
   const { nextEntryId, previousEntryId } = useEntryNavigationState();
 
-  // Fetch subscription data for validation
+  const collections = useCollections();
+
+  // Fetch subscription data for validation and to populate the collection for title display
   const subscriptionQuery = trpc.subscriptions.get.useQuery(
     { id: routeInfo.subscriptionId ?? "" },
     { enabled: !!routeInfo.subscriptionId }
   );
+
+  // Upsert subscription into collection so the title renders from the collection
+  useEffect(() => {
+    if (subscriptionQuery.data) {
+      upsertSubscriptionsInCollection(collections, [subscriptionQuery.data]);
+    }
+  }, [collections, subscriptionQuery.data]);
 
   // Fetch tag data for validation and empty message customization
   const tagsQuery = trpc.tags.list.useQuery(undefined, {
@@ -384,12 +342,8 @@ function UnifiedEntriesContentInner() {
     );
   }
 
-  // Title has its own Suspense boundary with smart fallback that uses cache
-  const titleSlot = (
-    <Suspense fallback={<TitleFallback routeInfo={routeInfo} />}>
-      <EntryListTitle routeInfo={routeInfo} />
-    </Suspense>
-  );
+  // Title reads directly from collections - no Suspense needed
+  const titleSlot = <EntryListTitle routeInfo={routeInfo} />;
 
   // Entry content - has its own internal Suspense boundary
   const entryContentSlot = openEntryId ? (
@@ -404,30 +358,14 @@ function UnifiedEntriesContentInner() {
     />
   ) : null;
 
-  // Entry list - has its own Suspense boundary
+  // Entry list - SuspendingEntryList handles its own loading state;
+  // the dynamic() import's loading prop covers the chunk load.
   const entryListSlot = (
-    <Suspense
-      fallback={
-        <EntryListFallback
-          filters={{
-            subscriptionId: queryInput.subscriptionId,
-            tagId: queryInput.tagId,
-            uncategorized: queryInput.uncategorized,
-            starredOnly: queryInput.starredOnly,
-            type: queryInput.type,
-            unreadOnly: queryInput.unreadOnly,
-            sortOrder: queryInput.sortOrder,
-          }}
-          skeletonCount={5}
-        />
+    <SuspendingEntryList
+      emptyMessage={
+        showUnreadOnly ? emptyMessages.emptyMessageUnread : emptyMessages.emptyMessageAll
       }
-    >
-      <SuspendingEntryList
-        emptyMessage={
-          showUnreadOnly ? emptyMessages.emptyMessageUnread : emptyMessages.emptyMessageAll
-        }
-      />
-    </Suspense>
+    />
   );
 
   return (
