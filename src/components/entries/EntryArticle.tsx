@@ -52,6 +52,8 @@ export interface EntryArticleProps {
   beforeContent?: ReactNode;
   /** Content inserted after the article content (e.g., CTA buttons in demo) */
   afterContent?: ReactNode;
+  /** Sticky controls that appear when the main action buttons scroll out of view */
+  stickyControls?: ReactNode;
   /** Touch event handlers for swipe gestures */
   onTouchStart?: React.TouchEventHandler;
   onTouchEnd?: React.TouchEventHandler;
@@ -76,6 +78,7 @@ export function EntryArticle({
   actionButtons,
   beforeContent,
   afterContent,
+  stickyControls,
   onTouchStart,
   onTouchEnd,
 }: EntryArticleProps) {
@@ -186,6 +189,9 @@ export function EntryArticle({
           </a>
         </footer>
       )}
+
+      {/* Sticky controls slot - shown when main action buttons scroll out of view */}
+      {stickyControls}
     </article>
   );
 }
