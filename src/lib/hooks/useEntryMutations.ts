@@ -336,12 +336,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
         }
       }
 
-      // Update entries in collection with server state (read + score)
-      for (const entry of data.entries) {
-        updateEntryReadInCollection(collections, [entry.id], entry.read);
-        updateEntryScoreInCollection(collections, entry.id, entry.score, entry.implicitScore);
-      }
-
       // Update counts (always apply, not dependent on timestamp)
       setBulkCounts(collections, data.counts);
     },
@@ -429,15 +423,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
       if (allComplete && winningState) {
         applyWinningStateToCache(data.entry.id, winningState);
       }
-
-      // Update entries collection with server state (starred + score)
-      updateEntryStarredInCollection(collections, data.entry.id, data.entry.starred);
-      updateEntryScoreInCollection(
-        collections,
-        data.entry.id,
-        data.entry.score,
-        data.entry.implicitScore
-      );
 
       // Update counts (always apply)
       setCounts(collections, data.counts);
