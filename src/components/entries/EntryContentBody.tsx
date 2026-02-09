@@ -53,6 +53,7 @@ import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useImagePrefetch } from "@/lib/hooks/useImagePrefetch";
 import { SWIPE_CONFIG } from "./EntryContentHelpers";
 import { EntryArticle } from "./EntryArticle";
+import { StickyEntryControls } from "./StickyEntryControls";
 import { VoteControls } from "./VoteControls";
 
 /**
@@ -201,6 +202,7 @@ export function EntryContentBody({
   onSetScore,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const actionButtonsRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Determine if we're showing full content
@@ -424,7 +426,7 @@ export function EntryContentBody({
         ) : undefined
       }
       actionButtons={
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div ref={actionButtonsRef} className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Star button */}
           <Button
             variant={starred ? "primary" : "secondary"}
@@ -573,6 +575,15 @@ export function EntryContentBody({
             />
           )}
         </>
+      }
+      stickyControls={
+        <StickyEntryControls
+          actionButtonsRef={actionButtonsRef}
+          starred={starred}
+          read={read}
+          onToggleStar={onToggleStar}
+          onToggleRead={onToggleRead}
+        />
       }
     />
   );
