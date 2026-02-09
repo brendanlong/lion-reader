@@ -159,7 +159,7 @@ export function createViewEntriesCollection(
       queryKey: ["entries-view", stableFilterKey(filters)],
       queryClient,
       getKey: (item: SortedEntryListItem) => item.id,
-      staleTime: Infinity,
+      staleTime: 0,
       queryFn: async (ctx) => {
         const opts = ctx.meta?.loadSubsetOptions as { offset?: number; limit?: number } | undefined;
         const offset = opts?.offset ?? 0;

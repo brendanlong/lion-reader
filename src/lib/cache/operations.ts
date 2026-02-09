@@ -162,6 +162,9 @@ export function handleNewEntry(
   if (feedType === "saved") {
     adjustEntriesCountInCollection(collections ?? null, "saved", 1, 1);
   }
+
+  // Refetch the active view collection so the new entry appears in the list
+  collections?.activeViewCollection?.utils.refetch();
 }
 
 // ============================================================================

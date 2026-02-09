@@ -277,6 +277,9 @@ export function setEntriesCountInCollection(
 /**
  * Adjusts entry counts by delta values.
  * Used by handleNewEntry, handleSubscriptionCreated/Deleted.
+ *
+ * If the count record doesn't exist yet (e.g., SSE events arrive before
+ * SSR count data is seeded), creates a new record with the delta as initial values.
  */
 export function adjustEntriesCountInCollection(
   collections: Collections | null,
@@ -291,6 +294,13 @@ export function adjustEntriesCountInCollection(
     collections.counts.update(key, (draft) => {
       draft.total = Math.max(0, current.total + totalDelta);
       draft.unread = Math.max(0, current.unread + unreadDelta);
+    });
+  } else {
+    // Record doesn't exist yet — create it so count updates aren't lost.
+    collections.counts.insert({
+      id: key,
+      total: Math.max(0, totalDelta),
+      unread: Math.max(0, unreadDelta),
     });
   }
 }
@@ -310,6 +320,8 @@ export function setUncategorizedUnreadInCollection(
     collections.counts.update("uncategorized", (draft) => {
       draft.unread = unread;
     });
+  } else {
+    collections.counts.insert({ id: "uncategorized", total: 0, unread });
   }
 }
 
@@ -320,6 +332,8 @@ export function setUncategorizedUnreadInCollection(
 /**
  * Adjusts the uncategorized unread count by a delta value.
  * Stored in the counts collection under the "uncategorized" key.
+ *
+ * If the record doesn't exist yet, creates it with the delta as initial value.
  */
 export function adjustUncategorizedUnreadInCollection(
   collections: Collections | null,
@@ -332,12 +346,20 @@ export function adjustUncategorizedUnreadInCollection(
     collections.counts.update("uncategorized", (draft) => {
       draft.unread = Math.max(0, current.unread + delta);
     });
+  } else {
+    collections.counts.insert({
+      id: "uncategorized",
+      total: 0,
+      unread: Math.max(0, delta),
+    });
   }
 }
 
 /**
  * Adjusts the uncategorized feed count by a delta value.
  * Used when subscriptions with no tags are created or deleted.
+ *
+ * If the record doesn't exist yet, creates it with the delta as initial value.
  */
 export function adjustUncategorizedFeedCountInCollection(
   collections: Collections | null,
@@ -349,6 +371,12 @@ export function adjustUncategorizedFeedCountInCollection(
   if (current) {
     collections.counts.update("uncategorized", (draft) => {
       draft.total = Math.max(0, current.total + delta);
+    });
+  } else {
+    collections.counts.insert({
+      id: "uncategorized",
+      total: Math.max(0, delta),
+      unread: 0,
     });
   }
 }
