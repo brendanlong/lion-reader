@@ -20,10 +20,10 @@ For detailed feature designs, see the docs in `docs/features/`.
 
 Visual architecture diagrams are available in `docs/diagrams/`:
 
-- **[frontend-data-flow.d2](diagrams/frontend-data-flow.d2)** - Delta-based state management with React Query
+- **[frontend-data-flow.d2](diagrams/frontend-data-flow.d2)** - TanStack DB collections with on-demand data loading
 - **[backend-api.d2](diagrams/backend-api.d2)** - tRPC routers, services layer, and database
 - **[feed-fetcher.d2](diagrams/feed-fetcher.d2)** - Background job queue and feed processing pipeline
-- **[sse-cache-updates.d2](diagrams/sse-cache-updates.d2)** - SSE event flow from backend to frontend cache updates
+- **[sse-cache-updates.d2](diagrams/sse-cache-updates.d2)** - SSE event flow from backend to frontend collection updates
 
 To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playground](https://play.d2lang.com/).
 
@@ -229,8 +229,8 @@ Lion Reader respects server Cache-Control headers, Retry-After directives, and H
 2. Worker publishes to per-feed Redis channel: `PUBLISH feed:{feedId}:events {type, entryId, ...}`
 3. SSE connections subscribe only to channels for feeds their user cares about
 4. App server receives message, forwards to client
-5. Client receives event, invalidates React Query cache
-6. UI updates automatically
+5. Client receives event, updates TanStack DB collections (counts, subscriptions, entries)
+6. UI updates automatically via live queries
 
 ### Channel Design
 
@@ -385,6 +385,64 @@ app/
 - `components/auth/` - Authentication forms
 - `components/app/` - App-level components
 - `components/ui/` - Generic UI primitives
+
+### Client-Side State Management
+
+Lion Reader uses **TanStack DB collections** as the primary client-side state store, with React Query handling SSR prefetching and entry detail views.
+
+#### Collections Architecture (`src/lib/collections/`)
+
+TanStack DB collections provide reactive, live-queryable state. There are two types:
+
+- **Local-only collections**: Client-managed state updated by SSE events and mutations (subscriptions, entries, counts)
+- **Query-backed on-demand collections**: Fetch pages from the server as the user scrolls, using an offset-to-cursor bridge to translate TanStack DB's offset-based loading to the cursor-based API (per-view entries, per-tag sidebar subscriptions)
+
+| Collection               | Type                     | Purpose                                      |
+| ------------------------ | ------------------------ | -------------------------------------------- |
+| **subscriptions**        | Local-only               | Sidebar subscription state and unread counts |
+| **tags**                 | Query-backed (eager)     | Tag list with feed/unread counts             |
+| **entries** (global)     | Local-only               | Lookup cache for SSE updates and detail view |
+| **entries** (per-view)   | Query-backed (on-demand) | Paginated entry list for the current view    |
+| **counts**               | Local-only               | Entry counts (all, starred, saved, etc.)     |
+| **activeViewCollection** | Reference                | Points to current view's entry collection    |
+
+#### Data Flow
+
+```
+Server ──(tRPC)──> React Query (SSR prefetch) ──> TanStack DB Collections
+                                                         │
+SSE/Sync events ──────────────────────────────────> Collection writes
+                                                         │
+                                                    Live Queries
+                                                         │
+                                                    Components
+```
+
+1. **SSR prefetch**: React Query prefetches data on the server; collections check this cache to avoid redundant first-page fetches
+2. **On-demand loading**: As users scroll, view collections fetch additional pages via the vanilla tRPC client
+3. **Mutations**: Write to both the global collection and the `activeViewCollection` for immediate UI updates
+4. **SSE events**: Update counts, subscriptions, and entry state directly in collections
+5. **Display stability**: `useStableEntryList` merges live query results with previously-seen entries so items don't disappear when their state changes (e.g., marking read in "unread only" view)
+
+#### Key Hooks
+
+| Hook                            | Purpose                                                 |
+| ------------------------------- | ------------------------------------------------------- |
+| `useViewEntriesCollection`      | Creates per-view on-demand entry collection             |
+| `useStableEntryList`            | Prevents entries from disappearing on state change      |
+| `useEntryNavigation`            | Shares next/prev entry IDs between list and detail view |
+| `useTagSubscriptionsCollection` | Creates per-tag subscription collection for sidebar     |
+| `useEntryMutations`             | Entry mutations with collection dual-writes             |
+| `useRealtimeUpdates`            | SSE connection with collection-based event handling     |
+
+#### React Query's Remaining Role
+
+React Query is still used for:
+
+- **SSR prefetch seeding** via `prefetchInfiniteQuery` / `prefetchQuery`
+- **Entry detail view** (`entries.get`) cache
+- **Import progress** tracking
+- **Pagination invalidation** as a trigger for collection refresh
 
 ---
 

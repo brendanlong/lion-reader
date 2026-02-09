@@ -1,5 +1,7 @@
 # Query Normalization Design
 
+> **Note (2026-02):** This plan has been superseded by the migration to TanStack DB collections (Phases 4-6). Entry data is now managed through TanStack DB collections rather than React Query cache entries, eliminating the cross-query duplication problem. See `src/lib/collections/` for the current architecture.
+
 ## Problem
 
 Entry data is duplicated across multiple React Query cache entries:
