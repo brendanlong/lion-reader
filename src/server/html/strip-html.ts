@@ -41,7 +41,7 @@ const BLOCK_TAGS = new Set([
 /**
  * Tags whose content should be skipped entirely.
  */
-const SKIP_TAGS = new Set(["script", "style"]);
+const SKIP_TAGS = new Set(["script", "style", "head"]);
 
 /**
  * Extracts text from HTML with proper spacing between block elements.
