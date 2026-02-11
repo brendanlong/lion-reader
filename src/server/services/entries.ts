@@ -92,6 +92,7 @@ export interface EntryFull {
   feedTitle: string | null;
   feedUrl: string | null;
   siteName: string | null;
+  unsubscribeUrl: string | null;
   score: number | null;
   implicitScore: number;
 }
@@ -472,6 +473,7 @@ export async function getEntry(
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
       feedUrl: feeds.url,
+      unsubscribeUrl: visibleEntries.unsubscribeUrl,
       score: visibleEntries.score,
       hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
       hasMarkedUnread: visibleEntries.hasMarkedUnread,

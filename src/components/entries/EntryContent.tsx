@@ -334,6 +334,7 @@ function EntryContentInner({
         showOriginal={showOriginal}
         setShowOriginal={setShowOriginal}
         footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
+        unsubscribeUrl={entry.unsubscribeUrl}
         onSwipeNext={onSwipeNext}
         onSwipePrevious={onSwipePrevious}
         // Full content props - only available if entry has a subscription

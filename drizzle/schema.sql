@@ -71,6 +71,7 @@ CREATE TABLE public.entries (
     full_content_fetched_at timestamp with time zone,
     full_content_error text,
     full_content_hash text,
+    unsubscribe_url text,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
@@ -408,7 +409,8 @@ CREATE VIEW public.visible_entries AS
     ue.has_starred,
     s.id AS subscription_id,
     esp.predicted_score,
-    esp.confidence AS prediction_confidence
+    esp.confidence AS prediction_confidence,
+    e.unsubscribe_url
    FROM (((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscriptions s ON (((s.user_id = ue.user_id) AND (e.feed_id = ANY (s.feed_ids)))))

@@ -1,9 +1,9 @@
 /**
- * Unit tests for extracting canonical URLs from newsletter email HTML.
+ * Unit tests for extracting canonical URLs and unsubscribe URLs from newsletter email HTML.
  */
 
 import { describe, it, expect } from "vitest";
-import { extractEmailUrl } from "@/server/email/extract-url";
+import { extractEmailUrl, extractUnsubscribeUrl } from "@/server/email/extract-url";
 
 describe("extractEmailUrl", () => {
   describe("Substack emails", () => {
@@ -223,6 +223,141 @@ describe("extractEmailUrl", () => {
       expect(extractEmailUrl(html)).toBe(
         "https://open.substack.com/pub/astralcodexten/p/political-backflow-from-europe"
       );
+    });
+  });
+});
+
+describe("extractUnsubscribeUrl", () => {
+  describe("basic extraction", () => {
+    it("extracts unsubscribe link from email HTML", () => {
+      const html = `
+        <p>You received this email because you subscribed.</p>
+        <a href="https://example.com/unsubscribe?token=abc123">Unsubscribe</a>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://example.com/unsubscribe?token=abc123");
+    });
+
+    it("extracts unsubscribe link with mixed case text", () => {
+      const html = `
+        <a href="https://example.com/unsubscribe">UNSUBSCRIBE</a>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://example.com/unsubscribe");
+    });
+
+    it("extracts unsubscribe link when text says 'click here to unsubscribe'", () => {
+      const html = `
+        <a href="https://example.com/unsubscribe?id=123">Click here to unsubscribe</a>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://example.com/unsubscribe?id=123");
+    });
+
+    it("returns null when no unsubscribe link found", () => {
+      const html = `
+        <h1><a href="https://example.com/article">My Article</a></h1>
+        <p>Some content</p>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBeNull();
+    });
+
+    it("returns null for empty HTML", () => {
+      expect(extractUnsubscribeUrl("")).toBeNull();
+    });
+
+    it("returns null for null-like input", () => {
+      expect(extractUnsubscribeUrl("")).toBeNull();
+    });
+  });
+
+  describe("URL filtering", () => {
+    it("skips tracking domain URLs even with unsubscribe text", () => {
+      const html = `
+        <a href="https://email.mg1.substack.com/c/something/unsubscribe">Unsubscribe</a>
+        <a href="https://newsletter.example.com/unsubscribe">Unsubscribe</a>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://newsletter.example.com/unsubscribe");
+    });
+
+    it("skips non-http URLs", () => {
+      const html = `
+        <a href="mailto:unsubscribe@example.com">Unsubscribe</a>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBeNull();
+    });
+
+    it("prefers URL with unsubscribe path over URL without", () => {
+      const html = `
+        <a href="https://example.com/preferences">Unsubscribe from this list</a>
+        <a href="https://example.com/unsubscribe?token=abc">Unsubscribe</a>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://example.com/unsubscribe?token=abc");
+    });
+
+    it("falls back to text-only match when no path match", () => {
+      const html = `
+        <a href="https://example.com/manage?action=remove">Unsubscribe</a>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://example.com/manage?action=remove");
+    });
+  });
+
+  describe("real-world newsletter patterns", () => {
+    it("extracts Substack unsubscribe link", () => {
+      const html = `
+        <table>
+          <tr><td>
+            <h1><a href="https://open.substack.com/pub/test/p/my-post">My Post</a></h1>
+            <p>Content here...</p>
+            <p>
+              <a href="https://test.substack.com/action/disable_email">Unsubscribe</a>
+            </p>
+          </td></tr>
+        </table>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://test.substack.com/action/disable_email");
+    });
+
+    it("extracts Ghost newsletter unsubscribe link", () => {
+      const html = `
+        <div class="post">
+          <h2><a href="https://blog.example.com/my-post/">My Post</a></h2>
+          <p>Content...</p>
+        </div>
+        <div class="footer">
+          <a href="https://blog.example.com/unsubscribe/?uuid=abc123">Unsubscribe</a>
+        </div>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://blog.example.com/unsubscribe/?uuid=abc123");
+    });
+
+    it("extracts Buttondown unsubscribe link", () => {
+      const html = `
+        <p>You're receiving this because you subscribed.</p>
+        <a href="https://buttondown.com/author/unsubscribe/abc123">Unsubscribe</a>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://buttondown.com/author/unsubscribe/abc123");
+    });
+
+    it("extracts unsubscribe link from complex footer", () => {
+      const html = `
+        <table role="presentation">
+          <tr><td>
+            <p style="color: #999; font-size: 12px;">
+              You received this because you signed up at example.com.
+              <a href="https://example.com/unsubscribe/user123" style="color: #999;">Unsubscribe</a>
+              |
+              <a href="https://example.com/preferences" style="color: #999;">Manage preferences</a>
+            </p>
+          </td></tr>
+        </table>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://example.com/unsubscribe/user123");
+    });
+
+    it("handles unsubscribe link with surrounding text", () => {
+      const html = `
+        <p>To unsubscribe from future emails, <a href="https://example.com/unsubscribe?id=abc">click here to unsubscribe</a>.</p>
+      `;
+      expect(extractUnsubscribeUrl(html)).toBe("https://example.com/unsubscribe?id=abc");
     });
   });
 });

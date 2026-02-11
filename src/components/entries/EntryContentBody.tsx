@@ -96,6 +96,8 @@ export interface EntryContentBodyProps {
   setShowOriginal: (show: boolean) => void;
   /** Optional domain for footer link (defaults to extracting from url) */
   footerLinkDomain?: string;
+  /** Unsubscribe URL extracted from email newsletter (null for non-email entries) */
+  unsubscribeUrl?: string | null;
   /** Callback when swiping to next article */
   onSwipeNext?: () => void;
   /** Callback when swiping to previous article */
@@ -173,6 +175,7 @@ export function EntryContentBody({
   showOriginal,
   setShowOriginal,
   footerLinkDomain,
+  unsubscribeUrl,
   onSwipeNext,
   onSwipePrevious,
   // Full content props
@@ -399,6 +402,7 @@ export function EntryContentBody({
       textSizeClass={textSizeClass}
       textStyle={textStyle}
       footerLinkDomain={footerLinkDomain}
+      unsubscribeUrl={unsubscribeUrl}
       isContentLoading={isContentLoading}
       contentRef={contentRef}
       onTouchStart={handleTouchStart}
