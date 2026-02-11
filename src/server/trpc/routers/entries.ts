@@ -129,6 +129,8 @@ const entryFullSchema = z.object({
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
   siteName: z.string().nullable(),
+  // Unsubscribe link from email HTML (for email entries)
+  unsubscribeUrl: z.string().nullable(),
   // Full content fields
   fullContentOriginal: z.string().nullable(),
   fullContentCleaned: z.string().nullable(),
@@ -271,6 +273,7 @@ const fullEntrySelectFields = {
   siteName: visibleEntries.siteName,
   feedTitle: feeds.title,
   feedUrl: feeds.url,
+  unsubscribeUrl: visibleEntries.unsubscribeUrl,
   fullContentOriginal: visibleEntries.fullContentOriginal,
   fullContentCleaned: visibleEntries.fullContentCleaned,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,

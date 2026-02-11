@@ -162,6 +162,110 @@ function cleanTrackingParams(url: string): string {
 }
 
 /**
+ * Checks if a URL looks like an unsubscribe link based on its path.
+ *
+ * @param url - The URL to check
+ * @returns true if the URL appears to be an unsubscribe link
+ */
+function isUnsubscribeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+
+    // Must be https or http
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+
+    // Skip known tracking redirect domains - these are click trackers, not actual unsub pages
+    if (TRACKING_DOMAINS.has(parsed.hostname)) {
+      return false;
+    }
+
+    // Check if the path contains unsubscribe-related patterns
+    const pathAndQuery = parsed.pathname + parsed.search;
+    return /\/unsubscribe/i.test(pathAndQuery);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extracts the unsubscribe URL from newsletter email HTML.
+ *
+ * Looks for `<a>` tags whose visible text contains "unsubscribe" (case-insensitive).
+ * Returns the first matching URL that has an unsubscribe-related path.
+ * Falls back to links whose text contains "unsubscribe" even without an
+ * unsubscribe path, since some services use generic URLs.
+ *
+ * Uses htmlparser2 for SAX-style streaming parsing per project conventions.
+ *
+ * @param html - The email HTML content
+ * @returns The extracted unsubscribe URL, or null if not found
+ */
+export function extractUnsubscribeUrl(html: string): string | null {
+  if (!html) {
+    return null;
+  }
+
+  let insideAnchor = false;
+  let currentHref: string | null = null;
+  let currentText = "";
+  let bestMatch: string | null = null;
+  let hasPathMatch = false;
+
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        if (name.toLowerCase() === "a" && attribs.href) {
+          insideAnchor = true;
+          currentHref = attribs.href;
+          currentText = "";
+        }
+      },
+      ontext(text) {
+        if (insideAnchor) {
+          currentText += text;
+        }
+      },
+      onclosetag(name) {
+        if (name.toLowerCase() === "a" && insideAnchor) {
+          if (currentHref && /unsubscribe/i.test(currentText)) {
+            try {
+              const parsed = new URL(currentHref);
+              if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+                if (!TRACKING_DOMAINS.has(parsed.hostname)) {
+                  if (isUnsubscribeUrl(currentHref)) {
+                    // Path-based match - highest priority, take first one
+                    if (!hasPathMatch) {
+                      bestMatch = currentHref;
+                      hasPathMatch = true;
+                    }
+                  } else if (!bestMatch) {
+                    // Text-only match - fallback, take first one
+                    bestMatch = currentHref;
+                  }
+                }
+              }
+            } catch {
+              // Invalid URL, skip
+            }
+          }
+          insideAnchor = false;
+          currentHref = null;
+          currentText = "";
+        }
+      },
+    },
+    { decodeEntities: true }
+  );
+
+  parser.write(html);
+  parser.end();
+
+  return bestMatch;
+}
+
+/**
  * Extracts the canonical post URL from newsletter email HTML.
  *
  * Looks for `<a>` tags inside heading elements (h1-h3), which is the most
