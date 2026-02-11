@@ -20,6 +20,39 @@ export function getDomainFromUrl(url: string): string | undefined {
 }
 
 /**
+ * Checks if a string is a valid HTTP(S) URL.
+ */
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Derives the URL for an entry.
+ * Uses the explicit link if available, otherwise falls back to
+ * the GUID if it's a valid HTTP(S) URL.
+ *
+ * @param entry - The parsed entry from the feed
+ * @returns The entry URL, or undefined if none can be derived
+ */
+export function deriveEntryUrl(entry: ParsedEntry): string | undefined {
+  if (entry.link && entry.link.trim()) {
+    return entry.link.trim();
+  }
+
+  // Fall back to GUID if it looks like a URL
+  if (entry.guid && entry.guid.trim() && isHttpUrl(entry.guid.trim())) {
+    return entry.guid.trim();
+  }
+
+  return undefined;
+}
+
+/**
  * A parsed entry from any feed format.
  */
 export interface ParsedEntry {

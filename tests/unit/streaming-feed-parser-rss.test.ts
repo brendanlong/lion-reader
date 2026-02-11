@@ -197,6 +197,37 @@ describe("parseRss", () => {
     });
   });
 
+  describe("GUID without link", () => {
+    it("parses items that have guid but no link element", () => {
+      const xml = `<?xml version="1.0" encoding="ISO-8859-1" ?>
+        <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+          <channel>
+            <title>Still Drinking</title>
+            <link>https://www.stilldrinking.org/</link>
+            <atom:link href="https://www.stilldrinking.org/rss/feed.xml" rel="self" type="application/rss+xml" />
+            <description>In which I complain about things.</description>
+            <item>
+              <title>Stop Talking to Technology Executives</title>
+              <guid>https://www.stilldrinking.org/stop-talking-to-technology-executives</guid>
+              <pubDate>Tue, 19 Aug 2025 23:39:00 EST</pubDate>
+              <description>Some description text</description>
+            </item>
+          </channel>
+        </rss>`;
+
+      const result = parseRss(xml);
+
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].title).toBe("Stop Talking to Technology Executives");
+      expect(result.entries[0].guid).toBe(
+        "https://www.stilldrinking.org/stop-talking-to-technology-executives"
+      );
+      // link should be undefined since the feed doesn't include a <link> element
+      // The entry-processor will derive the URL from the GUID
+      expect(result.entries[0].link).toBeUndefined();
+    });
+  });
+
   describe("malformed XML with unclosed tags", () => {
     it("handles unclosed link tags followed by other elements", () => {
       // This reproduces a real-world malformed feed where <link> tags
