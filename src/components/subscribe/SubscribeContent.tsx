@@ -9,9 +9,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
 import { handleSubscriptionCreated } from "@/lib/cache/operations";
 import { clientPush } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ type Step = "input" | "discovery" | "preview";
 // ============================================================================
 
 export function SubscribeContent() {
-  const queryClient = useQueryClient();
+  const collections = useCollections();
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState<string | undefined>();
   const [step, setStep] = useState<Step>("input");
@@ -68,7 +68,7 @@ export function SubscribeContent() {
   const subscribeMutation = trpc.subscriptions.create.useMutation({
     onSuccess: (data) => {
       // Use centralized cache operation for consistent behavior with SSE events
-      handleSubscriptionCreated(utils, data, queryClient);
+      handleSubscriptionCreated(utils, data, collections);
       clientPush("/all");
     },
     onError: () => {

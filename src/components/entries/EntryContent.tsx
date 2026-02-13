@@ -15,6 +15,12 @@ import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
+import { useCollections } from "@/lib/collections/context";
+import {
+  updateEntryReadInCollection,
+  updateEntryStarredInCollection,
+  updateEntryScoreInCollection,
+} from "@/lib/collections/writes";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { getDomain } from "@/lib/format";
@@ -79,6 +85,17 @@ function EntryContentInner({
 
   // Entry is guaranteed to exist after suspense resolves
   const entry = data.entry;
+
+  // Sync entries.get data to entries collection.
+  // This ensures the collection has the latest server state for this entry
+  // (e.g., if it was marked read by another client between list fetch and detail fetch).
+  const collections = useCollections();
+  useEffect(() => {
+    if (!entry) return;
+    updateEntryReadInCollection(collections, [entry.id], entry.read);
+    updateEntryStarredInCollection(collections, entry.id, entry.starred);
+    updateEntryScoreInCollection(collections, entry.id, entry.score, entry.implicitScore);
+  }, [collections, entry]);
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);

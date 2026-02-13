@@ -1,7 +1,8 @@
-# SSE Event Flow and Cache Update Architecture
+# SSE Event Flow and Collection Update Architecture
 #
 # This diagram shows how events flow from backend origins through Redis pub/sub
-# to the SSE endpoint, and how the frontend handles them to update caches.
+# to the SSE endpoint, and how the frontend handles them to update TanStack DB
+# collections and React Query caches.
 
 direction: down
 
@@ -35,12 +36,28 @@ event-sources: Event Sources {
     saved-updated: publishEntryUpdated(savedFeedId, entryId)
   }
 
+  entries-router: Entries Router {
+    style.fill: "#e0e7ff"
+    tooltip: "src/server/trpc/routers/entries.ts"
+
+    entry-state-changed: publishEntryStateChanged(userId, entryId, read, starred)
+  }
+
   subscriptions-router: Subscriptions Router {
     style.fill: "#e0e7ff"
     tooltip: "src/server/trpc/routers/subscriptions.ts"
 
     sub-created: publishSubscriptionCreated(userId, feedId, subscriptionId, subscription, feed)
     sub-deleted: publishSubscriptionDeleted(userId, feedId, subscriptionId)
+  }
+
+  tags-service: Tags Service {
+    style.fill: "#e0e7ff"
+    tooltip: "src/server/services/tags.ts"
+
+    tag-created: publishTagCreated(userId, tag)
+    tag-updated: publishTagUpdated(userId, tag)
+    tag-deleted: publishTagDeleted(userId, tagId)
   }
 
   job-handlers: Background Jobs {
@@ -81,8 +98,10 @@ redis: Redis Pub/Sub {
       Pattern: user:{userId}:events
 
       Events:
+      - entry_state_changed (entryId, read, starred)
       - subscription_created (full subscription + feed data)
       - subscription_deleted (subscriptionId)
+      - tag_created / tag_updated / tag_deleted
       - import_progress (per-feed progress)
       - import_completed (final counts)
     |
@@ -146,16 +165,18 @@ frontend: Frontend (useRealtimeUpdates) {
       - connected
       - new_entry
       - entry_updated
+      - entry_state_changed
       - subscription_created
       - subscription_deleted
+      - tag_created / tag_updated / tag_deleted
       - import_progress
       - import_completed
     |
   }
 
-  handle-event: Event Handler {
+  handle-event: handleSyncEvent {
     style.fill: "#f5d0fe"
-    tooltip: "handleEvent callback"
+    tooltip: "src/lib/cache/event-handlers.ts - unified handler for SSE + polling"
   }
 
   polling-fallback: Polling Fallback {
@@ -166,29 +187,29 @@ frontend: Frontend (useRealtimeUpdates) {
       - Poll sync.changes every 30s
       - Retry SSE every 60s
       - Uses granular cursors per entity type
+      - Same handleSyncEvent handler as SSE
     |
   }
 }
 
 # ==============================================================================
-# CACHE UPDATE OPERATIONS
+# COLLECTION UPDATE OPERATIONS
 # ==============================================================================
 
-cache-ops: Cache Operations {
+cache-ops: Collection & Cache Operations {
   style.fill: "#fff7ed"
-  tooltip: "src/lib/cache/operations.ts"
+  tooltip: "src/lib/cache/event-handlers.ts + operations.ts + collections/writes.ts"
 
   new-entry-handler: handleNewEntry {
     style.fill: "#fed7aa"
 
     updates: |
-      Updates (surgical, no refetch):
-      - subscriptions.list: unreadCount += 1
-      - tags.list: unreadCount += 1
-      - entries.count({}): unread += 1, total += 1
-      - entries.count({ type: "saved" }): if feedType === "saved"
+      Collection updates (no refetch):
+      - subscriptions collection: unreadCount += 1
+      - tags collection: unreadCount += 1
+      - counts collection: unread += 1, total += 1
 
-      Does NOT invalidate entries.list
+      Does NOT invalidate entry lists
       (entries appear on navigation)
     |
   }
@@ -197,12 +218,26 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Direct updates (metadata from event):
+      React Query (detail view):
       - entries.get: title, author, summary, url, publishedAt
-      - entries.list: same metadata fields (in-place)
 
-      Invalidations:
-      - entries.get({ id }): refetch full content
+      Collection (list view):
+      - entries collection: metadata update via
+        updateEntryMetadataInCollection()
+    |
+  }
+
+  entry-state-handler: entry_state_changed {
+    style.fill: "#fed7aa"
+
+    updates: |
+      React Query (detail view):
+      - entries.get: read, starred state
+
+      Collection (list view):
+      - entries collection: read/starred via
+        updateEntryReadInCollection()
+        updateEntryStarredInCollection()
     |
   }
 
@@ -210,13 +245,10 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Direct updates (no refetch):
-      - subscriptions.list: add subscription
-      - tags.list: feedCount += 1, unreadCount += N
-      - entries.count({}): unread += N, total += N
-
-      Targeted invalidations:
-      - subscriptions.list per-tag queries (affected tags only)
+      Collection updates (no refetch):
+      - subscriptions collection: add subscription
+      - tags collection: feedCount += 1, unreadCount += N
+      - counts collection: unread += N, total += N
     |
   }
 
@@ -224,13 +256,22 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Direct updates (no refetch):
-      - subscriptions.list: remove subscription
-      - tags.list: feedCount -= 1, unreadCount -= N
-      - entries.count({}): unread -= N, total -= N
+      Collection updates (no refetch):
+      - subscriptions collection: remove subscription
+      - tags collection: feedCount -= 1, unreadCount -= N
+      - counts collection: unread -= N, total -= N
 
-      Invalidations:
+      React Query invalidation:
       - entries.list (entries should be filtered out)
+    |
+  }
+
+  tag-handlers: tag_created / tag_updated / tag_deleted {
+    style.fill: "#fed7aa"
+
+    updates: |
+      Collection updates (no refetch):
+      - tags collection: add/update/remove tag
     |
   }
 
@@ -238,11 +279,7 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      import_progress:
-      - imports.get({ id }): invalidate
-      - imports.list: invalidate
-
-      import_completed:
+      React Query invalidations (no collection):
       - imports.get({ id }): invalidate
       - imports.list: invalidate
       (entry/subscription updates handled by individual events)
@@ -270,10 +307,22 @@ event-sources.saved-service.saved-updated -> redis.feed-channels: entry_updated 
   style.stroke: "#2563eb"
 }
 
+event-sources.entries-router.entry-state-changed -> redis.user-channels: entry_state_changed {
+  style.stroke: "#7c3aed"
+}
 event-sources.subscriptions-router.sub-created -> redis.user-channels: subscription_created {
   style.stroke: "#7c3aed"
 }
 event-sources.subscriptions-router.sub-deleted -> redis.user-channels: subscription_deleted {
+  style.stroke: "#7c3aed"
+}
+event-sources.tags-service.tag-created -> redis.user-channels: tag_created {
+  style.stroke: "#7c3aed"
+}
+event-sources.tags-service.tag-updated -> redis.user-channels: tag_updated {
+  style.stroke: "#7c3aed"
+}
+event-sources.tags-service.tag-deleted -> redis.user-channels: tag_deleted {
   style.stroke: "#7c3aed"
 }
 event-sources.job-handlers.import-sub-created -> redis.user-channels: subscription_created {
@@ -324,10 +373,16 @@ frontend.handle-event -> cache-ops.new-entry-handler: new_entry + feedType {
 frontend.handle-event -> cache-ops.entry-updated-handler: entry_updated {
   style.stroke: "#ea580c"
 }
+frontend.handle-event -> cache-ops.entry-state-handler: entry_state_changed {
+  style.stroke: "#ea580c"
+}
 frontend.handle-event -> cache-ops.sub-created-handler: subscription_created {
   style.stroke: "#ea580c"
 }
 frontend.handle-event -> cache-ops.sub-deleted-handler: subscription_deleted {
+  style.stroke: "#ea580c"
+}
+frontend.handle-event -> cache-ops.tag-handlers: tag_* {
   style.stroke: "#ea580c"
 }
 frontend.handle-event -> cache-ops.import-handlers: import_* {
@@ -346,7 +401,7 @@ entry-types: Entry Type Differences {
     description: |
       - Published from entry-processor
       - Has subscriptionId
-      - Updates subscription + tag unread counts
+      - Updates subscription + tag collections (unread counts)
     |
   }
 
@@ -355,7 +410,7 @@ entry-types: Entry Type Differences {
     description: |
       - Published from email inbound processor
       - Has subscriptionId
-      - Updates subscription + tag unread counts
+      - Updates subscription + tag collections (unread counts)
     |
   }
 
@@ -364,49 +419,58 @@ entry-types: Entry Type Differences {
     description: |
       - Published from saved service/router
       - subscriptionId is NULL (no subscription row)
-      - Updates entries.count({ type: "saved" })
+      - Updates counts collection (saved count)
       - Does NOT update subscription/tag counts
     |
   }
 }
 
 # ==============================================================================
-# CACHE UPDATE STRATEGY NOTES
+# UPDATE STRATEGY NOTES
 # ==============================================================================
 
-strategy-notes: Cache Strategy {
+strategy-notes: Update Strategy {
   style.fill: "#ecfccb"
 
-  direct-updates: Direct Updates (preferred) {
+  collection-writes: Collection Writes (preferred) {
     style.fill: "#d9f99d"
     description: |
-      Surgical updates avoid refetch:
+      Direct writes to TanStack DB collections:
       - Subscription unread counts
-      - Tag unread counts
+      - Tag unread/feed counts
       - Global entry counts
-      - Entry read/starred state
-      - Subscription list add/remove
+      - Entry read/starred/score state
+      - Subscription add/remove
+      - Tag add/update/remove
+
+      Live queries react automatically.
     |
   }
 
-  invalidations: Invalidations (force refetch) {
+  react-query: React Query (detail + imports) {
     style.fill: "#d9f99d"
     description: |
-      Force refetch when necessary:
-      - Entry lists (too many filter combinations)
-      - Entry content on update
-      - Import progress (complex state)
+      entries.get setData for detail view:
+      - Entry metadata updates
+      - Entry state changes (read/starred)
+
+      Invalidations for imports:
+      - imports.get/list on progress/completion
     |
   }
 
   design-rationale: Design Rationale {
     style.fill: "#d9f99d"
     description: |
-      entries.list is NOT invalidated on new_entry:
-      - Too many filter combinations (sub, tag, unread, starred)
+      Entry lists are NOT refreshed on new_entry:
+      - On-demand collections only fetch when scrolled
       - User won't see new entries until navigation
       - Unread counts still update (sidebar shows activity)
       - Keeps scrolling smooth without flicker
+
+      Display stability via useStableEntryList:
+      - Previously-seen entries stay visible after state change
+      - Resets only on view navigation
     |
   }
 }

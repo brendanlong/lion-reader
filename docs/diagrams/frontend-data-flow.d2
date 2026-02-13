@@ -1,5 +1,6 @@
-# Frontend Data Flow - React Query with Direct Cache Updates
-# Lion Reader uses React Query as the source of truth with helper functions for cache updates
+# Frontend Data Flow - TanStack DB Collections with On-Demand Loading
+# Lion Reader uses TanStack DB collections as the primary client state store,
+# with React Query for SSR prefetch seeding and entry detail views.
 
 direction: down
 
@@ -39,31 +40,43 @@ client: {
   style.fill: "#fff3e0"
 
   react_query: {
-    label: React Query Cache
+    label: React Query
     shape: cylinder
     style.fill: "#ffcc80"
 
     description: |md
-      **Server state cache**
-      - entries.list (infinite)
-      - entries.get
-      - entries.count
-      - subscriptions.list
-      - tags.list
+      **SSR prefetch + detail views**
+      - entries.get (detail view)
+      - SSR prefetch seeding
+      - imports.get/list
     |
   }
 
-  cache_helpers: {
-    label: Cache Helpers
-    shape: rectangle
+  collections: {
+    label: TanStack DB Collections
+    shape: cylinder
     style.fill: "#a5d6a7"
 
     description: |md
-      **src/lib/cache/**
-      - adjustSubscriptionUnreadCounts
-      - adjustTagUnreadCounts
-      - addSubscriptionToCache
-      - updateEntriesReadStatus
+      **Primary state store**
+      - subscriptions (local-only)
+      - tags (query-backed, eager)
+      - entries global (local-only)
+      - entries per-view (on-demand)
+      - counts (local-only)
+    |
+  }
+
+  writes: {
+    label: Collection Writes
+    shape: rectangle
+    style.fill: "#c8e6c9"
+
+    description: |md
+      **src/lib/collections/writes.ts**
+      - Dual-write: global + activeViewCollection
+      - Subscription/tag count adjustments
+      - Entry state updates (read, starred, score)
     |
   }
 }
@@ -79,19 +92,31 @@ hooks: {
   useRealtimeUpdates: {
     label: useRealtimeUpdates
     shape: rectangle
-    tooltip: "Manages SSE connection with polling fallback"
+    tooltip: "SSE connection with polling fallback, delegates to collection writes"
   }
 
   useEntryMutations: {
     label: useEntryMutations
     shape: rectangle
-    tooltip: "Mutations with direct cache updates"
+    tooltip: "Mutations with dual-write to global + view collections"
   }
 
-  useKeyboardShortcuts: {
-    label: useKeyboardShortcuts
+  useViewEntriesCollection: {
+    label: useViewEntriesCollection
     shape: rectangle
-    tooltip: "Keyboard navigation and entry selection"
+    tooltip: "Creates per-view on-demand collection with offset-to-cursor bridge"
+  }
+
+  useStableEntryList: {
+    label: useStableEntryList
+    shape: rectangle
+    tooltip: "Display stability - merges live entries with previously-seen entries"
+  }
+
+  useEntryNavigation: {
+    label: useEntryNavigation
+    shape: rectangle
+    tooltip: "External store sharing next/prev entry IDs between list and detail"
   }
 }
 
@@ -106,19 +131,19 @@ ui: {
   sidebar: {
     label: Sidebar
     shape: rectangle
-    tooltip: "Subscription list with unread counts"
+    tooltip: "Subscription list from per-tag on-demand collections"
   }
 
   unified_entries: {
     label: UnifiedEntriesContent
     shape: rectangle
-    tooltip: "Unified entry page with navigation and swipe support"
+    tooltip: "Unified entry page with swipe navigation"
   }
 
   suspending_list: {
     label: SuspendingEntryList
     shape: rectangle
-    tooltip: "Entry list with Suspense and keyboard navigation"
+    tooltip: "Entry list via useLiveInfiniteQuery over view collection"
   }
 
   entry_list: {
@@ -135,11 +160,25 @@ ui: {
 }
 
 # ==============================================================================
-# Connections - Initial Data Fetch
+# Connections - SSR Prefetch
 # ==============================================================================
 
-server.api -> client.react_query: "Initial fetch" {
+server.api -> client.react_query: "SSR prefetch" {
   style.stroke: "#1976d2"
+  style.stroke-width: 2
+}
+
+client.react_query -> client.collections: "Seed first page\n(avoid redundant fetch)" {
+  style.stroke: "#1976d2"
+  style.stroke-dash: 3
+}
+
+# ==============================================================================
+# Connections - On-Demand Loading
+# ==============================================================================
+
+server.api -> client.collections: "On-demand pages\n(vanilla tRPC client)" {
+  style.stroke: "#00796b"
   style.stroke-width: 2
 }
 
@@ -152,38 +191,38 @@ server.sse -> hooks.useRealtimeUpdates: "SSE events\n(new_entry, subscription_*)
   style.stroke-width: 2
 }
 
-hooks.useRealtimeUpdates -> client.cache_helpers: "subscription_created\nsubscription_deleted" {
+hooks.useRealtimeUpdates -> client.writes: "Update collections\n(counts, subs, entries)" {
   style.stroke: "#388e3c"
 }
 
-hooks.useRealtimeUpdates -> client.react_query: "invalidate (new_entry)" {
-  style.stroke: "#388e3c"
-  style.stroke-dash: 3
-}
-
-client.cache_helpers -> client.react_query: "Direct cache updates" {
+client.writes -> client.collections: "Write to collections" {
   style.stroke: "#00796b"
   style.stroke-width: 2
 }
 
 # ==============================================================================
-# Connections - Query Data Flow
+# Connections - Collection Data Flow
 # ==============================================================================
 
-client.react_query -> ui.unified_entries: "Paginated entries\n(non-suspending)" {
+client.collections -> hooks.useViewEntriesCollection: "Create per-view\non-demand collection" {
   style.stroke: "#7b1fa2"
 }
 
-client.react_query -> ui.suspending_list: "Paginated entries\n(suspending)" {
-  style.stroke: "#7b1fa2"
-}
-
-ui.suspending_list -> ui.entry_list: "Entries with\nread/starred state" {
+hooks.useViewEntriesCollection -> ui.suspending_list: "useLiveInfiniteQuery\n(reactive entries)" {
   style.stroke: "#7b1fa2"
   style.stroke-width: 2
 }
 
-client.react_query -> ui.sidebar: "Subscriptions/tags\nwith counts" {
+ui.suspending_list -> hooks.useStableEntryList: "Merge with\npreviously-seen entries" {
+  style.stroke: "#7b1fa2"
+}
+
+hooks.useStableEntryList -> ui.entry_list: "Stable entries\n(no disappearing)" {
+  style.stroke: "#7b1fa2"
+  style.stroke-width: 2
+}
+
+client.collections -> ui.sidebar: "Per-tag subscription\ncollections" {
   style.stroke: "#7b1fa2"
 }
 
@@ -199,33 +238,37 @@ hooks.useEntryMutations -> server.api: "1. Server mutation" {
   style.stroke: "#f57c00"
 }
 
-server.api -> hooks.useEntryMutations: "2. Response with\nsubscription context" {
+server.api -> hooks.useEntryMutations: "2. Response" {
   style.stroke: "#f57c00"
   style.stroke-dash: 3
 }
 
-hooks.useEntryMutations -> client.cache_helpers: "3. Update counts\n(instant)" {
+hooks.useEntryMutations -> client.writes: "3. Dual-write\n(global + view)" {
   style.stroke: "#f57c00"
   style.stroke-width: 2
 }
 
-hooks.useEntryMutations -> client.react_query: "4. Invalidate\nentry lists" {
-  style.stroke: "#f57c00"
-  style.stroke-dash: 3
-}
-
 # ==============================================================================
-# Connections - Navigation and Keyboard
+# Connections - Entry Navigation
 # ==============================================================================
 
-ui.suspending_list -> hooks.useKeyboardShortcuts: "Keyboard navigation" {
+ui.suspending_list -> hooks.useEntryNavigation: "Publish next/prev\nentry IDs" {
   style.stroke: "#9e9e9e"
   style.stroke-dash: 3
 }
 
-ui.unified_entries -> ui.entry_content: "Entry view with\nswipe navigation" {
+hooks.useEntryNavigation -> ui.unified_entries: "Consume next/prev\nfor swipe" {
   style.stroke: "#9e9e9e"
   style.stroke-dash: 3
+}
+
+ui.unified_entries -> ui.entry_content: "Entry detail view" {
+  style.stroke: "#9e9e9e"
+  style.stroke-dash: 3
+}
+
+client.react_query -> ui.entry_content: "entries.get\n(full content)" {
+  style.stroke: "#1976d2"
 }
 
 # ==============================================================================
@@ -238,10 +281,10 @@ legend: {
   style.fill: "#fafafa"
   style.stroke: "#e0e0e0"
 
-  initial: "Blue: Initial data fetch"
-  realtime: "Green: Real-time updates (SSE)"
-  query: "Purple: Query data flow"
-  mutation: "Orange: User mutations"
-  cache: "Teal: Direct cache updates"
-  dashed: "Dashed: Invalidation"
+  initial: "Blue: SSR prefetch + detail views (React Query)"
+  ondemand: "Teal: On-demand loading + collection writes"
+  realtime: "Green: Real-time updates (SSE → collections)"
+  query: "Purple: Collection data flow to UI"
+  mutation: "Orange: User mutations (dual-write)"
+  nav: "Gray: Navigation state"
 }

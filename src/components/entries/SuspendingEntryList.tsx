@@ -1,18 +1,24 @@
 /**
  * SuspendingEntryList Component
  *
- * A wrapper around EntryList that uses useSuspenseInfiniteQuery.
- * Suspends until entry data is ready, allowing independent loading
- * from other parts of the page (like entry content).
+ * Renders the entry list using a TanStack DB on-demand collection.
+ * The collection fetches pages from the server as the user scrolls,
+ * bridging TanStack DB's offset-based windowing to our cursor-based API.
  *
- * Uses useEntriesListInput to get query input, ensuring cache is shared
- * with the parent's non-suspending query (used for navigation).
+ * Uses useLiveInfiniteQuery for reactive pagination and useStableEntryList
+ * to prevent entries from disappearing when their state changes mid-session
+ * (e.g., marking an entry as read while viewing "unread only").
+ *
+ * Note: Despite the name, this component no longer uses React Suspense.
+ * The name is kept for compatibility with the dynamic import in
+ * UnifiedEntriesContent. Loading state is handled via isLoading/isReady.
  */
 
 "use client";
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { useLiveInfiniteQuery } from "@tanstack/react-db";
+import { eq } from "@tanstack/db";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
@@ -20,7 +26,14 @@ import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
+import { useCollections } from "@/lib/collections/context";
+import { upsertEntriesInCollection } from "@/lib/collections/writes";
+import { useViewEntriesCollection } from "@/lib/hooks/useViewEntriesCollection";
+import { useStableEntryList } from "@/lib/hooks/useStableEntryList";
+import { useEntryNavigationUpdater } from "@/lib/hooks/useEntryNavigation";
+import type { EntriesViewFilters } from "@/lib/collections/entries";
 import { EntryList, type ExternalQueryState } from "./EntryList";
+import { EntryListSkeleton } from "./EntryListSkeleton";
 
 interface SuspendingEntryListProps {
   emptyMessage: string;
@@ -30,61 +43,105 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
   const { openEntryId, setOpenEntryId } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const utils = trpc.useUtils();
   const scrollContainerRef = useScrollContainer();
+  const collections = useCollections();
 
-  // Get query input from URL - shared with parent's non-suspending query
+  // Get query input from URL
   const queryInput = useEntriesListInput();
 
-  // Suspending query - component suspends until data is ready
-  // Shares cache with parent's useInfiniteQuery via same queryInput
-  const [data, { fetchNextPage, hasNextPage, isFetchingNextPage, refetch }] =
-    trpc.entries.list.useSuspenseInfiniteQuery(queryInput, {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      staleTime: Infinity,
-      refetchOnWindowFocus: false,
-    });
-
-  // Flatten entries from all pages
-  const entries = useMemo(
-    () =>
-      data?.pages.flatMap((page) =>
-        page.items.map((entry) => ({
-          id: entry.id,
-          feedId: entry.feedId,
-          subscriptionId: entry.subscriptionId,
-          type: entry.type,
-          url: entry.url,
-          title: entry.title,
-          author: entry.author,
-          summary: entry.summary,
-          publishedAt: entry.publishedAt,
-          fetchedAt: entry.fetchedAt,
-          read: entry.read,
-          starred: entry.starred,
-          feedTitle: entry.feedTitle,
-          siteName: entry.siteName,
-        }))
-      ) ?? [],
-    [data?.pages]
+  // Build filters for the on-demand view collection
+  const viewFilters: EntriesViewFilters = useMemo(
+    () => ({
+      subscriptionId: queryInput.subscriptionId,
+      tagId: queryInput.tagId,
+      uncategorized: queryInput.uncategorized,
+      unreadOnly: showUnreadOnly,
+      starredOnly: queryInput.starredOnly,
+      sortOrder,
+      type: queryInput.type,
+      limit: queryInput.limit,
+    }),
+    [queryInput, showUnreadOnly, sortOrder]
   );
+
+  // Create the on-demand view collection (recreates on filter change)
+  const { collection: viewCollection, filterKey } = useViewEntriesCollection(viewFilters);
+
+  const sortDescending = sortOrder === "newest";
+
+  // Live infinite query over the view collection
+  // Client-side where clauses ensure correct hasNextPage / dataNeeded calculation
+  const {
+    data: liveData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isReady,
+  } = useLiveInfiniteQuery(
+    (q) => {
+      let query = q
+        .from({ e: viewCollection })
+        .orderBy(({ e }) => e._sortMs, sortDescending ? "desc" : "asc");
+
+      // Client-side filter matching server-side filter for correct pagination
+      if (showUnreadOnly) {
+        query = query.where(({ e }) => eq(e.read, false));
+      }
+      if (queryInput.starredOnly) {
+        query = query.where(({ e }) => eq(e.starred, true));
+      }
+
+      return query.select(({ e }) => ({ ...e }));
+    },
+    {
+      pageSize: queryInput.limit,
+      getNextPageParam: (lastPage, allPages) =>
+        lastPage.length === queryInput.limit ? allPages.length : undefined,
+    },
+    [filterKey, sortDescending, showUnreadOnly, queryInput.starredOnly]
+  );
+
+  // Display stability: merge live entries with previously-seen entries
+  const stableEntries = useStableEntryList(
+    liveData ?? [],
+    viewCollection,
+    filterKey,
+    sortDescending
+  );
+
+  // Populate global entries collection from live query results.
+  // This keeps entries available for SSE state updates, fallback lookups,
+  // and the detail view overlay.
+  useEffect(() => {
+    if (stableEntries.length > 0) {
+      upsertEntriesInCollection(collections, stableEntries);
+    }
+  }, [collections, stableEntries]);
 
   // Compute next/previous entry IDs for keyboard navigation
   // Also compute how close we are to the pagination boundary
   const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(() => {
-    if (!openEntryId || entries.length === 0) {
+    if (!openEntryId || stableEntries.length === 0) {
       return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
     }
-    const currentIndex = entries.findIndex((e) => e.id === openEntryId);
+    const currentIndex = stableEntries.findIndex((e) => e.id === openEntryId);
     if (currentIndex === -1) {
       return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
     }
     return {
-      nextEntryId: currentIndex < entries.length - 1 ? entries[currentIndex + 1].id : undefined,
-      previousEntryId: currentIndex > 0 ? entries[currentIndex - 1].id : undefined,
-      distanceToEnd: entries.length - 1 - currentIndex,
+      nextEntryId:
+        currentIndex < stableEntries.length - 1 ? stableEntries[currentIndex + 1].id : undefined,
+      previousEntryId: currentIndex > 0 ? stableEntries[currentIndex - 1].id : undefined,
+      distanceToEnd: stableEntries.length - 1 - currentIndex,
     };
-  }, [openEntryId, entries]);
+  }, [openEntryId, stableEntries]);
+
+  // Publish navigation state for swipe gestures in EntryContent
+  const updateNavigation = useEntryNavigationUpdater();
+  useEffect(() => {
+    updateNavigation({ nextEntryId, previousEntryId });
+  }, [updateNavigation, nextEntryId, previousEntryId]);
 
   // Trigger pagination when navigating close to the end of loaded entries
   const prevDistanceToEnd = useRef(distanceToEnd);
@@ -167,7 +224,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
 
   // Keyboard shortcuts
   const { selectedEntryId } = useKeyboardShortcuts({
-    entries,
+    entries: stableEntries,
     onOpenEntry: setOpenEntryId,
     onClose: () => setOpenEntryId(null),
     isEntryOpen: !!openEntryId,
@@ -175,25 +232,27 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     enabled: keyboardShortcutsEnabled,
     onToggleRead: handleToggleRead,
     onToggleStar: toggleStar,
-    onRefresh: () => utils.entries.list.invalidate(),
+    onRefresh: () => collections.invalidateActiveView(),
     onToggleUnreadOnly: toggleShowUnreadOnly,
     onNavigateNext: goToNextEntry,
     onNavigatePrevious: goToPreviousEntry,
   });
 
+  // Show skeleton while first page loads
+  if (isLoading && !isReady) {
+    return <EntryListSkeleton count={5} />;
+  }
+
   // External query state for EntryList
-  const externalQueryState: ExternalQueryState = useMemo(
-    () => ({
-      isLoading: false, // Suspense handles loading
-      isError: false, // ErrorBoundary handles errors
-      errorMessage: undefined,
-      isFetchingNextPage,
-      hasNextPage: hasNextPage ?? false,
-      fetchNextPage,
-      refetch,
-    }),
-    [isFetchingNextPage, hasNextPage, fetchNextPage, refetch]
-  );
+  const externalQueryState: ExternalQueryState = {
+    isLoading: isLoading && !isReady,
+    isError: false,
+    errorMessage: undefined,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch: () => collections.invalidateActiveView(),
+  };
 
   return (
     <EntryList
@@ -210,7 +269,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
       selectedEntryId={selectedEntryId}
       onToggleRead={handleToggleRead}
       onToggleStar={toggleStar}
-      externalEntries={entries}
+      externalEntries={stableEntries}
       externalQueryState={externalQueryState}
       emptyMessage={emptyMessage}
     />

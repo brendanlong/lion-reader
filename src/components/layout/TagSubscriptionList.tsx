@@ -1,15 +1,21 @@
 /**
  * TagSubscriptionList Component
  *
- * Renders subscriptions within a tag section using infinite scrolling.
- * Subscriptions are fetched per-tag (or uncategorized) when the section is expanded,
- * with more pages loaded automatically as the user scrolls.
+ * Renders subscriptions within a tag section using a TanStack DB on-demand collection.
+ * The collection fetches pages from the server as the user scrolls in the sidebar.
+ *
+ * Loaded subscriptions are also written into the global subscriptions collection
+ * for fast lookups and optimistic updates elsewhere in the app.
  */
 
 "use client";
 
-import { useEffect, useRef } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { useEffect, useMemo, useRef } from "react";
+import { useLiveInfiniteQuery } from "@tanstack/react-db";
+import { useCollections } from "@/lib/collections/context";
+import { upsertSubscriptionsInCollection } from "@/lib/collections/writes";
+import { useTagSubscriptionsCollection } from "@/lib/hooks/useTagSubscriptionsCollection";
+import type { TagSubscriptionFilters } from "@/lib/collections/subscriptions";
 import { SubscriptionItem } from "./SubscriptionItem";
 
 interface TagSubscriptionListProps {
@@ -32,6 +38,8 @@ interface TagSubscriptionListProps {
   onUnsubscribe: (sub: { id: string; title: string }) => void;
 }
 
+const PAGE_SIZE = 50;
+
 export function TagSubscriptionList({
   tagId,
   uncategorized,
@@ -41,17 +49,47 @@ export function TagSubscriptionList({
   onUnsubscribe,
 }: TagSubscriptionListProps) {
   const sentinelRef = useRef<HTMLLIElement>(null);
+  const collections = useCollections();
 
-  const subscriptionsQuery = trpc.subscriptions.list.useInfiniteQuery(
-    { tagId, uncategorized, limit: 50 },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  // Build filters for the on-demand collection
+  const filters: TagSubscriptionFilters = useMemo(
+    () => ({ tagId, uncategorized, limit: PAGE_SIZE }),
+    [tagId, uncategorized]
   );
 
-  const allSubscriptions = subscriptionsQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  // Create the on-demand collection (recreates on filter change)
+  const { collection: tagCollection, filterKey } = useTagSubscriptionsCollection(filters);
 
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = subscriptionsQuery;
+  // Live infinite query over the tag subscription collection
+  // Server sorts alphabetically by title, so we use ID as the orderBy
+  // (UUIDv7 gives us stable ordering; the server determines the actual sort)
+  const {
+    data: subscriptions,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isReady,
+  } = useLiveInfiniteQuery(
+    (q) =>
+      q
+        .from({ s: tagCollection })
+        .orderBy(({ s }) => s.id, "asc")
+        .select(({ s }) => ({ ...s })),
+    {
+      pageSize: PAGE_SIZE,
+      getNextPageParam: (lastPage, allPages) =>
+        lastPage.length === PAGE_SIZE ? allPages.length : undefined,
+    },
+    [filterKey]
+  );
+
+  // Populate global subscriptions collection from live query results
+  useEffect(() => {
+    if (subscriptions && subscriptions.length > 0) {
+      upsertSubscriptionsInCollection(collections, subscriptions);
+    }
+  }, [collections, subscriptions]);
 
   // Infinite scroll: observe sentinel element to load more
   useEffect(() => {
@@ -73,7 +111,7 @@ export function TagSubscriptionList({
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  if (subscriptionsQuery.isLoading) {
+  if (isLoading && !isReady) {
     return (
       <ul className="mt-1 ml-6 space-y-1">
         {[1, 2].map((i) => (
@@ -85,13 +123,13 @@ export function TagSubscriptionList({
     );
   }
 
-  if (allSubscriptions.length === 0) {
+  if (!subscriptions || subscriptions.length === 0) {
     return null;
   }
 
   return (
     <ul className="mt-1 ml-6 space-y-1">
-      {allSubscriptions.map((sub) => (
+      {subscriptions.map((sub) => (
         <SubscriptionItem
           key={sub.id}
           subscription={sub}
@@ -114,9 +152,7 @@ export function TagSubscriptionList({
         />
       ))}
       {/* Sentinel for infinite scroll */}
-      {subscriptionsQuery.hasNextPage && (
-        <li ref={sentinelRef} className="h-1" aria-hidden="true" />
-      )}
+      {hasNextPage && <li ref={sentinelRef} className="h-1" aria-hidden="true" />}
     </ul>
   );
 }

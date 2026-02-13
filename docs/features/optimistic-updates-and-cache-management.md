@@ -1,9 +1,11 @@
 # Optimistic Updates and Cache Management Optimization
 
-**Status:** Draft
+**Status:** Largely Superseded
 **Created:** 2026-01-10
 **Author:** Claude
 **Related Issues:** N/A
+
+> **Note (2026-02):** Most of the cache management concerns in this document have been superseded by the migration to TanStack DB collections (Phases 4-6). Sidebar counts, entry lists, subscription state, and tag state are now managed via TanStack DB collections with direct writes instead of React Query cache manipulation. React Query is only used for SSR prefetch seeding, entry detail views (`entries.get`), and import progress tracking. The SSE event handler (`handleSyncEvent`) now writes directly to collections. See `src/lib/collections/` for the current architecture.
 
 ## Overview
 
