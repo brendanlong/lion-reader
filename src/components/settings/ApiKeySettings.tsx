@@ -14,7 +14,7 @@ import { CheckIcon } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-const DEFAULT_MODEL = "claude-sonnet-4-5";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 /**
  * Groq API key settings, displayed near the narration settings.
