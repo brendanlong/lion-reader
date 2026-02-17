@@ -25,7 +25,7 @@ export const CURRENT_PROMPT_VERSION = 3;
 /**
  * Default model for summarization.
  */
-const DEFAULT_MODEL = "claude-sonnet-4-5";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 /**
  * Default maximum words for summaries.
