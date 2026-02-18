@@ -17,8 +17,6 @@ export default function RecentlyReadPage({ searchParams }: RecentlyReadPageProps
       filters={{ sortBy: "readChanged" }}
       defaultUnreadOnly={false}
       searchParams={searchParams}
-    >
-      {null}
-    </EntryListPage>
+    />
   );
 }

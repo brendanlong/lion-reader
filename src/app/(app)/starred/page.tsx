@@ -11,9 +11,5 @@ interface StarredEntriesPageProps {
 }
 
 export default function StarredEntriesPage({ searchParams }: StarredEntriesPageProps) {
-  return (
-    <EntryListPage filters={{ starredOnly: true }} searchParams={searchParams}>
-      {null}
-    </EntryListPage>
-  );
+  return <EntryListPage filters={{ starredOnly: true }} searchParams={searchParams} />;
 }

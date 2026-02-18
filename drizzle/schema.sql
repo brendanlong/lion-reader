@@ -678,6 +678,8 @@ CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
 
+CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
+
 CREATE INDEX idx_user_score_models_trained ON public.user_score_models USING btree (trained_at);
 
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
