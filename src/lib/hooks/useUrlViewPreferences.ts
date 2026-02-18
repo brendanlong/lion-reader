@@ -63,14 +63,24 @@ export interface UseUrlViewPreferencesResult {
  * }
  * ```
  */
+/**
+ * Returns the default unreadOnly value for the current route.
+ * Most views default to true (show unread only); recently-read defaults to false.
+ */
+function getDefaultUnreadOnly(pathname: string): boolean {
+  if (pathname === "/recently-read") return false;
+  return true;
+}
+
 export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const defaultUnreadOnly = getDefaultUnreadOnly(pathname);
 
   // Get current values from URL
   const { unreadOnly, sortOrder } = useMemo(
-    () => parseViewPreferencesFromParams(searchParams),
-    [searchParams]
+    () => parseViewPreferencesFromParams(searchParams, { unreadOnly: defaultUnreadOnly }),
+    [searchParams, defaultUnreadOnly]
   );
 
   // Helper to update URL with new params
@@ -80,11 +90,11 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
 
       // Update unreadOnly param
       if (updates.unreadOnly !== undefined) {
-        if (updates.unreadOnly) {
-          // true is the default, remove from URL to keep it clean
+        if (updates.unreadOnly === defaultUnreadOnly) {
+          // Matches the default for this view, remove from URL to keep it clean
           params.delete("unreadOnly");
         } else {
-          params.set("unreadOnly", "false");
+          params.set("unreadOnly", String(updates.unreadOnly));
         }
       }
 
@@ -102,7 +112,7 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
       const url = queryString ? `${pathname}?${queryString}` : pathname;
       clientReplace(url);
     },
-    [pathname, searchParams]
+    [pathname, searchParams, defaultUnreadOnly]
   );
 
   const toggleShowUnreadOnly = useCallback(() => {

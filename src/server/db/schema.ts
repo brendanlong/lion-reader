@@ -702,6 +702,7 @@ export const visibleEntries = pgView("visible_entries", {
   predictedScore: real("predicted_score"), // ML-predicted score, nullable
   predictionConfidence: real("prediction_confidence"), // confidence of prediction, nullable
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
+  readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull(),
 }).existing();
 
 // ============================================================================

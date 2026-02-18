@@ -42,6 +42,7 @@ interface RouteInfo {
     uncategorized?: boolean;
     starredOnly?: boolean;
     type?: EntryType;
+    sortBy?: "published" | "readChanged";
   };
   /** Static title (null means we need to fetch it) */
   title: string | null;
@@ -177,6 +178,19 @@ function useRouteInfo(): RouteInfo {
         emptyMessageUnread: "No unread entries from this tag. Toggle to show all items.",
         emptyMessageAll: "No entries from this tag yet.",
         markAllReadDescription: "this tag",
+      };
+    }
+
+    // /recently-read - Recently read entries
+    if (pathname === "/recently-read") {
+      return {
+        viewId: "recently-read" as const,
+        filters: { sortBy: "readChanged" as const },
+        title: "Recently Read",
+        emptyMessageUnread: "No unread entries. Toggle to show all items.",
+        emptyMessageAll:
+          "No recently read entries yet. Read some entries and they will appear here.",
+        markAllReadDescription: "all feeds",
       };
     }
 

@@ -410,7 +410,8 @@ CREATE VIEW public.visible_entries AS
     s.id AS subscription_id,
     esp.predicted_score,
     esp.confidence AS prediction_confidence,
-    e.unsubscribe_url
+    e.unsubscribe_url,
+    ue.read_changed_at
    FROM (((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscriptions s ON (((s.user_id = ue.user_id) AND (e.feed_id = ANY (s.feed_ids)))))

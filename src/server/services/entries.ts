@@ -32,6 +32,7 @@ export interface ListEntriesParams {
   unreadOnly?: boolean;
   starredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
+  sortBy?: "published" | "readChanged"; // Which timestamp to sort by (default: published)
   cursor?: string;
   limit?: number;
   showSpam: boolean;
@@ -230,8 +231,11 @@ export async function listEntries(
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
   conditions.push(...buildEntryFilterConditions(params));
 
-  // Sort column
-  const sortColumn = sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
+  // Sort column - readChanged sorts by when read state was last changed
+  const sortColumn =
+    params.sortBy === "readChanged"
+      ? visibleEntries.readChangedAt
+      : sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
 
   // Cursor condition
   if (params.cursor) {
@@ -275,6 +279,7 @@ export async function listEntries(
       hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
       hasMarkedUnread: visibleEntries.hasMarkedUnread,
       hasStarred: visibleEntries.hasStarred,
+      readChangedAt: visibleEntries.readChangedAt,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -313,7 +318,10 @@ export async function listEntries(
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {
     const lastEntry = resultEntries[resultEntries.length - 1];
-    const lastTs = lastEntry.publishedAt ?? lastEntry.fetchedAt;
+    const lastTs =
+      params.sortBy === "readChanged"
+        ? lastEntry.readChangedAt
+        : (lastEntry.publishedAt ?? lastEntry.fetchedAt);
     nextCursor = encodeCursor(lastTs, lastEntry.id);
   }
 

@@ -18,6 +18,7 @@ export interface EntryListFilters {
   uncategorized?: boolean;
   starredOnly?: boolean;
   type?: "web" | "email" | "saved";
+  sortBy?: "published" | "readChanged";
 }
 
 // Re-export for consumers
@@ -28,6 +29,8 @@ interface EntryListPageProps {
   filters: EntryListFilters;
   /** Search params from Next.js page */
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+  /** Override the default unreadOnly preference (default: true) */
+  defaultUnreadOnly?: boolean;
   /** The client component to render */
   children: React.ReactNode;
 }
@@ -55,7 +58,12 @@ interface EntryListPageProps {
  * }
  * ```
  */
-export async function EntryListPage({ filters, searchParams, children }: EntryListPageProps) {
+export async function EntryListPage({
+  filters,
+  searchParams,
+  defaultUnreadOnly,
+  children,
+}: EntryListPageProps) {
   const params = await searchParams;
 
   // Check if viewing a specific entry
@@ -70,7 +78,10 @@ export async function EntryListPage({ filters, searchParams, children }: EntryLi
   const urlParams = new URLSearchParams();
   if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
   if (params.sort) urlParams.set("sort", String(params.sort));
-  const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams);
+  const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(
+    urlParams,
+    defaultUnreadOnly !== undefined ? { unreadOnly: defaultUnreadOnly } : undefined
+  );
 
   // Build input using shared function to ensure cache key matches client
   const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
