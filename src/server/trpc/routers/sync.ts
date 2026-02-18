@@ -18,6 +18,7 @@ import {
   visibleEntries,
   subscriptionTags,
 } from "@/server/db/schema";
+import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
 
 // ============================================================================
 // Constants
@@ -75,141 +76,17 @@ const syncSubscriptionSchema = z.object({
 });
 
 /**
- * Tag for sync (created or updated).
- */
-const syncTagSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  color: z.string().nullable(),
-});
-
-/**
  * Updated tag for sync (includes all modifiable fields).
+ * Same shape as syncTagSchema — kept as a separate reference for clarity.
  */
-const syncTagUpdatedSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  color: z.string().nullable(),
-});
-
-// ============================================================================
-// Event Schemas (SSE-compatible format for sync.events)
-// ============================================================================
-
-/**
- * Entry metadata for entry_updated events.
- */
-const entryMetadataSchema = z.object({
-  title: z.string().nullable(),
-  author: z.string().nullable(),
-  summary: z.string().nullable(),
-  url: z.string().nullable(),
-  publishedAt: z.string().nullable(),
-});
-
-/**
- * Subscription data for subscription_created events.
- */
-const subscriptionCreatedDataSchema = z.object({
-  id: z.string(),
-  feedId: z.string(),
-  customTitle: z.string().nullable(),
-  subscribedAt: z.string(),
-  unreadCount: z.number(),
-  tags: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      color: z.string().nullable(),
-    })
-  ),
-});
-
-/**
- * Feed data for subscription_created events.
- */
-const feedCreatedDataSchema = z.object({
-  id: z.string(),
-  type: z.enum(["web", "email", "saved"]),
-  url: z.string().nullable(),
-  title: z.string().nullable(),
-  description: z.string().nullable(),
-  siteUrl: z.string().nullable(),
-});
-
-/**
- * Unified event schema matching SSE event format.
- * Each event has a type discriminator and event-specific data.
- * All events include `updatedAt` for cursor tracking.
- */
-const syncEventSchema = z.discriminatedUnion("type", [
-  // Entry events (updatedAt tracks entries cursor)
-  z.object({
-    type: z.literal("new_entry"),
-    subscriptionId: z.string().nullable(),
-    entryId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(), // Database updated_at for cursor tracking
-    feedType: z.enum(["web", "email", "saved"]).optional(),
-  }),
-  z.object({
-    type: z.literal("entry_updated"),
-    subscriptionId: z.string().nullable(),
-    entryId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(), // Database updated_at for cursor tracking
-    metadata: entryMetadataSchema,
-  }),
-  z.object({
-    type: z.literal("entry_state_changed"),
-    entryId: z.string(),
-    read: z.boolean(),
-    starred: z.boolean(),
-    timestamp: z.string(),
-    updatedAt: z.string(), // Database updated_at for cursor tracking
-  }),
-  // Subscription events (updatedAt tracks subscriptions cursor)
-  z.object({
-    type: z.literal("subscription_created"),
-    subscriptionId: z.string(),
-    feedId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(), // Database updated_at for cursor tracking
-    subscription: subscriptionCreatedDataSchema,
-    feed: feedCreatedDataSchema,
-  }),
-  z.object({
-    type: z.literal("subscription_deleted"),
-    subscriptionId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(), // Database updated_at for cursor tracking
-  }),
-  // Tag events (updatedAt tracks tags cursor)
-  z.object({
-    type: z.literal("tag_created"),
-    tag: syncTagSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(), // Database updated_at for cursor tracking
-  }),
-  z.object({
-    type: z.literal("tag_updated"),
-    tag: syncTagSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(), // Database updated_at for cursor tracking
-  }),
-  z.object({
-    type: z.literal("tag_deleted"),
-    tagId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(), // Database updated_at for cursor tracking
-  }),
-]);
+const syncTagUpdatedSchema = syncTagSchema;
 
 /**
  * Output schema for sync.events procedure.
+ * Uses the shared server event schema (no defaults/transforms).
  */
 const syncEventsOutputSchema = z.object({
-  events: z.array(syncEventSchema),
+  events: z.array(serverSyncEventSchema),
   hasMore: z.boolean(),
 });
 
@@ -789,7 +666,7 @@ export const syncRouter = createTRPCRouter({
       }
 
       // Collect all events with their timestamps for sorting
-      const allEvents: Array<z.infer<typeof syncEventSchema> & { _sortTime: Date }> = [];
+      const allEvents: Array<z.infer<typeof serverSyncEventSchema> & { _sortTime: Date }> = [];
 
       // Track if we hit any limits
       let hasMore = false;
@@ -1069,7 +946,7 @@ export const syncRouter = createTRPCRouter({
       // Remove _sortTime from events before returning
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const events = allEvents.map(({ _sortTime, ...event }) => event) as z.infer<
-        typeof syncEventSchema
+        typeof serverSyncEventSchema
       >[];
 
       return {
