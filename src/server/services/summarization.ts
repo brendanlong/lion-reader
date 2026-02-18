@@ -9,6 +9,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { marked } from "marked";
 import { logger } from "@/lib/logger";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
+import {
+  DEFAULT_SUMMARIZATION_MODEL,
+  DEFAULT_SUMMARIZATION_MAX_WORDS,
+} from "@/lib/summarization/constants";
 
 // Configure marked for safe rendering
 marked.setOptions({
@@ -21,16 +25,6 @@ marked.setOptions({
  * to invalidate cached summaries.
  */
 export const CURRENT_PROMPT_VERSION = 3;
-
-/**
- * Default model for summarization.
- */
-const DEFAULT_MODEL = "claude-sonnet-4-6";
-
-/**
- * Default maximum words for summaries.
- */
-const DEFAULT_MAX_WORDS = 150;
 
 /**
  * Maximum content length to send to the LLM (in characters).
@@ -58,7 +52,7 @@ function getMaxWords(userMaxWords?: number | null): number {
       return parsed;
     }
   }
-  return DEFAULT_MAX_WORDS;
+  return DEFAULT_SUMMARIZATION_MAX_WORDS;
 }
 
 /**
@@ -211,7 +205,8 @@ export async function generateSummary(
   }
 
   // Priority: user model > environment > default
-  const modelId = options?.userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_MODEL;
+  const modelId =
+    options?.userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_SUMMARIZATION_MODEL;
 
   try {
     const response = await client.messages.create({
@@ -268,7 +263,7 @@ export function isSummarizationAvailable(userApiKey?: string | null): boolean {
  * @param userModel - Optional user-configured model
  */
 export function getSummarizationModelId(userModel?: string | null): string {
-  return userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_MODEL;
+  return userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_SUMMARIZATION_MODEL;
 }
 
 /**
