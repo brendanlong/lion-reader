@@ -429,7 +429,8 @@ CREATE TABLE public.websub_subscriptions (
     last_challenge_at timestamp with time zone,
     last_error text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    unsubscribe_requested_at timestamp with time zone
 );
 
 ALTER TABLE ONLY public.api_tokens

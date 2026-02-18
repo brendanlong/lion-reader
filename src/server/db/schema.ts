@@ -771,6 +771,7 @@ export const websubSubscriptions = pgTable(
 
     lastChallengeAt: timestamp("last_challenge_at", { withTimezone: true }), // Last verification attempt
     lastError: text("last_error"), // Last error message if any
+    unsubscribeRequestedAt: timestamp("unsubscribe_requested_at", { withTimezone: true }), // When we requested unsubscribe from hub
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
