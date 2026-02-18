@@ -10,7 +10,7 @@
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
 import { eq, and, lt } from "drizzle-orm";
 import { db } from "../db";
-import { feeds, websubSubscriptions, type Feed } from "../db/schema";
+import { feeds, websubSubscriptions, type Feed, type WebsubSubscription } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { logger } from "@/lib/logger";
 
@@ -384,9 +384,7 @@ export async function handleVerificationChallenge(
     return { success: false, error: "Missing required parameters" };
   }
 
-  // We only handle subscribe mode currently
-  // (unsubscribe would be handled similarly if needed)
-  if (mode !== "subscribe") {
+  if (mode !== "subscribe" && mode !== "unsubscribe") {
     return { success: false, error: `Unsupported mode: ${mode}` };
   }
 
@@ -410,6 +408,10 @@ export async function handleVerificationChallenge(
       received: topic,
     });
     return { success: false, error: "Topic mismatch" };
+  }
+
+  if (mode === "unsubscribe") {
+    return handleUnsubscribeVerification(feedId, subscription, challenge);
   }
 
   // Parse lease seconds (if provided)
@@ -441,6 +443,55 @@ export async function handleVerificationChallenge(
     leaseSeconds: lease,
     expiresAt,
   });
+
+  return { success: true, challenge };
+}
+
+/**
+ * Handles an unsubscribe verification callback from a hub.
+ *
+ * Per W3C WebSub spec Section 5.3, we confirm unsubscribes that we requested
+ * (tracked via unsubscribe_requested_at). For hub-initiated unsubscribes
+ * (ones we didn't request), we also confirm and mark the subscription as
+ * unsubscribed, since fighting a hub's decision to unsubscribe us is unlikely
+ * to be productive.
+ */
+async function handleUnsubscribeVerification(
+  feedId: string,
+  subscription: WebsubSubscription,
+  challenge: string
+): Promise<VerificationResult> {
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    // Mark subscription as unsubscribed
+    await tx
+      .update(websubSubscriptions)
+      .set({
+        state: "unsubscribed",
+        lastChallengeAt: now,
+        lastError: subscription.unsubscribeRequestedAt
+          ? null
+          : "Hub-initiated unsubscribe confirmed",
+        updatedAt: now,
+      })
+      .where(eq(websubSubscriptions.id, subscription.id));
+
+    // Mark feed as not using WebSub
+    await tx.update(feeds).set({ websubActive: false, updatedAt: now }).where(eq(feeds.id, feedId));
+  });
+
+  if (subscription.unsubscribeRequestedAt) {
+    logger.info("WebSub unsubscribe verified (requested)", {
+      subscriptionId: subscription.id,
+      feedId,
+    });
+  } else {
+    logger.info("WebSub unsubscribe verified (hub-initiated)", {
+      subscriptionId: subscription.id,
+      feedId,
+    });
+  }
 
   return { success: true, challenge };
 }
@@ -651,12 +702,14 @@ async function markSubscriptionFailed(
   feedId: string,
   error: string
 ): Promise<void> {
+  const now = new Date();
   await db
     .update(websubSubscriptions)
     .set({
       state: "unsubscribed",
       lastError: error,
-      updatedAt: new Date(),
+      unsubscribeRequestedAt: now,
+      updatedAt: now,
     })
     .where(eq(websubSubscriptions.id, subscriptionId));
 
@@ -704,12 +757,14 @@ export async function deactivateWebsub(feedId: string): Promise<boolean> {
   }
 
   // Mark subscription as unsubscribed
+  const now = new Date();
   await db
     .update(websubSubscriptions)
     .set({
       state: "unsubscribed",
       lastError: "Hub URL removed from feed",
-      updatedAt: new Date(),
+      unsubscribeRequestedAt: now,
+      updatedAt: now,
     })
     .where(eq(websubSubscriptions.id, subscription.id));
 
@@ -718,7 +773,7 @@ export async function deactivateWebsub(feedId: string): Promise<boolean> {
     .update(feeds)
     .set({
       websubActive: false,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(eq(feeds.id, feedId));
 

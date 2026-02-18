@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { createHmac } from "crypto";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { feeds, entries, websubSubscriptions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -123,14 +124,14 @@ describe("WebSub Integration", () => {
       await createTestSubscription(feed.id, { topicUrl: feed.url ?? "" });
 
       const result = await handleVerificationChallenge(feed.id, {
-        mode: "unsubscribe",
+        mode: "invalid",
         topic: feed.url ?? "",
         challenge: "test-challenge-123",
         leaseSeconds: null,
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe("Unsupported mode: unsubscribe");
+      expect(result.error).toBe("Unsupported mode: invalid");
     });
 
     it("returns error when subscription not found", async () => {
@@ -208,6 +209,98 @@ describe("WebSub Integration", () => {
       expect(subscription.state).toBe("active");
       expect(subscription.leaseSeconds).toBeNull();
       expect(subscription.expiresAt).toBeNull();
+    });
+
+    it("confirms unsubscribe when we requested it", async () => {
+      const feed = await createTestFeed();
+      const topicUrl = "https://example.com/unsub-requested.xml";
+      const { subscription: createdSub } = await createTestSubscription(feed.id, {
+        topicUrl,
+        state: "active",
+        unsubscribeRequestedAt: new Date(),
+      });
+
+      // Mark feed as WebSub active
+      await db.update(feeds).set({ websubActive: true }).where(eq(feeds.id, feed.id));
+
+      const challenge = "unsubscribe-challenge-123";
+      const result = await handleVerificationChallenge(feed.id, {
+        mode: "unsubscribe",
+        topic: topicUrl,
+        challenge,
+        leaseSeconds: null,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.challenge).toBe(challenge);
+
+      // Verify subscription was marked as unsubscribed
+      const [subscription] = await db
+        .select()
+        .from(websubSubscriptions)
+        .where(eq(websubSubscriptions.id, createdSub.id));
+      expect(subscription.state).toBe("unsubscribed");
+      expect(subscription.lastError).toBeNull();
+      expect(subscription.lastChallengeAt).toBeInstanceOf(Date);
+
+      // Verify feed is no longer marked as WebSub active
+      const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+      expect(updatedFeed.websubActive).toBe(false);
+    });
+
+    it("confirms hub-initiated unsubscribe", async () => {
+      const feed = await createTestFeed();
+      const topicUrl = "https://example.com/hub-initiated.xml";
+      const { subscription: createdSub } = await createTestSubscription(feed.id, {
+        topicUrl,
+        state: "active",
+        // No unsubscribeRequestedAt - this is hub-initiated
+      });
+
+      // Mark feed as WebSub active
+      await db.update(feeds).set({ websubActive: true }).where(eq(feeds.id, feed.id));
+
+      const challenge = "hub-unsubscribe-challenge";
+      const result = await handleVerificationChallenge(feed.id, {
+        mode: "unsubscribe",
+        topic: topicUrl,
+        challenge,
+        leaseSeconds: null,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.challenge).toBe(challenge);
+
+      // Verify subscription was marked as unsubscribed with note
+      const [subscription] = await db
+        .select()
+        .from(websubSubscriptions)
+        .where(eq(websubSubscriptions.id, createdSub.id));
+      expect(subscription.state).toBe("unsubscribed");
+      expect(subscription.lastError).toBe("Hub-initiated unsubscribe confirmed");
+
+      // Verify feed is no longer marked as WebSub active
+      const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+      expect(updatedFeed.websubActive).toBe(false);
+    });
+
+    it("rejects unsubscribe with topic mismatch", async () => {
+      const feed = await createTestFeed();
+      await createTestSubscription(feed.id, {
+        topicUrl: "https://example.com/correct-feed.xml",
+        state: "active",
+        unsubscribeRequestedAt: new Date(),
+      });
+
+      const result = await handleVerificationChallenge(feed.id, {
+        mode: "unsubscribe",
+        topic: "https://example.com/wrong-feed.xml",
+        challenge: "challenge",
+        leaseSeconds: null,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Topic mismatch");
     });
   });
 
