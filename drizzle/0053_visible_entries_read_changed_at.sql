@@ -48,3 +48,8 @@ FROM (((public.user_entries ue
     LEFT JOIN public.subscriptions s ON (((s.user_id = ue.user_id) AND (e.feed_id = ANY (s.feed_ids)))))
     LEFT JOIN public.entry_score_predictions esp ON (((esp.user_id = ue.user_id) AND (esp.entry_id = e.id))))
 WHERE ((s.unsubscribed_at IS NULL) OR (ue.starred = true));
+
+-- Index to support efficient sorting by read_changed_at for the "Recently Read" list.
+-- Covers the sort column and entry_id for cursor-based pagination tie-breaking.
+CREATE INDEX idx_user_entries_read_changed_at
+    ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);

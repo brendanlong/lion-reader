@@ -31,8 +31,8 @@ interface EntryListPageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
   /** Override the default unreadOnly preference (default: true) */
   defaultUnreadOnly?: boolean;
-  /** The client component to render */
-  children: React.ReactNode;
+  /** Optional client component to render alongside prefetched data */
+  children?: React.ReactNode;
 }
 
 /**
@@ -50,11 +50,7 @@ interface EntryListPageProps {
  * ```tsx
  * // In page.tsx
  * export default function AllPage({ searchParams }) {
- *   return (
- *     <EntryListPage filters={{}} searchParams={searchParams}>
- *       <AllEntriesContent />
- *     </EntryListPage>
- *   );
+ *   return <EntryListPage filters={{}} searchParams={searchParams} />;
  * }
  * ```
  */
