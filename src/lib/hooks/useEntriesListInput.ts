@@ -22,6 +22,7 @@ interface RouteFilters {
   uncategorized?: boolean;
   starredOnly?: boolean;
   type?: EntryType;
+  sortBy?: "published" | "readChanged";
 }
 
 /**
@@ -58,6 +59,11 @@ function getFiltersFromPathname(pathname: string): RouteFilters {
   // /uncategorized
   if (pathname === "/uncategorized") {
     return { uncategorized: true };
+  }
+
+  // /recently-read
+  if (pathname === "/recently-read") {
+    return { sortBy: "readChanged" as const };
   }
 
   // /all or default

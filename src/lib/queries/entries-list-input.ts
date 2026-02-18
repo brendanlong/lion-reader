@@ -25,6 +25,7 @@ export interface EntriesListInput {
   unreadOnly: boolean;
   starredOnly: boolean | undefined;
   sortOrder: "newest" | "oldest";
+  sortBy: "published" | "readChanged" | undefined;
   type: EntryType | undefined;
   limit: number;
   /**
@@ -44,6 +45,7 @@ export interface EntriesListFilters {
   uncategorized?: boolean;
   starredOnly?: boolean;
   type?: EntryType;
+  sortBy?: "published" | "readChanged";
 }
 
 /**
@@ -84,6 +86,7 @@ export function buildEntriesListInput(
     unreadOnly: preferences.unreadOnly,
     starredOnly: filters.starredOnly,
     sortOrder: preferences.sortOrder,
+    sortBy: filters.sortBy,
     type: filters.type,
     limit,
     direction: preferences.sortOrder === "newest" ? "forward" : "backward",

@@ -62,6 +62,11 @@ const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
 const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
 
 /**
+ * Sort by validation schema for choosing which timestamp to sort entries by.
+ */
+const sortBySchema = z.enum(["published", "readChanged"]).optional();
+
+/**
  * Feed type validation schema for filtering entries by type.
  */
 const feedTypeSchema = z.enum(["web", "email", "saved"]);
@@ -461,6 +466,7 @@ export const entriesRouter = createTRPCRouter({
         unreadOnly: booleanQueryParam,
         starredOnly: booleanQueryParam,
         sortOrder: sortOrderSchema,
+        sortBy: sortBySchema,
         cursor: cursorSchema,
         limit: limitSchema,
       })
@@ -481,6 +487,7 @@ export const entriesRouter = createTRPCRouter({
         unreadOnly: input.unreadOnly,
         starredOnly: input.starredOnly,
         sortOrder: input.sortOrder,
+        sortBy: input.sortBy,
         cursor: input.cursor,
         limit: input.limit,
         showSpam,

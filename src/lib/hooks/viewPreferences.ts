@@ -8,7 +8,14 @@
 /**
  * View types for different entry list pages.
  */
-export type ViewType = "all" | "starred" | "subscription" | "tag" | "saved" | "uncategorized";
+export type ViewType =
+  | "all"
+  | "starred"
+  | "subscription"
+  | "tag"
+  | "saved"
+  | "uncategorized"
+  | "recently-read";
 
 /**
  * View preference settings.
@@ -41,18 +48,18 @@ const DEFAULT_PREFERENCES: ViewPreferences = {
  * This function is kept in a non-"use client" file so it can be used
  * for server-side prefetching as well as client-side rendering.
  */
-export function parseViewPreferencesFromParams(searchParams: URLSearchParams | null): {
+export function parseViewPreferencesFromParams(
+  searchParams: URLSearchParams | null,
+  defaults?: { unreadOnly?: boolean }
+): {
   unreadOnly: boolean;
   sortOrder: "newest" | "oldest";
 } {
   // Parse unreadOnly - explicit "false" means show all, anything else uses default
   const unreadOnlyParam = searchParams?.get("unreadOnly");
+  const defaultUnreadOnly = defaults?.unreadOnly ?? DEFAULT_PREFERENCES.showUnreadOnly;
   const unreadOnly =
-    unreadOnlyParam === "false"
-      ? false
-      : unreadOnlyParam === "true"
-        ? true
-        : DEFAULT_PREFERENCES.showUnreadOnly;
+    unreadOnlyParam === "false" ? false : unreadOnlyParam === "true" ? true : defaultUnreadOnly;
 
   // Parse sortOrder - explicit "oldest" means oldest first, anything else uses default
   const sortParam = searchParams?.get("sort");
