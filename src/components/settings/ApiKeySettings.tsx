@@ -13,8 +13,10 @@ import { trpc } from "@/lib/trpc/client";
 import { CheckIcon } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+import {
+  DEFAULT_SUMMARIZATION_MODEL,
+  DEFAULT_SUMMARIZATION_MAX_WORDS,
+} from "@/lib/summarization/constants";
 
 /**
  * Groq API key settings, displayed near the narration settings.
@@ -183,7 +185,7 @@ export function SummarizationApiKeySettings() {
   const currentMaxWords = preferencesQuery.data?.summarizationMaxWords ?? null;
   const currentPrompt = preferencesQuery.data?.summarizationPrompt ?? null;
   const models = modelsQuery.data?.models ?? [];
-  const defaultModelId = modelsQuery.data?.defaultModelId ?? DEFAULT_MODEL;
+  const defaultModelId = modelsQuery.data?.defaultModelId ?? DEFAULT_SUMMARIZATION_MODEL;
   const defaultPrompt = defaultPromptQuery.data?.prompt ?? "";
 
   const handleSave = useCallback(() => {
@@ -439,7 +441,7 @@ export function SummarizationApiKeySettings() {
                     type="number"
                     min={1}
                     max={10000}
-                    placeholder="150"
+                    placeholder={String(DEFAULT_SUMMARIZATION_MAX_WORDS)}
                     value={maxWordsInput}
                     onChange={(e) => setMaxWordsInput(e.target.value)}
                     disabled={updatePreferences.isPending}
@@ -467,7 +469,7 @@ export function SummarizationApiKeySettings() {
               ) : (
                 <div className="flex items-center gap-3">
                   <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-                    {currentMaxWords ?? "150 (default)"}
+                    {currentMaxWords ?? `${DEFAULT_SUMMARIZATION_MAX_WORDS} (default)`}
                   </span>
                   <Button
                     variant="secondary"
