@@ -372,6 +372,13 @@
       "when": 1770538800000,
       "tag": "0052_websub_unsubscribe",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1770548800000,
+      "tag": "0053_visible_entries_read_changed_at",
+      "breakpoints": true
     }
   ]
 }

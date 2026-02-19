@@ -106,6 +106,10 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
       >
         Saved
       </NavLink>
+
+      <NavLink href="/recently-read" isActive={isActiveLink("/recently-read")} onClick={onNavigate}>
+        Recently Read
+      </NavLink>
     </div>
   );
 }

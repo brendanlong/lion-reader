@@ -410,7 +410,8 @@ CREATE VIEW public.visible_entries AS
     s.id AS subscription_id,
     esp.predicted_score,
     esp.confidence AS prediction_confidence,
-    e.unsubscribe_url
+    e.unsubscribe_url,
+    ue.read_changed_at
    FROM (((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscriptions s ON (((s.user_id = ue.user_id) AND (e.feed_id = ANY (s.feed_ids)))))
@@ -677,6 +678,8 @@ CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_i
 CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id) WHERE (read = false);
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
+
+CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
 
 CREATE INDEX idx_user_score_models_trained ON public.user_score_models USING btree (trained_at);
 
