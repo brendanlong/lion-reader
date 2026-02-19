@@ -319,6 +319,9 @@ export async function saveArticle(
   const plugin = urlObj ? pluginRegistry.findWithCapability(urlObj, "savedArticle") : null;
 
   let html: string;
+  // The URL the content was actually fetched from (after redirects).
+  // Used for resolving relative URLs in the content.
+  let contentUrl: string = params.url;
   let pluginContent: {
     html: string;
     title?: string | null;
@@ -344,6 +347,9 @@ export async function saveArticle(
           skipReadability: plugin.capabilities.savedArticle.skipReadability,
         };
         html = content.html;
+        if (content.canonicalUrl) {
+          contentUrl = content.canonicalUrl;
+        }
         logger.debug("Successfully fetched content via plugin", {
           url: params.url,
           plugin: plugin.name,
@@ -371,6 +377,7 @@ export async function saveArticle(
   if (!pluginContent) {
     try {
       const result = await fetchHtmlPage(params.url);
+      contentUrl = result.finalUrl;
 
       // If we got Markdown, convert it to HTML and extract title
       if (result.isMarkdown) {
@@ -398,11 +405,11 @@ export async function saveArticle(
   }
 
   // Extract metadata
-  const metadata = extractMetadata(html!, params.url);
+  const metadata = extractMetadata(html!, contentUrl);
 
   // Run Readability for clean content (skip for plugins that request it, or for Markdown)
   const shouldSkipReadability = pluginContent?.skipReadability || markdownResult !== null;
-  const cleaned = shouldSkipReadability ? null : cleanContent(html!, { url: params.url });
+  const cleaned = shouldSkipReadability ? null : cleanContent(html!, { url: contentUrl });
 
   // Generate excerpt - prefer frontmatter summary for Markdown content
   let excerpt: string | null = null;

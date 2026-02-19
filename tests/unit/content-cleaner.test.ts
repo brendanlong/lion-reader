@@ -546,6 +546,31 @@ describe("absolutizeUrls", () => {
     });
   });
 
+  describe("directory-like URLs (trailing slash)", () => {
+    it("should resolve relative URLs correctly when base URL has trailing slash", () => {
+      // When a server redirects /html/2601.04480v1 → /html/2601.04480v1/,
+      // the trailing slash means the path is a directory, so relative URLs
+      // resolve against it rather than its parent.
+      const dirBaseUrl = "https://arxiv.org/html/2601.04480v1/";
+      const html = '<img src="figures/fig_004_gdoc.png" alt="Figure">';
+      const result = absolutizeUrls(html, dirBaseUrl);
+      expect(result).toContain(
+        'src="https://arxiv.org/html/2601.04480v1/figures/fig_004_gdoc.png"'
+      );
+    });
+
+    it("should resolve relative URLs against parent when base URL has no trailing slash", () => {
+      // Without trailing slash, the last segment is treated as a filename,
+      // so relative URLs resolve against the parent directory.
+      // This is standard URL resolution behavior per RFC 3986.
+      const fileBaseUrl = "https://arxiv.org/html/2601.04480v1";
+      const html = '<img src="figures/fig_004_gdoc.png" alt="Figure">';
+      const result = absolutizeUrls(html, fileBaseUrl);
+      // This resolves against /html/ (parent), NOT /html/2601.04480v1/
+      expect(result).toContain('src="https://arxiv.org/html/figures/fig_004_gdoc.png"');
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty HTML", () => {
       const html = "";
