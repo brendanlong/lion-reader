@@ -24,14 +24,16 @@ if (!existsSync(sourceDir)) {
   process.exit(0);
 }
 
-// Copy all .wasm files
-const wasmFiles = readdirSync(sourceDir).filter((f) => f.endsWith(".wasm"));
+// Copy .wasm files and their companion .mjs files (used by onnxruntime-web >= 1.24)
+const filesToCopy = readdirSync(sourceDir).filter(
+  (f) => f.startsWith("ort-wasm-simd-threaded") && (f.endsWith(".wasm") || f.endsWith(".mjs"))
+);
 
-for (const file of wasmFiles) {
+for (const file of filesToCopy) {
   const src = join(sourceDir, file);
   const dest = join(destDir, file);
   copyFileSync(src, dest);
   console.log(`Copied ${file} to public/onnx/`);
 }
 
-console.log(`Copied ${wasmFiles.length} ONNX WASM files to public/onnx/`);
+console.log(`Copied ${filesToCopy.length} ONNX Runtime files to public/onnx/`);

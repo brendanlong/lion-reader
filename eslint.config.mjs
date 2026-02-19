@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Build output
     "dist/**",
+    // Vendored ONNX Runtime WASM/JS files
+    "public/onnx/**",
   ]),
 ]);
 
