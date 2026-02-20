@@ -6,70 +6,96 @@ import { describe, it, expect } from "vitest";
 import { extractEmailUrl, extractUnsubscribeUrl } from "@/server/email/extract-url";
 
 describe("extractEmailUrl", () => {
-  describe("Substack emails", () => {
-    it("extracts URL from Substack post title h1", () => {
+  describe("view online text matching (primary strategy)", () => {
+    it("extracts URL from Substack READ IN APP button", () => {
       const html = `
-        <h1 class="post-title published">
-          <a href="https://open.substack.com/pub/astralcodexten/p/political-backflow-from-europe?utm_source=post-email-title&utm_campaign=email-post-title&isFreemail=false&r=67xro&token=abc123">
-            Political Backflow From Europe
-          </a>
-        </h1>
+        <h1><a href="https://substack.com/app-link/post?publication_id=2355025&post_id=185204578">Title</a></h1>
+        <p>Some content...</p>
+        <a class="email-button-outline" href="https://open.substack.com/pub/cartoonshateher/p/the-rise-of-the-highfivesexuals?utm_source=email&redirect=app-store&utm_campaign=email-read-in-app">
+          <span class="email-button-text">READ IN APP</span>
+        </a>
       `;
       expect(extractEmailUrl(html)).toBe(
-        "https://open.substack.com/pub/astralcodexten/p/political-backflow-from-europe"
+        "https://open.substack.com/pub/cartoonshateher/p/the-rise-of-the-highfivesexuals"
       );
     });
 
-    it("strips tracking parameters from open.substack.com URLs", () => {
+    it("extracts URL from 'Read Online' link in paragraph", () => {
       const html = `
-        <h1>
-          <a href="https://open.substack.com/pub/test/p/my-post?utm_source=email&utm_campaign=test&r=abc">
-            Test Post
-          </a>
-        </h1>
+        <p class="header" align="right">
+          January 25, 2026 |
+          <a href="https://leadershipintech.com/newsletters/2201?sid=eeba4afc">Read Online</a>
+        </p>
+        <h2><a href="https://leadershipintech.com/newsletters/2201?sid=eeba4afc">The hitchhiker's guide</a></h2>
       `;
-      expect(extractEmailUrl(html)).toBe("https://open.substack.com/pub/test/p/my-post");
+      expect(extractEmailUrl(html)).toBe(
+        "https://leadershipintech.com/newsletters/2201?sid=eeba4afc"
+      );
     });
 
-    it("skips substack.com/app-link URLs", () => {
-      // app-link URLs are deep links, not web URLs
+    it("extracts URL from 'View in your browser' link", () => {
       const html = `
-        <h1>
-          <a href="https://substack.com/app-link/post?publication_id=89120&post_id=182110210&utm_source=post-email-title">
-            Title
+        <a href="https://buttondown-0005.com/c/encodedtoken123">View in your browser</a>
+        <h1><a href="https://example.com/post">Newsletter Title</a></h1>
+      `;
+      expect(extractEmailUrl(html)).toBe("https://buttondown-0005.com/c/encodedtoken123");
+    });
+
+    it("extracts URL from 'View in browser' with nested spans", () => {
+      const html = `
+        <td align="center">
+          <a href="https://9nwl1.r.sp1-brevo.net/mk/mr/sh/abc123/def456">
+            <span><u>View in browser</u></span>
           </a>
-        </h1>
+        </td>
+        <h2>Level Up - Issue #340</h2>
+      `;
+      expect(extractEmailUrl(html)).toBe("https://9nwl1.r.sp1-brevo.net/mk/mr/sh/abc123/def456");
+    });
+
+    it("prefers view-online link over heading link", () => {
+      const html = `
+        <h1><a href="https://example.com/heading-url">Title</a></h1>
+        <a href="https://example.com/view-online-url">View in browser</a>
+      `;
+      expect(extractEmailUrl(html)).toBe("https://example.com/view-online-url");
+    });
+
+    it("takes the first view-online match", () => {
+      const html = `
+        <a href="https://example.com/first">Read online</a>
+        <a href="https://example.com/second">View in browser</a>
+      `;
+      expect(extractEmailUrl(html)).toBe("https://example.com/first");
+    });
+
+    it("skips view-online links with non-http protocols", () => {
+      const html = `
+        <a href="mailto:test@example.com">Read in app</a>
+        <h1><a href="https://example.com/post">Title</a></h1>
+      `;
+      expect(extractEmailUrl(html)).toBe("https://example.com/post");
+    });
+
+    it("skips Substack app-link even with view-online text", () => {
+      const html = `
+        <a href="https://substack.com/app-link/post?publication_id=123&post_id=456">Read in app</a>
       `;
       expect(extractEmailUrl(html)).toBeNull();
     });
 
-    it("handles custom domain Substack (not *.substack.com)", () => {
+    it("does not filter view-online links by isContentUrl", () => {
+      // Click-tracking URLs would fail isContentUrl but should be preserved
+      // when the link text is "View in browser"
       const html = `
-        <h1>
-          <a href="https://www.astralcodexten.com/p/political-backflow-from-europe?utm_source=email">
-            Political Backflow From Europe
-          </a>
-        </h1>
+        <a href="https://click.convertkit-mail.com/redirect/abc123">View in browser</a>
       `;
-      expect(extractEmailUrl(html)).toBe(
-        "https://www.astralcodexten.com/p/political-backflow-from-europe"
-      );
-    });
-
-    it("handles *.substack.com/p/ URLs with tracking params", () => {
-      const html = `
-        <h1>
-          <a href="https://mysubstack.substack.com/p/my-post?utm_source=email&utm_medium=reader&r=abc">
-            My Post
-          </a>
-        </h1>
-      `;
-      expect(extractEmailUrl(html)).toBe("https://mysubstack.substack.com/p/my-post");
+      expect(extractEmailUrl(html)).toBe("https://click.convertkit-mail.com/redirect/abc123");
     });
   });
 
-  describe("general newsletter emails", () => {
-    it("extracts URL from h1 > a", () => {
+  describe("heading link fallback (secondary strategy)", () => {
+    it("extracts URL from h1 > a when no view-online link", () => {
       const html = `
         <div>Some header content</div>
         <h1><a href="https://example.com/post/123">My Great Article</a></h1>
@@ -94,7 +120,7 @@ describe("extractEmailUrl", () => {
       expect(extractEmailUrl(html)).toBe("https://example.com/post");
     });
 
-    it("prefers h1 link (stops at first heading link)", () => {
+    it("takes first heading link", () => {
       const html = `
         <h1><a href="https://example.com/main-post">Main Title</a></h1>
         <h2><a href="https://example.com/secondary">Secondary</a></h2>
@@ -128,31 +154,77 @@ describe("extractEmailUrl", () => {
       `;
       expect(extractEmailUrl(html)).toBe("https://example.com/post?id=123&category=tech");
     });
+
+    it("strips tracking params from open.substack.com URLs", () => {
+      const html = `
+        <h1>
+          <a href="https://open.substack.com/pub/test/p/my-post?utm_source=email&utm_campaign=test&r=abc">
+            Test Post
+          </a>
+        </h1>
+      `;
+      expect(extractEmailUrl(html)).toBe("https://open.substack.com/pub/test/p/my-post");
+    });
+
+    it("handles custom domain Substack (not *.substack.com)", () => {
+      const html = `
+        <h1>
+          <a href="https://www.astralcodexten.com/p/political-backflow-from-europe?utm_source=email">
+            Political Backflow From Europe
+          </a>
+        </h1>
+      `;
+      expect(extractEmailUrl(html)).toBe(
+        "https://www.astralcodexten.com/p/political-backflow-from-europe"
+      );
+    });
+
+    it("handles *.substack.com/p/ URLs with tracking params", () => {
+      const html = `
+        <h1>
+          <a href="https://mysubstack.substack.com/p/my-post?utm_source=email&utm_medium=reader&r=abc">
+            My Post
+          </a>
+        </h1>
+      `;
+      expect(extractEmailUrl(html)).toBe("https://mysubstack.substack.com/p/my-post");
+    });
   });
 
   describe("URLs to skip", () => {
-    it("skips mailto: links", () => {
+    it("skips mailto: links in headings", () => {
       const html = `
         <h1><a href="mailto:contact@example.com">Contact Us</a></h1>
       `;
       expect(extractEmailUrl(html)).toBeNull();
     });
 
-    it("skips unsubscribe links", () => {
+    it("skips unsubscribe links in headings", () => {
       const html = `
         <h1><a href="https://example.com/unsubscribe?token=abc">Unsubscribe</a></h1>
       `;
       expect(extractEmailUrl(html)).toBeNull();
     });
 
-    it("skips subscribe links", () => {
+    it("skips subscribe links in headings", () => {
       const html = `
         <h1><a href="https://example.com/subscribe?ref=email">Subscribe</a></h1>
       `;
       expect(extractEmailUrl(html)).toBeNull();
     });
 
-    it("ignores links outside heading elements", () => {
+    it("returns null when only heading has app-link and no view-online link", () => {
+      const html = `
+        <h1>
+          <a href="https://substack.com/app-link/post?publication_id=89120&post_id=182110210">
+            Title
+          </a>
+        </h1>
+      `;
+      expect(extractEmailUrl(html)).toBeNull();
+    });
+
+    it("ignores non-matching links outside heading elements", () => {
       const html = `
         <p><a href="https://example.com/not-the-title">Some link</a></p>
         <a href="https://example.com/another-link">Another link</a>
@@ -166,7 +238,7 @@ describe("extractEmailUrl", () => {
       expect(extractEmailUrl("")).toBeNull();
     });
 
-    it("returns null for HTML with no headings", () => {
+    it("returns null for HTML with no headings and no view-online links", () => {
       const html = `
         <div>
           <p>Just some content</p>
@@ -196,25 +268,49 @@ describe("extractEmailUrl", () => {
     });
   });
 
-  describe("real-world Substack email fragment", () => {
-    it("extracts URL from realistic Substack email structure", () => {
-      // Simplified but representative Substack email structure
+  describe("real-world email fragments", () => {
+    it("extracts URL from modern Substack email with app-link in h1 + READ IN APP button", () => {
       const html = `
         <table role="presentation" width="100%">
           <tbody><tr><td></td><td class="content" width="550" align="left">
             <div class="post typography" dir="auto">
               <div class="post-header" role="region">
                 <h1 class="post-title published title-X77sOw" dir="auto">
-                  <a href="https://open.substack.com/pub/astralcodexten/p/political-backflow-from-europe?utm_source=post-email-title&amp;utm_campaign=email-post-title&amp;isFreemail=false&amp;r=67xro&amp;token=eyJ1c2VyX2lkIjoxMDQ0ODA1MiwicG9zdF9pZCI6MTgyMTEwMjEwfQ.test" target="_blank" rel="noopener noreferrer">
-                    Political Backflow From Europe
+                  <a href="https://substack.com/app-link/post?publication_id=2355025&amp;post_id=185204578&amp;utm_source=post-email-title&amp;isFreemail=false&amp;r=67xro&amp;token=abc123">
+                    The Rise of the Highfivesexuals
                   </a>
                 </h1>
-                <h3 class="subtitle">Some subtitle text...</h3>
+                <h3 class="subtitle">A subtitle</h3>
               </div>
             </div>
             <div class="post typography" dir="auto">
               <div class="body markup" dir="auto">
-                <p>The European discourse can be...</p>
+                <p>Content here...</p>
+              </div>
+            </div>
+            <a class="email-button-outline" href="https://open.substack.com/pub/cartoonshateher/p/the-rise-of-the-highfivesexuals?utm_source=email&amp;redirect=app-store&amp;utm_campaign=email-read-in-app">
+              <span class="email-button-text">READ IN APP</span>
+            </a>
+          </td><td></td></tr></tbody>
+        </table>
+      `;
+      expect(extractEmailUrl(html)).toBe(
+        "https://open.substack.com/pub/cartoonshateher/p/the-rise-of-the-highfivesexuals"
+      );
+    });
+
+    it("extracts URL from older Substack email with open.substack.com in heading", () => {
+      const html = `
+        <table role="presentation" width="100%">
+          <tbody><tr><td></td><td class="content" width="550" align="left">
+            <div class="post typography" dir="auto">
+              <div class="post-header" role="region">
+                <h1 class="post-title published title-X77sOw" dir="auto">
+                  <a href="https://open.substack.com/pub/astralcodexten/p/political-backflow-from-europe?utm_source=post-email-title&amp;utm_campaign=email-post-title&amp;isFreemail=false&amp;r=67xro&amp;token=abc123" target="_blank" rel="noopener noreferrer">
+                    Political Backflow From Europe
+                  </a>
+                </h1>
+                <h3 class="subtitle">Some subtitle text...</h3>
               </div>
             </div>
           </td><td></td></tr></tbody>
@@ -222,6 +318,37 @@ describe("extractEmailUrl", () => {
       `;
       expect(extractEmailUrl(html)).toBe(
         "https://open.substack.com/pub/astralcodexten/p/political-backflow-from-europe"
+      );
+    });
+
+    it("extracts URL from non-Substack newsletter with Read Online link", () => {
+      const html = `
+        <table>
+          <tr><td>
+            <p class="header" align="right">
+              January 25, 2026 |
+              <a href="https://leadershipintech.com/newsletters/2201?sid=eeba4afc-782f-49c1-937b-a52e11104ea0" style="color: #ec615c;">Read Online</a>
+            </p>
+            <h2><a href="https://leadershipintech.com/links/21280/abc/email">The hitchhiker's guide to measuring engineering ROI</a></h2>
+            <p>Content...</p>
+          </td></tr>
+        </table>
+      `;
+      expect(extractEmailUrl(html)).toBe(
+        "https://leadershipintech.com/newsletters/2201?sid=eeba4afc-782f-49c1-937b-a52e11104ea0"
+      );
+    });
+
+    it("extracts click-tracking URL from Buttondown 'View in your browser'", () => {
+      const html = `
+        <div>
+          <a href="https://buttondown-0005.com/c/NDcyMjg1NDEtZjg0Mi00MTk5LTliODEtYzlkNzQ4OTkwNTI3">View in your browser</a>
+          <h1>Hacker Newsletter #781</h1>
+          <p>Top links this week...</p>
+        </div>
+      `;
+      expect(extractEmailUrl(html)).toBe(
+        "https://buttondown-0005.com/c/NDcyMjg1NDEtZjg0Mi00MTk5LTliODEtYzlkNzQ4OTkwNTI3"
       );
     });
   });
