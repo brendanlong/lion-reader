@@ -550,9 +550,40 @@ export async function claimScoreTrainingJob(): Promise<Job | null> {
     RETURNING *
   `);
 
-  if (result.rows.length === 0) {
-    return null;
+  if (result.rows.length > 0) {
+    return rowToJob(result.rows[0]);
   }
 
-  return rowToJob(result.rows[0]);
+  // No claimable job row - ensure job rows exist for eligible users who don't have one.
+  // Like ensureFeedJob/claimSingletonJob, the row is created once and reused for scheduling.
+  const usersNeedingJobs = await db.execute<{ user_id: string }>(sql`
+    WITH users_needing_training AS (
+      SELECT ue.user_id
+      FROM user_entries ue
+      INNER JOIN entries e ON e.id = ue.entry_id
+      WHERE ue.score IS NOT NULL
+         OR ue.has_starred = true
+         OR ue.has_marked_unread = true
+         OR ue.has_marked_read_on_list = true
+         OR e.type = 'saved'
+      GROUP BY ue.user_id
+      HAVING count(*) >= 20
+    )
+    SELECT unt.user_id
+    FROM users_needing_training unt
+    WHERE NOT EXISTS (
+      SELECT 1 FROM jobs j
+      WHERE j.type = 'train_score_model'
+        AND (j.payload->>'userId')::uuid = unt.user_id
+    )
+  `);
+
+  for (const row of usersNeedingJobs.rows) {
+    await createJob({
+      type: "train_score_model",
+      payload: { userId: row.user_id },
+    });
+  }
+
+  return null;
 }
