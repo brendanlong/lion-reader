@@ -266,11 +266,19 @@ export function extractUnsubscribeUrl(html: string): string | null {
 }
 
 /**
+ * Pattern matching "view online" / "read in app" style link text.
+ * Covers: "Read in app", "READ IN APP", "View in browser",
+ * "View in your browser", "Read online", "View online", etc.
+ */
+const VIEW_ONLINE_PATTERN = /(read|view)\s+(in\s+(\w+\s+)?)?(app|online|browser)/i;
+
+/**
  * Extracts the canonical post URL from newsletter email HTML.
  *
- * Looks for `<a>` tags inside heading elements (h1-h3), which is the most
- * common pattern across newsletter platforms for linking to the web version
- * of a post.
+ * Uses a two-strategy approach in a single SAX pass:
+ * 1. Primary: "View online" text matching — scan all `<a>` tags for text
+ *    matching patterns like "View in browser", "Read online", "READ IN APP".
+ * 2. Fallback: heading links — `<a>` inside `<h1>`-`<h3>` (original strategy).
  *
  * @param html - The email HTML content
  * @returns The extracted URL, or null if no suitable URL was found
@@ -281,45 +289,70 @@ export function extractEmailUrl(html: string): string | null {
   }
 
   let headingDepth = 0;
-  let currentHeadingLevel = 0;
-  let foundUrl: string | null = null;
+  let headingCandidate: string | null = null;
+  let viewOnlineCandidate: string | null = null;
+
+  // Track current <a> tag state for text inspection
+  let insideAnchor = false;
+  let currentHref: string | null = null;
+  let currentText = "";
+  let inHeadingAnchor = false;
 
   const parser = new Parser(
     {
       onopentagname(name) {
         const tag = name.toLowerCase();
-
-        // Track heading elements
         if (tag === "h1" || tag === "h2" || tag === "h3") {
           headingDepth++;
-          currentHeadingLevel = parseInt(tag[1]);
         }
       },
       onopentag(name, attribs) {
         const tag = name.toLowerCase();
-
-        // Look for <a> tags inside headings
-        if (tag === "a" && headingDepth > 0 && attribs.href) {
-          const href = attribs.href;
-
-          // Check if it's a Substack URL that needs special handling
-          const resolved = resolveSubstackUrl(href);
-          if (!resolved) {
-            return;
-          }
-
-          // Check if it's a content URL (not tracking/unsubscribe)
-          if (isContentUrl(resolved)) {
-            const cleaned = cleanTrackingParams(resolved);
-            if (!foundUrl || currentHeadingLevel < parseInt(foundUrl[0])) {
-              foundUrl = cleaned;
-              parser.pause();
-            }
-          }
+        if (tag === "a" && attribs.href) {
+          insideAnchor = true;
+          currentHref = attribs.href;
+          currentText = "";
+          inHeadingAnchor = headingDepth > 0;
+        }
+      },
+      ontext(text) {
+        if (insideAnchor) {
+          currentText += text;
         }
       },
       onclosetag(name) {
         const tag = name.toLowerCase();
+
+        if (tag === "a" && insideAnchor) {
+          if (currentHref) {
+            const resolved = resolveSubstackUrl(currentHref);
+
+            if (resolved) {
+              // Strategy 1: "View online" text match
+              if (!viewOnlineCandidate && VIEW_ONLINE_PATTERN.test(currentText)) {
+                try {
+                  const parsed = new URL(resolved);
+                  if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+                    viewOnlineCandidate = cleanTrackingParams(resolved);
+                  }
+                } catch {
+                  // Invalid URL, skip
+                }
+              }
+
+              // Strategy 2: Heading link fallback
+              if (!headingCandidate && inHeadingAnchor && isContentUrl(resolved)) {
+                headingCandidate = cleanTrackingParams(resolved);
+              }
+            }
+          }
+
+          insideAnchor = false;
+          currentHref = null;
+          currentText = "";
+          inHeadingAnchor = false;
+        }
+
         if (tag === "h1" || tag === "h2" || tag === "h3") {
           headingDepth--;
         }
@@ -331,5 +364,5 @@ export function extractEmailUrl(html: string): string | null {
   parser.write(html);
   parser.end();
 
-  return foundUrl;
+  return viewOnlineCandidate ?? headingCandidate;
 }
