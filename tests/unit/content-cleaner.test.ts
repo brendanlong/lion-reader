@@ -571,6 +571,62 @@ describe("absolutizeUrls", () => {
     });
   });
 
+  describe("HTML <base> tag support", () => {
+    it("should use <base href> as the base URL for resolving relative URLs", () => {
+      const html =
+        '<html><head><base href="https://cdn.example.com/assets/"></head><body><img src="photo.jpg"></body></html>';
+      const result = absolutizeUrls(html, "https://example.com/page");
+      expect(result).toContain('src="https://cdn.example.com/assets/photo.jpg"');
+    });
+
+    it("should resolve <base href> against the provided baseUrl when relative", () => {
+      const html =
+        '<html><head><base href="/assets/"></head><body><img src="photo.jpg"></body></html>';
+      const result = absolutizeUrls(html, "https://example.com/page");
+      expect(result).toContain('src="https://example.com/assets/photo.jpg"');
+    });
+
+    it("should fall back to provided baseUrl when no <base> tag is present", () => {
+      const html = '<img src="photo.jpg">';
+      const result = absolutizeUrls(html, "https://example.com/articles/");
+      expect(result).toContain('src="https://example.com/articles/photo.jpg"');
+    });
+
+    it("should apply <base href> to all URL attribute types", () => {
+      const html = `<html><head><base href="https://cdn.example.com/"></head><body>
+        <img src="image.jpg">
+        <a href="page.html">Link</a>
+        <video poster="poster.jpg"></video>
+      </body></html>`;
+      const result = absolutizeUrls(html, "https://example.com/");
+      expect(result).toContain('src="https://cdn.example.com/image.jpg"');
+      expect(result).toContain('href="https://cdn.example.com/page.html"');
+      expect(result).toContain('poster="https://cdn.example.com/poster.jpg"');
+    });
+
+    it("should apply <base href> to srcset attributes", () => {
+      const html =
+        '<html><head><base href="https://cdn.example.com/img/"></head><body><img srcset="small.jpg 1x, large.jpg 2x"></body></html>';
+      const result = absolutizeUrls(html, "https://example.com/");
+      expect(result).toContain("https://cdn.example.com/img/small.jpg 1x");
+      expect(result).toContain("https://cdn.example.com/img/large.jpg 2x");
+    });
+
+    it("should not rewrite the <base> tag's own href", () => {
+      const html =
+        '<html><head><base href="https://cdn.example.com/"></head><body><img src="photo.jpg"></body></html>';
+      const result = absolutizeUrls(html, "https://example.com/");
+      expect(result).toContain('href="https://cdn.example.com/"');
+    });
+
+    it("should only use the first <base> tag per the HTML spec", () => {
+      const html =
+        '<html><head><base href="https://first.example.com/"><base href="https://second.example.com/"></head><body><img src="photo.jpg"></body></html>';
+      const result = absolutizeUrls(html, "https://example.com/");
+      expect(result).toContain('src="https://first.example.com/photo.jpg"');
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty HTML", () => {
       const html = "";
