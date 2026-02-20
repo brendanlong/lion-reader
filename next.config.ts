@@ -80,6 +80,21 @@ const nextConfig: NextConfig = {
     // Inject git commit SHA at build time
     GIT_COMMIT_SHA: getGitCommitSha(),
   },
+  // Rewrite FreshRSS-style Google Reader API paths to our standard paths.
+  // Many Android clients (FocusReader, SmartRSS, etc.) configured as "FreshRSS"
+  // prepend /api/greader.php to all Google Reader API paths.
+  async rewrites() {
+    return [
+      {
+        source: "/api/greader.php/accounts/:path*",
+        destination: "/accounts/:path*",
+      },
+      {
+        source: "/api/greader.php/reader/:path*",
+        destination: "/reader/:path*",
+      },
+    ];
+  },
   // Cache static assets for 1 day to reduce unnecessary requests
   async headers() {
     return [
