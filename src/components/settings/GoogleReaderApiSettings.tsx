@@ -17,7 +17,7 @@ export function GoogleReaderApiSettings() {
     );
   }, []);
 
-  const apiBase = `${baseUrl}/reader/api/0`;
+  const apiBase = `${baseUrl}/api/greader.php/reader/api/0`;
 
   return (
     <section>
@@ -77,23 +77,15 @@ export function GoogleReaderApiSettings() {
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
           <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Setup</h3>
           <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
-            In your app&apos;s account settings, choose &ldquo;Google Reader&rdquo;, &ldquo;Google
-            Reader API&rdquo;, or &ldquo;FreshRSS&rdquo; as the service type, then enter:
+            In your app&apos;s account settings, choose &ldquo;FreshRSS&rdquo; as the service type,
+            then enter:
           </p>
           <ul className="ui-text-sm mt-3 space-y-2 text-zinc-600 dark:text-zinc-400">
             <li>
               <strong className="text-zinc-900 dark:text-zinc-200">Server URL:</strong>{" "}
               <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
-                {baseUrl}
+                {baseUrl}/api/greader.php
               </code>
-              {baseUrl && (
-                <span className="ui-text-xs mt-1 block text-zinc-400 dark:text-zinc-500">
-                  If using FreshRSS mode:{" "}
-                  <code className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
-                    {baseUrl}/api/greader.php
-                  </code>
-                </span>
-              )}
             </li>
             <li>
               <strong className="text-zinc-900 dark:text-zinc-200">Email:</strong> Your Lion Reader
