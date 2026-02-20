@@ -17,7 +17,7 @@ export function GoogleReaderApiSettings() {
     );
   }, []);
 
-  const apiBase = `${baseUrl}/api/reader/api/0`;
+  const apiBase = `${baseUrl}/reader/api/0`;
 
   return (
     <section>
