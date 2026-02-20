@@ -152,6 +152,8 @@ export interface FetchHtmlPageResult {
   content: string;
   /** Whether the content is Markdown (based on Content-Type header) */
   isMarkdown: boolean;
+  /** The final URL after following redirects (use for resolving relative URLs) */
+  finalUrl: string;
 }
 
 /**
@@ -195,7 +197,7 @@ export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
     }
 
     const content = await response.text();
-    return { content, isMarkdown };
+    return { content, isMarkdown, finalUrl: response.url };
   } finally {
     clearTimeout(timeout);
   }

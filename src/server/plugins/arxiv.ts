@@ -49,7 +49,7 @@ export const arxivPlugin: UrlPlugin = {
             title: null, // Let Readability extract title
             author: null,
             publishedAt: null,
-            canonicalUrl: url.href,
+            canonicalUrl: result.finalUrl,
           };
         } catch (error) {
           logger.warn("Failed to fetch ArXiv paper", {

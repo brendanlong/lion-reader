@@ -60,8 +60,9 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
           });
 
           const html = pluginContent.html;
+          const resolveUrl = pluginContent.canonicalUrl || url;
 
-          const contentOriginal = absolutizeUrls(html, url);
+          const contentOriginal = absolutizeUrls(html, resolveUrl);
 
           // Respect plugin's skipReadability setting
           if (plugin.capabilities.savedArticle.skipReadability) {
@@ -72,7 +73,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
           }
 
           // Run Readability on plugin content
-          const cleaned = cleanContent(html, { url });
+          const cleaned = cleanContent(html, { url: resolveUrl });
 
           return {
             success: true,
@@ -93,6 +94,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
     logger.debug("Fetching full content using standard method", { url });
 
     const result = await fetchHtmlPage(url);
+    const resolveUrl = result.finalUrl;
 
     // If we got Markdown, convert it to HTML and skip Readability
     // Markdown is already clean content, no need for article extraction
@@ -101,7 +103,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
       const { html: contentCleaned } = await processMarkdown(result.content);
 
       // Absolutize URLs in the original HTML (before title stripping)
-      const contentOriginal = absolutizeUrls(contentCleaned, url);
+      const contentOriginal = absolutizeUrls(contentCleaned, resolveUrl);
 
       return {
         success: true,
@@ -112,10 +114,10 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
 
     // For HTML, absolutize URLs in the original
     const html = result.content;
-    const contentOriginal = absolutizeUrls(html, url);
+    const contentOriginal = absolutizeUrls(html, resolveUrl);
 
     // Clean the content using Readability
-    const cleaned = cleanContent(html, { url });
+    const cleaned = cleanContent(html, { url: resolveUrl });
 
     if (!cleaned) {
       return {
