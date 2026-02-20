@@ -117,6 +117,16 @@ function extractRandomBits(id: bigint): bigint {
 }
 
 /**
+ * Builds a SQL condition to match UUIDs by their timestamp hex prefix.
+ * UUIDs are stored as text like "xxxxxxxx-xxxx-...". The first 12 hex
+ * digits (positions 1-8 and 10-13, skipping the hyphen) encode the
+ * 48-bit millisecond timestamp.
+ */
+function uuidTimestampMatch(column: typeof entries.id | typeof subscriptions.id, tsHex: string) {
+  return sql`SUBSTRING(${column}::text, 1, 8) || SUBSTRING(${column}::text, 10, 4) = ${tsHex}`;
+}
+
+/**
  * Looks up a UUIDv7 entry ID from a Google Reader int64 ID.
  *
  * Strategy: Extract the 48-bit timestamp to narrow the query to entries
@@ -133,9 +143,7 @@ export async function int64ToUuid(db: typeof dbType, id: bigint): Promise<string
   const candidates = await db
     .select({ id: entries.id })
     .from(entries)
-    .where(
-      sql`SUBSTRING(${entries.id}::text, 1, 8) || SUBSTRING(${entries.id}::text, 10, 4) = ${tsHex}`
-    )
+    .where(uuidTimestampMatch(entries.id, tsHex))
     .limit(100);
 
   // Match on random bits
@@ -178,9 +186,7 @@ export async function batchInt64ToUuid(
     const candidates = await db
       .select({ id: entries.id })
       .from(entries)
-      .where(
-        sql`SUBSTRING(${entries.id}::text, 1, 8) || SUBSTRING(${entries.id}::text, 10, 4) = ${tsHex}`
-      )
+      .where(uuidTimestampMatch(entries.id, tsHex))
       .limit(1000);
 
     // Match each ID by random bits
@@ -231,12 +237,7 @@ export async function feedStreamIdToSubscriptionUuid(
   const candidates = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        sql`SUBSTRING(${subscriptions.id}::text, 1, 8) || SUBSTRING(${subscriptions.id}::text, 10, 4) = ${tsHex}`
-      )
-    )
+    .where(and(eq(subscriptions.userId, userId), uuidTimestampMatch(subscriptions.id, tsHex)))
     .limit(100);
 
   for (const candidate of candidates) {

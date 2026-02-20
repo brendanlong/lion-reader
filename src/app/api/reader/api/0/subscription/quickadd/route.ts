@@ -106,6 +106,7 @@ export async function POST(request: Request): Promise<Response> {
       streamName: feedUrl,
     });
   } catch (err) {
+    console.error("Failed to subscribe to feed:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return errorResponse(`Failed to subscribe: ${message}`, 500);
   }

@@ -38,7 +38,8 @@ export async function parseFormData(request: Request): Promise<URLSearchParams> 
   try {
     const text = await request.text();
     return new URLSearchParams(text);
-  } catch {
+  } catch (err) {
+    console.error("Failed to parse request body as form data:", err);
     return new URLSearchParams();
   }
 }

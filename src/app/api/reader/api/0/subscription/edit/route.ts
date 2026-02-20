@@ -185,16 +185,12 @@ async function applyTagChanges(
     }
 
     // Add tag to subscription (ignore if already exists)
-    try {
-      await database
-        .insert(subscriptionTags)
-        .values({
-          subscriptionId,
-          tagId: tag.id,
-        })
-        .onConflictDoNothing();
-    } catch {
-      // Ignore duplicate tag assignments
-    }
+    await database
+      .insert(subscriptionTags)
+      .values({
+        subscriptionId,
+        tagId: tag.id,
+      })
+      .onConflictDoNothing();
   }
 }

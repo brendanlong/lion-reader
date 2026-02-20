@@ -15,7 +15,7 @@ import { parseFormData, textResponse, errorResponse } from "@/server/google-read
 import { parseStreamId } from "@/server/google-reader/streams";
 import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { resolveTagByName } from "@/server/google-reader/tags";
-import { eq, and, isNull, lte, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull, lte, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/server/db";
 import {
   userEntries,
@@ -52,8 +52,7 @@ export async function POST(request: Request): Promise<Response> {
   const now = new Date();
 
   // Build conditions for the update
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const conditions: any[] = [
+  const conditions: SQL[] = [
     eq(userEntries.userId, userId),
     eq(userEntries.read, false),
     lte(userEntries.readChangedAt, now),
