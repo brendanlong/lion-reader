@@ -23,7 +23,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { type EntryType } from "./useEntryMutations";
+import { type EntryType } from "@/lib/queries/entries-list-input";
 import { clientPush } from "@/lib/navigation";
 
 /**

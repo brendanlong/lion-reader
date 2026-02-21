@@ -4,7 +4,7 @@
  * Common type definitions used across multiple hooks.
  */
 
-import { type EntryType } from "./useEntryMutations";
+import { type EntryType } from "@/lib/queries/entries-list-input";
 
 /**
  * Entry data for list display and navigation.

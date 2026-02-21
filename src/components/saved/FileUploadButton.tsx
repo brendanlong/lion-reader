@@ -68,13 +68,11 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const utils = trpc.useUtils();
   const collections = useCollections();
   const uploadMutation = trpc.saved.uploadFile.useMutation({
     onSuccess: () => {
       toast.success("File uploaded successfully");
-      // Invalidate entries list and update counts in collection
-      utils.entries.list.invalidate({ type: "saved" });
+      // Invalidate active entry view and update counts in collection
       collections.invalidateActiveView();
       adjustEntriesCountInCollection(collections, "saved", 1, 1);
       adjustEntriesCountInCollection(collections, "all", 1, 1);

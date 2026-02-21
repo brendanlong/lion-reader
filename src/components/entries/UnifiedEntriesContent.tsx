@@ -47,7 +47,7 @@ import {
   EntryNavigationProvider,
   useEntryNavigationState,
 } from "@/lib/hooks/useEntryNavigation";
-import { type EntryType } from "@/lib/hooks/useEntryMutations";
+import { type EntryType } from "@/lib/queries/entries-list-input";
 
 /**
  * Route info derived from the current pathname.

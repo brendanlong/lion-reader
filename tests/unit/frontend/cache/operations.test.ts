@@ -110,15 +110,13 @@ describe("handleSubscriptionCreated", () => {
 });
 
 describe("handleSubscriptionDeleted", () => {
-  it("invalidates entries.list", () => {
+  it("does not perform React Query invalidations (uses collection writes instead)", () => {
     const mockUtils = createMockTrpcUtils();
     handleSubscriptionDeleted(mockUtils.utils, "sub-1", null);
 
-    // entries.list invalidation is the only React Query operation remaining
-    const invalidateOps = mockUtils.operations.filter(
-      (op) => op.type === "invalidate" && op.router === "entries" && op.procedure === "list"
-    );
-    expect(invalidateOps.length).toBe(1);
+    // With TanStack DB migration, handleSubscriptionDeleted uses collection writes
+    // and invalidateActiveView() instead of React Query invalidations
+    expect(mockUtils.operations.length).toBe(0);
   });
 
   it("handles deletion without collections (no-op for collection writes)", () => {

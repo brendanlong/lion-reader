@@ -3,11 +3,10 @@
  *
  * Higher-level functions for subscription lifecycle and count updates.
  * All state updates flow through TanStack DB collections.
- * React Query is only used for entries.list invalidation (pagination).
  */
 
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import type { Collections, Subscription } from "@/lib/collections";
+import type { Collections } from "@/lib/collections";
 import { calculateTagDeltasFromSubscriptions } from "./count-cache";
 import {
   adjustSubscriptionUnreadInCollection,
@@ -57,7 +56,7 @@ export function handleSubscriptionCreated(
   collections?: Collections | null
 ): void {
   // Add to TanStack DB subscriptions collection
-  addSubscriptionToCollection(collections ?? null, subscription as unknown as Subscription);
+  addSubscriptionToCollection(collections ?? null, subscription);
 
   // Update tag/uncategorized feedCount and unreadCount in collections
   if (subscription.tags.length === 0) {
@@ -87,8 +86,6 @@ export function handleSubscriptionCreated(
  * - subscriptions collection (remove subscription)
  * - tags/uncategorized counts (feedCount + unreadCount)
  * - entries counts ("all")
- *
- * Also invalidates entries.list to refetch entry pages.
  */
 export function handleSubscriptionDeleted(
   utils: TRPCClientUtils,
@@ -123,8 +120,7 @@ export function handleSubscriptionDeleted(
   // Remove from collection
   removeSubscriptionFromCollection(collections ?? null, subscriptionId);
 
-  // Invalidate entries list - entries from this subscription should be filtered out
-  utils.entries.list.invalidate();
+  // Invalidate active entry view - entries from this subscription should be filtered out
   collections?.invalidateActiveView();
 }
 

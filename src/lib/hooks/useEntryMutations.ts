@@ -30,11 +30,9 @@ import {
   updateEntryScoreInCollection,
   zeroSubscriptionUnreadForMarkAllRead,
 } from "@/lib/collections/writes";
+import { type EntryType } from "@/lib/queries/entries-list-input";
 
-/**
- * Entry type for routing.
- */
-export type EntryType = "web" | "email" | "saved";
+export type { EntryType };
 
 /**
  * Options for the markAllRead mutation.
@@ -370,7 +368,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
   // markAllRead mutation - invalidates caches and refreshes counts
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
     onSuccess: (_data, variables) => {
-      utils.entries.list.invalidate();
       collections.invalidateActiveView();
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
