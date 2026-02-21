@@ -90,7 +90,7 @@ function EntryContentInner({
 
   // Check if algorithmic feed is enabled to decide whether to show vote controls
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
-  const algorithmicFeedEnabled = preferencesQuery.data?.algorithmicFeedEnabled ?? true;
+  const algorithmicFeedEnabled = preferencesQuery.data?.algorithmicFeedEnabled ?? false;
 
   // Get fetchFullContent setting directly from entry (included in entries.get response)
   // This avoids a separate subscriptions.get query

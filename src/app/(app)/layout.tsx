@@ -11,6 +11,7 @@
  * - entries.hasScoredEntries (sidebar "Best" link visibility)
  * - sync.cursors (lightweight max timestamps for SSE cursor initialization)
  * - summarization.isAvailable (for entry content summarization button)
+ * - users["me.preferences"] (for entry vote controls visibility)
  *
  * Note: entries.list is prefetched per-page in EntryListPage based on route-specific filters
  *
@@ -65,6 +66,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     trpc.entries.count.prefetch({ starredOnly: true }),
     trpc.entries.hasScoredEntries.prefetch(), // For sidebar "Best" link visibility
     trpc.summarization.isAvailable.prefetch(), // For entry content summarization button
+    trpc.users["me.preferences"].prefetch(), // For entry vote controls visibility
   ]);
   const initialCursors = await trpc.sync.cursors(); // Lightweight cursor-only query
 
