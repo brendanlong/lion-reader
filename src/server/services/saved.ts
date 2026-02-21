@@ -12,8 +12,9 @@ import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
-import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
+import { fetchHtmlPage, HttpFetchError, ContentTooLargeError } from "@/server/http/fetch";
 import { processMarkdown } from "@/server/markdown";
+import { usageLimitsConfig } from "@/server/config/env";
 import { wrapHtmlFragment } from "@/server/http/html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
@@ -339,6 +340,12 @@ export async function saveArticle(
     try {
       const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
       if (content) {
+        // Check plugin content size
+        const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+        if (content.html.length > maxSize) {
+          throw errors.contentTooLarge("Article", maxSize);
+        }
+
         pluginContent = {
           html: content.html,
           title: content.title,
@@ -394,6 +401,9 @@ export async function saveArticle(
         url: params.url,
         error: error instanceof Error ? error.message : String(error),
       });
+      if (error instanceof ContentTooLargeError) {
+        throw errors.contentTooLarge("Article", usageLimitsConfig.maxSavedArticleSizeBytes);
+      }
       if (error instanceof HttpFetchError && error.isBlocked()) {
         throw errors.siteBlocked(params.url, error.status);
       }
@@ -513,6 +523,12 @@ export async function createUploadedArticle(
   userId: string,
   params: CreateUploadedArticleParams
 ): Promise<SavedArticle> {
+  // Check content size
+  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+  if (params.contentHtml.length > maxSize) {
+    throw errors.contentTooLarge("Uploaded article", maxSize);
+  }
+
   // Get or create the user's saved feed
   const savedFeedId = await getOrCreateSavedFeed(db, userId);
 
@@ -559,6 +575,12 @@ export async function uploadArticle(
   userId: string,
   params: UploadArticleParams
 ): Promise<SavedArticle> {
+  // Check raw content size before processing
+  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+  if (params.content.length > maxSize) {
+    throw errors.contentTooLarge("Uploaded article", maxSize);
+  }
+
   // Convert markdown to HTML and extract title/summary/author from frontmatter or content
   const {
     html: contentCleaned,

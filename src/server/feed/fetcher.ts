@@ -6,6 +6,8 @@
 import { parseCacheHeaders, type ParsedCacheHeaders } from "./cache-headers";
 import { parseWebSubLinkHeaders, type WebSubLinkHeaders } from "./link-header";
 import { buildUserAgent } from "../http/user-agent";
+import { readResponseBufferWithSizeLimit, ContentTooLargeError } from "../http/fetch";
+import { usageLimitsConfig } from "../config/env";
 
 /**
  * Options for fetching a feed.
@@ -144,6 +146,17 @@ interface FetchTooManyRedirectsResult {
 }
 
 /**
+ * Result when the response body exceeds the maximum allowed size.
+ */
+interface FetchContentTooLargeResult {
+  status: "content_too_large";
+  /** The maximum allowed size in bytes */
+  maxBytes: number;
+  /** Error message */
+  message: string;
+}
+
+/**
  * All possible fetch results.
  */
 export type FetchFeedResult =
@@ -154,7 +167,8 @@ export type FetchFeedResult =
   | FetchServerErrorResult
   | FetchRateLimitedResult
   | FetchNetworkErrorResult
-  | FetchTooManyRedirectsResult;
+  | FetchTooManyRedirectsResult
+  | FetchContentTooLargeResult;
 
 /** Default request timeout in milliseconds */
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -403,9 +417,24 @@ export async function fetchFeed(
 
       // Handle success (200)
       if (response.status === 200) {
-        // Get raw bytes - allows caller to hash before expensive text decoding
-        const arrayBuffer = await response.arrayBuffer();
-        const body = Buffer.from(arrayBuffer);
+        // Get raw bytes with streaming size limit - prevents OOM from huge feeds
+        let body: Buffer;
+        try {
+          body = await readResponseBufferWithSizeLimit(
+            response,
+            usageLimitsConfig.maxFeedSizeBytes,
+            currentUrl
+          );
+        } catch (error) {
+          if (error instanceof ContentTooLargeError) {
+            return {
+              status: "content_too_large",
+              maxBytes: usageLimitsConfig.maxFeedSizeBytes,
+              message: error.message,
+            };
+          }
+          throw error;
+        }
         const contentType = response.headers.get("content-type") ?? "application/xml";
 
         // Parse Link headers for WebSub hub/self discovery (W3C WebSub spec §4)

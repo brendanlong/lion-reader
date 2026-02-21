@@ -107,6 +107,31 @@ export const githubConfig = {
   apiToken: process.env.GITHUB_API_TOKEN,
 };
 
+/**
+ * Usage limits configuration.
+ * These limits protect against abuse and prevent OOM from oversized content.
+ * All limits are configurable via environment variables.
+ */
+export const usageLimitsConfig = {
+  /** Maximum number of active subscriptions per user (default: 500). */
+  maxSubscriptionsPerUser: parseInt(process.env.MAX_SUBSCRIPTIONS_PER_USER || "500", 10),
+
+  /** Maximum feed response size in bytes (default: 10MB). Checked during streaming to avoid OOM. */
+  maxFeedSizeBytes: parseInt(process.env.MAX_FEED_SIZE_BYTES || String(10 * 1024 * 1024), 10),
+
+  /** Maximum number of entries to parse from a single feed (default: 100). */
+  maxFeedEntries: parseInt(process.env.MAX_FEED_ENTRIES || "100", 10),
+
+  /** Maximum saved article page size in bytes (default: 5MB). */
+  maxSavedArticleSizeBytes: parseInt(
+    process.env.MAX_SAVED_ARTICLE_SIZE_BYTES || String(5 * 1024 * 1024),
+    10
+  ),
+
+  /** Maximum email content size in bytes (default: 2MB). Emails larger than this are rejected. */
+  maxEmailSizeBytes: parseInt(process.env.MAX_EMAIL_SIZE_BYTES || String(2 * 1024 * 1024), 10),
+};
+
 export const storageConfig = {
   /** S3 bucket name for storing images */
   bucket: process.env.STORAGE_BUCKET,
