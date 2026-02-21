@@ -36,6 +36,8 @@ interface EntryListFallbackProps {
   selectedEntryId?: string | null;
   /** Callback when entry is clicked (disabled during fallback) */
   onEntryClick?: (entryId: string) => void;
+  /** Sort fallback data by predicted score (for algorithmic feed) */
+  sortByPredictedScore?: boolean;
 }
 
 /**
@@ -52,6 +54,7 @@ export function EntryListFallback({
   skeletonCount = 5,
   selectedEntryId,
   onEntryClick,
+  sortByPredictedScore = false,
 }: EntryListFallbackProps) {
   const queryClient = useQueryClient();
 
@@ -65,7 +68,16 @@ export function EntryListFallback({
   }
 
   // Show cached entries with a subtle loading indicator
-  const entries = placeholderData.pages.flatMap((page) => page.items);
+  let entries = placeholderData.pages.flatMap((page) => page.items);
+
+  // For algorithmic feed, sort by predicted score while loading
+  if (sortByPredictedScore) {
+    entries = [...entries].sort((a, b) => {
+      const scoreA = a.predictedScore ?? -Infinity;
+      const scoreB = b.predictedScore ?? -Infinity;
+      return scoreB - scoreA;
+    });
+  }
 
   return (
     <div className="space-y-3">

@@ -32,7 +32,7 @@ export interface ListEntriesParams {
   unreadOnly?: boolean;
   starredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
-  sortBy?: "published" | "readChanged"; // Which timestamp to sort by (default: published)
+  sortBy?: "published" | "readChanged" | "predictedScore"; // Which column to sort by (default: published)
   cursor?: string;
   limit?: number;
   showSpam: boolean;
@@ -72,6 +72,7 @@ export interface EntryListItem {
   siteName: string | null;
   score: number | null;
   implicitScore: number;
+  predictedScore: number | null;
 }
 
 export interface EntryFull {
@@ -180,6 +181,32 @@ function encodeCursor(ts: Date, entryId: string): string {
   return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
 }
 
+/**
+ * Cursor for score-based sorting where the sort value is a number, not a date.
+ */
+interface ScoreCursorData {
+  score: string; // Stringified number for consistent serialization
+  id: string;
+}
+
+function decodeScoreCursor(cursor: string): ScoreCursorData {
+  try {
+    const decoded = Buffer.from(cursor, "base64").toString("utf8");
+    const parsed = JSON.parse(decoded) as ScoreCursorData;
+    if (parsed.score === undefined || !parsed.id) {
+      throw new Error("Invalid cursor structure");
+    }
+    return parsed;
+  } catch {
+    throw errors.validation("Invalid cursor format");
+  }
+}
+
+function encodeScoreCursor(score: number, entryId: string): string {
+  const data: ScoreCursorData = { score: String(score), id: entryId };
+  return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
+}
+
 // ============================================================================
 // Service Functions
 // ============================================================================
@@ -231,6 +258,90 @@ export async function listEntries(
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
   conditions.push(...buildEntryFilterConditions(params));
 
+  // predictedScore sorting uses a different cursor and sort mechanism
+  if (params.sortBy === "predictedScore") {
+    // Sort by predicted score descending (highest first), with COALESCE to push nulls to end
+    const scoreColumn = sql`COALESCE(${visibleEntries.predictedScore}, -999)`;
+
+    // Cursor condition for score-based pagination
+    if (params.cursor) {
+      const { score: scoreStr, id } = decodeScoreCursor(params.cursor);
+      const cursorScore = parseFloat(scoreStr);
+      // Always descending for predicted score (highest first)
+      conditions.push(
+        sql`(${scoreColumn} < ${cursorScore} OR (${scoreColumn} = ${cursorScore} AND ${visibleEntries.id} < ${id}))`
+      );
+    }
+
+    const queryResults = await db
+      .select({
+        id: visibleEntries.id,
+        feedId: visibleEntries.feedId,
+        type: visibleEntries.type,
+        url: visibleEntries.url,
+        title: visibleEntries.title,
+        author: visibleEntries.author,
+        summary: visibleEntries.summary,
+        publishedAt: visibleEntries.publishedAt,
+        fetchedAt: visibleEntries.fetchedAt,
+        read: visibleEntries.read,
+        starred: visibleEntries.starred,
+        updatedAt: visibleEntries.updatedAt,
+        subscriptionId: visibleEntries.subscriptionId,
+        siteName: visibleEntries.siteName,
+        feedTitle: feeds.title,
+        score: visibleEntries.score,
+        hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+        hasMarkedUnread: visibleEntries.hasMarkedUnread,
+        hasStarred: visibleEntries.hasStarred,
+        readChangedAt: visibleEntries.readChangedAt,
+        predictedScore: visibleEntries.predictedScore,
+      })
+      .from(visibleEntries)
+      .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+      .where(and(...conditions))
+      .orderBy(desc(scoreColumn), desc(visibleEntries.id))
+      .limit(limit + 1);
+
+    const hasMore = queryResults.length > limit;
+    const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
+
+    const items = resultEntries.map((row) => ({
+      id: row.id,
+      subscriptionId: row.subscriptionId,
+      feedId: row.feedId,
+      type: row.type,
+      url: row.url,
+      title: row.title,
+      author: row.author,
+      summary: row.summary,
+      publishedAt: row.publishedAt,
+      fetchedAt: row.fetchedAt,
+      read: row.read,
+      starred: row.starred,
+      updatedAt: row.updatedAt,
+      feedTitle: row.feedTitle,
+      siteName: row.siteName,
+      score: row.score,
+      implicitScore: computeImplicitScore(
+        row.hasStarred,
+        row.hasMarkedUnread,
+        row.hasMarkedReadOnList,
+        row.type
+      ),
+      predictedScore: row.predictedScore,
+    }));
+
+    let nextCursor: string | undefined;
+    if (hasMore && resultEntries.length > 0) {
+      const lastEntry = resultEntries[resultEntries.length - 1];
+      const effectiveScore = lastEntry.predictedScore ?? -999;
+      nextCursor = encodeScoreCursor(effectiveScore, lastEntry.id);
+    }
+
+    return { items, nextCursor };
+  }
+
   // Sort column - readChanged sorts by when read state was last changed
   const sortColumn =
     params.sortBy === "readChanged"
@@ -280,6 +391,7 @@ export async function listEntries(
       hasMarkedUnread: visibleEntries.hasMarkedUnread,
       hasStarred: visibleEntries.hasStarred,
       readChangedAt: visibleEntries.readChangedAt,
+      predictedScore: visibleEntries.predictedScore,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -313,6 +425,7 @@ export async function listEntries(
       row.hasMarkedReadOnList,
       row.type
     ),
+    predictedScore: row.predictedScore,
   }));
 
   let nextCursor: string | undefined;
@@ -409,6 +522,7 @@ async function searchEntries(
       hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
       hasMarkedUnread: visibleEntries.hasMarkedUnread,
       hasStarred: visibleEntries.hasStarred,
+      predictedScore: visibleEntries.predictedScore,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -442,6 +556,7 @@ async function searchEntries(
       row.hasMarkedReadOnList,
       row.type
     ),
+    predictedScore: row.predictedScore,
   }));
 
   let nextCursor: string | undefined;

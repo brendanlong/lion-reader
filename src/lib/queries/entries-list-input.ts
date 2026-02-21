@@ -25,7 +25,7 @@ export interface EntriesListInput {
   unreadOnly: boolean;
   starredOnly: boolean | undefined;
   sortOrder: "newest" | "oldest";
-  sortBy: "published" | "readChanged" | undefined;
+  sortBy: "published" | "readChanged" | "predictedScore" | undefined;
   type: EntryType | undefined;
   limit: number;
   /**
@@ -45,7 +45,7 @@ export interface EntriesListFilters {
   uncategorized?: boolean;
   starredOnly?: boolean;
   type?: EntryType;
-  sortBy?: "published" | "readChanged";
+  sortBy?: "published" | "readChanged" | "predictedScore";
 }
 
 /**

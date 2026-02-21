@@ -633,6 +633,7 @@ interface EntryListItemForPlaceholder {
   siteName: string | null;
   score: number | null;
   implicitScore: number;
+  predictedScore: number | null;
 }
 
 /**
