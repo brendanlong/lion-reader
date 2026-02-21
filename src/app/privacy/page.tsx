@@ -175,7 +175,7 @@ export default function PrivacyPolicyPage() {
                     href="https://groq.com/privacy-policy/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ui-text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                    className="ui-text-sm text-accent hover:text-accent-hover"
                   >
                     View Groq&apos;s Privacy Policy &rarr;
                   </a>

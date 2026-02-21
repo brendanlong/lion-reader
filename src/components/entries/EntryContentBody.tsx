@@ -491,7 +491,7 @@ export function EntryContentBody({
                 fullContentError
                   ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950"
                   : fetchFullContent
-                    ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                    ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
                     : ""
               }
               aria-label={
@@ -538,7 +538,7 @@ export function EntryContentBody({
               disabled={isSummarizing}
               className={
                 showSummary && summary
-                  ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                  ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
                   : ""
               }
               aria-label={summary ? "Toggle summary" : "Generate AI summary"}

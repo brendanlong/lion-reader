@@ -85,7 +85,7 @@ export function StickyEntryControls({
           onClick={onToggleRead}
           className={`flex min-h-[36px] min-w-[36px] items-center justify-center rounded-full transition-colors ${
             !read
-              ? "text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950"
+              ? "text-accent hover:bg-accent-subtle"
               : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           }`}
           aria-label={read ? "Mark as unread" : "Mark as read"}
