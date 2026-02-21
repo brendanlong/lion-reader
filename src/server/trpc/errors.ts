@@ -47,6 +47,7 @@ const ErrorCodes = {
   INVITE_EXPIRED: "INVITE_EXPIRED",
   INVITE_ALREADY_USED: "INVITE_ALREADY_USED",
   MAX_INGEST_ADDRESSES_REACHED: "MAX_INGEST_ADDRESSES_REACHED",
+  SIGNUP_PROVIDER_NOT_ALLOWED: "SIGNUP_PROVIDER_NOT_ALLOWED",
 
   // Conflict errors (409)
   ALREADY_SUBSCRIBED: "ALREADY_SUBSCRIBED",
@@ -115,6 +116,7 @@ const errorCodeToTRPCCode: Record<
   INVITE_EXPIRED: "BAD_REQUEST",
   INVITE_ALREADY_USED: "BAD_REQUEST",
   MAX_INGEST_ADDRESSES_REACHED: "BAD_REQUEST",
+  SIGNUP_PROVIDER_NOT_ALLOWED: "FORBIDDEN",
   ALREADY_SUBSCRIBED: "CONFLICT",
   OAUTH_ALREADY_LINKED: "CONFLICT",
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
@@ -262,6 +264,13 @@ export const errors = {
         url,
         status,
       }
+    ),
+
+  // Signup provider restriction errors
+  signupProviderNotAllowed: (provider: string) =>
+    createError(
+      ErrorCodes.SIGNUP_PROVIDER_NOT_ALLOWED,
+      `Signup with ${provider} is not allowed on this server. Please use a different sign-in method.`
     ),
 
   // Invite errors

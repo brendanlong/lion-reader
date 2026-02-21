@@ -28,6 +28,7 @@ primary_region = "lax"
 
 [env]
   ALLOW_ALL_SIGNUPS = "false"
+  ALLOWED_SIGNUP_PROVIDERS = "apple,google"
   NEXT_PUBLIC_APP_URL = "https://lionreader.com"
   NODE_ENV = "production"
   PORT = "3000"

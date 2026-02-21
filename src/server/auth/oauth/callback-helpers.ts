@@ -25,22 +25,25 @@ export interface ClientInfo {
 }
 
 /**
- * Invite error codes that can be returned from processOAuthCallback
+ * Error codes from processOAuthCallback that should redirect to login with an error.
+ * Includes invite errors and signup provider restriction errors.
  */
-type InviteErrorCode =
+type SignupErrorCode =
   | "INVITE_REQUIRED"
   | "INVITE_INVALID"
   | "INVITE_EXPIRED"
-  | "INVITE_ALREADY_USED";
+  | "INVITE_ALREADY_USED"
+  | "SIGNUP_PROVIDER_NOT_ALLOWED";
 
 /**
- * Map of invite error codes to URL error parameters
+ * Map of signup error codes to URL error parameters
  */
-const INVITE_ERROR_MAP: Record<InviteErrorCode, string> = {
+const SIGNUP_ERROR_MAP: Record<SignupErrorCode, string> = {
   INVITE_REQUIRED: "invite_required",
   INVITE_INVALID: "invite_invalid",
   INVITE_EXPIRED: "invite_expired",
   INVITE_ALREADY_USED: "invite_already_used",
+  SIGNUP_PROVIDER_NOT_ALLOWED: "signup_provider_not_allowed",
 };
 
 // ============================================================================
@@ -66,7 +69,7 @@ function extractClientInfo(request: NextRequest): ClientInfo {
 
 /**
  * Extracts the error code from an error's cause, if present.
- * Used to detect invite-related errors from processOAuthCallback.
+ * Used to detect signup-related errors from processOAuthCallback.
  *
  * @param error - The error to extract the code from
  * @returns The error code, or undefined if not found
@@ -80,23 +83,24 @@ function getErrorCode(error: unknown): string | undefined {
 }
 
 /**
- * Checks if an error is an invite-related error and returns the appropriate redirect.
- * Returns null if the error is not invite-related.
+ * Checks if an error is a signup-related error (invite or provider restriction)
+ * and returns the appropriate redirect.
+ * Returns null if the error is not a recognized signup error.
  *
  * @param error - The error to check
  * @param appUrl - The base app URL for redirects
  * @param redirectStatus - HTTP status for redirect (default 302, use 303 for POST->GET)
- * @returns A redirect response if invite error, null otherwise
+ * @returns A redirect response if signup error, null otherwise
  */
-export function handleInviteError(
+export function handleSignupError(
   error: unknown,
   appUrl: string,
   redirectStatus?: number
 ): NextResponse | null {
   const errorCode = getErrorCode(error);
 
-  if (errorCode && errorCode in INVITE_ERROR_MAP) {
-    const urlError = INVITE_ERROR_MAP[errorCode as InviteErrorCode];
+  if (errorCode && errorCode in SIGNUP_ERROR_MAP) {
+    const urlError = SIGNUP_ERROR_MAP[errorCode as SignupErrorCode];
     return NextResponse.redirect(`${appUrl}/login?error=${urlError}`, redirectStatus);
   }
 

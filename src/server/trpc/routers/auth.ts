@@ -18,7 +18,7 @@ import {
 } from "../trpc";
 import { errors } from "../errors";
 import { users, oauthAccounts } from "@/server/db/schema";
-import { signupConfig } from "@/server/config/env";
+import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createSession, revokeSessionByToken } from "@/server/auth/session";
 import { getEnabledProviders } from "@/server/auth/oauth/config";
@@ -216,12 +216,13 @@ export const authRouter = createTRPCRouter({
 
       // Create user and session in a transaction
       const result = await ctx.db.transaction(async (tx) => {
-        // Create user (handles invite validation atomically)
+        // Create user (handles invite validation and provider restriction atomically)
         const user = await createUser(tx, {
           email,
           passwordHash,
           emailVerified: false,
           inviteToken,
+          provider: "email",
         });
 
         // Create session
@@ -777,11 +778,13 @@ export const authRouter = createTRPCRouter({
     .output(
       z.object({
         requiresInvite: z.boolean(),
+        allowedSignupProviders: z.array(z.enum(ALL_SIGNUP_PROVIDERS)),
       })
     )
     .query(() => {
       return {
         requiresInvite: !signupConfig.allowAllSignups,
+        allowedSignupProviders: [...signupConfig.allowedSignupProviders],
       };
     }),
 
