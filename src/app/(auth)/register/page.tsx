@@ -235,6 +235,10 @@ function RegisterForm() {
 
       <p className="ui-text-xs mt-4 text-center text-zinc-500 dark:text-zinc-400">
         By creating an account, you agree to our{" "}
+        <Link href="/terms" className="underline hover:text-zinc-700 dark:hover:text-zinc-300">
+          Terms of Service
+        </Link>{" "}
+        and{" "}
         <Link href="/privacy" className="underline hover:text-zinc-700 dark:hover:text-zinc-300">
           Privacy Policy
         </Link>
