@@ -637,7 +637,7 @@ export const entriesRouter = createTRPCRouter({
             and(
               eq(userEntries.userId, userId),
               inArray(userEntries.entryId, entryIds),
-              lte(userEntries.readChangedAt, changedAt)
+              sql`(${userEntries.readChangedAt} IS NULL OR ${userEntries.readChangedAt} <= ${changedAt})`
             )
           );
       }
@@ -744,7 +744,7 @@ export const entriesRouter = createTRPCRouter({
       const conditions: any[] = [
         eq(userEntries.userId, userId),
         eq(userEntries.read, false),
-        lte(userEntries.readChangedAt, changedAt),
+        sql`(${userEntries.readChangedAt} IS NULL OR ${userEntries.readChangedAt} <= ${changedAt})`,
       ];
 
       // Filter by subscriptionId - need to look up feed IDs first for validation
