@@ -92,7 +92,7 @@ function getErrorCode(error: unknown): string | undefined {
  * @param redirectStatus - HTTP status for redirect (default 302, use 303 for POST->GET)
  * @returns A redirect response if signup error, null otherwise
  */
-export function handleInviteError(
+export function handleSignupError(
   error: unknown,
   appUrl: string,
   redirectStatus?: number

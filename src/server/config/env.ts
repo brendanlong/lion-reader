@@ -9,16 +9,15 @@
  * - "email": Email/password signup
  * - "google", "apple", "discord": OAuth providers
  */
-export type SignupProvider = "email" | "google" | "apple" | "discord";
-
-const ALL_SIGNUP_PROVIDERS: SignupProvider[] = ["email", "google", "apple", "discord"];
+export const ALL_SIGNUP_PROVIDERS = ["email", "google", "apple", "discord"] as const;
+export type SignupProvider = (typeof ALL_SIGNUP_PROVIDERS)[number];
 
 /**
  * Parse ALLOWED_SIGNUP_PROVIDERS env var into a list of allowed providers.
  * Format: comma-separated list, e.g. "apple,google,email"
  * Default: all providers allowed (when env var is not set)
  */
-function parseAllowedSignupProviders(): SignupProvider[] {
+function parseAllowedSignupProviders(): readonly SignupProvider[] {
   const raw = process.env.ALLOWED_SIGNUP_PROVIDERS;
   if (!raw) return ALL_SIGNUP_PROVIDERS;
 

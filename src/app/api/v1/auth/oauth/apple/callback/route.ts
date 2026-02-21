@@ -20,7 +20,7 @@ import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
   createSessionResponse,
   createErrorRedirect,
-  handleInviteError,
+  handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
 
 // Apple uses POST with form_post response mode, so we need 303 status to convert POST to GET
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     console.error("Apple OAuth callback error:", error);
 
     // Check for invite-related errors
-    const inviteErrorResponse = handleInviteError(error, appUrl, REDIRECT_STATUS);
+    const inviteErrorResponse = handleSignupError(error, appUrl, REDIRECT_STATUS);
     if (inviteErrorResponse) {
       return inviteErrorResponse;
     }

@@ -28,7 +28,7 @@ import { oauthAccounts } from "@/server/db/schema";
 import {
   createSessionResponse,
   createErrorRedirect,
-  handleInviteError,
+  handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
 
 /**
@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
     console.error("Google OAuth callback error:", error);
 
     // Check for invite-related errors
-    const inviteErrorResponse = handleInviteError(error, appUrl);
+    const inviteErrorResponse = handleSignupError(error, appUrl);
     if (inviteErrorResponse) {
       return inviteErrorResponse;
     }
