@@ -24,7 +24,6 @@ interface BaseFeedEvent {
   timestamp: string;
   /** Database updated_at for cursor tracking (entries cursor) */
   updatedAt: string;
-  feedType?: "web" | "email" | "saved"; // Added to new_entry for cache updates
 }
 
 /**
@@ -32,6 +31,7 @@ interface BaseFeedEvent {
  */
 export interface NewEntryEvent extends BaseFeedEvent {
   type: "new_entry";
+  feedType: "web" | "email" | "saved";
 }
 
 /**
@@ -70,6 +70,7 @@ export interface SubscriptionCreatedEventSubscription {
   customTitle: string | null;
   subscribedAt: string; // ISO string for serialization
   unreadCount: number;
+  totalCount: number;
   tags: Array<{ id: string; name: string; color: string | null }>;
 }
 
@@ -170,6 +171,12 @@ export interface EntryStateChangedEvent {
   entryId: string;
   read: boolean;
   starred: boolean;
+  /** Subscription ID for count delta computation (null for saved/orphaned entries) */
+  subscriptionId: string | null;
+  /** Previous read state before this change, for computing count deltas */
+  previousRead: boolean;
+  /** Previous starred state before this change, for computing count deltas */
+  previousStarred: boolean;
   timestamp: string;
   /** Database updated_at for cursor tracking (entries cursor) */
   updatedAt: string;
@@ -326,7 +333,7 @@ export async function publishNewEntry(
   feedId: string,
   entryId: string,
   updatedAt: Date,
-  feedType?: "web" | "email" | "saved"
+  feedType: "web" | "email" | "saved"
 ): Promise<number> {
   const event: NewEntryEvent = {
     type: "new_entry",
@@ -545,6 +552,9 @@ export async function publishImportCompleted(
  * @param read - Current read state
  * @param starred - Current starred state
  * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @param subscriptionId - The subscription ID (null for saved/orphaned entries)
+ * @param previousRead - The read state before this change
+ * @param previousStarred - The starred state before this change
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishEntryStateChanged(
@@ -552,7 +562,10 @@ export async function publishEntryStateChanged(
   entryId: string,
   read: boolean,
   starred: boolean,
-  updatedAt: Date
+  updatedAt: Date,
+  subscriptionId: string | null,
+  previousRead: boolean,
+  previousStarred: boolean
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -564,6 +577,9 @@ export async function publishEntryStateChanged(
     entryId,
     read,
     starred,
+    subscriptionId,
+    previousRead,
+    previousStarred,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
@@ -785,6 +801,7 @@ export function parseUserEvent(message: string): UserEvent | null {
           (sub.customTitle !== null && typeof sub.customTitle !== "string") ||
           typeof sub.subscribedAt !== "string" ||
           typeof sub.unreadCount !== "number" ||
+          typeof sub.totalCount !== "number" ||
           !Array.isArray(sub.tags)
         ) {
           return null;
@@ -815,6 +832,7 @@ export function parseUserEvent(message: string): UserEvent | null {
             customTitle: sub.customTitle as string | null,
             subscribedAt: sub.subscribedAt,
             unreadCount: sub.unreadCount,
+            totalCount: sub.totalCount as number,
             tags: sub.tags as Array<{ id: string; name: string; color: string | null }>,
           },
           feed: {
@@ -903,7 +921,9 @@ export function parseUserEvent(message: string): UserEvent | null {
         typeof event.read === "boolean" &&
         typeof event.starred === "boolean" &&
         typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string"
+        typeof event.updatedAt === "string" &&
+        typeof event.previousRead === "boolean" &&
+        typeof event.previousStarred === "boolean"
       ) {
         return {
           type: "entry_state_changed",
@@ -911,6 +931,9 @@ export function parseUserEvent(message: string): UserEvent | null {
           entryId: event.entryId,
           read: event.read,
           starred: event.starred,
+          subscriptionId: typeof event.subscriptionId === "string" ? event.subscriptionId : null,
+          previousRead: event.previousRead,
+          previousStarred: event.previousStarred,
           timestamp: event.timestamp,
           updatedAt: event.updatedAt,
         };

@@ -10,6 +10,8 @@
 import { useState, useRef, useCallback, type ChangeEvent, type DragEvent } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
+import { adjustEntriesCountInCollection } from "@/lib/collections/writes";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icon-button";
@@ -66,13 +68,14 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const utils = trpc.useUtils();
+  const collections = useCollections();
   const uploadMutation = trpc.saved.uploadFile.useMutation({
     onSuccess: () => {
       toast.success("File uploaded successfully");
-      // Invalidate queries to refresh the saved list and count
-      utils.entries.list.invalidate({ type: "saved" });
-      utils.entries.count.invalidate({ type: "saved" });
+      // Invalidate active entry view and update counts in collection
+      collections.invalidateActiveView();
+      adjustEntriesCountInCollection(collections, "saved", 1, 1);
+      adjustEntriesCountInCollection(collections, "all", 1, 1);
       onSuccess?.();
       handleClose();
     },

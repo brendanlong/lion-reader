@@ -59,6 +59,10 @@ src/server/
   plugins/       # Content source plugins (LessWrong, Google Docs, ArXiv, GitHub)
   mcp/           # MCP server
 src/lib/         # Shared utilities (client and server)
+  collections/   # TanStack DB collections (primary client state store)
+  hooks/         # Custom React hooks
+  cache/         # SSE event handlers and collection update operations
+  trpc/          # tRPC clients (React, vanilla, server, query-client)
 src/components/  # React components
 src/app/         # Next.js routes
 tests/unit/      # Pure logic tests (no mocks, no DB)

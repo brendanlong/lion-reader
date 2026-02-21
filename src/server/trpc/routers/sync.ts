@@ -848,6 +848,30 @@ export const syncRouter = createTRPCRouter({
           }
         }
 
+        // Batch-fetch total entry counts for all active subscriptions
+        const totalBySubscription = new Map<string, number>();
+        if (activeSubscriptions.length > 0) {
+          const totalResults = await Promise.all(
+            activeSubscriptions.map(async ({ subscription }) => {
+              const result = await ctx.db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(userEntries)
+                .innerJoin(entries, eq(entries.id, userEntries.entryId))
+                .where(
+                  and(
+                    eq(userEntries.userId, userId),
+                    sql`${entries.feedId} = ANY(${subscription.feedIds})`
+                  )
+                );
+              return { subscriptionId: subscription.id, count: result[0]?.count ?? 0 };
+            })
+          );
+
+          for (const { subscriptionId, count } of totalResults) {
+            totalBySubscription.set(subscriptionId, count);
+          }
+        }
+
         for (const { subscription, feed } of subscriptionResults) {
           if (subscription.unsubscribedAt === null) {
             allEvents.push({
@@ -862,6 +886,7 @@ export const syncRouter = createTRPCRouter({
                 customTitle: subscription.customTitle,
                 subscribedAt: subscription.subscribedAt.toISOString(),
                 unreadCount: unreadBySubscription.get(subscription.id) ?? 0,
+                totalCount: totalBySubscription.get(subscription.id) ?? 0,
                 tags: tagsBySubscription.get(subscription.id) ?? [],
               },
               feed: {

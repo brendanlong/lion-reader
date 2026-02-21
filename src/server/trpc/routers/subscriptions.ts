@@ -76,6 +76,7 @@ const subscriptionOutputSchema = z.object({
   siteUrl: z.string().nullable(),
   subscribedAt: z.date(),
   unreadCount: z.number(),
+  totalCount: z.number(),
   tags: z.array(tagOutputSchema),
   fetchFullContent: z.boolean(), // whether to fetch full article content from URL
 });
@@ -294,6 +295,7 @@ async function subscribeToExistingFeed(
     customTitle: null,
     subscribedAt: result.subscribedAt.toISOString(),
     unreadCount: result.unreadCount,
+    totalCount: result.unreadCount, // at creation time, total === unread
     tags: [] as Array<{ id: string; name: string; color: string | null }>,
   };
 
@@ -319,6 +321,7 @@ async function subscribeToExistingFeed(
     siteUrl: feedRecord.siteUrl,
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
+    totalCount: result.unreadCount, // at creation time, total === unread
     tags: [] as Array<{ id: string; name: string; color: string | null }>,
     fetchFullContent: false, // default for new subscriptions
   };
@@ -475,6 +478,7 @@ async function subscribeToNewOrUnfetchedFeed(
     customTitle: null,
     subscribedAt: result.subscribedAt.toISOString(),
     unreadCount: result.unreadCount,
+    totalCount: result.unreadCount, // at creation time, total === unread
     tags: [] as Array<{ id: string; name: string; color: string | null }>,
   };
 
@@ -500,6 +504,7 @@ async function subscribeToNewOrUnfetchedFeed(
     siteUrl: feedRecord.siteUrl,
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
+    totalCount: result.unreadCount, // at creation time, total === unread
     tags: [] as Array<{ id: string; name: string; color: string | null }>,
     fetchFullContent: false, // default for new subscriptions
   };
@@ -735,6 +740,10 @@ export const subscriptionsRouter = createTRPCRouter({
           unreadCount: sql<number>`
             COUNT(${entries.id}) FILTER (WHERE ${userEntries.read} = false)::int
           `,
+          // Total entry count from user_entries
+          totalCount: sql<number>`
+            COUNT(${entries.id}) FILTER (WHERE ${userEntries.userId} IS NOT NULL)::int
+          `,
         })
         .from(feeds)
         .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscription.id))
@@ -755,6 +764,7 @@ export const subscriptionsRouter = createTRPCRouter({
 
       const subscriptionTagsList = result.tags;
       const unreadCount = result.unreadCount;
+      const totalCount = result.totalCount;
 
       // Return flat format
       return {
@@ -767,6 +777,7 @@ export const subscriptionsRouter = createTRPCRouter({
         siteUrl: result.siteUrl,
         subscribedAt: subscription.subscribedAt,
         unreadCount,
+        totalCount,
         tags: subscriptionTagsList,
         fetchFullContent: subscription.fetchFullContent,
       };

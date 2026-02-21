@@ -311,7 +311,7 @@ CREATE TABLE public.user_entries (
     read boolean DEFAULT false NOT NULL,
     starred boolean DEFAULT false NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    read_changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    read_changed_at timestamp with time zone,
     starred_changed_at timestamp with time zone DEFAULT now() NOT NULL,
     score smallint,
     score_changed_at timestamp with time zone,

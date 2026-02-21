@@ -10,8 +10,11 @@
 import { useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useUrlViewPreferences } from "./useUrlViewPreferences";
-import { buildEntriesListInput, type EntriesListInput } from "@/lib/queries/entries-list-input";
-import { type EntryType } from "./useEntryMutations";
+import {
+  buildEntriesListInput,
+  type EntriesListInput,
+  type EntryType,
+} from "@/lib/queries/entries-list-input";
 
 /**
  * Route filters derived from the current pathname.

@@ -379,18 +379,18 @@ export async function GET(req: Request): Promise<Response> {
             const subscriptionId = feedSubscriptionMap.get(event.feedId) ?? null;
 
             // Transform event to use subscriptionId instead of feedId
-            // Include metadata for entry_updated events to enable direct cache updates
+            // Include type-specific fields for direct cache updates
             const clientEvent: Record<string, unknown> = {
               type: event.type,
               subscriptionId,
               entryId: event.entryId,
               timestamp: event.timestamp,
               updatedAt: event.updatedAt, // Database updated_at for cursor tracking
-              feedType: event.feedType,
             };
 
-            // Include metadata for entry_updated events
-            if (event.type === "entry_updated") {
+            if (event.type === "new_entry") {
+              clientEvent.feedType = event.feedType;
+            } else if (event.type === "entry_updated") {
               clientEvent.metadata = event.metadata;
             }
 

@@ -14,22 +14,40 @@
 
 "use client";
 
-import { Suspense, useMemo, useEffect, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
+import dynamic from "next/dynamic";
+import { EntryPageLayout, TitleSkeleton } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
-import { SuspendingEntryList } from "./SuspendingEntryList";
-import { EntryListFallback } from "./EntryListFallback";
+import { EntryListSkeleton } from "./EntryListSkeleton";
+
+// SuspendingEntryList uses useLiveInfiniteQuery (TanStack DB) which calls useSyncExternalStore
+// without getServerSnapshot, causing SSR to crash. Disable SSR since the on-demand
+// collection is client-only state.
+const SuspendingEntryList = dynamic(
+  () => import("./SuspendingEntryList").then((m) => m.SuspendingEntryList),
+  { ssr: false, loading: () => <EntryListSkeleton count={5} /> }
+);
+// EntryListTitle uses useLiveQuery for reactive collection reads, which also
+// uses useSyncExternalStore without getServerSnapshot. Disable SSR.
+const EntryListTitle = dynamic(() => import("./EntryListTitle").then((m) => m.EntryListTitle), {
+  ssr: false,
+  loading: () => <TitleSkeleton />,
+});
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
-import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
-import { findCachedSubscription } from "@/lib/cache/count-cache";
-import { type EntryType } from "@/lib/hooks/useEntryMutations";
+import { useCollections } from "@/lib/collections/context";
+import { upsertSubscriptionsInCollection } from "@/lib/collections/writes";
+import {
+  createEntryNavigationStore,
+  EntryNavigationProvider,
+  useEntryNavigationState,
+} from "@/lib/hooks/useEntryNavigation";
+import { type EntryType } from "@/lib/queries/entries-list-input";
 
 /**
  * Route info derived from the current pathname.
@@ -223,114 +241,31 @@ function useRouteInfo(): RouteInfo {
 }
 
 /**
- * Title component for subscription pages.
- * Uses useSuspenseQuery so it suspends until data is available.
- */
-function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
-  const [subscription] = trpc.subscriptions.get.useSuspenseQuery({ id: subscriptionId });
-  if (!subscription) {
-    // This shouldn't happen with suspense, but handle it gracefully
-    return <TitleText>Untitled Feed</TitleText>;
-  }
-  return (
-    <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
-  );
-}
-
-/**
- * Title component for tag pages.
- * Uses useSuspenseQuery so it suspends until data is available.
- */
-function TagTitle({ tagId }: { tagId: string }) {
-  const [tagsData] = trpc.tags.list.useSuspenseQuery();
-  const tag = tagsData?.items.find((t) => t.id === tagId);
-  return <TitleText>{tag?.name ?? "Unknown Tag"}</TitleText>;
-}
-
-/**
- * Title component that handles all route types.
- * Static titles render immediately; dynamic titles suspend until data loads.
- */
-function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
-  // Static title - render immediately
-  if (routeInfo.title !== null) {
-    return <TitleText>{routeInfo.title}</TitleText>;
-  }
-
-  // Subscription title - suspends until subscription data loads
-  if (routeInfo.subscriptionId) {
-    return <SubscriptionTitle subscriptionId={routeInfo.subscriptionId} />;
-  }
-
-  // Tag title - suspends until tags data loads
-  if (routeInfo.tagId) {
-    return <TagTitle tagId={routeInfo.tagId} />;
-  }
-
-  return <TitleText>All Items</TitleText>;
-}
-
-/**
- * Smart title fallback that tries to show cached title instead of skeleton.
- * Used as the Suspense fallback for the title slot.
- */
-function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
-  const utils = trpc.useUtils();
-  const queryClient = useQueryClient();
-
-  // Static title - render immediately (shouldn't suspend anyway, but handle it)
-  if (routeInfo.title !== null) {
-    return <TitleText>{routeInfo.title}</TitleText>;
-  }
-
-  // Subscription title from cache
-  if (routeInfo.subscriptionId) {
-    const subscription = findCachedSubscription(utils, queryClient, routeInfo.subscriptionId);
-    if (subscription) {
-      return (
-        <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
-      );
-    }
-    return <TitleSkeleton />;
-  }
-
-  // Tag title from cache
-  if (routeInfo.tagId) {
-    const tagsData = utils.tags.list.getData();
-    const tag = tagsData?.items.find((t) => t.id === routeInfo.tagId);
-    if (tag) {
-      return <TitleText>{tag.name}</TitleText>;
-    }
-    return <TitleSkeleton />;
-  }
-
-  return <TitleText>All Items</TitleText>;
-}
-
-/**
  * Inner content component that renders based on route.
- * Entry content and entry list have independent Suspense boundaries.
+ * Titles read from TanStack DB collections; entry list handles its own loading.
  */
 function UnifiedEntriesContentInner() {
   const routeInfo = useRouteInfo();
   const { showUnreadOnly } = useUrlViewPreferences();
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
-  // Get query input based on current URL - shared with SuspendingEntryList
-  const queryInput = useEntriesListInput();
+  // Navigation state published by SuspendingEntryList via useEntryNavigationUpdater
+  const { nextEntryId, previousEntryId } = useEntryNavigationState();
 
-  // Non-suspending query for navigation - shares cache with SuspendingEntryList
-  const entriesQuery = trpc.entries.list.useInfiniteQuery(queryInput, {
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-  });
+  const collections = useCollections();
 
-  // Fetch subscription data for validation
+  // Fetch subscription data for validation and to populate the collection for title display
   const subscriptionQuery = trpc.subscriptions.get.useQuery(
     { id: routeInfo.subscriptionId ?? "" },
     { enabled: !!routeInfo.subscriptionId }
   );
+
+  // Upsert subscription into collection so the title renders from the collection
+  useEffect(() => {
+    if (subscriptionQuery.data) {
+      upsertSubscriptionsInCollection(collections, [subscriptionQuery.data]);
+    }
+  }, [collections, subscriptionQuery.data]);
 
   // Fetch tag data for validation and empty message customization
   const tagsQuery = trpc.tags.list.useQuery(undefined, {
@@ -376,42 +311,6 @@ function UnifiedEntriesContentInner() {
     return options;
   }, [routeInfo.filters]);
 
-  // Get adjacent entry IDs from query data for navigation
-  // Also compute distance to end for pagination triggering
-  const pages = entriesQuery.data?.pages;
-  const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(() => {
-    if (!openEntryId || !pages) {
-      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
-    }
-    const allEntries = pages.flatMap((page) => page.items);
-    const currentIndex = allEntries.findIndex((e) => e.id === openEntryId);
-    if (currentIndex === -1) {
-      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
-    }
-    return {
-      nextEntryId:
-        currentIndex < allEntries.length - 1 ? allEntries[currentIndex + 1].id : undefined,
-      previousEntryId: currentIndex > 0 ? allEntries[currentIndex - 1].id : undefined,
-      distanceToEnd: allEntries.length - 1 - currentIndex,
-    };
-  }, [openEntryId, pages]);
-
-  // Trigger pagination when navigating close to the end of loaded entries
-  // This ensures swipe navigation can continue beyond the initial page
-  const prevDistanceToEnd = useRef(distanceToEnd);
-  useEffect(() => {
-    const PAGINATION_THRESHOLD = 3;
-    if (
-      distanceToEnd <= PAGINATION_THRESHOLD &&
-      distanceToEnd < prevDistanceToEnd.current &&
-      entriesQuery.hasNextPage &&
-      !entriesQuery.isFetchingNextPage
-    ) {
-      entriesQuery.fetchNextPage();
-    }
-    prevDistanceToEnd.current = distanceToEnd;
-  }, [distanceToEnd, entriesQuery]);
-
   // Navigation callbacks - just update URL, React re-renders
   const handleSwipeNext = useMemo(() => {
     if (!nextEntryId) return undefined;
@@ -444,12 +343,8 @@ function UnifiedEntriesContentInner() {
     );
   }
 
-  // Title has its own Suspense boundary with smart fallback that uses cache
-  const titleSlot = (
-    <Suspense fallback={<TitleFallback routeInfo={routeInfo} />}>
-      <EntryListTitle routeInfo={routeInfo} />
-    </Suspense>
-  );
+  // Title reactively reads from collections via useLiveQuery
+  const titleSlot = <EntryListTitle routeInfo={routeInfo} />;
 
   // Entry content - has its own internal Suspense boundary
   const entryContentSlot = openEntryId ? (
@@ -464,31 +359,14 @@ function UnifiedEntriesContentInner() {
     />
   ) : null;
 
-  // Entry list - has its own Suspense boundary
+  // Entry list - SuspendingEntryList handles its own loading state;
+  // the dynamic() import's loading prop covers the chunk load.
   const entryListSlot = (
-    <Suspense
-      fallback={
-        <EntryListFallback
-          filters={{
-            subscriptionId: queryInput.subscriptionId,
-            tagId: queryInput.tagId,
-            uncategorized: queryInput.uncategorized,
-            starredOnly: queryInput.starredOnly,
-            type: queryInput.type,
-            unreadOnly: queryInput.unreadOnly,
-            sortOrder: queryInput.sortOrder,
-          }}
-          skeletonCount={5}
-          sortByPredictedScore={routeInfo.viewId === "best"}
-        />
+    <SuspendingEntryList
+      emptyMessage={
+        showUnreadOnly ? emptyMessages.emptyMessageUnread : emptyMessages.emptyMessageAll
       }
-    >
-      <SuspendingEntryList
-        emptyMessage={
-          showUnreadOnly ? emptyMessages.emptyMessageUnread : emptyMessages.emptyMessageAll
-        }
-      />
-    </Suspense>
+    />
   );
 
   return (
@@ -511,14 +389,17 @@ function UnifiedEntriesContentInner() {
  * to determine what to render. When navigation happens via pushState, usePathname()
  * updates and this component re-renders with the appropriate content.
  *
- * Note: No outer Suspense needed because UnifiedEntriesContentInner uses only
- * non-suspending queries. All suspending queries are inside child components
- * with their own Suspense boundaries (title, entry list, entry content).
+ * Provides EntryNavigationProvider so SuspendingEntryList can publish
+ * next/previous entry IDs for swipe gesture navigation in EntryContent.
  */
 export function UnifiedEntriesContent() {
+  const [navigationStore] = useState(createEntryNavigationStore);
+
   return (
     <ErrorBoundary message="Failed to load entries">
-      <UnifiedEntriesContentInner />
+      <EntryNavigationProvider value={navigationStore}>
+        <UnifiedEntriesContentInner />
+      </EntryNavigationProvider>
     </ErrorBoundary>
   );
 }

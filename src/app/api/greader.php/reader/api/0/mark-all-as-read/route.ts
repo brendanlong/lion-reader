@@ -55,7 +55,7 @@ export async function POST(request: Request): Promise<Response> {
   const conditions: SQL[] = [
     eq(userEntries.userId, userId),
     eq(userEntries.read, false),
-    lte(userEntries.readChangedAt, now),
+    sql`(${userEntries.readChangedAt} IS NULL OR ${userEntries.readChangedAt} <= ${now})`,
   ];
 
   // Add timestamp filter if provided

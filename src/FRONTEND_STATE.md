@@ -24,24 +24,11 @@ The frontend uses React Query (via tRPC) for server state management with a hybr
 
 Centralized helpers in `src/lib/cache/` ensure consistent updates across the codebase:
 
-### Entry Cache (`entry-cache.ts`)
-
-| Function                   | Purpose                                                       |
-| -------------------------- | ------------------------------------------------------------- |
-| `updateEntriesReadStatus`  | Updates `entries.get` cache + `entries.list` in-place         |
-| `updateEntryStarredStatus` | Updates `entries.get` cache + `entries.list` in-place         |
-| `updateEntryScoreInCache`  | Updates score/implicitScore in `entries.get` + `entries.list` |
-
 ### Count Cache (`count-cache.ts`)
 
-| Function                              | Purpose                                                |
-| ------------------------------------- | ------------------------------------------------------ |
-| `adjustSubscriptionUnreadCounts`      | Directly updates unread counts in `subscriptions.list` |
-| `adjustTagUnreadCounts`               | Directly updates unread counts in `tags.list`          |
-| `adjustEntriesCount`                  | Directly updates `entries.count` cache                 |
-| `addSubscriptionToCache`              | Adds new subscription to `subscriptions.list`          |
-| `removeSubscriptionFromCache`         | Removes subscription from `subscriptions.list`         |
-| `calculateTagDeltasFromSubscriptions` | Calculates tag deltas from subscription deltas         |
+| Function                              | Purpose                                                      |
+| ------------------------------------- | ------------------------------------------------------------ |
+| `calculateTagDeltasFromSubscriptions` | Calculates tag deltas from subscription deltas (collections) |
 
 ## Queries
 
@@ -109,14 +96,14 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Entry Mutations
 
-| Mutation                   | Used In             | Cache Updates                                                                                                                                    |
-| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `subscriptions.list` counts, `tags.list` counts, entry scores. Server returns absolute counts. |
-| `entries.markAllRead`      | `useEntryMutations` | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count` (bulk operation, direct update not practical)                     |
-| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.          |
-| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.          |
-| `entries.setScore`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), entry scores                                                                                   |
-| `entries.fetchFullContent` | `EntryContent`      | Invalidate: `entries.get({ id })`                                                                                                                |
+| Mutation                   | Used In             | Cache Updates                                                                                                                                                               |
+| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `subscriptions.list` counts, `tags.list` counts, entry scores. Server returns absolute counts.                            |
+| `entries.markAllRead`      | `useEntryMutations` | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count`. Direct: subscription unread counts zeroed in collection (by subscriptionId, tagId, or all). |
+| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.                                     |
+| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.                                     |
+| `entries.setScore`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), entry scores                                                                                                              |
+| `entries.fetchFullContent` | `EntryContent`      | Invalidate: `entries.get({ id })`                                                                                                                                           |
 
 ### Subscription Mutations
 
@@ -165,11 +152,11 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 The `useRealtimeUpdates` hook manages SSE connections and updates caches.
 
-**Key principle:** Direct cache updates where possible, invalidation only when necessary. `entries.list` is NOT invalidated for new entries - users see new entries when they navigate (sidebar counts update immediately).
+**Key principle:** Direct cache updates where possible, invalidation only when necessary. The active view collection is invalidated on new entries, subscription deletes, and navigation so the entry list stays current.
 
 | SSE Event              | Cache Updates                                                                                                                                     |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `new_entry`            | Direct: `subscriptions.list` unreadCount, `tags.list` unreadCount, `entries.count`. Does NOT invalidate `entries.list`.                           |
+| `new_entry`            | Direct: `subscriptions.list` unreadCount, `tags.list` unreadCount, `entries.count`. Invalidates active view collection so new entries appear.     |
 | `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). No invalidation - avoids race condition when viewing. |
 | `subscription_created` | Direct: add to `subscriptions.list`, update `tags.list` feedCount/unreadCount, update `entries.count`.                                            |
 | `subscription_deleted` | Direct: remove from `subscriptions.list`, update `tags.list`, update `entries.count`. Invalidate: `entries.list`.                                 |
@@ -309,10 +296,8 @@ Returns the updated entry with score fields:
 
 | File                                               | Purpose                                           |
 | -------------------------------------------------- | ------------------------------------------------- |
-| `src/lib/cache/index.ts`                           | Cache helper exports                              |
 | `src/lib/cache/operations.ts`                      | High-level cache operations (primary API)         |
-| `src/lib/cache/entry-cache.ts`                     | Low-level entry cache update helpers              |
-| `src/lib/cache/count-cache.ts`                     | Low-level subscription/tag count update helpers   |
+| `src/lib/cache/count-cache.ts`                     | Tag delta calculation from subscription deltas    |
 | `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with cache updates                |
 | `src/lib/hooks/useRealtimeUpdates.ts`              | SSE connection and cache updates                  |
 | `src/lib/hooks/useKeyboardShortcuts.ts`            | Keyboard navigation and entry selection           |

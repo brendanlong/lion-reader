@@ -12,8 +12,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { findEntryInListCache } from "@/lib/cache/entry-cache";
+import { useCollections } from "@/lib/collections/context";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { trpc } from "@/lib/trpc/client";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
@@ -49,10 +48,10 @@ function ButtonShimmer({ width = "w-24" }: { width?: string }) {
  * Star and Read buttons are functional via optimistic updates.
  */
 export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackProps) {
-  const queryClient = useQueryClient();
+  const collections = useCollections();
 
-  // Try to find cached entry data from list queries
-  const cachedEntry = findEntryInListCache(queryClient, entryId);
+  // O(1) lookup from entries collection (populated by SuspendingEntryList)
+  const cachedEntry = collections.entries.get(entryId) ?? null;
 
   // Check if algorithmic feed is enabled to decide whether to show vote controls
   const preferencesQuery = trpc.users["me.preferences"].useQuery();

@@ -390,6 +390,12 @@ export async function listEntries(
       ? visibleEntries.readChangedAt
       : sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
 
+  // When sorting by readChanged, only show entries the user has explicitly
+  // toggled read/unread. readChangedAt is NULL for entries never interacted with.
+  if (params.sortBy === "readChanged") {
+    conditions.push(sql`${visibleEntries.readChangedAt} IS NOT NULL`);
+  }
+
   // Cursor condition
   if (params.cursor) {
     const { ts, id } = decodeCursor(params.cursor);
@@ -450,7 +456,7 @@ export async function listEntries(
     const lastEntry = resultEntries[resultEntries.length - 1];
     const lastTs =
       params.sortBy === "readChanged"
-        ? lastEntry.readChangedAt
+        ? lastEntry.readChangedAt! // non-null: filtered by IS NOT NULL above
         : (lastEntry.publishedAt ?? lastEntry.fetchedAt);
     nextCursor = encodeCursor(lastTs, lastEntry.id);
   }
@@ -651,7 +657,7 @@ export async function markEntriesRead(
       and(
         eq(userEntries.userId, userId),
         inArray(userEntries.entryId, entryIds),
-        lte(userEntries.readChangedAt, changedAt)
+        sql`(${userEntries.readChangedAt} IS NULL OR ${userEntries.readChangedAt} <= ${changedAt})`
       )
     );
 

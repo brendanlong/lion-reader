@@ -609,7 +609,7 @@ export const userEntries = pgTable(
 
     // Timestamps for idempotent updates - tracks when each field was last set
     // Used for conditional updates: only apply if incoming timestamp is newer
-    readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull().defaultNow(),
+    readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
     starredChangedAt: timestamp("starred_changed_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -703,7 +703,7 @@ export const visibleEntries = pgView("visible_entries", {
   predictedScore: real("predicted_score"), // ML-predicted score, nullable
   predictionConfidence: real("prediction_confidence"), // confidence of prediction, nullable
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
-  readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull(),
+  readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
 }).existing();
 
 // ============================================================================

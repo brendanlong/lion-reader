@@ -1599,6 +1599,7 @@ export async function handleProcessOpmlImport(
             customTitle: null,
             subscribedAt: subscriptionResult.subscribedAt.toISOString(),
             unreadCount: subscriptionResult.unreadCount,
+            totalCount: subscriptionResult.unreadCount, // at import time, total === unread
             tags: subscriptionTagsList,
           },
           {

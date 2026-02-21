@@ -14,6 +14,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
+import { refreshGlobalCounts } from "@/lib/cache/operations";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icon-button";
@@ -87,6 +89,7 @@ function ImportSection() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
+  const collections = useCollections();
 
   // Query to poll for import status when importing
   const importQuery = trpc.imports.get.useQuery(
@@ -122,7 +125,7 @@ function ImportSection() {
     return baseState;
   })();
 
-  // Invalidate subscriptions when import completes
+  // Invalidate subscriptions and refresh counts when import completes
   const prevCompleted = useRef(false);
   useEffect(() => {
     const isCompleted = importState.type === "complete" && baseState.type === "importing";
@@ -130,7 +133,7 @@ function ImportSection() {
       prevCompleted.current = true;
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
-      utils.entries.count.invalidate();
+      refreshGlobalCounts(utils, collections);
     } else if (baseState.type !== "importing") {
       prevCompleted.current = false;
     }
@@ -139,7 +142,8 @@ function ImportSection() {
     baseState.type,
     utils.subscriptions.list,
     utils.tags.list,
-    utils.entries.count,
+    utils,
+    collections,
   ]);
 
   const importMutation = trpc.subscriptions.import.useMutation({

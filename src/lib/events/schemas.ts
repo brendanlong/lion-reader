@@ -47,6 +47,7 @@ export const subscriptionCreatedDataSchema = z.object({
   customTitle: z.string().nullable(),
   subscribedAt: z.string(),
   unreadCount: z.number(),
+  totalCount: z.number(),
   tags: z.array(syncTagSchema),
 });
 
@@ -92,7 +93,7 @@ export const newEntryEventSchema = z.object({
   entryId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
-  feedType: z.enum(["web", "email", "saved"]).optional(),
+  feedType: z.enum(["web", "email", "saved"]),
 });
 
 export const entryUpdatedEventSchema = z.object({
@@ -109,6 +110,12 @@ export const entryStateChangedEventSchema = z.object({
   entryId: z.string(),
   read: z.boolean(),
   starred: z.boolean(),
+  /** Subscription ID for count delta computation (null for saved/orphaned entries) */
+  subscriptionId: z.string().nullable().optional(),
+  /** Previous read state before this change (absent in sync polling events) */
+  previousRead: z.boolean().optional(),
+  /** Previous starred state before this change (absent in sync polling events) */
+  previousStarred: z.boolean().optional(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });
@@ -213,11 +220,28 @@ export const syncEventSchema = z.union([
   importCompletedEventSchema,
 ]);
 
+// ============================================================================
+// Inferred Types
+// ============================================================================
+
 /**
- * The inferred TypeScript type for sync events.
- * Use this instead of manually maintaining interface types.
+ * Union type for all sync events, inferred from the Zod schema.
  */
 export type SyncEvent = z.infer<typeof syncEventSchema>;
+
+/**
+ * Individual event types for consumers that need to narrow on specific events.
+ */
+export type NewEntryEvent = z.infer<typeof newEntryEventSchema>;
+export type EntryUpdatedEvent = z.infer<typeof entryUpdatedEventSchema>;
+export type EntryStateChangedEvent = z.infer<typeof entryStateChangedEventSchema>;
+export type SubscriptionCreatedEvent = z.infer<typeof subscriptionCreatedEventSchema>;
+export type SubscriptionDeletedEvent = z.infer<typeof subscriptionDeletedEventSchema>;
+export type TagCreatedEvent = z.infer<typeof tagCreatedEventSchema>;
+export type TagUpdatedEvent = z.infer<typeof tagUpdatedEventSchema>;
+export type TagDeletedEvent = z.infer<typeof tagDeletedEventSchema>;
+export type ImportProgressEvent = z.infer<typeof importProgressEventSchema>;
+export type ImportCompletedEvent = z.infer<typeof importCompletedEventSchema>;
 
 // ============================================================================
 // Server-Only Event Schema (without defaults/transforms)

@@ -29,6 +29,7 @@ export interface Subscription {
   siteUrl: string | null;
   subscribedAt: Date;
   unreadCount: number;
+  totalCount: number;
   tags: Tag[];
   fetchFullContent: boolean;
 }
@@ -57,6 +58,20 @@ export function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
     .groupBy(entries.feedId)
     .as("unread_counts");
 
+  // Subquery to get total entry counts per feed (all user_entries, not just unread)
+  const totalCountsSubquery = db
+    .select({
+      feedId: entries.feedId,
+      totalCount: sql<number>`count(*)::int`.as("total_count"),
+    })
+    .from(entries)
+    .innerJoin(
+      userEntries,
+      and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
+    )
+    .groupBy(entries.feedId)
+    .as("total_counts");
+
   return db
     .select({
       // From user_feeds view - subscription fields
@@ -73,6 +88,8 @@ export function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       siteUrl: userFeeds.siteUrl,
       // Unread count from subquery
       unreadCount: sql<number>`COALESCE(${unreadCountsSubquery.unreadCount}, 0)`,
+      // Total entry count from subquery
+      totalCount: sql<number>`COALESCE(${totalCountsSubquery.totalCount}, 0)`,
       // Tags aggregated as JSON array
       tags: sql<Array<{ id: string; name: string; color: string | null }>>`
         COALESCE(
@@ -85,6 +102,7 @@ export function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
     })
     .from(userFeeds)
     .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.feedId, userFeeds.feedId))
+    .leftJoin(totalCountsSubquery, eq(totalCountsSubquery.feedId, userFeeds.feedId))
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
     .groupBy(
@@ -98,7 +116,8 @@ export function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       userFeeds.originalTitle,
       userFeeds.description,
       userFeeds.siteUrl,
-      unreadCountsSubquery.unreadCount
+      unreadCountsSubquery.unreadCount,
+      totalCountsSubquery.totalCount
     );
 }
 
@@ -121,6 +140,7 @@ export function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
     siteUrl: row.siteUrl,
     subscribedAt: row.subscribedAt,
     unreadCount: row.unreadCount,
+    totalCount: row.totalCount,
     tags: row.tags,
     fetchFullContent: row.fetchFullContent,
   };

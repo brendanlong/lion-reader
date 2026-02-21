@@ -2,15 +2,18 @@
  * TagList Component
  *
  * Renders the list of tags with unread counts in the sidebar.
- * Uses useSuspenseQuery so it can stream with Suspense boundaries.
+ * Uses TanStack DB live queries for reactive updates from the tags collection.
+ * Uncategorized counts come from the counts collection (populated by the tags fetch).
  */
 
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useMemo } from "react";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
+import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db";
 import { ClientLink } from "@/components/ui/client-link";
-import { trpc } from "@/lib/trpc/client";
+import { useCollections } from "@/lib/collections/context";
 import { useExpandedTags } from "@/lib/hooks/useExpandedTags";
 import { NavLinkWithIcon } from "@/components/ui/nav-link";
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icon-button";
@@ -32,15 +35,23 @@ interface TagListProps {
 }
 
 /**
- * Inner component that suspends on tags.list query.
+ * Inner component that suspends on tags collection.
  */
 function TagListContent({ onNavigate, onEdit, onUnsubscribe, unreadOnly }: TagListProps) {
   const pathname = usePathname();
-  const [tagsData] = trpc.tags.list.useSuspenseQuery();
+  const { tags: tagsCollection, counts: countsCollection } = useCollections();
+  const { data: tags } = useLiveSuspenseQuery(tagsCollection);
+  const { data: allCounts } = useLiveQuery(countsCollection);
   const { isExpanded, toggleExpanded } = useExpandedTags();
 
-  const tags = tagsData.items;
-  const uncategorized = tagsData.uncategorized;
+  // Get uncategorized counts from the counts collection
+  const uncategorized = useMemo(() => {
+    const record = allCounts.find((c) => c.id === "uncategorized");
+    return {
+      feedCount: record?.total ?? 0,
+      unreadCount: record?.unread ?? 0,
+    };
+  }, [allCounts]);
 
   // Determine which tag/uncategorized is currently active so we always show it
   const activeTagId = pathname.startsWith("/tag/") ? pathname.slice("/tag/".length) : null;
@@ -167,7 +178,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe, unreadOnly }: TagLi
               isActive={isActiveLink("/uncategorized")}
               icon={<ColorDot color={null} size="sm" />}
               label="Uncategorized"
-              count={uncategorized?.unreadCount ?? 0}
+              count={uncategorized.unreadCount}
               onClick={onNavigate}
             />
           </div>
@@ -209,6 +220,14 @@ function TagListError() {
   return <p className="ui-text-sm px-3 text-red-600 dark:text-red-400">Failed to load feeds</p>;
 }
 
+// TagListContent uses useLiveQuery/useLiveSuspenseQuery (TanStack DB) which calls
+// useSyncExternalStore without getServerSnapshot, causing SSR to crash.
+// Disable SSR since the tags/counts collections are client-only state.
+const DynamicTagListContent = dynamic(() => Promise.resolve({ default: TagListContent }), {
+  ssr: false,
+  loading: () => <TagListSkeleton />,
+});
+
 /**
  * TagList with built-in Suspense and ErrorBoundary.
  */
@@ -216,7 +235,7 @@ export function TagList(props: TagListProps) {
   return (
     <ErrorBoundary fallback={<TagListError />}>
       <Suspense fallback={<TagListSkeleton />}>
-        <TagListContent {...props} />
+        <DynamicTagListContent {...props} />
       </Suspense>
     </ErrorBoundary>
   );
