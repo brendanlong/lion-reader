@@ -1,13 +1,30 @@
 /**
  * Footer component for auth pages (login/register)
  *
- * Displays attribution and GitHub link in a compact format.
+ * Displays attribution, legal links, and GitHub link in a compact format.
  */
+
+import Link from "next/link";
 
 export function AuthFooter() {
   return (
     <footer className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
       <p className="ui-text-xs text-center text-zinc-500 dark:text-zinc-500">
+        <Link
+          href="/terms"
+          className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
+        >
+          Terms of Service
+        </Link>{" "}
+        •{" "}
+        <Link
+          href="/privacy"
+          className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
+        >
+          Privacy Policy
+        </Link>
+      </p>
+      <p className="ui-text-xs mt-2 text-center text-zinc-500 dark:text-zinc-500">
         Created by{" "}
         <a
           href="https://www.brendanlong.com"
