@@ -9,6 +9,28 @@
   --foreground: #171717;
 
   /* =================================
+     Accent Colors (for links, highlights, focus rings)
+     Light mode: blue
+     ================================= */
+  --accent: #2563eb; /* blue-600 */
+  --accent-hover: #1d4ed8; /* blue-700 */
+  --accent-muted: #3b82f6; /* blue-500 */
+  --accent-subtle: #eff6ff; /* blue-50 */
+  --accent-subtle-foreground: #1e40af; /* blue-800 */
+  --accent-border: #bfdbfe; /* blue-200 */
+
+  /* =================================
+     Info Colors (for informational alerts, summary cards)
+     Light mode: blue, Dark mode: warm neutral to reduce blue light
+     ================================= */
+  --info: #2563eb; /* blue-600 */
+  --info-muted: #3b82f6; /* blue-500 */
+  --info-subtle: #eff6ff; /* blue-50 */
+  --info-subtle-foreground: #1e3a8a; /* blue-900 */
+  --info-foreground: #1e40af; /* blue-800 */
+  --info-border: #bfdbfe; /* blue-200 */
+
+  /* =================================
      UI Typography Scale (16px baseline)
      ================================= */
   --ui-text-xs: 0.875rem; /* 14px - badges, status indicators */
@@ -22,6 +44,18 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-subtle-foreground: var(--accent-subtle-foreground);
+  --color-accent-border: var(--accent-border);
+  --color-info: var(--info);
+  --color-info-muted: var(--info-muted);
+  --color-info-subtle: var(--info-subtle);
+  --color-info-subtle-foreground: var(--info-subtle-foreground);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-border: var(--info-border);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -30,6 +64,22 @@
 .dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+
+  /* Dark mode: red accent */
+  --accent: #f87171; /* red-400 */
+  --accent-hover: #fca5a5; /* red-300 */
+  --accent-muted: #ef4444; /* red-500 */
+  --accent-subtle: rgba(127, 29, 29, 0.2); /* red-900/20 */
+  --accent-subtle-foreground: #fecaca; /* red-200 */
+  --accent-border: #991b1b; /* red-800 */
+
+  /* Dark mode: neutral info colors for readability */
+  --info: #a1a1aa; /* zinc-400 */
+  --info-muted: #71717a; /* zinc-500 */
+  --info-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+  --info-subtle-foreground: #e4e4e7; /* zinc-200 */
+  --info-foreground: #d4d4d8; /* zinc-300 */
+  --info-border: #3f3f46; /* zinc-700 */
 }
 
 /* Fallback to system preference when no class is set */
@@ -37,6 +87,22 @@
   :root:not(.dark):not(.light) {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    /* Dark mode: red accent */
+    --accent: #f87171; /* red-400 */
+    --accent-hover: #fca5a5; /* red-300 */
+    --accent-muted: #ef4444; /* red-500 */
+    --accent-subtle: rgba(127, 29, 29, 0.2); /* red-900/20 */
+    --accent-subtle-foreground: #fecaca; /* red-200 */
+    --accent-border: #991b1b; /* red-800 */
+
+    /* Dark mode: neutral info colors for readability */
+    --info: #a1a1aa; /* zinc-400 */
+    --info-muted: #71717a; /* zinc-500 */
+    --info-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+    --info-subtle-foreground: #e4e4e7; /* zinc-200 */
+    --info-foreground: #d4d4d8; /* zinc-300 */
+    --info-border: #3f3f46; /* zinc-700 */
   }
 }
 

@@ -67,6 +67,7 @@ interface CachedSession {
   userPasswordHash: string | null;
   userInviteId: string | null;
   userShowSpam: boolean;
+  userAlgorithmicFeedEnabled: boolean;
   userGroqApiKey: string | null;
   userAnthropicApiKey: string | null;
   userSummarizationModel: string | null;
@@ -206,6 +207,7 @@ function serializeForCache(data: SessionData): string {
     userPasswordHash: data.user.passwordHash,
     userInviteId: data.user.inviteId ?? null,
     userShowSpam: data.user.showSpam,
+    userAlgorithmicFeedEnabled: data.user.algorithmicFeedEnabled,
     userGroqApiKey: data.user.groqApiKey ?? null,
     userAnthropicApiKey: data.user.anthropicApiKey ?? null,
     userSummarizationModel: data.user.summarizationModel ?? null,
@@ -241,6 +243,7 @@ function deserializeFromCache(data: string): SessionData {
       passwordHash: cached.userPasswordHash,
       inviteId: cached.userInviteId ?? null,
       showSpam: cached.userShowSpam ?? false,
+      algorithmicFeedEnabled: cached.userAlgorithmicFeedEnabled ?? true,
       groqApiKey: cached.userGroqApiKey ?? null,
       anthropicApiKey: cached.userAnthropicApiKey ?? null,
       summarizationModel: cached.userSummarizationModel ?? null,

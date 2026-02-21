@@ -162,7 +162,7 @@ describe("StatusCard", () => {
     it("applies info variant styles", () => {
       render(<StatusCard variant="info">Info</StatusCard>);
       const card = screen.getByText("Info").closest("div");
-      expect(card).toHaveClass("border-blue-200", "bg-blue-50");
+      expect(card).toHaveClass("border-info-border", "bg-info-subtle");
     });
 
     it("applies success variant styles", () => {

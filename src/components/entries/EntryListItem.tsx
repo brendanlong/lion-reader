@@ -64,8 +64,8 @@ export function getItemClasses(read: boolean, selected: boolean): string {
     "group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4";
 
   if (selected) {
-    // Selected state takes priority - blue ring indicator
-    return `${baseClasses} border-blue-500 ring-2 ring-blue-500 ring-offset-1 dark:border-blue-400 dark:ring-blue-400 dark:ring-offset-zinc-900 ${
+    // Selected state takes priority - accent ring indicator
+    return `${baseClasses} border-accent ring-2 ring-accent ring-offset-1 dark:ring-offset-zinc-900 ${
       read ? "bg-white dark:bg-zinc-900" : "bg-zinc-50 dark:bg-zinc-800"
     }`;
   }
@@ -148,8 +148,8 @@ export const EntryListItem = memo(function EntryListItem({
               onClick={handleToggleRead}
               className={`block h-2.5 w-2.5 rounded-full transition-colors ${
                 read
-                  ? "border border-zinc-300 bg-transparent hover:border-blue-400 hover:bg-blue-100 dark:border-zinc-600 dark:hover:border-blue-400 dark:hover:bg-blue-900/50"
-                  : "bg-blue-500 hover:bg-blue-600 dark:bg-blue-400 dark:hover:bg-blue-300"
+                  ? "hover:border-accent hover:bg-accent-subtle border border-zinc-300 bg-transparent dark:border-zinc-600"
+                  : "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover"
               }`}
               aria-label={read ? "Mark as unread" : "Mark as read"}
               title={read ? "Mark as unread" : "Mark as read"}
@@ -159,7 +159,7 @@ export const EntryListItem = memo(function EntryListItem({
               className={`block h-2.5 w-2.5 rounded-full ${
                 read
                   ? "border border-zinc-300 bg-transparent dark:border-zinc-600"
-                  : "bg-blue-500 dark:bg-blue-400"
+                  : "bg-accent-muted dark:bg-accent"
               }`}
               aria-hidden="true"
             />

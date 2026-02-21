@@ -510,6 +510,7 @@ export async function claimScoreTrainingJob(): Promise<Job | null> {
   const modelAgeThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours
 
   // Find a user who needs training:
+  // - Has algorithmic feed enabled
   // - Has 20+ scored entries
   // - Model is missing OR model is stale (> 24h old)
   // - Doesn't have a training job currently running
@@ -518,11 +519,13 @@ export async function claimScoreTrainingJob(): Promise<Job | null> {
       SELECT ue.user_id
       FROM user_entries ue
       INNER JOIN entries e ON e.id = ue.entry_id
-      WHERE ue.score IS NOT NULL
+      INNER JOIN users u ON u.id = ue.user_id
+      WHERE u.algorithmic_feed_enabled = true
+        AND (ue.score IS NOT NULL
          OR ue.has_starred = true
          OR ue.has_marked_unread = true
          OR ue.has_marked_read_on_list = true
-         OR e.type = 'saved'
+         OR e.type = 'saved')
       GROUP BY ue.user_id
       HAVING count(*) >= 20
     ),
@@ -561,11 +564,13 @@ export async function claimScoreTrainingJob(): Promise<Job | null> {
       SELECT ue.user_id
       FROM user_entries ue
       INNER JOIN entries e ON e.id = ue.entry_id
-      WHERE ue.score IS NOT NULL
+      INNER JOIN users u ON u.id = ue.user_id
+      WHERE u.algorithmic_feed_enabled = true
+        AND (ue.score IS NOT NULL
          OR ue.has_starred = true
          OR ue.has_marked_unread = true
          OR ue.has_marked_read_on_list = true
-         OR e.type = 'saved'
+         OR e.type = 'saved')
       GROUP BY ue.user_id
       HAVING count(*) >= 20
     )

@@ -121,7 +121,7 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ui-text-xl sm:ui-text-2xl block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:text-blue-600 hover:underline md:text-3xl dark:text-zinc-100 dark:hover:text-blue-400"
+                    className="ui-text-xl sm:ui-text-2xl hover:text-accent block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:underline md:text-3xl dark:text-zinc-100"
                   >
                     {title}
                   </a>
@@ -230,7 +230,7 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
+              className="ui-text-sm text-accent hover:text-accent-hover inline-flex min-h-[44px] items-center gap-2 font-medium transition-colors"
             >
               <ExternalLinkIcon className="h-4 w-4" />
               Read on {getDomain(url)}

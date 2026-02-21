@@ -31,8 +31,9 @@ function CountBadge({ count }: { count: number }) {
 }
 
 /**
- * Best feed nav link, only visible if user has scored entries.
- * Uses the same unread count as All Items from the counts collection.
+ * Best feed nav link with count, only visible if user has scored entries
+ * and the algorithmic feed enabled (both checked server-side by hasScoredEntries).
+ * Shares the same unread count as All Items from the counts collection.
  */
 function BestNavLink({ isActive, onNavigate }: { isActive: boolean; onNavigate: () => void }) {
   const [hasScoredData] = trpc.entries.hasScoredEntries.useSuspenseQuery();

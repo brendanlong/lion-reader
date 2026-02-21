@@ -49,16 +49,15 @@ describe("getItemClasses", () => {
       const classes = getItemClasses(false, true);
 
       expect(classes).toContain(baseClasses);
-      // Selected state has blue ring
-      expect(classes).toContain("border-blue-500");
+      // Selected state has accent ring
+      expect(classes).toContain("border-accent");
       expect(classes).toContain("ring-2");
-      expect(classes).toContain("ring-blue-500");
+      expect(classes).toContain("ring-accent");
       expect(classes).toContain("ring-offset-1");
       // Unread background within selected state
       expect(classes).toContain("bg-zinc-50");
       // Dark mode variants
-      expect(classes).toContain("dark:border-blue-400");
-      expect(classes).toContain("dark:ring-blue-400");
+      expect(classes).toContain("dark:ring-offset-zinc-900");
       expect(classes).toContain("dark:bg-zinc-800");
     });
   });
@@ -68,16 +67,15 @@ describe("getItemClasses", () => {
       const classes = getItemClasses(true, true);
 
       expect(classes).toContain(baseClasses);
-      // Selected state has blue ring
-      expect(classes).toContain("border-blue-500");
+      // Selected state has accent ring
+      expect(classes).toContain("border-accent");
       expect(classes).toContain("ring-2");
-      expect(classes).toContain("ring-blue-500");
+      expect(classes).toContain("ring-accent");
       expect(classes).toContain("ring-offset-1");
       // Read background within selected state
       expect(classes).toContain("bg-white");
       // Dark mode variants
-      expect(classes).toContain("dark:border-blue-400");
-      expect(classes).toContain("dark:ring-blue-400");
+      expect(classes).toContain("dark:ring-offset-zinc-900");
       expect(classes).toContain("dark:bg-zinc-900");
     });
   });
@@ -87,9 +85,9 @@ describe("getItemClasses", () => {
       const selectedUnread = getItemClasses(false, true);
       const selectedRead = getItemClasses(true, true);
 
-      // Both should have the blue ring (selected indicator)
-      expect(selectedUnread).toContain("ring-blue-500");
-      expect(selectedRead).toContain("ring-blue-500");
+      // Both should have the accent ring (selected indicator)
+      expect(selectedUnread).toContain("ring-accent");
+      expect(selectedRead).toContain("ring-accent");
 
       // Neither should have hover states that conflict with selection
       expect(selectedUnread).not.toContain("hover:bg-zinc-100");

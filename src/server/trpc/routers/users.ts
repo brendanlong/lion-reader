@@ -322,6 +322,7 @@ export const usersRouter = createTRPCRouter({
     .output(
       z.object({
         showSpam: z.boolean(),
+        algorithmicFeedEnabled: z.boolean(),
         canConfigureApiKeys: z.boolean(),
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
@@ -335,6 +336,7 @@ export const usersRouter = createTRPCRouter({
       // Never expose raw API keys — only whether they are set
       return {
         showSpam: ctx.session.user.showSpam,
+        algorithmicFeedEnabled: ctx.session.user.algorithmicFeedEnabled,
         canConfigureApiKeys: isEncryptionConfigured(),
         hasGroqApiKey: !!ctx.session.user.groqApiKey,
         hasAnthropicApiKey: !!ctx.session.user.anthropicApiKey,
@@ -361,6 +363,7 @@ export const usersRouter = createTRPCRouter({
     .input(
       z.object({
         showSpam: z.boolean().optional(),
+        algorithmicFeedEnabled: z.boolean().optional(),
         // API keys: empty string clears the key, non-empty sets it
         groqApiKey: z.string().optional(),
         anthropicApiKey: z.string().optional(),
@@ -373,6 +376,7 @@ export const usersRouter = createTRPCRouter({
     .output(
       z.object({
         showSpam: z.boolean(),
+        algorithmicFeedEnabled: z.boolean(),
         canConfigureApiKeys: z.boolean(),
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
@@ -397,6 +401,7 @@ export const usersRouter = createTRPCRouter({
       // Build update object with only provided fields
       const updateData: {
         showSpam?: boolean;
+        algorithmicFeedEnabled?: boolean;
         groqApiKey?: string | null;
         anthropicApiKey?: string | null;
         summarizationModel?: string | null;
@@ -409,6 +414,10 @@ export const usersRouter = createTRPCRouter({
 
       if (input.showSpam !== undefined) {
         updateData.showSpam = input.showSpam;
+      }
+
+      if (input.algorithmicFeedEnabled !== undefined) {
+        updateData.algorithmicFeedEnabled = input.algorithmicFeedEnabled;
       }
 
       if (input.groqApiKey !== undefined) {
@@ -444,6 +453,7 @@ export const usersRouter = createTRPCRouter({
       const updatedUser = await ctx.db
         .select({
           showSpam: users.showSpam,
+          algorithmicFeedEnabled: users.algorithmicFeedEnabled,
           groqApiKey: users.groqApiKey,
           anthropicApiKey: users.anthropicApiKey,
           summarizationModel: users.summarizationModel,
@@ -456,6 +466,7 @@ export const usersRouter = createTRPCRouter({
 
       return {
         showSpam: updatedUser[0]?.showSpam ?? false,
+        algorithmicFeedEnabled: updatedUser[0]?.algorithmicFeedEnabled ?? true,
         canConfigureApiKeys: isEncryptionConfigured(),
         hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
         hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,

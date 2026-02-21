@@ -314,7 +314,7 @@ function DemoRouterContent() {
               }
               className={
                 showSummaryForEntry === selectedEntry.id
-                  ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                  ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
                   : ""
               }
               aria-label={

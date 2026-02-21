@@ -156,7 +156,7 @@ describe("EntryListItem", () => {
 
       const button = screen.getByRole("button", { name: "Mark as read" });
       expect(button).toBeInTheDocument();
-      expect(button).toHaveClass("bg-blue-500");
+      expect(button).toHaveClass("bg-accent-muted");
     });
 
     it("shows empty indicator for read entries", () => {
@@ -222,7 +222,7 @@ describe("EntryListItem", () => {
       render(<EntryListItem entry={entry} selected={true} />);
 
       const article = screen.getByRole("button");
-      expect(article).toHaveClass("ring-2", "ring-blue-500");
+      expect(article).toHaveClass("ring-2", "ring-accent");
     });
 
     it("does not apply selection ring when not selected", () => {

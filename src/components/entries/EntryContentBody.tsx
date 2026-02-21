@@ -248,6 +248,15 @@ export function EntryContentBody({
   // Get narration settings for auto-scroll preference
   const [narrationSettings] = useNarrationSettings();
 
+  // Stop narration if user disables it in settings while audio is playing
+  useEffect(() => {
+    if (!narrationSettings.enabled) {
+      narration.stop();
+    }
+    // Only trigger when enabled changes, not on every narration object change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrationSettings.enabled]);
+
   // Get text appearance settings
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
@@ -482,7 +491,7 @@ export function EntryContentBody({
                 fullContentError
                   ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950"
                   : fetchFullContent
-                    ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                    ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
                     : ""
               }
               aria-label={
@@ -511,7 +520,7 @@ export function EntryContentBody({
           )}
 
           {/* Narration controls - pass narration state for controlled mode */}
-          {!hideNarration && (
+          {!hideNarration && narrationSettings.enabled && (
             <NarrationControls
               articleId={articleId}
               title={title}
@@ -529,7 +538,7 @@ export function EntryContentBody({
               disabled={isSummarizing}
               className={
                 showSummary && summary
-                  ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-600"
+                  ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
                   : ""
               }
               aria-label={summary ? "Toggle summary" : "Generate AI summary"}
@@ -572,7 +581,7 @@ export function EntryContentBody({
           )}
 
           {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
-          {!hideNarration && shouldProcessForHighlighting && (
+          {!hideNarration && narrationSettings.enabled && shouldProcessForHighlighting && (
             <NarrationHighlightStyles
               highlightedParagraphIds={highlightedParagraphIds}
               enabled={narrationSettings.highlightEnabled}
