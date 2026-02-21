@@ -36,6 +36,7 @@ import { publishSubscriptionCreated, publishSubscriptionDeleted } from "@/server
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import { usageLimitsConfig } from "@/server/config/env";
 
 // ============================================================================
 // Validation Schemas
@@ -159,7 +160,7 @@ export async function createOrReactivateSubscription(
       throw errors.alreadySubscribed();
     }
 
-    // Reactivate soft-deleted subscription
+    // Reactivate soft-deleted subscription (no count check needed - user already had this slot)
     subscriptionId = sub.id;
     subscribedAt = new Date();
     isReactivated = true;
@@ -173,6 +174,17 @@ export async function createOrReactivateSubscription(
       })
       .where(eq(subscriptions.id, subscriptionId));
   } else {
+    // Enforce subscription count limit before creating a new subscription
+    const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
+    const [{ activeCount }] = await db
+      .select({ activeCount: sql<number>`count(*)::int` })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+    if (activeCount >= maxSubs) {
+      throw errors.maxSubscriptionsReached(maxSubs);
+    }
+
     // Create new subscription
     subscriptionId = generateUuidv7();
     subscribedAt = new Date();

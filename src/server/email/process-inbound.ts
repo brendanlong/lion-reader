@@ -23,6 +23,7 @@ import {
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishSubscriptionCreated } from "../redis/pubsub";
 import { logger } from "@/lib/logger";
+import { usageLimitsConfig } from "@/server/config/env";
 
 // ============================================================================
 // Types
@@ -214,6 +215,18 @@ function generateEmailContentHash(subject: string, content: string): string {
  * @returns Processing result
  */
 export async function processInboundEmail(email: InboundEmail): Promise<ProcessEmailResult> {
+  // 0. Check email content size before any processing
+  const contentSize = (email.html?.length ?? 0) + (email.text?.length ?? 0);
+  if (contentSize > usageLimitsConfig.maxEmailSizeBytes) {
+    logger.info("Email rejected: content too large", {
+      from: email.from.address,
+      to: email.to,
+      contentSize,
+      maxSize: usageLimitsConfig.maxEmailSizeBytes,
+    });
+    return { success: false, error: "Email content too large" };
+  }
+
   // 1. Extract token from recipient
   const token = extractToken(email.to);
 

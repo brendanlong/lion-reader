@@ -63,6 +63,10 @@ const ErrorCodes = {
   PARSE_ERROR: "PARSE_ERROR",
   SAVED_ARTICLE_FETCH_ERROR: "SAVED_ARTICLE_FETCH_ERROR",
 
+  // Payload too large errors (413)
+  CONTENT_TOO_LARGE: "CONTENT_TOO_LARGE",
+  MAX_SUBSCRIPTIONS_REACHED: "MAX_SUBSCRIPTIONS_REACHED",
+
   // Bad gateway errors (502)
   SITE_BLOCKED: "SITE_BLOCKED",
 } as const;
@@ -120,6 +124,8 @@ const errorCodeToTRPCCode: Record<
   FEED_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
   PARSE_ERROR: "INTERNAL_SERVER_ERROR",
   SAVED_ARTICLE_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
+  CONTENT_TOO_LARGE: "BAD_REQUEST",
+  MAX_SUBSCRIPTIONS_REACHED: "BAD_REQUEST",
   SITE_BLOCKED: "BAD_GATEWAY",
 };
 
@@ -268,6 +274,21 @@ export const errors = {
 
   inviteAlreadyUsed: () =>
     createError(ErrorCodes.INVITE_ALREADY_USED, "Invite token has already been used"),
+
+  // Usage limit errors
+  contentTooLarge: (resource: string, maxBytes: number) =>
+    createError(
+      ErrorCodes.CONTENT_TOO_LARGE,
+      `${resource} exceeds the maximum size of ${Math.round(maxBytes / (1024 * 1024))}MB`,
+      { maxBytes }
+    ),
+
+  maxSubscriptionsReached: (limit: number) =>
+    createError(
+      ErrorCodes.MAX_SUBSCRIPTIONS_REACHED,
+      `You have reached the maximum number of subscriptions (${limit})`,
+      { limit }
+    ),
 
   // Admin errors
   adminSecretNotConfigured: () =>

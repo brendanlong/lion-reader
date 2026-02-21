@@ -778,6 +778,21 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       return handleTemporaryError(feed, result.message, now);
     }
 
+    case "content_too_large": {
+      // Feed is too large - this is a persistent error, schedule far in future
+      const nextFetch = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      await updateFeedOnError(feed.id, result.message, now, nextFetch);
+      return {
+        success: false,
+        nextRunAt: nextFetch,
+        error: result.message,
+        metadata: {
+          permanent: true,
+          maxBytes: result.maxBytes,
+        },
+      };
+    }
+
     case "server_error":
     case "rate_limited":
     case "network_error":

@@ -7,6 +7,7 @@
 
 import { USER_AGENT } from "./user-agent";
 import { errors } from "../trpc/errors";
+import { usageLimitsConfig } from "../config/env";
 
 // ============================================================================
 // Custom Errors
@@ -33,6 +34,92 @@ export class HttpFetchError extends Error {
   isBlocked(): boolean {
     return this.status === 403 || this.status === 429 || this.status === 406;
   }
+}
+
+/**
+ * Error thrown when a response body exceeds the maximum allowed size.
+ * Checked during streaming to avoid loading the full body into memory.
+ */
+export class ContentTooLargeError extends Error {
+  constructor(
+    public readonly url: string,
+    public readonly maxBytes: number,
+    public readonly receivedBytes: number
+  ) {
+    const maxMB = Math.round(maxBytes / (1024 * 1024));
+    super(`Response body exceeds maximum size of ${maxMB}MB`);
+    this.name = "ContentTooLargeError";
+  }
+}
+
+/**
+ * Reads a response body as a Buffer with a streaming size limit.
+ * Aborts the request if the response exceeds maxBytes, preventing OOM.
+ *
+ * Checks Content-Length header first for an early rejection, then
+ * enforces the limit while streaming chunks.
+ *
+ * @param response - The fetch Response object
+ * @param maxBytes - Maximum allowed response size in bytes
+ * @param url - The URL being fetched (for error messages)
+ * @returns The response body as a Buffer
+ * @throws ContentTooLargeError if the response exceeds the limit
+ */
+export async function readResponseBufferWithSizeLimit(
+  response: Response,
+  maxBytes: number,
+  url: string
+): Promise<Buffer> {
+  // Early check: Content-Length header (not always present, but fast rejection)
+  const contentLength = response.headers.get("content-length");
+  if (contentLength) {
+    const declaredSize = parseInt(contentLength, 10);
+    if (!isNaN(declaredSize) && declaredSize > maxBytes) {
+      throw new ContentTooLargeError(url, maxBytes, declaredSize);
+    }
+  }
+
+  if (!response.body) {
+    return Buffer.alloc(0);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    receivedBytes += value.byteLength;
+    if (receivedBytes > maxBytes) {
+      reader.cancel();
+      throw new ContentTooLargeError(url, maxBytes, receivedBytes);
+    }
+
+    chunks.push(value);
+  }
+
+  return Buffer.concat(chunks, receivedBytes);
+}
+
+/**
+ * Reads a response body as text with a streaming size limit.
+ * Delegates to readResponseBufferWithSizeLimit and decodes the result.
+ *
+ * @param response - The fetch Response object
+ * @param maxBytes - Maximum allowed response size in bytes
+ * @param url - The URL being fetched (for error messages)
+ * @returns The response body as a string
+ * @throws ContentTooLargeError if the response exceeds the limit
+ */
+async function readResponseWithSizeLimit(
+  response: Response,
+  maxBytes: number,
+  url: string
+): Promise<string> {
+  const buffer = await readResponseBufferWithSizeLimit(response, maxBytes, url);
+  return buffer.toString();
 }
 
 // ============================================================================
@@ -72,6 +159,8 @@ export interface FetchUrlOptions {
   accept?: string;
   /** Custom User-Agent header. Defaults to USER_AGENT. */
   userAgent?: string;
+  /** Maximum response size in bytes. Defaults to maxFeedSizeBytes from config. */
+  maxSizeBytes?: number;
 }
 
 // ============================================================================
@@ -107,6 +196,7 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
   const timeoutMs = options?.timeoutMs ?? FEED_FETCH_TIMEOUT_MS;
   const accept = options?.accept ?? FEED_ACCEPT_HEADER;
   const userAgent = options?.userAgent ?? USER_AGENT;
+  const maxSizeBytes = options?.maxSizeBytes ?? usageLimitsConfig.maxFeedSizeBytes;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -125,12 +215,15 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
       throw errors.feedFetchError(url, `HTTP ${response.status}`);
     }
 
-    const text = await response.text();
+    const text = await readResponseWithSizeLimit(response, maxSizeBytes, url);
     const contentType = response.headers.get("content-type") ?? "";
     const isMarkdown = contentType.includes("text/markdown");
 
     return { text, contentType, finalUrl: response.url, isMarkdown };
   } catch (error) {
+    if (error instanceof ContentTooLargeError) {
+      throw errors.contentTooLarge("Feed", maxSizeBytes);
+    }
     if (error instanceof Error && error.name === "AbortError") {
       throw errors.feedFetchError(url, "Request timed out");
     }
@@ -166,7 +259,11 @@ export interface FetchHtmlPageResult {
  * @returns The content and whether it's Markdown
  * @throws Error on fetch failure
  */
-export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
+export async function fetchHtmlPage(
+  url: string,
+  options?: { maxSizeBytes?: number }
+): Promise<FetchHtmlPageResult> {
+  const maxSizeBytes = options?.maxSizeBytes ?? usageLimitsConfig.maxSavedArticleSizeBytes;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PAGE_FETCH_TIMEOUT_MS);
 
@@ -196,7 +293,7 @@ export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
       throw new Error(`Invalid content type: ${contentType}`);
     }
 
-    const content = await response.text();
+    const content = await readResponseWithSizeLimit(response, maxSizeBytes, url);
     return { content, isMarkdown, finalUrl: response.url };
   } finally {
     clearTimeout(timeout);
