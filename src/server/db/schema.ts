@@ -62,6 +62,7 @@ export const users = pgTable("users", {
 
   // Preferences
   showSpam: boolean("show_spam").notNull().default(false), // Show spam entries from email feeds
+  algorithmicFeedEnabled: boolean("algorithmic_feed_enabled").notNull().default(true), // Enable algorithmic feed, voting, and model training
 
   // User-configured API keys (override server defaults when set)
   groqApiKey: text("groq_api_key"), // For narration LLM preprocessing

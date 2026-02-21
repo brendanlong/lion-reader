@@ -388,15 +388,9 @@ function SpamPreferenceSection() {
       const previousPrefs = utils.users["me.preferences"].getData();
 
       // Optimistically update
-      utils.users["me.preferences"].setData(undefined, (old) => ({
-        showSpam: newPrefs.showSpam ?? old?.showSpam ?? false,
-        canConfigureApiKeys: old?.canConfigureApiKeys ?? false,
-        hasGroqApiKey: old?.hasGroqApiKey ?? false,
-        hasAnthropicApiKey: old?.hasAnthropicApiKey ?? false,
-        summarizationModel: old?.summarizationModel ?? null,
-        summarizationMaxWords: old?.summarizationMaxWords ?? null,
-        summarizationPrompt: old?.summarizationPrompt ?? null,
-      }));
+      utils.users["me.preferences"].setData(undefined, (old) =>
+        old ? { ...old, showSpam: newPrefs.showSpam ?? old.showSpam } : undefined
+      );
 
       return { previousPrefs };
     },

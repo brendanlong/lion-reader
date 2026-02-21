@@ -30,6 +30,7 @@ import AiSettingsContent from "./pages/AiSettingsContent";
 import IntegrationsSettingsContent from "./pages/IntegrationsSettingsContent";
 import FeedHealthSettingsContent from "./pages/FeedHealthSettingsContent";
 import SessionsSettingsContent from "./pages/SessionsSettingsContent";
+import AlgorithmicFeedSettingsContent from "./pages/AlgorithmicFeedSettingsContent";
 
 const settingsLinks = [
   { href: "/settings", label: "Account" },
@@ -37,6 +38,7 @@ const settingsLinks = [
   { href: "/settings/subscriptions", label: "Subscriptions" },
   { href: "/settings/email", label: "Email" },
   { href: "/settings/ai", label: "AI & Narration" },
+  { href: "/settings/algorithmic-feed", label: "Algorithmic Feed" },
   { href: "/settings/integrations", label: "Integrations" },
   { href: "/settings/feed-health", label: "Feed Health" },
   { href: "/settings/sessions", label: "Sessions" },
@@ -60,6 +62,8 @@ function SettingsContentRouter() {
       return <EmailSettingsContent />;
     case "/settings/ai":
       return <AiSettingsContent />;
+    case "/settings/algorithmic-feed":
+      return <AlgorithmicFeedSettingsContent />;
     case "/settings/integrations":
       return <IntegrationsSettingsContent />;
     case "/settings/feed-health":

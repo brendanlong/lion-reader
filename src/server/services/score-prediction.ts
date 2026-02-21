@@ -558,12 +558,15 @@ export async function predictScoresForFeedEntries(
   // Find users who:
   // 1. Have an active subscription to this feed
   // 2. Have a trained model
+  // 3. Have the algorithmic feed enabled
   const usersWithModels = await db.execute<{ user_id: string }>(sql`
     SELECT DISTINCT s.user_id
     FROM subscriptions s
     INNER JOIN user_score_models usm ON usm.user_id = s.user_id
+    INNER JOIN users u ON u.id = s.user_id
     WHERE s.feed_id = ${feedId}
       AND s.unsubscribed_at IS NULL
+      AND u.algorithmic_feed_enabled = true
   `);
 
   if (usersWithModels.rows.length === 0) {

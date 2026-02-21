@@ -47,7 +47,8 @@ function SavedCount() {
 }
 
 /**
- * Best feed nav link with count, only visible if user has scored entries.
+ * Best feed nav link with count, only visible if user has scored entries
+ * and the algorithmic feed enabled (both checked server-side by hasScoredEntries).
  * Shares the same unread count as All Items.
  */
 function BestNavLink({ isActive, onNavigate }: { isActive: boolean; onNavigate: () => void }) {

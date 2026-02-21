@@ -1002,10 +1002,11 @@ export const entriesRouter = createTRPCRouter({
     }),
 
   /**
-   * Check if the user has scored any entries.
+   * Check if the user has scored any entries and has the algorithmic feed enabled.
    *
-   * Returns true if the user has explicitly scored at least one entry,
-   * which is the prerequisite for the algorithmic feed to be useful.
+   * Returns true if the user has the algorithmic feed enabled AND has explicitly
+   * scored at least one entry, which is the prerequisite for the algorithmic feed
+   * to be useful.
    */
   hasScoredEntries: protectedProcedure
     .meta({
@@ -1018,6 +1019,11 @@ export const entriesRouter = createTRPCRouter({
     })
     .output(z.object({ hasScoredEntries: z.boolean() }))
     .query(async ({ ctx }) => {
+      // Short-circuit: if algorithmic feed is disabled, no need to query
+      if (!ctx.session.user.algorithmicFeedEnabled) {
+        return { hasScoredEntries: false };
+      }
+
       const userId = ctx.session.user.id;
       const result = await ctx.db
         .select({ id: userEntries.entryId })

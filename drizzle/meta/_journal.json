@@ -379,6 +379,13 @@
       "when": 1770548800000,
       "tag": "0053_visible_entries_read_changed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1770558800000,
+      "tag": "0054_algorithmic_feed_setting",
+      "breakpoints": true
     }
   ]
 }
