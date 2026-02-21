@@ -10,6 +10,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
+import { NULL_PREDICTED_SCORE_SENTINEL } from "@/server/services/entries";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import { EntryListLoadingMore } from "./EntryListStates";
@@ -70,12 +71,14 @@ export function EntryListFallback({
   // Show cached entries with a subtle loading indicator
   let entries = placeholderData.pages.flatMap((page) => page.items);
 
-  // For algorithmic feed, sort by predicted score while loading
+  // For algorithmic feed, sort by predicted score while loading.
+  // Matches backend sort: COALESCE(predicted_score, sentinel) DESC, id DESC
   if (sortByPredictedScore) {
     entries = [...entries].sort((a, b) => {
-      const scoreA = a.predictedScore ?? -Infinity;
-      const scoreB = b.predictedScore ?? -Infinity;
-      return scoreB - scoreA;
+      const scoreA = a.predictedScore ?? NULL_PREDICTED_SCORE_SENTINEL;
+      const scoreB = b.predictedScore ?? NULL_PREDICTED_SCORE_SENTINEL;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return b.id.localeCompare(a.id);
     });
   }
 
