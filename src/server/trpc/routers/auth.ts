@@ -216,12 +216,13 @@ export const authRouter = createTRPCRouter({
 
       // Create user and session in a transaction
       const result = await ctx.db.transaction(async (tx) => {
-        // Create user (handles invite validation atomically)
+        // Create user (handles invite validation and provider restriction atomically)
         const user = await createUser(tx, {
           email,
           passwordHash,
           emailVerified: false,
           inviteToken,
+          provider: "email",
         });
 
         // Create session
@@ -777,11 +778,13 @@ export const authRouter = createTRPCRouter({
     .output(
       z.object({
         requiresInvite: z.boolean(),
+        allowedSignupProviders: z.array(z.enum(["email", "google", "apple", "discord"])),
       })
     )
     .query(() => {
       return {
         requiresInvite: !signupConfig.allowAllSignups,
+        allowedSignupProviders: signupConfig.allowedSignupProviders,
       };
     }),
 

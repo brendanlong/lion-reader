@@ -79,6 +79,8 @@ function LoginForm() {
       invalid_state: "Authentication failed. Please try again.",
       callback_failed: "Failed to complete sign-in. Please try again.",
       provider_not_configured: "This sign-in method is not available.",
+      signup_provider_not_allowed:
+        "This sign-in method is not available for new accounts. If you already have an account, try a different sign-in method.",
       invite_required:
         "An invite is required to create an account. If you already have an account, try signing in with email and password instead.",
       invite_invalid: "The invite link is invalid. Please request a new invite.",

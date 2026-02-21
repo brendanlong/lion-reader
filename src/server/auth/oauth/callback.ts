@@ -188,12 +188,13 @@ export async function processOAuthCallback(
 
   // Create new user and OAuth account in a transaction
   const newUser = await db.transaction(async (tx: DbOrTx) => {
-    // Create user (handles invite validation atomically)
+    // Create user (handles invite validation and provider restriction atomically)
     const user = await createUser(tx, {
       email,
       passwordHash: null,
       emailVerified: true, // OAuth provider verified the email
       inviteToken,
+      provider,
     });
 
     // Create OAuth account

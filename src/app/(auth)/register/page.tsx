@@ -112,6 +112,10 @@ function RegisterForm() {
     });
   };
 
+  // Determine allowed signup providers
+  const allowedProviders = signupConfigData?.allowedSignupProviders;
+  const isEmailAllowed = !allowedProviders || allowedProviders.includes("email");
+
   // Show loading state while fetching config
   if (isLoadingConfig) {
     return (
@@ -168,61 +172,66 @@ function RegisterForm() {
         mode="signup"
         onError={(error) => setErrors({ form: error })}
         inviteToken={inviteToken ?? undefined}
+        allowedProviders={allowedProviders}
       />
 
-      {/* Divider */}
-      <div className="relative my-6">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-zinc-300 dark:border-zinc-700" />
-        </div>
-        <div className="ui-text-sm relative flex justify-center">
-          <span className="bg-white px-2 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-            Or continue with email
-          </span>
-        </div>
-      </div>
+      {isEmailAllowed && (
+        <>
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-zinc-300 dark:border-zinc-700" />
+            </div>
+            <div className="ui-text-sm relative flex justify-center">
+              <span className="bg-white px-2 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                Or continue with email
+              </span>
+            </div>
+          </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          id="email"
-          type="email"
-          label="Email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          error={errors.email}
-          autoComplete="email"
-          disabled={registerMutation.isPending}
-        />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input
+              id="email"
+              type="email"
+              label="Email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              error={errors.email}
+              autoComplete="email"
+              disabled={registerMutation.isPending}
+            />
 
-        <Input
-          id="password"
-          type="password"
-          label="Password"
-          placeholder="At least 8 characters"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={errors.password}
-          autoComplete="new-password"
-          disabled={registerMutation.isPending}
-        />
+            <Input
+              id="password"
+              type="password"
+              label="Password"
+              placeholder="At least 8 characters"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              error={errors.password}
+              autoComplete="new-password"
+              disabled={registerMutation.isPending}
+            />
 
-        <Input
-          id="confirm-password"
-          type="password"
-          label="Confirm password"
-          placeholder="Confirm your password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          error={errors.confirmPassword}
-          autoComplete="new-password"
-          disabled={registerMutation.isPending}
-        />
+            <Input
+              id="confirm-password"
+              type="password"
+              label="Confirm password"
+              placeholder="Confirm your password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              error={errors.confirmPassword}
+              autoComplete="new-password"
+              disabled={registerMutation.isPending}
+            />
 
-        <Button type="submit" className="w-full" loading={registerMutation.isPending}>
-          Create account
-        </Button>
-      </form>
+            <Button type="submit" className="w-full" loading={registerMutation.isPending}>
+              Create account
+            </Button>
+          </form>
+        </>
+      )}
 
       <p className="ui-text-xs mt-4 text-center text-zinc-500 dark:text-zinc-400">
         By creating an account, you agree to our{" "}

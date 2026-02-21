@@ -5,9 +5,36 @@
  */
 
 /**
+ * Valid signup provider types.
+ * - "email": Email/password signup
+ * - "google", "apple", "discord": OAuth providers
+ */
+export type SignupProvider = "email" | "google" | "apple" | "discord";
+
+const ALL_SIGNUP_PROVIDERS: SignupProvider[] = ["email", "google", "apple", "discord"];
+
+/**
+ * Parse ALLOWED_SIGNUP_PROVIDERS env var into a list of allowed providers.
+ * Format: comma-separated list, e.g. "apple,google,email"
+ * Default: all providers allowed (when env var is not set)
+ */
+function parseAllowedSignupProviders(): SignupProvider[] {
+  const raw = process.env.ALLOWED_SIGNUP_PROVIDERS;
+  if (!raw) return ALL_SIGNUP_PROVIDERS;
+
+  const providers = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s): s is SignupProvider => ALL_SIGNUP_PROVIDERS.includes(s as SignupProvider));
+
+  return providers.length > 0 ? providers : ALL_SIGNUP_PROVIDERS;
+}
+
+/**
  * Signup configuration.
  * ALLOW_ALL_SIGNUPS=true bypasses invite requirement.
  * ALLOWLIST_SECRET protects admin endpoints for managing invites.
+ * ALLOWED_SIGNUP_PROVIDERS limits which providers can be used for new signups.
  */
 export const signupConfig = {
   /** If true, anyone can sign up without an invite. Defaults to false. */
@@ -15,6 +42,14 @@ export const signupConfig = {
 
   /** Secret for admin API endpoints. If not set, admin endpoints are disabled. */
   allowlistSecret: process.env.ALLOWLIST_SECRET,
+
+  /**
+   * List of providers allowed for new signups.
+   * Parsed from ALLOWED_SIGNUP_PROVIDERS env var (comma-separated).
+   * Default: all providers allowed.
+   * Stacks with invite requirement (both must be satisfied).
+   */
+  allowedSignupProviders: parseAllowedSignupProviders(),
 };
 
 /**

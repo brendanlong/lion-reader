@@ -12,7 +12,7 @@
 import { and, eq, gte, isNull } from "drizzle-orm";
 
 import { users, invites } from "@/server/db/schema";
-import { signupConfig } from "@/server/config/env";
+import { signupConfig, type SignupProvider } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { errors } from "@/server/trpc/errors";
 import type { Database } from "@/server/db";
@@ -29,6 +29,8 @@ export interface CreateUserParams {
   emailVerified: boolean;
   /** Optional invite token for invite-only signups */
   inviteToken?: string;
+  /** The signup provider being used (for allowed provider enforcement) */
+  provider: SignupProvider;
 }
 
 /**
@@ -63,11 +65,16 @@ type DbOrTx = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
  * @throws INVITE_EXPIRED if invite has expired
  */
 export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<CreateUserResult> {
-  const { email, passwordHash, emailVerified, inviteToken } = params;
+  const { email, passwordHash, emailVerified, inviteToken, provider } = params;
   const now = new Date();
   const userId = generateUuidv7();
 
   let claimedInviteId: string | undefined;
+
+  // Check if the signup provider is allowed
+  if (!signupConfig.allowedSignupProviders.includes(provider)) {
+    throw errors.signupProviderNotAllowed(provider);
+  }
 
   // If invite required, try to claim it atomically
   if (!signupConfig.allowAllSignups) {
