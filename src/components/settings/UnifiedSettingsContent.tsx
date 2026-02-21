@@ -31,6 +31,7 @@ import IntegrationsSettingsContent from "./pages/IntegrationsSettingsContent";
 import FeedHealthSettingsContent from "./pages/FeedHealthSettingsContent";
 import SessionsSettingsContent from "./pages/SessionsSettingsContent";
 import AlgorithmicFeedSettingsContent from "./pages/AlgorithmicFeedSettingsContent";
+import DeleteAccountSettingsContent from "./pages/DeleteAccountSettingsContent";
 
 const settingsLinks = [
   { href: "/settings", label: "Account" },
@@ -42,6 +43,7 @@ const settingsLinks = [
   { href: "/settings/integrations", label: "Integrations" },
   { href: "/settings/feed-health", label: "Feed Health" },
   { href: "/settings/sessions", label: "Sessions" },
+  { href: "/settings/delete-account", label: "Delete Account" },
 ];
 
 /**
@@ -70,6 +72,8 @@ function SettingsContentRouter() {
       return <FeedHealthSettingsContent />;
     case "/settings/sessions":
       return <SessionsSettingsContent />;
+    case "/settings/delete-account":
+      return <DeleteAccountSettingsContent />;
     default:
       // Default to account settings for unknown paths
       return <AccountSettingsContent />;
