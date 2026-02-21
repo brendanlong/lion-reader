@@ -8,11 +8,12 @@ import { z } from "zod";
 import * as argon2 from "argon2";
 import { eq, and, isNull, gt, desc } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import { revokeSession, invalidateUserSessionCaches } from "@/server/auth/session";
 import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
+import { deleteUser } from "@/server/services/users";
 
 // ============================================================================
 // Schemas
@@ -497,5 +498,37 @@ export const usersRouter = createTRPCRouter({
         bestFeedScoreWeight: updatedUser[0]?.bestFeedScoreWeight ?? 1,
         bestFeedUncertaintyWeight: updatedUser[0]?.bestFeedUncertaintyWeight ?? 1,
       };
+    }),
+
+  /**
+   * Delete the current user's account.
+   *
+   * Permanently deletes the user account and all associated data.
+   * Requires the user to type "delete" as confirmation.
+   * Uses expensive rate limiting to prevent abuse.
+   */
+  "me.deleteAccount": expensiveProtectedProcedure
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/users/me",
+        tags: ["Users"],
+        summary: "Delete account",
+      },
+    })
+    .input(
+      z.object({
+        confirmation: z
+          .string()
+          .refine((val) => val === "delete", "You must type 'delete' to confirm"),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+
+      await deleteUser(ctx.db, userId);
+
+      return { success: true };
     }),
 });

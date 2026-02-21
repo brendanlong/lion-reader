@@ -29,7 +29,7 @@ export default function PrivacyPolicyPage() {
             Privacy Policy
           </h1>
           <p className="ui-text-sm mt-2 text-zinc-500 dark:text-zinc-400">
-            Last updated: December 2025
+            Last updated: February 2026
           </p>
         </div>
 
@@ -343,8 +343,15 @@ export default function PrivacyPolicyPage() {
                 for narration at any time
               </li>
               <li>
-                <strong>Delete:</strong> Request account deletion by contacting us (see Contact
-                section below). We are working on self-service account deletion.
+                <strong>Delete:</strong> Delete your account and all associated data at any time
+                from your{" "}
+                <Link
+                  href="/settings/delete-account"
+                  className="text-accent hover:text-accent-hover font-medium"
+                >
+                  account settings
+                </Link>
+                . Account deletion is permanent and cannot be undone.
               </li>
             </ul>
           </section>
