@@ -18,7 +18,7 @@ export interface EntryListFilters {
   uncategorized?: boolean;
   starredOnly?: boolean;
   type?: "web" | "email" | "saved";
-  sortBy?: "published" | "readChanged";
+  sortBy?: "published" | "readChanged" | "predictedScore";
 }
 
 // Re-export for consumers

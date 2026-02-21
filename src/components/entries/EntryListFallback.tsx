@@ -10,6 +10,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
+import { NULL_PREDICTED_SCORE_SENTINEL } from "@/server/services/entries";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import { EntryListLoadingMore } from "./EntryListStates";
@@ -36,6 +37,8 @@ interface EntryListFallbackProps {
   selectedEntryId?: string | null;
   /** Callback when entry is clicked (disabled during fallback) */
   onEntryClick?: (entryId: string) => void;
+  /** Sort fallback data by predicted score (for algorithmic feed) */
+  sortByPredictedScore?: boolean;
 }
 
 /**
@@ -52,6 +55,7 @@ export function EntryListFallback({
   skeletonCount = 5,
   selectedEntryId,
   onEntryClick,
+  sortByPredictedScore = false,
 }: EntryListFallbackProps) {
   const queryClient = useQueryClient();
 
@@ -65,7 +69,18 @@ export function EntryListFallback({
   }
 
   // Show cached entries with a subtle loading indicator
-  const entries = placeholderData.pages.flatMap((page) => page.items);
+  let entries = placeholderData.pages.flatMap((page) => page.items);
+
+  // For algorithmic feed, sort by predicted score while loading.
+  // Matches backend sort: COALESCE(predicted_score, sentinel) DESC, id DESC
+  if (sortByPredictedScore) {
+    entries = [...entries].sort((a, b) => {
+      const scoreA = a.predictedScore ?? NULL_PREDICTED_SCORE_SENTINEL;
+      const scoreB = b.predictedScore ?? NULL_PREDICTED_SCORE_SENTINEL;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return b.id.localeCompare(a.id);
+    });
+  }
 
   return (
     <div className="space-y-3">

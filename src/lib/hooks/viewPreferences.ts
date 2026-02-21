@@ -15,7 +15,8 @@ export type ViewType =
   | "tag"
   | "saved"
   | "uncategorized"
-  | "recently-read";
+  | "recently-read"
+  | "best";
 
 /**
  * View preference settings.

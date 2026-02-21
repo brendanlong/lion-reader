@@ -64,7 +64,7 @@ const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
 /**
  * Sort by validation schema for choosing which timestamp to sort entries by.
  */
-const sortBySchema = z.enum(["published", "readChanged"]).optional();
+const sortBySchema = z.enum(["published", "readChanged", "predictedScore"]).optional();
 
 /**
  * Feed type validation schema for filtering entries by type.
@@ -110,6 +110,7 @@ const entryListItemSchema = z.object({
   siteName: z.string().nullable(),
   score: z.number().nullable(),
   implicitScore: z.number(),
+  predictedScore: z.number().nullable(),
 });
 
 /**
@@ -998,6 +999,33 @@ export const entriesRouter = createTRPCRouter({
         starredOnly: input?.starredOnly,
         showSpam: ctx.session.user.showSpam,
       });
+    }),
+
+  /**
+   * Check if the user has scored any entries.
+   *
+   * Returns true if the user has explicitly scored at least one entry,
+   * which is the prerequisite for the algorithmic feed to be useful.
+   */
+  hasScoredEntries: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/entries/has-scored",
+        tags: ["Entries"],
+        summary: "Check if user has scored entries",
+      },
+    })
+    .output(z.object({ hasScoredEntries: z.boolean() }))
+    .query(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+      const result = await ctx.db
+        .select({ id: userEntries.entryId })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), sql`${userEntries.score} IS NOT NULL`))
+        .limit(1);
+
+      return { hasScoredEntries: result.length > 0 };
     }),
 
   /**

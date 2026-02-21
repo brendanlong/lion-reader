@@ -32,7 +32,7 @@ export interface ListEntriesParams {
   unreadOnly?: boolean;
   starredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
-  sortBy?: "published" | "readChanged"; // Which timestamp to sort by (default: published)
+  sortBy?: "published" | "readChanged" | "predictedScore"; // Which column to sort by (default: published)
   cursor?: string;
   limit?: number;
   showSpam: boolean;
@@ -72,6 +72,7 @@ export interface EntryListItem {
   siteName: string | null;
   score: number | null;
   implicitScore: number;
+  predictedScore: number | null;
 }
 
 export interface EntryFull {
@@ -153,6 +154,73 @@ export function computeImplicitScore(
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
+/**
+ * Sentinel value used for null predicted scores in sorting.
+ * Pushes entries without predictions to the end of score-sorted lists.
+ */
+export const NULL_PREDICTED_SCORE_SENTINEL = -999;
+
+// ============================================================================
+// Row Mapping Helper
+// ============================================================================
+
+/**
+ * Shape of a database row from the entry list query (shared across list/search).
+ */
+interface EntryListRow {
+  id: string;
+  subscriptionId: string | null;
+  feedId: string;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  updatedAt: Date;
+  read: boolean;
+  starred: boolean;
+  siteName: string | null;
+  feedTitle: string | null;
+  score: number | null;
+  hasMarkedReadOnList: boolean;
+  hasMarkedUnread: boolean;
+  hasStarred: boolean;
+  predictedScore: number | null;
+}
+
+/**
+ * Maps a database row to an EntryListItem, computing implicit score.
+ */
+function toEntryListItem(row: EntryListRow): EntryListItem {
+  return {
+    id: row.id,
+    subscriptionId: row.subscriptionId,
+    feedId: row.feedId,
+    type: row.type,
+    url: row.url,
+    title: row.title,
+    author: row.author,
+    summary: row.summary,
+    publishedAt: row.publishedAt,
+    fetchedAt: row.fetchedAt,
+    read: row.read,
+    starred: row.starred,
+    updatedAt: row.updatedAt,
+    feedTitle: row.feedTitle,
+    siteName: row.siteName,
+    score: row.score,
+    implicitScore: computeImplicitScore(
+      row.hasStarred,
+      row.hasMarkedUnread,
+      row.hasMarkedReadOnList,
+      row.type
+    ),
+    predictedScore: row.predictedScore,
+  };
+}
+
 // ============================================================================
 // Cursor Helpers
 // ============================================================================
@@ -177,6 +245,32 @@ function decodeCursor(cursor: string): CursorData {
 
 function encodeCursor(ts: Date, entryId: string): string {
   const data: CursorData = { ts: ts.toISOString(), id: entryId };
+  return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
+}
+
+/**
+ * Cursor for score-based sorting where the sort value is a number, not a date.
+ */
+interface ScoreCursorData {
+  score: string; // Stringified number for consistent serialization
+  id: string;
+}
+
+function decodeScoreCursor(cursor: string): ScoreCursorData {
+  try {
+    const decoded = Buffer.from(cursor, "base64").toString("utf8");
+    const parsed = JSON.parse(decoded) as ScoreCursorData;
+    if (parsed.score === undefined || !parsed.id) {
+      throw new Error("Invalid cursor structure");
+    }
+    return parsed;
+  } catch {
+    throw errors.validation("Invalid cursor format");
+  }
+}
+
+function encodeScoreCursor(score: number, entryId: string): string {
+  const data: ScoreCursorData = { score: String(score), id: entryId };
   return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
 }
 
@@ -231,6 +325,65 @@ export async function listEntries(
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
   conditions.push(...buildEntryFilterConditions(params));
 
+  // predictedScore sorting uses a different cursor and sort mechanism
+  if (params.sortBy === "predictedScore") {
+    // Sort by predicted score descending (highest first), with COALESCE to push nulls to end
+    const scoreColumn = sql`COALESCE(${visibleEntries.predictedScore}, ${NULL_PREDICTED_SCORE_SENTINEL})`;
+
+    // Cursor condition for score-based pagination
+    if (params.cursor) {
+      const { score: scoreStr, id } = decodeScoreCursor(params.cursor);
+      const cursorScore = parseFloat(scoreStr);
+      // Always descending for predicted score (highest first)
+      conditions.push(
+        sql`(${scoreColumn} < ${cursorScore} OR (${scoreColumn} = ${cursorScore} AND ${visibleEntries.id} < ${id}))`
+      );
+    }
+
+    const queryResults = await db
+      .select({
+        id: visibleEntries.id,
+        feedId: visibleEntries.feedId,
+        type: visibleEntries.type,
+        url: visibleEntries.url,
+        title: visibleEntries.title,
+        author: visibleEntries.author,
+        summary: visibleEntries.summary,
+        publishedAt: visibleEntries.publishedAt,
+        fetchedAt: visibleEntries.fetchedAt,
+        read: visibleEntries.read,
+        starred: visibleEntries.starred,
+        updatedAt: visibleEntries.updatedAt,
+        subscriptionId: visibleEntries.subscriptionId,
+        siteName: visibleEntries.siteName,
+        feedTitle: feeds.title,
+        score: visibleEntries.score,
+        hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+        hasMarkedUnread: visibleEntries.hasMarkedUnread,
+        hasStarred: visibleEntries.hasStarred,
+        readChangedAt: visibleEntries.readChangedAt,
+        predictedScore: visibleEntries.predictedScore,
+      })
+      .from(visibleEntries)
+      .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+      .where(and(...conditions))
+      .orderBy(desc(scoreColumn), desc(visibleEntries.id))
+      .limit(limit + 1);
+
+    const hasMore = queryResults.length > limit;
+    const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
+    const items = resultEntries.map(toEntryListItem);
+
+    let nextCursor: string | undefined;
+    if (hasMore && resultEntries.length > 0) {
+      const lastEntry = resultEntries[resultEntries.length - 1];
+      const effectiveScore = lastEntry.predictedScore ?? NULL_PREDICTED_SCORE_SENTINEL;
+      nextCursor = encodeScoreCursor(effectiveScore, lastEntry.id);
+    }
+
+    return { items, nextCursor };
+  }
+
   // Sort column - readChanged sorts by when read state was last changed
   const sortColumn =
     params.sortBy === "readChanged"
@@ -280,6 +433,7 @@ export async function listEntries(
       hasMarkedUnread: visibleEntries.hasMarkedUnread,
       hasStarred: visibleEntries.hasStarred,
       readChangedAt: visibleEntries.readChangedAt,
+      predictedScore: visibleEntries.predictedScore,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -289,31 +443,7 @@ export async function listEntries(
 
   const hasMore = queryResults.length > limit;
   const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
-
-  const items = resultEntries.map((row) => ({
-    id: row.id,
-    subscriptionId: row.subscriptionId,
-    feedId: row.feedId,
-    type: row.type,
-    url: row.url,
-    title: row.title,
-    author: row.author,
-    summary: row.summary,
-    publishedAt: row.publishedAt,
-    fetchedAt: row.fetchedAt,
-    read: row.read,
-    starred: row.starred,
-    updatedAt: row.updatedAt,
-    feedTitle: row.feedTitle,
-    siteName: row.siteName,
-    score: row.score,
-    implicitScore: computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
-  }));
+  const items = resultEntries.map(toEntryListItem);
 
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {
@@ -409,6 +539,7 @@ async function searchEntries(
       hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
       hasMarkedUnread: visibleEntries.hasMarkedUnread,
       hasStarred: visibleEntries.hasStarred,
+      predictedScore: visibleEntries.predictedScore,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -418,31 +549,7 @@ async function searchEntries(
 
   const hasMore = queryResults.length > limit;
   const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
-
-  const items = resultEntries.map((row) => ({
-    id: row.id,
-    subscriptionId: row.subscriptionId,
-    feedId: row.feedId,
-    type: row.type,
-    url: row.url,
-    title: row.title,
-    author: row.author,
-    summary: row.summary,
-    publishedAt: row.publishedAt,
-    fetchedAt: row.fetchedAt,
-    read: row.read,
-    starred: row.starred,
-    updatedAt: row.updatedAt,
-    feedTitle: row.feedTitle,
-    siteName: row.siteName,
-    score: row.score,
-    implicitScore: computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
-  }));
+  const items = resultEntries.map(toEntryListItem);
 
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {

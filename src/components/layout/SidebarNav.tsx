@@ -47,6 +47,31 @@ function SavedCount() {
 }
 
 /**
+ * Best feed nav link with count, only visible if user has scored entries.
+ * Shares the same unread count as All Items.
+ */
+function BestNavLink({ isActive, onNavigate }: { isActive: boolean; onNavigate: () => void }) {
+  const [hasScoredData] = trpc.entries.hasScoredEntries.useSuspenseQuery();
+
+  if (!hasScoredData.hasScoredEntries) return null;
+
+  return (
+    <NavLink
+      href="/best"
+      isActive={isActive}
+      countElement={
+        <SuspenseCount>
+          <AllItemsCount />
+        </SuspenseCount>
+      }
+      onClick={onNavigate}
+    >
+      Best
+    </NavLink>
+  );
+}
+
+/**
  * Wraps a count component with ErrorBoundary and Suspense.
  * Shows nothing during loading or on error (graceful degradation).
  */
@@ -80,6 +105,12 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
       >
         All Items
       </NavLink>
+
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <BestNavLink isActive={isActiveLink("/best")} onNavigate={onNavigate} />
+        </Suspense>
+      </ErrorBoundary>
 
       <NavLink
         href="/starred"

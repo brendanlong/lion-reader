@@ -55,6 +55,9 @@ interface EntryPageLayoutProps {
 
   /** Whether to show the file upload button (for Saved page) */
   showUploadButton?: boolean;
+
+  /** Whether to hide the sort toggle (e.g., for algorithmic feed) */
+  hideSortToggle?: boolean;
 }
 
 export function EntryPageLayout({
@@ -64,6 +67,7 @@ export function EntryPageLayout({
   markAllReadDescription,
   markAllReadOptions,
   showUploadButton = false,
+  hideSortToggle = false,
 }: EntryPageLayoutProps) {
   // Use non-suspending hooks directly so buttons render immediately
   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
@@ -88,7 +92,7 @@ export function EntryPageLayout({
               isLoading={isMarkAllReadPending}
               onConfirm={() => markAllRead(markAllReadOptions)}
             />
-            <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
+            {!hideSortToggle && <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />}
             <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
           </div>
         </div>
