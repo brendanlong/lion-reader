@@ -50,7 +50,12 @@ interface InfiniteData {
 export function updateEntriesInListCache(
   queryClient: QueryClient,
   entryIds: string[],
-  updates: Partial<{ read: boolean; starred: boolean; score: number | null; implicitScore: number }>
+  updates: Partial<{
+    read: boolean;
+    starred: boolean;
+    score: number | null;
+    implicitScore: number;
+  }>
 ): void {
   const entryIdSet = new Set(entryIds);
 
