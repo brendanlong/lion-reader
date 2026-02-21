@@ -15,6 +15,7 @@ import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { findEntryInListCache } from "@/lib/cache/entry-cache";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
+import { trpc } from "@/lib/trpc/client";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +53,10 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
 
   // Try to find cached entry data from list queries
   const cachedEntry = findEntryInListCache(queryClient, entryId);
+
+  // Check if algorithmic feed is enabled to decide whether to show vote controls
+  const preferencesQuery = trpc.users["me.preferences"].useQuery();
+  const algorithmicFeedEnabled = preferencesQuery.data?.algorithmicFeedEnabled ?? false;
 
   // Entry mutations for star/read - these work optimistically even during loading
   const { markRead, star, unstar, setScore } = useEntryMutations();
@@ -161,14 +166,16 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
               </div>
             </div>
 
-            {/* Right column: vote controls */}
-            <div className="-mt-[24px] shrink-0">
-              <VoteControls
-                score={cachedEntry.score ?? null}
-                implicitScore={cachedEntry.implicitScore ?? 0}
-                onSetScore={handleSetScore}
-              />
-            </div>
+            {/* Right column: vote controls - only show when algorithmic feed is enabled */}
+            {algorithmicFeedEnabled && (
+              <div className="-mt-[24px] shrink-0">
+                <VoteControls
+                  score={cachedEntry.score ?? null}
+                  implicitScore={cachedEntry.implicitScore ?? 0}
+                  onSetScore={handleSetScore}
+                />
+              </div>
+            )}
           </div>
 
           {/* Action buttons - Star and Read are functional, others show shimmer */}
