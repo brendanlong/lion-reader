@@ -71,6 +71,10 @@ export const users = pgTable("users", {
   summarizationMaxWords: integer("summarization_max_words"), // Override SUMMARIZATION_MAX_WORDS
   summarizationPrompt: text("summarization_prompt"), // Custom summarization prompt
 
+  // Best feed sorting weights: sort by score_weight * predicted_score + uncertainty_weight * (1 - confidence)
+  bestFeedScoreWeight: real("best_feed_score_weight").notNull().default(1),
+  bestFeedUncertaintyWeight: real("best_feed_uncertainty_weight").notNull().default(1),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

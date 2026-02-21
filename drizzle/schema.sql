@@ -368,7 +368,10 @@ CREATE TABLE public.users (
     anthropic_api_key text,
     summarization_model text,
     summarization_max_words integer,
-    summarization_prompt text
+    summarization_prompt text,
+    algorithmic_feed_enabled boolean DEFAULT true NOT NULL,
+    best_feed_score_weight real DEFAULT 1 NOT NULL,
+    best_feed_uncertainty_weight real DEFAULT 1 NOT NULL
 );
 
 CREATE VIEW public.visible_entries AS

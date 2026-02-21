@@ -386,6 +386,13 @@
       "when": 1770558800000,
       "tag": "0054_algorithmic_feed_setting",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1770568800000,
+      "tag": "0055_best_feed_weights",
+      "breakpoints": true
     }
   ]
 }

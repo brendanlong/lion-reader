@@ -73,6 +73,8 @@ interface CachedSession {
   userSummarizationModel: string | null;
   userSummarizationMaxWords: number | null;
   userSummarizationPrompt: string | null;
+  userBestFeedScoreWeight: number;
+  userBestFeedUncertaintyWeight: number;
 }
 
 // ============================================================================
@@ -213,6 +215,8 @@ function serializeForCache(data: SessionData): string {
     userSummarizationModel: data.user.summarizationModel ?? null,
     userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
     userSummarizationPrompt: data.user.summarizationPrompt ?? null,
+    userBestFeedScoreWeight: data.user.bestFeedScoreWeight,
+    userBestFeedUncertaintyWeight: data.user.bestFeedUncertaintyWeight,
   };
   return JSON.stringify(cached);
 }
@@ -249,6 +253,8 @@ function deserializeFromCache(data: string): SessionData {
       summarizationModel: cached.userSummarizationModel ?? null,
       summarizationMaxWords: cached.userSummarizationMaxWords ?? null,
       summarizationPrompt: cached.userSummarizationPrompt ?? null,
+      bestFeedScoreWeight: cached.userBestFeedScoreWeight ?? 1,
+      bestFeedUncertaintyWeight: cached.userBestFeedUncertaintyWeight ?? 1,
     },
   };
 }

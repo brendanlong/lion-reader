@@ -36,6 +36,9 @@ export interface ListEntriesParams {
   cursor?: string;
   limit?: number;
   showSpam: boolean;
+  // Best feed sorting weights: sort by scoreWeight * predicted_score + uncertaintyWeight * (1 - confidence)
+  bestFeedScoreWeight?: number;
+  bestFeedUncertaintyWeight?: number;
 }
 
 export interface SearchEntriesParams {
@@ -328,8 +331,11 @@ export async function listEntries(
 
   // predictedScore sorting uses a different cursor and sort mechanism
   if (params.sortBy === "predictedScore") {
-    // Sort by predicted score descending (highest first), with COALESCE to push nulls to end
-    const scoreColumn = sql`COALESCE(${visibleEntries.predictedScore}, ${NULL_PREDICTED_SCORE_SENTINEL})`;
+    // Sort by weighted formula: scoreWeight * predicted_score + uncertaintyWeight * (1 - confidence)
+    // For entries without predictions, use a sentinel to push them to the end.
+    const scoreWeight = params.bestFeedScoreWeight ?? 1;
+    const uncertaintyWeight = params.bestFeedUncertaintyWeight ?? 1;
+    const scoreColumn = sql`CASE WHEN ${visibleEntries.predictedScore} IS NOT NULL THEN ${scoreWeight} * ${visibleEntries.predictedScore} + ${uncertaintyWeight} * (1 - COALESCE(${visibleEntries.predictionConfidence}, 0)) ELSE ${NULL_PREDICTED_SCORE_SENTINEL}::real END`;
 
     // Cursor condition for score-based pagination
     if (params.cursor) {
@@ -364,6 +370,8 @@ export async function listEntries(
         hasStarred: visibleEntries.hasStarred,
         readChangedAt: visibleEntries.readChangedAt,
         predictedScore: visibleEntries.predictedScore,
+        predictionConfidence: visibleEntries.predictionConfidence,
+        computedSortScore: sql<number>`${scoreColumn}`.as("computed_sort_score"),
       })
       .from(visibleEntries)
       .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -378,8 +386,7 @@ export async function listEntries(
     let nextCursor: string | undefined;
     if (hasMore && resultEntries.length > 0) {
       const lastEntry = resultEntries[resultEntries.length - 1];
-      const effectiveScore = lastEntry.predictedScore ?? NULL_PREDICTED_SCORE_SENTINEL;
-      nextCursor = encodeScoreCursor(effectiveScore, lastEntry.id);
+      nextCursor = encodeScoreCursor(lastEntry.computedSortScore, lastEntry.id);
     }
 
     return { items, nextCursor };
