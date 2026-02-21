@@ -290,23 +290,27 @@ LIMIT 10000;  -- Cap for memory
 
 ### Memory Management
 
-For 256 MB deployment:
+For 512 MB worker deployment:
 
-| Component                       | Estimated Memory |
-| ------------------------------- | ---------------- |
-| TF-IDF vectorizer (5K features) | ~10 MB           |
-| Training matrix (1K entries)    | ~20 MB (sparse)  |
-| Ridge model weights             | ~0.5 MB          |
-| Prediction batch (1K entries)   | ~20 MB           |
-| **Total per user**              | **~50 MB**       |
+| Component                                  | Estimated Memory |
+| ------------------------------------------ | ---------------- |
+| TF-IDF vectorizer (3K features)            | ~5 MB            |
+| Gram matrix (3.5K features² × 8B)          | ~98 MB           |
+| Feature means + X^T y vectors              | ~0.1 MB          |
+| Ridge model weights                        | ~0.03 MB         |
+| Training data (10K entries, text + scores) | ~40 MB           |
+| Prediction batch (1K entries)              | ~20 MB           |
+| Node.js baseline                           | ~80 MB           |
+| **Peak per user (during training)**        | **~250 MB**      |
 
-Strategies for memory efficiency:
+Key memory optimizations:
 
-1. Process one user at a time (no parallelism)
-2. Use sparse matrices throughout
-3. Limit vocabulary size (max_features=5000)
-4. Stream entries in batches for prediction
-5. Garbage collect between users
+1. **Sparse X^T X accumulation**: The Gram matrix (X^T X) is computed directly from sparse TF-IDF vectors — the full dense design matrix (n × features) is never materialized
+2. **Cholesky solve in-place**: Solves the normal equations without creating an augmented matrix (saves features × features bytes vs Gauss-Jordan)
+3. **3-fold CV** (not 5): Reduces peak memory by running fewer training iterations
+4. **3,000 max TF-IDF features**: Keeps the Gram matrix under 100 MB
+5. Process one user at a time (no parallelism)
+6. Stream entries in batches for prediction
 
 ### Scoring Schedule
 

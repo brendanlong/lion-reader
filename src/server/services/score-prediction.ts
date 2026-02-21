@@ -24,8 +24,15 @@ const MIN_TRAINING_ENTRIES = 20;
 /** Maximum number of entries to use for training (memory constraint) */
 const MAX_TRAINING_ENTRIES = 10000;
 
-/** Maximum TF-IDF features */
-const MAX_TFIDF_FEATURES = 5000;
+/** Maximum TF-IDF features.
+ * With feed ID features this determines the Gram matrix size (features² × 8 bytes).
+ * 3000 TF-IDF + 500 feeds = 3500 features → ~98 MB Gram matrix, fits in 512 MB worker. */
+const MAX_TFIDF_FEATURES = 3000;
+
+/** Maximum feed ID features for one-hot encoding.
+ * Feeds beyond this are excluded from the feature vector (still used for TF-IDF text).
+ * Keeps total features bounded: 3000 TF-IDF + 500 feeds = 3500 max. */
+const MAX_FEED_FEATURES = 500;
 
 /** Ridge regression alpha (L2 regularization strength) */
 const RIDGE_ALPHA = 1.0;
@@ -206,9 +213,16 @@ export async function trainModel(db: typeof dbType, userId: string): Promise<Tra
     };
   }
 
-  // Extract unique feed IDs for one-hot encoding
-  const feedIdSet = new Set(trainingData.map((d) => d.feedId));
-  const feedIds = Array.from(feedIdSet);
+  // Extract feed IDs for one-hot encoding, capped to MAX_FEED_FEATURES.
+  // Keep the most frequent feeds since they contribute the most training signal.
+  const feedCounts = new Map<string, number>();
+  for (const d of trainingData) {
+    feedCounts.set(d.feedId, (feedCounts.get(d.feedId) ?? 0) + 1);
+  }
+  const feedIds = Array.from(feedCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, MAX_FEED_FEATURES)
+    .map(([id]) => id);
   const feedIdMap = new Map(feedIds.map((id, i) => [id, i]));
 
   // Prepare text documents
@@ -243,6 +257,8 @@ export async function trainModel(db: typeof dbType, userId: string): Promise<Tra
     sampleCount: trainingData.length,
     tfidfFeatures: tfidfFeatureCount,
     feedFeatures: feedIds.length,
+    feedsCapped: feedCounts.size > MAX_FEED_FEATURES,
+    totalFeedsInData: feedCounts.size,
     totalFeatures,
   });
 

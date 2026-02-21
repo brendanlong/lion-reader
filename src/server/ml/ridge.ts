@@ -4,13 +4,16 @@
  * A lightweight TypeScript implementation of Ridge (L2-regularized) linear regression.
  * Uses the closed-form solution: w = (X^T X + λI)^(-1) X^T y
  *
- * Designed for memory efficiency with the score prediction use case:
- * - ~5,000 features (TF-IDF + feed IDs)
- * - ~1,000-10,000 training samples
- * - Single output (predicted score)
+ * Memory-efficient: computes X^T X and X^T y directly from sparse vectors,
+ * never materializing the full dense design matrix. Uses Cholesky decomposition
+ * to solve the system in-place, avoiding the augmented matrix needed by
+ * Gauss-Jordan elimination.
+ *
+ * Memory usage: O(features²) for the Gram matrix, independent of sample count.
+ * With 3,000 features this is ~72 MB; with 5,000 features it's ~200 MB.
  */
 
-import { type SparseVector, sparseToDense } from "./tfidf";
+import { type SparseVector } from "./tfidf";
 
 /**
  * Ridge regression model weights and configuration.
@@ -42,183 +45,6 @@ const DEFAULT_CONFIG: RidgeConfig = {
 };
 
 /**
- * Simple matrix type for internal calculations.
- * Row-major order: data[row][col]
- */
-type Matrix = number[][];
-
-/**
- * Creates a zero matrix of given dimensions.
- */
-function zeros(rows: number, cols: number): Matrix {
-  return Array.from({ length: rows }, () => new Array(cols).fill(0));
-}
-
-/**
- * Creates an identity matrix of given size.
- */
-function eye(size: number): Matrix {
-  const result = zeros(size, size);
-  for (let i = 0; i < size; i++) {
-    result[i][i] = 1;
-  }
-  return result;
-}
-
-/**
- * Matrix transpose.
- */
-function transpose(A: Matrix): Matrix {
-  const rows = A.length;
-  const cols = A[0].length;
-  const result = zeros(cols, rows);
-  for (let i = 0; i < rows; i++) {
-    for (let j = 0; j < cols; j++) {
-      result[j][i] = A[i][j];
-    }
-  }
-  return result;
-}
-
-/**
- * Matrix multiplication: A @ B
- */
-function matmul(A: Matrix, B: Matrix): Matrix {
-  const rowsA = A.length;
-  const colsA = A[0].length;
-  const colsB = B[0].length;
-
-  const result = zeros(rowsA, colsB);
-  for (let i = 0; i < rowsA; i++) {
-    for (let j = 0; j < colsB; j++) {
-      let sum = 0;
-      for (let k = 0; k < colsA; k++) {
-        sum += A[i][k] * B[k][j];
-      }
-      result[i][j] = sum;
-    }
-  }
-  return result;
-}
-
-/**
- * Matrix-vector multiplication: A @ v
- */
-function matvec(A: Matrix, v: number[]): number[] {
-  const rows = A.length;
-  const cols = A[0].length;
-  const result = new Array(rows).fill(0);
-  for (let i = 0; i < rows; i++) {
-    let sum = 0;
-    for (let j = 0; j < cols; j++) {
-      sum += A[i][j] * v[j];
-    }
-    result[i] = sum;
-  }
-  return result;
-}
-
-/**
- * Matrix addition: A + B
- */
-function matadd(A: Matrix, B: Matrix): Matrix {
-  const rows = A.length;
-  const cols = A[0].length;
-  const result = zeros(rows, cols);
-  for (let i = 0; i < rows; i++) {
-    for (let j = 0; j < cols; j++) {
-      result[i][j] = A[i][j] + B[i][j];
-    }
-  }
-  return result;
-}
-
-/**
- * Scalar multiplication: c * A
- */
-function scalarMul(c: number, A: Matrix): Matrix {
-  return A.map((row) => row.map((val) => c * val));
-}
-
-/**
- * Matrix inversion using Gauss-Jordan elimination.
- * Returns null if matrix is singular.
- */
-function inverse(A: Matrix): Matrix | null {
-  const n = A.length;
-  if (n === 0 || A[0].length !== n) {
-    return null;
-  }
-
-  // Create augmented matrix [A | I]
-  const aug: Matrix = zeros(n, 2 * n);
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      aug[i][j] = A[i][j];
-    }
-    aug[i][n + i] = 1;
-  }
-
-  // Forward elimination with partial pivoting
-  for (let col = 0; col < n; col++) {
-    // Find pivot
-    let maxRow = col;
-    let maxVal = Math.abs(aug[col][col]);
-    for (let row = col + 1; row < n; row++) {
-      const absVal = Math.abs(aug[row][col]);
-      if (absVal > maxVal) {
-        maxVal = absVal;
-        maxRow = row;
-      }
-    }
-
-    // Check for singularity
-    if (maxVal < 1e-10) {
-      return null;
-    }
-
-    // Swap rows
-    if (maxRow !== col) {
-      [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
-    }
-
-    // Scale pivot row
-    const pivot = aug[col][col];
-    for (let j = 0; j < 2 * n; j++) {
-      aug[col][j] /= pivot;
-    }
-
-    // Eliminate column
-    for (let row = 0; row < n; row++) {
-      if (row !== col) {
-        const factor = aug[row][col];
-        for (let j = 0; j < 2 * n; j++) {
-          aug[row][j] -= factor * aug[col][j];
-        }
-      }
-    }
-  }
-
-  // Extract inverse from augmented matrix
-  const inv = zeros(n, n);
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      inv[i][j] = aug[i][n + j];
-    }
-  }
-
-  return inv;
-}
-
-/**
- * Converts sparse vectors to a dense matrix.
- * Each row is one sample.
- */
-function sparseToDenseMatrix(vectors: SparseVector[], numFeatures: number): Matrix {
-  return vectors.map((vec) => sparseToDense(vec, numFeatures));
-}
-
-/**
  * Computes mean of an array.
  */
 function mean(arr: number[]): number {
@@ -227,10 +53,195 @@ function mean(arr: number[]): number {
 }
 
 /**
+ * Computes feature means from sparse vectors.
+ * Returns a dense array of means (one per feature).
+ */
+function computeFeatureMeans(X: SparseVector[], numFeatures: number, nSamples: number): number[] {
+  const sums = new Array<number>(numFeatures).fill(0);
+  for (const vec of X) {
+    for (const [index, value] of vec) {
+      sums[index] += value;
+    }
+  }
+  for (let j = 0; j < numFeatures; j++) {
+    sums[j] /= nSamples;
+  }
+  return sums;
+}
+
+/**
+ * Computes X^T X directly from sparse vectors, optionally with mean-centering.
+ *
+ * For centered data: (X - μ)^T (X - μ) = X^T X - n * μ μ^T
+ * where μ is the column-wise mean vector.
+ *
+ * This avoids materializing the dense n×p matrix entirely.
+ * Memory: O(p²) for the result matrix.
+ */
+function sparseXtX(
+  X: SparseVector[],
+  numFeatures: number,
+  featureMeans: number[] | null
+): Float64Array {
+  const p = numFeatures;
+  // Use a flat Float64Array for better memory efficiency than number[][]
+  const result = new Float64Array(p * p);
+
+  // Accumulate X^T X from sparse vectors
+  for (const vec of X) {
+    const len = vec.length;
+    for (let a = 0; a < len; a++) {
+      const [i, vi] = vec[a];
+      // Diagonal
+      result[i * p + i] += vi * vi;
+      // Upper triangle (symmetric)
+      for (let b = a + 1; b < len; b++) {
+        const [j, vj] = vec[b];
+        const prod = vi * vj;
+        result[i * p + j] += prod;
+        result[j * p + i] += prod;
+      }
+    }
+  }
+
+  // If centering: subtract n * μ μ^T
+  if (featureMeans) {
+    const n = X.length;
+    for (let i = 0; i < p; i++) {
+      if (featureMeans[i] === 0) continue;
+      for (let j = i; j < p; j++) {
+        if (featureMeans[j] === 0) continue;
+        const correction = n * featureMeans[i] * featureMeans[j];
+        result[i * p + j] -= correction;
+        if (i !== j) {
+          result[j * p + i] -= correction;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Computes X^T y directly from sparse vectors, optionally with mean-centering.
+ *
+ * For centered data: (X - μ)^T (y - ȳ) = X^T y_adj - n * μ * ȳ_adj
+ * But since y is already adjusted (ȳ_adj = 0), this simplifies to X^T y_adj - μ * sum(y_adj).
+ * And sum(y_adj) = 0 when y is centered, so: (X - μ)^T y_adj = X^T y_adj
+ *
+ * Wait — that's only true when y_adj is perfectly centered. Since we center y ourselves,
+ * sum(y_adj) = 0, so no correction needed for X^T y when y is centered.
+ */
+function sparseXty(
+  X: SparseVector[],
+  y: number[],
+  numFeatures: number,
+  featureMeans: number[] | null
+): Float64Array {
+  const result = new Float64Array(numFeatures);
+
+  for (let i = 0; i < X.length; i++) {
+    const yi = y[i];
+    if (yi === 0) continue;
+    for (const [index, value] of X[i]) {
+      result[index] += value * yi;
+    }
+  }
+
+  // When both X and y are centered:
+  // (X-μ)^T (y-ȳ) = X^T(y-ȳ) - μ·Σ(y-ȳ)
+  // Since y is centered, Σ(y-ȳ) = 0, so no correction needed.
+  // But featureMeans correction is needed for the X centering when y_adj isn't exactly zero-sum
+  // (floating point). For safety, apply the correction:
+  if (featureMeans) {
+    let ySum = 0;
+    for (let i = 0; i < y.length; i++) {
+      ySum += y[i];
+    }
+    if (ySum !== 0) {
+      for (let j = 0; j < numFeatures; j++) {
+        result[j] -= featureMeans[j] * ySum;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Solves (A + αI)x = b in-place using Cholesky decomposition.
+ * A must be symmetric positive semi-definite (which X^T X always is).
+ * Adding αI (α > 0) makes it positive definite, guaranteeing Cholesky succeeds.
+ *
+ * Modifies `A` in-place (stores the lower triangular factor L).
+ * Returns the solution vector x, or null if decomposition fails.
+ *
+ * Memory: O(1) extra beyond the input matrix (solves in-place).
+ */
+function choleskySolve(
+  A: Float64Array,
+  b: Float64Array,
+  n: number,
+  alpha: number
+): number[] | null {
+  // Add regularization in-place: A += αI
+  for (let i = 0; i < n; i++) {
+    A[i * n + i] += alpha;
+  }
+
+  // Cholesky decomposition: A = L L^T (in-place, lower triangle)
+  for (let j = 0; j < n; j++) {
+    let sum = A[j * n + j];
+    for (let k = 0; k < j; k++) {
+      sum -= A[j * n + k] * A[j * n + k];
+    }
+    if (sum <= 0) {
+      return null; // Not positive definite
+    }
+    const ljj = Math.sqrt(sum);
+    A[j * n + j] = ljj;
+
+    for (let i = j + 1; i < n; i++) {
+      sum = A[i * n + j];
+      for (let k = 0; k < j; k++) {
+        sum -= A[i * n + k] * A[j * n + k];
+      }
+      A[i * n + j] = sum / ljj;
+    }
+  }
+
+  // Forward substitution: L z = b
+  const z = new Array<number>(n);
+  for (let i = 0; i < n; i++) {
+    let sum = b[i];
+    for (let k = 0; k < i; k++) {
+      sum -= A[i * n + k] * z[k];
+    }
+    z[i] = sum / A[i * n + i];
+  }
+
+  // Back substitution: L^T x = z
+  const x = new Array<number>(n);
+  for (let i = n - 1; i >= 0; i--) {
+    let sum = z[i];
+    for (let k = i + 1; k < n; k++) {
+      sum -= A[k * n + i] * x[k]; // L^T[i][k] = L[k][i]
+    }
+    x[i] = sum / A[i * n + i];
+  }
+
+  return x;
+}
+
+/**
  * Ridge Regression
  *
  * Solves: min ||Xw - y||² + α||w||²
  * Closed-form solution: w = (X^T X + αI)^(-1) X^T y
+ *
+ * Implementation uses sparse X^T X accumulation + Cholesky solve,
+ * avoiding dense matrix materialization entirely.
  */
 export class RidgeRegression {
   private config: RidgeConfig;
@@ -245,7 +256,7 @@ export class RidgeRegression {
    *
    * @param X Feature vectors (sparse format)
    * @param y Target values
-   * @param numFeatures Total number of features (needed for sparse to dense conversion)
+   * @param numFeatures Total number of features
    */
   fit(X: SparseVector[], y: number[], numFeatures: number): void {
     if (X.length !== y.length) {
@@ -265,49 +276,27 @@ export class RidgeRegression {
       yAdjusted = y.map((val) => val - yMean);
     }
 
-    // Convert sparse to dense
-    const XDense = sparseToDenseMatrix(X, numFeatures);
+    // Compute feature means for centering (only if fitting intercept)
+    const featureMeans = this.config.fitIntercept
+      ? computeFeatureMeans(X, numFeatures, nSamples)
+      : null;
 
-    // Center X if fitting intercept (mean-center each feature)
-    const featureMeans = new Array(numFeatures).fill(0);
-    if (this.config.fitIntercept) {
-      for (let j = 0; j < numFeatures; j++) {
-        let sum = 0;
-        for (let i = 0; i < nSamples; i++) {
-          sum += XDense[i][j];
-        }
-        featureMeans[j] = sum / nSamples;
-      }
-      for (let i = 0; i < nSamples; i++) {
-        for (let j = 0; j < numFeatures; j++) {
-          XDense[i][j] -= featureMeans[j];
-        }
-      }
+    // Compute X^T X directly from sparse vectors (with centering correction)
+    const XtX = sparseXtX(X, numFeatures, featureMeans);
+
+    // Compute X^T y directly from sparse vectors
+    const Xty = sparseXty(X, yAdjusted, numFeatures, featureMeans);
+
+    // Solve (X^T X + αI) w = X^T y via Cholesky decomposition
+    // Note: choleskySolve modifies XtX in-place
+    const weights = choleskySolve(XtX, Xty, numFeatures, this.config.alpha);
+    if (!weights) {
+      throw new Error("Cholesky decomposition failed - matrix not positive definite");
     }
 
-    // Compute X^T X
-    const Xt = transpose(XDense);
-    const XtX = matmul(Xt, XDense);
-
-    // Add regularization: X^T X + αI
-    const alphaI = scalarMul(this.config.alpha, eye(numFeatures));
-    const XtXReg = matadd(XtX, alphaI);
-
-    // Compute (X^T X + αI)^(-1)
-    const XtXRegInv = inverse(XtXReg);
-    if (!XtXRegInv) {
-      throw new Error("Matrix is singular, cannot compute inverse");
-    }
-
-    // Compute X^T y
-    const Xty = matvec(Xt, yAdjusted);
-
-    // Compute weights: w = (X^T X + αI)^(-1) X^T y
-    const weights = matvec(XtXRegInv, Xty);
-
-    // Compute intercept
+    // Compute intercept: yMean - Σ(w_j * featureMean_j)
     let intercept = yMean;
-    if (this.config.fitIntercept) {
+    if (this.config.fitIntercept && featureMeans) {
       for (let j = 0; j < numFeatures; j++) {
         intercept -= weights[j] * featureMeans[j];
       }
@@ -415,7 +404,7 @@ export class RidgeRegression {
  * @param y Target values
  * @param numFeatures Total number of features
  * @param config Ridge configuration
- * @param nFolds Number of CV folds (default: 5)
+ * @param nFolds Number of CV folds (default: 3)
  * @returns MAE and Pearson correlation
  */
 export function crossValidate(
@@ -423,7 +412,7 @@ export function crossValidate(
   y: number[],
   numFeatures: number,
   config: Partial<RidgeConfig> = {},
-  nFolds: number = 5
+  nFolds: number = 3
 ): { mae: number; correlation: number } {
   const nSamples = X.length;
   if (nSamples < nFolds) {
