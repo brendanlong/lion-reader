@@ -102,7 +102,9 @@ export function createTagSubscriptionsCollection(
       queryKey: ["subscriptions-tag", stableTagFilterKey(filters)],
       queryClient,
       getKey: (item: Subscription) => item.id,
-      staleTime: Infinity,
+      // Use a finite staleTime so expanding a tag section after SSE events
+      // have drifted the counts will trigger a refetch that corrects them (#623).
+      staleTime: 60_000,
       queryFn: async (ctx) => {
         const opts = ctx.meta?.loadSubsetOptions as { offset?: number; limit?: number } | undefined;
         const offset = opts?.offset ?? 0;

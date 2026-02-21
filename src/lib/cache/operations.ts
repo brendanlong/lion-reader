@@ -142,15 +142,16 @@ export function handleNewEntry(
   feedType: "web" | "email" | "saved",
   collections?: Collections | null
 ): void {
-  // Update subscription and tag unread counts
+  // Update per-subscription and tag/uncategorized unread counts.
+  // Same tradeoff as entry_state_changed: if the subscription isn't loaded
+  // in the collection, tag deltas will be zero and counts may drift until
+  // the tag section is expanded and refetched (see #623).
   if (subscriptionId) {
     const subscriptionDeltas = new Map<string, number>();
     subscriptionDeltas.set(subscriptionId, 1);
 
-    // Update subscription unread in collection
     adjustSubscriptionUnreadInCollection(collections ?? null, subscriptionDeltas);
 
-    // Calculate and apply tag deltas using subscription data from collection
     const { tagDeltas, uncategorizedDelta } = calculateTagDeltasFromSubscriptions(
       subscriptionDeltas,
       collections ?? null

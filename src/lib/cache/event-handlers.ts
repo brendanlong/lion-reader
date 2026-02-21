@@ -51,10 +51,10 @@ export function handleSyncEvent(
 ): void {
   switch (event.type) {
     case "new_entry":
-      // Update unread counts in collections
-      if (event.feedType) {
-        handleNewEntry(utils, event.subscriptionId, event.feedType, collections);
-      }
+      // Update unread counts in collections.
+      // feedType is optional in the SSE schema (older servers may not send it).
+      // Default to "web" when missing so count updates still happen.
+      handleNewEntry(utils, event.subscriptionId, event.feedType ?? "web", collections);
       // Invalidate view collection so the new entry appears in the list
       collections?.invalidateActiveView();
       break;
@@ -113,13 +113,24 @@ export function handleSyncEvent(
         // Update global "all" unread count
         adjustEntriesCountInCollection(collections ?? null, "all", 0, unreadDelta);
 
-        // Update subscription unread count
+        // Update per-subscription and tag/uncategorized unread counts.
+        //
+        // TRADEOFF (see #623): Subscriptions are loaded on-demand when users
+        // expand tag sections in the sidebar. If the subscription isn't in
+        // the collection yet, calculateTagDeltasFromSubscriptions will return
+        // zero deltas, so tag/uncategorized/per-subscription counts won't be
+        // adjusted here. This is acceptable per Goal 4 ("Everything works even
+        // if we don't have per-subscription data"):
+        //   - Global "all" count (above) is always correct.
+        //   - Tag/uncategorized counts may drift temporarily.
+        //   - When tag sections are expanded, the tag subscriptions collection
+        //     refetches from the server (staleTime is finite), which corrects
+        //     the counts.
         if (event.subscriptionId) {
           const subscriptionDeltas = new Map<string, number>();
           subscriptionDeltas.set(event.subscriptionId, unreadDelta);
           adjustSubscriptionUnreadInCollection(collections ?? null, subscriptionDeltas);
 
-          // Update tag/uncategorized unread counts
           const { tagDeltas, uncategorizedDelta } = calculateTagDeltasFromSubscriptions(
             subscriptionDeltas,
             collections ?? null
