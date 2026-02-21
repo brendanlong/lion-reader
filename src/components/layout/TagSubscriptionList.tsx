@@ -30,6 +30,8 @@ interface TagSubscriptionListProps {
   }) => void;
   /** Callback to unsubscribe */
   onUnsubscribe: (sub: { id: string; title: string }) => void;
+  /** When true, only show subscriptions with unread entries */
+  unreadOnly: boolean;
 }
 
 export function TagSubscriptionList({
@@ -39,11 +41,12 @@ export function TagSubscriptionList({
   onClose,
   onEdit,
   onUnsubscribe,
+  unreadOnly,
 }: TagSubscriptionListProps) {
   const sentinelRef = useRef<HTMLLIElement>(null);
 
   const subscriptionsQuery = trpc.subscriptions.list.useInfiniteQuery(
-    { tagId, uncategorized, limit: 50 },
+    { tagId, uncategorized, unreadOnly: unreadOnly || undefined, limit: 50 },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
     }

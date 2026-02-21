@@ -27,12 +27,14 @@ interface TagListProps {
     tagIds: string[];
   }) => void;
   onUnsubscribe: (sub: { id: string; title: string }) => void;
+  /** When true, only show tags/subscriptions with unread entries */
+  unreadOnly: boolean;
 }
 
 /**
  * Inner component that suspends on tags.list query.
  */
-function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
+function TagListContent({ onNavigate, onEdit, onUnsubscribe, unreadOnly }: TagListProps) {
   const pathname = usePathname();
   const [tagsData] = trpc.tags.list.useSuspenseQuery();
   const { isExpanded, toggleExpanded } = useExpandedTags();
@@ -40,12 +42,23 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
   const tags = tagsData.items;
   const uncategorized = tagsData.uncategorized;
 
-  // Tags sorted alphabetically, showing only tags that have subscriptions
+  // Determine which tag/uncategorized is currently active so we always show it
+  const activeTagId = pathname.startsWith("/tag/") ? pathname.slice("/tag/".length) : null;
+  const isUncategorizedActive = pathname === "/uncategorized";
+
+  // Tags sorted alphabetically, showing only tags that have subscriptions.
+  // When unreadOnly, also hide tags with 0 unread (unless currently active).
   const sortedTags = [...(tags ?? [])]
-    .filter((tag) => tag.feedCount > 0)
+    .filter((tag) => {
+      if (tag.feedCount === 0) return false;
+      if (unreadOnly && tag.unreadCount === 0 && tag.id !== activeTagId) return false;
+      return true;
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const hasUncategorized = (uncategorized?.feedCount ?? 0) > 0;
+  const hasUncategorized =
+    (uncategorized?.feedCount ?? 0) > 0 &&
+    (!unreadOnly || (uncategorized?.unreadCount ?? 0) > 0 || isUncategorizedActive);
   const hasTags = sortedTags.length > 0 || hasUncategorized;
 
   const isActiveLink = (href: string) => {
@@ -58,7 +71,11 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
     return pathname.startsWith(href);
   };
 
-  if (!hasTags) {
+  // Check if user has any subscriptions at all (ignoring unread filter)
+  const hasAnySubscriptions =
+    (tags ?? []).some((tag) => tag.feedCount > 0) || (uncategorized?.feedCount ?? 0) > 0;
+
+  if (!hasAnySubscriptions) {
     return (
       <p className="ui-text-sm px-3 text-zinc-500 dark:text-zinc-400">
         No subscriptions yet.{" "}
@@ -71,6 +88,10 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
         </ClientLink>
       </p>
     );
+  }
+
+  if (!hasTags) {
+    return <p className="ui-text-sm px-3 text-zinc-500 dark:text-zinc-400">No unread feeds</p>;
   }
 
   return (
@@ -116,6 +137,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
                 onClose={onNavigate}
                 onEdit={onEdit}
                 onUnsubscribe={onUnsubscribe}
+                unreadOnly={unreadOnly}
               />
             )}
           </li>
@@ -158,6 +180,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe }: TagListProps) {
               onClose={onNavigate}
               onEdit={onEdit}
               onUnsubscribe={onUnsubscribe}
+              unreadOnly={unreadOnly}
             />
           )}
         </li>

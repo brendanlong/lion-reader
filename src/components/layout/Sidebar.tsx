@@ -18,8 +18,10 @@ import { trpc } from "@/lib/trpc/client";
 import { handleSubscriptionDeleted } from "@/lib/cache/operations";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
+import { useSidebarUnreadOnly } from "@/lib/hooks/useSidebarUnreadOnly";
 import { SidebarNav } from "./SidebarNav";
 import { TagList } from "./TagList";
+import { SidebarUnreadToggle } from "./SidebarUnreadToggle";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -27,6 +29,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const queryClient = useQueryClient();
+  const { sidebarUnreadOnly, toggleSidebarUnreadOnly } = useSidebarUnreadOnly();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
@@ -85,8 +88,13 @@ export function Sidebar({ onClose }: SidebarProps) {
         {/* Main Navigation with streaming counts */}
         <SidebarNav onNavigate={handleNavigate} />
 
-        {/* Divider */}
-        <div className="mx-3 border-t border-zinc-200 dark:border-zinc-700" />
+        {/* Divider with unread toggle */}
+        <div className="mx-3 flex items-center gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
+          <span className="ui-text-xs flex-1 font-medium text-zinc-500 dark:text-zinc-400">
+            Feeds
+          </span>
+          <SidebarUnreadToggle unreadOnly={sidebarUnreadOnly} onToggle={toggleSidebarUnreadOnly} />
+        </div>
 
         {/* Scrollable area with tags and feeds */}
         <div className="flex-1 overflow-y-auto p-3">
@@ -94,6 +102,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             onNavigate={handleNavigate}
             onEdit={handleEdit}
             onUnsubscribe={handleUnsubscribe}
+            unreadOnly={sidebarUnreadOnly}
           />
         </div>
       </nav>
