@@ -24,7 +24,6 @@ interface BaseFeedEvent {
   timestamp: string;
   /** Database updated_at for cursor tracking (entries cursor) */
   updatedAt: string;
-  feedType?: "web" | "email" | "saved"; // Added to new_entry for cache updates
 }
 
 /**
@@ -32,6 +31,7 @@ interface BaseFeedEvent {
  */
 export interface NewEntryEvent extends BaseFeedEvent {
   type: "new_entry";
+  feedType: "web" | "email" | "saved";
 }
 
 /**
@@ -333,7 +333,7 @@ export async function publishNewEntry(
   feedId: string,
   entryId: string,
   updatedAt: Date,
-  feedType?: "web" | "email" | "saved"
+  feedType: "web" | "email" | "saved"
 ): Promise<number> {
   const event: NewEntryEvent = {
     type: "new_entry",

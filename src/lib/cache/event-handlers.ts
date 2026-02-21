@@ -51,10 +51,8 @@ export function handleSyncEvent(
 ): void {
   switch (event.type) {
     case "new_entry":
-      // Update unread counts in collections.
-      // feedType is optional in the SSE schema (older servers may not send it).
-      // Default to "web" when missing so count updates still happen.
-      handleNewEntry(utils, event.subscriptionId, event.feedType ?? "web", collections);
+      // Update unread counts in collections
+      handleNewEntry(utils, event.subscriptionId, event.feedType, collections);
       // Invalidate view collection so the new entry appears in the list
       collections?.invalidateActiveView();
       break;

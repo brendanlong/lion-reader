@@ -93,7 +93,7 @@ export const newEntryEventSchema = z.object({
   entryId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
-  feedType: z.enum(["web", "email", "saved"]).optional(),
+  feedType: z.enum(["web", "email", "saved"]),
 });
 
 export const entryUpdatedEventSchema = z.object({
