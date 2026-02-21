@@ -8,6 +8,7 @@
  * - auth.me (user info for header)
  * - tags.list (sidebar tag structure and unread counts)
  * - entries.count (all/starred/saved counts for sidebar)
+ * - entries.hasScoredEntries (sidebar "Best" link visibility)
  * - sync.cursors (lightweight max timestamps for SSE cursor initialization)
  * - summarization.isAvailable (for entry content summarization button)
  *
@@ -62,6 +63,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     trpc.entries.count.prefetch({}),
     trpc.entries.count.prefetch({ type: "saved" }),
     trpc.entries.count.prefetch({ starredOnly: true }),
+    trpc.entries.hasScoredEntries.prefetch(), // For sidebar "Best" link visibility
     trpc.summarization.isAvailable.prefetch(), // For entry content summarization button
   ]);
   const initialCursors = await trpc.sync.cursors(); // Lightweight cursor-only query
