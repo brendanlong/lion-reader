@@ -96,14 +96,14 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Entry Mutations
 
-| Mutation                   | Used In             | Cache Updates                                                                                                                                    |
-| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `subscriptions.list` counts, `tags.list` counts, entry scores. Server returns absolute counts. |
-| `entries.markAllRead`      | `useEntryMutations` | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count` (bulk operation, direct update not practical)                     |
-| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.          |
-| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.          |
-| `entries.setScore`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), entry scores                                                                                   |
-| `entries.fetchFullContent` | `EntryContent`      | Invalidate: `entries.get({ id })`                                                                                                                |
+| Mutation                   | Used In             | Cache Updates                                                                                                                                                               |
+| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entries.markRead`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `subscriptions.list` counts, `tags.list` counts, entry scores. Server returns absolute counts.                            |
+| `entries.markAllRead`      | `useEntryMutations` | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count`. Direct: subscription unread counts zeroed in collection (by subscriptionId, tagId, or all). |
+| `entries.star`             | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.                                     |
+| `entries.unstar`           | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), `entries.count({ starredOnly: true })`, entry scores. Server returns absolute counts.                                     |
+| `entries.setScore`         | `useEntryMutations` | Direct: `entries.get`, `entries.list` (in-place), entry scores                                                                                                              |
+| `entries.fetchFullContent` | `EntryContent`      | Invalidate: `entries.get({ id })`                                                                                                                                           |
 
 ### Subscription Mutations
 

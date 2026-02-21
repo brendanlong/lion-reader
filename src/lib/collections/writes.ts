@@ -130,6 +130,51 @@ export function upsertSubscriptionsInCollection(
   }
 }
 
+/**
+ * Zeroes out unread counts for subscriptions matching markAllRead filters.
+ *
+ * - No filter: all subscriptions set to 0
+ * - subscriptionId: only that subscription
+ * - tagId: all subscriptions whose `tags` array contains that tag
+ */
+export function zeroSubscriptionUnreadForMarkAllRead(
+  collections: Collections | null,
+  filters: {
+    subscriptionId?: string;
+    tagId?: string;
+  }
+): void {
+  if (!collections) return;
+
+  if (filters.subscriptionId) {
+    // Single subscription
+    const current = collections.subscriptions.get(filters.subscriptionId);
+    if (current) {
+      collections.subscriptions.update(filters.subscriptionId, (draft) => {
+        draft.unreadCount = 0;
+      });
+    }
+  } else if (filters.tagId) {
+    // All subscriptions with this tag
+    collections.subscriptions.forEach((sub) => {
+      if (sub.tags.some((t) => t.id === filters.tagId) && sub.unreadCount > 0) {
+        collections.subscriptions.update(sub.id, (draft) => {
+          draft.unreadCount = 0;
+        });
+      }
+    });
+  } else {
+    // No filter: zero out all subscriptions
+    collections.subscriptions.forEach((sub) => {
+      if (sub.unreadCount > 0) {
+        collections.subscriptions.update(sub.id, (draft) => {
+          draft.unreadCount = 0;
+        });
+      }
+    });
+  }
+}
+
 // ============================================================================
 // Tag Collection Writes (query-backed)
 // ============================================================================

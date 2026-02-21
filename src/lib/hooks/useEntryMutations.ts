@@ -28,6 +28,7 @@ import {
   updateEntryReadInCollection,
   updateEntryStarredInCollection,
   updateEntryScoreInCollection,
+  zeroSubscriptionUnreadForMarkAllRead,
 } from "@/lib/collections/writes";
 
 /**
@@ -368,12 +369,18 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
   // markAllRead mutation - invalidates caches and refreshes counts
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       utils.entries.list.invalidate();
       collections.invalidateActiveView();
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
       collections.tags.utils.refetch();
+
+      // Zero out unread counts for affected subscriptions in the local collection
+      zeroSubscriptionUnreadForMarkAllRead(collections, {
+        subscriptionId: variables.subscriptionId,
+        tagId: variables.tagId,
+      });
 
       // markAllRead doesn't return counts, so fetch fresh counts from server
       refreshGlobalCounts(utils, collections);
