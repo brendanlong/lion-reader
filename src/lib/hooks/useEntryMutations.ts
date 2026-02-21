@@ -337,6 +337,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
       // Update counts (always apply, not dependent on timestamp)
       setBulkCounts(collections, data.counts);
+
+      // Invalidate the active view so the list refetches from the server.
+      // This is needed for views sorted by readChangedAt (Recently Read),
+      // where the sort order changes after a read/unread toggle.
+      collections.invalidateActiveView();
     },
 
     onError: (error, variables) => {

@@ -390,6 +390,12 @@ export async function listEntries(
       ? visibleEntries.readChangedAt
       : sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
 
+  // When sorting by readChanged, only show entries the user has actually read.
+  // Without this, all entries appear (readChangedAt defaults to row creation time).
+  if (params.sortBy === "readChanged") {
+    conditions.push(eq(visibleEntries.read, true));
+  }
+
   // Cursor condition
   if (params.cursor) {
     const { ts, id } = decodeCursor(params.cursor);
