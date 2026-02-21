@@ -63,6 +63,8 @@ function createAuthContext(userId: string): Context {
         summarizationModel: null,
         summarizationMaxWords: null,
         summarizationPrompt: null,
+        bestFeedScoreWeight: 1,
+        bestFeedUncertaintyWeight: 1,
         createdAt: now,
         updatedAt: now,
       },

@@ -492,6 +492,8 @@ export const entriesRouter = createTRPCRouter({
         cursor: input.cursor,
         limit: input.limit,
         showSpam,
+        bestFeedScoreWeight: ctx.session.user.bestFeedScoreWeight,
+        bestFeedUncertaintyWeight: ctx.session.user.bestFeedUncertaintyWeight,
       });
     }),
 

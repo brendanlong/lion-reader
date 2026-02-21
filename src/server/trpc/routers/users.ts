@@ -329,6 +329,8 @@ export const usersRouter = createTRPCRouter({
         summarizationModel: z.string().nullable(),
         summarizationMaxWords: z.number().nullable(),
         summarizationPrompt: z.string().nullable(),
+        bestFeedScoreWeight: z.number(),
+        bestFeedUncertaintyWeight: z.number(),
       })
     )
     .query(async ({ ctx }) => {
@@ -343,6 +345,8 @@ export const usersRouter = createTRPCRouter({
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
+        bestFeedScoreWeight: ctx.session.user.bestFeedScoreWeight,
+        bestFeedUncertaintyWeight: ctx.session.user.bestFeedUncertaintyWeight,
       };
     }),
 
@@ -371,6 +375,9 @@ export const usersRouter = createTRPCRouter({
         // Summarization settings: null clears (reverts to default)
         summarizationMaxWords: z.number().int().min(1).max(10000).nullable().optional(),
         summarizationPrompt: z.string().max(10000).nullable().optional(),
+        // Best feed sorting weights
+        bestFeedScoreWeight: z.number().min(0).max(10).optional(),
+        bestFeedUncertaintyWeight: z.number().min(0).max(10).optional(),
       })
     )
     .output(
@@ -383,6 +390,8 @@ export const usersRouter = createTRPCRouter({
         summarizationModel: z.string().nullable(),
         summarizationMaxWords: z.number().nullable(),
         summarizationPrompt: z.string().nullable(),
+        bestFeedScoreWeight: z.number(),
+        bestFeedUncertaintyWeight: z.number(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -407,6 +416,8 @@ export const usersRouter = createTRPCRouter({
         summarizationModel?: string | null;
         summarizationMaxWords?: number | null;
         summarizationPrompt?: string | null;
+        bestFeedScoreWeight?: number;
+        bestFeedUncertaintyWeight?: number;
         updatedAt: Date;
       } = {
         updatedAt: new Date(),
@@ -443,6 +454,14 @@ export const usersRouter = createTRPCRouter({
         updateData.summarizationPrompt = input.summarizationPrompt;
       }
 
+      if (input.bestFeedScoreWeight !== undefined) {
+        updateData.bestFeedScoreWeight = input.bestFeedScoreWeight;
+      }
+
+      if (input.bestFeedUncertaintyWeight !== undefined) {
+        updateData.bestFeedUncertaintyWeight = input.bestFeedUncertaintyWeight;
+      }
+
       // Update user preferences in database
       await ctx.db.update(users).set(updateData).where(eq(users.id, userId));
 
@@ -459,6 +478,8 @@ export const usersRouter = createTRPCRouter({
           summarizationModel: users.summarizationModel,
           summarizationMaxWords: users.summarizationMaxWords,
           summarizationPrompt: users.summarizationPrompt,
+          bestFeedScoreWeight: users.bestFeedScoreWeight,
+          bestFeedUncertaintyWeight: users.bestFeedUncertaintyWeight,
         })
         .from(users)
         .where(eq(users.id, userId))
@@ -473,6 +494,8 @@ export const usersRouter = createTRPCRouter({
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,
+        bestFeedScoreWeight: updatedUser[0]?.bestFeedScoreWeight ?? 1,
+        bestFeedUncertaintyWeight: updatedUser[0]?.bestFeedUncertaintyWeight ?? 1,
       };
     }),
 });
