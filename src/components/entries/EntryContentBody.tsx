@@ -248,6 +248,15 @@ export function EntryContentBody({
   // Get narration settings for auto-scroll preference
   const [narrationSettings] = useNarrationSettings();
 
+  // Stop narration if user disables it in settings while audio is playing
+  useEffect(() => {
+    if (!narrationSettings.enabled) {
+      narration.stop();
+    }
+    // Only trigger when enabled changes, not on every narration object change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrationSettings.enabled]);
+
   // Get text appearance settings
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
@@ -572,7 +581,7 @@ export function EntryContentBody({
           )}
 
           {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
-          {!hideNarration && shouldProcessForHighlighting && (
+          {!hideNarration && narrationSettings.enabled && shouldProcessForHighlighting && (
             <NarrationHighlightStyles
               highlightedParagraphIds={highlightedParagraphIds}
               enabled={narrationSettings.highlightEnabled}
