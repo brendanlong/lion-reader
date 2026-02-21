@@ -29,7 +29,7 @@ import { USER_AGENT } from "@/server/http/user-agent";
  * Paper IDs can be in old format (hep-th/9901001) or new format (2601.04649).
  */
 const ARXIV_URL_PATTERN =
-  /^https?:\/\/(?:www\.)?arxiv\.org\/(abs|pdf|html)\/([a-zA-Z0-9.\-/]+?)(?:\.pdf)?(?:v\d+)?(?:[?#].*)?$/;
+  /^https?:\/\/(?:www\.)?arxiv\.org\/(abs|pdf|html)\/([a-zA-Z0-9.\-/]+?(?:v\d+)?)(?:\.pdf)?(?:[?#].*)?$/;
 
 /**
  * Checks if a URL is an ArXiv paper URL (abs, pdf, or html).

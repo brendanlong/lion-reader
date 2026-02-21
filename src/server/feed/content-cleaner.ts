@@ -124,6 +124,37 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
 }
 
 /**
+ * Extracts the effective base URL from HTML content by looking for a <base href="..."> tag.
+ *
+ * Per the HTML spec, only the first <base> element with an href attribute is used.
+ * The href is resolved against the provided fallback URL.
+ *
+ * This is useful for extracting the base URL before processing that may strip
+ * the <base> tag (e.g. Readability), so relative URLs can still be resolved correctly.
+ *
+ * @param html - The HTML content to search
+ * @param fallbackUrl - The URL to use if no <base> tag is found, also used to resolve
+ *                      relative <base href> values
+ * @returns The effective base URL (from <base> tag or fallback)
+ */
+export function extractBaseHref(html: string, fallbackUrl: string): string {
+  // Use a simple regex to extract the first <base href="..."> value.
+  // This is intentionally simple - we only need the first one per the HTML spec,
+  // and we want this to be fast since it runs before Readability.
+  const match = html.match(/<base\s[^>]*href\s*=\s*["']([^"']+)["']/i);
+  if (!match) {
+    return fallbackUrl;
+  }
+
+  try {
+    // Resolve the <base> href against the fallback URL in case it's relative
+    return new URL(match[1], fallbackUrl).href;
+  } catch {
+    return fallbackUrl;
+  }
+}
+
+/**
  * Resolves a potentially relative URL against a base URL.
  *
  * @param url - The URL to resolve (may be relative or absolute)
@@ -351,8 +382,10 @@ export function cleanContent(
       return null;
     }
 
-    // Absolutize relative URLs in the cleaned content if we have a base URL
-    const content = url ? absolutizeUrls(article.content, url) : article.content;
+    // Absolutize relative URLs in the cleaned content if we have a base URL.
+    // Extract <base href> from the raw HTML since Readability strips it.
+    const effectiveUrl = url ? extractBaseHref(html, url) : undefined;
+    const content = effectiveUrl ? absolutizeUrls(article.content, effectiveUrl) : article.content;
 
     return {
       content,

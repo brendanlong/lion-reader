@@ -26,10 +26,20 @@ export const arxivPlugin: UrlPlugin = {
     savedArticle: {
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
         try {
-          // Determine the best URL to fetch (HTML version if available)
-          const fetchUrl = await getArxivFetchUrl(url.href);
-          if (!fetchUrl) {
-            return null;
+          // For /html/ URLs, fetch directly; for /abs/ and /pdf/, try to find the HTML version
+          const isHtmlUrl = /^\/html\//.test(url.pathname);
+          let fetchUrl: string;
+
+          if (isHtmlUrl) {
+            // Already an HTML URL - fetch it directly
+            fetchUrl = url.href;
+          } else {
+            // Try to transform abs/pdf to HTML
+            const transformed = await getArxivFetchUrl(url.href);
+            if (!transformed) {
+              return null;
+            }
+            fetchUrl = transformed;
           }
 
           logger.debug("Fetching ArXiv paper", {

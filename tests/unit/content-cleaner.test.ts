@@ -7,6 +7,7 @@ import {
   cleanContent,
   generateCleanedSummary,
   absolutizeUrls,
+  extractBaseHref,
   isLessWrongFeed,
   cleanLessWrongContent,
 } from "@/server/feed/content-cleaner";
@@ -665,6 +666,73 @@ describe("absolutizeUrls", () => {
       expect(result!.content).toContain('src="https://example.com/images/test.jpg"');
       expect(result!.content).toContain('href="https://example.com/other-page"');
     });
+
+    it("should use <base href> from raw HTML even after Readability strips it", () => {
+      // Simulates the ArXiv case: URL without trailing slash, but <base> tag has one
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head><base href="/html/2602.04118v1/"/></head>
+        <body>
+          <article>
+            <h1>Paper Title</h1>
+            <p>This is the first paragraph of the paper with enough content for Readability to consider it readable.</p>
+            <img src="x1.png" alt="Figure 1">
+            <p>This is the second paragraph with more detailed analysis of the results shown above.</p>
+            <p>This is the third paragraph with conclusions and future work directions.</p>
+          </article>
+        </body>
+        </html>
+      `;
+
+      const result = cleanContent(html, { url: "https://arxiv.org/html/2602.04118v1" });
+
+      expect(result).not.toBeNull();
+      // Should resolve against the <base href> (with trailing slash), not the URL
+      expect(result!.content).toContain('src="https://arxiv.org/html/2602.04118v1/x1.png"');
+    });
+  });
+});
+
+describe("extractBaseHref", () => {
+  it("should extract base href from HTML", () => {
+    const html = '<html><head><base href="/html/paper/"/></head><body></body></html>';
+    expect(extractBaseHref(html, "https://example.com/page")).toBe(
+      "https://example.com/html/paper/"
+    );
+  });
+
+  it("should return fallback URL when no base tag exists", () => {
+    const html = "<html><head></head><body></body></html>";
+    expect(extractBaseHref(html, "https://example.com/page")).toBe("https://example.com/page");
+  });
+
+  it("should handle absolute base href", () => {
+    const html = '<html><head><base href="https://cdn.example.com/assets/"/></head></html>';
+    expect(extractBaseHref(html, "https://example.com/page")).toBe(
+      "https://cdn.example.com/assets/"
+    );
+  });
+
+  it("should use only the first base tag per HTML spec", () => {
+    const html =
+      '<html><head><base href="/first/"/><base href="/second/"/></head><body></body></html>';
+    expect(extractBaseHref(html, "https://example.com")).toBe("https://example.com/first/");
+  });
+
+  it("should handle base tag with other attributes", () => {
+    const html = '<html><head><base target="_blank" href="/path/"/></head></html>';
+    expect(extractBaseHref(html, "https://example.com")).toBe("https://example.com/path/");
+  });
+
+  it("should handle single-quoted href", () => {
+    const html = "<html><head><base href='/path/'/></head></html>";
+    expect(extractBaseHref(html, "https://example.com")).toBe("https://example.com/path/");
+  });
+
+  it("should return fallback when no href attribute in base tag", () => {
+    const html = '<html><head><base target="_blank"></head></html>';
+    expect(extractBaseHref(html, "https://example.com/page")).toBe("https://example.com/page");
   });
 });
 
