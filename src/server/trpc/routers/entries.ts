@@ -62,6 +62,11 @@ const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
 const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
 
 /**
+ * Sort by validation schema for choosing which timestamp to sort entries by.
+ */
+const sortBySchema = z.enum(["published", "readChanged", "predictedScore"]).optional();
+
+/**
  * Feed type validation schema for filtering entries by type.
  */
 const feedTypeSchema = z.enum(["web", "email", "saved"]);
@@ -105,6 +110,7 @@ const entryListItemSchema = z.object({
   siteName: z.string().nullable(),
   score: z.number().nullable(),
   implicitScore: z.number(),
+  predictedScore: z.number().nullable(),
 });
 
 /**
@@ -129,6 +135,8 @@ const entryFullSchema = z.object({
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
   siteName: z.string().nullable(),
+  // Unsubscribe link from email HTML (for email entries)
+  unsubscribeUrl: z.string().nullable(),
   // Full content fields
   fullContentOriginal: z.string().nullable(),
   fullContentCleaned: z.string().nullable(),
@@ -271,6 +279,7 @@ const fullEntrySelectFields = {
   siteName: visibleEntries.siteName,
   feedTitle: feeds.title,
   feedUrl: feeds.url,
+  unsubscribeUrl: visibleEntries.unsubscribeUrl,
   fullContentOriginal: visibleEntries.fullContentOriginal,
   fullContentCleaned: visibleEntries.fullContentCleaned,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
@@ -461,6 +470,7 @@ export const entriesRouter = createTRPCRouter({
         unreadOnly: booleanQueryParam,
         starredOnly: booleanQueryParam,
         sortOrder: sortOrderSchema,
+        sortBy: sortBySchema,
         cursor: cursorSchema,
         limit: limitSchema,
       })
@@ -481,6 +491,7 @@ export const entriesRouter = createTRPCRouter({
         unreadOnly: input.unreadOnly,
         starredOnly: input.starredOnly,
         sortOrder: input.sortOrder,
+        sortBy: input.sortBy,
         cursor: input.cursor,
         limit: input.limit,
         showSpam,
@@ -1001,6 +1012,33 @@ export const entriesRouter = createTRPCRouter({
         starredOnly: input?.starredOnly,
         showSpam: ctx.session.user.showSpam,
       });
+    }),
+
+  /**
+   * Check if the user has scored any entries.
+   *
+   * Returns true if the user has explicitly scored at least one entry,
+   * which is the prerequisite for the algorithmic feed to be useful.
+   */
+  hasScoredEntries: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/entries/has-scored",
+        tags: ["Entries"],
+        summary: "Check if user has scored entries",
+      },
+    })
+    .output(z.object({ hasScoredEntries: z.boolean() }))
+    .query(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+      const result = await ctx.db
+        .select({ id: userEntries.entryId })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), sql`${userEntries.score} IS NOT NULL`))
+        .limit(1);
+
+      return { hasScoredEntries: result.length > 0 };
     }),
 
   /**

@@ -37,6 +37,8 @@ export interface EntryArticleProps {
   textStyle?: CSSProperties;
   /** Optional domain for footer link (defaults to extracting from url) */
   footerLinkDomain?: string;
+  /** Unsubscribe URL extracted from email newsletter (null for non-email entries) */
+  unsubscribeUrl?: string | null;
   /** Whether content is loading (shows skeleton) */
   isContentLoading?: boolean;
   /** Ref for the content container (for highlighting, image prefetch) */
@@ -71,6 +73,7 @@ export function EntryArticle({
   textSizeClass = "prose prose-zinc dark:prose-invert",
   textStyle,
   footerLinkDomain,
+  unsubscribeUrl,
   isContentLoading,
   contentRef,
   backButton,
@@ -175,18 +178,33 @@ export function EntryArticle({
       {/* After content slot (CTA buttons, etc.) */}
       {afterContent}
 
-      {/* Footer with original link */}
-      {url && (
+      {/* Footer with original link and unsubscribe link */}
+      {(url || unsubscribeUrl) && (
         <footer className="mt-8 border-t border-zinc-200 pt-6 sm:mt-12 sm:pt-8 dark:border-zinc-700">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
-          >
-            <ExternalLinkIcon className="h-4 w-4" />
-            Read on {displayFooterDomain}
-          </a>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            {url && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-blue-600 transition-colors hover:text-blue-700 active:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 dark:active:text-blue-200"
+              >
+                <ExternalLinkIcon className="h-4 w-4" />
+                Read on {displayFooterDomain}
+              </a>
+            )}
+            {unsubscribeUrl && (
+              <a
+                href={unsubscribeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-zinc-500 transition-colors hover:text-zinc-700 active:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-300 dark:active:text-zinc-200"
+              >
+                <ExternalLinkIcon className="h-4 w-4" />
+                Unsubscribe
+              </a>
+            )}
+          </div>
         </footer>
       )}
 

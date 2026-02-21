@@ -30,6 +30,7 @@ interface SubscriptionsListResponse {
 export interface TagSubscriptionFilters {
   tagId?: string;
   uncategorized?: boolean;
+  unreadOnly?: boolean;
   limit: number;
 }
 
@@ -64,7 +65,12 @@ export type SubscriptionsCollection = ReturnType<typeof createSubscriptionsColle
  * Generates a stable string key for a tag subscription filter combination.
  */
 export function stableTagFilterKey(filters: TagSubscriptionFilters): string {
-  return JSON.stringify([filters.tagId ?? null, filters.uncategorized ?? null, filters.limit]);
+  return JSON.stringify([
+    filters.tagId ?? null,
+    filters.uncategorized ?? null,
+    filters.unreadOnly ?? null,
+    filters.limit,
+  ]);
 }
 
 /**
@@ -81,6 +87,7 @@ export function createTagSubscriptionsCollection(
   fetchSubscriptions: (params: {
     tagId?: string;
     uncategorized?: boolean;
+    unreadOnly?: boolean;
     cursor?: string;
     limit: number;
   }) => Promise<SubscriptionsListResponse>,
@@ -110,6 +117,7 @@ export function createTagSubscriptionsCollection(
         const result = await fetchSubscriptions({
           tagId: filters.tagId,
           uncategorized: filters.uncategorized,
+          unreadOnly: filters.unreadOnly,
           cursor,
           limit,
         });

@@ -358,6 +358,27 @@
       "when": 1770518800000,
       "tag": "0050_user_summary_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1770528800000,
+      "tag": "0051_unsubscribe_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1770538800000,
+      "tag": "0052_websub_unsubscribe",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1770548800000,
+      "tag": "0053_visible_entries_read_changed_at",
+      "breakpoints": true
     }
   ]
 }

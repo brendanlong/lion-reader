@@ -1,31 +1,27 @@
 /**
- * Shared Event Schemas
+ * Shared SSE/Sync Event Schemas
  *
- * Zod schemas for all sync event types used by both SSE and polling sync.
- * These replace manual typeof checks in the SSE parser and manual TypeScript
- * interfaces in the event handler.
+ * Zod schemas for all real-time event types. These are the single source of truth
+ * for event shapes, used by:
+ * - SSE event parsing (client-side)
+ * - sync.events endpoint output validation (server-side)
+ * - Cache event handlers (type derivation)
  *
- * The server may include extra fields (userId, feedId) that aren't needed
- * client-side. Using passthrough() on the discriminated union allows those
- * fields to pass through without validation errors while we extract only
- * what the client needs via the schema definitions.
+ * SSE events from the server may include extra fields (userId, feedId) that
+ * aren't relevant to the client. Using Zod's default strip behavior, these
+ * extra fields are ignored during parsing.
  */
 
 import { z } from "zod";
 
 // ============================================================================
-// Shared Sub-schemas
+// Reusable Sub-Schemas
 // ============================================================================
 
-const feedTypeSchema = z.enum(["web", "email", "saved"]);
-
-const tagSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  color: z.string().nullable(),
-});
-
-const entryMetadataSchema = z.object({
+/**
+ * Entry metadata for entry_updated events.
+ */
+export const entryMetadataSchema = z.object({
   title: z.string().nullable(),
   author: z.string().nullable(),
   summary: z.string().nullable(),
@@ -33,19 +29,34 @@ const entryMetadataSchema = z.object({
   publishedAt: z.string().nullable(),
 });
 
-const subscriptionDataSchema = z.object({
+/**
+ * Tag data included in tag events.
+ */
+export const syncTagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().nullable(),
+});
+
+/**
+ * Subscription data for subscription_created events.
+ */
+export const subscriptionCreatedDataSchema = z.object({
   id: z.string(),
   feedId: z.string(),
   customTitle: z.string().nullable(),
   subscribedAt: z.string(),
   unreadCount: z.number(),
   totalCount: z.number(),
-  tags: z.array(tagSchema),
+  tags: z.array(syncTagSchema),
 });
 
-const feedDataSchema = z.object({
+/**
+ * Feed data for subscription_created events.
+ */
+export const feedCreatedDataSchema = z.object({
   id: z.string(),
-  type: feedTypeSchema,
+  type: z.enum(["web", "email", "saved"]),
   url: z.string().nullable(),
   title: z.string().nullable(),
   description: z.string().nullable(),
@@ -53,110 +64,101 @@ const feedDataSchema = z.object({
 });
 
 // ============================================================================
-// Base Fields
+// Timestamp Helpers
 // ============================================================================
 
 /**
- * Default timestamp generator for events that may not include a timestamp.
+ * Timestamp field that defaults to current time if not provided by the server.
+ * SSE events from Redis pub/sub always include timestamps, but this provides
+ * a safe fallback.
  */
-const defaultTimestamp = () => new Date().toISOString();
+const timestampWithDefault = z
+  .string()
+  .optional()
+  .default(() => new Date().toISOString());
+
+/**
+ * updatedAt field that falls back to timestamp if not provided.
+ * Import events don't always include updatedAt from the server.
+ */
+const updatedAtWithFallback = z.string().optional();
 
 // ============================================================================
 // Individual Event Schemas
 // ============================================================================
 
-const newEntryEventSchema = z
-  .object({
-    type: z.literal("new_entry"),
-    subscriptionId: z.string().nullable(),
-    entryId: z.string(),
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string(),
-    feedType: feedTypeSchema.optional(),
-  })
-  .passthrough();
+export const newEntryEventSchema = z.object({
+  type: z.literal("new_entry"),
+  subscriptionId: z.string().nullable(),
+  entryId: z.string(),
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+  feedType: z.enum(["web", "email", "saved"]).optional(),
+});
 
-const entryUpdatedEventSchema = z
-  .object({
-    type: z.literal("entry_updated"),
-    subscriptionId: z.string().nullable(),
-    entryId: z.string(),
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string(),
-    metadata: entryMetadataSchema,
-  })
-  .passthrough();
+export const entryUpdatedEventSchema = z.object({
+  type: z.literal("entry_updated"),
+  subscriptionId: z.string().nullable(),
+  entryId: z.string(),
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+  metadata: entryMetadataSchema,
+});
 
-const entryStateChangedEventSchema = z
-  .object({
-    type: z.literal("entry_state_changed"),
-    entryId: z.string(),
-    read: z.boolean(),
-    starred: z.boolean(),
-    /** Subscription ID for count delta computation (null for saved/orphaned entries) */
-    subscriptionId: z.string().nullable().optional(),
-    /** Previous read state before this change (absent in sync polling events) */
-    previousRead: z.boolean().optional(),
-    /** Previous starred state before this change (absent in sync polling events) */
-    previousStarred: z.boolean().optional(),
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string(),
-  })
-  .passthrough();
+export const entryStateChangedEventSchema = z.object({
+  type: z.literal("entry_state_changed"),
+  entryId: z.string(),
+  read: z.boolean(),
+  starred: z.boolean(),
+  /** Subscription ID for count delta computation (null for saved/orphaned entries) */
+  subscriptionId: z.string().nullable().optional(),
+  /** Previous read state before this change (absent in sync polling events) */
+  previousRead: z.boolean().optional(),
+  /** Previous starred state before this change (absent in sync polling events) */
+  previousStarred: z.boolean().optional(),
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+});
 
-const subscriptionCreatedEventSchema = z
-  .object({
-    type: z.literal("subscription_created"),
-    subscriptionId: z.string(),
-    feedId: z.string(),
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string(),
-    subscription: subscriptionDataSchema,
-    feed: feedDataSchema,
-  })
-  .passthrough();
+export const subscriptionCreatedEventSchema = z.object({
+  type: z.literal("subscription_created"),
+  subscriptionId: z.string(),
+  feedId: z.string(),
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+  subscription: subscriptionCreatedDataSchema,
+  feed: feedCreatedDataSchema,
+});
 
-const subscriptionDeletedEventSchema = z
-  .object({
-    type: z.literal("subscription_deleted"),
-    subscriptionId: z.string(),
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string(),
-  })
-  .passthrough();
+export const subscriptionDeletedEventSchema = z.object({
+  type: z.literal("subscription_deleted"),
+  subscriptionId: z.string(),
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+});
 
-const tagCreatedEventSchema = z
-  .object({
-    type: z.literal("tag_created"),
-    tag: tagSchema,
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string(),
-  })
-  .passthrough();
+export const tagCreatedEventSchema = z.object({
+  type: z.literal("tag_created"),
+  tag: syncTagSchema,
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+});
 
-const tagUpdatedEventSchema = z
-  .object({
-    type: z.literal("tag_updated"),
-    tag: tagSchema,
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string(),
-  })
-  .passthrough();
+export const tagUpdatedEventSchema = z.object({
+  type: z.literal("tag_updated"),
+  tag: syncTagSchema,
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+});
 
-const tagDeletedEventSchema = z
-  .object({
-    type: z.literal("tag_deleted"),
-    tagId: z.string(),
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string(),
-  })
-  .passthrough();
+export const tagDeletedEventSchema = z.object({
+  type: z.literal("tag_deleted"),
+  tagId: z.string(),
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+});
 
-/**
- * Import events use `timestamp` as fallback for `updatedAt` since
- * the server doesn't always include `updatedAt` for import events.
- */
-const importProgressEventSchema = z
+export const importProgressEventSchema = z
   .object({
     type: z.literal("import_progress"),
     importId: z.string(),
@@ -166,16 +168,15 @@ const importProgressEventSchema = z
     skipped: z.number(),
     failed: z.number(),
     total: z.number(),
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string().optional(),
+    timestamp: timestampWithDefault,
+    updatedAt: updatedAtWithFallback,
   })
-  .passthrough()
   .transform((event) => ({
     ...event,
     updatedAt: event.updatedAt ?? event.timestamp,
   }));
 
-const importCompletedEventSchema = z
+export const importCompletedEventSchema = z
   .object({
     type: z.literal("import_completed"),
     importId: z.string(),
@@ -183,28 +184,26 @@ const importCompletedEventSchema = z
     skipped: z.number(),
     failed: z.number(),
     total: z.number(),
-    timestamp: z.string().default(defaultTimestamp),
-    updatedAt: z.string().optional(),
+    timestamp: timestampWithDefault,
+    updatedAt: updatedAtWithFallback,
   })
-  .passthrough()
   .transform((event) => ({
     ...event,
     updatedAt: event.updatedAt ?? event.timestamp,
   }));
 
 // ============================================================================
-// Discriminated Union
+// Unified Event Schema
 // ============================================================================
 
 /**
- * Schema for all sync events. Used to validate SSE event data and
- * derive the SyncEvent TypeScript type.
+ * Discriminated union of all SSE/sync event types.
  *
- * Note: We use z.union instead of z.discriminatedUnion because some
- * member schemas use .transform(), which is not supported by
- * discriminatedUnion.
+ * Note: import events use .transform() for updatedAt fallback, so they can't
+ * be members of z.discriminatedUnion(). We use z.union() with the discriminated
+ * union for the core events plus the import events.
  */
-export const syncEventSchema = z.union([
+const coreEventSchema = z.discriminatedUnion("type", [
   newEntryEventSchema,
   entryUpdatedEventSchema,
   entryStateChangedEventSchema,
@@ -213,6 +212,10 @@ export const syncEventSchema = z.union([
   tagCreatedEventSchema,
   tagUpdatedEventSchema,
   tagDeletedEventSchema,
+]);
+
+export const syncEventSchema = z.union([
+  coreEventSchema,
   importProgressEventSchema,
   importCompletedEventSchema,
 ]);
@@ -239,3 +242,26 @@ export type TagUpdatedEvent = z.infer<typeof tagUpdatedEventSchema>;
 export type TagDeletedEvent = z.infer<typeof tagDeletedEventSchema>;
 export type ImportProgressEvent = z.infer<typeof importProgressEventSchema>;
 export type ImportCompletedEvent = z.infer<typeof importCompletedEventSchema>;
+
+// ============================================================================
+// Server-Only Event Schema (without defaults/transforms)
+// ============================================================================
+
+/**
+ * Strict event schema used by the sync.events server endpoint.
+ * Derived from the client-side schemas by overriding `timestamp` to require
+ * a string (no default), since the server always provides timestamps.
+ *
+ * This also excludes import events which are SSE-only (not returned by sync.events).
+ */
+const strictTimestamp = { timestamp: z.string() };
+export const serverSyncEventSchema = z.discriminatedUnion("type", [
+  newEntryEventSchema.extend(strictTimestamp),
+  entryUpdatedEventSchema.extend(strictTimestamp),
+  entryStateChangedEventSchema.extend(strictTimestamp),
+  subscriptionCreatedEventSchema.extend(strictTimestamp),
+  subscriptionDeletedEventSchema.extend(strictTimestamp),
+  tagCreatedEventSchema.extend(strictTimestamp),
+  tagUpdatedEventSchema.extend(strictTimestamp),
+  tagDeletedEventSchema.extend(strictTimestamp),
+]);

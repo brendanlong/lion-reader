@@ -439,6 +439,9 @@ export const entries = pgTable(
     listUnsubscribeHttps: text("list_unsubscribe_https"), // https: URL from header
     listUnsubscribePost: boolean("list_unsubscribe_post"), // true if one-click POST supported
 
+    // Unsubscribe URL extracted from email HTML body (for email entries)
+    unsubscribeUrl: text("unsubscribe_url"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -698,6 +701,8 @@ export const visibleEntries = pgView("visible_entries", {
   subscriptionId: uuid("subscription_id"), // nullable - null for orphaned starred entries
   predictedScore: real("predicted_score"), // ML-predicted score, nullable
   predictionConfidence: real("prediction_confidence"), // confidence of prediction, nullable
+  unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
+  readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull(),
 }).existing();
 
 // ============================================================================
@@ -767,6 +772,7 @@ export const websubSubscriptions = pgTable(
 
     lastChallengeAt: timestamp("last_challenge_at", { withTimezone: true }), // Last verification attempt
     lastError: text("last_error"), // Last error message if any
+    unsubscribeRequestedAt: timestamp("unsubscribe_requested_at", { withTimezone: true }), // When we requested unsubscribe from hub
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

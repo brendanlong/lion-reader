@@ -10,6 +10,7 @@ import { eq, and, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import { generateSummary } from "../html/strip-html";
 import { cleanContent } from "../feed/content-cleaner";
+import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
 import {
   feeds,
   entries,
@@ -403,6 +404,17 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   const contentForSummary = contentCleaned ?? contentOriginal;
   const summary = generateSummary(contentForSummary);
 
+  // Extract canonical URL from email HTML.
+  // Many newsletters (Substack, Ghost, Buttondown, etc.) include a link to the
+  // web version of the post in the email's title heading. This gives email entries
+  // a "Read on {domain}" link in the UI and enables full content fetching.
+  const url = email.html ? extractEmailUrl(email.html) : null;
+
+  // Extract unsubscribe URL from email HTML.
+  // Many newsletters include an "unsubscribe" link in their footer. We extract this
+  // so users can navigate to the newsletter's unsubscribe page directly from the UI.
+  const unsubscribeUrl = email.html ? extractUnsubscribeUrl(email.html) : null;
+
   // Parse List-Unsubscribe headers
   const listUnsubscribeMailto = parseListUnsubscribeMailto(email.headers.listUnsubscribe);
   const listUnsubscribeHttps = parseListUnsubscribeHttps(email.headers.listUnsubscribe);
@@ -416,6 +428,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     feedId: feed.id,
     type: "email",
     guid: email.messageId,
+    url,
     title: email.subject,
     author: email.from.name || email.from.address,
     contentOriginal,
@@ -429,6 +442,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     listUnsubscribeMailto,
     listUnsubscribeHttps,
     listUnsubscribePost,
+    unsubscribeUrl,
   };
 
   await db.insert(entries).values(newEntry);

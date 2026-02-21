@@ -88,9 +88,9 @@ primary_region = "lax"
   cpus = 2
   processes = ["app"]
 
-# Background worker: 1x 512MB 2 CPU
+# Background worker: 1x 512MB 1 CPU (needs memory for ML model training)
 [[vm]]
-  memory = "256mb"
+  memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
   processes = ["worker"]

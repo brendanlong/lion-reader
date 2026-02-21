@@ -16,8 +16,8 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useCollections } from "@/lib/collections/context";
-import { handleSyncEvent, type SyncEvent } from "@/lib/cache/event-handlers";
-import { syncEventSchema } from "@/lib/events/schemas";
+import { handleSyncEvent } from "@/lib/cache/event-handlers";
+import { syncEventSchema, type SyncEvent } from "@/lib/events/schemas";
 
 /**
  * Sync cursors for each entity type.
@@ -84,6 +84,8 @@ const SSE_RETRY_INTERVAL_MS = 60_000;
 
 /**
  * Parses SSE event data from a JSON string into a SyncEvent.
+ * Uses the shared Zod schema for validation, which strips extra server fields
+ * (userId, feedId) and applies defaults for optional fields like timestamp.
  * Returns null if the data is invalid or doesn't match a known event type.
  *
  * Uses the shared Zod schema for validation, replacing ~290 lines of manual

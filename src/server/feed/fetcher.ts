@@ -4,6 +4,7 @@
  */
 
 import { parseCacheHeaders, type ParsedCacheHeaders } from "./cache-headers";
+import { parseWebSubLinkHeaders, type WebSubLinkHeaders } from "./link-header";
 import { buildUserAgent } from "../http/user-agent";
 
 /**
@@ -53,6 +54,8 @@ interface FetchSuccessResult {
   cacheHeaders: ParsedCacheHeaders;
   /** Redirect chain if any permanent redirects occurred */
   redirects: RedirectInfo[];
+  /** WebSub hub and self URLs from HTTP Link headers (W3C WebSub spec §4) */
+  websubLinks: WebSubLinkHeaders;
 }
 
 /**
@@ -405,6 +408,10 @@ export async function fetchFeed(
         const body = Buffer.from(arrayBuffer);
         const contentType = response.headers.get("content-type") ?? "application/xml";
 
+        // Parse Link headers for WebSub hub/self discovery (W3C WebSub spec §4)
+        const linkHeader = response.headers.get("link");
+        const websubLinks = linkHeader ? parseWebSubLinkHeaders(linkHeader) : {};
+
         return {
           status: "success",
           statusCode: 200,
@@ -413,6 +420,7 @@ export async function fetchFeed(
           finalUrl: currentUrl,
           cacheHeaders: parseCacheHeaders(response.headers),
           redirects,
+          websubLinks,
         };
       }
 

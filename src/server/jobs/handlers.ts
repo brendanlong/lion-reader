@@ -22,6 +22,7 @@ import {
 } from "../db/schema";
 import { fetchFullContent } from "../services/full-content";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../feed/fetcher";
+import type { WebSubLinkHeaders } from "../feed/link-header";
 import { parseFeed } from "../feed/parser";
 import { processEntries } from "../feed/entry-processor";
 import { calculateNextFetch } from "../feed/scheduling";
@@ -298,6 +299,7 @@ function getMetricsStatus(
  * @param cacheHeaders - Parsed cache headers from the response
  * @param bodyHash - Pre-computed SHA-256 hash of the body
  * @param redirects - The redirect chain from the fetch
+ * @param websubLinks - WebSub hub and self URLs from HTTP Link headers
  * @param now - Current timestamp
  * @returns Job handler result with next run time
  */
@@ -307,6 +309,7 @@ async function processSuccessfulFetch(
   cacheHeaders: ParsedCacheHeaders,
   bodyHash: string,
   redirects: RedirectInfo[],
+  websubLinks: WebSubLinkHeaders,
   now: Date
 ): Promise<JobHandlerResult> {
   // Decode to string for parsing (we only get here when hash differs, so content changed)
@@ -375,8 +378,9 @@ async function processSuccessfulFetch(
     title: feedTitle,
     description: parsedFeed.description,
     siteUrl: parsedFeed.siteUrl,
-    hubUrl: parsedFeed.hubUrl,
-    selfUrl: parsedFeed.selfUrl,
+    // HTTP Link headers take precedence over embedded feed links per W3C WebSub spec §4
+    hubUrl: websubLinks.hubUrl ?? parsedFeed.hubUrl,
+    selfUrl: websubLinks.selfUrl ?? parsedFeed.selfUrl,
     ttlMinutes: parsedFeed.ttlMinutes,
     syndication: parsedFeed.syndication,
   };
@@ -611,6 +615,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         result.cacheHeaders,
         bodyHash,
         result.redirects,
+        result.websubLinks,
         now
       );
     }

@@ -17,9 +17,5 @@ export default async function SingleSubscriptionPage({
 }: SingleSubscriptionPageProps) {
   const { id: subscriptionId } = await params;
 
-  return (
-    <EntryListPage filters={{ subscriptionId }} searchParams={searchParams}>
-      {null}
-    </EntryListPage>
-  );
+  return <EntryListPage filters={{ subscriptionId }} searchParams={searchParams} />;
 }

@@ -36,6 +36,8 @@ interface TagSubscriptionListProps {
   }) => void;
   /** Callback to unsubscribe */
   onUnsubscribe: (sub: { id: string; title: string }) => void;
+  /** When true, only show subscriptions with unread entries */
+  unreadOnly: boolean;
 }
 
 const PAGE_SIZE = 50;
@@ -47,14 +49,15 @@ export function TagSubscriptionList({
   onClose,
   onEdit,
   onUnsubscribe,
+  unreadOnly,
 }: TagSubscriptionListProps) {
   const sentinelRef = useRef<HTMLLIElement>(null);
   const collections = useCollections();
 
   // Build filters for the on-demand collection
   const filters: TagSubscriptionFilters = useMemo(
-    () => ({ tagId, uncategorized, limit: PAGE_SIZE }),
-    [tagId, uncategorized]
+    () => ({ tagId, uncategorized, unreadOnly: unreadOnly || undefined, limit: PAGE_SIZE }),
+    [tagId, uncategorized, unreadOnly]
   );
 
   // Create the on-demand collection (recreates on filter change)

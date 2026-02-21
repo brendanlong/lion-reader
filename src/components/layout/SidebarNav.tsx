@@ -8,11 +8,13 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useCollections } from "@/lib/collections/context";
+import { trpc } from "@/lib/trpc/client";
 import { NavLink } from "@/components/ui/nav-link";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface SidebarNavProps {
   onNavigate: () => void;
@@ -25,6 +27,30 @@ function CountBadge({ count }: { count: number }) {
   if (count === 0) return null;
   return (
     <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">({count})</span>
+  );
+}
+
+/**
+ * Best feed nav link, only visible if user has scored entries.
+ * Uses the same unread count as All Items from the counts collection.
+ */
+function BestNavLink({ isActive, onNavigate }: { isActive: boolean; onNavigate: () => void }) {
+  const [hasScoredData] = trpc.entries.hasScoredEntries.useSuspenseQuery();
+  const { counts: countsCollection } = useCollections();
+  const { data: allCounts } = useLiveQuery(countsCollection);
+  const allCount = allCounts.find((c) => c.id === "all")?.unread ?? 0;
+
+  if (!hasScoredData.hasScoredEntries) return null;
+
+  return (
+    <NavLink
+      href="/best"
+      isActive={isActive}
+      countElement={<CountBadge count={allCount} />}
+      onClick={onNavigate}
+    >
+      Best
+    </NavLink>
   );
 }
 
@@ -57,6 +83,12 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
         All Items
       </NavLink>
 
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <BestNavLink isActive={isActiveLink("/best")} onNavigate={onNavigate} />
+        </Suspense>
+      </ErrorBoundary>
+
       <NavLink
         href="/starred"
         isActive={isActiveLink("/starred")}
@@ -73,6 +105,10 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
         onClick={onNavigate}
       >
         Saved
+      </NavLink>
+
+      <NavLink href="/recently-read" isActive={isActiveLink("/recently-read")} onClick={onNavigate}>
+        Recently Read
       </NavLink>
     </div>
   );

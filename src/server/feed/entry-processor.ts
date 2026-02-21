@@ -12,7 +12,7 @@ import { db } from "../db";
 import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
-import type { ParsedEntry, ParsedFeed } from "./types";
+import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { generateSummary } from "../html/strip-html";
 import { logger } from "@/lib/logger";
@@ -161,10 +161,11 @@ export async function createEntry(
   feedUrl?: string
 ): Promise<Entry> {
   const guid = deriveGuid(parsedEntry);
+  const entryUrl = deriveEntryUrl(parsedEntry);
 
   // Clean the content
   const cleaningResult = cleanEntryContent(parsedEntry, {
-    entryUrl: parsedEntry.link ?? undefined,
+    entryUrl,
     feedUrl,
   });
 
@@ -176,7 +177,7 @@ export async function createEntry(
     feedId,
     type: feedType,
     guid,
-    url: parsedEntry.link ?? null,
+    url: entryUrl ?? null,
     title: parsedEntry.title ?? null,
     author: parsedEntry.author ?? null,
     contentOriginal: cleaningResult.contentOriginal,
@@ -208,15 +209,18 @@ export async function updateEntryContent(
   contentHash: string,
   feedUrl?: string
 ): Promise<Entry> {
+  const entryUrl = deriveEntryUrl(parsedEntry);
+
   // Clean the content
   const cleaningResult = cleanEntryContent(parsedEntry, {
-    entryUrl: parsedEntry.link ?? undefined,
+    entryUrl,
     feedUrl,
   });
 
   const [entry] = await db
     .update(entries)
     .set({
+      url: entryUrl ?? null,
       title: parsedEntry.title ?? null,
       author: parsedEntry.author ?? null,
       contentOriginal: cleaningResult.contentOriginal,

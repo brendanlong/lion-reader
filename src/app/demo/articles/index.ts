@@ -22,6 +22,7 @@ import search from "./search";
 import opml from "./opml";
 
 // Integrations & Sync
+import googleReaderApi from "./google-reader-api";
 import mcpServer from "./mcp-server";
 import discordBot from "./discord-bot";
 import browserExtension from "./browser-extension";
@@ -54,6 +55,7 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   // scoring,
   opml,
   // Integrations & Sync
+  googleReaderApi,
   mcpServer,
   discordBot,
   browserExtension,

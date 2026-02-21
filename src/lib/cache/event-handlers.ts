@@ -26,9 +26,9 @@ import {
 } from "@/lib/collections/writes";
 import { calculateTagDeltasFromSubscriptions } from "./count-cache";
 
-// Re-export SyncEvent type from the shared schema
-export type { SyncEvent } from "@/lib/events/schemas";
+// Re-export SyncEvent type from the shared schema (single source of truth)
 import type { SyncEvent } from "@/lib/events/schemas";
+export type { SyncEvent } from "@/lib/events/schemas";
 
 // ============================================================================
 // Event Handler

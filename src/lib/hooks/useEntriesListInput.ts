@@ -22,6 +22,7 @@ interface RouteFilters {
   uncategorized?: boolean;
   starredOnly?: boolean;
   type?: EntryType;
+  sortBy?: "published" | "readChanged" | "predictedScore";
 }
 
 /**
@@ -58,6 +59,16 @@ function getFiltersFromPathname(pathname: string): RouteFilters {
   // /uncategorized
   if (pathname === "/uncategorized") {
     return { uncategorized: true };
+  }
+
+  // /recently-read
+  if (pathname === "/recently-read") {
+    return { sortBy: "readChanged" as const };
+  }
+
+  // /best - Algorithmic feed sorted by predicted score
+  if (pathname === "/best") {
+    return { sortBy: "predictedScore" as const };
   }
 
   // /all or default

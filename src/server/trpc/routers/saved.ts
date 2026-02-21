@@ -32,7 +32,7 @@ import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
-import { cleanContent } from "@/server/feed/content-cleaner";
+import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import {
@@ -304,6 +304,9 @@ export const savedRouter = createTRPCRouter({
 
       // Use provided HTML or fetch the page
       let html: string | undefined;
+      // The URL the content was actually fetched from (after redirects).
+      // Used for resolving relative URLs in the content.
+      let contentUrl: string = input.url;
       // For Google Docs URLs, we may get content from the Google Docs API
       let googleDocsContent: GoogleDocsContent | null = null;
       // For plugin-handled URLs, we may get content from a plugin
@@ -313,6 +316,7 @@ export const savedRouter = createTRPCRouter({
         author?: string | null;
         siteName?: string;
         publishedAt?: Date | null;
+        skipReadability?: boolean;
       } | null = null;
 
       if (input.html) {
@@ -447,6 +451,7 @@ export const savedRouter = createTRPCRouter({
             });
             try {
               const result = await fetchHtmlPage(normalizedUrl);
+              contentUrl = result.finalUrl;
               html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
             } catch (error) {
               logger.warn("Failed to fetch Google Docs URL", {
@@ -491,8 +496,12 @@ export const savedRouter = createTRPCRouter({
                 author: content.author,
                 siteName: plugin.capabilities.savedArticle.siteName,
                 publishedAt: content.publishedAt,
+                skipReadability: plugin.capabilities.savedArticle.skipReadability,
               };
               html = content.html;
+              if (content.canonicalUrl) {
+                contentUrl = content.canonicalUrl;
+              }
               logger.debug("Successfully fetched content via plugin", {
                 url: input.url,
                 plugin: plugin.name,
@@ -512,6 +521,7 @@ export const savedRouter = createTRPCRouter({
         if (!html) {
           try {
             const result = await fetchHtmlPage(input.url);
+            contentUrl = result.finalUrl;
             html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
           } catch (error) {
             logger.warn("Failed to fetch URL for saved article", {
@@ -536,14 +546,13 @@ export const savedRouter = createTRPCRouter({
       }
 
       // Extract metadata (for LessWrong, we already have better metadata from GraphQL)
-      const metadata = extractMetadata(html, input.url);
+      const metadata = extractMetadata(html, contentUrl);
 
       // Run Readability for clean content (also absolutizes URLs internally)
-      // Skip for Google Docs API content and plugin content - already clean and structured
-      // For LessWrong, the GraphQL content is already clean, but Readability will still
-      // absolutize URLs and provide consistent output format
-      const cleaned =
-        googleDocsContent || pluginContent ? null : cleanContent(html, { url: input.url });
+      // Skip for Google Docs API content and plugins that request skipReadability
+      const shouldSkipReadability =
+        Boolean(googleDocsContent) || (pluginContent?.skipReadability ?? false);
+      const cleaned = shouldSkipReadability ? null : cleanContent(html, { url: contentUrl });
 
       // Generate excerpt
       let excerpt: string | null = null;
@@ -584,9 +593,12 @@ export const savedRouter = createTRPCRouter({
       // Saved articles don't have a publishedAt - they use fetchedAt (when saved)
       // This ensures consistent sorting by save time in all views
 
-      // For API/plugin content, use the HTML directly (already clean and structured)
+      // When cleanContent ran, it already absolutized URLs in its output.
+      // When it was skipped (Google Docs or skipReadability plugins), absolutize here.
+      const rawContentCleaned = googleDocsContent?.html || pluginContent?.html || null;
       const finalContentCleaned =
-        googleDocsContent?.html || pluginContent?.html || cleaned?.content || null;
+        cleaned?.content ??
+        (rawContentCleaned ? absolutizeUrls(rawContentCleaned, contentUrl) : null);
 
       // Compute content hash for narration deduplication
       const contentHash = generateContentHash(finalTitle, finalContentCleaned || html);

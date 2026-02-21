@@ -32,12 +32,37 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
       output += decoder.decode(chunk);
     });
 
+    // Effective base URL - may be overridden by a <base href="..."> tag.
+    // Since html-rewriter-wasm processes elements in document order,
+    // <base> in <head> will be seen before any body elements.
+    // Per the HTML spec, only the first <base> with an href is used.
+    let effectiveBaseUrl = baseUrl;
+    let baseHrefSet = false;
+
+    // Check for <base> tag and use its href as the base URL
+    rewriter.on("base[href]", {
+      element(el) {
+        if (baseHrefSet) return;
+
+        const href = el.getAttribute("href");
+        if (href) {
+          // Resolve the <base> href against the provided baseUrl,
+          // in case <base href> itself is relative
+          const resolved = resolveUrl(href, baseUrl);
+          if (resolved) {
+            effectiveBaseUrl = resolved;
+            baseHrefSet = true;
+          }
+        }
+      },
+    });
+
     // Handle elements with URL attributes
     rewriter.on("[src]", {
       element(el) {
         const value = el.getAttribute("src");
         if (value) {
-          const absolute = resolveUrl(value, baseUrl);
+          const absolute = resolveUrl(value, effectiveBaseUrl);
           if (absolute && absolute !== value) {
             el.setAttribute("src", absolute);
           }
@@ -47,9 +72,11 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
 
     rewriter.on("[href]", {
       element(el) {
+        // Don't rewrite the <base> tag's own href
+        if (el.tagName === "base") return;
         const value = el.getAttribute("href");
         if (value) {
-          const absolute = resolveUrl(value, baseUrl);
+          const absolute = resolveUrl(value, effectiveBaseUrl);
           if (absolute && absolute !== value) {
             el.setAttribute("href", absolute);
           }
@@ -61,7 +88,7 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
       element(el) {
         const value = el.getAttribute("poster");
         if (value) {
-          const absolute = resolveUrl(value, baseUrl);
+          const absolute = resolveUrl(value, effectiveBaseUrl);
           if (absolute && absolute !== value) {
             el.setAttribute("poster", absolute);
           }
@@ -73,7 +100,7 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
       element(el) {
         const value = el.getAttribute("srcset");
         if (value) {
-          el.setAttribute("srcset", absolutizeSrcset(value, baseUrl));
+          el.setAttribute("srcset", absolutizeSrcset(value, effectiveBaseUrl));
         }
       },
     });

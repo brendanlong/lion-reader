@@ -18,9 +18,5 @@ export default async function TagEntriesPage({ params, searchParams }: TagEntrie
   const isUncategorized = tagId === "uncategorized";
   const filters = isUncategorized ? { uncategorized: true as const } : { tagId };
 
-  return (
-    <EntryListPage filters={filters} searchParams={searchParams}>
-      {null}
-    </EntryListPage>
-  );
+  return <EntryListPage filters={filters} searchParams={searchParams} />;
 }

@@ -60,6 +60,7 @@ interface RouteInfo {
     uncategorized?: boolean;
     starredOnly?: boolean;
     type?: EntryType;
+    sortBy?: "published" | "readChanged" | "predictedScore";
   };
   /** Static title (null means we need to fetch it) */
   title: string | null;
@@ -75,6 +76,8 @@ interface RouteInfo {
   emptyMessageAll: string;
   /** Description for mark all read dialog */
   markAllReadDescription: string;
+  /** Whether to hide the sort toggle (e.g., for algorithmic feed) */
+  hideSortToggle?: boolean;
 }
 
 /**
@@ -195,6 +198,33 @@ function useRouteInfo(): RouteInfo {
         emptyMessageUnread: "No unread entries from this tag. Toggle to show all items.",
         emptyMessageAll: "No entries from this tag yet.",
         markAllReadDescription: "this tag",
+      };
+    }
+
+    // /best - Algorithmic feed sorted by predicted score
+    if (pathname === "/best") {
+      return {
+        viewId: "best" as const,
+        filters: { sortBy: "predictedScore" as const },
+        title: "Best",
+        hideSortToggle: true,
+        emptyMessageUnread: "No unread entries. Toggle to show all items.",
+        emptyMessageAll:
+          "No entries with predicted scores yet. Score some entries to train the algorithm.",
+        markAllReadDescription: "all feeds",
+      };
+    }
+
+    // /recently-read - Recently read entries
+    if (pathname === "/recently-read") {
+      return {
+        viewId: "recently-read" as const,
+        filters: { sortBy: "readChanged" as const },
+        title: "Recently Read",
+        emptyMessageUnread: "No unread entries. Toggle to show all items.",
+        emptyMessageAll:
+          "No recently read entries yet. Read some entries and they will appear here.",
+        markAllReadDescription: "all feeds",
       };
     }
 
@@ -347,6 +377,7 @@ function UnifiedEntriesContentInner() {
       markAllReadDescription={emptyMessages.markAllReadDescription}
       markAllReadOptions={markAllReadOptions}
       showUploadButton={routeInfo.showUploadButton}
+      hideSortToggle={routeInfo.hideSortToggle}
     />
   );
 }

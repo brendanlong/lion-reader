@@ -100,6 +100,12 @@ describe("stripHtml", () => {
       const html = "<p>A</p><script><script>nested</script></script><p>B</p>";
       expect(stripHtml(html, 300)).toBe("A B");
     });
+
+    it("excludes head and title content from full HTML documents", () => {
+      const html =
+        "<!DOCTYPE html><html><head><title>Page Title</title></head><body><p>Body content here.</p></body></html>";
+      expect(stripHtml(html, 300)).toBe("Body content here.");
+    });
   });
 
   describe("HTML entity decoding", () => {

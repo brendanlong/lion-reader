@@ -333,7 +333,7 @@ function DemoRouterContent() {
             {showSummaryForEntry === selectedEntry.id && (
               <SummaryCard
                 summary={selectedEntry.summaryHtml}
-                modelId="claude-sonnet-4-5-20250929"
+                modelId="claude-sonnet-4-6"
                 generatedAt={new Date("2026-02-07")}
                 onClose={() => setShowSummaryForEntry(null)}
               />
