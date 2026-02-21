@@ -90,6 +90,7 @@ function createTestCollections(): Collections {
     tags: undefined as unknown as Collections["tags"],
     entries: createEntriesCollection(),
     counts: createCountsCollection(),
+    tagSubscriptionCollections: new Map(),
     activeViewCollection: null,
     invalidateActiveView: () => {},
   };

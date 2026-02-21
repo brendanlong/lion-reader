@@ -18,7 +18,11 @@
  */
 
 import type { QueryClient, QueryCacheNotifyEvent } from "@tanstack/react-query";
-import { createSubscriptionsCollection, type SubscriptionsCollection } from "./subscriptions";
+import {
+  createSubscriptionsCollection,
+  type SubscriptionsCollection,
+  type TagSubscriptionsCollection,
+} from "./subscriptions";
 import {
   createTagsCollection,
   type TagsCollection,
@@ -46,7 +50,7 @@ export type {
   CountRecord,
   UncategorizedCounts,
 } from "./types";
-export type { SubscriptionsCollection } from "./subscriptions";
+export type { SubscriptionsCollection, TagSubscriptionsCollection } from "./subscriptions";
 export type { TagsCollection } from "./tags";
 export type { EntriesCollection } from "./entries";
 export type { ViewEntriesCollection } from "./entries";
@@ -64,6 +68,9 @@ export interface Collections {
   tags: TagsCollection;
   entries: EntriesCollection;
   counts: CountsCollection;
+  /** Active per-tag subscription collections, keyed by filter key.
+   * Registered by TagSubscriptionList, used by writes to propagate unread count changes. */
+  tagSubscriptionCollections: Map<string, TagSubscriptionsCollection>;
   /** The active on-demand view collection, set by useViewEntriesCollection */
   activeViewCollection: ViewEntriesCollection | null;
   /**
@@ -210,6 +217,7 @@ export function createCollections(
     tags: createTagsCollection(queryClient, fetchers.fetchTagsAndUncategorized),
     entries: createEntriesCollection(),
     counts,
+    tagSubscriptionCollections: new Map(),
     activeViewCollection: null,
     invalidateActiveView: () => {},
   };

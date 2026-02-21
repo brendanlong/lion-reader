@@ -63,6 +63,15 @@ export function TagSubscriptionList({
   // Create the on-demand collection (recreates on filter change)
   const { collection: tagCollection, filterKey } = useTagSubscriptionsCollection(filters);
 
+  // Register the tag subscription collection so write functions can propagate
+  // unread count changes to it (in addition to the global subscriptions collection)
+  useEffect(() => {
+    collections.tagSubscriptionCollections.set(filterKey, tagCollection);
+    return () => {
+      collections.tagSubscriptionCollections.delete(filterKey);
+    };
+  }, [collections, filterKey, tagCollection]);
+
   // Live infinite query over the tag subscription collection
   // Server sorts alphabetically by title, so we use ID as the orderBy
   // (UUIDv7 gives us stable ordering; the server determines the actual sort)

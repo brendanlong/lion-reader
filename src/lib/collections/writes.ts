@@ -36,6 +36,20 @@ export function adjustSubscriptionUnreadInCollection(
       });
     }
   }
+
+  // Propagate to per-tag subscription collections
+  for (const [, tagCol] of collections.tagSubscriptionCollections) {
+    const updates: Array<{ id: string; unreadCount: number }> = [];
+    for (const [id, delta] of subscriptionDeltas) {
+      const current = tagCol.get(id);
+      if (current) {
+        updates.push({ id, unreadCount: Math.max(0, current.unreadCount + delta) });
+      }
+    }
+    if (updates.length > 0) {
+      tagCol.utils.writeUpdate(updates);
+    }
+  }
 }
 
 /**
@@ -54,6 +68,13 @@ export function setSubscriptionUnreadInCollection(
     collections.subscriptions.update(subscriptionId, (draft) => {
       draft.unreadCount = unread;
     });
+  }
+
+  // Propagate to per-tag subscription collections
+  for (const [, tagCol] of collections.tagSubscriptionCollections) {
+    if (tagCol.get(subscriptionId)) {
+      tagCol.utils.writeUpdate({ id: subscriptionId, unreadCount: unread });
+    }
   }
 }
 
@@ -75,6 +96,19 @@ export function setBulkSubscriptionUnreadInCollection(
       });
     }
   }
+
+  // Propagate to per-tag subscription collections
+  for (const [, tagCol] of collections.tagSubscriptionCollections) {
+    const tagUpdates: Array<{ id: string; unreadCount: number }> = [];
+    for (const [id, unread] of updates) {
+      if (tagCol.get(id)) {
+        tagUpdates.push({ id, unreadCount: unread });
+      }
+    }
+    if (tagUpdates.length > 0) {
+      tagCol.utils.writeUpdate(tagUpdates);
+    }
+  }
 }
 
 /**
@@ -91,6 +125,13 @@ export function addSubscriptionToCollection(
   if (collections.subscriptions.has(subscription.id)) return;
 
   collections.subscriptions.insert(subscription);
+
+  // Propagate to per-tag subscription collections
+  for (const [, tagCol] of collections.tagSubscriptionCollections) {
+    if (!tagCol.has(subscription.id)) {
+      tagCol.utils.writeInsert(subscription);
+    }
+  }
 }
 
 /**
@@ -105,6 +146,13 @@ export function removeSubscriptionFromCollection(
 
   if (collections.subscriptions.has(subscriptionId)) {
     collections.subscriptions.delete(subscriptionId);
+  }
+
+  // Propagate to per-tag subscription collections
+  for (const [, tagCol] of collections.tagSubscriptionCollections) {
+    if (tagCol.has(subscriptionId)) {
+      tagCol.utils.writeDelete(subscriptionId);
+    }
   }
 }
 
@@ -146,6 +194,9 @@ export function zeroSubscriptionUnreadForMarkAllRead(
 ): void {
   if (!collections) return;
 
+  // Track which subscription IDs are zeroed so we can propagate to tag collections
+  const zeroedIds: string[] = [];
+
   if (filters.subscriptionId) {
     // Single subscription
     const current = collections.subscriptions.get(filters.subscriptionId);
@@ -153,6 +204,7 @@ export function zeroSubscriptionUnreadForMarkAllRead(
       collections.subscriptions.update(filters.subscriptionId, (draft) => {
         draft.unreadCount = 0;
       });
+      zeroedIds.push(filters.subscriptionId);
     }
   } else if (filters.tagId) {
     // All subscriptions with this tag
@@ -161,6 +213,7 @@ export function zeroSubscriptionUnreadForMarkAllRead(
         collections.subscriptions.update(sub.id, (draft) => {
           draft.unreadCount = 0;
         });
+        zeroedIds.push(sub.id);
       }
     });
   } else {
@@ -170,8 +223,24 @@ export function zeroSubscriptionUnreadForMarkAllRead(
         collections.subscriptions.update(sub.id, (draft) => {
           draft.unreadCount = 0;
         });
+        zeroedIds.push(sub.id);
       }
     });
+  }
+
+  // Propagate to per-tag subscription collections
+  if (zeroedIds.length > 0) {
+    for (const [, tagCol] of collections.tagSubscriptionCollections) {
+      const updates: Array<{ id: string; unreadCount: number }> = [];
+      for (const id of zeroedIds) {
+        if (tagCol.get(id)) {
+          updates.push({ id, unreadCount: 0 });
+        }
+      }
+      if (updates.length > 0) {
+        tagCol.utils.writeUpdate(updates);
+      }
+    }
   }
 }
 
