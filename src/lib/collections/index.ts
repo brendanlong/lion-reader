@@ -33,6 +33,12 @@ import {
 import { createCountsCollection, type CountsCollection } from "./counts";
 import type { CountRecord, TagItem, UncategorizedCounts } from "./types";
 
+/**
+ * tRPC query key prefix for entries.count queries.
+ * Full key format: [["entries", "count"], { input: {...}, type: "query" }]
+ */
+const ENTRIES_COUNT_KEY_PATH = ["entries", "count"] as const;
+
 export type {
   Subscription,
   EntryListItem,
@@ -106,6 +112,58 @@ function isTagsListKey(queryKey: readonly unknown[]): boolean {
 }
 
 /**
+ * Check if a query key matches an entries.count key.
+ */
+function isEntriesCountKey(queryKey: readonly unknown[]): boolean {
+  if (queryKey.length < 2) return false;
+  const path = queryKey[0];
+  const meta = queryKey[1] as { type?: string } | undefined;
+  return (
+    Array.isArray(path) &&
+    path.length === 2 &&
+    path[0] === ENTRIES_COUNT_KEY_PATH[0] &&
+    path[1] === ENTRIES_COUNT_KEY_PATH[1] &&
+    meta?.type === "query"
+  );
+}
+
+/**
+ * Determine the count key ("all", "starred", or "saved") from entries.count input.
+ * Returns null if the input doesn't match a known count category.
+ */
+function getCountKeyFromInput(input: Record<string, unknown> | undefined): string | null {
+  if (!input || Object.keys(input).length === 0) {
+    return "all";
+  }
+  if (input.starredOnly === true) {
+    return "starred";
+  }
+  if (input.type === "saved") {
+    return "saved";
+  }
+  return null;
+}
+
+/**
+ * Write entry counts from an entries.count response to the counts collection.
+ */
+function syncEntryCount(
+  counts: CountsCollection,
+  countKey: string,
+  data: { total: number; unread: number }
+): void {
+  const existing = counts.get(countKey);
+  if (existing) {
+    counts.update(countKey, (draft: CountRecord) => {
+      draft.total = data.total;
+      draft.unread = data.unread;
+    });
+  } else {
+    counts.insert({ id: countKey, total: data.total, unread: data.unread });
+  }
+}
+
+/**
  * Write uncategorized counts from a tags.list response to the counts collection.
  */
 function syncUncategorizedCounts(counts: CountsCollection, data: TagsListResponse): void {
@@ -130,9 +188,12 @@ function syncUncategorizedCounts(counts: CountsCollection, data: TagsListRespons
  * Called once in the TRPCProvider when the QueryClient is available.
  * The fetcher functions bridge tRPC with the collection queryFn interface.
  *
- * Sets up a query cache subscription to sync uncategorized counts from
- * tags.list responses into the counts collection, keeping the tags
- * collection's `select` function pure.
+ * Sets up a query cache subscription to sync counts from server responses:
+ * - Uncategorized counts from tags.list responses
+ * - Entry counts (all/starred/saved) from entries.count responses
+ *
+ * This subscription handles both eager seeding (from SSR-prefetched data)
+ * and async updates (when queries resolve after initialization).
  *
  * @param queryClient - The shared QueryClient instance
  * @param fetchers - Functions to fetch data from the tRPC API
@@ -161,17 +222,42 @@ export function createCollections(
     syncUncategorizedCounts(counts, prefetchedTagsData);
   }
 
-  // Subscribe to query cache updates to sync uncategorized counts
-  // whenever tags.list data changes (fetches, refetches, SSE invalidations)
+  // Seed entry counts from SSR-prefetched entries.count queries
+  const countQueries = queryClient.getQueriesData<{ total: number; unread: number }>({
+    queryKey: [ENTRIES_COUNT_KEY_PATH.slice()],
+  });
+  for (const [queryKey, data] of countQueries) {
+    if (!data) continue;
+    const keyMeta = queryKey[1] as { input?: Record<string, unknown> } | undefined;
+    const countKey = getCountKeyFromInput(keyMeta?.input);
+    if (countKey) {
+      syncEntryCount(counts, countKey, data);
+    }
+  }
+
+  // Subscribe to query cache updates to sync counts whenever data changes
   const unsubscribe = queryClient.getQueryCache().subscribe((event: QueryCacheNotifyEvent) => {
-    if (
-      event.type === "updated" &&
-      event.action.type === "success" &&
-      isTagsListKey(event.query.queryKey)
-    ) {
-      const data = event.query.state.data as TagsListResponse | undefined;
-      if (data) {
-        syncUncategorizedCounts(counts, data);
+    if (event.type === "updated" && event.action.type === "success") {
+      // Sync uncategorized counts from tags.list
+      if (isTagsListKey(event.query.queryKey)) {
+        const data = event.query.state.data as TagsListResponse | undefined;
+        if (data) {
+          syncUncategorizedCounts(counts, data);
+        }
+      }
+
+      // Sync entry counts from entries.count
+      if (isEntriesCountKey(event.query.queryKey)) {
+        const data = event.query.state.data as { total: number; unread: number } | undefined;
+        if (data) {
+          const keyMeta = event.query.queryKey[1] as
+            | { input?: Record<string, unknown> }
+            | undefined;
+          const countKey = getCountKeyFromInput(keyMeta?.input);
+          if (countKey) {
+            syncEntryCount(counts, countKey, data);
+          }
+        }
       }
     }
   });

@@ -172,31 +172,13 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
 
   // Initialize TanStack DB collections and query cache subscription.
   // Both are stored together so the cleanup function is accessible for teardown.
-  const [{ collections, cleanup: collectionsCleanup }] = useState(() => {
-    const { collections: cols, cleanup } = createCollections(queryClient, {
+  // Entry counts and uncategorized counts are seeded from prefetched data and
+  // kept in sync via query cache subscriptions inside createCollections.
+  const [{ collections, cleanup: collectionsCleanup }] = useState(() =>
+    createCollections(queryClient, {
       fetchTagsAndUncategorized: () => vanillaClient.tags.list.query(),
-    });
-
-    // Seed entry counts from SSR-prefetched React Query cache.
-    // Query key format: [["entries", "count"], { input: {...}, type: "query" }]
-    const countQueries = queryClient.getQueriesData<{ total: number; unread: number }>({
-      queryKey: [["entries", "count"]],
-    });
-    for (const [queryKey, data] of countQueries) {
-      if (!data) continue;
-      const keyMeta = queryKey[1] as { input?: Record<string, unknown> } | undefined;
-      const input = keyMeta?.input;
-      if (!input || Object.keys(input).length === 0) {
-        cols.counts.insert({ id: "all", total: data.total, unread: data.unread });
-      } else if (input.starredOnly === true) {
-        cols.counts.insert({ id: "starred", total: data.total, unread: data.unread });
-      } else if (input.type === "saved") {
-        cols.counts.insert({ id: "saved", total: data.total, unread: data.unread });
-      }
-    }
-
-    return { collections: cols, cleanup };
-  });
+    })
+  );
 
   // Clean up the query cache subscription when the provider unmounts
   useEffect(() => {
