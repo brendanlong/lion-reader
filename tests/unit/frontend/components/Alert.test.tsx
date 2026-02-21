@@ -27,7 +27,7 @@ describe("Alert", () => {
     it("renders with default variant (info)", () => {
       render(<Alert>Info message</Alert>);
       const alert = screen.getByRole("alert");
-      expect(alert).toHaveClass("bg-blue-50", "text-blue-800");
+      expect(alert).toHaveClass("bg-info-subtle", "text-info-foreground");
     });
   });
 
@@ -53,7 +53,7 @@ describe("Alert", () => {
     it("applies info variant styles", () => {
       render(<Alert variant="info">Info message</Alert>);
       const alert = screen.getByRole("alert");
-      expect(alert).toHaveClass("bg-blue-50", "text-blue-800");
+      expect(alert).toHaveClass("bg-info-subtle", "text-info-foreground");
     });
   });
 

@@ -270,9 +270,7 @@ function ImportSection() {
       {importState.type === "idle" && (
         <div
           className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
-            isDragOver
-              ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/20"
-              : "border-zinc-300 dark:border-zinc-700"
+            isDragOver ? "border-accent bg-accent-subtle" : "border-zinc-300 dark:border-zinc-700"
           }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -289,7 +287,7 @@ function ImportSection() {
             <UploadIcon className="mx-auto h-12 w-12 text-zinc-400 dark:text-zinc-500" />
             <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
               Drag and drop your OPML file here, or{" "}
-              <span className="font-medium text-blue-600 dark:text-blue-400">browse</span>
+              <span className="text-accent font-medium">browse</span>
             </p>
             <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-500">
               Supports .opml and .xml files up to 5MB
@@ -319,7 +317,7 @@ function ImportSection() {
       {(importState.type === "queuing" || importState.type === "importing") && (
         <div className="py-4">
           <div className="mb-2 flex items-center">
-            <SpinnerIcon className="h-5 w-5 text-blue-500" />
+            <SpinnerIcon className="text-accent h-5 w-5" />
             <span className="ui-text-sm ml-2 font-medium text-zinc-700 dark:text-zinc-300">
               Importing feeds...
             </span>
@@ -328,7 +326,7 @@ function ImportSection() {
             <div className="mb-2">
               <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                 <div
-                  className="h-full bg-blue-500 transition-all duration-300"
+                  className="bg-accent h-full transition-all duration-300"
                   style={{
                     width: `${((importQuery.data.importedCount + importQuery.data.skippedCount + importQuery.data.failedCount) / importState.totalFeeds) * 100}%`,
                   }}
@@ -409,7 +407,7 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className="ui-text-sm mb-4 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          className="ui-text-sm text-accent hover:text-accent-hover mb-4"
         >
           Show all {feeds.length} feeds
         </button>
@@ -468,7 +466,7 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
           <button
             type="button"
             onClick={() => setShowDetails(!showDetails)}
-            className="ui-text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            className="ui-text-sm text-accent hover:text-accent-hover"
           >
             {showDetails ? "Hide details" : "Show details"}
           </button>
