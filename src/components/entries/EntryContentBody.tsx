@@ -511,7 +511,7 @@ export function EntryContentBody({
           )}
 
           {/* Narration controls - pass narration state for controlled mode */}
-          {!hideNarration && (
+          {!hideNarration && narrationSettings.enabled && (
             <NarrationControls
               articleId={articleId}
               title={title}
