@@ -21,7 +21,7 @@
     "default_popup": "src/popup.html"
   },
 
-  "permissions": ["activeTab", "scripting", "storage", "contextMenus", "webNavigation"],
+  "permissions": ["activeTab", "storage", "contextMenus", "webNavigation"],
 
   "browser_specific_settings": {
     "gecko": {
