@@ -358,12 +358,15 @@ export default function AccountSettingsContent() {
           <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
             Learn more about how we collect, use, and protect your data.
           </p>
-          <div className="mt-4">
+          <div className="mt-4 flex gap-4">
             <a
               href="/privacy"
               className="ui-text-sm text-accent hover:text-accent-hover font-medium"
             >
               View Privacy Policy &rarr;
+            </a>
+            <a href="/terms" className="ui-text-sm text-accent hover:text-accent-hover font-medium">
+              View Terms of Service &rarr;
             </a>
           </div>
         </div>
