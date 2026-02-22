@@ -15,6 +15,7 @@ import { useMemo, useEffect, useCallback, useRef, useState, Suspense } from "rea
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ClientLink } from "@/components/ui/client-link";
+import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeftIcon,
@@ -253,116 +254,117 @@ function DemoRouterContent() {
 
   if (selectedEntry) {
     return (
-      <EntryArticle
-        key={selectedEntry.id}
-        {...getDemoEntryArticleProps(selectedEntry)}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        backButton={
-          <ClientLink
-            href={backHref}
-            className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
-          >
-            <ArrowLeftIcon className="h-4 w-4" />
-            <span>Back to list</span>
-          </ClientLink>
-        }
-        actionButtons={
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {/* Star button */}
-            <Button
-              variant={selectedEntry.starred ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => demoState.toggleStar(selectedEntry.id)}
-              className={
-                selectedEntry.starred
-                  ? "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-500 dark:text-white dark:hover:bg-amber-600"
-                  : ""
-              }
-              aria-label={selectedEntry.starred ? "Remove from starred" : "Add to starred"}
+      <ScrollContainer key={selectedEntry.id} className="h-full overflow-y-auto">
+        <EntryArticle
+          {...getDemoEntryArticleProps(selectedEntry)}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          backButton={
+            <ClientLink
+              href={backHref}
+              className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
             >
-              {selectedEntry.starred ? (
-                <StarFilledIcon className="h-5 w-5" />
-              ) : (
-                <StarIcon className="h-5 w-5" />
-              )}
-              <span className="ml-2">{selectedEntry.starred ? "Starred" : "Star"}</span>
-            </Button>
+              <ArrowLeftIcon className="h-4 w-4" />
+              <span>Back to list</span>
+            </ClientLink>
+          }
+          actionButtons={
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              {/* Star button */}
+              <Button
+                variant={selectedEntry.starred ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => demoState.toggleStar(selectedEntry.id)}
+                className={
+                  selectedEntry.starred
+                    ? "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-500 dark:text-white dark:hover:bg-amber-600"
+                    : ""
+                }
+                aria-label={selectedEntry.starred ? "Remove from starred" : "Add to starred"}
+              >
+                {selectedEntry.starred ? (
+                  <StarFilledIcon className="h-5 w-5" />
+                ) : (
+                  <StarIcon className="h-5 w-5" />
+                )}
+                <span className="ml-2">{selectedEntry.starred ? "Starred" : "Star"}</span>
+              </Button>
 
-            {/* Mark read/unread button */}
-            <Button
-              variant={!selectedEntry.read ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => demoState.toggleRead(selectedEntry.id)}
-              aria-label={selectedEntry.read ? "Mark as unread" : "Mark as read"}
-            >
-              {selectedEntry.read ? (
-                <CircleIcon className="h-4 w-4" />
-              ) : (
-                <CircleFilledIcon className="h-4 w-4" />
-              )}
-              <span className="ml-2">{selectedEntry.read ? "Read" : "Unread"}</span>
-            </Button>
+              {/* Mark read/unread button */}
+              <Button
+                variant={!selectedEntry.read ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => demoState.toggleRead(selectedEntry.id)}
+                aria-label={selectedEntry.read ? "Mark as unread" : "Mark as read"}
+              >
+                {selectedEntry.read ? (
+                  <CircleIcon className="h-4 w-4" />
+                ) : (
+                  <CircleFilledIcon className="h-4 w-4" />
+                )}
+                <span className="ml-2">{selectedEntry.read ? "Read" : "Unread"}</span>
+              </Button>
 
-            {/* Summarize button */}
-            <Button
-              variant={showSummaryForEntry === selectedEntry.id ? "primary" : "secondary"}
-              size="sm"
-              onClick={() =>
-                setShowSummaryForEntry(
-                  showSummaryForEntry === selectedEntry.id ? null : selectedEntry.id
-                )
-              }
-              className={
-                showSummaryForEntry === selectedEntry.id
-                  ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
-                  : ""
-              }
-              aria-label={
-                showSummaryForEntry === selectedEntry.id ? "Hide summary" : "Show AI summary"
-              }
-            >
-              <SparklesIcon className="h-4 w-4" />
-              <span className="ml-2">
-                {showSummaryForEntry === selectedEntry.id ? "Hide Summary" : "Summarize"}
-              </span>
-            </Button>
-          </div>
-        }
-        beforeContent={
-          <>
-            {showSummaryForEntry === selectedEntry.id && (
-              <SummaryCard
-                summary={selectedEntry.summaryHtml}
-                modelId="claude-sonnet-4-6"
-                generatedAt={new Date("2026-02-07")}
-                onClose={() => setShowSummaryForEntry(null)}
-              />
-            )}
-            {selectedEntry.id === "welcome" && (
-              <div className="mb-6 rounded-lg border border-zinc-200 bg-zinc-50 p-6 text-center dark:border-zinc-700 dark:bg-zinc-800/50">
-                <h2 className="mb-4 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-                  Get Started
-                </h2>
-                <div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
-                  <Link
-                    href="/register"
-                    className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md bg-zinc-900 px-6 font-medium text-white transition-colors hover:bg-zinc-800 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                  >
-                    Sign Up
-                  </Link>
-                  <Link
-                    href="/login"
-                    className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md border border-zinc-300 bg-white px-6 font-medium text-zinc-900 transition-colors hover:bg-zinc-50 sm:w-auto dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                  >
-                    Sign in
-                  </Link>
+              {/* Summarize button */}
+              <Button
+                variant={showSummaryForEntry === selectedEntry.id ? "primary" : "secondary"}
+                size="sm"
+                onClick={() =>
+                  setShowSummaryForEntry(
+                    showSummaryForEntry === selectedEntry.id ? null : selectedEntry.id
+                  )
+                }
+                className={
+                  showSummaryForEntry === selectedEntry.id
+                    ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
+                    : ""
+                }
+                aria-label={
+                  showSummaryForEntry === selectedEntry.id ? "Hide summary" : "Show AI summary"
+                }
+              >
+                <SparklesIcon className="h-4 w-4" />
+                <span className="ml-2">
+                  {showSummaryForEntry === selectedEntry.id ? "Hide Summary" : "Summarize"}
+                </span>
+              </Button>
+            </div>
+          }
+          beforeContent={
+            <>
+              {showSummaryForEntry === selectedEntry.id && (
+                <SummaryCard
+                  summary={selectedEntry.summaryHtml}
+                  modelId="claude-sonnet-4-6"
+                  generatedAt={new Date("2026-02-07")}
+                  onClose={() => setShowSummaryForEntry(null)}
+                />
+              )}
+              {selectedEntry.id === "welcome" && (
+                <div className="mb-6 rounded-lg border border-zinc-200 bg-zinc-50 p-6 text-center dark:border-zinc-700 dark:bg-zinc-800/50">
+                  <h2 className="mb-4 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+                    Get Started
+                  </h2>
+                  <div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
+                    <Link
+                      href="/register"
+                      className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md bg-zinc-900 px-6 font-medium text-white transition-colors hover:bg-zinc-800 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    >
+                      Sign Up
+                    </Link>
+                    <Link
+                      href="/login"
+                      className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md border border-zinc-300 bg-white px-6 font-medium text-zinc-900 transition-colors hover:bg-zinc-50 sm:w-auto dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      Sign in
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            )}
-          </>
-        }
-      />
+              )}
+            </>
+          }
+        />
+      </ScrollContainer>
     );
   }
 
