@@ -13,6 +13,9 @@
 
 export const dynamic = "force-dynamic";
 
+// The Android app scrapes this with a DOTALL regex that expects exactly
+// 4 non-empty <strong><code>VALUE</code></strong> groups followed by
+// a /developer/client/delete/ link. Empty values won't match ([^<]+?).
 const DEVELOPER_HTML = `<!DOCTYPE html>
 <html>
 <head><title>Lion Reader - API Clients</title></head>
@@ -23,7 +26,7 @@ const DEVELOPER_HTML = `<!DOCTYPE html>
 <div class="collapsible-body">
 <p>Client ID: <strong><code>wallabag</code></strong></p>
 <p>Client secret: <strong><code>wallabag</code></strong></p>
-<p>Redirect URIs: <strong><code></code></strong></p>
+<p>Redirect URIs: <strong><code>n/a</code></strong></p>
 <p>Grant types: <strong><code>password refresh_token</code></strong></p>
 <a href="/developer/client/delete/1">Delete</a>
 </div>
