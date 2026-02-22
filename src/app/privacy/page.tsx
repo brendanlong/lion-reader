@@ -107,8 +107,8 @@ export default function PrivacyPolicyPage() {
               How We Use Your Data
             </h2>
             <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-              We use the information we collect solely to provide and improve Lion Reader&apos;s
-              features:
+              We use the information we collect to provide, operate, and improve the Lion Reader
+              service. This includes:
             </p>
             <ul className="mt-2 list-disc space-y-1 pl-6 text-zinc-600 dark:text-zinc-400">
               <li>To maintain your account and authenticate you when you sign in</li>
@@ -120,12 +120,47 @@ export default function PrivacyPolicyPage() {
                 Grafana)
               </li>
               <li>To prevent abuse and maintain security of the service</li>
+              <li>
+                To administer the service, including managing user accounts, monitoring feed health,
+                and managing invite codes (see Administrative Access below)
+              </li>
             </ul>
             <p className="mt-2 text-zinc-600 dark:text-zinc-400">
               <strong>
                 We do not use your data for advertising, marketing to third parties, or any purpose
                 unrelated to providing the Lion Reader service.
               </strong>
+            </p>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="ui-text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+              Administrative Access
+            </h2>
+            <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+              Lion Reader administrators have access to an internal admin portal used to operate and
+              maintain the service. This portal is protected by a separate secret and is not
+              accessible to regular users. Through the admin portal, administrators can view:
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-6 text-zinc-600 dark:text-zinc-400">
+              <li>
+                <strong>User information:</strong> Email addresses, account creation dates, linked
+                sign-in providers (e.g., Google, Apple, Discord), number of feed subscriptions,
+                number of entries, and scoring model statistics
+              </li>
+              <li>
+                <strong>Feed health data:</strong> Feed URLs, titles, fetch error details,
+                subscriber counts, entry counts, and fetch sizes — used to diagnose and resolve feed
+                issues
+              </li>
+              <li>
+                <strong>Invite management:</strong> Invite codes, their status (pending, used,
+                expired), and which user claimed each invite
+              </li>
+            </ul>
+            <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+              Administrative access is used solely for service operation, troubleshooting, and user
+              support.
             </p>
           </section>
 
