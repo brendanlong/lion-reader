@@ -13,7 +13,7 @@
 
 "use client";
 
-import { type FormEvent, type ReactNode, useCallback, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,15 +38,35 @@ function getStoredToken(): string | null {
 }
 
 /**
+ * Validates an admin token by making a lightweight API call.
+ * Returns true if the token is valid, false otherwise.
+ */
+async function validateAdminToken(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      "/api/trpc/admin.listInvites?input=" +
+        encodeURIComponent(JSON.stringify({ json: { limit: 1 } })),
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Login form for admin authentication.
- * Stores the admin secret in localStorage on submit.
+ * Validates the token against the server before accepting it.
  */
 function AdminLoginForm({ onLogin }: { onLogin: (token: string) => void }) {
   const [secret, setSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
 
   const handleSubmit = useCallback(
-    (e: FormEvent) => {
+    async (e: FormEvent) => {
       e.preventDefault();
       const trimmed = secret.trim();
       if (!trimmed) {
@@ -54,6 +74,16 @@ function AdminLoginForm({ onLogin }: { onLogin: (token: string) => void }) {
         return;
       }
       setError(null);
+      setIsValidating(true);
+
+      const valid = await validateAdminToken(trimmed);
+      setIsValidating(false);
+
+      if (!valid) {
+        setError("Invalid admin secret");
+        return;
+      }
+
       localStorage.setItem(ADMIN_TOKEN_KEY, trimmed);
       onLogin(trimmed);
     },
@@ -77,8 +107,8 @@ function AdminLoginForm({ onLogin }: { onLogin: (token: string) => void }) {
             error={error ?? undefined}
             autoFocus
           />
-          <Button type="submit" className="w-full">
-            Login
+          <Button type="submit" className="w-full" disabled={isValidating}>
+            {isValidating ? "Verifying..." : "Login"}
           </Button>
         </form>
       </Card>
@@ -172,6 +202,24 @@ interface AdminAppProps {
  */
 export function AdminApp({ children }: AdminAppProps) {
   const [token, setToken] = useState<string | null>(getStoredToken);
+  const hasStoredToken = token !== null;
+  const [isVerifying, setIsVerifying] = useState(hasStoredToken);
+
+  // Validate stored token on mount
+  useEffect(() => {
+    if (!hasStoredToken) return;
+
+    const storedToken = getStoredToken();
+    if (!storedToken) return;
+
+    validateAdminToken(storedToken).then((valid) => {
+      if (!valid) {
+        localStorage.removeItem(ADMIN_TOKEN_KEY);
+        setToken(null);
+      }
+      setIsVerifying(false);
+    });
+  }, [hasStoredToken]);
 
   const handleLogin = useCallback((newToken: string) => {
     setToken(newToken);
@@ -181,6 +229,14 @@ export function AdminApp({ children }: AdminAppProps) {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
     setToken(null);
   }, []);
+
+  if (isVerifying) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">Verifying credentials...</p>
+      </div>
+    );
+  }
 
   if (!token) {
     return <AdminLoginForm onLogin={handleLogin} />;

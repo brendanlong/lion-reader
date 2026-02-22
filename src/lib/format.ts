@@ -63,6 +63,18 @@ export function formatFutureTime(date: Date | null): string {
 }
 
 /**
+ * Format a byte count as a human-readable string (e.g., "1.5 MB").
+ * Returns "--" for null values.
+ */
+export function formatBytes(bytes: number | null): string {
+  if (bytes == null) return "--";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/**
  * Extract domain from URL for display.
  */
 export function getDomain(url: string): string {

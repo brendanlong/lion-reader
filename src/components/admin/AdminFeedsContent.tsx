@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatRelativeTime, formatFutureTime } from "@/lib/format";
+import { formatRelativeTime, formatFutureTime, formatBytes } from "@/lib/format";
 import {
   SpinnerIcon,
   ExternalLinkIcon,
@@ -55,13 +55,6 @@ interface FeedItem {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function formatBytes(bytes: number | null): string {
-  if (bytes == null) return "--";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function truncateUrl(url: string, maxLength: number = 60): string {
   if (url.length <= maxLength) return url;

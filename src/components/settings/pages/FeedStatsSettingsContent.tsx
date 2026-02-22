@@ -10,7 +10,12 @@
 
 import { useCallback, useEffect, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
+import {
+  getFeedDisplayName,
+  formatRelativeTime,
+  formatFutureTime,
+  formatBytes,
+} from "@/lib/format";
 import { Alert } from "@/components/ui/alert";
 import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
 import {
@@ -55,16 +60,6 @@ interface FeedStats {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Format bytes into a human-readable string (B, KB, MB).
- */
-function formatBytes(bytes: number | null): string {
-  if (bytes == null) return "--";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 /**
  * Get status badge for feed

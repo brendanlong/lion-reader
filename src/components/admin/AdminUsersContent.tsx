@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ClientLink } from "@/components/ui/client-link";
 import { SpinnerIcon, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icon-button";
+import { formatBytes } from "@/lib/format";
 
 // ============================================================================
 // Constants
@@ -34,14 +35,6 @@ function formatDate(date: Date): string {
     day: "numeric",
     year: "numeric",
   }).format(new Date(date));
-}
-
-function formatBytes(bytes: number | null): string {
-  if (bytes == null) return "--";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function truncateId(id: string): string {
