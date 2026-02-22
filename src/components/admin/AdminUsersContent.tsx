@@ -10,6 +10,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -164,8 +165,11 @@ function EmptyState({ hasSearch }: { hasSearch: boolean }) {
 // ============================================================================
 
 export default function AdminUsersContent() {
-  const [searchInput, setSearchInput] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchParams = useSearchParams();
+  const initialSearch = searchParams.get("search") ?? "";
+
+  const [searchInput, setSearchInput] = useState(initialSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Debounce search input

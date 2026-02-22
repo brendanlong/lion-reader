@@ -9,6 +9,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -261,11 +262,14 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
 // ============================================================================
 
 export default function AdminFeedsContent() {
+  const searchParams = useSearchParams();
+  const initialEmail = searchParams.get("userEmail") ?? "";
+
   const [urlInput, setUrlInput] = useState("");
-  const [emailInput, setEmailInput] = useState("");
+  const [emailInput, setEmailInput] = useState(initialEmail);
   const [brokenOnly, setBrokenOnly] = useState(false);
   const [debouncedUrl, setDebouncedUrl] = useState("");
-  const [debouncedEmail, setDebouncedEmail] = useState("");
+  const [debouncedEmail, setDebouncedEmail] = useState(initialEmail);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
