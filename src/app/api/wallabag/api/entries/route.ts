@@ -59,17 +59,23 @@ export async function GET(request: Request): Promise<Response> {
   // Filter by read/archived state
   if (params.archive === false) {
     baseParams.unreadOnly = true;
+  } else if (params.archive === true) {
+    baseParams.readOnly = true;
   }
 
   // Filter by starred state
   if (params.starred === true) {
     baseParams.starredOnly = true;
+  } else if (params.starred === false) {
+    baseParams.unstarredOnly = true;
   }
 
   // Get total count for pagination metadata
   const counts = await entriesService.countEntries(db, auth.userId, {
     unreadOnly: params.archive === false ? true : undefined,
+    readOnly: params.archive === true ? true : undefined,
     starredOnly: params.starred === true ? true : undefined,
+    unstarredOnly: params.starred === false ? true : undefined,
     showSpam: false,
   });
 

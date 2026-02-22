@@ -30,7 +30,9 @@ export interface ListEntriesParams {
   type?: "web" | "email" | "saved";
   excludeTypes?: Array<"web" | "email" | "saved">;
   unreadOnly?: boolean;
+  readOnly?: boolean;
   starredOnly?: boolean;
+  unstarredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
   sortBy?: "published" | "readChanged" | "predictedScore"; // Which column to sort by (default: published)
   cursor?: string;
@@ -51,7 +53,9 @@ export interface SearchEntriesParams {
   type?: "web" | "email" | "saved";
   excludeTypes?: Array<"web" | "email" | "saved">;
   unreadOnly?: boolean;
+  readOnly?: boolean;
   starredOnly?: boolean;
+  unstarredOnly?: boolean;
   cursor?: string;
   limit?: number;
   showSpam: boolean;
@@ -859,7 +863,9 @@ export async function countEntries(
     type?: "web" | "email" | "saved";
     excludeTypes?: Array<"web" | "email" | "saved">;
     unreadOnly?: boolean;
+    readOnly?: boolean;
     starredOnly?: boolean;
+    unstarredOnly?: boolean;
     showSpam: boolean;
   }
 ): Promise<{ total: number; unread: number }> {

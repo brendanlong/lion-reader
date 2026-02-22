@@ -21,7 +21,9 @@ export interface EntryFilterParams {
 
 export interface EntryConditionParams {
   unreadOnly?: boolean;
+  readOnly?: boolean;
   starredOnly?: boolean;
+  unstarredOnly?: boolean;
   type?: "web" | "email" | "saved";
   excludeTypes?: Array<"web" | "email" | "saved">;
   showSpam: boolean;
@@ -159,10 +161,14 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
 
   if (params.unreadOnly) {
     conditions.push(eq(visibleEntries.read, false));
+  } else if (params.readOnly) {
+    conditions.push(eq(visibleEntries.read, true));
   }
 
   if (params.starredOnly) {
     conditions.push(eq(visibleEntries.starred, true));
+  } else if (params.unstarredOnly) {
+    conditions.push(eq(visibleEntries.starred, false));
   }
 
   if (params.type) {
