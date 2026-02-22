@@ -30,7 +30,9 @@ export interface ListEntriesParams {
   type?: "web" | "email" | "saved";
   excludeTypes?: Array<"web" | "email" | "saved">;
   unreadOnly?: boolean;
+  readOnly?: boolean;
   starredOnly?: boolean;
+  unstarredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
   sortBy?: "published" | "readChanged" | "predictedScore"; // Which column to sort by (default: published)
   cursor?: string;
@@ -51,7 +53,9 @@ export interface SearchEntriesParams {
   type?: "web" | "email" | "saved";
   excludeTypes?: Array<"web" | "email" | "saved">;
   unreadOnly?: boolean;
+  readOnly?: boolean;
   starredOnly?: boolean;
+  unstarredOnly?: boolean;
   cursor?: string;
   limit?: number;
   showSpam: boolean;
@@ -625,6 +629,66 @@ export async function getEntry(
 }
 
 /**
+ * Gets multiple entries by ID in a single query.
+ * Returns entries in the same order as the input IDs.
+ * Missing entries are silently skipped.
+ */
+export async function getEntries(
+  db: typeof dbType,
+  userId: string,
+  entryIds: string[]
+): Promise<EntryFull[]> {
+  if (entryIds.length === 0) return [];
+
+  const results = await db
+    .select({
+      id: visibleEntries.id,
+      feedId: visibleEntries.feedId,
+      type: visibleEntries.type,
+      url: visibleEntries.url,
+      title: visibleEntries.title,
+      author: visibleEntries.author,
+      contentOriginal: visibleEntries.contentOriginal,
+      contentCleaned: visibleEntries.contentCleaned,
+      summary: visibleEntries.summary,
+      publishedAt: visibleEntries.publishedAt,
+      fetchedAt: visibleEntries.fetchedAt,
+      updatedAt: visibleEntries.updatedAt,
+      read: visibleEntries.read,
+      starred: visibleEntries.starred,
+      subscriptionId: visibleEntries.subscriptionId,
+      siteName: visibleEntries.siteName,
+      feedTitle: feeds.title,
+      feedUrl: feeds.url,
+      unsubscribeUrl: visibleEntries.unsubscribeUrl,
+      score: visibleEntries.score,
+      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
+      hasMarkedUnread: visibleEntries.hasMarkedUnread,
+      hasStarred: visibleEntries.hasStarred,
+    })
+    .from(visibleEntries)
+    .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .where(and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId)));
+
+  // Build a map for O(1) lookup, then return in original order
+  const resultMap = new Map<string, EntryFull>();
+  for (const row of results) {
+    resultMap.set(row.id, {
+      ...row,
+      score: row.score,
+      implicitScore: computeImplicitScore(
+        row.hasStarred,
+        row.hasMarkedUnread,
+        row.hasMarkedReadOnList,
+        row.type
+      ),
+    });
+  }
+
+  return entryIds.map((id) => resultMap.get(id)).filter((e): e is EntryFull => e != null);
+}
+
+/**
  * Marks entries as read or unread.
  *
  * Uses idempotent updates: only applies if changedAt is newer than the stored
@@ -799,7 +863,9 @@ export async function countEntries(
     type?: "web" | "email" | "saved";
     excludeTypes?: Array<"web" | "email" | "saved">;
     unreadOnly?: boolean;
+    readOnly?: boolean;
     starredOnly?: boolean;
+    unstarredOnly?: boolean;
     showSpam: boolean;
   }
 ): Promise<{ total: number; unread: number }> {

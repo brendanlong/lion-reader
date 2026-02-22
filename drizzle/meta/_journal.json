@@ -407,6 +407,13 @@
       "when": 1770588800000,
       "tag": "0057_drop_total_entry_count",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1770598800000,
+      "tag": "0058_wallabag_id",
+      "breakpoints": true
     }
   ]
 }
