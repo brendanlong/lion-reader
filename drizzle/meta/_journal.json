@@ -393,6 +393,13 @@
       "when": 1770568800000,
       "tag": "0055_best_feed_weights",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1770578800000,
+      "tag": "0056_feed_fetch_stats",
+      "breakpoints": true
     }
   ]
 }
