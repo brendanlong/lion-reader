@@ -426,13 +426,6 @@ async function processSuccessfulFetch(
   const newHubUrl = feedMetadata.hubUrl ?? null;
   const newSelfUrl = feedMetadata.selfUrl ?? feed.selfUrl;
 
-  // Count total entries for this feed
-  const totalEntryCountResult = await db
-    .select({ count: count() })
-    .from(entries)
-    .where(eq(entries.feedId, feed.id));
-  const totalEntryCount = totalEntryCountResult[0]?.count ?? 0;
-
   // Calculate the number of entries seen in this fetch
   const lastFetchEntryCount =
     processResult.newCount + processResult.updatedCount + processResult.unchangedCount;
@@ -457,7 +450,6 @@ async function processSuccessfulFetch(
       // Feed fetch statistics
       lastFetchEntryCount,
       lastFetchSizeBytes: body.length,
-      totalEntryCount,
       updatedAt: now,
     })
     .where(eq(feeds.id, feed.id));

@@ -7,10 +7,10 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, isNull, sql, count } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { feeds, subscriptions } from "@/server/db/schema";
+import { feeds, subscriptions, entries } from "@/server/db/schema";
 
 // ============================================================================
 // Constants
@@ -118,6 +118,28 @@ export const feedStatsRouter = createTRPCRouter({
         );
       }
 
+      // Total entry count subquery
+      const totalEntryCountSq = ctx.db
+        .select({ count: count().as("count") })
+        .from(entries)
+        .where(eq(entries.feedId, feeds.id));
+
+      // Oldest entry timestamp subquery
+      const oldestEntryAtSq = ctx.db
+        .select({ minFetchedAt: sql`MIN(${entries.fetchedAt})`.as("min_fetched_at") })
+        .from(entries)
+        .where(eq(entries.feedId, feeds.id));
+
+      // Entries per week: count / weeks since oldest entry
+      const entriesPerWeekExpr = sql<number | null>`
+        CASE
+          WHEN (${totalEntryCountSq}) = 0 THEN NULL
+          WHEN (${oldestEntryAtSq}) IS NULL THEN NULL
+          WHEN EXTRACT(EPOCH FROM (NOW() - (${oldestEntryAtSq}))) < 604800 THEN NULL
+          ELSE (${totalEntryCountSq})::float / (EXTRACT(EPOCH FROM (NOW() - (${oldestEntryAtSq}))) / 604800.0)
+        END
+      `;
+
       // Get all web feeds the user is subscribed to with their stats
       const feedStats = await ctx.db
         .select({
@@ -136,12 +158,8 @@ export const feedStatsRouter = createTRPCRouter({
           subscribedAt: subscriptions.subscribedAt,
           lastFetchEntryCount: feeds.lastFetchEntryCount,
           lastFetchSizeBytes: feeds.lastFetchSizeBytes,
-          totalEntryCount: feeds.totalEntryCount,
-          entriesPerWeek: sql<
-            number | null
-          >`CASE WHEN EXTRACT(EPOCH FROM (NOW() - ${feeds.createdAt})) > 604800 THEN ${feeds.totalEntryCount}::float / (EXTRACT(EPOCH FROM (NOW() - ${feeds.createdAt})) / 604800) ELSE NULL END`.as(
-            "entries_per_week"
-          ),
+          totalEntryCount: sql<number>`(${totalEntryCountSq})`.as("total_entry_count"),
+          entriesPerWeek: entriesPerWeekExpr.as("entries_per_week"),
         })
         .from(feeds)
         .innerJoin(subscriptions, eq(subscriptions.feedId, feeds.id))
@@ -176,8 +194,8 @@ export const feedStatsRouter = createTRPCRouter({
           subscribedAt: feed.subscribedAt,
           lastFetchEntryCount: feed.lastFetchEntryCount,
           lastFetchSizeBytes: feed.lastFetchSizeBytes,
-          totalEntryCount: feed.totalEntryCount,
-          entriesPerWeek: feed.entriesPerWeek,
+          totalEntryCount: Number(feed.totalEntryCount),
+          entriesPerWeek: feed.entriesPerWeek != null ? Number(feed.entriesPerWeek) : null,
         })),
         nextCursor,
       };

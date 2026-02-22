@@ -400,6 +400,13 @@
       "when": 1770578800000,
       "tag": "0056_feed_fetch_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1770588800000,
+      "tag": "0057_drop_total_entry_count",
+      "breakpoints": true
     }
   ]
 }

@@ -368,7 +368,6 @@ export const feeds = pgTable(
     // Fetch statistics
     lastFetchEntryCount: integer("last_fetch_entry_count"), // Number of entries in the last successful fetch
     lastFetchSizeBytes: integer("last_fetch_size_bytes"), // Size of HTTP response body in bytes
-    totalEntryCount: integer("total_entry_count").notNull().default(0), // Total number of entries in the feed
 
     // Redirect tracking - wait period before applying permanent redirects
     redirectUrl: text("redirect_url"), // URL we're being redirected to (301/308)

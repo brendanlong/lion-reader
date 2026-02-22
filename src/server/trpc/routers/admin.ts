@@ -12,6 +12,7 @@ import crypto from "crypto";
 import { createTRPCRouter, adminProcedure } from "../trpc";
 import {
   feeds,
+  entries,
   subscriptions,
   users,
   invites,
@@ -311,13 +312,25 @@ const feedHealthEndpoints = {
         .from(subscriptions)
         .where(and(eq(subscriptions.feedId, feeds.id), isNull(subscriptions.unsubscribedAt)));
 
-      // Entries per week: totalEntryCount / (seconds since creation / 604800)
-      // Returns null if totalEntryCount is 0 or feed was just created
+      // Total entry count subquery
+      const totalEntryCountSq = ctx.db
+        .select({ count: count().as("count") })
+        .from(entries)
+        .where(eq(entries.feedId, feeds.id));
+
+      // Oldest entry timestamp subquery
+      const oldestEntryAtSq = ctx.db
+        .select({ minFetchedAt: sql`MIN(${entries.fetchedAt})`.as("min_fetched_at") })
+        .from(entries)
+        .where(eq(entries.feedId, feeds.id));
+
+      // Entries per week: count / weeks since oldest entry
       const entriesPerWeekExpr = sql<number | null>`
         CASE
-          WHEN ${feeds.totalEntryCount} = 0 THEN NULL
-          WHEN EXTRACT(EPOCH FROM (NOW() - ${feeds.createdAt})) < 604800 THEN NULL
-          ELSE ${feeds.totalEntryCount}::float / (EXTRACT(EPOCH FROM (NOW() - ${feeds.createdAt})) / 604800.0)
+          WHEN (${totalEntryCountSq}) = 0 THEN NULL
+          WHEN (${oldestEntryAtSq}) IS NULL THEN NULL
+          WHEN EXTRACT(EPOCH FROM (NOW() - (${oldestEntryAtSq}))) < 604800 THEN NULL
+          ELSE (${totalEntryCountSq})::float / (EXTRACT(EPOCH FROM (NOW() - (${oldestEntryAtSq}))) / 604800.0)
         END
       `;
 
@@ -386,7 +399,7 @@ const feedHealthEndpoints = {
           subscriberCount: sql<number>`(${subscriberCountSq})`.as("subscriber_count"),
           lastFetchEntryCount: feeds.lastFetchEntryCount,
           lastFetchSizeBytes: feeds.lastFetchSizeBytes,
-          totalEntryCount: feeds.totalEntryCount,
+          totalEntryCount: sql<number>`(${totalEntryCountSq})`.as("total_entry_count"),
           entriesPerWeek: entriesPerWeekExpr.as("entries_per_week"),
         })
         .from(feeds)
@@ -413,7 +426,7 @@ const feedHealthEndpoints = {
           subscriberCount: Number(row.subscriberCount),
           lastFetchEntryCount: row.lastFetchEntryCount,
           lastFetchSizeBytes: row.lastFetchSizeBytes,
-          totalEntryCount: row.totalEntryCount,
+          totalEntryCount: Number(row.totalEntryCount),
           entriesPerWeek: row.entriesPerWeek != null ? Number(row.entriesPerWeek) : null,
         })),
         nextCursor,
