@@ -50,7 +50,7 @@ const article: DemoArticle = {
 
     <h3>Other Ways to Save</h3>
 
-    <p>The browser extension is one of several ways to save articles in Lion Reader. You can also save via the <a href="/demo/all?entry=save-for-later">bookmarklet</a>, the <a href="/demo/all?entry=pwa">PWA share target</a> on mobile, the <a href="/demo/all?entry=discord-bot">Discord bot</a>, or the <a href="/demo/all?entry=mcp-server">MCP server</a> from AI assistants. All methods use the same underlying save service, so your saved articles end up in the same place regardless of how you captured them.</p>
+    <p>The browser extension is one of several ways to save articles in Lion Reader. You can also save via the <a href="/demo/all?entry=save-for-later">bookmarklet</a>, the <a href="/demo/all?entry=wallabag-api">Wallabag app</a> on mobile, the <a href="/demo/all?entry=pwa">PWA share target</a>, the <a href="/demo/all?entry=discord-bot">Discord bot</a>, or the <a href="/demo/all?entry=mcp-server">MCP server</a> from AI assistants. All methods use the same underlying save service, so your saved articles end up in the same place regardless of how you captured them.</p>
   `,
 };
 

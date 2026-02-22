@@ -24,6 +24,7 @@ const article: DemoArticle = {
       <li><strong>PWA share target</strong> &mdash; Use your phone&rsquo;s native share menu to send articles directly to Lion Reader</li>
       <li><strong>MCP integration</strong> &mdash; Save articles via AI assistants like Claude</li>
       <li><strong>tRPC API</strong> &mdash; Programmatic saving for automation and integrations</li>
+      <li><strong>Wallabag app</strong> &mdash; Use the Wallabag mobile app&rsquo;s share intent to save URLs from any app on your phone</li>
       <li><strong>Discord bot</strong> &mdash; Save articles shared in Discord channels</li>
       <li><strong>File upload</strong> &mdash; Upload Markdown files, Word documents, and HTML files directly</li>
       <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope (powered by the <strong>Plugin System</strong>)</li>
