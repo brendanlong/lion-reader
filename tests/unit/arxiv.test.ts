@@ -106,9 +106,10 @@ describe("ArXiv URL detection", () => {
       expect(extractPaperId("https://arxiv.org/html/2601.04649")).toBe("2601.04649");
     });
 
-    it("extracts paper ID without version number", () => {
-      expect(extractPaperId("https://arxiv.org/abs/2601.04649v1")).toBe("2601.04649");
-      expect(extractPaperId("https://arxiv.org/abs/2601.04649v12")).toBe("2601.04649");
+    it("extracts paper ID with version number preserved", () => {
+      expect(extractPaperId("https://arxiv.org/abs/2601.04649v1")).toBe("2601.04649v1");
+      expect(extractPaperId("https://arxiv.org/abs/2601.04649v12")).toBe("2601.04649v12");
+      expect(extractPaperId("https://arxiv.org/html/2602.04118v1")).toBe("2602.04118v1");
     });
 
     it("extracts paper ID from old format URLs", () => {
@@ -142,6 +143,10 @@ describe("ArXiv URL detection", () => {
   describe("buildArxivHtmlUrl", () => {
     it("builds HTML URL from new format paper ID", () => {
       expect(buildArxivHtmlUrl("2601.04649")).toBe("https://arxiv.org/html/2601.04649");
+    });
+
+    it("builds HTML URL from paper ID with version", () => {
+      expect(buildArxivHtmlUrl("2601.04649v1")).toBe("https://arxiv.org/html/2601.04649v1");
     });
 
     it("builds HTML URL from old format paper ID", () => {
