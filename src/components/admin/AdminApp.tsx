@@ -201,25 +201,26 @@ interface AdminAppProps {
  * with header, tab navigation, and tRPC provider.
  */
 export function AdminApp({ children }: AdminAppProps) {
-  const [token, setToken] = useState<string | null>(getStoredToken);
-  const hasStoredToken = token !== null;
-  const [isVerifying, setIsVerifying] = useState(hasStoredToken);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Validate stored token on mount
+  // Check localStorage and validate stored token on mount.
+  // Start in loading state on both server and client to avoid hydration mismatch,
+  // since localStorage is only available on the client.
   useEffect(() => {
-    if (!hasStoredToken) return;
-
-    const storedToken = getStoredToken();
-    if (!storedToken) return;
-
-    validateAdminToken(storedToken).then((valid) => {
-      if (!valid) {
-        localStorage.removeItem(ADMIN_TOKEN_KEY);
-        setToken(null);
+    void (async () => {
+      const storedToken = getStoredToken();
+      if (storedToken) {
+        const valid = await validateAdminToken(storedToken);
+        if (valid) {
+          setToken(storedToken);
+        } else {
+          localStorage.removeItem(ADMIN_TOKEN_KEY);
+        }
       }
-      setIsVerifying(false);
-    });
-  }, [hasStoredToken]);
+      setIsLoading(false);
+    })();
+  }, []);
 
   const handleLogin = useCallback((newToken: string) => {
     setToken(newToken);
@@ -230,7 +231,7 @@ export function AdminApp({ children }: AdminAppProps) {
     setToken(null);
   }, []);
 
-  if (isVerifying) {
+  if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">Verifying credentials...</p>
