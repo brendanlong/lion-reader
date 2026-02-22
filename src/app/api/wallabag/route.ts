@@ -3,19 +3,30 @@
  *
  * GET /api/wallabag - Server discovery endpoint
  *
- * The Wallabag Android app hits the configured server URL to verify
- * it exists before proceeding with the connection wizard. Returns
- * a simple 200 response so the app doesn't see a 404.
+ * The Wallabag Android app checks the configured server URL to verify
+ * it's a real Wallabag instance. Before checking for a login form, it
+ * checks if the page is a "regular page" (already logged in) by looking for:
+ * - A logout link matching: /logout">
+ * - A logo matching: alt="wallabag logo"
+ *
+ * If both are present, the app returns OK and proceeds to the API
+ * validation step (version.json + OAuth token).
  */
-
-import { jsonResponse } from "@/server/wallabag/parse";
 
 export const dynamic = "force-dynamic";
 
+const DISCOVERY_HTML = `<!DOCTYPE html>
+<html>
+<head><title>Lion Reader</title></head>
+<body>
+<img alt="wallabag logo" />
+<a href="/logout">Logout</a>
+</body>
+</html>`;
+
 export async function GET(): Promise<Response> {
-  return jsonResponse({
-    appname: "Lion Reader",
-    version: "2.6.0",
-    allowed_registration: false,
+  return new Response(DISCOVERY_HTML, {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 }
