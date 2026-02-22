@@ -40,12 +40,14 @@ export interface RedirectInfo {
 }
 
 /**
- * Result of a successful feed fetch (status 200).
+ * Result of a successful feed fetch (status 200 or 206).
+ * 206 Partial Content is treated as success because some servers return it
+ * even without a Range request, and the response body is still a valid feed.
  */
 interface FetchSuccessResult {
   status: "success";
-  /** HTTP status code (200) */
-  statusCode: 200;
+  /** HTTP status code (200 or 206) */
+  statusCode: 200 | 206;
   /** Response body as raw bytes - allows hashing before expensive text decoding */
   body: Buffer;
   /** Content-Type header value */
@@ -415,8 +417,10 @@ export async function fetchFeed(
         };
       }
 
-      // Handle success (200)
-      if (response.status === 200) {
+      // Handle success (200 or 206 Partial Content)
+      // Some servers return 206 even without a Range request header.
+      // The response body is still a valid feed, so we treat it as success.
+      if (response.status === 200 || response.status === 206) {
         // Get raw bytes with streaming size limit - prevents OOM from huge feeds
         let body: Buffer;
         try {
@@ -443,7 +447,7 @@ export async function fetchFeed(
 
         return {
           status: "success",
-          statusCode: 200,
+          statusCode: response.status as 200 | 206,
           body,
           contentType,
           finalUrl: currentUrl,
