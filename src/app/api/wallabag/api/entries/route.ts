@@ -49,7 +49,7 @@ export async function GET(request: Request): Promise<Response> {
   const params = parseEntryListParams(url);
 
   // Build list params from Wallabag query params
-  const listParams: entriesService.ListEntriesParams = {
+  const baseParams: entriesService.ListEntriesParams = {
     userId: auth.userId,
     limit: params.perPage,
     sortOrder: params.order === "asc" ? "oldest" : "newest",
@@ -58,18 +58,13 @@ export async function GET(request: Request): Promise<Response> {
 
   // Filter by read/archived state
   if (params.archive === false) {
-    listParams.unreadOnly = true;
+    baseParams.unreadOnly = true;
   }
 
   // Filter by starred state
   if (params.starred === true) {
-    listParams.starredOnly = true;
+    baseParams.starredOnly = true;
   }
-
-  // Wallabag uses page-based pagination. We need to simulate this with cursor-based.
-  // For page > 1, we need to skip (page - 1) * perPage entries.
-  // We do this by fetching enough entries to cover the requested page.
-  const skipCount = (params.page - 1) * params.perPage;
 
   // Get total count for pagination metadata
   const counts = await entriesService.countEntries(db, auth.userId, {
@@ -78,32 +73,45 @@ export async function GET(request: Request): Promise<Response> {
     showSpam: false,
   });
 
-  // For page-based pagination, fetch entries with offset simulation
-  // We use a larger limit to skip to the right page
-  const fetchLimit = skipCount + params.perPage;
+  // Simulate page-based pagination by iterating through cursor-based pages.
+  // Skip (page - 1) pages of entries, then return the requested page.
+  let cursor: string | undefined;
+  for (let p = 1; p < params.page; p++) {
+    const skipResult = await entriesService.listEntries(db, {
+      ...baseParams,
+      cursor,
+    });
+    cursor = skipResult.nextCursor;
+    if (!cursor) {
+      // Requested page is beyond available data
+      const baseUrl = `${url.origin}/api/wallabag/api/entries`;
+      return jsonResponse(
+        createPaginatedResponse([], params.page, params.perPage, counts.total, baseUrl)
+      );
+    }
+  }
+
+  // Fetch the actual requested page
   const result = await entriesService.listEntries(db, {
-    ...listParams,
-    limit: Math.min(fetchLimit, 100),
+    ...baseParams,
+    cursor,
   });
 
-  // Slice to the requested page
-  const pageItems = result.items.slice(skipCount, skipCount + params.perPage);
-
-  // If detail is "full", fetch full content for each entry
+  // If detail is "full", fetch full content in a single bulk query
   let formattedItems;
   if (params.detail === "full") {
-    formattedItems = await Promise.all(
-      pageItems.map(async (entry) => {
-        try {
-          const full = await entriesService.getEntry(db, auth.userId, entry.id);
-          return formatEntryFull(full);
-        } catch {
-          return formatEntryListItem(entry);
-        }
-      })
+    const fullEntries = await entriesService.getEntries(
+      db,
+      auth.userId,
+      result.items.map((e) => e.id)
     );
+    const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
+    formattedItems = result.items.map((entry) => {
+      const full = fullMap.get(entry.id);
+      return full ? formatEntryFull(full) : formatEntryListItem(entry);
+    });
   } else {
-    formattedItems = pageItems.map(formatEntryListItem);
+    formattedItems = result.items.map(formatEntryListItem);
   }
 
   const baseUrl = `${url.origin}/api/wallabag/api/entries`;

@@ -453,6 +453,12 @@ export const entries = pgTable(
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+
+    // Wallabag API integer ID - Postgres generated column from SHA-256 of UUID
+    // Matches TypeScript uuidToWallabagId() in src/server/wallabag/format.ts
+    wallabagId: integer("wallabag_id").generatedAlwaysAs(
+      sql`(('x' || left(encode(sha256(id::text::bytea), 'hex'), 8))::bit(32)::int & x'7fffffff'::int)`
+    ),
   },
   (table) => [
     // Unique constraint on feed + guid
@@ -712,6 +718,7 @@ export const visibleEntries = pgView("visible_entries", {
   predictionConfidence: real("prediction_confidence"), // confidence of prediction, nullable
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull(),
+  wallabagId: integer("wallabag_id"), // Wallabag API integer ID (generated column from entries table)
 }).existing();
 
 // ============================================================================

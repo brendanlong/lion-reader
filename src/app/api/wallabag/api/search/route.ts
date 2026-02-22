@@ -34,14 +34,40 @@ export async function GET(request: Request): Promise<Response> {
     100
   );
 
-  const result = await entriesService.listEntries(db, {
+  const searchParams: entriesService.ListEntriesParams = {
     userId: auth.userId,
     query: term,
     limit: perPage,
     showSpam: false,
+  };
+
+  // Simulate page-based pagination by iterating through cursor-based pages.
+  let cursor: string | undefined;
+  for (let p = 1; p < page; p++) {
+    const skipResult = await entriesService.listEntries(db, {
+      ...searchParams,
+      cursor,
+    });
+    cursor = skipResult.nextCursor;
+    if (!cursor) {
+      // Requested page is beyond available data
+      const baseUrl = `${url.origin}/api/wallabag/api/search`;
+      return jsonResponse(createPaginatedResponse([], page, perPage, 0, baseUrl));
+    }
+  }
+
+  // Fetch the actual requested page
+  const result = await entriesService.listEntries(db, {
+    ...searchParams,
+    cursor,
   });
+
+  // Estimate total: for search results we don't have an efficient count query,
+  // so compute a lower bound from the page position and whether there are more results.
+  const itemsSoFar = (page - 1) * perPage + result.items.length;
+  const total = result.nextCursor ? itemsSoFar + 1 : itemsSoFar;
 
   const items = result.items.map(formatEntryListItem);
   const baseUrl = `${url.origin}/api/wallabag/api/search`;
-  return jsonResponse(createPaginatedResponse(items, page, perPage, items.length, baseUrl));
+  return jsonResponse(createPaginatedResponse(items, page, perPage, total, baseUrl));
 }

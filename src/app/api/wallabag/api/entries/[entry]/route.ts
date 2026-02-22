@@ -10,7 +10,7 @@
 
 import { requireAuth } from "@/server/wallabag/auth";
 import { jsonResponse, errorResponse, parseBody } from "@/server/wallabag/parse";
-import { formatEntryFull } from "@/server/wallabag/format";
+import { formatEntryFull, uuidToWallabagId } from "@/server/wallabag/format";
 import { wallabagIdToUuid } from "@/server/wallabag/id";
 import * as entriesService from "@/server/services/entries";
 import * as savedService from "@/server/services/saved";
@@ -106,5 +106,5 @@ export async function DELETE(
   }
 
   // Return the entry (Wallabag API returns the deleted entry)
-  return jsonResponse({ id: parseInt(entryParam, 10) });
+  return jsonResponse({ id: uuidToWallabagId(entryId) });
 }
