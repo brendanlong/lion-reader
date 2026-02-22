@@ -27,18 +27,17 @@ export function WallabagApiSettings() {
   const serverUrl = `${baseUrl}/api/wallabag`;
 
   // Build the wallabag:// deep link for auto-configuration.
-  // Format: wallabag://username@server-host-and-path
-  // The Android app splits on @ and pre-fills the server URL and username fields.
+  // Format: wallabag://username@server-url
+  // The Android app splits on @ to get [username, server] and pre-fills those fields.
+  // Since Lion Reader uses email addresses as usernames (containing @), we encode
+  // the @ as %40 so the split produces exactly 2 parts. The user will see the
+  // percent-encoded email in the username field and may need to fix it manually.
+  // We include https:// in the server part so the app can connect without the user
+  // needing to add it.
   const wallabagDeepLink = useMemo(() => {
     if (!email || !baseUrl) return null;
-    try {
-      const url = new URL(serverUrl);
-      // Use host (includes port if non-standard) + pathname
-      const serverPart = url.host + url.pathname;
-      return `wallabag://${encodeURIComponent(email)}@${serverPart}`;
-    } catch {
-      return null;
-    }
+    const encodedEmail = email.replace(/@/g, "%40");
+    return `wallabag://${encodedEmail}@${serverUrl}`;
   }, [email, baseUrl, serverUrl]);
 
   return (
@@ -99,7 +98,16 @@ export function WallabagApiSettings() {
             <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Quick Setup</h3>
             <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
               Scan this QR code with your phone or tap the button below to auto-configure the
-              Wallabag Android app. You&apos;ll only need to enter your password.
+              Wallabag Android app. You&apos;ll need to enter your password, and fix the username if
+              the{" "}
+              <code className="ui-text-xs rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                @
+              </code>{" "}
+              shows as{" "}
+              <code className="ui-text-xs rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                %40
+              </code>
+              .
             </p>
 
             <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
