@@ -317,16 +317,23 @@ const feedHealthEndpoints = {
       // Only web feeds
       conditions.push(eq(feeds.type, "web"));
 
-      // Cursor-based pagination
-      // We order by (consecutiveFailures DESC, title ASC, id ASC), so cursor needs composite logic.
-      // For simplicity, use feed id as a tiebreaker. We fetch limit+1 and use the last id as cursor.
+      // Cursor-based pagination with mixed sort directions:
+      // ORDER BY consecutiveFailures DESC, title ASC, id ASC
+      // Tuple comparison (<) assumes uniform direction, so we use explicit OR logic.
       if (cursor) {
-        // To handle composite ordering with a simple cursor, we use a subquery approach:
-        // Get the cursor feed's sort key values and filter to rows that come after it.
         conditions.push(
-          sql`(${feeds.consecutiveFailures}, COALESCE(${feeds.title}, ''), ${feeds.id}) < (
-            SELECT f2.consecutive_failures, COALESCE(f2.title, ''), f2.id
-            FROM feeds f2 WHERE f2.id = ${cursor}
+          sql`(
+            ${feeds.consecutiveFailures} < (SELECT f2.consecutive_failures FROM feeds f2 WHERE f2.id = ${cursor})
+            OR (
+              ${feeds.consecutiveFailures} = (SELECT f2.consecutive_failures FROM feeds f2 WHERE f2.id = ${cursor})
+              AND (
+                COALESCE(${feeds.title}, '') > (SELECT COALESCE(f2.title, '') FROM feeds f2 WHERE f2.id = ${cursor})
+                OR (
+                  COALESCE(${feeds.title}, '') = (SELECT COALESCE(f2.title, '') FROM feeds f2 WHERE f2.id = ${cursor})
+                  AND ${feeds.id} > (SELECT f2.id FROM feeds f2 WHERE f2.id = ${cursor})
+                )
+              )
+            )
           )`
         );
       }
@@ -495,7 +502,6 @@ const userEndpoints = {
             entryCount: z.number(),
             scoringModelSize: z.number().nullable(),
             scoringModelMemoryEstimate: z.number().nullable(),
-            totalEntrySizeBytes: z.number().nullable(),
           })
         ),
         nextCursor: z.string().optional(),
@@ -551,17 +557,6 @@ const userEndpoints = {
          WHERE usm.user_id = ${users.id})
       `;
 
-      // Subquery: total entry content size estimate using LENGTH approximation
-      const totalEntrySizeBytesSq = sql<number | null>`
-        (SELECT SUM(
-           COALESCE(LENGTH(e.content_original), 0) +
-           COALESCE(LENGTH(e.content_cleaned), 0)
-         )::bigint
-         FROM user_entries ue
-         JOIN entries e ON e.id = ue.entry_id
-         WHERE ue.user_id = ${users.id})
-      `;
-
       const conditions = [];
 
       // Cursor-based pagination: id < cursor (order by id DESC, since UUIDv7 is time-ordered)
@@ -588,7 +583,6 @@ const userEndpoints = {
           scoringModelMemoryEstimate: scoringModelMemoryEstimateSq.as(
             "scoring_model_memory_estimate"
           ),
-          totalEntrySizeBytes: totalEntrySizeBytesSq.as("total_entry_size_bytes"),
         })
         .from(users)
         .where(whereClause)
@@ -610,8 +604,6 @@ const userEndpoints = {
           scoringModelSize: row.scoringModelSize != null ? Number(row.scoringModelSize) : null,
           scoringModelMemoryEstimate:
             row.scoringModelMemoryEstimate != null ? Number(row.scoringModelMemoryEstimate) : null,
-          totalEntrySizeBytes:
-            row.totalEntrySizeBytes != null ? Number(row.totalEntrySizeBytes) : null,
         })),
         nextCursor,
       };

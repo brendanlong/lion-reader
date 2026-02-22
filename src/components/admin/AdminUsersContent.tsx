@@ -3,7 +3,7 @@
  *
  * Displays a paginated list of all users in the system with search by email.
  * Shows user details including OAuth providers, subscription/entry counts,
- * scoring model info, and total entry size.
+ * scoring model info.
  * Uses infinite scroll for pagination and debounced search for filtering.
  */
 
@@ -91,7 +91,6 @@ interface User {
   entryCount: number;
   scoringModelSize: number | null;
   scoringModelMemoryEstimate: number | null;
-  totalEntrySizeBytes: number | null;
 }
 
 function UserRow({ user }: { user: User }) {
@@ -127,7 +126,6 @@ function UserRow({ user }: { user: User }) {
           </ClientLink>
         </span>
         <span>Entries: {user.entryCount.toLocaleString()}</span>
-        <span>Entry size: {formatBytes(user.totalEntrySizeBytes)}</span>
       </div>
 
       {/* Scoring model info */}

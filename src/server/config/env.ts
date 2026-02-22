@@ -39,8 +39,10 @@ export const signupConfig = {
   /** If true, anyone can sign up without an invite. Defaults to false. */
   allowAllSignups: process.env.ALLOW_ALL_SIGNUPS === "true",
 
-  /** Secret for admin API endpoints. If not set, admin endpoints are disabled. */
-  allowlistSecret: process.env.ADMIN_SECRET ?? process.env.ALLOWLIST_SECRET,
+  /** Secret for admin API endpoints. If not set, admin endpoints are disabled. Read lazily so tests can set it after import. */
+  get allowlistSecret() {
+    return process.env.ADMIN_SECRET ?? process.env.ALLOWLIST_SECRET;
+  },
 
   /**
    * List of providers allowed for new signups.

@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, lt } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { feeds, subscriptions } from "@/server/db/schema";
@@ -94,8 +94,28 @@ export const feedStatsRouter = createTRPCRouter({
         eq(feeds.type, "web"),
       ];
 
+      // Cursor-based pagination matching ORDER BY (resolved_title ASC, id DESC).
+      // We need composite logic since the primary sort (title) differs from the cursor column (id).
       if (cursor) {
-        conditions.push(lt(subscriptions.id, cursor));
+        conditions.push(
+          sql`(
+            COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) > (
+              SELECT COALESCE(s2.custom_title, f2.title, f2.url)
+              FROM subscriptions s2
+              JOIN feeds f2 ON f2.id = s2.feed_id
+              WHERE s2.id = ${cursor}
+            )
+            OR (
+              COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) = (
+                SELECT COALESCE(s2.custom_title, f2.title, f2.url)
+                FROM subscriptions s2
+                JOIN feeds f2 ON f2.id = s2.feed_id
+                WHERE s2.id = ${cursor}
+              )
+              AND ${subscriptions.id} < ${cursor}
+            )
+          )`
+        );
       }
 
       // Get all web feeds the user is subscribed to with their stats
