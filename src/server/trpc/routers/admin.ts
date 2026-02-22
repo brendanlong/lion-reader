@@ -10,7 +10,16 @@ import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count } from "drizzle-o
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
-import { feeds, subscriptions, users, invites, jobs } from "@/server/db/schema";
+import {
+  feeds,
+  subscriptions,
+  users,
+  invites,
+  jobs,
+  oauthAccounts,
+  userEntries,
+  userScoreModels,
+} from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 
 // ============================================================================
@@ -515,46 +524,43 @@ const userEndpoints = {
       // Subquery: OAuth provider names as a JSON array
       const providersSq = sql<string[]>`
         COALESCE(
-          (SELECT json_agg(DISTINCT oa.provider)
-           FROM oauth_accounts oa
-           WHERE oa.user_id = ${users.id}),
+          (SELECT json_agg(DISTINCT ${oauthAccounts.provider})
+           FROM ${oauthAccounts}
+           WHERE ${oauthAccounts.userId} = ${users.id}),
           '[]'::json
         )
       `;
 
       // Subquery: count of active subscriptions
-      const subscriptionCountSq = sql<number>`
-        (SELECT COUNT(*)::int
-         FROM subscriptions s
-         WHERE s.user_id = ${users.id}
-           AND s.unsubscribed_at IS NULL)
-      `;
+      const subscriptionCountSq = ctx.db
+        .select({ count: count().as("count") })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, users.id), isNull(subscriptions.unsubscribedAt)));
 
       // Subquery: count of user_entries
-      const entryCountSq = sql<number>`
-        (SELECT COUNT(*)::int
-         FROM user_entries ue
-         WHERE ue.user_id = ${users.id})
-      `;
+      const entryCountSq = ctx.db
+        .select({ count: count().as("count") })
+        .from(userEntries)
+        .where(eq(userEntries.userId, users.id));
 
       // Subquery: scoring model size (length of model_data text)
       const scoringModelSizeSq = sql<number | null>`
-        (SELECT LENGTH(usm.model_data)
-         FROM user_score_models usm
-         WHERE usm.user_id = ${users.id})
+        (SELECT LENGTH(${userScoreModels.modelData})
+         FROM ${userScoreModels}
+         WHERE ${userScoreModels.userId} = ${users.id})
       `;
 
       // Subquery: scoring model memory estimate based on vocabulary size
       // Rough estimate: vocabulary entries * ~100 bytes each
       const scoringModelMemoryEstimateSq = sql<number | null>`
         (SELECT jsonb_array_length(
-           CASE WHEN jsonb_typeof(usm.vocabulary) = 'object'
-                THEN jsonb_path_query_array(usm.vocabulary, '$.*')
+           CASE WHEN jsonb_typeof(${userScoreModels.vocabulary}) = 'object'
+                THEN jsonb_path_query_array(${userScoreModels.vocabulary}, '$.*')
                 ELSE '[]'::jsonb
            END
          ) * 100
-         FROM user_score_models usm
-         WHERE usm.user_id = ${users.id})
+         FROM ${userScoreModels}
+         WHERE ${userScoreModels.userId} = ${users.id})
       `;
 
       const conditions = [];
@@ -577,8 +583,8 @@ const userEndpoints = {
           email: users.email,
           createdAt: users.createdAt,
           providers: providersSq.as("providers"),
-          subscriptionCount: subscriptionCountSq.as("subscription_count"),
-          entryCount: entryCountSq.as("entry_count"),
+          subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
+          entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
           scoringModelSize: scoringModelSizeSq.as("scoring_model_size"),
           scoringModelMemoryEstimate: scoringModelMemoryEstimateSq.as(
             "scoring_model_memory_estimate"
