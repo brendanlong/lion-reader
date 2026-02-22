@@ -68,6 +68,27 @@ jobs:
       - name: Run unit tests
         run: pnpm test:unit
 
+  build-extension:
+    name: Build Extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release extension
+        run: bash extension/build.sh --release
+
+      - name: Upload Chrome extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: lion-reader-chrome
+          path: extension/lion-reader-chrome.zip
+
+      - name: Upload Firefox extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: lion-reader-firefox
+          path: extension/lion-reader-firefox.zip
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
