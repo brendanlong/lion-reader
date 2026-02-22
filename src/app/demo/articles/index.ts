@@ -25,6 +25,7 @@ import googleReaderApi from "./google-reader-api";
 import mcpServer from "./mcp-server";
 import discordBot from "./discord-bot";
 import browserExtension from "./browser-extension";
+import wallabagApi from "./wallabag-api";
 import plugins from "./plugins";
 import websub from "./websub";
 import pwa from "./pwa";
@@ -58,6 +59,7 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   mcpServer,
   discordBot,
   browserExtension,
+  wallabagApi,
   plugins,
   websub,
   pwa,

@@ -87,7 +87,7 @@ const SUBSCRIPTION_CONFIG: Record<string, { title: string; tagId: string; descri
     title: "Integrations & Sync",
     tagId: "features",
     description:
-      "MCP server for AI assistants, WebSub push, real-time updates, and installable PWA support.",
+      "Google Reader and Wallabag APIs, MCP server for AI assistants, WebSub push, real-time updates, and installable PWA support.",
   },
   "lion-reader": {
     title: "Lion Reader",
