@@ -27,7 +27,7 @@ primary_region = "lax"
   discord = "node dist/discord-bot.js"
 
 [env]
-  ALLOW_ALL_SIGNUPS = "false"
+  ALLOW_ALL_SIGNUPS = "true"
   ALLOWED_SIGNUP_PROVIDERS = "apple,google"
   NEXT_PUBLIC_APP_URL = "https://lionreader.com"
   NODE_ENV = "production"
