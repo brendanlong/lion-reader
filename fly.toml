@@ -143,13 +143,3 @@ primary_region = "lax"
     method = "GET"
     path = "/health"
     processes = ["worker"]
-
-  [checks.discord_health]
-    type = "http"
-    port = 9093
-    grace_period = "30s"
-    interval = "30s"
-    timeout = "5s"
-    method = "GET"
-    path = "/health"
-    processes = ["discord"]
