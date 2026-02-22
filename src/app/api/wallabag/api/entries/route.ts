@@ -49,8 +49,10 @@ export async function GET(request: Request): Promise<Response> {
   const params = parseEntryListParams(url);
 
   // Build list params from Wallabag query params
+  // Scope to saved articles only — the Wallabag API is a read-it-later interface
   const baseParams: entriesService.ListEntriesParams = {
     userId: auth.userId,
+    type: "saved",
     limit: params.perPage,
     sortOrder: params.order === "asc" ? "oldest" : "newest",
     showSpam: false,
@@ -72,6 +74,7 @@ export async function GET(request: Request): Promise<Response> {
 
   // Get total count for pagination metadata
   const counts = await entriesService.countEntries(db, auth.userId, {
+    type: "saved",
     unreadOnly: params.archive === false ? true : undefined,
     readOnly: params.archive === true ? true : undefined,
     starredOnly: params.starred === true ? true : undefined,

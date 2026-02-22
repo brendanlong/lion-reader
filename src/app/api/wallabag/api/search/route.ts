@@ -37,6 +37,7 @@ export async function GET(request: Request): Promise<Response> {
   const searchParams: entriesService.ListEntriesParams = {
     userId: auth.userId,
     query: term,
+    type: "saved",
     limit: perPage,
     showSpam: false,
   };
