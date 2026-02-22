@@ -1,20 +1,34 @@
 /**
  * Admin Router
  *
- * Handles admin operations like managing invites.
+ * Handles admin operations: invite management, feed health monitoring, and user listing.
  * All endpoints require ALLOWLIST_SECRET Bearer token.
  */
 
 import { z } from "zod";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count } from "drizzle-orm";
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
-import { invites, users } from "@/server/db/schema";
+import { feeds, subscriptions, users, invites, jobs } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
 
 /** Invite validity duration in days */
 const INVITE_VALIDITY_DAYS = 7;
+
+/** Default page size */
+const DEFAULT_LIMIT = 50;
+
+/** Maximum page size */
+const MAX_LIMIT = 100;
+
+// ============================================================================
+// HELPERS
+// ============================================================================
 
 /** Generate a random invite token (URL-safe base64) */
 function generateInviteToken(): string {
@@ -26,7 +40,17 @@ function getAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 }
 
-export const adminRouter = createTRPCRouter({
+/** Shared pagination input schema */
+const paginationInput = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+});
+
+// ============================================================================
+// INVITE ENDPOINTS
+// ============================================================================
+
+const inviteEndpoints = {
   /**
    * Create a new invite.
    *
@@ -80,9 +104,10 @@ export const adminRouter = createTRPCRouter({
     }),
 
   /**
-   * List all invites.
+   * List all invites with cursor-based pagination and optional search.
    *
-   * Returns all invites with their status (pending, used, expired).
+   * Search filters by used-by user email (partial match, case-insensitive).
+   * Ordered by createdAt DESC (newest first), using UUIDv7 id as cursor.
    */
   listInvites: adminProcedure
     .meta({
@@ -93,10 +118,16 @@ export const adminRouter = createTRPCRouter({
         summary: "List all invites",
       },
     })
-    .input(z.object({}).optional())
+    .input(
+      paginationInput
+        .extend({
+          search: z.string().optional(),
+        })
+        .optional()
+    )
     .output(
       z.object({
-        invites: z.array(
+        items: z.array(
           z.object({
             id: z.string(),
             token: z.string(),
@@ -107,13 +138,30 @@ export const adminRouter = createTRPCRouter({
             usedByEmail: z.string().nullable(),
           })
         ),
+        nextCursor: z.string().optional(),
       })
     )
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx, input }) => {
       const now = new Date();
+      const limit = input?.limit ?? DEFAULT_LIMIT;
+      const cursor = input?.cursor;
+      const search = input?.search;
 
-      // Get all invites with user email via LEFT JOIN
-      const allInvites = await ctx.db
+      const conditions = [];
+
+      // Cursor-based pagination: id < cursor (since we order by id DESC)
+      if (cursor) {
+        conditions.push(lt(invites.id, cursor));
+      }
+
+      // Search by used-by user email
+      if (search) {
+        conditions.push(ilike(users.email, `%${search}%`));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const rows = await ctx.db
         .select({
           id: invites.id,
           token: invites.token,
@@ -124,10 +172,16 @@ export const adminRouter = createTRPCRouter({
         })
         .from(invites)
         .leftJoin(users, eq(invites.usedByUserId, users.id))
-        .orderBy(invites.createdAt);
+        .where(whereClause)
+        .orderBy(desc(invites.id))
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      const items = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor = hasMore ? items[items.length - 1].id : undefined;
 
       return {
-        invites: allInvites.map((inv) => {
+        items: items.map((inv) => {
           let status: "pending" | "used" | "expired";
           if (inv.usedAt) {
             status = "used";
@@ -147,6 +201,7 @@ export const adminRouter = createTRPCRouter({
             usedByEmail: inv.usedByEmail,
           };
         }),
+        nextCursor,
       };
     }),
 
@@ -179,4 +234,399 @@ export const adminRouter = createTRPCRouter({
 
       return { success: true };
     }),
+} as const;
+
+// ============================================================================
+// FEED HEALTH ENDPOINTS
+// ============================================================================
+
+const feedHealthEndpoints = {
+  /**
+   * List ALL web feeds in the system (admin-level, not user-specific).
+   *
+   * Supports filtering by URL substring, user email subscription, and broken status.
+   * Ordered by consecutiveFailures DESC, then title ASC.
+   */
+  listFeeds: adminProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/admin/feeds",
+        tags: ["Admin"],
+        summary: "List all feeds in the system",
+      },
+    })
+    .input(
+      paginationInput
+        .extend({
+          urlFilter: z.string().optional(),
+          userEmail: z.string().optional(),
+          brokenOnly: z.boolean().optional(),
+        })
+        .optional()
+    )
+    .output(
+      z.object({
+        items: z.array(
+          z.object({
+            feedId: z.string(),
+            title: z.string().nullable(),
+            url: z.string().nullable(),
+            siteUrl: z.string().nullable(),
+            consecutiveFailures: z.number(),
+            lastError: z.string().nullable(),
+            lastFetchedAt: z.date().nullable(),
+            lastEntriesUpdatedAt: z.date().nullable(),
+            nextFetchAt: z.date().nullable(),
+            websubActive: z.boolean(),
+            subscriberCount: z.number(),
+            lastFetchEntryCount: z.number().nullable(),
+            lastFetchSizeBytes: z.number().nullable(),
+            totalEntryCount: z.number(),
+            entriesPerWeek: z.number().nullable(),
+          })
+        ),
+        nextCursor: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const limit = input?.limit ?? DEFAULT_LIMIT;
+      const cursor = input?.cursor;
+      const urlFilter = input?.urlFilter;
+      const userEmail = input?.userEmail;
+      const brokenOnly = input?.brokenOnly;
+
+      // Subscriber count subquery
+      const subscriberCountSq = ctx.db
+        .select({ count: count().as("subscriber_count") })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.feedId, feeds.id), isNull(subscriptions.unsubscribedAt)));
+
+      // Entries per week: totalEntryCount / (seconds since creation / 604800)
+      // Returns null if totalEntryCount is 0 or feed was just created
+      const entriesPerWeekExpr = sql<number | null>`
+        CASE
+          WHEN ${feeds.totalEntryCount} = 0 THEN NULL
+          WHEN EXTRACT(EPOCH FROM (NOW() - ${feeds.createdAt})) < 604800 THEN NULL
+          ELSE ${feeds.totalEntryCount}::float / (EXTRACT(EPOCH FROM (NOW() - ${feeds.createdAt})) / 604800.0)
+        END
+      `;
+
+      const conditions = [];
+
+      // Only web feeds
+      conditions.push(eq(feeds.type, "web"));
+
+      // Cursor-based pagination
+      // We order by (consecutiveFailures DESC, title ASC, id ASC), so cursor needs composite logic.
+      // For simplicity, use feed id as a tiebreaker. We fetch limit+1 and use the last id as cursor.
+      if (cursor) {
+        // To handle composite ordering with a simple cursor, we use a subquery approach:
+        // Get the cursor feed's sort key values and filter to rows that come after it.
+        conditions.push(
+          sql`(${feeds.consecutiveFailures}, COALESCE(${feeds.title}, ''), ${feeds.id}) < (
+            SELECT f2.consecutive_failures, COALESCE(f2.title, ''), f2.id
+            FROM feeds f2 WHERE f2.id = ${cursor}
+          )`
+        );
+      }
+
+      // URL substring filter (case-insensitive)
+      if (urlFilter) {
+        conditions.push(ilike(feeds.url, `%${urlFilter}%`));
+      }
+
+      // Broken only filter
+      if (brokenOnly) {
+        conditions.push(gt(feeds.consecutiveFailures, 0));
+      }
+
+      // User email filter: feeds that a specific user is subscribed to
+      if (userEmail) {
+        conditions.push(
+          sql`${feeds.id} IN (
+            SELECT s.feed_id FROM subscriptions s
+            JOIN users u ON u.id = s.user_id
+            WHERE u.email ILIKE ${`%${userEmail}%`}
+              AND s.unsubscribed_at IS NULL
+          )`
+        );
+      }
+
+      const whereClause = and(...conditions);
+
+      const rows = await ctx.db
+        .select({
+          feedId: feeds.id,
+          title: feeds.title,
+          url: feeds.url,
+          siteUrl: feeds.siteUrl,
+          consecutiveFailures: feeds.consecutiveFailures,
+          lastError: feeds.lastError,
+          lastFetchedAt: feeds.lastFetchedAt,
+          lastEntriesUpdatedAt: feeds.lastEntriesUpdatedAt,
+          nextFetchAt: feeds.nextFetchAt,
+          websubActive: feeds.websubActive,
+          subscriberCount: sql<number>`(${subscriberCountSq})`.as("subscriber_count"),
+          lastFetchEntryCount: feeds.lastFetchEntryCount,
+          lastFetchSizeBytes: feeds.lastFetchSizeBytes,
+          totalEntryCount: feeds.totalEntryCount,
+          entriesPerWeek: entriesPerWeekExpr.as("entries_per_week"),
+        })
+        .from(feeds)
+        .where(whereClause)
+        .orderBy(desc(feeds.consecutiveFailures), asc(feeds.title), asc(feeds.id))
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      const items = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor = hasMore ? items[items.length - 1].feedId : undefined;
+
+      return {
+        items: items.map((row) => ({
+          feedId: row.feedId,
+          title: row.title,
+          url: row.url,
+          siteUrl: row.siteUrl,
+          consecutiveFailures: row.consecutiveFailures,
+          lastError: row.lastError,
+          lastFetchedAt: row.lastFetchedAt,
+          lastEntriesUpdatedAt: row.lastEntriesUpdatedAt,
+          nextFetchAt: row.nextFetchAt,
+          websubActive: row.websubActive,
+          subscriberCount: Number(row.subscriberCount),
+          lastFetchEntryCount: row.lastFetchEntryCount,
+          lastFetchSizeBytes: row.lastFetchSizeBytes,
+          totalEntryCount: row.totalEntryCount,
+          entriesPerWeek: row.entriesPerWeek != null ? Number(row.entriesPerWeek) : null,
+        })),
+        nextCursor,
+      };
+    }),
+
+  /**
+   * Admin retry for any feed (no subscription check).
+   *
+   * Resets consecutiveFailures to 0 and sets nextFetchAt to now.
+   * Also updates the associated fetch_feed job to run immediately.
+   */
+  retryFeedFetch: adminProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/admin/feeds/{feedId}/retry",
+        tags: ["Admin"],
+        summary: "Retry fetching a feed",
+      },
+    })
+    .input(
+      z.object({
+        feedId: z.string().uuid("Invalid feed ID"),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date();
+
+      // Reset the feed's failure counter and schedule immediate fetch
+      await ctx.db
+        .update(feeds)
+        .set({
+          consecutiveFailures: 0,
+          lastError: null,
+          nextFetchAt: now,
+          updatedAt: now,
+        })
+        .where(eq(feeds.id, input.feedId));
+
+      // Also update the job to run immediately
+      await ctx.db
+        .update(jobs)
+        .set({
+          consecutiveFailures: 0,
+          lastError: null,
+          nextRunAt: now,
+          updatedAt: now,
+        })
+        .where(sql`${jobs.payload}->>'feedId' = ${input.feedId} AND ${jobs.type} = 'fetch_feed'`);
+
+      return { success: true };
+    }),
+} as const;
+
+// ============================================================================
+// USER ENDPOINTS
+// ============================================================================
+
+const userEndpoints = {
+  /**
+   * List ALL users in the system.
+   *
+   * Supports search by email (partial match, case-insensitive).
+   * Includes computed fields: OAuth providers, subscription count, entry count,
+   * scoring model stats, and total entry size estimate.
+   * Ordered by createdAt DESC (newest first).
+   */
+  listUsers: adminProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/admin/users",
+        tags: ["Admin"],
+        summary: "List all users",
+      },
+    })
+    .input(
+      paginationInput
+        .extend({
+          search: z.string().optional(),
+        })
+        .optional()
+    )
+    .output(
+      z.object({
+        items: z.array(
+          z.object({
+            id: z.string(),
+            email: z.string(),
+            createdAt: z.date(),
+            providers: z.array(z.string()),
+            subscriptionCount: z.number(),
+            entryCount: z.number(),
+            scoringModelSize: z.number().nullable(),
+            scoringModelMemoryEstimate: z.number().nullable(),
+            totalEntrySizeBytes: z.number().nullable(),
+          })
+        ),
+        nextCursor: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const limit = input?.limit ?? DEFAULT_LIMIT;
+      const cursor = input?.cursor;
+      const search = input?.search;
+
+      // Subquery: OAuth provider names as a JSON array
+      const providersSq = sql<string[]>`
+        COALESCE(
+          (SELECT json_agg(DISTINCT oa.provider)
+           FROM oauth_accounts oa
+           WHERE oa.user_id = ${users.id}),
+          '[]'::json
+        )
+      `;
+
+      // Subquery: count of active subscriptions
+      const subscriptionCountSq = sql<number>`
+        (SELECT COUNT(*)::int
+         FROM subscriptions s
+         WHERE s.user_id = ${users.id}
+           AND s.unsubscribed_at IS NULL)
+      `;
+
+      // Subquery: count of user_entries
+      const entryCountSq = sql<number>`
+        (SELECT COUNT(*)::int
+         FROM user_entries ue
+         WHERE ue.user_id = ${users.id})
+      `;
+
+      // Subquery: scoring model size (length of model_data text)
+      const scoringModelSizeSq = sql<number | null>`
+        (SELECT LENGTH(usm.model_data)
+         FROM user_score_models usm
+         WHERE usm.user_id = ${users.id})
+      `;
+
+      // Subquery: scoring model memory estimate based on vocabulary size
+      // Rough estimate: vocabulary entries * ~100 bytes each
+      const scoringModelMemoryEstimateSq = sql<number | null>`
+        (SELECT jsonb_array_length(
+           CASE WHEN jsonb_typeof(usm.vocabulary) = 'object'
+                THEN jsonb_path_query_array(usm.vocabulary, '$.*')
+                ELSE '[]'::jsonb
+           END
+         ) * 100
+         FROM user_score_models usm
+         WHERE usm.user_id = ${users.id})
+      `;
+
+      // Subquery: total entry content size estimate using LENGTH approximation
+      const totalEntrySizeBytesSq = sql<number | null>`
+        (SELECT SUM(
+           COALESCE(LENGTH(e.content_original), 0) +
+           COALESCE(LENGTH(e.content_cleaned), 0)
+         )::bigint
+         FROM user_entries ue
+         JOIN entries e ON e.id = ue.entry_id
+         WHERE ue.user_id = ${users.id})
+      `;
+
+      const conditions = [];
+
+      // Cursor-based pagination: id < cursor (order by id DESC, since UUIDv7 is time-ordered)
+      if (cursor) {
+        conditions.push(lt(users.id, cursor));
+      }
+
+      // Search by email
+      if (search) {
+        conditions.push(ilike(users.email, `%${search}%`));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const rows = await ctx.db
+        .select({
+          id: users.id,
+          email: users.email,
+          createdAt: users.createdAt,
+          providers: providersSq.as("providers"),
+          subscriptionCount: subscriptionCountSq.as("subscription_count"),
+          entryCount: entryCountSq.as("entry_count"),
+          scoringModelSize: scoringModelSizeSq.as("scoring_model_size"),
+          scoringModelMemoryEstimate: scoringModelMemoryEstimateSq.as(
+            "scoring_model_memory_estimate"
+          ),
+          totalEntrySizeBytes: totalEntrySizeBytesSq.as("total_entry_size_bytes"),
+        })
+        .from(users)
+        .where(whereClause)
+        .orderBy(desc(users.id))
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      const items = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor = hasMore ? items[items.length - 1].id : undefined;
+
+      return {
+        items: items.map((row) => ({
+          id: row.id,
+          email: row.email,
+          createdAt: row.createdAt,
+          providers: Array.isArray(row.providers) ? (row.providers as string[]) : ([] as string[]),
+          subscriptionCount: Number(row.subscriptionCount),
+          entryCount: Number(row.entryCount),
+          scoringModelSize: row.scoringModelSize != null ? Number(row.scoringModelSize) : null,
+          scoringModelMemoryEstimate:
+            row.scoringModelMemoryEstimate != null ? Number(row.scoringModelMemoryEstimate) : null,
+          totalEntrySizeBytes:
+            row.totalEntrySizeBytes != null ? Number(row.totalEntrySizeBytes) : null,
+        })),
+        nextCursor,
+      };
+    }),
+} as const;
+
+// ============================================================================
+// ROUTER
+// ============================================================================
+
+export const adminRouter = createTRPCRouter({
+  // Invites
+  ...inviteEndpoints,
+  // Feed health
+  ...feedHealthEndpoints,
+  // Users
+  ...userEndpoints,
 });

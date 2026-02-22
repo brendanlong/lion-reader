@@ -40,7 +40,7 @@ export const signupConfig = {
   allowAllSignups: process.env.ALLOW_ALL_SIGNUPS === "true",
 
   /** Secret for admin API endpoints. If not set, admin endpoints are disabled. */
-  allowlistSecret: process.env.ALLOWLIST_SECRET,
+  allowlistSecret: process.env.ADMIN_SECRET ?? process.env.ALLOWLIST_SECRET,
 
   /**
    * List of providers allowed for new signups.
