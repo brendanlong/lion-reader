@@ -26,7 +26,7 @@ const article: DemoArticle = {
       <li><strong>Real-time updates</strong> &mdash; New entries appear instantly via Server-Sent Events. No refreshing, no polling, just seamless updates as content arrives.</li>
       <li><strong>Progressive Web App</strong> &mdash; Install Lion Reader on desktop or mobile for a native app experience. Share articles directly from your phone.</li>
       <li><strong>Privacy-focused</strong> &mdash; Self-hostable and open source. No ads, no data selling, no third-party analytics. You control your data completely.</li>
-      <li><strong>Smart scoring</strong> &mdash; Rate articles and Lion Reader learns your preferences using TF-IDF and Ridge Regression to predict scores for new content.</li>
+      <li><strong>Algorithmic feed</strong> &mdash; Rate articles and Lion Reader trains a machine learning model to predict scores. The Best feed surfaces your highest-scored unread entries automatically.</li>
     </ul>
 
     <h3>Explore the Demo</h3>
@@ -36,7 +36,7 @@ const article: DemoArticle = {
     <ul>
       <li><strong>Feed Types</strong> &mdash; See how Lion Reader handles RSS feeds, email newsletters, and saved articles</li>
       <li><strong>Reading Experience</strong> &mdash; Explore full content fetching, AI summaries, text-to-speech, and keyboard navigation</li>
-      <li><strong>Organization &amp; Search</strong> &mdash; Learn about tags, full-text search, ML-powered scoring, and OPML import/export</li>
+      <li><strong>Organization &amp; Search</strong> &mdash; Learn about tags, full-text search, the algorithmic feed, and OPML import/export</li>
       <li><strong>Integrations &amp; Sync</strong> &mdash; Discover MCP integration, WebSub push, the PWA, and real-time updates</li>
     </ul>
 
