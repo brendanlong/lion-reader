@@ -254,6 +254,7 @@ function DemoRouterContent() {
   if (selectedEntry) {
     return (
       <EntryArticle
+        key={selectedEntry.id}
         {...getDemoEntryArticleProps(selectedEntry)}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
