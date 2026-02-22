@@ -3,15 +3,35 @@
  *
  * Displays fetch statistics for all subscribed feeds including
  * last fetch time, next scheduled fetch, error states, and WebSub status.
+ * Uses infinite scroll for cursor-based pagination.
  */
 
 "use client";
 
+import { useCallback, useEffect, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
+import {
+  getFeedDisplayName,
+  formatRelativeTime,
+  formatFutureTime,
+  formatBytes,
+} from "@/lib/format";
 import { Alert } from "@/components/ui/alert";
 import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
-import { RssIcon, ClockIcon, CalendarIcon, RefreshIcon } from "@/components/ui/icon-button";
+import {
+  RssIcon,
+  ClockIcon,
+  CalendarIcon,
+  RefreshIcon,
+  DocumentIcon,
+  SpinnerIcon,
+} from "@/components/ui/icon-button";
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const PAGE_SIZE = 50;
 
 // ============================================================================
 // Types
@@ -31,6 +51,10 @@ interface FeedStats {
   lastError: string | null;
   websubActive: boolean;
   subscribedAt: Date;
+  lastFetchEntryCount: number | null;
+  lastFetchSizeBytes: number | null;
+  totalEntryCount: number;
+  entriesPerWeek: number | null;
 }
 
 // ============================================================================
@@ -64,15 +88,57 @@ function getStatusBadge(feed: FeedStats): { text: string; className: string } {
 // ============================================================================
 
 export default function FeedStatsSettingsContent() {
-  const statsQuery = trpc.feedStats.list.useQuery();
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  const feeds = statsQuery.data?.items ?? [];
+  const statsQuery = trpc.feedStats.list.useInfiniteQuery(
+    { limit: PAGE_SIZE },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    }
+  );
 
-  // Calculate summary stats
+  // Flatten all pages into a single list
+  const feeds = useMemo(
+    () => statsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [statsQuery.data?.pages]
+  );
+
+  // Calculate summary stats from all loaded feeds
   const totalFeeds = feeds.length;
   const healthyFeeds = feeds.filter((f) => f.consecutiveFailures === 0).length;
   const brokenFeeds = feeds.filter((f) => f.consecutiveFailures > 0).length;
   const websubFeeds = feeds.filter((f) => f.websubActive).length;
+
+  // Intersection Observer for infinite scroll
+  // Destructure before using in useCallback to satisfy React Compiler lint rule
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = statsQuery;
+  const handleObserver = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const target = entries[0];
+      if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage]
+  );
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(handleObserver, {
+      rootMargin: "100px",
+      threshold: 0,
+    });
+
+    const currentRef = loadMoreRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
+    }
+
+    return () => {
+      if (currentRef) {
+        observer.unobserve(currentRef);
+      }
+    };
+  }, [handleObserver]);
 
   return (
     <div>
@@ -109,8 +175,26 @@ export default function FeedStatsSettingsContent() {
         ) : (
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {feeds.map((feed) => (
-              <FeedStatsRow key={feed.feedId} feed={feed} />
+              <FeedStatsRow key={feed.subscriptionId} feed={feed} />
             ))}
+
+            {/* Load more trigger element */}
+            <div ref={loadMoreRef} className="h-1" />
+
+            {/* Loading indicator */}
+            {statsQuery.isFetchingNextPage && (
+              <div className="flex items-center justify-center p-4">
+                <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
+                <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">Loading more...</span>
+              </div>
+            )}
+
+            {/* End of list */}
+            {!statsQuery.hasNextPage && feeds.length > 0 && (
+              <p className="ui-text-xs p-3 text-center text-zinc-400 dark:text-zinc-500">
+                All feeds loaded
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -207,7 +291,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
             </div>
           )}
 
-          {/* Stats Grid */}
+          {/* Stats Grid - Fetch timing */}
           <div className="ui-text-sm mt-3 grid grid-cols-3 gap-x-6 gap-y-2">
             <StatItem
               icon={<ClockIcon />}
@@ -229,6 +313,30 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
                   ? formatRelativeTime(new Date(feed.lastEntriesUpdatedAt))
                   : "Never"
               }
+            />
+          </div>
+
+          {/* Stats Grid - Entry and size stats */}
+          <div className="ui-text-sm mt-2 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+            <StatItem
+              icon={<DocumentIcon />}
+              label="Total entries"
+              value={String(feed.totalEntryCount)}
+            />
+            <StatItem
+              icon={<DocumentIcon />}
+              label="Entries/week"
+              value={feed.entriesPerWeek != null ? feed.entriesPerWeek.toFixed(1) : "--"}
+            />
+            <StatItem
+              icon={<DocumentIcon />}
+              label="Last fetch size"
+              value={formatBytes(feed.lastFetchSizeBytes)}
+            />
+            <StatItem
+              icon={<DocumentIcon />}
+              label="Last fetch entries"
+              value={feed.lastFetchEntryCount != null ? String(feed.lastFetchEntryCount) : "--"}
             />
           </div>
         </div>

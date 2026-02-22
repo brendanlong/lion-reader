@@ -365,6 +365,10 @@ export const feeds = pgTable(
     selfUrl: text("self_url"), // Canonical feed URL (topic URL)
     websubActive: boolean("websub_active").notNull().default(false), // Whether WebSub is currently active
 
+    // Fetch statistics
+    lastFetchEntryCount: integer("last_fetch_entry_count"), // Number of entries in the last successful fetch
+    lastFetchSizeBytes: integer("last_fetch_size_bytes"), // Size of HTTP response body in bytes
+
     // Redirect tracking - wait period before applying permanent redirects
     redirectUrl: text("redirect_url"), // URL we're being redirected to (301/308)
     redirectFirstSeenAt: timestamp("redirect_first_seen_at", { withTimezone: true }), // When redirect was first observed
