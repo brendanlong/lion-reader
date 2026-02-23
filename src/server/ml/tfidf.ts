@@ -99,31 +99,14 @@ export class TfidfVectorizer {
   }
 
   /**
-   * Fits the vectorizer on a corpus of documents.
-   * Learns vocabulary and computes IDF values.
-   *
-   * @param documents Array of text documents
+   * Builds vocabulary and IDF values from term frequency counts.
+   * Shared by fit() and fitTransform().
    */
-  fit(documents: string[]): void {
-    const numDocs = documents.length;
-    const termDocFreq = new Map<string, number>();
-    const termTotalFreq = new Map<string, number>();
-
-    // Count document frequencies for each term
-    for (const doc of documents) {
-      const terms = extractTerms(doc, this.config);
-      const uniqueTerms = new Set(terms);
-
-      for (const term of uniqueTerms) {
-        termDocFreq.set(term, (termDocFreq.get(term) || 0) + 1);
-      }
-
-      for (const term of terms) {
-        termTotalFreq.set(term, (termTotalFreq.get(term) || 0) + 1);
-      }
-    }
-
-    // Filter terms by document frequency
+  private buildVocabulary(
+    numDocs: number,
+    termDocFreq: Map<string, number>,
+    termTotalFreq: Map<string, number>
+  ): void {
     const minDfCount = this.config.minDf;
     const maxDfCount = Math.floor(this.config.maxDf * numDocs);
 
@@ -154,6 +137,34 @@ export class TfidfVectorizer {
   }
 
   /**
+   * Fits the vectorizer on a corpus of documents.
+   * Learns vocabulary and computes IDF values.
+   *
+   * @param documents Array of text documents
+   */
+  fit(documents: string[]): void {
+    const numDocs = documents.length;
+    const termDocFreq = new Map<string, number>();
+    const termTotalFreq = new Map<string, number>();
+
+    // Count document frequencies for each term
+    for (const doc of documents) {
+      const terms = extractTerms(doc, this.config);
+      const uniqueTerms = new Set(terms);
+
+      for (const term of uniqueTerms) {
+        termDocFreq.set(term, (termDocFreq.get(term) || 0) + 1);
+      }
+
+      for (const term of terms) {
+        termTotalFreq.set(term, (termTotalFreq.get(term) || 0) + 1);
+      }
+    }
+
+    this.buildVocabulary(numDocs, termDocFreq, termTotalFreq);
+  }
+
+  /**
    * Transforms documents into TF-IDF sparse vectors.
    *
    * @param documents Array of text documents
@@ -176,7 +187,42 @@ export class TfidfVectorizer {
     }
 
     const terms = extractTerms(document, this.config);
+    return this.termsToVector(terms);
+  }
 
+  /**
+   * Transforms a single document and computes feature coverage in one pass.
+   * Avoids the double-tokenization that occurs when calling transformSingle()
+   * and getFeatureCoverage() separately.
+   */
+  transformWithCoverage(document: string): { vector: SparseVector; coverage: number } {
+    if (!this.fitted) {
+      throw new Error("Vectorizer must be fitted before transform");
+    }
+
+    const terms = extractTerms(document, this.config);
+    const vector = this.termsToVector(terms);
+
+    // Compute coverage from the same terms (avoids re-tokenizing)
+    if (terms.length === 0) {
+      return { vector, coverage: 0 };
+    }
+    const uniqueTerms = new Set(terms);
+    let inVocab = 0;
+    for (const term of uniqueTerms) {
+      if (this.vocabulary.has(term)) {
+        inVocab++;
+      }
+    }
+    const coverage = inVocab / uniqueTerms.size;
+
+    return { vector, coverage };
+  }
+
+  /**
+   * Converts pre-extracted terms into a TF-IDF sparse vector.
+   */
+  private termsToVector(terms: string[]): SparseVector {
     // Count term frequencies
     const termFreq = new Map<number, number>();
     for (const term of terms) {
@@ -218,10 +264,35 @@ export class TfidfVectorizer {
 
   /**
    * Fits and transforms in one step.
+   * More efficient than calling fit() then transform() separately because
+   * it tokenizes each document only once instead of twice.
    */
   fitTransform(documents: string[]): SparseVector[] {
-    this.fit(documents);
-    return this.transform(documents);
+    const numDocs = documents.length;
+    const termDocFreq = new Map<string, number>();
+    const termTotalFreq = new Map<string, number>();
+
+    // Extract terms once and cache them
+    const allTerms: string[][] = new Array(numDocs);
+
+    for (let i = 0; i < numDocs; i++) {
+      const terms = extractTerms(documents[i], this.config);
+      allTerms[i] = terms;
+      const uniqueTerms = new Set(terms);
+
+      for (const term of uniqueTerms) {
+        termDocFreq.set(term, (termDocFreq.get(term) || 0) + 1);
+      }
+
+      for (const term of terms) {
+        termTotalFreq.set(term, (termTotalFreq.get(term) || 0) + 1);
+      }
+    }
+
+    this.buildVocabulary(numDocs, termDocFreq, termTotalFreq);
+
+    // Transform using cached terms (no re-tokenization)
+    return allTerms.map((terms) => this.termsToVector(terms));
   }
 
   /**
@@ -307,18 +378,4 @@ export function combineFeatures(
   }
 
   return combined;
-}
-
-/**
- * Converts a sparse vector to a dense array.
- * Used for matrix operations with Ridge regression.
- */
-export function sparseToDense(vector: SparseVector, size: number): number[] {
-  const dense = new Array<number>(size).fill(0);
-  for (const [index, value] of vector) {
-    if (index < size) {
-      dense[index] = value;
-    }
-  }
-  return dense;
 }

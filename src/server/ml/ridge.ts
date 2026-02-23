@@ -54,17 +54,22 @@ function mean(arr: number[]): number {
 
 /**
  * Computes feature means from sparse vectors.
- * Returns a dense array of means (one per feature).
+ * Returns a Float64Array of means (one per feature).
  */
-function computeFeatureMeans(X: SparseVector[], numFeatures: number, nSamples: number): number[] {
-  const sums = new Array<number>(numFeatures).fill(0);
+function computeFeatureMeans(
+  X: SparseVector[],
+  numFeatures: number,
+  nSamples: number
+): Float64Array {
+  const sums = new Float64Array(numFeatures);
   for (const vec of X) {
     for (const [index, value] of vec) {
       sums[index] += value;
     }
   }
+  const invN = 1 / nSamples;
   for (let j = 0; j < numFeatures; j++) {
-    sums[j] /= nSamples;
+    sums[j] *= invN;
   }
   return sums;
 }
@@ -81,7 +86,7 @@ function computeFeatureMeans(X: SparseVector[], numFeatures: number, nSamples: n
 function sparseXtX(
   X: SparseVector[],
   numFeatures: number,
-  featureMeans: number[] | null
+  featureMeans: Float64Array | null
 ): Float64Array {
   const p = numFeatures;
   // Use a flat Float64Array for better memory efficiency than number[][]
@@ -137,7 +142,7 @@ function sparseXty(
   X: SparseVector[],
   y: number[],
   numFeatures: number,
-  featureMeans: number[] | null
+  featureMeans: Float64Array | null
 ): Float64Array {
   const result = new Float64Array(numFeatures);
 
@@ -184,7 +189,7 @@ function choleskySolve(
   b: Float64Array,
   n: number,
   alpha: number
-): number[] | null {
+): Float64Array | null {
   // Add regularization in-place: A += αI
   for (let i = 0; i < n; i++) {
     A[i * n + i] += alpha;
@@ -212,7 +217,7 @@ function choleskySolve(
   }
 
   // Forward substitution: L z = b
-  const z = new Array<number>(n);
+  const z = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     let sum = b[i];
     for (let k = 0; k < i; k++) {
@@ -222,7 +227,7 @@ function choleskySolve(
   }
 
   // Back substitution: L^T x = z
-  const x = new Array<number>(n);
+  const x = new Float64Array(n);
   for (let i = n - 1; i >= 0; i--) {
     let sum = z[i];
     for (let k = i + 1; k < n; k++) {
@@ -303,7 +308,7 @@ export class RidgeRegression {
     }
 
     this.model = {
-      weights,
+      weights: Array.from(weights),
       intercept,
       alpha: this.config.alpha,
       numFeatures,
