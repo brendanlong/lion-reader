@@ -55,6 +55,16 @@ class PluginRegistry {
 
     return plugins.find((p) => p.matchUrl(url)) ?? null;
   }
+
+  /**
+   * Find the first plugin registered for a hostname.
+   * Unlike findAny, this only checks hostname, not matchUrl.
+   * Useful for site-level metadata like feedBuilderUrl.
+   */
+  findByHostname(hostname: string): UrlPlugin | null {
+    const plugins = this.hostIndex.get(hostname.toLowerCase());
+    return plugins?.[0] ?? null;
+  }
 }
 
 // Global singleton

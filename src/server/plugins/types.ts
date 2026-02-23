@@ -21,6 +21,13 @@ export interface UrlPlugin {
 
   /** Plugin capabilities */
   capabilities: PluginCapabilities;
+
+  /**
+   * Optional URL to an external tool for building custom feed URLs for this site.
+   * Shown on the feed discovery/disambiguation page when subscribing.
+   * E.g., a LessWrong RSS feed builder tool.
+   */
+  feedBuilderUrl?: string;
 }
 
 export interface PluginCapabilities {
