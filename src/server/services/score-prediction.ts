@@ -477,13 +477,15 @@ export async function predictScores(
 
   for (const entry of entriesToPredict) {
     const text = extractEntryText(entry);
-    const tfidfVector = vectorizer.transformSingle(text);
+
+    // transformWithCoverage computes TF-IDF vector and feature coverage in a single
+    // tokenization pass, avoiding the overhead of tokenizing the text twice.
+    const { vector: tfidfVector, coverage: featureCoverage } =
+      vectorizer.transformWithCoverage(text);
     const combinedVector = combineFeatures(tfidfVector, entry.feedId, feedIdMap, tfidfFeatureCount);
 
     const rawScore = regression.predictSingle(combinedVector);
 
-    // Compute confidence based on feature coverage
-    const featureCoverage = vectorizer.getFeatureCoverage(text);
     const feedKnown = feedIdMap.has(entry.feedId) ? 1.0 : 0.5;
     const confidence = featureCoverage * feedKnown;
 
