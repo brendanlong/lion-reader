@@ -578,6 +578,8 @@ export const subscriptions = pgTable(
     index("idx_subscriptions_feed").on(table.feedId),
     // GIN index on feed_ids for efficient @> (array contains) lookups
     index("idx_subscriptions_feed_ids").using("gin", table.feedIds),
+    // GIN index on previous_feed_ids for efficient @> lookups in redirect deduplication
+    index("idx_subscriptions_previous_feed_ids").using("gin", table.previousFeedIds),
   ]
 );
 
