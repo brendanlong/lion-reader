@@ -817,34 +817,28 @@ export const syncRouter = createTRPCRouter({
         // Batch-fetch unread counts for all active subscriptions in one query
         const unreadBySubscription = new Map<string, number>();
         if (activeSubscriptions.length > 0) {
-          // Build a single query that counts unread entries per subscription's feedIds
-          // We use a subquery approach: for each subscription, count unread entries
-          // matching any of its feedIds
-          for (const { subscription } of activeSubscriptions) {
-            // feedIds is an array column, so we need per-subscription queries
-            // but we can run them in parallel
-            unreadBySubscription.set(subscription.id, 0);
-          }
-
-          const unreadResults = await Promise.all(
-            activeSubscriptions.map(async ({ subscription }) => {
-              const result = await ctx.db
-                .select({ count: sql<number>`count(*)::int` })
-                .from(userEntries)
-                .innerJoin(entries, eq(entries.id, userEntries.entryId))
-                .where(
-                  and(
-                    eq(userEntries.userId, userId),
-                    eq(userEntries.read, false),
-                    sql`${entries.feedId} = ANY(${subscription.feedIds})`
-                  )
-                );
-              return { subscriptionId: subscription.id, count: result[0]?.count ?? 0 };
-            })
+          const activeSubscriptionIds = activeSubscriptions.map(
+            ({ subscription }) => subscription.id
           );
 
+          const unreadResults = await ctx.db
+            .select({
+              subscriptionId: visibleEntries.subscriptionId,
+              count: sql<number>`count(*)::int`,
+            })
+            .from(visibleEntries)
+            .where(
+              and(
+                eq(visibleEntries.userId, userId),
+                eq(visibleEntries.read, false),
+                inArray(visibleEntries.subscriptionId, activeSubscriptionIds)
+              )
+            )
+            .groupBy(visibleEntries.subscriptionId);
+
           for (const { subscriptionId, count } of unreadResults) {
-            unreadBySubscription.set(subscriptionId, count);
+            // subscriptionId is guaranteed non-null by the inArray filter above
+            unreadBySubscription.set(subscriptionId!, count);
           }
         }
 
