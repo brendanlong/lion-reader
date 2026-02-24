@@ -95,7 +95,10 @@ export async function POST(request: NextRequest) {
       inviteToken: appleResult.inviteToken,
     });
 
-    return createSessionResponse(oauthResult.userId, request, appUrl, REDIRECT_STATUS);
+    return createSessionResponse(oauthResult.userId, request, appUrl, {
+      redirectStatus: REDIRECT_STATUS,
+      isNewUser: oauthResult.isNewUser,
+    });
   } catch (error) {
     console.error("Apple OAuth callback error:", error);
 

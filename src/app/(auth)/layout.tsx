@@ -24,7 +24,15 @@ export default async function AuthLayout({ children }: AuthLayoutProps) {
   if (sessionToken) {
     const session = await validateSession(sessionToken);
     if (session) {
-      // User is already signed in, redirect to the app
+      // User is signed in but hasn't completed signup confirmation
+      if (
+        !session.user.tosAgreedAt ||
+        !session.user.privacyPolicyAgreedAt ||
+        !session.user.notEuAgreedAt
+      ) {
+        redirect("/complete-signup");
+      }
+      // User is fully authenticated, redirect to the app
       redirect("/all");
     }
   }

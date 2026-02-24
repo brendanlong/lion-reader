@@ -21,7 +21,7 @@
 
 import { redirect } from "next/navigation";
 import { TRPCProvider } from "@/lib/trpc/provider";
-import { createHydrationHelpersForRequest, isAuthenticated } from "@/lib/trpc/server";
+import { createHydrationHelpersForRequest, isAuthenticated, isConfirmed } from "@/lib/trpc/server";
 import { AppLayoutContent } from "./AppLayoutContent";
 
 interface AppLayoutProps {
@@ -42,6 +42,11 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   // Redirect unauthenticated users to login
   if (!(await isAuthenticated())) {
     redirect("/login");
+  }
+
+  // Redirect unconfirmed users to complete signup
+  if (!(await isConfirmed())) {
+    redirect("/complete-signup");
   }
 
   // Use tRPC hydration helpers for prefetching - this ensures query keys match

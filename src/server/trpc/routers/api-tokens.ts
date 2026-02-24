@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import { eq, and, isNull, desc } from "drizzle-orm";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { createApiToken, API_TOKEN_SCOPES, type ApiTokenScope } from "@/server/auth/api-token";
 import { apiTokens } from "@/server/db/schema";
 import { errors } from "../errors";

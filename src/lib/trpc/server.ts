@@ -132,3 +132,15 @@ export async function isAuthenticated(): Promise<boolean> {
   const ctx = await createServerContext();
   return ctx.session !== null;
 }
+
+/**
+ * Checks if the current user has completed signup confirmation.
+ * Returns false if not authenticated or not confirmed.
+ */
+export async function isConfirmed(): Promise<boolean> {
+  const ctx = await createServerContext();
+  const user = ctx.session?.user;
+  return (
+    user?.tosAgreedAt != null && user?.privacyPolicyAgreedAt != null && user?.notEuAgreedAt != null
+  );
+}

@@ -139,7 +139,9 @@ export async function GET(request: NextRequest) {
       inviteToken: googleResult.inviteToken,
     });
 
-    return createSessionResponse(oauthResult.userId, request, appUrl);
+    return createSessionResponse(oauthResult.userId, request, appUrl, {
+      isNewUser: oauthResult.isNewUser,
+    });
   } catch (error) {
     console.error("Google OAuth callback error:", error);
 

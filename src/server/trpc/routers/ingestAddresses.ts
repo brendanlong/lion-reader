@@ -10,7 +10,11 @@ import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
-import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  confirmedProtectedProcedure as protectedProcedure,
+  expensiveConfirmedProtectedProcedure as expensiveProtectedProcedure,
+} from "../trpc";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { ingestAddresses } from "@/server/db/schema";

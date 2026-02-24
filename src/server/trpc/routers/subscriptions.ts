@@ -8,7 +8,11 @@
 import { z } from "zod";
 import { eq, and, isNull, sql, inArray } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  confirmedProtectedProcedure as protectedProcedure,
+  expensiveConfirmedProtectedProcedure as expensiveProtectedProcedure,
+} from "../trpc";
 import { errors } from "../errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";

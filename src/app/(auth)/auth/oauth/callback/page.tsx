@@ -145,9 +145,11 @@ function OAuthCallbackContent() {
       // Store the session token in a cookie
       document.cookie = `session=${data.sessionToken}; path=/; max-age=${30 * 24 * 60 * 60}; samesite=lax`;
       cleanupOAuthState();
+      // New users need to complete signup confirmation first
+      const redirectTo = data.isNewUser ? "/complete-signup" : "/all";
       // Broadcast completion for PWAs that may be listening in another window
-      broadcastOAuthComplete("/all");
-      router.push("/all");
+      broadcastOAuthComplete(redirectTo);
+      router.push(redirectTo);
       router.refresh();
     },
     onError: (error) => {
@@ -161,9 +163,11 @@ function OAuthCallbackContent() {
     onSuccess: (data) => {
       document.cookie = `session=${data.sessionToken}; path=/; max-age=${30 * 24 * 60 * 60}; samesite=lax`;
       cleanupOAuthState();
+      // New users need to complete signup confirmation first
+      const redirectTo = data.isNewUser ? "/complete-signup" : "/all";
       // Broadcast completion for PWAs that may be listening in another window
-      broadcastOAuthComplete("/all");
-      router.push("/all");
+      broadcastOAuthComplete(redirectTo);
+      router.push(redirectTo);
       router.refresh();
     },
     onError: (error) => {

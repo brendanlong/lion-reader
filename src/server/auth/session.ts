@@ -75,6 +75,9 @@ interface CachedSession {
   userSummarizationPrompt: string | null;
   userBestFeedScoreWeight: number;
   userBestFeedUncertaintyWeight: number;
+  userTosAgreedAt: string | null;
+  userPrivacyPolicyAgreedAt: string | null;
+  userNotEuAgreedAt: string | null;
 }
 
 // ============================================================================
@@ -217,6 +220,9 @@ function serializeForCache(data: SessionData): string {
     userSummarizationPrompt: data.user.summarizationPrompt ?? null,
     userBestFeedScoreWeight: data.user.bestFeedScoreWeight,
     userBestFeedUncertaintyWeight: data.user.bestFeedUncertaintyWeight,
+    userTosAgreedAt: data.user.tosAgreedAt?.toISOString() ?? null,
+    userPrivacyPolicyAgreedAt: data.user.privacyPolicyAgreedAt?.toISOString() ?? null,
+    userNotEuAgreedAt: data.user.notEuAgreedAt?.toISOString() ?? null,
   };
   return JSON.stringify(cached);
 }
@@ -255,6 +261,11 @@ function deserializeFromCache(data: string): SessionData {
       summarizationPrompt: cached.userSummarizationPrompt ?? null,
       bestFeedScoreWeight: cached.userBestFeedScoreWeight ?? 1,
       bestFeedUncertaintyWeight: cached.userBestFeedUncertaintyWeight ?? 1,
+      tosAgreedAt: cached.userTosAgreedAt ? new Date(cached.userTosAgreedAt) : null,
+      privacyPolicyAgreedAt: cached.userPrivacyPolicyAgreedAt
+        ? new Date(cached.userPrivacyPolicyAgreedAt)
+        : null,
+      notEuAgreedAt: cached.userNotEuAgreedAt ? new Date(cached.userNotEuAgreedAt) : null,
     },
   };
 }

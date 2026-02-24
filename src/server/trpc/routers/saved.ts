@@ -22,7 +22,11 @@ import { eq, and } from "drizzle-orm";
 import { Parser } from "htmlparser2";
 import { TRPCError } from "@trpc/server";
 
-import { createTRPCRouter, protectedProcedure, scopedProtectedProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  confirmedProtectedProcedure as protectedProcedure,
+  scopedProtectedProcedure,
+} from "../trpc";
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";

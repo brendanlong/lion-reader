@@ -26,6 +26,16 @@ function isUnauthorizedError(error: unknown): boolean {
 }
 
 /**
+ * Check if an error is a SIGNUP_CONFIRMATION_REQUIRED error.
+ */
+function isSignupConfirmationRequired(error: unknown): boolean {
+  if (error instanceof TRPCClientError) {
+    return error.data?.appErrorCode === "SIGNUP_CONFIRMATION_REQUIRED";
+  }
+  return false;
+}
+
+/**
  * Check if the user currently has a session cookie.
  */
 function hasSessionCookie(): boolean {
@@ -62,6 +72,21 @@ function handleUnauthorizedError() {
       ? `?redirect=${encodeURIComponent(currentPath)}`
       : "";
   window.location.href = `/login${redirectParam}`;
+}
+
+/**
+ * Redirect to complete-signup page when signup confirmation is required.
+ * Uses a flag to prevent multiple redirects from concurrent failed requests.
+ */
+let isRedirectingToCompleteSignup = false;
+function handleSignupConfirmationRequired() {
+  if (isRedirectingToCompleteSignup || typeof window === "undefined") return;
+
+  // Already on the complete-signup page
+  if (window.location.pathname === "/complete-signup") return;
+
+  isRedirectingToCompleteSignup = true;
+  window.location.href = "/complete-signup";
 }
 
 /**
@@ -111,6 +136,8 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
         const error = event.action.error;
         if (isUnauthorizedError(error)) {
           handleUnauthorizedError();
+        } else if (isSignupConfirmationRequired(error)) {
+          handleSignupConfirmationRequired();
         }
       }
     });
@@ -121,6 +148,8 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
         const error = event.action.error;
         if (isUnauthorizedError(error)) {
           handleUnauthorizedError();
+        } else if (isSignupConfirmationRequired(error)) {
+          handleSignupConfirmationRequired();
         }
       }
     });

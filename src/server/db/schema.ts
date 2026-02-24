@@ -75,6 +75,11 @@ export const users = pgTable("users", {
   bestFeedScoreWeight: real("best_feed_score_weight").notNull().default(1),
   bestFeedUncertaintyWeight: real("best_feed_uncertainty_weight").notNull().default(1),
 
+  // Signup confirmation: each records when the user accepted the agreement
+  tosAgreedAt: timestamp("tos_agreed_at", { withTimezone: true }),
+  privacyPolicyAgreedAt: timestamp("privacy_policy_agreed_at", { withTimezone: true }),
+  notEuAgreedAt: timestamp("not_eu_agreed_at", { withTimezone: true }),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
