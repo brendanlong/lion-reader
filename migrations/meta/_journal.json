@@ -414,6 +414,20 @@
       "when": 1770598800000,
       "tag": "0058_wallabag_id",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1770608800000,
+      "tag": "0059_visible_entries_gin_operator",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1770618800000,
+      "tag": "0060_subscription_feeds",
+      "breakpoints": true
     }
   ]
 }

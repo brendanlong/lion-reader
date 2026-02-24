@@ -12,6 +12,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   entries,
   feeds,
+  subscriptionFeeds,
   subscriptions,
   userEntries,
   tags,
@@ -272,12 +273,18 @@ export const syncRouter = createTRPCRouter({
           .from(userEntries)
           .innerJoin(entries, eq(entries.id, userEntries.entryId))
           .innerJoin(feeds, eq(entries.feedId, feeds.id))
-          // Join with subscriptions to get subscriptionId and check visibility
+          // Join with subscriptions via subscription_feeds to get subscriptionId and check visibility
+          .leftJoin(
+            subscriptionFeeds,
+            and(
+              eq(subscriptionFeeds.userId, userEntries.userId),
+              eq(subscriptionFeeds.feedId, entries.feedId)
+            )
+          )
           .leftJoin(
             subscriptions,
             and(
-              eq(subscriptions.userId, userEntries.userId),
-              sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`,
+              eq(subscriptions.id, subscriptionFeeds.subscriptionId),
               isNull(subscriptions.unsubscribedAt)
             )
           )
@@ -722,10 +729,13 @@ export const syncRouter = createTRPCRouter({
           .from(entries)
           .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
           .leftJoin(
+            subscriptionFeeds,
+            and(eq(subscriptionFeeds.userId, userId), eq(subscriptionFeeds.feedId, entries.feedId))
+          )
+          .leftJoin(
             subscriptions,
             and(
-              eq(subscriptions.userId, userId),
-              sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`,
+              eq(subscriptions.id, subscriptionFeeds.subscriptionId),
               isNull(subscriptions.unsubscribedAt)
             )
           )

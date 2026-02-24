@@ -10,16 +10,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-
-/** Helper to create a SQL uuid array literal for use with ANY() */
-function sqlUuidArray(ids: string[]) {
-  return sql.raw(`ARRAY[${ids.map((id) => `'${id}'`).join(",")}]::uuid[]`);
-}
 import {
   users,
   feeds,
   entries,
   subscriptions,
+  subscriptionFeeds,
   userEntries,
   tags,
   subscriptionTags,
@@ -27,6 +23,11 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
+
+/** Helper to create a SQL uuid array literal for use with ANY() */
+function sqlUuidArray(ids: string[]) {
+  return sql.raw(`ARRAY[${ids.map((id) => `'${id}'`).join(",")}]::uuid[]`);
+}
 
 // ============================================================================
 // Configuration
@@ -128,7 +129,7 @@ function printTimings(label: string, timings: Timing[]) {
   console.log(`\n=== ${label} ===`);
   const total = timings.reduce((sum, t) => sum + t.ms, 0);
   for (const t of timings) {
-    const pct = ((t.ms / total) * 100).toFixed(1);
+    const pct = total > 0 ? ((t.ms / total) * 100).toFixed(1) : "0.0";
     console.log(`  ${t.label}: ${t.ms.toFixed(1)}ms (${pct}%)`);
   }
   console.log(`  TOTAL: ${total.toFixed(1)}ms`);
@@ -154,16 +155,20 @@ const testFeedIds: string[] = [];
 const testSubscriptionIds: string[] = [];
 const testTagIds: string[] = [];
 
+async function cleanupTestData() {
+  await db.delete(subscriptionTags);
+  await db.delete(tags);
+  await db.delete(userEntries);
+  await db.delete(entries);
+  await db.delete(subscriptionFeeds);
+  await db.delete(subscriptions);
+  await db.delete(feeds);
+  await db.delete(users);
+}
+
 describe("Entries Performance Profiling", () => {
   beforeAll(async () => {
-    // Clean up any previous test data
-    await db.delete(subscriptionTags);
-    await db.delete(tags).where(sql`true`);
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
+    await cleanupTestData();
 
     console.log("\n--- Setting up test data ---");
     const setupStart = performance.now();
@@ -178,11 +183,12 @@ describe("Entries Performance Profiling", () => {
       updatedAt: new Date(),
     });
 
-    // Create tags
+    // Create tags in batch
+    const tagBatch = [];
     for (let t = 0; t < NUM_TAGS; t++) {
       const tagId = generateUuidv7();
       testTagIds.push(tagId);
-      await db.insert(tags).values({
+      tagBatch.push({
         id: tagId,
         userId: testUserId,
         name: `Tag ${t}`,
@@ -190,16 +196,24 @@ describe("Entries Performance Profiling", () => {
         updatedAt: new Date(),
       });
     }
+    await db.insert(tags).values(tagBatch);
 
-    // Create feeds, subscriptions, entries, and user_entries in batches
+    // Generate all data in memory first, then batch insert
+    const feedBatch = [];
+    const subscriptionBatch = [];
+    const subscriptionFeedBatch = [];
+    const subscriptionTagBatch = [];
+    const allEntries = [];
+    const allUserEntries = [];
+
     for (let f = 0; f < NUM_FEEDS; f++) {
       const feedId = generateUuidv7();
       testFeedIds.push(feedId);
       const now = new Date();
 
-      await db.insert(feeds).values({
+      feedBatch.push({
         id: feedId,
-        type: "web",
+        type: "web" as const,
         url: `https://perf-test-${f}.example.com/feed.xml`,
         title: `Perf Feed ${f}`,
         lastFetchedAt: now,
@@ -210,7 +224,7 @@ describe("Entries Performance Profiling", () => {
 
       const subId = generateUuidv7();
       testSubscriptionIds.push(subId);
-      await db.insert(subscriptions).values({
+      subscriptionBatch.push({
         id: subId,
         userId: testUserId,
         feedId,
@@ -219,19 +233,22 @@ describe("Entries Performance Profiling", () => {
         updatedAt: now,
       });
 
+      subscriptionFeedBatch.push({
+        subscriptionId: subId,
+        feedId,
+        userId: testUserId,
+      });
+
       // Assign each subscription to 1-2 tags (some uncategorized)
       if (f < NUM_FEEDS - 3) {
         // Leave 3 subscriptions uncategorized
         const tagIdx = f % NUM_TAGS;
-        await db.insert(subscriptionTags).values({
+        subscriptionTagBatch.push({
           subscriptionId: subId,
           tagId: testTagIds[tagIdx],
         });
       }
 
-      // Create entries in batch
-      const entryBatch = [];
-      const userEntryBatch = [];
       for (let e = 0; e < ENTRIES_PER_FEED; e++) {
         const entryId = generateUuidv7();
         testEntryIds.push(entryId);
@@ -239,7 +256,7 @@ describe("Entries Performance Profiling", () => {
           Date.now() - (NUM_FEEDS * ENTRIES_PER_FEED - (f * ENTRIES_PER_FEED + e)) * 60000
         );
 
-        entryBatch.push({
+        allEntries.push({
           id: entryId,
           feedId,
           type: "web" as const,
@@ -254,7 +271,7 @@ describe("Entries Performance Profiling", () => {
           updatedAt: now,
         });
 
-        userEntryBatch.push({
+        allUserEntries.push({
           userId: testUserId,
           entryId,
           read: e < ENTRIES_PER_FEED / 2, // half read, half unread
@@ -264,10 +281,15 @@ describe("Entries Performance Profiling", () => {
           updatedAt: now,
         });
       }
-
-      await db.insert(entries).values(entryBatch);
-      await db.insert(userEntries).values(userEntryBatch);
     }
+
+    // Batch insert all data
+    await db.insert(feeds).values(feedBatch);
+    await db.insert(subscriptions).values(subscriptionBatch);
+    await db.insert(subscriptionFeeds).values(subscriptionFeedBatch);
+    await db.insert(subscriptionTags).values(subscriptionTagBatch);
+    await db.insert(entries).values(allEntries);
+    await db.insert(userEntries).values(allUserEntries);
 
     const setupMs = performance.now() - setupStart;
     console.log(
@@ -283,13 +305,7 @@ describe("Entries Performance Profiling", () => {
   }, 120000);
 
   afterAll(async () => {
-    await db.delete(subscriptionTags);
-    await db.delete(tags).where(sql`true`);
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
+    await cleanupTestData();
   });
 
   // ============================================================================

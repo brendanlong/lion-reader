@@ -72,6 +72,7 @@ CREATE TABLE public.entries (
     full_content_error text,
     full_content_hash text,
     unsubscribe_url text,
+    wallabag_id integer GENERATED ALWAYS AS ((((('x'::text || "left"(encode(sha256(((id)::text)::bytea), 'hex'::text), 8)))::bit(32))::integer & ('01111111111111111111111111111111'::"bit")::integer)) STORED,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
@@ -124,6 +125,8 @@ CREATE TABLE public.feeds (
     last_entries_updated_at timestamp with time zone,
     redirect_url text,
     redirect_first_seen_at timestamp with time zone,
+    last_fetch_entry_count integer,
+    last_fetch_size_bytes integer,
     CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type])) = (user_id IS NOT NULL)))
 );
 
@@ -275,6 +278,12 @@ CREATE TABLE public.sessions (
     last_active_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE TABLE public.subscription_feeds (
+    subscription_id uuid NOT NULL,
+    feed_id uuid NOT NULL,
+    user_id uuid NOT NULL
+);
+
 CREATE TABLE public.subscription_tags (
     subscription_id uuid NOT NULL,
     tag_id uuid NOT NULL,
@@ -290,8 +299,6 @@ CREATE TABLE public.subscriptions (
     unsubscribed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    previous_feed_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
-    feed_ids uuid[] GENERATED ALWAYS AS ((ARRAY[feed_id] || previous_feed_ids)) STORED,
     fetch_full_content boolean DEFAULT false NOT NULL
 );
 
@@ -327,7 +334,6 @@ CREATE VIEW public.user_feeds AS
     s.subscribed_at,
     s.created_at,
     s.feed_id,
-    s.feed_ids,
     s.custom_title,
     s.fetch_full_content,
     f.type,
@@ -414,10 +420,12 @@ CREATE VIEW public.visible_entries AS
     esp.predicted_score,
     esp.confidence AS prediction_confidence,
     e.unsubscribe_url,
-    ue.read_changed_at
-   FROM (((public.user_entries ue
+    ue.read_changed_at,
+    e.wallabag_id
+   FROM ((((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
-     LEFT JOIN public.subscriptions s ON (((s.user_id = ue.user_id) AND (s.feed_ids @> ARRAY[e.feed_id]))))
+     LEFT JOIN public.subscription_feeds sf ON (((sf.user_id = ue.user_id) AND (sf.feed_id = e.feed_id))))
+     LEFT JOIN public.subscriptions s ON ((s.id = sf.subscription_id)))
      LEFT JOIN public.entry_score_predictions esp ON (((esp.user_id = ue.user_id) AND (esp.entry_id = e.id))))
   WHERE ((s.unsubscribed_at IS NULL) OR (ue.starred = true));
 
@@ -527,6 +535,9 @@ ALTER TABLE ONLY public.sessions
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_token_hash_unique UNIQUE (token_hash);
 
+ALTER TABLE ONLY public.subscription_feeds
+    ADD CONSTRAINT subscription_feeds_pkey PRIMARY KEY (subscription_id, feed_id);
+
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_tag_id_pk PRIMARY KEY (subscription_id, tag_id);
 
@@ -580,19 +591,21 @@ CREATE INDEX idx_blocked_senders_user ON public.blocked_senders USING btree (use
 
 CREATE INDEX idx_entries_feed ON public.entries USING btree (feed_id, id);
 
+CREATE INDEX idx_entries_feed_published_coalesce ON public.entries USING btree (feed_id, COALESCE(published_at, fetched_at) DESC, id DESC);
+
 CREATE INDEX idx_entries_feed_type ON public.entries USING btree (feed_id, type);
-
-CREATE INDEX idx_entries_feed_published_coalesce ON public.entries USING btree (feed_id, (COALESCE(published_at, fetched_at)) DESC, id DESC);
-
-CREATE INDEX idx_entries_published_coalesce ON public.entries USING btree ((COALESCE(published_at, fetched_at)) DESC, id DESC);
 
 CREATE INDEX idx_entries_fetched ON public.entries USING btree (feed_id, fetched_at);
 
 CREATE INDEX idx_entries_last_seen ON public.entries USING btree (feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);
 
+CREATE INDEX idx_entries_published_coalesce ON public.entries USING btree (COALESCE(published_at, fetched_at) DESC, id DESC);
+
 CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 
 CREATE INDEX idx_entries_type ON public.entries USING btree (type);
+
+CREATE INDEX idx_entries_wallabag_id ON public.entries USING btree (wallabag_id);
 
 CREATE INDEX idx_entry_score_predictions_entry ON public.entry_score_predictions USING btree (entry_id);
 
@@ -660,6 +673,10 @@ CREATE INDEX idx_sessions_token ON public.sessions USING btree (token_hash);
 
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
 
+CREATE INDEX idx_subscription_feeds_feed ON public.subscription_feeds USING btree (feed_id);
+
+CREATE INDEX idx_subscription_feeds_user_feed ON public.subscription_feeds USING btree (user_id, feed_id);
+
 CREATE INDEX idx_subscription_tags_subscription ON public.subscription_tags USING btree (subscription_id);
 
 CREATE INDEX idx_subscription_tags_tag ON public.subscription_tags USING btree (tag_id);
@@ -667,10 +684,6 @@ CREATE INDEX idx_subscription_tags_tag ON public.subscription_tags USING btree (
 CREATE INDEX idx_subscriptions_feed ON public.subscriptions USING btree (feed_id);
 
 CREATE INDEX idx_subscriptions_feed_active ON public.subscriptions USING btree (feed_id) WHERE (unsubscribed_at IS NULL);
-
-CREATE INDEX idx_subscriptions_feed_ids ON public.subscriptions USING gin (feed_ids);
-
-CREATE INDEX idx_subscriptions_previous_feed_ids ON public.subscriptions USING gin (previous_feed_ids);
 
 CREATE INDEX idx_subscriptions_user ON public.subscriptions USING btree (user_id);
 
@@ -682,13 +695,13 @@ CREATE INDEX idx_tags_user ON public.tags USING btree (user_id);
 
 CREATE INDEX idx_user_entries_entry_id ON public.user_entries USING btree (entry_id);
 
+CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
+
 CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_id) WHERE (starred = true);
 
 CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id) WHERE (read = false);
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
-
-CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
 
 CREATE INDEX idx_user_score_models_trained ON public.user_score_models USING btree (trained_at);
 
@@ -748,6 +761,15 @@ ALTER TABLE ONLY public.opml_imports
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.subscription_feeds
+    ADD CONSTRAINT subscription_feeds_feed_id_fkey FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.subscription_feeds
+    ADD CONSTRAINT subscription_feeds_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.subscription_feeds
+    ADD CONSTRAINT subscription_feeds_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_subscriptions_id_fk FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;

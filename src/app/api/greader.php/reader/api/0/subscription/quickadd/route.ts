@@ -15,7 +15,7 @@ import { uuidToInt64 } from "@/server/google-reader/id";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { db } from "@/server/db";
 import { eq, isNull, and } from "drizzle-orm";
-import { feeds, subscriptions } from "@/server/db/schema";
+import { feeds, subscriptions, subscriptionFeeds } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 
 export const dynamic = "force-dynamic";
@@ -98,6 +98,12 @@ export async function POST(request: Request): Promise<Response> {
       createdAt: now,
       updatedAt: now,
     });
+
+    // Add the feed to the subscription_feeds junction table
+    await db
+      .insert(subscriptionFeeds)
+      .values({ subscriptionId, feedId, userId: session.user.id })
+      .onConflictDoNothing();
 
     return jsonResponse({
       query: feedUrl,

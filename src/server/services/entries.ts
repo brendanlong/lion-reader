@@ -9,6 +9,7 @@ import type { db as dbType } from "@/server/db";
 import {
   entries,
   feeds,
+  subscriptionFeeds,
   userEntries,
   subscriptions,
   subscriptionTags,
@@ -776,15 +777,16 @@ export async function markEntriesRead(
     .where(inArray(entries.id, entryIds))
     .as("affected_feeds");
 
-  // Find subscriptions containing the affected feeds
+  // Find subscriptions containing the affected feeds via subscription_feeds junction table
   const affectedSubscriptionsSubquery = db
     .selectDistinct({ subscriptionId: subscriptions.id })
     .from(subscriptions)
+    .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
     .where(
       and(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        sql`${subscriptions.feedIds} && ARRAY(SELECT feed_id FROM ${affectedFeedsSubquery})`
+        inArray(subscriptionFeeds.feedId, sql`(SELECT feed_id FROM ${affectedFeedsSubquery})`)
       )
     )
     .as("affected_subscriptions");
@@ -795,8 +797,11 @@ export async function markEntriesRead(
       unreadCount: sql<number>`COALESCE(COUNT(*) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
     })
     .from(affectedSubscriptionsSubquery)
-    .leftJoin(subscriptions, eq(subscriptions.id, affectedSubscriptionsSubquery.subscriptionId))
-    .leftJoin(entries, sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`)
+    .leftJoin(
+      subscriptionFeeds,
+      eq(subscriptionFeeds.subscriptionId, affectedSubscriptionsSubquery.subscriptionId)
+    )
+    .leftJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
     .leftJoin(userEntries, and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId)))
     .groupBy(affectedSubscriptionsSubquery.subscriptionId);
 
@@ -827,7 +832,8 @@ export async function markEntriesRead(
         isNull(subscriptions.unsubscribedAt)
       )
     )
-    .leftJoin(entries, sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`)
+    .leftJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
+    .leftJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
     .leftJoin(userEntries, and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId)))
     .groupBy(affectedTagsSubquery.tagId);
 

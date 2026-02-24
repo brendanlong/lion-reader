@@ -559,15 +559,6 @@ export const subscriptions = pgTable(
       .notNull()
       .references(() => feeds.id, { onDelete: "cascade" }),
 
-    // Previous feed IDs from redirect migrations - preserves history when feeds redirect
-    previousFeedIds: uuid("previous_feed_ids").array().notNull().default([]),
-    // Generated column combining feedId with previousFeedIds for efficient querying
-    // Use s.feed_ids @> ARRAY[e.feed_id] to match entries from current or previous feeds (uses GIN index)
-    feedIds: uuid("feed_ids")
-      .array()
-      .notNull()
-      .generatedAlwaysAs(sql`ARRAY[feed_id] || previous_feed_ids`),
-
     customTitle: text("custom_title"), // user's override for feed title
     fetchFullContent: boolean("fetch_full_content").notNull().default(false), // fetch full article from URL
 
@@ -582,10 +573,31 @@ export const subscriptions = pgTable(
     unique("uq_subscriptions_user_feed").on(table.userId, table.feedId),
     index("idx_subscriptions_user").on(table.userId),
     index("idx_subscriptions_feed").on(table.feedId),
-    // GIN index on feed_ids for efficient @> (array contains) lookups
-    index("idx_subscriptions_feed_ids").using("gin", table.feedIds),
-    // GIN index on previous_feed_ids for efficient @> lookups in redirect deduplication
-    index("idx_subscriptions_previous_feed_ids").using("gin", table.previousFeedIds),
+  ]
+);
+
+/**
+ * Subscription feeds junction table - maps subscriptions to all feed IDs they cover.
+ * Each subscription has at least one row (for the current feed_id). Additional rows
+ * are added during feed redirects to preserve access to entries from old feeds.
+ */
+export const subscriptionFeeds = pgTable(
+  "subscription_feeds",
+  {
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "cascade" }),
+    feedId: uuid("feed_id")
+      .notNull()
+      .references(() => feeds.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.subscriptionId, table.feedId] }),
+    index("idx_subscription_feeds_user_feed").on(table.userId, table.feedId),
+    index("idx_subscription_feeds_feed").on(table.feedId),
   ]
 );
 
@@ -665,7 +677,6 @@ export const userFeeds = pgView("user_feeds", {
   subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(), // for sync cursor tracking
   feedId: uuid("feed_id").notNull(), // internal use only
-  feedIds: uuid("feed_ids").array().notNull(), // for entry visibility queries
   customTitle: text("custom_title"),
   fetchFullContent: boolean("fetch_full_content").notNull(), // fetch full article from URL
   type: feedTypeEnum("type").notNull(),
