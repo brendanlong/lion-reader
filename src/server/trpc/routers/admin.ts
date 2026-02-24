@@ -272,6 +272,7 @@ const feedHealthEndpoints = {
           urlFilter: z.string().optional(),
           userEmail: z.string().optional(),
           brokenOnly: z.boolean().optional(),
+          hasSubscribers: z.boolean().optional(),
         })
         .optional()
     )
@@ -305,6 +306,7 @@ const feedHealthEndpoints = {
       const urlFilter = input?.urlFilter;
       const userEmail = input?.userEmail;
       const brokenOnly = input?.brokenOnly;
+      const hasSubscribers = input?.hasSubscribers;
 
       // Subscriber count subquery
       const subscriberCountSq = ctx.db
@@ -368,6 +370,11 @@ const feedHealthEndpoints = {
       // Broken only filter
       if (brokenOnly) {
         conditions.push(gt(feeds.consecutiveFailures, 0));
+      }
+
+      // Has subscribers filter: only feeds with active subscribers
+      if (hasSubscribers) {
+        conditions.push(sql`(${subscriberCountSq}) > 0`);
       }
 
       // User email filter: feeds that a specific user is subscribed to

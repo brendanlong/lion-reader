@@ -261,6 +261,7 @@ export default function AdminFeedsContent() {
   const [urlInput, setUrlInput] = useState("");
   const [emailInput, setEmailInput] = useState(initialEmail);
   const [brokenOnly, setBrokenOnly] = useState(false);
+  const [hasSubscribers, setHasSubscribers] = useState(true);
   const [debouncedUrl, setDebouncedUrl] = useState("");
   const [debouncedEmail, setDebouncedEmail] = useState(initialEmail);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -291,6 +292,7 @@ export default function AdminFeedsContent() {
       urlFilter: debouncedUrl || undefined,
       userEmail: debouncedEmail || undefined,
       brokenOnly: brokenOnly || undefined,
+      hasSubscribers: hasSubscribers || undefined,
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -354,7 +356,8 @@ export default function AdminFeedsContent() {
     };
   }, [handleObserver]);
 
-  const hasFilters = debouncedUrl.length > 0 || debouncedEmail.length > 0 || brokenOnly;
+  const hasFilters =
+    debouncedUrl.length > 0 || debouncedEmail.length > 0 || brokenOnly || hasSubscribers;
 
   return (
     <div>
@@ -381,7 +384,16 @@ export default function AdminFeedsContent() {
             onChange={(e) => setEmailInput(e.target.value)}
           />
         </div>
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-3">
+          <label className="ui-text-sm flex cursor-pointer items-center gap-2 text-zinc-600 dark:text-zinc-400">
+            <input
+              type="checkbox"
+              checked={hasSubscribers}
+              onChange={(e) => setHasSubscribers(e.target.checked)}
+              className="text-accent focus:ring-accent h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800"
+            />
+            Has subscribers
+          </label>
           <Button
             variant={brokenOnly ? "primary" : "secondary"}
             size="sm"
