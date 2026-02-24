@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 1: Base image with pnpm (for building)
 # =============================================================================
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 
 # Enable corepack and prepare the exact pnpm version from package.json
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
@@ -67,7 +67,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 # =============================================================================
 # Stage 4: Production runner (minimal image, no pnpm needed)
 # =============================================================================
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 WORKDIR /app
 
