@@ -37,6 +37,9 @@ export interface ListEntriesParams {
   sortBy?: "published" | "readChanged" | "predictedScore"; // Which column to sort by (default: published)
   cursor?: string;
   limit?: number;
+  maxLimit?: number; // Override MAX_LIMIT (e.g., for Google Reader API which needs larger batches)
+  publishedAfter?: Date; // Only entries published/fetched after this timestamp
+  publishedBefore?: Date; // Only entries published/fetched before this timestamp
   showSpam: boolean;
   // Best feed sorting weights: sort by scoreWeight * predicted_score + uncertaintyWeight * (1 - confidence)
   bestFeedScoreWeight?: number;
@@ -58,6 +61,9 @@ export interface SearchEntriesParams {
   unstarredOnly?: boolean;
   cursor?: string;
   limit?: number;
+  maxLimit?: number;
+  publishedAfter?: Date;
+  publishedBefore?: Date;
   showSpam: boolean;
 }
 
@@ -306,7 +312,8 @@ export async function listEntries(
     });
   }
 
-  const limit = Math.min(params.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+  const effectiveMaxLimit = params.maxLimit ?? MAX_LIMIT;
+  const limit = Math.min(params.limit ?? DEFAULT_LIMIT, effectiveMaxLimit);
   const sortOrder = params.sortOrder ?? "newest";
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
@@ -332,6 +339,18 @@ export async function listEntries(
 
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
   conditions.push(...buildEntryFilterConditions(params));
+
+  // Timestamp filters (used by Google Reader API ot/nt parameters)
+  if (params.publishedAfter) {
+    conditions.push(
+      sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) >= ${params.publishedAfter}`
+    );
+  }
+  if (params.publishedBefore) {
+    conditions.push(
+      sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) <= ${params.publishedBefore}`
+    );
+  }
 
   // predictedScore sorting uses a different cursor and sort mechanism
   if (params.sortBy === "predictedScore") {
@@ -477,7 +496,8 @@ async function searchEntries(
   db: typeof dbType,
   params: SearchEntriesParams
 ): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
-  const limit = Math.min(params.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+  const effectiveMaxLimit = params.maxLimit ?? MAX_LIMIT;
+  const limit = Math.min(params.limit ?? DEFAULT_LIMIT, effectiveMaxLimit);
   const searchIn = params.searchIn ?? "both";
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
@@ -518,6 +538,18 @@ async function searchEntries(
 
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
   conditions.push(...buildEntryFilterConditions(params));
+
+  // Timestamp filters
+  if (params.publishedAfter) {
+    conditions.push(
+      sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) >= ${params.publishedAfter}`
+    );
+  }
+  if (params.publishedBefore) {
+    conditions.push(
+      sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) <= ${params.publishedBefore}`
+    );
+  }
 
   // Cursor for search results (based on rank)
   if (params.cursor) {

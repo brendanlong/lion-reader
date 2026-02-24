@@ -50,14 +50,33 @@ export async function GET(request: Request): Promise<Response> {
   const continuation = searchParams.get("c") ?? undefined;
   const sortOrder = searchParams.get("r") === "o" ? "oldest" : "newest";
   const excludeTarget = searchParams.get("xt");
+  const olderThan = searchParams.get("ot");
+  const newerThan = searchParams.get("nt");
 
   const listParams: entriesService.ListEntriesParams = {
     userId: session.user.id,
     limit: count,
+    maxLimit: 10000,
     cursor: continuation,
     sortOrder: sortOrder as "newest" | "oldest",
     showSpam: session.user.showSpam,
   };
+
+  // ot = "older than" timestamp — only return items newer than this (published after)
+  if (olderThan) {
+    const ts = parseInt(olderThan, 10);
+    if (!isNaN(ts)) {
+      listParams.publishedAfter = new Date(ts * 1000);
+    }
+  }
+
+  // nt = "newer than" timestamp — only return items older than this (published before)
+  if (newerThan) {
+    const ts = parseInt(newerThan, 10);
+    if (!isNaN(ts)) {
+      listParams.publishedBefore = new Date(ts * 1000);
+    }
+  }
 
   switch (parsedStream.type) {
     case "feed": {
