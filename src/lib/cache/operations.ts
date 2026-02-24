@@ -361,7 +361,18 @@ export function handleSubscriptionCreated(
   subscription: SubscriptionData,
   queryClient?: QueryClient
 ): void {
+  // Guard against duplicate subscription events (e.g. from sync polling).
+  // addSubscriptionToCache already checks for duplicates in the list cache,
+  // but the count updates below do not. Check if the subscription already
+  // exists before incrementing counts to prevent unbounded count inflation (#680).
+  const alreadyExists = queryClient
+    ? findCachedSubscription(utils, queryClient, subscription.id) !== undefined
+    : (utils.subscriptions.list.getData()?.items.some((s) => s.id === subscription.id) ?? false);
+
   addSubscriptionToCache(utils, subscription);
+
+  // Skip count updates if the subscription was already in the cache
+  if (alreadyExists) return;
 
   // Invalidate only the affected subscription list queries
   // - The unparameterized query (no input) for entry content pages
