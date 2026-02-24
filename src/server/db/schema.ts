@@ -471,6 +471,10 @@ export const entries = pgTable(
     index("idx_entries_spam").on(table.feedId, table.isSpam),
     // For filtering by entry type
     index("idx_entries_type").on(table.type),
+    // Expression index for the primary sort column (COALESCE(published_at, fetched_at) DESC, id DESC)
+    // Enables limit pushdown for entry list queries through the visible_entries view.
+    // Created via raw SQL in migration 0060 (Drizzle can't express expression indexes with DESC).
+    //
     // Type-specific check constraints (created via raw SQL in migrations):
     // - entries_spam_only_email: spam fields only for email entries
     // - entries_unsubscribe_only_email: unsubscribe fields only for email entries

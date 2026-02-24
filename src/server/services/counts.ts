@@ -75,8 +75,8 @@ export interface UnreadCounts {
  * Fetches unread counts for all lists an entry belongs to.
  *
  * Optimized based on entry type:
- * - Saved articles: 1 query (global + saved counts)
- * - Web/email entries: 2 queries (global + subscription/tags counts)
+ * - Saved articles: 1 query (global + saved + entry info in single scan)
+ * - Web/email entries: 2 queries (global scan + tag counts)
  *
  * @param db - Database instance
  * @param userId - User ID
@@ -88,7 +88,9 @@ export async function getEntryRelatedCounts(
   userId: string,
   entryId: string
 ): Promise<UnreadCounts> {
-  // Query 1: Get global counts + saved counts + subscription count in one query
+  // Single query: global counts + saved counts + subscription count + entry info
+  // The entry info (subscriptionId, type) is extracted during the same full scan
+  // using MAX with a CASE filter, eliminating a separate round trip.
   const result = await db
     .select({
       // Global counts
@@ -97,51 +99,46 @@ export async function getEntryRelatedCounts(
       // Starred counts
       starredTotal: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
       starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
-      // Saved counts (computed for all, but only used if type = 'saved')
+      // Saved counts
       savedTotal: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
       savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
-      // Subscription count (computed for all, but only used if entry has subscription)
-      subscriptionUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.subscriptionId} = (
-        SELECT subscription_id FROM visible_entries WHERE user_id = ${userId} AND id = ${entryId}
-      ) AND NOT ${visibleEntries.read})::int`,
+      // Entry info extracted from the same scan
+      entrySubscriptionId: sql<
+        string | null
+      >`MAX(CASE WHEN ${visibleEntries.id} = ${entryId} THEN ${visibleEntries.subscriptionId}::text END)`,
+      entryType: sql<
+        string | null
+      >`MAX(CASE WHEN ${visibleEntries.id} = ${entryId} THEN ${visibleEntries.type}::text END)`,
     })
     .from(visibleEntries)
     .where(eq(visibleEntries.userId, userId));
 
   if (result.length === 0) {
-    // Entry not found or user doesn't have access
     return {
       all: { total: 0, unread: 0 },
       starred: { total: 0, unread: 0 },
     };
   }
 
-  // Get entry info from a separate query to know its context
-  const entryInfo = await db
-    .select({
-      subscriptionId: visibleEntries.subscriptionId,
-      type: visibleEntries.type,
-    })
-    .from(visibleEntries)
-    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)))
-    .limit(1);
-
-  if (entryInfo.length === 0) {
-    return {
-      all: { total: 0, unread: 0 },
-      starred: { total: 0, unread: 0 },
-    };
-  }
-
-  const { subscriptionId, type } = entryInfo[0];
   const counts = result[0];
+
+  // Entry not found in this user's visible entries
+  if (!counts.entryType) {
+    return {
+      all: { total: 0, unread: 0 },
+      starred: { total: 0, unread: 0 },
+    };
+  }
+
+  const subscriptionId = counts.entrySubscriptionId;
+  const type = counts.entryType as "web" | "email" | "saved";
 
   const baseCounts: UnreadCounts = {
     all: { total: counts.allTotal, unread: counts.allUnread },
     starred: { total: counts.starredTotal, unread: counts.starredUnread },
   };
 
-  // For saved articles, include saved counts and return
+  // For saved articles, include saved counts and return (no subscription/tag queries needed)
   if (type === "saved") {
     return {
       ...baseCounts,
@@ -154,12 +151,22 @@ export async function getEntryRelatedCounts(
     return baseCounts;
   }
 
-  // Query 2: Get tag counts for this subscription's tags only
-  const tagResult = await getSubscriptionTagCounts(db, userId, subscriptionId);
+  // Query 2: Get subscription unread count + tag counts in parallel
+  const [subscriptionUnreadResult, tagResult] = await Promise.all([
+    db
+      .select({
+        unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      })
+      .from(visibleEntries)
+      .where(
+        and(eq(visibleEntries.userId, userId), eq(visibleEntries.subscriptionId, subscriptionId))
+      ),
+    getSubscriptionTagCounts(db, userId, subscriptionId),
+  ]);
 
   return {
     ...baseCounts,
-    subscription: { id: subscriptionId, unread: counts.subscriptionUnread },
+    subscription: { id: subscriptionId, unread: subscriptionUnreadResult[0]?.unread ?? 0 },
     tags: tagResult.tags,
     uncategorized: tagResult.uncategorized ?? undefined,
   };
@@ -168,6 +175,10 @@ export async function getEntryRelatedCounts(
 /**
  * Fetches tag unread counts for a specific subscription's tags.
  * If the subscription has no tags, returns uncategorized count instead.
+ *
+ * Optimized to use a single query: always fetches tag counts for the
+ * subscription's tags. If no tags exist (empty result), falls back to
+ * fetching the uncategorized count.
  *
  * @param db - Database instance
  * @param userId - User ID
@@ -179,40 +190,8 @@ async function getSubscriptionTagCounts(
   userId: string,
   subscriptionId: string
 ): Promise<{ tags: TagCount[]; uncategorized: { unread: number } | null }> {
-  // First check if this subscription has any tags
-  const subTags = await db
-    .select({ tagId: subscriptionTags.tagId })
-    .from(subscriptionTags)
-    .where(eq(subscriptionTags.subscriptionId, subscriptionId));
-
-  if (subTags.length === 0) {
-    // Subscription has no tags - get uncategorized count
-    const uncategorizedResult = await db
-      .select({
-        unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      })
-      .from(visibleEntries)
-      .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
-      .where(
-        and(
-          eq(visibleEntries.userId, userId),
-          sql`NOT EXISTS (
-            SELECT 1 FROM subscription_tags st
-            WHERE st.subscription_id = ${userFeeds.id}
-          )`
-        )
-      );
-
-    return {
-      tags: [],
-      uncategorized: { unread: uncategorizedResult[0]?.unread ?? 0 },
-    };
-  }
-
-  // Subscription has tags - get counts for each tag
-  const tagIds = subTags.map((t) => t.tagId);
-
-  // Get unread counts for entries in subscriptions with these tags
+  // Single query: get tag IDs for this subscription and their unread counts.
+  // If the subscription has no tags, the result will be empty.
   const tagCounts = await db
     .select({
       tagId: subscriptionTags.tagId,
@@ -220,12 +199,49 @@ async function getSubscriptionTagCounts(
     })
     .from(subscriptionTags)
     .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))
-    .where(and(eq(visibleEntries.userId, userId), inArray(subscriptionTags.tagId, tagIds)))
+    .where(
+      and(
+        eq(visibleEntries.userId, userId),
+        // Use a subquery to find all tags for this subscription, then count
+        // entries for all subscriptions with those tags
+        inArray(
+          subscriptionTags.tagId,
+          db
+            .select({ tagId: subscriptionTags.tagId })
+            .from(subscriptionTags)
+            .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+        )
+      )
+    )
     .groupBy(subscriptionTags.tagId);
 
+  if (tagCounts.length > 0) {
+    return {
+      tags: tagCounts.map((t) => ({ id: t.tagId, unread: t.unread })),
+      uncategorized: null,
+    };
+  }
+
+  // Subscription has no tags - get uncategorized count
+  const uncategorizedResult = await db
+    .select({
+      unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+    })
+    .from(visibleEntries)
+    .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+    .where(
+      and(
+        eq(visibleEntries.userId, userId),
+        sql`NOT EXISTS (
+          SELECT 1 FROM subscription_tags st
+          WHERE st.subscription_id = ${userFeeds.id}
+        )`
+      )
+    );
+
   return {
-    tags: tagCounts.map((t) => ({ id: t.tagId, unread: t.unread })),
-    uncategorized: null,
+    tags: [],
+    uncategorized: { unread: uncategorizedResult[0]?.unread ?? 0 },
   };
 }
 
@@ -303,71 +319,78 @@ export async function getBulkEntryRelatedCounts(
     return baseCounts;
   }
 
-  // Query 2: Get per-subscription counts
-  const subscriptionCounts = await db
-    .select({
-      subscriptionId: visibleEntries.subscriptionId,
-      unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-    })
-    .from(visibleEntries)
-    .where(
-      and(
-        eq(visibleEntries.userId, userId),
-        inArray(visibleEntries.subscriptionId, subscriptionIds)
+  // Queries 2 & 3: Run subscription counts and tag lookups in parallel
+  const [subscriptionCounts, subTags] = await Promise.all([
+    db
+      .select({
+        subscriptionId: visibleEntries.subscriptionId,
+        unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      })
+      .from(visibleEntries)
+      .where(
+        and(
+          eq(visibleEntries.userId, userId),
+          inArray(visibleEntries.subscriptionId, subscriptionIds)
+        )
       )
-    )
-    .groupBy(visibleEntries.subscriptionId);
+      .groupBy(visibleEntries.subscriptionId),
+    db
+      .select({
+        subscriptionId: subscriptionTags.subscriptionId,
+        tagId: subscriptionTags.tagId,
+      })
+      .from(subscriptionTags)
+      .where(inArray(subscriptionTags.subscriptionId, subscriptionIds)),
+  ]);
 
   baseCounts.subscriptions = subscriptionCounts
     .filter((s) => s.subscriptionId !== null)
     .map((s) => ({ id: s.subscriptionId!, unread: s.unread }));
 
-  // Query 3: Get tags for affected subscriptions
-  const subTags = await db
-    .select({
-      subscriptionId: subscriptionTags.subscriptionId,
-      tagId: subscriptionTags.tagId,
-    })
-    .from(subscriptionTags)
-    .where(inArray(subscriptionTags.subscriptionId, subscriptionIds));
-
   const tagIds = [...new Set(subTags.map((t) => t.tagId))];
   const subscriptionsWithTags = new Set(subTags.map((t) => t.subscriptionId));
   const hasUncategorized = subscriptionIds.some((id) => !subscriptionsWithTags.has(id));
 
-  // Query 4: Get per-tag counts (if any tags)
-  if (tagIds.length > 0) {
-    const tagCounts = await db
-      .select({
-        tagId: subscriptionTags.tagId,
-        unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      })
-      .from(subscriptionTags)
-      .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))
-      .where(and(eq(visibleEntries.userId, userId), inArray(subscriptionTags.tagId, tagIds)))
-      .groupBy(subscriptionTags.tagId);
+  // Queries 4 & 5: Run tag counts and uncategorized count in parallel
+  const [tagCounts, uncategorizedResult] = await Promise.all([
+    tagIds.length > 0
+      ? db
+          .select({
+            tagId: subscriptionTags.tagId,
+            unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+          })
+          .from(subscriptionTags)
+          .innerJoin(
+            visibleEntries,
+            eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId)
+          )
+          .where(and(eq(visibleEntries.userId, userId), inArray(subscriptionTags.tagId, tagIds)))
+          .groupBy(subscriptionTags.tagId)
+      : Promise.resolve([]),
+    hasUncategorized
+      ? db
+          .select({
+            unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+          })
+          .from(visibleEntries)
+          .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+          .where(
+            and(
+              eq(visibleEntries.userId, userId),
+              sql`NOT EXISTS (
+              SELECT 1 FROM subscription_tags st
+              WHERE st.subscription_id = ${userFeeds.id}
+            )`
+            )
+          )
+      : Promise.resolve(null),
+  ]);
 
+  if (tagCounts.length > 0) {
     baseCounts.tags = tagCounts.map((t) => ({ id: t.tagId, unread: t.unread }));
   }
 
-  // Query 5: Get uncategorized count (if any subscription has no tags)
-  if (hasUncategorized) {
-    const uncategorizedResult = await db
-      .select({
-        unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      })
-      .from(visibleEntries)
-      .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
-      .where(
-        and(
-          eq(visibleEntries.userId, userId),
-          sql`NOT EXISTS (
-            SELECT 1 FROM subscription_tags st
-            WHERE st.subscription_id = ${userFeeds.id}
-          )`
-        )
-      );
-
+  if (uncategorizedResult) {
     baseCounts.uncategorized = { unread: uncategorizedResult[0]?.unread ?? 0 };
   }
 
