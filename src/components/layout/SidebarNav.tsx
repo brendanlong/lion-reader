@@ -15,6 +15,8 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface SidebarNavProps {
   onNavigate: () => void;
+  /** Called on mousedown with the link href (e.g., to prefetch data) */
+  onPrefetch?: (href: string) => void;
 }
 
 /**
@@ -51,7 +53,15 @@ function SavedCount() {
  * and the algorithmic feed enabled (both checked server-side by hasScoredEntries).
  * Shares the same unread count as All Items.
  */
-function BestNavLink({ isActive, onNavigate }: { isActive: boolean; onNavigate: () => void }) {
+function BestNavLink({
+  isActive,
+  onNavigate,
+  onPrefetch,
+}: {
+  isActive: boolean;
+  onNavigate: () => void;
+  onPrefetch?: (href: string) => void;
+}) {
   const [hasScoredData] = trpc.entries.hasScoredEntries.useSuspenseQuery();
 
   if (!hasScoredData.hasScoredEntries) return null;
@@ -66,6 +76,7 @@ function BestNavLink({ isActive, onNavigate }: { isActive: boolean; onNavigate: 
         </SuspenseCount>
       }
       onClick={onNavigate}
+      onPrefetch={onPrefetch}
     >
       Best
     </NavLink>
@@ -87,7 +98,7 @@ function SuspenseCount({ children }: { children: React.ReactNode }) {
 /**
  * Main navigation links with independently streaming unread counts.
  */
-export function SidebarNav({ onNavigate }: SidebarNavProps) {
+export function SidebarNav({ onNavigate, onPrefetch }: SidebarNavProps) {
   const pathname = usePathname();
 
   const isActiveLink = (href: string) => pathname === href;
@@ -103,13 +114,18 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
           </SuspenseCount>
         }
         onClick={onNavigate}
+        onPrefetch={onPrefetch}
       >
         All Items
       </NavLink>
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>
-          <BestNavLink isActive={isActiveLink("/best")} onNavigate={onNavigate} />
+          <BestNavLink
+            isActive={isActiveLink("/best")}
+            onNavigate={onNavigate}
+            onPrefetch={onPrefetch}
+          />
         </Suspense>
       </ErrorBoundary>
 
@@ -122,6 +138,7 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
           </SuspenseCount>
         }
         onClick={onNavigate}
+        onPrefetch={onPrefetch}
       >
         Starred
       </NavLink>
@@ -135,11 +152,17 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
           </SuspenseCount>
         }
         onClick={onNavigate}
+        onPrefetch={onPrefetch}
       >
         Saved
       </NavLink>
 
-      <NavLink href="/recently-read" isActive={isActiveLink("/recently-read")} onClick={onNavigate}>
+      <NavLink
+        href="/recently-read"
+        isActive={isActiveLink("/recently-read")}
+        onClick={onNavigate}
+        onPrefetch={onPrefetch}
+      >
         Recently Read
       </NavLink>
     </div>

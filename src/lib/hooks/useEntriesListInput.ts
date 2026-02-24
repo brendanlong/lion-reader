@@ -27,8 +27,9 @@ interface RouteFilters {
 
 /**
  * Extract route filters from pathname.
+ * Exported for reuse in sidebar prefetch.
  */
-function getFiltersFromPathname(pathname: string): RouteFilters {
+export function getFiltersFromPathname(pathname: string): RouteFilters {
   // /subscription/:id
   const subscriptionMatch = pathname.match(/^\/subscription\/([^/]+)/);
   if (subscriptionMatch) {

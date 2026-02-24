@@ -26,6 +26,8 @@ export interface SubscriptionItemProps {
   onUnsubscribe: () => void;
   /** Optional href override (e.g., for demo page query-param navigation) */
   href?: string;
+  /** Called on mousedown with the link href (e.g., to prefetch data) */
+  onPrefetch?: (href: string) => void;
 }
 
 // ============================================================================
@@ -39,6 +41,7 @@ export function SubscriptionItem({
   onEdit,
   onUnsubscribe,
   href,
+  onPrefetch,
 }: SubscriptionItemProps) {
   const displayTitle = subscription.title || "Untitled Feed";
   const subHref = href ?? `/subscription/${subscription.id}`;
@@ -48,6 +51,7 @@ export function SubscriptionItem({
       <ClientLink
         href={subHref}
         onNavigate={onClose}
+        onPrefetch={onPrefetch}
         className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
           isActive
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"

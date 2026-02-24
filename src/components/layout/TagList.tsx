@@ -29,12 +29,20 @@ interface TagListProps {
   onUnsubscribe: (sub: { id: string; title: string }) => void;
   /** When true, only show tags/subscriptions with unread entries */
   unreadOnly: boolean;
+  /** Called on mousedown with the link href (e.g., to prefetch data) */
+  onPrefetch?: (href: string) => void;
 }
 
 /**
  * Inner component that suspends on tags.list query.
  */
-function TagListContent({ onNavigate, onEdit, onUnsubscribe, unreadOnly }: TagListProps) {
+function TagListContent({
+  onNavigate,
+  onEdit,
+  onUnsubscribe,
+  unreadOnly,
+  onPrefetch,
+}: TagListProps) {
   const pathname = usePathname();
   const [tagsData] = trpc.tags.list.useSuspenseQuery();
   const { isExpanded, toggleExpanded } = useExpandedTags();
@@ -126,6 +134,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe, unreadOnly }: TagLi
                 label={tag.name}
                 count={tag.unreadCount}
                 onClick={onNavigate}
+                onPrefetch={onPrefetch}
               />
             </div>
 
@@ -138,6 +147,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe, unreadOnly }: TagLi
                 onEdit={onEdit}
                 onUnsubscribe={onUnsubscribe}
                 unreadOnly={unreadOnly}
+                onPrefetch={onPrefetch}
               />
             )}
           </li>
@@ -169,6 +179,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe, unreadOnly }: TagLi
               label="Uncategorized"
               count={uncategorized?.unreadCount ?? 0}
               onClick={onNavigate}
+              onPrefetch={onPrefetch}
             />
           </div>
 
@@ -181,6 +192,7 @@ function TagListContent({ onNavigate, onEdit, onUnsubscribe, unreadOnly }: TagLi
               onEdit={onEdit}
               onUnsubscribe={onUnsubscribe}
               unreadOnly={unreadOnly}
+              onPrefetch={onPrefetch}
             />
           )}
         </li>

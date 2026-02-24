@@ -21,6 +21,8 @@ export interface NavLinkProps {
   countElement?: ReactNode;
   /** Called when link is clicked */
   onClick?: () => void;
+  /** Called on mousedown with the link href (e.g., to prefetch data) */
+  onPrefetch?: (href: string) => void;
   /** Additional class name */
   className?: string;
 }
@@ -46,12 +48,14 @@ export function NavLink({
   children,
   countElement,
   onClick,
+  onPrefetch,
   className = "",
 }: NavLinkProps) {
   return (
     <ClientLink
       href={href}
       onNavigate={onClick}
+      onPrefetch={onPrefetch}
       className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
         isActive
           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
@@ -98,12 +102,14 @@ export function NavLinkWithIcon({
   label,
   count,
   onClick,
+  onPrefetch,
   className = "",
 }: NavLinkWithIconProps) {
   return (
     <ClientLink
       href={href}
       onNavigate={onClick}
+      onPrefetch={onPrefetch}
       className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
         isActive
           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
