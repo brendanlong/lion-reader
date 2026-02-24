@@ -17,7 +17,12 @@ import { clientPush } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
-import { CheckCircleIcon, SpinnerIcon, ChevronRightIcon } from "@/components/ui/icon-button";
+import {
+  CheckCircleIcon,
+  SpinnerIcon,
+  ChevronRightIcon,
+  ExternalLinkIcon,
+} from "@/components/ui/icon-button";
 
 // ============================================================================
 // Types
@@ -43,6 +48,7 @@ export function SubscribeContent() {
   const [discoveredFeeds, setDiscoveredFeeds] = useState<DiscoveredFeed[]>([]);
   const [selectedFeedUrl, setSelectedFeedUrl] = useState<string | null>(null);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [feedBuilderUrl, setFeedBuilderUrl] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -97,6 +103,13 @@ export function SubscribeContent() {
     return true;
   };
 
+  const resetDiscoveryState = useCallback(() => {
+    setSelectedFeedUrl(null);
+    setDiscoveredFeeds([]);
+    setDiscoveryError(null);
+    setFeedBuilderUrl(null);
+  }, []);
+
   /**
    * Checks if an error indicates we should try discovery
    */
@@ -115,9 +128,7 @@ export function SubscribeContent() {
     }
 
     // Reset state
-    setSelectedFeedUrl(null);
-    setDiscoveredFeeds([]);
-    setDiscoveryError(null);
+    resetDiscoveryState();
 
     // First, try to preview directly
     const result = await previewQuery.refetch();
@@ -136,6 +147,7 @@ export function SubscribeContent() {
       if (discoverResult.data && discoverResult.data.feeds.length > 0) {
         // Found feeds via discovery
         setDiscoveredFeeds(discoverResult.data.feeds);
+        setFeedBuilderUrl(discoverResult.data.feedBuilderUrl ?? null);
         setStep("discovery");
         return;
       }
@@ -172,9 +184,7 @@ export function SubscribeContent() {
     } else {
       // Go back to input
       setStep("input");
-      setSelectedFeedUrl(null);
-      setDiscoveredFeeds([]);
-      setDiscoveryError(null);
+      resetDiscoveryState();
     }
   };
 
@@ -325,6 +335,22 @@ export function SubscribeContent() {
                 </button>
               ))}
             </div>
+
+            {/* Feed builder link from plugin */}
+            {feedBuilderUrl && (
+              <p className="ui-text-sm mt-4 text-zinc-600 dark:text-zinc-400">
+                Looking for a custom feed?{" "}
+                <a
+                  href={feedBuilderUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-zinc-900 underline hover:text-zinc-700 dark:text-zinc-200 dark:hover:text-zinc-400"
+                >
+                  Build a custom feed URL
+                  <ExternalLinkIcon className="h-3.5 w-3.5" />
+                </a>
+              </p>
+            )}
           </div>
 
           {/* Back button */}

@@ -25,6 +25,7 @@ import {
   fetchLessWrongUserBySlug,
   buildLessWrongUserFeedUrl,
 } from "@/server/feed/lesswrong";
+import { pluginRegistry } from "@/server/plugins";
 
 // ============================================================================
 // Constants
@@ -388,12 +389,17 @@ export const feedsRouter = createTRPCRouter({
     .output(
       z.object({
         feeds: z.array(discoveredFeedSchema),
+        feedBuilderUrl: z.string().nullish(),
       })
     )
     .query(async ({ input }) => {
       const inputUrl = input.url;
       const seenUrls = new Set<string>();
       const allFeeds: DiscoveredFeed[] = [];
+
+      // Check if a plugin provides a feed builder URL for this hostname
+      const hostname = new URL(inputUrl).hostname;
+      const feedBuilderUrl = pluginRegistry.findByHostname(hostname)?.feedBuilderUrl ?? null;
 
       /**
        * Helper to add a feed to results, deduplicating by URL.
@@ -410,7 +416,7 @@ export const feedsRouter = createTRPCRouter({
       if (directFeed) {
         addFeed(directFeed);
         // If it's a valid feed, return it directly (no need to check other sources)
-        return { feeds: allFeeds };
+        return { feeds: allFeeds, feedBuilderUrl };
       }
 
       // Step 2: Fetch the URL and try to discover feeds from HTML
@@ -437,6 +443,6 @@ export const feedsRouter = createTRPCRouter({
         }
       }
 
-      return { feeds: allFeeds };
+      return { feeds: allFeeds, feedBuilderUrl };
     }),
 });

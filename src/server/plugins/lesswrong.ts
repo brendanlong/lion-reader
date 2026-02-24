@@ -25,6 +25,8 @@ export const lessWrongPlugin: UrlPlugin = {
     return /^\/(posts|users)\//.test(url.pathname) || url.searchParams.has("commentId");
   },
 
+  feedBuilderUrl: "https://brendanlong.github.io/lesswrong-rss-builder/",
+
   capabilities: {
     feed: {
       async transformToFeedUrl(url: URL): Promise<URL | null> {
