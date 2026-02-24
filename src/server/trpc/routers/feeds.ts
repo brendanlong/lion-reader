@@ -21,9 +21,18 @@ import { isLessWrongFeed, cleanLessWrongContent } from "@/server/feed/content-cl
 import {
   isLessWrongUserUrl,
   isLessWrongUserFeedUrl,
+  isLessWrongFrontpage,
+  isLessWrongShortformPage,
+  isLessWrongUrl,
+  extractPostId,
   extractUserSlug,
   fetchLessWrongUserBySlug,
+  fetchLessWrongPostMetadata,
   buildLessWrongUserFeedUrl,
+  buildLessWrongPostCommentFeedUrl,
+  buildLessWrongUserShortformFeedUrl,
+  LESSWRONG_FRONTPAGE_FEED_URL,
+  LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
 } from "@/server/feed/lesswrong";
 import { pluginRegistry } from "@/server/plugins";
 
@@ -221,6 +230,67 @@ async function checkCommonPaths(baseUrl: string): Promise<DiscoveredFeed[]> {
 }
 
 /**
+ * Transforms a LessWrong page URL into the corresponding RSS feed URL.
+ *
+ * Handles:
+ * - Front page → frontpage feed
+ * - User profiles → user posts feed
+ * - Post URLs → post comment feed (or user shortform feed if post is a shortform)
+ * - Shortform/quicktakes page → shortform frontpage feed
+ *
+ * @param url - The LessWrong URL to transform
+ * @returns The feed URL, or null if the URL doesn't match any known pattern
+ */
+async function transformLessWrongUrlToFeed(url: string): Promise<string | null> {
+  // Front page → frontpage feed
+  if (isLessWrongFrontpage(url)) {
+    logger.info("Detected LessWrong front page", { url });
+    return LESSWRONG_FRONTPAGE_FEED_URL;
+  }
+
+  // Shortform/quicktakes page → shortform frontpage feed
+  if (isLessWrongShortformPage(url)) {
+    logger.info("Detected LessWrong shortform page", { url });
+    return LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL;
+  }
+
+  // User profile → user posts feed
+  if (isLessWrongUserUrl(url)) {
+    const slug = extractUserSlug(url);
+    if (slug) {
+      logger.info("Detected LessWrong user URL", { url, slug });
+      const user = await fetchLessWrongUserBySlug(slug);
+      if (user) {
+        logger.info("Using LessWrong user feed", { url, user });
+        return buildLessWrongUserFeedUrl(user.userId);
+      }
+    }
+    return null;
+  }
+
+  // Post URLs → check if shortform, then either user shortform feed or post comment feed
+  if (isLessWrongUrl(url)) {
+    const postId = extractPostId(url);
+    if (postId) {
+      logger.info("Detected LessWrong post URL", { url, postId });
+      const metadata = await fetchLessWrongPostMetadata(postId);
+      if (metadata?.shortform && metadata.userId) {
+        logger.info("LessWrong post is a shortform, using user shortform feed", {
+          url,
+          postId,
+          userId: metadata.userId,
+        });
+        return buildLessWrongUserShortformFeedUrl(metadata.userId);
+      }
+      logger.info("Using LessWrong post comment feed", { url, postId });
+      return buildLessWrongPostCommentFeedUrl(postId);
+    }
+  }
+
+  return null;
+}
+
+/**
  * Output schema for discovered feed.
  */
 const discoveredFeedSchema = z.object({
@@ -271,18 +341,11 @@ export const feedsRouter = createTRPCRouter({
     .query(async ({ input }) => {
       let feedUrl = input.url;
 
-      // Special case: LessWrong user profile pages
-      // Look up the user via GraphQL API to get their feed URL
-      if (isLessWrongUserUrl(feedUrl)) {
-        const slug = extractUserSlug(feedUrl);
-        if (slug) {
-          logger.info("Preview: Detected LessWrong user URL", { feedUrl, slug });
-          const user = await fetchLessWrongUserBySlug(slug);
-          if (user) {
-            feedUrl = buildLessWrongUserFeedUrl(user.userId);
-            logger.info("Preview: Using LessWrong user feed", { feedUrl, user });
-          }
-        }
+      // Special case: LessWrong URLs
+      // Transform various LessWrong page URLs to their corresponding feed URLs
+      const lwFeedUrl = await transformLessWrongUrlToFeed(feedUrl);
+      if (lwFeedUrl) {
+        feedUrl = lwFeedUrl;
       }
 
       // Step 1: Fetch the URL
@@ -411,7 +474,17 @@ export const feedsRouter = createTRPCRouter({
         }
       }
 
-      // Step 1: Try to fetch and parse the URL as a feed directly
+      // Step 1: Check if this is a LessWrong URL with a known feed mapping
+      const lwFeedUrl = await transformLessWrongUrlToFeed(inputUrl);
+      if (lwFeedUrl) {
+        const lwFeed = await tryFetchAsFeed(lwFeedUrl, FEED_FETCH_TIMEOUT_MS);
+        if (lwFeed) {
+          addFeed(lwFeed);
+          return { feeds: allFeeds, feedBuilderUrl };
+        }
+      }
+
+      // Step 2: Try to fetch and parse the URL as a feed directly
       const directFeed = await tryFetchAsFeed(inputUrl, FEED_FETCH_TIMEOUT_MS);
       if (directFeed) {
         addFeed(directFeed);
@@ -419,7 +492,7 @@ export const feedsRouter = createTRPCRouter({
         return { feeds: allFeeds, feedBuilderUrl };
       }
 
-      // Step 2: Fetch the URL and try to discover feeds from HTML
+      // Step 3: Fetch the URL and try to discover feeds from HTML
       try {
         const { text: content, contentType } = await fetchUrl(inputUrl);
 
@@ -434,7 +507,7 @@ export const feedsRouter = createTRPCRouter({
         // If we can't fetch the page, we'll just check common paths
       }
 
-      // Step 3: Check common feed paths on the domain
+      // Step 4: Check common feed paths on the domain
       // Only do this if we haven't found any feeds yet
       if (allFeeds.length === 0) {
         const pathFeeds = await checkCommonPaths(inputUrl);

@@ -52,10 +52,37 @@ const LESSWRONG_USER_URL_PATTERN =
   /^https?:\/\/(?:www\.)?lesswrong\.com\/users\/([a-zA-Z0-9_-]+)(?:\/|$|\?|#)/;
 
 /**
+ * Pattern for matching the LessWrong front page.
+ * Matches: https://www.lesswrong.com/ or https://www.lesswrong.com
+ */
+const LESSWRONG_FRONTPAGE_PATTERN = /^https?:\/\/(?:www\.)?lesswrong\.com\/?(?:\?[^/]*)?(?:#.*)?$/;
+
+/**
+ * Pattern for matching the LessWrong shortform/quicktakes page.
+ * Matches: https://www.lesswrong.com/quicktakes
+ */
+const LESSWRONG_SHORTFORM_PAGE_PATTERN =
+  /^https?:\/\/(?:www\.)?lesswrong\.com\/quicktakes(?:\/|$|\?|#)/;
+
+/**
  * Checks if a URL is a LessWrong post URL.
  */
 export function isLessWrongUrl(url: string): boolean {
   return LESSWRONG_POST_URL_PATTERN.test(url);
+}
+
+/**
+ * Checks if a URL is the LessWrong front page.
+ */
+export function isLessWrongFrontpage(url: string): boolean {
+  return LESSWRONG_FRONTPAGE_PATTERN.test(url);
+}
+
+/**
+ * Checks if a URL is the LessWrong shortform/quicktakes page.
+ */
+export function isLessWrongShortformPage(url: string): boolean {
+  return LESSWRONG_SHORTFORM_PAGE_PATTERN.test(url);
 }
 
 /**
@@ -692,6 +719,37 @@ export function buildLessWrongUserFeedUrl(userId: string): string {
 }
 
 /**
+ * The LessWrong frontpage RSS feed URL.
+ */
+export const LESSWRONG_FRONTPAGE_FEED_URL = "https://www.lesswrong.com/feed.xml?view=frontpage";
+
+/**
+ * Builds the RSS feed URL for comments on a specific LessWrong post.
+ *
+ * @param postId - The LessWrong post ID
+ * @returns The comment feed URL
+ */
+export function buildLessWrongPostCommentFeedUrl(postId: string): string {
+  return `https://www.lesswrong.com/feed.xml?type=comments&view=postCommentsNew&postId=${encodeURIComponent(postId)}`;
+}
+
+/**
+ * The LessWrong shortform frontpage RSS feed URL.
+ */
+export const LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL =
+  "https://www.lesswrong.com/feed.xml?type=comments&view=shortformFrontpage";
+
+/**
+ * Builds the RSS feed URL for a user's shortform posts.
+ *
+ * @param userId - The user's internal ID
+ * @returns The shortform feed URL
+ */
+export function buildLessWrongUserShortformFeedUrl(userId: string): string {
+  return `https://www.lesswrong.com/feed.xml?type=comments&view=shortform&userId=${encodeURIComponent(userId)}`;
+}
+
+/**
  * Checks if a URL is a LessWrong user feed URL (feed.xml with userId param).
  */
 export function isLessWrongUserFeedUrl(url: string): boolean {
@@ -809,6 +867,146 @@ export async function fetchLessWrongUserById(userId: string): Promise<LessWrongU
     } else {
       logger.warn("LessWrong GraphQL user-by-id request error", {
         userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ============================================================================
+// Post Metadata Lookup (for shortform detection)
+// ============================================================================
+
+/**
+ * Zod schema for the post metadata GraphQL response.
+ */
+const postMetadataGraphqlResponseSchema = z.object({
+  data: z
+    .object({
+      post: z
+        .object({
+          result: z
+            .object({
+              _id: z.string(),
+              shortform: z.boolean().nullable(),
+              userId: z.string().nullable(),
+            })
+            .nullable(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+  errors: z
+    .array(
+      z.object({
+        message: z.string(),
+      })
+    )
+    .optional(),
+});
+
+/**
+ * Result from fetching post metadata.
+ */
+export interface LessWrongPostMetadata {
+  /** Post ID */
+  postId: string;
+  /** Whether this is a shortform post */
+  shortform: boolean;
+  /** Author's user ID */
+  userId: string | null;
+}
+
+/**
+ * GraphQL query to fetch post metadata (shortform status and author).
+ */
+const POST_METADATA_QUERY = `
+  query GetPostMetadata($postId: String!) {
+    post(input: { selector: { _id: $postId } }) {
+      result {
+        _id
+        shortform
+        userId
+      }
+    }
+  }
+`;
+
+/**
+ * Fetches post metadata from LessWrong to determine if it's a shortform post.
+ *
+ * @param postId - The LessWrong post ID (17-character alphanumeric)
+ * @returns Post metadata including shortform status, or null if fetch fails
+ */
+export async function fetchLessWrongPostMetadata(
+  postId: string
+): Promise<LessWrongPostMetadata | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        query: POST_METADATA_QUERY,
+        variables: { postId },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      logger.warn("LessWrong GraphQL post metadata request failed", {
+        postId,
+        status: response.status,
+        statusText: response.statusText,
+      });
+      return null;
+    }
+
+    const json = await response.json();
+    const parsed = postMetadataGraphqlResponseSchema.safeParse(json);
+
+    if (!parsed.success) {
+      logger.warn("LessWrong GraphQL post metadata response validation failed", {
+        postId,
+        error: parsed.error.message,
+      });
+      return null;
+    }
+
+    if (parsed.data.errors && parsed.data.errors.length > 0) {
+      logger.warn("LessWrong GraphQL post metadata returned errors", {
+        postId,
+        errors: parsed.data.errors.map((e) => e.message),
+      });
+      return null;
+    }
+
+    const post = parsed.data.data?.post?.result;
+    if (!post) {
+      logger.debug("LessWrong post not found for metadata", { postId });
+      return null;
+    }
+
+    return {
+      postId: post._id,
+      shortform: post.shortform ?? false,
+      userId: post.userId,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      logger.warn("LessWrong GraphQL post metadata request timed out", { postId });
+    } else {
+      logger.warn("LessWrong GraphQL post metadata request error", {
+        postId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
