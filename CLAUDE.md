@@ -38,7 +38,7 @@ See @src/components/CLAUDE.md for UI component guidelines, available components,
 - Break work into commit-sized chunks; commit when finished
 - Use amend commits when it makes sense (ALWAYS check the current commit before amending)
 - Main branch: `master`
-- Commit `drizzle/schema.sql` changes separately if unrelated to current work
+- Commit `migrations/schema.sql` changes separately if unrelated to current work
 
 ## GitHub Issues
 
@@ -83,7 +83,7 @@ Use the database views for frontend queries instead of manual joins:
 - **`user_feeds`**: Active subscriptions with feed data merged. Use for `subscriptions.list/get/export`. Already filters out unsubscribed entries and resolves title (custom or original).
 - **`visible_entries`**: Entries with visibility rules applied. Use for `entries.list/get/count`. Includes read/starred state and subscription_id. An entry is visible if it's from an active subscription OR is starred.
 
-These views are defined in `drizzle/0035_subscription_views.sql` and have Drizzle schemas in `src/server/db/schema.ts`.
+These views are defined in `migrations/0035_subscription_views.sql` and have Drizzle schemas in `src/server/db/schema.ts`.
 
 ## API Conventions
 

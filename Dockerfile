@@ -92,8 +92,8 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy built Next.js app
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 
-# Copy drizzle migrations (SQL files needed at runtime)
-COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
+# Copy migrations (SQL files needed at runtime)
+COPY --from=builder --chown=nextjs:nodejs /app/migrations ./migrations
 
 # Copy bundled scripts (no longer need tsx, tsconfig, or src/)
 COPY --from=builder /app/dist/worker.js ./dist/worker.js

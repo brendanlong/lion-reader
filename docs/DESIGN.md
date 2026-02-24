@@ -115,7 +115,7 @@ All primary keys use **UUIDv7**, which provides:
 
 ### Key Tables
 
-The schema is defined in `drizzle/` migrations. Key tables:
+The schema is defined in `migrations/` directory. Key tables:
 
 - **users** - User accounts with email, password hash, OAuth links
 - **sessions** - Session tokens with expiry and revocation

@@ -4,7 +4,7 @@
  * Key differences from drizzle-kit:
  * - Each migration runs in its own transaction (drizzle-kit runs all in one)
  * - Better error messages and hash verification
- * - Compatible with existing drizzle migration format
+ * - Compatible with drizzle-kit migration format
  */
 
 import * as crypto from "crypto";
@@ -190,7 +190,7 @@ async function runMigration(
 
 function resolveOptions(options?: MigrationOptions): ResolvedOptions {
   return {
-    migrationsDir: options?.migrationsDir ?? path.join(process.cwd(), "drizzle"),
+    migrationsDir: options?.migrationsDir ?? path.join(process.cwd(), "migrations"),
     migrationsSchema: options?.migrationsSchema ?? "drizzle",
     migrationsTable: options?.migrationsTable ?? "__drizzle_migrations",
     verbose: options?.verbose ?? true,
