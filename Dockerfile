@@ -51,6 +51,9 @@ ENV REDIS_URL="redis://localhost:6379"
 # Build Next.js application
 RUN pnpm build
 
+# Build custom server bundle (compression + Next.js wrapper)
+RUN pnpm build:server
+
 # Build worker bundle (single optimized JS file)
 RUN pnpm build:worker
 
@@ -96,6 +99,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/migrations ./migrations
 
 # Copy bundled scripts (no longer need tsx, tsconfig, or src/)
+COPY --from=builder /app/dist/server.js ./dist/server.js
 COPY --from=builder /app/dist/worker.js ./dist/worker.js
 COPY --from=builder /app/dist/migrate.js ./dist/migrate.js
 COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
