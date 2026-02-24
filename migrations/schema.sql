@@ -417,7 +417,7 @@ CREATE VIEW public.visible_entries AS
     ue.read_changed_at
    FROM (((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
-     LEFT JOIN public.subscriptions s ON (((s.user_id = ue.user_id) AND (e.feed_id = ANY (s.feed_ids)))))
+     LEFT JOIN public.subscriptions s ON (((s.user_id = ue.user_id) AND (s.feed_ids @> ARRAY[e.feed_id]))))
      LEFT JOIN public.entry_score_predictions esp ON (((esp.user_id = ue.user_id) AND (esp.entry_id = e.id))))
   WHERE ((s.unsubscribed_at IS NULL) OR (ue.starred = true));
 

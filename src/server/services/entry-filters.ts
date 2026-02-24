@@ -5,7 +5,7 @@
  * countEntries, and markAllRead.
  */
 
-import { eq, and, notInArray, sql, type SQL } from "drizzle-orm";
+import { eq, and, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { subscriptionTags, tags, userFeeds, visibleEntries } from "@/server/db/schema";
 
@@ -87,16 +87,15 @@ function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, userId: st
 
 /**
  * Builds a subquery for feed IDs from uncategorized subscriptions.
+ * Uses a LEFT JOIN anti-join pattern: subscriptions with no matching
+ * subscription_tags row are "uncategorized".
  */
 function buildUncategorizedFeedIdsSubquery(db: typeof dbType, userId: string) {
-  const taggedSubscriptionIds = db
-    .select({ subscriptionId: subscriptionTags.subscriptionId })
-    .from(subscriptionTags);
-
   return db
     .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
     .from(userFeeds)
-    .where(and(eq(userFeeds.userId, userId), notInArray(userFeeds.id, taggedSubscriptionIds)));
+    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
+    .where(and(eq(userFeeds.userId, userId), isNull(subscriptionTags.subscriptionId)));
 }
 
 // ============================================================================
