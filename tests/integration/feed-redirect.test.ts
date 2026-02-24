@@ -16,6 +16,7 @@ import {
   feeds,
   entries,
   subscriptions,
+  subscriptionFeeds,
   userEntries,
   jobs,
   type Feed,
@@ -129,11 +130,18 @@ async function createTestSubscription(
     id: subscriptionId,
     userId,
     feedId,
-    previousFeedIds: options?.previousFeedIds ?? [],
     subscribedAt: new Date(),
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+
+  // Insert into subscription_feeds: current feed + any previous feeds
+  const allFeedIds = [feedId, ...(options?.previousFeedIds ?? [])];
+  await db
+    .insert(subscriptionFeeds)
+    .values(allFeedIds.map((fId) => ({ subscriptionId, feedId: fId, userId })))
+    .onConflictDoNothing();
+
   return subscriptionId;
 }
 
@@ -218,20 +226,31 @@ async function getSubscription(
 ): Promise<{
   id: string;
   feedId: string;
-  previousFeedIds: string[];
+  subscriptionFeedIds: string[];
   unsubscribedAt: Date | null;
 } | null> {
   const result = await db
     .select({
       id: subscriptions.id,
       feedId: subscriptions.feedId,
-      previousFeedIds: subscriptions.previousFeedIds,
       unsubscribedAt: subscriptions.unsubscribedAt,
     })
     .from(subscriptions)
     .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
     .limit(1);
-  return result[0] ?? null;
+
+  if (result.length === 0) return null;
+
+  // Get all feed IDs from subscription_feeds
+  const sfResult = await db
+    .select({ feedId: subscriptionFeeds.feedId })
+    .from(subscriptionFeeds)
+    .where(eq(subscriptionFeeds.subscriptionId, result[0].id));
+
+  return {
+    ...result[0],
+    subscriptionFeedIds: sfResult.map((r) => r.feedId),
+  };
 }
 
 /**
@@ -239,14 +258,28 @@ async function getSubscription(
  */
 async function getActiveSubscriptions(
   userId: string
-): Promise<Array<{ feedId: string; previousFeedIds: string[] }>> {
-  return db
+): Promise<Array<{ id: string; feedId: string; subscriptionFeedIds: string[] }>> {
+  const subs = await db
     .select({
+      id: subscriptions.id,
       feedId: subscriptions.feedId,
-      previousFeedIds: subscriptions.previousFeedIds,
     })
     .from(subscriptions)
     .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+  // Get subscription_feeds for each subscription
+  const result = [];
+  for (const sub of subs) {
+    const sfResult = await db
+      .select({ feedId: subscriptionFeeds.feedId })
+      .from(subscriptionFeeds)
+      .where(eq(subscriptionFeeds.subscriptionId, sub.id));
+    result.push({
+      ...sub,
+      subscriptionFeedIds: sfResult.map((r) => r.feedId),
+    });
+  }
+  return result;
 }
 
 /**
@@ -307,7 +340,7 @@ describe("Feed Redirect Handling", () => {
   });
 
   describe("Redirect to existing feed - new subscription created", () => {
-    it("creates subscription to new feed with old feed in previousFeedIds", async () => {
+    it("creates subscription to new feed with old feed in subscription_feeds", async () => {
       const userId = await createTestUser();
       const fetchTime = new Date("2024-01-01T10:00:00Z");
 
@@ -346,10 +379,10 @@ describe("Feed Redirect Handling", () => {
       // Simulate the redirect migration
       await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
 
-      // Verify: User should have subscription to new feed with old feed in previousFeedIds
+      // Verify: User should have subscription to new feed with old feed in subscription_feeds
       const newSub = await getSubscription(userId, newFeedId);
       expect(newSub).not.toBeNull();
-      expect(newSub!.previousFeedIds).toContain(oldFeedId);
+      expect(newSub!.subscriptionFeedIds).toContain(oldFeedId);
 
       // Verify: Old subscription should be unsubscribed
       const oldSub = await getSubscription(userId, oldFeedId);
@@ -363,7 +396,7 @@ describe("Feed Redirect Handling", () => {
   });
 
   describe("Redirect when user already subscribed to target feed", () => {
-    it("appends old feed to existing subscription's previousFeedIds", async () => {
+    it("appends old feed to existing subscription's subscription_feeds", async () => {
       const userId = await createTestUser();
       const fetchTime = new Date("2024-01-01T10:00:00Z");
 
@@ -407,10 +440,10 @@ describe("Feed Redirect Handling", () => {
       // Simulate the redirect migration
       await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
 
-      // Verify: Subscription to new feed should have old feed in previousFeedIds
+      // Verify: Subscription to new feed should have old feed in subscription_feeds
       const newSub = await getSubscription(userId, newFeedId);
       expect(newSub).not.toBeNull();
-      expect(newSub!.previousFeedIds).toContain(oldFeedId);
+      expect(newSub!.subscriptionFeedIds).toContain(oldFeedId);
       expect(newSub!.unsubscribedAt).toBeNull(); // Still active
 
       // Verify: Old subscription should be unsubscribed
@@ -455,11 +488,11 @@ describe("Feed Redirect Handling", () => {
       // Simulate the redirect migration
       await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
 
-      // Verify: New feed subscription should be reactivated with old feed in previousFeedIds
+      // Verify: New feed subscription should be reactivated with old feed in subscription_feeds
       const newSub = await getSubscription(userId, newFeedId);
       expect(newSub).not.toBeNull();
       expect(newSub!.unsubscribedAt).toBeNull(); // Reactivated
-      expect(newSub!.previousFeedIds).toContain(oldFeedId);
+      expect(newSub!.subscriptionFeedIds).toContain(oldFeedId);
     });
   });
 
@@ -512,8 +545,8 @@ describe("Feed Redirect Handling", () => {
 
       expect(userANewSub).not.toBeNull();
       expect(userBNewSub).not.toBeNull();
-      expect(userANewSub!.previousFeedIds).toContain(oldFeedId);
-      expect(userBNewSub!.previousFeedIds).toContain(oldFeedId);
+      expect(userANewSub!.subscriptionFeedIds).toContain(oldFeedId);
+      expect(userBNewSub!.subscriptionFeedIds).toContain(oldFeedId);
 
       // Verify: Both old subscriptions should be unsubscribed
       const userAOldSub = await getSubscription(userA, oldFeedId);
@@ -532,7 +565,7 @@ describe("Feed Redirect Handling", () => {
   });
 
   describe("Entry visibility after redirect", () => {
-    it("user sees entries from both old and new feeds via feed_ids", async () => {
+    it("user sees entries from both old and new feeds via subscription_feeds", async () => {
       const userId = await createTestUser();
       const fetchTime = new Date("2024-01-01T10:00:00Z");
 
@@ -597,7 +630,7 @@ describe("Feed Redirect Handling", () => {
       // Verify subscription was migrated correctly
       const sub = await getSubscription(userId, newFeedId);
       expect(sub).not.toBeNull();
-      expect(sub!.previousFeedIds).toContain(oldFeedId);
+      expect(sub!.subscriptionFeedIds).toContain(oldFeedId);
 
       // Simulate the new feed syncing - this calls the actual sync code
       // which should NOT create user_entries for entries with GUIDs the user
@@ -988,7 +1021,8 @@ describe("Feed Redirect Handling", () => {
       // Verify intermediate state
       let sub = await getSubscription(userId, feedBId);
       expect(sub).not.toBeNull();
-      expect(sub!.previousFeedIds).toEqual([feedAId]);
+      expect(sub!.subscriptionFeedIds).toContain(feedAId);
+      expect(sub!.subscriptionFeedIds).toContain(feedBId);
 
       // Add entry from Feed B
       const entryB = await createTestEntry(feedBId, {
@@ -1006,10 +1040,10 @@ describe("Feed Redirect Handling", () => {
       sub = await getSubscription(userId, feedCId);
       expect(sub).not.toBeNull();
       // previousFeedIds should contain feedBId (the immediate previous feed)
-      expect(sub!.previousFeedIds).toContain(feedBId);
+      expect(sub!.subscriptionFeedIds).toContain(feedBId);
 
-      // The subscription to Feed B should now have feedAId in previousFeedIds
-      // and be unsubscribed, so its previousFeedIds won't help us.
+      // The subscription to Feed B should now have feedAId in subscription_feeds
+      // and be unsubscribed, so it won't help visibility.
       // This is a known limitation - we only track immediate previous feeds.
 
       // But user_entries from Feed A are still linked to the user

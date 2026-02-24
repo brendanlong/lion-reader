@@ -6,7 +6,14 @@
 
 import { eq, and, sql, isNull } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { tags, subscriptionTags, subscriptions, entries, userEntries } from "@/server/db/schema";
+import {
+  tags,
+  subscriptionFeeds,
+  subscriptionTags,
+  subscriptions,
+  entries,
+  userEntries,
+} from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { publishTagCreated, publishTagUpdated, publishTagDeleted } from "@/server/redis/pubsub";
@@ -59,8 +66,10 @@ function tagUnreadCountSql(userId: string) {
     INNER JOIN ${subscriptions} s
       ON st.subscription_id = s.id
       AND s.unsubscribed_at IS NULL
+    INNER JOIN ${subscriptionFeeds} sf
+      ON sf.subscription_id = s.id
     INNER JOIN ${entries} e
-      ON s.feed_ids @> ARRAY[e.feed_id]
+      ON e.feed_id = sf.feed_id
     INNER JOIN ${userEntries} ue
       ON ue.entry_id = e.id
       AND ue.user_id = ${userId}
@@ -112,7 +121,8 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
           )`
         )
       )
-      .leftJoin(entries, sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`)
+      .leftJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
+      .leftJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
       .leftJoin(
         userEntries,
         and(
@@ -278,7 +288,8 @@ export async function updateTag(
           isNull(subscriptions.unsubscribedAt)
         )
       )
-      .innerJoin(entries, sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`)
+      .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
+      .innerJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
       .innerJoin(
         userEntries,
         and(

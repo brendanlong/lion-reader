@@ -15,6 +15,7 @@ import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import {
   feeds,
   subscriptions,
+  subscriptionFeeds,
   entries,
   userEntries,
   tags,
@@ -197,6 +198,12 @@ export async function createOrReactivateSubscription(
       createdAt: subscribedAt,
       updatedAt: subscribedAt,
     });
+
+    // Add the feed to the subscription_feeds junction table
+    await db
+      .insert(subscriptionFeeds)
+      .values({ subscriptionId, feedId, userId })
+      .onConflictDoNothing();
   }
 
   // Populate user_entries for initial unread entries

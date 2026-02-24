@@ -15,14 +15,14 @@ import { parseFormData, textResponse, errorResponse } from "@/server/google-read
 import { parseStreamId } from "@/server/google-reader/streams";
 import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { resolveTagByName } from "@/server/google-reader/tags";
-import { eq, and, isNull, lte, inArray, sql, type SQL } from "drizzle-orm";
+import { eq, and, isNull, lte, inArray, type SQL } from "drizzle-orm";
 import { db } from "@/server/db";
 import {
   userEntries,
   entries,
+  subscriptionFeeds,
   subscriptions,
   subscriptionTags,
-  userFeeds,
 } from "@/server/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -80,27 +80,30 @@ export async function POST(request: Request): Promise<Response> {
         return textResponse("OK");
       }
 
-      // Look up feed IDs for this subscription
-      const subResult = await db
-        .select({ feedIds: subscriptions.feedIds })
-        .from(subscriptions)
-        .where(
+      // Look up feed IDs for this subscription via subscription_feeds junction table
+      const feedIdsResult = await db
+        .select({ feedId: subscriptionFeeds.feedId })
+        .from(subscriptionFeeds)
+        .innerJoin(
+          subscriptions,
           and(
-            eq(subscriptions.id, subscriptionId),
+            eq(subscriptions.id, subscriptionFeeds.subscriptionId),
             eq(subscriptions.userId, userId),
             isNull(subscriptions.unsubscribedAt)
           )
         )
-        .limit(1);
+        .where(eq(subscriptionFeeds.subscriptionId, subscriptionId));
 
-      if (subResult.length === 0 || !subResult[0].feedIds) {
+      if (feedIdsResult.length === 0) {
         return textResponse("OK");
       }
+
+      const feedIds = feedIdsResult.map((r) => r.feedId);
 
       const entryIdsSubquery = db
         .select({ id: entries.id })
         .from(entries)
-        .where(inArray(entries.feedId, subResult[0].feedIds));
+        .where(inArray(entries.feedId, feedIds));
 
       conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
       break;
@@ -127,13 +130,16 @@ export async function POST(request: Request): Promise<Response> {
         return textResponse("OK");
       }
 
-      // Subquery for feed IDs from subscriptions with this tag
+      // Subquery for feed IDs from subscriptions with this tag via subscription_feeds
       const taggedFeedIdsSubquery = db
         .select({
-          feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id"),
+          feedId: subscriptionFeeds.feedId,
         })
         .from(subscriptionTags)
-        .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
+        .innerJoin(
+          subscriptionFeeds,
+          eq(subscriptionTags.subscriptionId, subscriptionFeeds.subscriptionId)
+        )
         .where(eq(subscriptionTags.tagId, tag.id));
 
       const taggedEntryIdsSubquery = db

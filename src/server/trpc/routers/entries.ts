@@ -19,6 +19,7 @@ import { uuidSchema } from "../validation";
 import {
   entries,
   feeds,
+  subscriptionFeeds,
   userEntries,
   subscriptions,
   subscriptionTags,
@@ -230,8 +231,8 @@ type DbContext = {
 
 /**
  * Looks up the feed IDs for a subscription.
- * Returns the subscription's feed_ids array (current feed + previous feeds from redirects).
- * Uses user_feeds view which already filters out unsubscribed entries.
+ * Returns all feed IDs from the subscription_feeds junction table (current feed + previous feeds from redirects).
+ * Validates subscription ownership via user_feeds view.
  *
  * @param db - Database instance
  * @param subscriptionId - The subscription ID to look up
@@ -243,13 +244,23 @@ async function getSubscriptionFeedIds(
   subscriptionId: string,
   userId: string
 ): Promise<string[] | null> {
-  const result = await db
-    .select({ feedIds: userFeeds.feedIds })
+  // Verify subscription exists and belongs to user
+  const subExists = await db
+    .select({ id: userFeeds.id })
     .from(userFeeds)
     .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
     .limit(1);
 
-  return result.length > 0 ? result[0].feedIds : null;
+  if (subExists.length === 0) {
+    return null;
+  }
+
+  const result = await db
+    .select({ feedId: subscriptionFeeds.feedId })
+    .from(subscriptionFeeds)
+    .where(eq(subscriptionFeeds.subscriptionId, subscriptionId));
+
+  return result.map((r) => r.feedId);
 }
 
 // ============================================================================
@@ -772,12 +783,14 @@ export const entriesRouter = createTRPCRouter({
           return { count: 0 };
         }
 
-        // Subquery for feed IDs of subscriptions with this tag
-        // Uses unnest to expand the feed_ids array since Drizzle doesn't support array unnest directly
+        // Subquery for feed IDs of subscriptions with this tag via subscription_feeds junction table
         const taggedFeedIdsSubquery = ctx.db
-          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+          .select({ feedId: subscriptionFeeds.feedId })
           .from(subscriptionTags)
-          .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
+          .innerJoin(
+            subscriptionFeeds,
+            eq(subscriptionTags.subscriptionId, subscriptionFeeds.subscriptionId)
+          )
           .where(eq(subscriptionTags.tagId, input.tagId));
 
         // Subquery for entry IDs from tagged feeds
@@ -796,10 +809,11 @@ export const entriesRouter = createTRPCRouter({
           .select({ subscriptionId: subscriptionTags.subscriptionId })
           .from(subscriptionTags);
 
-        // Subquery for feed IDs from uncategorized subscriptions (no tags)
+        // Subquery for feed IDs from uncategorized subscriptions (no tags) via subscription_feeds
         const uncategorizedFeedIdsSubquery = ctx.db
-          .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+          .select({ feedId: subscriptionFeeds.feedId })
           .from(userFeeds)
+          .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, userFeeds.id))
           .where(
             and(
               eq(userFeeds.userId, userId),

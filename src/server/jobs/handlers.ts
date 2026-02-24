@@ -13,6 +13,7 @@ import { db } from "../db";
 import {
   feeds,
   subscriptions,
+  subscriptionFeeds,
   entries,
   opmlImports,
   tags,
@@ -1100,11 +1101,11 @@ async function applyRedirectMigration(
  * Used when a permanent redirect is detected and the target URL already has a feed.
  *
  * For each subscriber:
- * 1. Creates or updates subscription to new feed, adding old feed to previousFeedIds
+ * 1. Creates or updates subscription to new feed, adding old feed ID to subscription_feeds
  * 2. Unsubscribes from old feed
  *
  * User entries stay linked to entries in the old feed. Entry queries use
- * subscriptions.feed_ids (which includes previousFeedIds) to find all relevant entries.
+ * the subscription_feeds junction table to find all relevant entries.
  *
  * @param oldFeed - The feed that is being redirected
  * @param newFeed - The existing feed at the redirect URL
@@ -1142,7 +1143,6 @@ export async function migrateSubscriptionsToExistingFeed(
     .select({
       id: subscriptions.id,
       userId: subscriptions.userId,
-      previousFeedIds: subscriptions.previousFeedIds,
       unsubscribedAt: subscriptions.unsubscribedAt,
     })
     .from(subscriptions)
@@ -1155,7 +1155,6 @@ export async function migrateSubscriptionsToExistingFeed(
   const usersWithExisting: Array<{
     userId: string;
     existingSubId: string;
-    previousFeedIds: string[];
     wasUnsubscribed: boolean;
   }> = [];
   const usersWithoutExisting: string[] = [];
@@ -1166,7 +1165,6 @@ export async function migrateSubscriptionsToExistingFeed(
       usersWithExisting.push({
         userId: sub.userId,
         existingSubId: existing.id,
-        previousFeedIds: existing.previousFeedIds,
         wasUnsubscribed: existing.unsubscribedAt !== null,
       });
     } else {
@@ -1174,20 +1172,28 @@ export async function migrateSubscriptionsToExistingFeed(
     }
   }
 
-  // Batch update: For users with existing subscriptions, add old feed to previousFeedIds
-  // Note: Each subscription may have different previousFeedIds, so we need individual updates
-  // But we can at least avoid the N SELECT queries we were doing before
+  // For users with existing subscriptions: reactivate if needed and add old feed to subscription_feeds
   for (const user of usersWithExisting) {
-    const newPreviousFeedIds = [...user.previousFeedIds, oldFeed.id];
+    if (user.wasUnsubscribed) {
+      await db
+        .update(subscriptions)
+        .set({
+          unsubscribedAt: null,
+          subscribedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(subscriptions.id, user.existingSubId));
+    }
+
+    // Add old feed ID to the existing subscription's subscription_feeds
     await db
-      .update(subscriptions)
-      .set({
-        previousFeedIds: newPreviousFeedIds,
-        unsubscribedAt: null,
-        subscribedAt: user.wasUnsubscribed ? now : undefined,
-        updatedAt: now,
+      .insert(subscriptionFeeds)
+      .values({
+        subscriptionId: user.existingSubId,
+        feedId: oldFeed.id,
+        userId: user.userId,
       })
-      .where(eq(subscriptions.id, user.existingSubId));
+      .onConflictDoNothing();
   }
 
   // Batch insert: For users without existing subscriptions, create new ones
@@ -1196,13 +1202,19 @@ export async function migrateSubscriptionsToExistingFeed(
       id: generateUuidv7(),
       userId,
       feedId: newFeed.id,
-      previousFeedIds: [oldFeed.id],
       subscribedAt: now,
       createdAt: now,
       updatedAt: now,
     }));
 
     await db.insert(subscriptions).values(newSubscriptions);
+
+    // Add subscription_feeds entries for both new feed and old feed
+    const sfEntries = newSubscriptions.flatMap((sub) => [
+      { subscriptionId: sub.id, feedId: newFeed.id, userId: sub.userId },
+      { subscriptionId: sub.id, feedId: oldFeed.id, userId: sub.userId },
+    ]);
+    await db.insert(subscriptionFeeds).values(sfEntries).onConflictDoNothing();
 
     // Ensure a job exists for the new feed (will be claimed via data-driven eligibility)
     await ensureFeedJob(newFeed.id);

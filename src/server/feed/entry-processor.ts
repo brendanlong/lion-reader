@@ -440,6 +440,7 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   // 1. Joins subscriptions with entries for the given feed to get all (user, entry) pairs
   // 2. Excludes pairs where the user already has a user_entry for an entry
   //    with the same GUID from one of their previous feeds (redirect deduplication)
+  //    Uses subscription_feeds junction table to find previous feed IDs
   // 3. Uses ON CONFLICT DO NOTHING for idempotency
   // We use db.execute() with raw SQL because Drizzle's INSERT...SELECT always
   // generates column lists for all table columns. Since we only want to insert
@@ -458,8 +459,9 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
           SELECT 1
           FROM user_entries ue_existing
           JOIN entries e_prev ON ue_existing.entry_id = e_prev.id
+          JOIN subscription_feeds sf ON sf.subscription_id = s.id AND sf.feed_id = e_prev.feed_id
           WHERE ue_existing.user_id = s.user_id
-            AND s.previous_feed_ids @> ARRAY[e_prev.feed_id]
+            AND sf.feed_id != s.feed_id
             AND e_prev.guid = e.guid
         )
       ON CONFLICT DO NOTHING

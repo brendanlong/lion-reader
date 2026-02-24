@@ -12,6 +12,7 @@ import {
   users,
   tags,
   subscriptions,
+  subscriptionFeeds,
   subscriptionTags,
   feeds,
   entries,
@@ -128,6 +129,10 @@ async function createTestSubscription(userId: string, feedId: string): Promise<s
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+  await db
+    .insert(subscriptionFeeds)
+    .values({ subscriptionId, feedId, userId })
+    .onConflictDoNothing();
   return subscriptionId;
 }
 

@@ -5,9 +5,15 @@
  * countEntries, and markAllRead.
  */
 
-import { eq, and, isNull, notInArray, sql, type SQL } from "drizzle-orm";
+import { eq, and, isNull, notInArray, type SQL } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { subscriptionTags, tags, userFeeds, visibleEntries } from "@/server/db/schema";
+import {
+  subscriptionFeeds,
+  subscriptionTags,
+  tags,
+  userFeeds,
+  visibleEntries,
+} from "@/server/db/schema";
 
 // ============================================================================
 // Types
@@ -55,20 +61,30 @@ export interface EntryFilterResult {
 // ============================================================================
 
 /**
- * Gets feed IDs for a subscription from the user_feeds view.
+ * Gets feed IDs for a subscription from the subscription_feeds junction table.
  */
 async function getSubscriptionFeedIds(
   db: typeof dbType,
   subscriptionId: string,
   userId: string
 ): Promise<string[] | null> {
-  const result = await db
-    .select({ feedIds: userFeeds.feedIds })
+  // Verify subscription exists and belongs to user
+  const subExists = await db
+    .select({ id: userFeeds.id })
     .from(userFeeds)
     .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
     .limit(1);
 
-  return result.length > 0 ? result[0].feedIds : null;
+  if (subExists.length === 0) {
+    return null;
+  }
+
+  const result = await db
+    .select({ feedId: subscriptionFeeds.feedId })
+    .from(subscriptionFeeds)
+    .where(eq(subscriptionFeeds.subscriptionId, subscriptionId));
+
+  return result.map((r) => r.feedId);
 }
 
 /**
@@ -78,9 +94,12 @@ async function getSubscriptionFeedIds(
  */
 function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, userId: string) {
   return db
-    .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+    .select({ feedId: subscriptionFeeds.feedId })
     .from(subscriptionTags)
-    .innerJoin(userFeeds, eq(subscriptionTags.subscriptionId, userFeeds.id))
+    .innerJoin(
+      subscriptionFeeds,
+      eq(subscriptionTags.subscriptionId, subscriptionFeeds.subscriptionId)
+    )
     .innerJoin(tags, and(eq(subscriptionTags.tagId, tags.id), eq(tags.userId, userId)))
     .where(eq(subscriptionTags.tagId, tagId));
 }
@@ -92,8 +111,9 @@ function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, userId: st
  */
 function buildUncategorizedFeedIdsSubquery(db: typeof dbType, userId: string) {
   return db
-    .select({ feedId: sql<string>`unnest(${userFeeds.feedIds})`.as("feed_id") })
+    .select({ feedId: subscriptionFeeds.feedId })
     .from(userFeeds)
+    .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, userFeeds.id))
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .where(and(eq(userFeeds.userId, userId), isNull(subscriptionTags.subscriptionId)));
 }

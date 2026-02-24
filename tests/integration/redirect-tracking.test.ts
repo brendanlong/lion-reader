@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { feeds, subscriptions, users, jobs } from "../../src/server/db/schema";
+import { feeds, subscriptions, subscriptionFeeds, users, jobs } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
 import { ensureFeedJob, getJobPayload, claimFeedJob } from "../../src/server/jobs/queue";
@@ -17,6 +17,7 @@ describe("Redirect Tracking", () => {
   // Clean up before each test
   beforeEach(async () => {
     await db.delete(jobs);
+    await db.delete(subscriptionFeeds);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
@@ -25,6 +26,7 @@ describe("Redirect Tracking", () => {
   // Clean up after all tests
   afterAll(async () => {
     await db.delete(jobs);
+    await db.delete(subscriptionFeeds);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
@@ -86,6 +88,11 @@ describe("Redirect Tracking", () => {
       createdAt: now,
       updatedAt: now,
     });
+    // Add to subscription_feeds junction table
+    await db
+      .insert(subscriptionFeeds)
+      .values({ subscriptionId, feedId, userId })
+      .onConflictDoNothing();
     return subscriptionId;
   }
 
@@ -256,20 +263,24 @@ describe("Redirect Tracking", () => {
         .limit(1);
       expect(initialNewSub).toHaveLength(0);
 
-      // Simulate migration: unsubscribe from old, subscribe to new with previousFeedIds
+      // Simulate migration: unsubscribe from old, subscribe to new with old feed in subscription_feeds
       const now = new Date();
 
-      // Create subscription to new feed with old feed in previousFeedIds
+      // Create subscription to new feed
       const newSubId = generateUuidv7();
       await db.insert(subscriptions).values({
         id: newSubId,
         userId,
         feedId: newFeedId,
-        previousFeedIds: [oldFeedId],
         subscribedAt: now,
         createdAt: now,
         updatedAt: now,
       });
+      // Add both new and old feed to subscription_feeds
+      await db.insert(subscriptionFeeds).values([
+        { subscriptionId: newSubId, feedId: newFeedId, userId },
+        { subscriptionId: newSubId, feedId: oldFeedId, userId },
+      ]);
 
       // Unsubscribe from old feed
       await db
@@ -296,10 +307,16 @@ describe("Redirect Tracking", () => {
         .limit(1);
       expect(migratedNewSub).toHaveLength(1);
       expect(migratedNewSub[0].unsubscribedAt).toBeNull();
-      expect(migratedNewSub[0].previousFeedIds).toContain(oldFeedId);
+
+      // Verify subscription_feeds contains old feed
+      const sfResult = await db
+        .select({ feedId: subscriptionFeeds.feedId })
+        .from(subscriptionFeeds)
+        .where(eq(subscriptionFeeds.subscriptionId, newSubId));
+      expect(sfResult.map((r) => r.feedId)).toContain(oldFeedId);
     });
 
-    it("appends to previousFeedIds when user already subscribed to new feed", async () => {
+    it("adds old feed to subscription_feeds when user already subscribed to new feed", async () => {
       const userId = await createTestUser();
 
       // Create feeds
@@ -312,16 +329,13 @@ describe("Redirect Tracking", () => {
       // User also subscribed to old feed
       await createSubscription(userId, oldFeedId);
 
-      // Simulate migration by appending old feed to new subscription's previousFeedIds
-      const now = new Date();
-
+      // Simulate migration by adding old feed to subscription_feeds
       await db
-        .update(subscriptions)
-        .set({
-          previousFeedIds: [oldFeedId],
-          updatedAt: now,
-        })
-        .where(eq(subscriptions.id, existingSubId));
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: existingSubId, feedId: oldFeedId, userId })
+        .onConflictDoNothing();
+
+      const now = new Date();
 
       // Unsubscribe from old feed
       await db
@@ -332,14 +346,20 @@ describe("Redirect Tracking", () => {
         })
         .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, oldFeedId)));
 
-      // Verify the existing subscription was updated
+      // Verify subscription_feeds was updated
+      const sfResult = await db
+        .select({ feedId: subscriptionFeeds.feedId })
+        .from(subscriptionFeeds)
+        .where(eq(subscriptionFeeds.subscriptionId, existingSubId));
+      expect(sfResult.map((r) => r.feedId)).toContain(oldFeedId);
+
+      // Verify the subscription is still active
       const updatedSub = await db
         .select()
         .from(subscriptions)
         .where(eq(subscriptions.id, existingSubId))
         .limit(1);
       expect(updatedSub).toHaveLength(1);
-      expect(updatedSub[0].previousFeedIds).toContain(oldFeedId);
       expect(updatedSub[0].unsubscribedAt).toBeNull();
     });
 
@@ -363,11 +383,16 @@ describe("Redirect Tracking", () => {
         createdAt: subCreatedAt,
         updatedAt: unsubscribedAt,
       });
+      // Add subscription_feeds for the new feed (even though unsubscribed)
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: subId, feedId: newFeedId, userId })
+        .onConflictDoNothing();
 
       // User subscribed to old feed
       await createSubscription(userId, oldFeedId);
 
-      // Simulate migration: reactivate new sub and add old feed to previousFeedIds
+      // Simulate migration: reactivate new sub and add old feed to subscription_feeds
       const now = new Date();
 
       await db
@@ -375,10 +400,15 @@ describe("Redirect Tracking", () => {
         .set({
           unsubscribedAt: null,
           subscribedAt: now,
-          previousFeedIds: [oldFeedId],
           updatedAt: now,
         })
         .where(eq(subscriptions.id, subId));
+
+      // Add old feed to subscription_feeds
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: subId, feedId: oldFeedId, userId })
+        .onConflictDoNothing();
 
       // Unsubscribe from old feed
       await db
@@ -397,7 +427,13 @@ describe("Redirect Tracking", () => {
         .limit(1);
       expect(reactivatedSub).toHaveLength(1);
       expect(reactivatedSub[0].unsubscribedAt).toBeNull();
-      expect(reactivatedSub[0].previousFeedIds).toContain(oldFeedId);
+
+      // Verify subscription_feeds contains old feed
+      const sfResult = await db
+        .select({ feedId: subscriptionFeeds.feedId })
+        .from(subscriptionFeeds)
+        .where(eq(subscriptionFeeds.subscriptionId, subId));
+      expect(sfResult.map((r) => r.feedId)).toContain(oldFeedId);
     });
   });
 
