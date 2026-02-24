@@ -129,13 +129,13 @@ async function readResponseWithSizeLimit(
 /**
  * Accept-Encoding header for outgoing requests.
  *
- * Node.js 20's native fetch only advertises "gzip, deflate" by default,
+ * Node.js's native fetch only advertises "gzip, deflate" by default,
  * but it can also decompress brotli. Explicitly including "br" lets servers
  * send brotli-compressed responses, which are typically 15-20% smaller than gzip.
  *
- * zstd is not included because Node.js 20 doesn't support it (added in Node.js 22.15+).
+ * zstd is included for Node.js 22+ which supports it natively.
  */
-export const ACCEPT_ENCODING = "gzip, deflate, br";
+export const ACCEPT_ENCODING = "zstd, gzip, deflate, br";
 
 /**
  * Default timeout for feed fetch requests (10 seconds).

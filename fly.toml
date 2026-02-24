@@ -22,7 +22,7 @@ primary_region = "lax"
 
 # Separate process groups for independent scaling and resource allocation
 [processes]
-  app = "node node_modules/next/dist/bin/next start"
+  app = "node dist/server.js"
   worker = "node dist/worker.js"
   discord = "node dist/discord-bot.js"
 

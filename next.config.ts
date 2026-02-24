@@ -76,6 +76,10 @@ const withPWAConfig = withPWA({
 });
 
 const nextConfig: NextConfig = {
+  // Disable Next.js's built-in gzip compression. Our custom server applies
+  // zstd/brotli/gzip/deflate compression to streaming SSR responses, and
+  // Fly.io's edge handles non-streaming responses.
+  compress: false,
   env: {
     // Inject git commit SHA at build time
     GIT_COMMIT_SHA: getGitCommitSha(),
