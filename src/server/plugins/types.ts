@@ -72,7 +72,7 @@ export interface SavedArticleCapability {
    * Fetch content for a saved article.
    * Return null to fall back to normal fetching.
    */
-  fetchContent(url: URL, options: SavedArticleFetchOptions): Promise<SavedArticleContent | null>;
+  fetchContent(url: URL): Promise<SavedArticleContent | null>;
 
   /**
    * Whether to skip Readability processing.
@@ -85,11 +85,6 @@ export interface SavedArticleCapability {
    * Site name to use for this saved article.
    */
   siteName?: string;
-}
-
-export interface SavedArticleFetchOptions {
-  /** Upload images to storage */
-  uploadImages?: boolean;
 }
 
 export interface SavedArticleContent {

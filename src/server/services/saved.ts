@@ -338,7 +338,7 @@ export async function saveArticle(
     });
 
     try {
-      const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
+      const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!);
       if (content) {
         // Check plugin content size
         const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;

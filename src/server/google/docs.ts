@@ -25,7 +25,6 @@ import { z } from "zod";
 import { GoogleAuth } from "google-auth-library";
 import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
-import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { escapeHtml } from "@/server/http/html";
 import { stripTitleHeader } from "@/server/html/strip-title-header";
@@ -713,8 +712,6 @@ function extractTabContent(doc: ParsedDoc, tabId: string | null): TabContent | n
 interface ConversionContext {
   /** The tab content being converted */
   content: TabContent;
-  /** Map of image object IDs to their uploaded URLs */
-  imageUrls: Map<string, string>;
   /** Footnotes encountered during conversion (id -> number) */
   footnoteNumbers: Map<string, number>;
   /** Current footnote counter */
@@ -760,14 +757,9 @@ function isOrderedList(listId: string, nestingLevel: number, ctx: ConversionCont
 
 /**
  * Gets the image URL for an inline or positioned object.
+ * Uses the original contentUri from the Google Docs API (hotlink).
  */
 function getImageUrl(objectId: string, ctx: ConversionContext): string | null {
-  // Check if we have an uploaded URL
-  const uploadedUrl = ctx.imageUrls.get(objectId);
-  if (uploadedUrl) {
-    return uploadedUrl;
-  }
-
   // Get the original URL from inline objects
   const inlineObj = ctx.content.inlineObjects?.[objectId];
   if (inlineObj?.inlineObjectProperties?.embeddedObject?.imageProperties?.contentUri) {
@@ -1096,108 +1088,6 @@ function convertFootnotes(ctx: ConversionContext): string {
 }
 
 /**
- * Extracts and uploads images from the tab content.
- *
- * @param content - The tab content containing image objects
- * @param docId - The document ID (used for organizing images)
- * @param accessToken - The OAuth access token for fetching images
- * @returns Map of object IDs to uploaded URLs
- */
-async function uploadDocumentImages(
-  content: TabContent,
-  docId: string,
-  accessToken: string
-): Promise<Map<string, string>> {
-  const imageUrls = new Map<string, string>();
-
-  if (!isStorageAvailable()) {
-    logger.debug("Storage not configured, images will use original URLs");
-    return imageUrls;
-  }
-
-  // Collect all image objects
-  const imageObjects: Array<{ objectId: string; contentUri: string; alt: string }> = [];
-
-  // Inline objects
-  if (content.inlineObjects) {
-    for (const [objectId, obj] of Object.entries(content.inlineObjects)) {
-      const contentUri = obj.inlineObjectProperties?.embeddedObject?.imageProperties?.contentUri;
-      if (contentUri) {
-        const alt =
-          obj.inlineObjectProperties?.embeddedObject?.title ||
-          obj.inlineObjectProperties?.embeddedObject?.description ||
-          "Image";
-        imageObjects.push({ objectId, contentUri, alt });
-      }
-    }
-  }
-
-  // Positioned objects
-  if (content.positionedObjects) {
-    for (const [objectId, obj] of Object.entries(content.positionedObjects)) {
-      const contentUri =
-        obj.positionedObjectProperties?.embeddedObject?.imageProperties?.contentUri;
-      if (contentUri) {
-        const alt =
-          obj.positionedObjectProperties?.embeddedObject?.title ||
-          obj.positionedObjectProperties?.embeddedObject?.description ||
-          "Image";
-        imageObjects.push({ objectId, contentUri, alt });
-      }
-    }
-  }
-
-  if (imageObjects.length === 0) {
-    return imageUrls;
-  }
-
-  logger.debug("Uploading document images", {
-    docId,
-    imageCount: imageObjects.length,
-  });
-
-  // Upload images in parallel (with concurrency limit)
-  const CONCURRENCY = 5;
-  for (let i = 0; i < imageObjects.length; i += CONCURRENCY) {
-    const batch = imageObjects.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(
-      batch.map(async ({ objectId, contentUri }) => {
-        try {
-          const result = await fetchAndUploadImage(contentUri, {
-            documentId: docId,
-            prefix: "google-docs",
-            authorization: `Bearer ${accessToken}`,
-          });
-          if (result) {
-            return { objectId, url: result.url };
-          }
-        } catch (error) {
-          logger.warn("Failed to upload image", {
-            objectId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-        return null;
-      })
-    );
-
-    for (const result of results) {
-      if (result) {
-        imageUrls.set(result.objectId, result.url);
-      }
-    }
-  }
-
-  logger.debug("Image upload complete", {
-    docId,
-    uploaded: imageUrls.size,
-    total: imageObjects.length,
-  });
-
-  return imageUrls;
-}
-
-/**
  * Converts Google Docs API structured content to HTML.
  *
  * Handles:
@@ -1227,13 +1117,9 @@ async function convertDocsApiToHtml(
     return "<p>Empty document</p>";
   }
 
-  // Upload images to storage (if configured)
-  const imageUrls = await uploadDocumentImages(content, doc.documentId, accessToken);
-
   // Create conversion context
   const ctx: ConversionContext = {
     content,
-    imageUrls,
     footnoteNumbers: new Map(),
     footnoteCounter: 0,
   };

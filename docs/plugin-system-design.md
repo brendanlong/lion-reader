@@ -95,7 +95,7 @@ export interface SavedArticleCapability {
    * Fetch content for a saved article.
    * Return null to fall back to normal fetching.
    */
-  fetchContent(url: URL, options: SavedArticleFetchOptions): Promise<SavedArticleContent | null>;
+  fetchContent(url: URL): Promise<SavedArticleContent | null>;
 
   /**
    * Whether to skip Readability processing.
@@ -108,13 +108,6 @@ export interface SavedArticleCapability {
    * Site name to use for this saved article.
    */
   siteName?: string;
-}
-
-export interface SavedArticleFetchOptions {
-  /** Upload images to storage */
-  uploadImages?: boolean;
-  /** Storage instance for image uploads */
-  storage?: Storage;
 }
 
 export interface SavedArticleContent {
@@ -174,7 +167,7 @@ export class PluginRegistry {
 
     if (!plugins) return null;
 
-    return plugins.find(p => p.matchUrl(url)) ?? null;
+    return plugins.find((p) => p.matchUrl(url)) ?? null;
   }
 }
 
@@ -190,13 +183,12 @@ export const pluginRegistry = new PluginRegistry();
 // src/server/plugins/lesswrong.ts
 
 export const lessWrongPlugin: UrlPlugin = {
-  name: 'lesswrong',
-  hosts: ['lesswrong.com', 'www.lesswrong.com', 'lesserwrong.com', 'www.lesserwrong.com'],
+  name: "lesswrong",
+  hosts: ["lesswrong.com", "www.lesswrong.com", "lesserwrong.com", "www.lesserwrong.com"],
 
   matchUrl(url: URL): boolean {
     // Match posts, comments, and user profiles
-    return /^\/(posts|users)\//.test(url.pathname) ||
-           url.searchParams.has('userId');  // Feed URLs
+    return /^\/(posts|users)\//.test(url.pathname) || url.searchParams.has("userId"); // Feed URLs
   },
 
   capabilities: {
@@ -216,12 +208,12 @@ export const lessWrongPlugin: UrlPlugin = {
         // Strip "Published on January 7, 2026 2:39 AM GMT<br/><br/>" prefix
         return html.replace(
           /^Published on [A-Za-z]+ \d{1,2}, \d{4} \d{1,2}:\d{2} [AP]M \w+<br\s*\/?>(<br\s*\/?>|\s)*/i,
-          ''
+          ""
         );
       },
 
       async transformFeedTitle(title: string, feedUrl: URL): Promise<string> {
-        const userId = feedUrl.searchParams.get('userId');
+        const userId = feedUrl.searchParams.get("userId");
         if (!userId) return title;
 
         const user = await fetchLessWrongUserById(userId);
@@ -230,7 +222,7 @@ export const lessWrongPlugin: UrlPlugin = {
         return `${title} - ${user.displayName}`;
       },
 
-      siteName: 'LessWrong',
+      siteName: "LessWrong",
     },
 
     savedArticle: {
@@ -247,8 +239,8 @@ export const lessWrongPlugin: UrlPlugin = {
         };
       },
 
-      skipReadability: true,  // GraphQL content is already clean
-      siteName: 'LessWrong',
+      skipReadability: true, // GraphQL content is already clean
+      siteName: "LessWrong",
     },
   },
 };
@@ -260,8 +252,8 @@ export const lessWrongPlugin: UrlPlugin = {
 // src/server/plugins/google-docs.ts
 
 export const googleDocsPlugin: UrlPlugin = {
-  name: 'google-docs',
-  hosts: ['docs.google.com'],
+  name: "google-docs",
+  hosts: ["docs.google.com"],
 
   matchUrl(url: URL): boolean {
     return /^\/document\/d\/[a-zA-Z0-9_-]+/.test(url.pathname);
@@ -269,14 +261,11 @@ export const googleDocsPlugin: UrlPlugin = {
 
   capabilities: {
     savedArticle: {
-      async fetchContent(url: URL, options: SavedArticleFetchOptions): Promise<SavedArticleContent | null> {
+      async fetchContent(url: URL): Promise<SavedArticleContent | null> {
         const normalized = normalizeGoogleDocsUrl(url.href);
         if (!normalized) return null;
 
-        const result = await fetchPublicGoogleDoc(normalized, {
-          uploadImages: options.uploadImages,
-          storage: options.storage,
-        });
+        const result = await fetchPublicGoogleDoc(normalized);
 
         if (!result) return null;
 
@@ -289,8 +278,8 @@ export const googleDocsPlugin: UrlPlugin = {
         };
       },
 
-      skipReadability: true,  // API content is already clean
-      siteName: 'Google Docs',
+      skipReadability: true, // API content is already clean
+      siteName: "Google Docs",
     },
   },
 };
@@ -302,8 +291,8 @@ export const googleDocsPlugin: UrlPlugin = {
 // src/server/plugins/arxiv.ts
 
 export const arxivPlugin: UrlPlugin = {
-  name: 'arxiv',
-  hosts: ['arxiv.org', 'www.arxiv.org'],
+  name: "arxiv",
+  hosts: ["arxiv.org", "www.arxiv.org"],
 
   matchUrl(url: URL): boolean {
     // Match /abs/2401.12345 or /pdf/2401.12345
@@ -315,25 +304,25 @@ export const arxivPlugin: UrlPlugin = {
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
         // Transform to HTML version: /abs/2401.12345 → /html/2401.12345
         const htmlUrl = url.href
-          .replace('/abs/', '/html/')
-          .replace('/pdf/', '/html/')
-          .replace('.pdf', '');
+          .replace("/abs/", "/html/")
+          .replace("/pdf/", "/html/")
+          .replace(".pdf", "");
 
         // Fetch HTML version
         const response = await fetch(htmlUrl, {
-          headers: { 'User-Agent': USER_AGENT },
+          headers: { "User-Agent": USER_AGENT },
         });
 
         if (!response.ok) return null;
 
         return {
           html: await response.text(),
-          title: null,  // Let Readability extract it
+          title: null, // Let Readability extract it
         };
       },
 
-      skipReadability: false,  // Still want cleanup
-      siteName: 'arXiv',
+      skipReadability: false, // Still want cleanup
+      siteName: "arXiv",
     },
   },
 };
@@ -346,16 +335,16 @@ export const arxivPlugin: UrlPlugin = {
 ```typescript
 // src/server/plugins/index.ts
 
-import { pluginRegistry } from './registry';
-import { lessWrongPlugin } from './lesswrong';
-import { googleDocsPlugin } from './google-docs';
+import { pluginRegistry } from "./registry";
+import { lessWrongPlugin } from "./lesswrong";
+import { googleDocsPlugin } from "./google-docs";
 
 // Register all plugins at startup
 pluginRegistry.register(lessWrongPlugin);
 pluginRegistry.register(googleDocsPlugin);
 
-export { pluginRegistry } from './registry';
-export type * from './types';
+export { pluginRegistry } from "./registry";
+export type * from "./types";
 ```
 
 ### 2. Saved Articles (saved.ts)
@@ -371,17 +360,14 @@ if (isGoogleDocsUrl(url)) {
 }
 
 // After (unified):
-const plugin = pluginRegistry.findWithCapability(new URL(url), 'savedArticle');
+const plugin = pluginRegistry.findWithCapability(new URL(url), "savedArticle");
 let content: SavedArticleContent | null = null;
 
 if (plugin) {
   try {
-    content = await plugin.capabilities.savedArticle.fetchContent(
-      new URL(url),
-      { uploadImages: true, storage }
-    );
+    content = await plugin.capabilities.savedArticle.fetchContent(new URL(url));
   } catch (error) {
-    logger.warn({ error, url, plugin: plugin.name }, 'Plugin fetch failed, falling back');
+    logger.warn({ error, url, plugin: plugin.name }, "Plugin fetch failed, falling back");
   }
 }
 
@@ -405,7 +391,7 @@ if (isLessWrongFeed(feedUrl)) {
 }
 
 // After:
-const plugin = pluginRegistry.findWithCapability(new URL(feedUrl), 'feed');
+const plugin = pluginRegistry.findWithCapability(new URL(feedUrl), "feed");
 if (plugin?.capabilities.feed.cleanEntryContent) {
   html = plugin.capabilities.feed.cleanEntryContent(html);
 }
@@ -421,7 +407,7 @@ if (isLessWrongUserUrl(url)) {
 }
 
 // After:
-const plugin = pluginRegistry.findWithCapability(new URL(url), 'feed');
+const plugin = pluginRegistry.findWithCapability(new URL(url), "feed");
 if (plugin?.capabilities.feed.transformToFeedUrl) {
   const feedUrl = await plugin.capabilities.feed.transformToFeedUrl(new URL(url));
   if (feedUrl) url = feedUrl.href;
@@ -455,11 +441,13 @@ src/server/plugins/
 ## Testing Strategy
 
 **Unit tests** (pure logic):
+
 - `matchUrl()` function for each plugin
 - `cleanEntryContent()` for feed plugins
 - Registry lookup with various URLs and capabilities
 
 **Integration tests** (with external services):
+
 - Plugin fetch functions (mocked HTTP/GraphQL responses)
 - Full saved article flow with plugin
 - Full feed processing flow with plugin

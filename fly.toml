@@ -49,12 +49,6 @@ primary_region = "lax"
   DISCORD_SUCCESS_EMOJI='salutinglionreader'
   DISCORD_ERROR_EMOJI='cryinglionreader'
 
-  # Object storage
-  STORAGE_BUCKET = "lion-reader-prod"
-  STORAGE_ENDPOINT = "https://t3.storage.dev"
-  STORAGE_REGION = "auto"
-  STORAGE_PUBLIC_URL_BASE = "https://lion-reader-prod.t3.storage.dev/"
-
   # Newsletters
   INGEST_EMAIL_DOMAIN = "in.app.lionreader.com"
 

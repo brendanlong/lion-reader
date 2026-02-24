@@ -488,7 +488,7 @@ export const savedRouter = createTRPCRouter({
           });
 
           try {
-            const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
+            const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!);
             if (content) {
               pluginContent = {
                 html: content.html,
