@@ -666,6 +666,8 @@ CREATE INDEX idx_subscriptions_feed_active ON public.subscriptions USING btree (
 
 CREATE INDEX idx_subscriptions_feed_ids ON public.subscriptions USING gin (feed_ids);
 
+CREATE INDEX idx_subscriptions_previous_feed_ids ON public.subscriptions USING gin (previous_feed_ids);
+
 CREATE INDEX idx_subscriptions_user ON public.subscriptions USING btree (user_id);
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
