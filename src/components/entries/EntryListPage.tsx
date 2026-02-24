@@ -7,26 +7,18 @@
 
 import { createHydrationHelpersForRequest } from "@/lib/trpc/server";
 import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
-import { buildEntriesListInput, type EntriesListInput } from "@/lib/queries/entries-list-input";
-
-/**
- * Filters for the entry list query.
- */
-export interface EntryListFilters {
-  subscriptionId?: string;
-  tagId?: string;
-  uncategorized?: boolean;
-  starredOnly?: boolean;
-  type?: "web" | "email" | "saved";
-  sortBy?: "published" | "readChanged" | "predictedScore";
-}
+import {
+  buildEntriesListInput,
+  type EntriesListFilters,
+  type EntriesListInput,
+} from "@/lib/queries/entries-list-input";
 
 // Re-export for consumers
-export type { EntriesListInput };
+export type { EntriesListFilters, EntriesListInput };
 
 interface EntryListPageProps {
   /** Filters for the entry list query */
-  filters: EntryListFilters;
+  filters: EntriesListFilters;
   /** Search params from Next.js page */
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
   /** Override the default unreadOnly preference (default: true) */

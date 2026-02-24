@@ -16,8 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { handleSubscriptionDeleted } from "@/lib/cache/operations";
-import { getFiltersFromPathname } from "@/lib/hooks/useEntriesListInput";
-import { buildEntriesListInput } from "@/lib/queries/entries-list-input";
+import { buildEntriesListInputForRoute } from "@/lib/queries/entries-list-input";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 import { useSidebarUnreadOnly } from "@/lib/hooks/useSidebarUnreadOnly";
@@ -77,12 +76,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   // data immediately without suspending, then refetches in the background.
   const handlePrefetchRoute = useCallback(
     (href: string) => {
-      const filters = getFiltersFromPathname(href);
-      const defaultUnreadOnly = href === "/recently-read" ? false : true;
-      const input = buildEntriesListInput(filters, {
-        unreadOnly: defaultUnreadOnly,
-        sortOrder: "newest",
-      });
+      const input = buildEntriesListInputForRoute(href);
       void utils.entries.list.prefetchInfinite(input, {
         getNextPageParam: (lastPage) => lastPage.nextCursor,
         pages: 1,

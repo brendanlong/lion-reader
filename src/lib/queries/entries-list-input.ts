@@ -92,3 +92,83 @@ export function buildEntriesListInput(
     direction: preferences.sortOrder === "newest" ? "forward" : "backward",
   };
 }
+
+/**
+ * Extract entry list filters from a pathname.
+ *
+ * This is the single source of truth for mapping routes to filters.
+ * Used by: client hooks, sidebar prefetch, server-side prefetch.
+ */
+export function getFiltersFromPathname(pathname: string): EntriesListFilters {
+  // /subscription/:id
+  const subscriptionMatch = pathname.match(/^\/subscription\/([^/]+)/);
+  if (subscriptionMatch) {
+    return { subscriptionId: subscriptionMatch[1] };
+  }
+
+  // /tag/:tagId
+  const tagMatch = pathname.match(/^\/tag\/([^/]+)/);
+  if (tagMatch) {
+    const tagId = tagMatch[1];
+    // Handle "uncategorized" pseudo-tag
+    if (tagId === "uncategorized") {
+      return { uncategorized: true };
+    }
+    return { tagId };
+  }
+
+  // /starred
+  if (pathname === "/starred") {
+    return { starredOnly: true };
+  }
+
+  // /saved
+  if (pathname === "/saved") {
+    return { type: "saved" as const };
+  }
+
+  // /uncategorized
+  if (pathname === "/uncategorized") {
+    return { uncategorized: true };
+  }
+
+  // /recently-read
+  if (pathname === "/recently-read") {
+    return { sortBy: "readChanged" as const };
+  }
+
+  // /best - Algorithmic feed sorted by predicted score
+  if (pathname === "/best") {
+    return { sortBy: "predictedScore" as const };
+  }
+
+  // /all or default
+  return {};
+}
+
+/**
+ * Returns the default view preferences for a given pathname.
+ *
+ * This is the single source of truth for per-route defaults.
+ * Most views default to unreadOnly=true, sortOrder="newest".
+ * /recently-read defaults to unreadOnly=false.
+ */
+export function getDefaultViewPreferences(pathname: string): EntriesListViewPreferences {
+  return {
+    unreadOnly: pathname === "/recently-read" ? false : true,
+    sortOrder: "newest",
+  };
+}
+
+/**
+ * Build entries.list input from just a pathname (no search params).
+ *
+ * Convenience function for cases where search params aren't available,
+ * such as sidebar mousedown prefetch. Uses default view preferences
+ * for the route.
+ */
+export function buildEntriesListInputForRoute(pathname: string): EntriesListInput {
+  const filters = getFiltersFromPathname(pathname);
+  const preferences = getDefaultViewPreferences(pathname);
+  return buildEntriesListInput(filters, preferences);
+}
