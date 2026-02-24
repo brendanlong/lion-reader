@@ -2,7 +2,8 @@
  * Recently Read Entries Page
  *
  * Shows entries sorted by when their read state was last changed.
- * Unlike other lists, this defaults to showing both read and unread entries.
+ * Unlike other lists, this defaults to showing both read and unread entries
+ * (configured via getDefaultViewPreferences in entries-list-input.ts).
  */
 
 import { EntryListPage } from "@/components/entries/EntryListPage";
@@ -12,11 +13,5 @@ interface RecentlyReadPageProps {
 }
 
 export default function RecentlyReadPage({ searchParams }: RecentlyReadPageProps) {
-  return (
-    <EntryListPage
-      filters={{ sortBy: "readChanged" }}
-      defaultUnreadOnly={false}
-      searchParams={searchParams}
-    />
-  );
+  return <EntryListPage pathname="/recently-read" searchParams={searchParams} />;
 }

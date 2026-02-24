@@ -11,5 +11,5 @@ interface AllEntriesPageProps {
 }
 
 export default function AllEntriesPage({ searchParams }: AllEntriesPageProps) {
-  return <EntryListPage filters={{}} searchParams={searchParams} />;
+  return <EntryListPage pathname="/all" searchParams={searchParams} />;
 }

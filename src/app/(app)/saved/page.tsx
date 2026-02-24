@@ -11,5 +11,5 @@ interface SavedArticlesPageProps {
 }
 
 export default function SavedArticlesPage({ searchParams }: SavedArticlesPageProps) {
-  return <EntryListPage filters={{ type: "saved" }} searchParams={searchParams} />;
+  return <EntryListPage pathname="/saved" searchParams={searchParams} />;
 }

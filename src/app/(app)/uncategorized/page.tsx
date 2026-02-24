@@ -11,5 +11,5 @@ interface UncategorizedEntriesPageProps {
 }
 
 export default function UncategorizedEntriesPage({ searchParams }: UncategorizedEntriesPageProps) {
-  return <EntryListPage filters={{ uncategorized: true }} searchParams={searchParams} />;
+  return <EntryListPage pathname="/uncategorized" searchParams={searchParams} />;
 }

@@ -15,7 +15,7 @@ export default async function SingleSubscriptionPage({
   params,
   searchParams,
 }: SingleSubscriptionPageProps) {
-  const { id: subscriptionId } = await params;
+  const { id } = await params;
 
-  return <EntryListPage filters={{ subscriptionId }} searchParams={searchParams} />;
+  return <EntryListPage pathname={`/subscription/${id}`} searchParams={searchParams} />;
 }
