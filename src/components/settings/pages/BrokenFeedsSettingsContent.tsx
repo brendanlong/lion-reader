@@ -24,13 +24,14 @@ import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 
 interface BrokenFeed {
   feedId: string;
-  subscriptionId: string;
+  subscriptionId: string | null;
   title: string | null;
   url: string | null;
   consecutiveFailures: number;
   lastError: string | null;
   lastFetchedAt: Date | null;
   nextFetchAt: Date | null;
+  subscriberCount: number;
 }
 
 // ============================================================================
@@ -43,9 +44,10 @@ export default function BrokenFeedsSettingsContent() {
     id: string;
     title: string;
   } | null>(null);
+  const [hasSubscribers, setHasSubscribers] = useState(true);
 
   const utils = trpc.useUtils();
-  const brokenQuery = trpc.brokenFeeds.list.useQuery();
+  const brokenQuery = trpc.brokenFeeds.list.useQuery({ hasSubscribers });
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
     onMutate: (variables) => {
@@ -81,6 +83,15 @@ export default function BrokenFeedsSettingsContent() {
           These feeds have failed to fetch recently. You can retry fetching immediately or wait for
           the next scheduled attempt.
         </p>
+        <label className="ui-text-sm mt-3 flex cursor-pointer items-center gap-2 text-zinc-600 dark:text-zinc-400">
+          <input
+            type="checkbox"
+            checked={hasSubscribers}
+            onChange={(e) => setHasSubscribers(e.target.checked)}
+            className="text-accent focus:ring-accent h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          Only show feeds with subscribers
+        </label>
       </div>
 
       {/* Broken Feeds List */}
@@ -199,6 +210,9 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
               {feed.consecutiveFailures === 1 ? "" : "s"}
             </span>
             <span>
+              {feed.subscriberCount} subscriber{feed.subscriberCount === 1 ? "" : "s"}
+            </span>
+            <span>
               Last attempt:{" "}
               {feed.lastFetchedAt ? formatRelativeTime(new Date(feed.lastFetchedAt)) : "Never"}
             </span>
@@ -211,14 +225,16 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
           <Button variant="secondary" size="sm" onClick={handleRetry} loading={isRetrying}>
             Retry Now
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => onUnsubscribe(feed.subscriptionId, displayName)}
-            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
-          >
-            Unsubscribe
-          </Button>
+          {feed.subscriptionId && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => onUnsubscribe(feed.subscriptionId!, displayName)}
+              className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+            >
+              Unsubscribe
+            </Button>
+          )}
         </div>
       </div>
     </div>
