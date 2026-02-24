@@ -16,6 +16,12 @@ import {
   isLessWrongUserFeedUrl,
   extractUserIdFromFeedUrl,
   buildLessWrongUserFeedUrl,
+  isLessWrongFrontpage,
+  isLessWrongShortformPage,
+  buildLessWrongPostCommentFeedUrl,
+  buildLessWrongUserShortformFeedUrl,
+  LESSWRONG_FRONTPAGE_FEED_URL,
+  LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
 } from "../../src/server/feed/lesswrong";
 
 describe("LessWrong URL detection", () => {
@@ -335,6 +341,123 @@ describe("LessWrong URL detection", () => {
     it("properly encodes special characters in user ID", () => {
       expect(buildLessWrongUserFeedUrl("user+id&special=chars")).toBe(
         "https://www.lesswrong.com/feed.xml?userId=user%2Bid%26special%3Dchars"
+      );
+    });
+  });
+
+  describe("isLessWrongFrontpage", () => {
+    it("returns true for the LessWrong front page", () => {
+      expect(isLessWrongFrontpage("https://www.lesswrong.com")).toBe(true);
+      expect(isLessWrongFrontpage("https://www.lesswrong.com/")).toBe(true);
+      expect(isLessWrongFrontpage("https://lesswrong.com")).toBe(true);
+      expect(isLessWrongFrontpage("https://lesswrong.com/")).toBe(true);
+    });
+
+    it("returns true for the front page with query params", () => {
+      expect(isLessWrongFrontpage("https://www.lesswrong.com/?ref=foo")).toBe(true);
+    });
+
+    it("returns true for the front page with hash fragment", () => {
+      expect(isLessWrongFrontpage("https://www.lesswrong.com/#section")).toBe(true);
+    });
+
+    it("returns true for HTTP URLs", () => {
+      expect(isLessWrongFrontpage("http://www.lesswrong.com")).toBe(true);
+    });
+
+    it("returns false for non-LessWrong URLs", () => {
+      expect(isLessWrongFrontpage("https://example.com")).toBe(false);
+      expect(isLessWrongFrontpage("https://greaterwrong.com")).toBe(false);
+    });
+
+    it("returns false for LessWrong sub-pages", () => {
+      expect(isLessWrongFrontpage("https://www.lesswrong.com/posts/abc/slug")).toBe(false);
+      expect(isLessWrongFrontpage("https://www.lesswrong.com/users/username")).toBe(false);
+      expect(isLessWrongFrontpage("https://www.lesswrong.com/quicktakes")).toBe(false);
+    });
+
+    it("returns false for invalid URLs", () => {
+      expect(isLessWrongFrontpage("not a url")).toBe(false);
+      expect(isLessWrongFrontpage("")).toBe(false);
+    });
+  });
+
+  describe("isLessWrongShortformPage", () => {
+    it("returns true for the LessWrong quicktakes page", () => {
+      expect(isLessWrongShortformPage("https://www.lesswrong.com/quicktakes")).toBe(true);
+      expect(isLessWrongShortformPage("https://lesswrong.com/quicktakes")).toBe(true);
+    });
+
+    it("returns true for quicktakes with trailing slash", () => {
+      expect(isLessWrongShortformPage("https://www.lesswrong.com/quicktakes/")).toBe(true);
+    });
+
+    it("returns true for quicktakes with query params", () => {
+      expect(isLessWrongShortformPage("https://www.lesswrong.com/quicktakes?sort=new")).toBe(true);
+    });
+
+    it("returns true for quicktakes with hash fragment", () => {
+      expect(isLessWrongShortformPage("https://www.lesswrong.com/quicktakes#top")).toBe(true);
+    });
+
+    it("returns true for HTTP URLs", () => {
+      expect(isLessWrongShortformPage("http://www.lesswrong.com/quicktakes")).toBe(true);
+    });
+
+    it("returns false for non-LessWrong URLs", () => {
+      expect(isLessWrongShortformPage("https://example.com/quicktakes")).toBe(false);
+    });
+
+    it("returns false for LessWrong non-quicktakes URLs", () => {
+      expect(isLessWrongShortformPage("https://www.lesswrong.com")).toBe(false);
+      expect(isLessWrongShortformPage("https://www.lesswrong.com/posts/abc/slug")).toBe(false);
+      expect(isLessWrongShortformPage("https://www.lesswrong.com/users/username")).toBe(false);
+    });
+
+    it("returns false for invalid URLs", () => {
+      expect(isLessWrongShortformPage("not a url")).toBe(false);
+      expect(isLessWrongShortformPage("")).toBe(false);
+    });
+  });
+
+  describe("buildLessWrongPostCommentFeedUrl", () => {
+    it("builds a post comment feed URL from a post ID", () => {
+      expect(buildLessWrongPostCommentFeedUrl("NjzLuhdneE3mXY8we")).toBe(
+        "https://www.lesswrong.com/feed.xml?type=comments&view=postCommentsNew&postId=NjzLuhdneE3mXY8we"
+      );
+    });
+
+    it("properly encodes special characters in post ID", () => {
+      expect(buildLessWrongPostCommentFeedUrl("id+with&special=chars")).toBe(
+        "https://www.lesswrong.com/feed.xml?type=comments&view=postCommentsNew&postId=id%2Bwith%26special%3Dchars"
+      );
+    });
+  });
+
+  describe("buildLessWrongUserShortformFeedUrl", () => {
+    it("builds a user shortform feed URL from a user ID", () => {
+      expect(buildLessWrongUserShortformFeedUrl("6jLdWqegNefgaabhr")).toBe(
+        "https://www.lesswrong.com/feed.xml?type=comments&view=shortform&userId=6jLdWqegNefgaabhr"
+      );
+    });
+
+    it("properly encodes special characters in user ID", () => {
+      expect(buildLessWrongUserShortformFeedUrl("user+id&special=chars")).toBe(
+        "https://www.lesswrong.com/feed.xml?type=comments&view=shortform&userId=user%2Bid%26special%3Dchars"
+      );
+    });
+  });
+
+  describe("feed URL constants", () => {
+    it("has the correct frontpage feed URL", () => {
+      expect(LESSWRONG_FRONTPAGE_FEED_URL).toBe(
+        "https://www.lesswrong.com/feed.xml?view=frontpage"
+      );
+    });
+
+    it("has the correct shortform frontpage feed URL", () => {
+      expect(LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL).toBe(
+        "https://www.lesswrong.com/feed.xml?type=comments&view=shortformFrontpage"
       );
     });
   });
