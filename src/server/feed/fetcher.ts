@@ -6,7 +6,11 @@
 import { parseCacheHeaders, type ParsedCacheHeaders } from "./cache-headers";
 import { parseWebSubLinkHeaders, type WebSubLinkHeaders } from "./link-header";
 import { buildUserAgent } from "../http/user-agent";
-import { readResponseBufferWithSizeLimit, ContentTooLargeError } from "../http/fetch";
+import {
+  readResponseBufferWithSizeLimit,
+  ContentTooLargeError,
+  ACCEPT_ENCODING,
+} from "../http/fetch";
 import { usageLimitsConfig } from "../config/env";
 
 /**
@@ -346,6 +350,7 @@ export async function fetchFeed(
         subscriberCount,
       }),
     Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+    "Accept-Encoding": ACCEPT_ENCODING,
   };
 
   if (etag) {
