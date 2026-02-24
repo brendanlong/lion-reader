@@ -60,6 +60,9 @@ RUN pnpm build:discord-bot
 # Build migration bundle (single optimized JS file)
 RUN pnpm build:migrate
 
+# Build custom server bundle (streaming compression wrapper for Next.js)
+RUN pnpm build:server
+
 # Prune dev dependencies after build
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm prune --prod --ignore-scripts
@@ -99,6 +102,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/migrations ./migrations
 COPY --from=builder /app/dist/worker.js ./dist/worker.js
 COPY --from=builder /app/dist/migrate.js ./dist/migrate.js
 COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
+COPY --from=builder /app/dist/server.js ./dist/server.js
 
 # Copy startup script
 COPY --from=builder /app/scripts/start-all.sh ./scripts/start-all.sh

@@ -76,6 +76,10 @@ const withPWAConfig = withPWA({
 });
 
 const nextConfig: NextConfig = {
+  // Disable Next.js built-in compression — our custom server (scripts/server.ts)
+  // handles compression with Z_SYNC_FLUSH for streaming support. This prevents
+  // Fly.io's proxy from buffering streaming SSR responses.
+  compress: false,
   env: {
     // Inject git commit SHA at build time
     GIT_COMMIT_SHA: getGitCommitSha(),

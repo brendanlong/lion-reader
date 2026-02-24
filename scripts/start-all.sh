@@ -10,10 +10,10 @@ set -e
 if [ -n "$DISCORD_BOT_TOKEN" ]; then
   exec npx concurrently --kill-others --names "worker,api,discord" \
     "nice -n 10 node dist/worker.js" \
-    "node node_modules/next/dist/bin/next start" \
+    "node dist/server.js" \
     "node dist/discord-bot.js"
 else
   exec npx concurrently --kill-others --names "worker,api" \
     "nice -n 10 node dist/worker.js" \
-    "node node_modules/next/dist/bin/next start"
+    "node dist/server.js"
 fi
