@@ -150,6 +150,16 @@ body {
 }
 
 /* =================================
+   Prose Link Hover
+   Element-level hover so only the hovered link changes color,
+   not all links in the entry.
+   ================================= */
+
+.prose a:hover {
+  color: var(--accent-hover);
+}
+
+/* =================================
    Narration Highlighting Styles
    ================================= */
 
