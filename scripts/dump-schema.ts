@@ -5,7 +5,7 @@
  *
  * This script:
  * 1. Runs pg_dump --schema-only to get the current schema
- * 2. Excludes the drizzle migration tracking schema (internal)
+ * 2. Excludes the drizzle migration tracking schema in Postgres (internal)
  * 3. Outputs a consistent, reproducible SQL file
  */
 
@@ -13,7 +13,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 
-const OUTPUT_FILE = path.join(process.cwd(), "drizzle", "schema.sql");
+const OUTPUT_FILE = path.join(process.cwd(), "migrations", "schema.sql");
 
 /**
  * Cleans up pg_dump output by removing unnecessary lines:
@@ -92,7 +92,7 @@ function parseConnectionString(url: string): {
 }
 
 /**
- * Dumps the current database schema to drizzle/schema.sql
+ * Dumps the current database schema to migrations/schema.sql
  * @param databaseUrl - PostgreSQL connection string
  */
 export function dumpSchema(databaseUrl: string): void {

@@ -382,7 +382,7 @@ lion-reader/
 │       ├── feeds/
 │       └── ui/
 │
-├── drizzle/                   # Migrations
+├── migrations/                # Migrations
 ├── tests/
 │   ├── unit/
 │   └── integration/

@@ -254,7 +254,7 @@ WHERE
 
 Files changed:
 
-- `drizzle/0035_subscription_views.sql` (new)
+- `migrations/0035_subscription_views.sql` (new)
 
 ### Commit 2: Add subscriptionId filter to entries router
 
@@ -393,7 +393,7 @@ Files changed:
 
 | File                                       | Change                               |
 | ------------------------------------------ | ------------------------------------ |
-| `drizzle/0035_subscription_views.sql`      | New migration for views              |
+| `migrations/0035_subscription_views.sql`   | New migration for views              |
 | `src/server/trpc/routers/entries.ts`       | Add subscriptionId filter and output |
 | `src/server/trpc/routers/subscriptions.ts` | Flatten response shape               |
 
