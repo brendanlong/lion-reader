@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, gt, isNull, sql, count } from "drizzle-orm";
+import { eq, and, gt, isNull, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { feeds, subscriptions, jobs } from "@/server/db/schema";
@@ -20,14 +20,13 @@ import { feeds, subscriptions, jobs } from "@/server/db/schema";
  */
 const brokenFeedOutputSchema = z.object({
   feedId: z.string(),
-  subscriptionId: z.string().nullable(),
+  subscriptionId: z.string(),
   title: z.string().nullable(),
   url: z.string().nullable(),
   consecutiveFailures: z.number(),
   lastError: z.string().nullable(),
   lastFetchedAt: z.date().nullable(),
   nextFetchAt: z.date().nullable(),
-  subscriberCount: z.number(),
 });
 
 // ============================================================================
@@ -36,11 +35,11 @@ const brokenFeedOutputSchema = z.object({
 
 export const brokenFeedsRouter = createTRPCRouter({
   /**
-   * List all broken feeds.
+   * List all broken feeds for the current user.
    *
-   * Returns web feeds that have at least one consecutive fetch failure.
-   * Optionally filters to only feeds with active subscribers (default: true).
-   * Includes the current user's subscription ID if they are subscribed.
+   * Returns feeds that:
+   * - The user is actively subscribed to (not unsubscribed)
+   * - Have at least one consecutive fetch failure
    *
    * Ordered by failure count (highest first), then by last fetch time.
    */
@@ -53,57 +52,36 @@ export const brokenFeedsRouter = createTRPCRouter({
         summary: "List broken feeds",
       },
     })
-    .input(
-      z
-        .object({
-          hasSubscribers: z.boolean().default(true),
-        })
-        .optional()
-    )
+    .input(z.object({}).optional())
     .output(
       z.object({
         items: z.array(brokenFeedOutputSchema),
       })
     )
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
-      const hasSubscribers = input?.hasSubscribers ?? true;
 
-      // Subscriber count subquery
-      const subscriberCountSq = ctx.db
-        .select({ count: count().as("subscriber_count") })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.feedId, feeds.id), isNull(subscriptions.unsubscribedAt)));
-
-      // Current user's subscription ID subquery
-      const userSubscriptionSq = sql<string | null>`(
-        SELECT ${subscriptions.id} FROM ${subscriptions}
-        WHERE ${subscriptions.feedId} = ${feeds.id}
-          AND ${subscriptions.userId} = ${userId}
-          AND ${subscriptions.unsubscribedAt} IS NULL
-        LIMIT 1
-      )`;
-
-      const conditions = [eq(feeds.type, "web"), gt(feeds.consecutiveFailures, 0)];
-
-      if (hasSubscribers) {
-        conditions.push(sql`(${subscriberCountSq}) > 0`);
-      }
-
+      // Get all broken feeds the user is subscribed to
       const brokenFeeds = await ctx.db
         .select({
           feedId: feeds.id,
-          subscriptionId: userSubscriptionSq.as("user_subscription_id"),
+          subscriptionId: subscriptions.id,
           title: feeds.title,
           url: feeds.url,
           consecutiveFailures: feeds.consecutiveFailures,
           lastError: feeds.lastError,
           lastFetchedAt: feeds.lastFetchedAt,
           nextFetchAt: feeds.nextFetchAt,
-          subscriberCount: sql<number>`(${subscriberCountSq})`.as("subscriber_count"),
         })
         .from(feeds)
-        .where(and(...conditions))
+        .innerJoin(subscriptions, eq(subscriptions.feedId, feeds.id))
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            isNull(subscriptions.unsubscribedAt),
+            gt(feeds.consecutiveFailures, 0)
+          )
+        )
         .orderBy(
           sql`${feeds.consecutiveFailures} DESC`,
           sql`${feeds.lastFetchedAt} DESC NULLS LAST`
@@ -119,7 +97,6 @@ export const brokenFeedsRouter = createTRPCRouter({
           lastError: feed.lastError,
           lastFetchedAt: feed.lastFetchedAt,
           nextFetchAt: feed.nextFetchAt,
-          subscriberCount: Number(feed.subscriberCount),
         })),
       };
     }),
@@ -128,6 +105,7 @@ export const brokenFeedsRouter = createTRPCRouter({
    * Retry fetching a broken feed.
    *
    * Resets the failure counter and schedules an immediate fetch.
+   * Only works for feeds the user is subscribed to.
    *
    * @param feedId - The feed ID to retry
    * @returns Success status
@@ -148,6 +126,25 @@ export const brokenFeedsRouter = createTRPCRouter({
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // Verify the user is subscribed to this feed
+      const subscription = await ctx.db
+        .select()
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            eq(subscriptions.feedId, input.feedId),
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .limit(1);
+
+      if (subscription.length === 0) {
+        throw new Error("Feed not found or not subscribed");
+      }
+
       const now = new Date();
 
       // Reset the feed's failure counter and schedule immediate fetch
