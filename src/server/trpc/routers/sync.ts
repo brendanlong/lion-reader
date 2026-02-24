@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, gt, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -150,13 +150,17 @@ export const syncRouter = createTRPCRouter({
     const userId = ctx.session.user.id;
 
     // Run all max queries in parallel for efficiency
-    // SQL returns timestamps as strings, so we convert to ISO format
+    // Use to_char to format timestamps as ISO 8601 with microsecond precision.
+    // Avoids JavaScript Date truncation which loses microseconds and causes
+    // cursor comparison bugs (see #680).
     const [entriesResult, subscriptionsResult, tagsResult] = await Promise.all([
       // Entries: max of GREATEST(entries.updated_at, user_entries.updated_at)
       // This catches both entry metadata changes AND read/starred state changes
       ctx.db
         .select({
-          max: sql<string>`MAX(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}))::text`,
+          max: sql<
+            string | null
+          >`to_char(MAX(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
         })
         .from(userEntries)
         .innerJoin(entries, eq(entries.id, userEntries.entryId))
@@ -165,27 +169,29 @@ export const syncRouter = createTRPCRouter({
       // Subscriptions: max(updated_at) from ALL subscriptions (active and removed)
       // updated_at is set when unsubscribing, so this covers both cases
       ctx.db
-        .select({ max: sql<string>`MAX(${subscriptions.updatedAt})::text` })
+        .select({
+          max: sql<
+            string | null
+          >`to_char(MAX(${subscriptions.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+        })
         .from(subscriptions)
         .where(eq(subscriptions.userId, userId)),
 
       // Tags: max(updated_at) - captures creates, updates, and soft deletes
       ctx.db
-        .select({ max: sql<string>`MAX(${tags.updatedAt})::text` })
+        .select({
+          max: sql<
+            string | null
+          >`to_char(MAX(${tags.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+        })
         .from(tags)
         .where(eq(tags.userId, userId)),
     ]);
 
-    // Convert Postgres timestamp strings to ISO format
-    const toIso = (val: string | null): string | null => {
-      if (!val) return null;
-      return new Date(val).toISOString();
-    };
-
     return {
-      entries: toIso(entriesResult[0]?.max ?? null),
-      subscriptions: toIso(subscriptionsResult[0]?.max ?? null),
-      tags: toIso(tagsResult[0]?.max ?? null),
+      entries: entriesResult[0]?.max ?? null,
+      subscriptions: subscriptionsResult[0]?.max ?? null,
+      tags: tagsResult[0]?.max ?? null,
     };
   }),
 
@@ -221,19 +227,23 @@ export const syncRouter = createTRPCRouter({
 
       // For backward compatibility, if cursors is not provided, use `since` for all queries
       // If neither is provided, this is an initial sync
-      const legacySince = input.since ? new Date(input.since) : null;
+      // Keep cursors as strings to preserve Postgres microsecond precision (#680).
+      // Using new Date() would truncate to milliseconds.
+      const legacySince = input.since ?? null;
 
       // Parse cursors (prefer explicit cursors over legacy `since`)
-      const entriesCursor = input.cursors?.entries ? new Date(input.cursors.entries) : legacySince;
-      const subscriptionsCursor = input.cursors?.subscriptions
-        ? new Date(input.cursors.subscriptions)
-        : legacySince;
-      const tagsCursor = input.cursors?.tags ? new Date(input.cursors.tags) : legacySince;
+      // String cursors for SQL comparisons (preserve µs precision)
+      const entriesCursorStr = input.cursors?.entries ?? legacySince;
+      const subscriptionsCursorStr = input.cursors?.subscriptions ?? legacySince;
+      const tagsCursorStr = input.cursors?.tags ?? legacySince;
+      // Date cursors for JavaScript comparisons (categorization only, ms precision acceptable)
+      const entriesCursorDate = entriesCursorStr ? new Date(entriesCursorStr) : null;
+      const tagsCursorDate = tagsCursorStr ? new Date(tagsCursorStr) : null;
 
-      // Track output cursors - derived from actual query results
-      let outputEntriesCursor: Date | null = entriesCursor;
-      let outputSubscriptionsCursor: Date | null = subscriptionsCursor;
-      let outputTagsCursor: Date | null = tagsCursor;
+      // Track output cursors as ISO strings with µs precision
+      let outputEntriesCursor: string | null = entriesCursorStr;
+      let outputSubscriptionsCursor: string | null = subscriptionsCursorStr;
+      let outputTagsCursor: string | null = tagsCursorStr;
 
       // Track if we have more data than we're returning
       let hasMore = false;
@@ -248,7 +258,7 @@ export const syncRouter = createTRPCRouter({
       let createdEntries: z.infer<typeof syncEntrySchema>[] = [];
       const updatedEntryStates: z.infer<typeof syncEntryStateSchema>[] = [];
 
-      if (entriesCursor) {
+      if (entriesCursorStr) {
         // Get entries where either the entry itself or its user state changed since cursor
         const changedEntryResults = await ctx.db
           .select({
@@ -267,8 +277,8 @@ export const syncRouter = createTRPCRouter({
             starred: userEntries.starred,
             userEntryUpdatedAt: userEntries.updatedAt,
             feedTitle: feeds.title,
-            // Computed column for filtering and cursor
-            maxUpdatedAt: sql<Date>`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`,
+            // Raw ISO string with µs precision for cursor output
+            maxUpdatedAtRaw: sql<string>`to_char(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
           .from(userEntries)
           .innerJoin(entries, eq(entries.id, userEntries.entryId))
@@ -291,7 +301,8 @@ export const syncRouter = createTRPCRouter({
           .where(
             and(
               eq(userEntries.userId, userId),
-              gt(sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`, entriesCursor),
+              // Pass cursor string directly to Postgres to preserve µs precision
+              sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) > ${entriesCursorStr}::timestamptz`,
               // Visibility: either from active subscription or starred
               sql`(${subscriptions.id} IS NOT NULL OR ${userEntries.starred} = true)`
             )
@@ -304,11 +315,10 @@ export const syncRouter = createTRPCRouter({
           changedEntryResults.pop();
         }
 
-        // Update cursor to the max GREATEST from results
-        // Note: sql<Date> is just a type hint - Postgres returns string timestamps
+        // Update cursor to the max GREATEST from results (µs-precision ISO string)
         if (changedEntryResults.length > 0) {
           const lastEntry = changedEntryResults[changedEntryResults.length - 1];
-          outputEntriesCursor = new Date(lastEntry.maxUpdatedAt);
+          outputEntriesCursor = lastEntry.maxUpdatedAtRaw;
         }
 
         // Split results: metadata changes go to created, state-only changes go to updated
@@ -316,7 +326,8 @@ export const syncRouter = createTRPCRouter({
           // Get subscriptionId from the join (may be null for orphaned starred entries)
           const subscriptionId = (row as { subscriptionId?: string | null }).subscriptionId ?? null;
 
-          if (row.entryUpdatedAt > entriesCursor) {
+          // Use Date comparison for categorization (ms precision acceptable here)
+          if (entriesCursorDate && row.entryUpdatedAt > entriesCursorDate) {
             // Entry metadata changed - include full data
             createdEntries.push({
               id: row.id,
@@ -371,13 +382,17 @@ export const syncRouter = createTRPCRouter({
           recentEntryResults.pop();
         }
 
-        // For initial sync, set cursor to NOW() rather than max from results.
+        // For initial sync, set cursor to NOW() from Postgres rather than JS Date.
+        // Using Postgres NOW() preserves µs precision and avoids clock skew.
         // This is important because initial sync orders by publishedAt (for display),
         // but incremental sync filters by GREATEST(updated_at). An entry with high
         // updated_at but low publishedAt might not be in the top 500 by publishedAt,
         // but would appear in incremental sync. Using NOW() ensures we don't re-fetch
         // entries that existed when this query ran.
-        outputEntriesCursor = new Date();
+        const nowResult = await ctx.db.execute<{ now: string }>(
+          sql`SELECT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS now`
+        );
+        outputEntriesCursor = nowResult.rows[0].now;
 
         createdEntries = recentEntryResults.map((row) => ({
           id: row.id,
@@ -403,25 +418,29 @@ export const syncRouter = createTRPCRouter({
       let createdSubscriptions: z.infer<typeof syncSubscriptionSchema>[] = [];
       const removedSubscriptionIds: string[] = [];
 
-      if (subscriptionsCursor) {
+      if (subscriptionsCursorStr) {
         // For incremental sync, get all subscriptions changed since cursor
         // This includes new, modified, and unsubscribed - split by unsubscribedAt
         const changedSubscriptionResults = await ctx.db
           .select({
             subscription: subscriptions,
             feed: feeds,
+            updatedAtRaw: sql<string>`to_char(${subscriptions.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
           .from(subscriptions)
           .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
           .where(
-            and(eq(subscriptions.userId, userId), gt(subscriptions.updatedAt, subscriptionsCursor))
+            and(
+              eq(subscriptions.userId, userId),
+              sql`${subscriptions.updatedAt} > ${subscriptionsCursorStr}::timestamptz`
+            )
           )
           .orderBy(subscriptions.updatedAt);
 
-        // Update cursor to the last subscription's updatedAt
+        // Update cursor to the last subscription's updatedAt (µs precision)
         if (changedSubscriptionResults.length > 0) {
           const lastSub = changedSubscriptionResults[changedSubscriptionResults.length - 1];
-          outputSubscriptionsCursor = lastSub.subscription.updatedAt;
+          outputSubscriptionsCursor = lastSub.updatedAtRaw;
         }
 
         // Split into active and removed
@@ -455,15 +474,18 @@ export const syncRouter = createTRPCRouter({
 
         // For initial sync, set cursor to the max updatedAt of ALL subscriptions (including removed)
         // This ensures we catch any unsubscribes that happen after this point
-        // Note: sql<Date> is just a type hint - Postgres returns string timestamps
         const maxUpdatedAt = await ctx.db
-          .select({ max: sql<string>`MAX(${subscriptions.updatedAt})` })
+          .select({
+            max: sql<
+              string | null
+            >`to_char(MAX(${subscriptions.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+          })
           .from(subscriptions)
           .where(eq(subscriptions.userId, userId))
           .then((rows) => rows[0]?.max ?? null);
 
         if (maxUpdatedAt) {
-          outputSubscriptionsCursor = new Date(maxUpdatedAt);
+          outputSubscriptionsCursor = maxUpdatedAt;
         }
 
         createdSubscriptions = allSubscriptionResults.map(({ subscription, feed }) => ({
@@ -485,7 +507,7 @@ export const syncRouter = createTRPCRouter({
       const updatedTags: z.infer<typeof syncTagUpdatedSchema>[] = [];
       const removedTagIds: string[] = [];
 
-      if (tagsCursor) {
+      if (tagsCursorStr) {
         // Incremental sync: get tags changed since cursor
         const changedTagResults = await ctx.db
           .select({
@@ -495,15 +517,18 @@ export const syncRouter = createTRPCRouter({
             createdAt: tags.createdAt,
             updatedAt: tags.updatedAt,
             deletedAt: tags.deletedAt,
+            updatedAtRaw: sql<string>`to_char(${tags.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
           .from(tags)
-          .where(and(eq(tags.userId, userId), gt(tags.updatedAt, tagsCursor)))
+          .where(
+            and(eq(tags.userId, userId), sql`${tags.updatedAt} > ${tagsCursorStr}::timestamptz`)
+          )
           .orderBy(tags.updatedAt);
 
-        // Update cursor to the last tag's updatedAt
+        // Update cursor to the last tag's updatedAt (µs precision)
         if (changedTagResults.length > 0) {
           const lastTag = changedTagResults[changedTagResults.length - 1];
-          outputTagsCursor = lastTag.updatedAt;
+          outputTagsCursor = lastTag.updatedAtRaw;
         }
 
         // Split into created, updated, and removed based on timestamps
@@ -511,7 +536,7 @@ export const syncRouter = createTRPCRouter({
           if (row.deletedAt !== null) {
             // Tag was soft deleted
             removedTagIds.push(row.id);
-          } else if (row.createdAt > tagsCursor) {
+          } else if (tagsCursorDate && row.createdAt > tagsCursorDate) {
             // Tag was created after the cursor
             createdTags.push({
               id: row.id,
@@ -541,15 +566,18 @@ export const syncRouter = createTRPCRouter({
 
         // For initial sync, set cursor to max(updated_at) of ALL tags (including deleted)
         // This ensures we catch any deletes that happen after this point
-        // Note: sql<Date> is just a type hint - Postgres returns string timestamps
         const maxUpdatedAt = await ctx.db
-          .select({ max: sql<string>`MAX(${tags.updatedAt})` })
+          .select({
+            max: sql<
+              string | null
+            >`to_char(MAX(${tags.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+          })
           .from(tags)
           .where(eq(tags.userId, userId))
           .then((rows) => rows[0]?.max ?? null);
 
         if (maxUpdatedAt) {
-          outputTagsCursor = new Date(maxUpdatedAt);
+          outputTagsCursor = maxUpdatedAt;
         }
 
         createdTags = allTagResults.map((row) => ({
@@ -565,7 +593,7 @@ export const syncRouter = createTRPCRouter({
       let removedEntryIds: string[] = [];
 
       // Only process if this is an incremental sync and we have removed subscriptions
-      if (subscriptionsCursor && removedSubscriptionIds.length > 0) {
+      if (subscriptionsCursorStr && removedSubscriptionIds.length > 0) {
         // Get feed IDs for the removed subscriptions
         const removedFeedIds = await ctx.db
           .select({ feedId: subscriptions.feedId })
@@ -593,15 +621,16 @@ export const syncRouter = createTRPCRouter({
         }
       }
 
-      // Compute syncedAt as the max of all output cursors for backward compatibility
+      // Compute syncedAt as the max of all output cursors for backward compatibility.
+      // ISO 8601 strings in UTC with fixed format are lexicographically sortable.
       const allCursors = [outputEntriesCursor, outputSubscriptionsCursor, outputTagsCursor].filter(
-        (c): c is Date => c !== null
+        (c): c is string => c !== null
       );
 
       const syncedAt =
         allCursors.length > 0
-          ? new Date(Math.max(...allCursors.map((c) => c.getTime())))
-          : new Date();
+          ? allCursors.reduce((a, b) => (a > b ? a : b))
+          : new Date().toISOString();
 
       return {
         entries: {
@@ -619,11 +648,11 @@ export const syncRouter = createTRPCRouter({
           removed: removedTagIds,
         },
         cursors: {
-          entries: outputEntriesCursor?.toISOString() ?? null,
-          subscriptions: outputSubscriptionsCursor?.toISOString() ?? null,
-          tags: outputTagsCursor?.toISOString() ?? null,
+          entries: outputEntriesCursor,
+          subscriptions: outputSubscriptionsCursor,
+          tags: outputTagsCursor,
         },
-        syncedAt: syncedAt.toISOString(),
+        syncedAt,
         hasMore,
       };
     }),
@@ -657,11 +686,12 @@ export const syncRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      const entriesCursor = input.cursors?.entries ? new Date(input.cursors.entries) : null;
-      const subscriptionsCursor = input.cursors?.subscriptions
-        ? new Date(input.cursors.subscriptions)
-        : null;
-      const tagsCursor = input.cursors?.tags ? new Date(input.cursors.tags) : null;
+      // Keep cursors as strings to preserve Postgres µs precision (#680)
+      const entriesCursor = input.cursors?.entries ?? null;
+      const subscriptionsCursor = input.cursors?.subscriptions ?? null;
+      const tagsCursor = input.cursors?.tags ?? null;
+      // Date versions for JavaScript comparisons (categorization, sorting)
+      const tagsCursorDate = tagsCursor ? new Date(tagsCursor) : null;
 
       // If no cursors provided, return empty events (initial cursor establishment
       // is handled by sync.cursors endpoint)
@@ -688,9 +718,15 @@ export const syncRouter = createTRPCRouter({
             read: userEntries.read,
             starred: userEntries.starred,
             updatedAt: userEntries.updatedAt,
+            updatedAtRaw: sql<string>`to_char(${userEntries.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
           .from(userEntries)
-          .where(and(eq(userEntries.userId, userId), gt(userEntries.updatedAt, entriesCursor)))
+          .where(
+            and(
+              eq(userEntries.userId, userId),
+              sql`${userEntries.updatedAt} > ${entriesCursor}::timestamptz`
+            )
+          )
           .orderBy(userEntries.updatedAt)
           .limit(MAX_ENTRIES + 1);
 
@@ -705,8 +741,8 @@ export const syncRouter = createTRPCRouter({
             entryId: row.id,
             read: row.read,
             starred: row.starred,
-            timestamp: row.updatedAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
+            timestamp: row.updatedAtRaw,
+            updatedAt: row.updatedAtRaw,
             _sortTime: row.updatedAt,
           });
         }
@@ -724,6 +760,7 @@ export const syncRouter = createTRPCRouter({
             url: entries.url,
             publishedAt: entries.publishedAt,
             updatedAt: entries.updatedAt,
+            updatedAtRaw: sql<string>`to_char(${entries.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
             subscriptionId: subscriptions.id,
           })
           .from(entries)
@@ -742,7 +779,7 @@ export const syncRouter = createTRPCRouter({
           .where(
             and(
               eq(userEntries.userId, userId),
-              gt(entries.updatedAt, entriesCursor),
+              sql`${entries.updatedAt} > ${entriesCursor}::timestamptz`,
               // Visibility: either from active subscription or starred
               sql`(${subscriptions.id} IS NOT NULL OR ${userEntries.starred} = true)`
             )
@@ -760,8 +797,8 @@ export const syncRouter = createTRPCRouter({
             type: "entry_updated" as const,
             subscriptionId: row.subscriptionId,
             entryId: row.id,
-            timestamp: row.updatedAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
+            timestamp: row.updatedAtRaw,
+            updatedAt: row.updatedAtRaw,
             metadata: {
               title: row.title,
               author: row.author,
@@ -782,11 +819,15 @@ export const syncRouter = createTRPCRouter({
           .select({
             subscription: subscriptions,
             feed: feeds,
+            updatedAtRaw: sql<string>`to_char(${subscriptions.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
           .from(subscriptions)
           .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
           .where(
-            and(eq(subscriptions.userId, userId), gt(subscriptions.updatedAt, subscriptionsCursor))
+            and(
+              eq(subscriptions.userId, userId),
+              sql`${subscriptions.updatedAt} > ${subscriptionsCursor}::timestamptz`
+            )
           )
           .orderBy(subscriptions.updatedAt);
 
@@ -852,14 +893,14 @@ export const syncRouter = createTRPCRouter({
           }
         }
 
-        for (const { subscription, feed } of subscriptionResults) {
+        for (const { subscription, feed, updatedAtRaw } of subscriptionResults) {
           if (subscription.unsubscribedAt === null) {
             allEvents.push({
               type: "subscription_created" as const,
               subscriptionId: subscription.id,
               feedId: subscription.feedId,
-              timestamp: subscription.updatedAt.toISOString(),
-              updatedAt: subscription.updatedAt.toISOString(),
+              timestamp: updatedAtRaw,
+              updatedAt: updatedAtRaw,
               subscription: {
                 id: subscription.id,
                 feedId: subscription.feedId,
@@ -882,8 +923,8 @@ export const syncRouter = createTRPCRouter({
             allEvents.push({
               type: "subscription_deleted" as const,
               subscriptionId: subscription.id,
-              timestamp: subscription.updatedAt.toISOString(),
-              updatedAt: subscription.updatedAt.toISOString(),
+              timestamp: updatedAtRaw,
+              updatedAt: updatedAtRaw,
               _sortTime: subscription.updatedAt,
             });
           }
@@ -902,9 +943,10 @@ export const syncRouter = createTRPCRouter({
             createdAt: tags.createdAt,
             updatedAt: tags.updatedAt,
             deletedAt: tags.deletedAt,
+            updatedAtRaw: sql<string>`to_char(${tags.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
           .from(tags)
-          .where(and(eq(tags.userId, userId), gt(tags.updatedAt, tagsCursor)))
+          .where(and(eq(tags.userId, userId), sql`${tags.updatedAt} > ${tagsCursor}::timestamptz`))
           .orderBy(tags.updatedAt);
 
         for (const row of tagResults) {
@@ -912,11 +954,11 @@ export const syncRouter = createTRPCRouter({
             allEvents.push({
               type: "tag_deleted" as const,
               tagId: row.id,
-              timestamp: row.updatedAt.toISOString(),
-              updatedAt: row.updatedAt.toISOString(),
+              timestamp: row.updatedAtRaw,
+              updatedAt: row.updatedAtRaw,
               _sortTime: row.updatedAt,
             });
-          } else if (row.createdAt > tagsCursor) {
+          } else if (tagsCursorDate && row.createdAt > tagsCursorDate) {
             allEvents.push({
               type: "tag_created" as const,
               tag: {
@@ -924,8 +966,8 @@ export const syncRouter = createTRPCRouter({
                 name: row.name,
                 color: row.color,
               },
-              timestamp: row.updatedAt.toISOString(),
-              updatedAt: row.updatedAt.toISOString(),
+              timestamp: row.updatedAtRaw,
+              updatedAt: row.updatedAtRaw,
               _sortTime: row.updatedAt,
             });
           } else {
@@ -936,8 +978,8 @@ export const syncRouter = createTRPCRouter({
                 name: row.name,
                 color: row.color,
               },
-              timestamp: row.updatedAt.toISOString(),
-              updatedAt: row.updatedAt.toISOString(),
+              timestamp: row.updatedAtRaw,
+              updatedAt: row.updatedAtRaw,
               _sortTime: row.updatedAt,
             });
           }

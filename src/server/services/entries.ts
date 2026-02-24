@@ -258,8 +258,8 @@ function decodeCursor(cursor: string): CursorData {
   }
 }
 
-function encodeCursor(ts: Date, entryId: string): string {
-  const data: CursorData = { ts: ts.toISOString(), id: entryId };
+function encodeCursor(ts: string, entryId: string): string {
+  const data: CursorData = { ts, id: entryId };
   return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
 }
 
@@ -422,17 +422,26 @@ export async function listEntries(
       ? visibleEntries.readChangedAt
       : sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
 
+  // Raw ISO string version of sortColumn with microsecond precision.
+  // Used for cursor encoding to avoid JavaScript Date truncation.
+  const sortTsRawExpr =
+    params.sortBy === "readChanged"
+      ? sql<string>`to_char(${visibleEntries.readChangedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+      : sql<string>`to_char(COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
   // Cursor condition
+  // Pass timestamp string directly to Postgres (::timestamptz) to preserve
+  // microsecond precision. Using new Date(ts) would truncate to milliseconds,
+  // causing entries to fall into gaps between cursor and actual timestamps.
   if (params.cursor) {
     const { ts, id } = decodeCursor(params.cursor);
-    const cursorTs = new Date(ts);
     if (sortOrder === "newest") {
       conditions.push(
-        sql`(${sortColumn} < ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${visibleEntries.id} < ${id}))`
+        sql`(${sortColumn} < ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${visibleEntries.id} < ${id}))`
       );
     } else {
       conditions.push(
-        sql`(${sortColumn} > ${cursorTs} OR (${sortColumn} = ${cursorTs} AND ${visibleEntries.id} > ${id}))`
+        sql`(${sortColumn} > ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${visibleEntries.id} > ${id}))`
       );
     }
   }
@@ -466,6 +475,7 @@ export async function listEntries(
       hasStarred: visibleEntries.hasStarred,
       readChangedAt: visibleEntries.readChangedAt,
       predictedScore: visibleEntries.predictedScore,
+      sortTsRaw: sortTsRawExpr,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -480,11 +490,7 @@ export async function listEntries(
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {
     const lastEntry = resultEntries[resultEntries.length - 1];
-    const lastTs =
-      params.sortBy === "readChanged"
-        ? lastEntry.readChangedAt
-        : (lastEntry.publishedAt ?? lastEntry.fetchedAt);
-    nextCursor = encodeCursor(lastTs, lastEntry.id);
+    nextCursor = encodeCursor(lastEntry.sortTsRaw, lastEntry.id);
   }
 
   return { items, nextCursor };
@@ -599,7 +605,7 @@ async function searchEntries(
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {
     const lastEntry = resultEntries[resultEntries.length - 1];
-    nextCursor = encodeCursor(new Date(lastEntry.rank.toString()), lastEntry.id);
+    nextCursor = encodeCursor(lastEntry.rank.toString(), lastEntry.id);
   }
 
   return { items, nextCursor };
