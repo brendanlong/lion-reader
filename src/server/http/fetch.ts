@@ -127,6 +127,17 @@ async function readResponseWithSizeLimit(
 // ============================================================================
 
 /**
+ * Accept-Encoding header for outgoing requests.
+ *
+ * Node.js 20's native fetch only advertises "gzip, deflate" by default,
+ * but it can also decompress brotli. Explicitly including "br" lets servers
+ * send brotli-compressed responses, which are typically 15-20% smaller than gzip.
+ *
+ * zstd is not included because Node.js 20 doesn't support it (added in Node.js 22.15+).
+ */
+export const ACCEPT_ENCODING = "gzip, deflate, br";
+
+/**
  * Default timeout for feed fetch requests (10 seconds).
  */
 export const FEED_FETCH_TIMEOUT_MS = 10000;
@@ -206,6 +217,7 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
       headers: {
         "User-Agent": userAgent,
         Accept: accept,
+        "Accept-Encoding": ACCEPT_ENCODING,
       },
       signal: controller.signal,
       redirect: "follow",
@@ -273,6 +285,7 @@ export async function fetchHtmlPage(
       headers: {
         "User-Agent": USER_AGENT,
         Accept: HTML_ACCEPT_HEADER,
+        "Accept-Encoding": ACCEPT_ENCODING,
       },
       redirect: "follow",
     });

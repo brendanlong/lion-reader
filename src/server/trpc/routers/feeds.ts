@@ -11,7 +11,12 @@ import { logger } from "@/lib/logger";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { errors } from "../errors";
 import { feedUrlSchema } from "../validation";
-import { fetchUrl, isHtmlContent, FEED_FETCH_TIMEOUT_MS } from "@/server/http/fetch";
+import {
+  fetchUrl,
+  isHtmlContent,
+  FEED_FETCH_TIMEOUT_MS,
+  ACCEPT_ENCODING,
+} from "@/server/http/fetch";
 import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { parseFeed, detectFeedType } from "@/server/feed/parser";
@@ -159,6 +164,7 @@ async function tryFetchAsFeed(
         "User-Agent": USER_AGENT,
         Accept:
           "application/rss+xml, application/atom+xml, application/feed+json, application/json, application/xml, text/xml, */*",
+        "Accept-Encoding": ACCEPT_ENCODING,
       },
       signal: controller.signal,
       redirect: "follow",
