@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { eq, and, gt, isNull, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { request } from "@octokit/request";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { feeds, subscriptions, jobs } from "@/server/db/schema";
@@ -41,6 +42,26 @@ const GITHUB_REPO_OWNER = "brendanlong";
 const GITHUB_REPO_NAME = "lion-reader";
 
 /**
+ * Create a GitHub API request function with the issues token and custom user agent.
+ */
+function getGitHubRequest() {
+  const token = githubConfig.issuesToken;
+  if (!token) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "GitHub issue filing is not configured",
+    });
+  }
+
+  return request.defaults({
+    headers: {
+      authorization: `token ${token}`,
+      "user-agent": USER_AGENT,
+    },
+  });
+}
+
+/**
  * Create a GitHub issue for a broken feed.
  */
 async function createGitHubIssue(params: {
@@ -49,13 +70,7 @@ async function createGitHubIssue(params: {
   lastError: string | null;
   consecutiveFailures: number;
 }): Promise<{ issueUrl: string }> {
-  const token = githubConfig.issuesToken;
-  if (!token) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "GitHub issue filing is not configured",
-    });
-  }
+  const ghRequest = getGitHubRequest();
 
   const title = `Broken feed: ${params.feedTitle || params.feedUrl}`;
   const body = [
@@ -72,39 +87,25 @@ async function createGitHubIssue(params: {
     .filter((line) => line !== null)
     .join("\n");
 
-  const response = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/issues`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "User-Agent": USER_AGENT,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        title,
-        body,
-        labels: ["broken-feed"],
-      }),
-    }
-  );
+  try {
+    const { data } = await ghRequest("POST /repos/{owner}/{repo}/issues", {
+      owner: GITHUB_REPO_OWNER,
+      repo: GITHUB_REPO_NAME,
+      title,
+      body,
+      labels: ["broken-feed"],
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
+    return { issueUrl: data.html_url };
+  } catch (error) {
     logger.error("Failed to create GitHub issue", {
-      status: response.status,
-      error: errorText,
+      error: error instanceof Error ? error.message : String(error),
     });
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message: "Failed to create GitHub issue. Please try again later.",
     });
   }
-
-  const data = (await response.json()) as { html_url: string };
-  return { issueUrl: data.html_url };
 }
 
 // ============================================================================
@@ -275,13 +276,6 @@ export const brokenFeedsRouter = createTRPCRouter({
     .output(z.object({ issueUrl: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-
-      if (!githubConfig.issuesToken) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "GitHub issue filing is not configured",
-        });
-      }
 
       // Verify the user is subscribed to this feed and get feed details
       const result = await ctx.db

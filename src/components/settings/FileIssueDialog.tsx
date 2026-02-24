@@ -30,6 +30,7 @@ interface FileIssueDialogProps {
   onCancel: () => void;
 }
 
+// Wrapper unmounts the content when closed, resetting checkbox state on each open.
 export function FileIssueDialog(props: FileIssueDialogProps) {
   if (!props.isOpen) return null;
   return <FileIssueDialogContent {...props} />;
