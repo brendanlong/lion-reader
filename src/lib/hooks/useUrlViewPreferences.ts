@@ -17,6 +17,7 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { clientReplace } from "@/lib/navigation";
 import { parseViewPreferencesFromParams } from "./viewPreferences";
+import { getDefaultViewPreferences } from "@/lib/queries/entries-list-input";
 
 /**
  * Result of the useUrlViewPreferences hook.
@@ -63,19 +64,10 @@ export interface UseUrlViewPreferencesResult {
  * }
  * ```
  */
-/**
- * Returns the default unreadOnly value for the current route.
- * Most views default to true (show unread only); recently-read defaults to false.
- */
-function getDefaultUnreadOnly(pathname: string): boolean {
-  if (pathname === "/recently-read") return false;
-  return true;
-}
-
 export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const defaultUnreadOnly = getDefaultUnreadOnly(pathname);
+  const defaultUnreadOnly = getDefaultViewPreferences(pathname).unreadOnly;
 
   // Get current values from URL
   const { unreadOnly, sortOrder } = useMemo(

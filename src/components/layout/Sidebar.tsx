@@ -11,11 +11,12 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { handleSubscriptionDeleted } from "@/lib/cache/operations";
+import { buildEntriesListInputForRoute } from "@/lib/queries/entries-list-input";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 import { useSidebarUnreadOnly } from "@/lib/hooks/useSidebarUnreadOnly";
@@ -69,6 +70,21 @@ export function Sidebar({ onClose }: SidebarProps) {
     onClose?.();
   };
 
+  // Prefetch entries.list on mousedown (fires ~100-200ms before click).
+  // Even though handleNavigate invalidates the cache, prefetched data will
+  // still be available as stale data - useSuspenseInfiniteQuery renders stale
+  // data immediately without suspending, then refetches in the background.
+  const handlePrefetchRoute = useCallback(
+    (href: string) => {
+      const input = buildEntriesListInputForRoute(href);
+      void utils.entries.list.prefetchInfinite(input, {
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+        pages: 1,
+      });
+    },
+    [utils]
+  );
+
   const handleEdit = (sub: {
     id: string;
     title: string;
@@ -86,7 +102,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     <>
       <nav className="flex h-full flex-col bg-white dark:bg-zinc-900">
         {/* Main Navigation with streaming counts */}
-        <SidebarNav onNavigate={handleNavigate} />
+        <SidebarNav onNavigate={handleNavigate} onPrefetch={handlePrefetchRoute} />
 
         {/* Divider with unread toggle */}
         <div className="mx-3 flex items-center gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
@@ -103,6 +119,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             onEdit={handleEdit}
             onUnsubscribe={handleUnsubscribe}
             unreadOnly={sidebarUnreadOnly}
+            onPrefetch={handlePrefetchRoute}
           />
         </div>
       </nav>

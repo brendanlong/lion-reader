@@ -37,6 +37,10 @@ interface EntryListItemProps {
   entry: EntryListItemData;
   onClick?: (entryId: string) => void;
   /**
+   * Callback when mousedown fires on the entry (used for prefetching).
+   */
+  onMouseDown?: (entryId: string) => void;
+  /**
    * Whether this entry is currently selected (for keyboard navigation).
    */
   selected?: boolean;
@@ -84,6 +88,7 @@ export function getItemClasses(read: boolean, selected: boolean): string {
 export const EntryListItem = memo(function EntryListItem({
   entry,
   onClick,
+  onMouseDown,
   selected = false,
   onToggleRead,
   onToggleStar,
@@ -111,6 +116,10 @@ export const EntryListItem = memo(function EntryListItem({
     onClick?.(id);
   };
 
+  const handleMouseDown = () => {
+    onMouseDown?.(id);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -134,6 +143,7 @@ export const EntryListItem = memo(function EntryListItem({
       role="button"
       tabIndex={0}
       onClick={handleClick}
+      onMouseDown={handleMouseDown}
       onKeyDown={handleKeyDown}
       data-entry-id={id}
       className={getItemClasses(read, selected)}

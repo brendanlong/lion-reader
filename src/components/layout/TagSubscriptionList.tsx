@@ -32,6 +32,8 @@ interface TagSubscriptionListProps {
   onUnsubscribe: (sub: { id: string; title: string }) => void;
   /** When true, only show subscriptions with unread entries */
   unreadOnly: boolean;
+  /** Called on mousedown with the link href (e.g., to prefetch data) */
+  onPrefetch?: (href: string) => void;
 }
 
 export function TagSubscriptionList({
@@ -42,6 +44,7 @@ export function TagSubscriptionList({
   onEdit,
   onUnsubscribe,
   unreadOnly,
+  onPrefetch,
 }: TagSubscriptionListProps) {
   const sentinelRef = useRef<HTMLLIElement>(null);
 
@@ -114,6 +117,7 @@ export function TagSubscriptionList({
               title: sub.title || "Untitled Feed",
             })
           }
+          onPrefetch={onPrefetch}
         />
       ))}
       {/* Sentinel for infinite scroll */}

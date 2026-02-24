@@ -126,6 +126,11 @@ interface EntryListProps {
   onEntryClick?: (entryId: string) => void;
 
   /**
+   * Callback when mousedown fires on an entry (used for prefetching).
+   */
+  onEntryMouseDown?: (entryId: string) => void;
+
+  /**
    * Number of entries to fetch per page.
    * @default 10
    */
@@ -184,6 +189,7 @@ interface EntryListProps {
 export function EntryList({
   filters = {},
   onEntryClick,
+  onEntryMouseDown,
   pageSize = 10,
   emptyMessage = "No entries to display",
   selectedEntryId,
@@ -320,6 +326,7 @@ export function EntryList({
           key={entry.id}
           entry={entry}
           onClick={onEntryClick}
+          onMouseDown={onEntryMouseDown}
           selected={selectedEntryId === entry.id}
           onToggleRead={onToggleRead}
           onToggleStar={onToggleStar}

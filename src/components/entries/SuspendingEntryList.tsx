@@ -165,6 +165,14 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     [setOpenEntryId]
   );
 
+  // Prefetch entry on mousedown (fires ~100-200ms before click)
+  const handleEntryMouseDown = useCallback(
+    (entryId: string) => {
+      void utils.entries.get.prefetch({ id: entryId });
+    },
+    [utils]
+  );
+
   // Keyboard shortcuts
   const { selectedEntryId } = useKeyboardShortcuts({
     entries,
@@ -207,6 +215,7 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
         sortOrder,
       }}
       onEntryClick={handleEntryClick}
+      onEntryMouseDown={handleEntryMouseDown}
       selectedEntryId={selectedEntryId}
       onToggleRead={handleToggleRead}
       onToggleStar={toggleStar}

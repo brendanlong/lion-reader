@@ -10,70 +10,11 @@
 import { useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useUrlViewPreferences } from "./useUrlViewPreferences";
-import { buildEntriesListInput, type EntriesListInput } from "@/lib/queries/entries-list-input";
-import { type EntryType } from "./useEntryMutations";
-
-/**
- * Route filters derived from the current pathname.
- */
-interface RouteFilters {
-  subscriptionId?: string;
-  tagId?: string;
-  uncategorized?: boolean;
-  starredOnly?: boolean;
-  type?: EntryType;
-  sortBy?: "published" | "readChanged" | "predictedScore";
-}
-
-/**
- * Extract route filters from pathname.
- */
-function getFiltersFromPathname(pathname: string): RouteFilters {
-  // /subscription/:id
-  const subscriptionMatch = pathname.match(/^\/subscription\/([^/]+)/);
-  if (subscriptionMatch) {
-    return { subscriptionId: subscriptionMatch[1] };
-  }
-
-  // /tag/:tagId
-  const tagMatch = pathname.match(/^\/tag\/([^/]+)/);
-  if (tagMatch) {
-    const tagId = tagMatch[1];
-    // Handle "uncategorized" pseudo-tag
-    if (tagId === "uncategorized") {
-      return { uncategorized: true };
-    }
-    return { tagId };
-  }
-
-  // /starred
-  if (pathname === "/starred") {
-    return { starredOnly: true };
-  }
-
-  // /saved
-  if (pathname === "/saved") {
-    return { type: "saved" as const };
-  }
-
-  // /uncategorized
-  if (pathname === "/uncategorized") {
-    return { uncategorized: true };
-  }
-
-  // /recently-read
-  if (pathname === "/recently-read") {
-    return { sortBy: "readChanged" as const };
-  }
-
-  // /best - Algorithmic feed sorted by predicted score
-  if (pathname === "/best") {
-    return { sortBy: "predictedScore" as const };
-  }
-
-  // /all or default
-  return {};
-}
+import {
+  buildEntriesListInput,
+  getFiltersFromPathname,
+  type EntriesListInput,
+} from "@/lib/queries/entries-list-input";
 
 /**
  * Hook that returns the query input for entries.list based on current URL state.

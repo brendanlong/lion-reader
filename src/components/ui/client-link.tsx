@@ -21,6 +21,8 @@ export interface ClientLinkProps extends Omit<
   children: ReactNode;
   /** Called after navigation (e.g., to close a menu) */
   onNavigate?: () => void;
+  /** Called on mousedown with the link href (e.g., to prefetch data) */
+  onPrefetch?: (href: string) => void;
 }
 
 /**
@@ -38,11 +40,12 @@ export interface ClientLinkProps extends Omit<
  * </ClientLink>
  * ```
  */
-export function ClientLink({ href, children, onNavigate, ...props }: ClientLinkProps) {
+export function ClientLink({ href, children, onNavigate, onPrefetch, ...props }: ClientLinkProps) {
   return (
     <a
       href={href}
       onClick={(e: MouseEvent<HTMLAnchorElement>) => handleClientNav(e, href, onNavigate)}
+      onMouseDown={onPrefetch ? () => onPrefetch(href) : undefined}
       {...props}
     >
       {children}

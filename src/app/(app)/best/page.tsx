@@ -12,5 +12,5 @@ interface BestEntriesPageProps {
 }
 
 export default function BestEntriesPage({ searchParams }: BestEntriesPageProps) {
-  return <EntryListPage filters={{ sortBy: "predictedScore" }} searchParams={searchParams} />;
+  return <EntryListPage pathname="/best" searchParams={searchParams} />;
 }

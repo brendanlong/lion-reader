@@ -7,30 +7,27 @@
 
 import { createHydrationHelpersForRequest } from "@/lib/trpc/server";
 import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
-import { buildEntriesListInput, type EntriesListInput } from "@/lib/queries/entries-list-input";
-
-/**
- * Filters for the entry list query.
- */
-export interface EntryListFilters {
-  subscriptionId?: string;
-  tagId?: string;
-  uncategorized?: boolean;
-  starredOnly?: boolean;
-  type?: "web" | "email" | "saved";
-  sortBy?: "published" | "readChanged" | "predictedScore";
-}
+import {
+  buildEntriesListInput,
+  getDefaultViewPreferences,
+  getFiltersFromPathname,
+  type EntriesListFilters,
+  type EntriesListInput,
+} from "@/lib/queries/entries-list-input";
 
 // Re-export for consumers
-export type { EntriesListInput };
+export type { EntriesListFilters, EntriesListInput };
 
 interface EntryListPageProps {
-  /** Filters for the entry list query */
-  filters: EntryListFilters;
+  /**
+   * The resolved pathname for this page (e.g., "/all", "/subscription/abc123").
+   * Used to derive filters and default view preferences via the centralized
+   * getFiltersFromPathname and getDefaultViewPreferences functions, ensuring
+   * server prefetch cache keys match client queries exactly.
+   */
+  pathname: string;
   /** Search params from Next.js page */
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-  /** Override the default unreadOnly preference (default: true) */
-  defaultUnreadOnly?: boolean;
   /** Optional client component to render alongside prefetched data */
   children?: React.ReactNode;
 }
@@ -39,27 +36,22 @@ interface EntryListPageProps {
  * Server component wrapper for entry list pages.
  *
  * Handles:
- * - Prefetching entry list with filters
+ * - Prefetching entry list with filters derived from pathname
  * - Prefetching specific entry when viewing one (?entry= param)
  * - Passing hydrated state to client
  *
- * Uses tRPC's hydration helpers to ensure query keys match exactly between
- * server prefetch and client query, preventing hydration mismatches.
+ * Uses the same getFiltersFromPathname and getDefaultViewPreferences functions
+ * as the client hooks, ensuring server prefetch cache keys match exactly.
  *
  * @example
  * ```tsx
  * // In page.tsx
  * export default function AllPage({ searchParams }) {
- *   return <EntryListPage filters={{}} searchParams={searchParams} />;
+ *   return <EntryListPage pathname="/all" searchParams={searchParams} />;
  * }
  * ```
  */
-export async function EntryListPage({
-  filters,
-  searchParams,
-  defaultUnreadOnly,
-  children,
-}: EntryListPageProps) {
+export async function EntryListPage({ pathname, searchParams, children }: EntryListPageProps) {
   const params = await searchParams;
 
   // Check if viewing a specific entry
@@ -70,14 +62,17 @@ export async function EntryListPage({
   // Note: Layout already verified authentication, so we skip that check here
   const { trpc } = await createHydrationHelpersForRequest();
 
-  // Parse view preferences from URL (same logic as client hook)
+  // Derive filters and defaults from pathname (same functions as client hooks)
+  const filters = getFiltersFromPathname(pathname);
+  const defaults = getDefaultViewPreferences(pathname);
+
+  // Parse view preferences from URL, using route-specific defaults
   const urlParams = new URLSearchParams();
   if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
   if (params.sort) urlParams.set("sort", String(params.sort));
-  const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(
-    urlParams,
-    defaultUnreadOnly !== undefined ? { unreadOnly: defaultUnreadOnly } : undefined
-  );
+  const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams, {
+    unreadOnly: defaults.unreadOnly,
+  });
 
   // Build input using shared function to ensure cache key matches client
   const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });

@@ -2,6 +2,7 @@
  * Tag Entries Page
  *
  * Prefetches entry data for /tag/[tagId] route. AppRouter handles rendering.
+ * The "uncategorized" pseudo-tag is handled by getFiltersFromPathname.
  */
 
 import { EntryListPage } from "@/components/entries/EntryListPage";
@@ -14,9 +15,5 @@ interface TagEntriesPageProps {
 export default async function TagEntriesPage({ params, searchParams }: TagEntriesPageProps) {
   const { tagId } = await params;
 
-  // Handle "uncategorized" pseudo-tag
-  const isUncategorized = tagId === "uncategorized";
-  const filters = isUncategorized ? { uncategorized: true as const } : { tagId };
-
-  return <EntryListPage filters={filters} searchParams={searchParams} />;
+  return <EntryListPage pathname={`/tag/${tagId}`} searchParams={searchParams} />;
 }
