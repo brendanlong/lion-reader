@@ -796,7 +796,7 @@ export async function markEntriesRead(
     })
     .from(affectedSubscriptionsSubquery)
     .leftJoin(subscriptions, eq(subscriptions.id, affectedSubscriptionsSubquery.subscriptionId))
-    .leftJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
+    .leftJoin(entries, sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`)
     .leftJoin(userEntries, and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId)))
     .groupBy(affectedSubscriptionsSubquery.subscriptionId);
 
@@ -827,7 +827,7 @@ export async function markEntriesRead(
         isNull(subscriptions.unsubscribedAt)
       )
     )
-    .leftJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
+    .leftJoin(entries, sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`)
     .leftJoin(userEntries, and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId)))
     .groupBy(affectedTagsSubquery.tagId);
 

@@ -277,7 +277,7 @@ export const syncRouter = createTRPCRouter({
             subscriptions,
             and(
               eq(subscriptions.userId, userEntries.userId),
-              sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
+              sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`,
               isNull(subscriptions.unsubscribedAt)
             )
           )
@@ -725,7 +725,7 @@ export const syncRouter = createTRPCRouter({
             subscriptions,
             and(
               eq(subscriptions.userId, userId),
-              sql`${entries.feedId} = ANY(${subscriptions.feedIds})`,
+              sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`,
               isNull(subscriptions.unsubscribedAt)
             )
           )

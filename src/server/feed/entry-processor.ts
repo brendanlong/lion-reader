@@ -459,7 +459,7 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
           FROM user_entries ue_existing
           JOIN entries e_prev ON ue_existing.entry_id = e_prev.id
           WHERE ue_existing.user_id = s.user_id
-            AND e_prev.feed_id = ANY(s.previous_feed_ids)
+            AND s.previous_feed_ids @> ARRAY[e_prev.feed_id]
             AND e_prev.guid = e.guid
         )
       ON CONFLICT DO NOTHING

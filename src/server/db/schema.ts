@@ -556,7 +556,7 @@ export const subscriptions = pgTable(
     // Previous feed IDs from redirect migrations - preserves history when feeds redirect
     previousFeedIds: uuid("previous_feed_ids").array().notNull().default([]),
     // Generated column combining feedId with previousFeedIds for efficient querying
-    // Use e.feed_id = ANY(s.feed_ids) to match entries from current or previous feeds
+    // Use s.feed_ids @> ARRAY[e.feed_id] to match entries from current or previous feeds (uses GIN index)
     feedIds: uuid("feed_ids")
       .array()
       .notNull()
@@ -576,8 +576,10 @@ export const subscriptions = pgTable(
     unique("uq_subscriptions_user_feed").on(table.userId, table.feedId),
     index("idx_subscriptions_user").on(table.userId),
     index("idx_subscriptions_feed").on(table.feedId),
-    // GIN index on feed_ids for efficient ANY() lookups
+    // GIN index on feed_ids for efficient @> (array contains) lookups
     index("idx_subscriptions_feed_ids").using("gin", table.feedIds),
+    // GIN index on previous_feed_ids for efficient @> lookups in redirect deduplication
+    index("idx_subscriptions_previous_feed_ids").using("gin", table.previousFeedIds),
   ]
 );
 

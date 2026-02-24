@@ -60,7 +60,7 @@ function tagUnreadCountSql(userId: string) {
       ON st.subscription_id = s.id
       AND s.unsubscribed_at IS NULL
     INNER JOIN ${entries} e
-      ON e.feed_id = ANY(s.feed_ids)
+      ON s.feed_ids @> ARRAY[e.feed_id]
     INNER JOIN ${userEntries} ue
       ON ue.entry_id = e.id
       AND ue.user_id = ${userId}
@@ -112,7 +112,7 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
           )`
         )
       )
-      .leftJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
+      .leftJoin(entries, sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`)
       .leftJoin(
         userEntries,
         and(
@@ -278,7 +278,7 @@ export async function updateTag(
           isNull(subscriptions.unsubscribedAt)
         )
       )
-      .innerJoin(entries, sql`${entries.feedId} = ANY(${subscriptions.feedIds})`)
+      .innerJoin(entries, sql`${subscriptions.feedIds} @> ARRAY[${entries.feedId}]`)
       .innerJoin(
         userEntries,
         and(
