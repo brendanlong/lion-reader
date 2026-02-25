@@ -108,6 +108,12 @@ COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
 COPY --from=builder /app/scripts/start-all.sh ./scripts/start-all.sh
 RUN chmod +x scripts/start-all.sh
 
+# Generate minimal next.config.js for runtime.
+# The full next.config.ts requires TypeScript and build-time-only deps (next-pwa,
+# sentry). Only compress:false is needed at runtime — everything else (headers,
+# webpack, etc.) is baked into .next/ at build time.
+RUN echo 'module.exports = { compress: false };' > next.config.js
+
 # Switch to non-root user
 USER nextjs
 
