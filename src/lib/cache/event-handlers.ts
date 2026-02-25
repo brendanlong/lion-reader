@@ -10,7 +10,12 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "./operations";
 import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
-import { applySyncTagChanges, removeSyncTags, updateSubscriptionInCache } from "./count-cache";
+import {
+  applySyncTagChanges,
+  removeSyncTags,
+  updateSubscriptionInCache,
+  type CachedSubscription,
+} from "./count-cache";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
 import type { SyncEvent } from "@/lib/events/schemas";
@@ -89,16 +94,28 @@ export function handleSyncEvent(
       break;
     }
 
-    case "subscription_updated":
+    case "subscription_updated": {
       // Update the subscription's tags and title in cache, then invalidate
       // tag-related queries to get fresh feedCount/unreadCount
-      updateSubscriptionInCache(utils, event.subscriptionId, {
+      const subUpdates: Partial<Pick<CachedSubscription, "tags" | "title">> = {
         tags: event.tags,
-        ...(event.customTitle !== null ? { title: event.customTitle } : {}),
-      });
+      };
+      if (event.customTitle !== null) {
+        // Custom title set - use it as the resolved title
+        subUpdates.title = event.customTitle;
+      } else {
+        // Custom title cleared - revert to originalTitle from cache
+        const cached = utils.subscriptions.get.getData({ id: event.subscriptionId });
+        if (cached) {
+          subUpdates.title = cached.originalTitle;
+        }
+        // If not cached, the invalidation below will correct it
+      }
+      updateSubscriptionInCache(utils, event.subscriptionId, subUpdates);
       utils.tags.list.invalidate();
       utils.subscriptions.list.invalidate();
       break;
+    }
 
     case "subscription_deleted":
       // Check if already removed (optimistic update from same tab)
