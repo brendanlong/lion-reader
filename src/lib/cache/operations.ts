@@ -266,7 +266,7 @@ export function handleEntriesMarkedRead(
  * Updates:
  * - entries.get cache
  * - entries.list cache (updates in place, no refetch)
- * - entries.count({ starredOnly: true }) - total +1, unread +1 if entry is unread
+ * - entries.count({ starredOnly: true }) - unread +1 if entry is unread
  *
  * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
  *
@@ -284,9 +284,10 @@ export function handleEntryStarred(
   // 1. Update entry starred status
   updateEntryStarredStatus(utils, entryId, true, queryClient);
 
-  // 2. Update starred count
-  // Total always +1, unread +1 only if entry is unread
-  adjustEntriesCount(utils, { starredOnly: true }, read ? 0 : 1, 1);
+  // 2. Update starred unread count (+1 only if entry is unread)
+  if (!read) {
+    adjustEntriesCount(utils, { starredOnly: true }, 1);
+  }
 }
 
 /**
@@ -295,7 +296,7 @@ export function handleEntryStarred(
  * Updates:
  * - entries.get cache
  * - entries.list cache (updates in place, no refetch)
- * - entries.count({ starredOnly: true }) - total -1, unread -1 if entry is unread
+ * - entries.count({ starredOnly: true }) - unread -1 if entry is unread
  *
  * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
  *
@@ -313,9 +314,10 @@ export function handleEntryUnstarred(
   // 1. Update entry starred status
   updateEntryStarredStatus(utils, entryId, false, queryClient);
 
-  // 2. Update starred count
-  // Total always -1, unread -1 only if entry was unread
-  adjustEntriesCount(utils, { starredOnly: true }, read ? 0 : -1, -1);
+  // 2. Update starred unread count (-1 only if entry was unread)
+  if (!read) {
+    adjustEntriesCount(utils, { starredOnly: true }, -1);
+  }
 }
 
 /**
@@ -422,7 +424,7 @@ export function handleSubscriptionCreated(
   });
 
   // Directly update entries.count for All Articles
-  adjustEntriesCount(utils, {}, subscription.unreadCount, subscription.unreadCount);
+  adjustEntriesCount(utils, {}, subscription.unreadCount);
 }
 
 /**
@@ -497,7 +499,7 @@ export function handleSubscriptionDeleted(
     });
 
     // Directly update entries.count for All Articles
-    adjustEntriesCount(utils, {}, -subscription.unreadCount, -subscription.unreadCount);
+    adjustEntriesCount(utils, {}, -subscription.unreadCount);
   } else {
     // Fallback: invalidate broadly when we don't have subscription data
     utils.subscriptions.list.invalidate();
@@ -543,12 +545,12 @@ export function handleNewEntry(
     updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
   }
 
-  // Update All Articles unread count (+1 unread, +1 total)
-  adjustEntriesCount(utils, {}, 1, 1);
+  // Update All Articles unread count (+1 unread)
+  adjustEntriesCount(utils, {}, 1);
 
   // Update saved unread count if it's a saved entry
   if (feedType === "saved") {
-    adjustEntriesCount(utils, { type: "saved" }, 1, 1);
+    adjustEntriesCount(utils, { type: "saved" }, 1);
   }
 }
 
@@ -560,9 +562,9 @@ export function handleNewEntry(
  * Unread counts for a single entry, as returned by star/unstar mutations.
  */
 export interface UnreadCounts {
-  all: { total: number; unread: number };
-  starred: { total: number; unread: number };
-  saved?: { total: number; unread: number };
+  all: { unread: number };
+  starred: { unread: number };
+  saved?: { unread: number };
   subscription?: { id: string; unread: number };
   tags?: Array<{ id: string; unread: number }>;
   uncategorized?: { unread: number };
@@ -572,9 +574,9 @@ export interface UnreadCounts {
  * Bulk unread counts, as returned by markRead mutation.
  */
 export interface BulkUnreadCounts {
-  all: { total: number; unread: number };
-  starred: { total: number; unread: number };
-  saved: { total: number; unread: number };
+  all: { unread: number };
+  starred: { unread: number };
+  saved: { unread: number };
   subscriptions: Array<{ id: string; unread: number }>;
   tags: Array<{ id: string; unread: number }>;
   uncategorized?: { unread: number };

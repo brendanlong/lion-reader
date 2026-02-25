@@ -95,9 +95,9 @@ const savedArticleFullSchema = z.object({
  * Saved articles only affect all, starred, and saved counts (no subscription/tags).
  */
 const savedUnreadCountsSchema = z.object({
-  all: z.object({ total: z.number(), unread: z.number() }),
-  starred: z.object({ total: z.number(), unread: z.number() }),
-  saved: z.object({ total: z.number(), unread: z.number() }),
+  all: z.object({ unread: z.number() }),
+  starred: z.object({ unread: z.number() }),
+  saved: z.object({ unread: z.number() }),
 });
 
 // ============================================================================

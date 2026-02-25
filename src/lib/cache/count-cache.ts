@@ -273,18 +273,15 @@ export function adjustTagUnreadCounts(
  * @param utils - tRPC utils for cache access
  * @param filters - The filter params to target (e.g., { starredOnly: true })
  * @param unreadDelta - Change to unread count
- * @param totalDelta - Change to total count (default: 0)
  */
 export function adjustEntriesCount(
   utils: TRPCClientUtils,
   filters: Parameters<typeof utils.entries.count.setData>[0],
-  unreadDelta: number,
-  totalDelta: number = 0
+  unreadDelta: number
 ): void {
   utils.entries.count.setData(filters, (oldData) => {
     if (!oldData) return oldData;
     return {
-      total: Math.max(0, oldData.total + totalDelta),
       unread: Math.max(0, oldData.unread + unreadDelta),
     };
   });

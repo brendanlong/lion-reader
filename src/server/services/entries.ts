@@ -912,7 +912,7 @@ export async function countEntries(
     unstarredOnly?: boolean;
     showSpam: boolean;
   }
-): Promise<{ total: number; unread: number }> {
+): Promise<{ unread: number }> {
   const conditions = [eq(visibleEntries.userId, userId)];
 
   // Apply feed filters (subscriptionId, tagId, uncategorized)
@@ -927,7 +927,7 @@ export async function countEntries(
   );
 
   if (feedFilter.isEmpty) {
-    return { total: 0, unread: 0 };
+    return { unread: 0 };
   }
 
   if (feedFilter.feedIdsCondition !== null) {
@@ -939,16 +939,69 @@ export async function countEntries(
 
   const result = await db
     .select({
-      total: sql<number>`count(*)::int`,
       unread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.read} = false)::int`,
     })
     .from(visibleEntries)
     .where(and(...conditions));
 
   return {
-    total: result[0]?.total ?? 0,
     unread: result[0]?.unread ?? 0,
   };
+}
+
+/**
+ * Counts total entries matching filters. Used only by APIs that need total
+ * counts for pagination metadata (e.g., Wallabag compatibility API).
+ *
+ * Most callers should use `countEntries` instead, which only counts unread
+ * entries and can leverage partial indexes for better performance.
+ */
+export async function countTotalEntries(
+  db: typeof dbType,
+  userId: string,
+  params: {
+    subscriptionId?: string;
+    tagId?: string;
+    uncategorized?: boolean;
+    type?: "web" | "email" | "saved";
+    excludeTypes?: Array<"web" | "email" | "saved">;
+    unreadOnly?: boolean;
+    readOnly?: boolean;
+    starredOnly?: boolean;
+    unstarredOnly?: boolean;
+    showSpam: boolean;
+  }
+): Promise<number> {
+  const conditions = [eq(visibleEntries.userId, userId)];
+
+  const feedFilter = await buildEntryFeedFilter(
+    db,
+    {
+      subscriptionId: params.subscriptionId,
+      tagId: params.tagId,
+      uncategorized: params.uncategorized,
+    },
+    userId
+  );
+
+  if (feedFilter.isEmpty) {
+    return 0;
+  }
+
+  if (feedFilter.feedIdsCondition !== null) {
+    conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
+  }
+
+  conditions.push(...buildEntryFilterConditions(params));
+
+  const result = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+    })
+    .from(visibleEntries)
+    .where(and(...conditions));
+
+  return result[0]?.total ?? 0;
 }
 
 /**
