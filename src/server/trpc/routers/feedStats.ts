@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { eq, and, isNull, sql, count } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { feeds, subscriptions, entries } from "@/server/db/schema";
 
 // ============================================================================

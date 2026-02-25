@@ -31,10 +31,19 @@ const t = initTRPC
   .create({
     transformer: superjson,
     errorFormatter({ shape, error }) {
+      // Extract our custom app error code from cause (set by createError in errors.ts)
+      const cause = error.cause;
+      const appErrorCode =
+        cause && typeof cause === "object" && "code" in cause
+          ? (cause as { code: string }).code
+          : undefined;
+
       return {
         ...shape,
         data: {
           ...shape.data,
+          // Custom app error code (e.g. SIGNUP_CONFIRMATION_REQUIRED, INVITE_REQUIRED)
+          appErrorCode,
           // Include Zod validation errors in response
           zodError: error.cause instanceof ZodError ? error.cause.flatten() : null,
         },
@@ -134,8 +143,44 @@ const authMiddleware = t.middleware(({ ctx, next }) => {
 /**
  * Protected procedure - requires authentication.
  * The session is guaranteed to be non-null in the handler.
+ * Does NOT require signup confirmation — use for auth management endpoints
+ * (auth.me, auth.confirmSignup, auth.logout, etc.)
  */
 export const protectedProcedure = t.procedure.use(timingMiddleware).use(authMiddleware);
+
+/**
+ * Middleware that enforces signup confirmation.
+ * Throws FORBIDDEN with SIGNUP_CONFIRMATION_REQUIRED code if the user
+ * has not completed the signup confirmation flow (ToS, Privacy, EU check).
+ * Must be chained after authMiddleware.
+ */
+const confirmedMiddleware = t.middleware(({ ctx, next }) => {
+  const session = ctx.session!;
+  const sessionToken = ctx.sessionToken!;
+
+  const { tosAgreedAt, privacyPolicyAgreedAt, notEuAgreedAt } = session.user;
+  if (!tosAgreedAt || !privacyPolicyAgreedAt || !notEuAgreedAt) {
+    throw errors.signupConfirmationRequired();
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      session,
+      sessionToken,
+    },
+  });
+});
+
+/**
+ * Confirmed protected procedure - requires authentication AND signup confirmation.
+ * Use this for all regular app endpoints. Users who haven't completed signup
+ * confirmation will get a SIGNUP_CONFIRMATION_REQUIRED error.
+ */
+export const confirmedProtectedProcedure = t.procedure
+  .use(timingMiddleware)
+  .use(authMiddleware)
+  .use(confirmedMiddleware);
 
 // ============================================================================
 // Scope Enforcement Middleware
@@ -178,11 +223,16 @@ function createScopeMiddleware(requiredScope: ApiTokenScope) {
 /**
  * Creates a protected procedure that requires a specific API token scope.
  * Session-based auth has full access; API tokens must have the specified scope.
+ * Also requires signup confirmation.
  *
  * @param scope - The required scope for API token access
  */
 export function scopedProtectedProcedure(scope: ApiTokenScope) {
-  return t.procedure.use(timingMiddleware).use(authMiddleware).use(createScopeMiddleware(scope));
+  return t.procedure
+    .use(timingMiddleware)
+    .use(authMiddleware)
+    .use(confirmedMiddleware)
+    .use(createScopeMiddleware(scope));
 }
 
 // ============================================================================
@@ -282,10 +332,22 @@ export const expensivePublicProcedure = t.procedure
  * Protected procedure with stricter rate limiting.
  * Used for expensive authenticated operations like subscribing.
  * Uses expensive rate limits (10 burst, 1/sec refill).
+ * Does NOT require signup confirmation — use for auth management endpoints.
  */
 export const expensiveProtectedProcedure = t.procedure
   .use(timingMiddleware)
   .use(authMiddleware)
+  .use(createAuthenticatedRateLimitMiddleware("expensive"));
+
+/**
+ * Confirmed protected procedure with stricter rate limiting.
+ * Used for expensive authenticated operations that require confirmed signup.
+ * Uses expensive rate limits (10 burst, 1/sec refill).
+ */
+export const expensiveConfirmedProtectedProcedure = t.procedure
+  .use(timingMiddleware)
+  .use(authMiddleware)
+  .use(confirmedMiddleware)
   .use(createAuthenticatedRateLimitMiddleware("expensive"));
 
 // ============================================================================

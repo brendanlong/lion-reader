@@ -377,7 +377,10 @@ CREATE TABLE public.users (
     summarization_prompt text,
     algorithmic_feed_enabled boolean DEFAULT true NOT NULL,
     best_feed_score_weight real DEFAULT 1 NOT NULL,
-    best_feed_uncertainty_weight real DEFAULT 1 NOT NULL
+    best_feed_uncertainty_weight real DEFAULT 1 NOT NULL,
+    tos_agreed_at timestamp with time zone,
+    privacy_policy_agreed_at timestamp with time zone,
+    not_eu_agreed_at timestamp with time zone
 );
 
 CREATE VIEW public.visible_entries AS

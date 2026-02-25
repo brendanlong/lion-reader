@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { entries, narrationContent, userEntries } from "@/server/db/schema";

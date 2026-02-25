@@ -809,6 +809,9 @@ export const authRouter = createTRPCRouter({
           id: z.string(),
           email: z.string(),
           emailVerifiedAt: z.date().nullable(),
+          tosAgreedAt: z.date().nullable(),
+          privacyPolicyAgreedAt: z.date().nullable(),
+          notEuAgreedAt: z.date().nullable(),
           createdAt: z.date(),
         }),
       })
@@ -821,9 +824,54 @@ export const authRouter = createTRPCRouter({
           id: user.id,
           email: user.email,
           emailVerifiedAt: user.emailVerifiedAt,
+          tosAgreedAt: user.tosAgreedAt,
+          privacyPolicyAgreedAt: user.privacyPolicyAgreedAt,
+          notEuAgreedAt: user.notEuAgreedAt,
           createdAt: user.createdAt,
         },
       };
+    }),
+
+  /**
+   * Confirm signup by accepting Terms of Service, Privacy Policy, and EU check.
+   *
+   * Users must confirm all three checkboxes before they can use the app.
+   * This sets the individual agreement timestamps on the user record.
+   */
+  confirmSignup: protectedProcedure
+    .input(
+      z.object({
+        acceptedTermsOfService: z.literal(true, {
+          error: "You must accept the Terms of Service",
+        }),
+        acceptedPrivacyPolicy: z.literal(true, {
+          error: "You must accept the Privacy Policy",
+        }),
+        confirmedNotInEu: z.literal(true, {
+          error: "You must confirm you are not in the EU",
+        }),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+      const now = new Date();
+
+      await ctx.db
+        .update(users)
+        .set({
+          tosAgreedAt: now,
+          privacyPolicyAgreedAt: now,
+          notEuAgreedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
+
+      // Invalidate session cache so the confirmed state is reflected immediately
+      const { invalidateUserSessionCaches } = await import("@/server/auth/session");
+      await invalidateUserSessionCaches(userId);
+
+      return { success: true };
     }),
 
   /**

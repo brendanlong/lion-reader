@@ -428,6 +428,13 @@
       "when": 1770618800000,
       "tag": "0060_subscription_feeds",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1770628800000,
+      "tag": "0062_signup_confirmation",
+      "breakpoints": true
     }
   ]
 }

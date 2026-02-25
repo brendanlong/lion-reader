@@ -114,14 +114,16 @@ export function handleSignupError(
  * @param userId - The authenticated user's ID
  * @param request - The incoming request (for client info extraction)
  * @param appUrl - The base app URL for redirects
- * @param redirectStatus - HTTP status for redirect (default 302, use 303 for POST->GET)
+ * @param options - Optional configuration
+ * @param options.redirectStatus - HTTP status for redirect (default 302, use 303 for POST->GET)
+ * @param options.isNewUser - Whether this is a new user (redirects to complete-signup)
  * @returns A redirect response with the session cookie set
  */
 export async function createSessionResponse(
   userId: string,
   request: NextRequest,
   appUrl: string,
-  redirectStatus?: number
+  options?: { redirectStatus?: number; isNewUser?: boolean }
 ): Promise<NextResponse> {
   const { userAgent, ipAddress } = extractClientInfo(request);
 
@@ -132,10 +134,13 @@ export async function createSessionResponse(
     ipAddress,
   });
 
+  // New users need to complete signup confirmation first
+  const redirectTo = options?.isNewUser ? "/complete-signup" : "/all";
+
   // Redirect through OAuth completion page to broadcast success for PWAs
   const response = NextResponse.redirect(
-    `${appUrl}/auth/oauth/complete?redirect=/all`,
-    redirectStatus
+    `${appUrl}/auth/oauth/complete?redirect=${encodeURIComponent(redirectTo)}`,
+    options?.redirectStatus
   );
 
   // Set session cookie (30 days)

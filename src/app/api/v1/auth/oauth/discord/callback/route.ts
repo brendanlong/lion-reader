@@ -70,7 +70,9 @@ export async function GET(request: NextRequest) {
       inviteToken,
     });
 
-    return createSessionResponse(oauthResult.userId, request, appUrl);
+    return createSessionResponse(oauthResult.userId, request, appUrl, {
+      isNewUser: oauthResult.isNewUser,
+    });
   } catch (error) {
     console.error("Discord OAuth callback error:", error);
 

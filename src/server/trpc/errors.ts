@@ -20,6 +20,7 @@ const ErrorCodes = {
 
   // Authorization errors (403)
   FORBIDDEN: "FORBIDDEN",
+  SIGNUP_CONFIRMATION_REQUIRED: "SIGNUP_CONFIRMATION_REQUIRED",
   ADMIN_SECRET_NOT_CONFIGURED: "ADMIN_SECRET_NOT_CONFIGURED",
 
   // Not found errors (404)
@@ -93,6 +94,7 @@ const errorCodeToTRPCCode: Record<
   SESSION_EXPIRED: "UNAUTHORIZED",
   ADMIN_UNAUTHORIZED: "UNAUTHORIZED",
   FORBIDDEN: "FORBIDDEN",
+  SIGNUP_CONFIRMATION_REQUIRED: "FORBIDDEN",
   ADMIN_SECRET_NOT_CONFIGURED: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
   USER_NOT_FOUND: "NOT_FOUND",
@@ -166,6 +168,12 @@ export const errors = {
 
   forbidden: (message = "You don't have permission to access this resource") =>
     createError(ErrorCodes.FORBIDDEN, message),
+
+  signupConfirmationRequired: () =>
+    createError(
+      ErrorCodes.SIGNUP_CONFIRMATION_REQUIRED,
+      "You must complete signup before accessing this resource"
+    ),
 
   notFound: (resource: string) => createError(ErrorCodes.NOT_FOUND, `${resource} not found`),
 

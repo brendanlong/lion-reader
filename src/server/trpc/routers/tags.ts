@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { uuidSchema } from "../validation";
 import * as tagsService from "@/server/services/tags";
 

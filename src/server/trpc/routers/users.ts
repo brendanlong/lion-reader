@@ -8,7 +8,11 @@ import { z } from "zod";
 import * as argon2 from "argon2";
 import { eq, and, isNull, gt, desc } from "drizzle-orm";
 
-import { createTRPCRouter, protectedProcedure, expensiveProtectedProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  confirmedProtectedProcedure as protectedProcedure,
+  expensiveProtectedProcedure,
+} from "../trpc";
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import { revokeSession, invalidateUserSessionCaches } from "@/server/auth/session";

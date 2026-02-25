@@ -13,7 +13,7 @@ import { z } from "zod";
 import { eq, and, lte, inArray, notInArray, sql } from "drizzle-orm";
 import { createHash } from "crypto";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import {
