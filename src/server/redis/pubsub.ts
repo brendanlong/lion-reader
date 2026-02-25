@@ -16,244 +16,12 @@ import {
   feedCreatedDataSchema,
 } from "@/lib/events/schemas";
 
-/**
- * Event types that can be published.
- */
-type FeedEventType = "new_entry" | "entry_updated";
-
-/**
- * Base event payload interface for feed events.
- */
-interface BaseFeedEvent {
-  type: FeedEventType;
-  feedId: string;
-  entryId: string;
-  timestamp: string;
-  /** Database updated_at for cursor tracking (entries cursor) */
-  updatedAt: string;
-  feedType?: "web" | "email" | "saved"; // Added to new_entry for cache updates
-}
-
-/**
- * Event published when a new entry is created.
- */
-export interface NewEntryEvent extends BaseFeedEvent {
-  type: "new_entry";
-}
-
-/**
- * Entry metadata included in entry_updated events.
- * Enables direct cache updates without refetching.
- */
-export interface EntryUpdatedMetadata {
-  title: string | null;
-  author: string | null;
-  summary: string | null;
-  url: string | null;
-  publishedAt: string | null; // ISO string for serialization
-}
-
-/**
- * Event published when an existing entry is updated.
- */
-export interface EntryUpdatedEvent extends BaseFeedEvent {
-  type: "entry_updated";
-  /** Entry metadata for direct cache updates */
-  metadata: EntryUpdatedMetadata;
-}
-
-/**
- * Union type for all feed events.
- */
-export type FeedEvent = NewEntryEvent | EntryUpdatedEvent;
-
-/**
- * Subscription data included in subscription_created events.
- * Mirrors the subscription output schema to enable optimistic cache updates.
- */
-export interface SubscriptionCreatedEventSubscription {
-  id: string;
-  feedId: string;
-  customTitle: string | null;
-  subscribedAt: string; // ISO string for serialization
-  unreadCount: number;
-  tags: Array<{ id: string; name: string; color: string | null }>;
-}
-
-/**
- * Feed data included in subscription_created events.
- * Mirrors the feed output schema to enable optimistic cache updates.
- */
-export interface SubscriptionCreatedEventFeed {
-  id: string;
-  type: "web" | "email" | "saved";
-  url: string | null;
-  title: string | null;
-  description: string | null;
-  siteUrl: string | null;
-}
-
-/**
- * Event published when a user subscribes to a new feed.
- * This is sent to all of the user's active SSE connections so they can:
- * 1. Add the new feedId to their filter set
- * 2. Update the subscriptions cache directly (optimistic update)
- *
- * Includes full subscription and feed data to enable cache updates without
- * requiring a full refetch of the subscriptions list.
- */
-export interface SubscriptionCreatedEvent {
-  type: "subscription_created";
-  userId: string;
-  feedId: string;
-  subscriptionId: string;
-  timestamp: string;
-  /** Database updated_at for cursor tracking (subscriptions cursor) */
-  updatedAt: string;
-  /** Full subscription data for optimistic cache update */
-  subscription: SubscriptionCreatedEventSubscription;
-  /** Full feed data for optimistic cache update */
-  feed: SubscriptionCreatedEventFeed;
-}
-
-/**
- * Event published when a subscription's properties change (tags, custom title, etc.).
- * This is sent to all of the user's active SSE connections so they can
- * update the subscription in their caches.
- */
-export interface SubscriptionUpdatedEvent {
-  type: "subscription_updated";
-  userId: string;
-  subscriptionId: string;
-  tags: Array<{ id: string; name: string; color: string | null }>;
-  customTitle: string | null;
-  timestamp: string;
-  /** Database updated_at for cursor tracking (subscriptions cursor) */
-  updatedAt: string;
-}
-
-/**
- * Event published when a user unsubscribes from a feed.
- * This is sent to all of the user's active SSE connections so they can:
- * 1. Remove the feedId from their filter set
- * 2. Refresh the subscriptions list
- */
-export interface SubscriptionDeletedEvent {
-  type: "subscription_deleted";
-  userId: string;
-  feedId: string;
-  subscriptionId: string;
-  timestamp: string;
-  /** Database updated_at for cursor tracking (subscriptions cursor) */
-  updatedAt: string;
-}
-
-/**
- * Event published when an OPML import makes progress (a feed is processed).
- * Sent after each feed is processed so the UI can show real-time progress.
- */
-export interface ImportProgressEvent {
-  type: "import_progress";
-  userId: string;
-  importId: string;
-  /** The URL of the feed that was just processed */
-  feedUrl: string;
-  /** Status of this feed: imported, skipped, or failed */
-  feedStatus: "imported" | "skipped" | "failed";
-  /** Current counts */
-  imported: number;
-  skipped: number;
-  failed: number;
-  total: number;
-  timestamp: string;
-}
-
-/**
- * Event published when an OPML import completes (all feeds processed).
- */
-export interface ImportCompletedEvent {
-  type: "import_completed";
-  userId: string;
-  importId: string;
-  /** Final counts */
-  imported: number;
-  skipped: number;
-  failed: number;
-  total: number;
-  timestamp: string;
-}
-
-/**
- * Event published when an entry's read/starred state changes.
- * This is sent to all of the user's active SSE connections for multi-tab/device sync.
- */
-export interface EntryStateChangedEvent {
-  type: "entry_state_changed";
-  userId: string;
-  entryId: string;
-  read: boolean;
-  starred: boolean;
-  timestamp: string;
-  /** Database updated_at for cursor tracking (entries cursor) */
-  updatedAt: string;
-}
-
-/**
- * Event published when a tag is created.
- */
-export interface TagCreatedEvent {
-  type: "tag_created";
-  userId: string;
-  tag: { id: string; name: string; color: string | null };
-  timestamp: string;
-  /** Database updated_at for cursor tracking (tags cursor) */
-  updatedAt: string;
-}
-
-/**
- * Event published when a tag is updated.
- */
-export interface TagUpdatedEvent {
-  type: "tag_updated";
-  userId: string;
-  tag: { id: string; name: string; color: string | null };
-  timestamp: string;
-  /** Database updated_at for cursor tracking (tags cursor) */
-  updatedAt: string;
-}
-
-/**
- * Event published when a tag is deleted.
- */
-export interface TagDeletedEvent {
-  type: "tag_deleted";
-  userId: string;
-  tagId: string;
-  timestamp: string;
-  /** Database updated_at for cursor tracking (tags cursor) */
-  updatedAt: string;
-}
-
-/**
- * Union type for all user events.
- */
-export type UserEvent =
-  | SubscriptionCreatedEvent
-  | SubscriptionUpdatedEvent
-  | SubscriptionDeletedEvent
-  | ImportProgressEvent
-  | ImportCompletedEvent
-  | EntryStateChangedEvent
-  | TagCreatedEvent
-  | TagUpdatedEvent
-  | TagDeletedEvent;
-
 // ============================================================================
-// Server-Side Parsing Schemas
+// Event Schemas (single source of truth for both publishing and parsing)
 // ============================================================================
 
 /**
- * Zod schema for feed events received from Redis pub/sub.
+ * Zod schema for feed events published/received via Redis pub/sub.
  * Reuses entryMetadataSchema from the shared event schemas.
  */
 const feedEventSchema = z.discriminatedUnion("type", [
@@ -277,7 +45,7 @@ const feedEventSchema = z.discriminatedUnion("type", [
 ]);
 
 /**
- * Zod schema for user events received from Redis pub/sub.
+ * Zod schema for user events published/received via Redis pub/sub.
  * Composes from shared sub-schemas (syncTagSchema, subscriptionCreatedDataSchema, etc.)
  * to stay in sync with the client-side event definitions.
  */
@@ -362,6 +130,35 @@ const userEventSchema = z.discriminatedUnion("type", [
     updatedAt: z.string(),
   }),
 ]);
+
+// ============================================================================
+// Derived Types (all derived from Zod schemas above)
+// ============================================================================
+
+/** Union type for all feed events. */
+export type FeedEvent = z.infer<typeof feedEventSchema>;
+/** Union type for all user events. */
+export type UserEvent = z.infer<typeof userEventSchema>;
+
+// Individual feed event types (used by publish functions)
+type NewEntryEvent = Extract<FeedEvent, { type: "new_entry" }>;
+type EntryUpdatedEvent = Extract<FeedEvent, { type: "entry_updated" }>;
+
+// Sub-types derived from shared schemas
+export type EntryUpdatedMetadata = z.infer<typeof entryMetadataSchema>;
+export type SubscriptionCreatedEventSubscription = z.infer<typeof subscriptionCreatedDataSchema>;
+export type SubscriptionCreatedEventFeed = z.infer<typeof feedCreatedDataSchema>;
+
+// Individual user event types (used by publish functions)
+type SubscriptionCreatedEvent = Extract<UserEvent, { type: "subscription_created" }>;
+type SubscriptionUpdatedEvent = Extract<UserEvent, { type: "subscription_updated" }>;
+type SubscriptionDeletedEvent = Extract<UserEvent, { type: "subscription_deleted" }>;
+type ImportProgressEvent = Extract<UserEvent, { type: "import_progress" }>;
+type ImportCompletedEvent = Extract<UserEvent, { type: "import_completed" }>;
+type EntryStateChangedEvent = Extract<UserEvent, { type: "entry_state_changed" }>;
+type TagCreatedEvent = Extract<UserEvent, { type: "tag_created" }>;
+type TagUpdatedEvent = Extract<UserEvent, { type: "tag_updated" }>;
+type TagDeletedEvent = Extract<UserEvent, { type: "tag_deleted" }>;
 
 /**
  * Returns the channel name for feed-specific events.
