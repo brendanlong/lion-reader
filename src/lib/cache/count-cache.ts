@@ -356,6 +356,12 @@ export function updateSubscriptionInCache(
       items: oldData.items.map((s) => (s.id === subscriptionId ? { ...s, ...updates } : s)),
     };
   });
+
+  // Update in subscriptions.get cache (used by entry list title)
+  utils.subscriptions.get.setData({ id: subscriptionId }, (oldData) => {
+    if (!oldData) return oldData;
+    return { ...oldData, ...updates };
+  });
 }
 
 /**
