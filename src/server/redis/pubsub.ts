@@ -8,6 +8,13 @@
  */
 
 import Redis from "ioredis";
+import { z } from "zod";
+import {
+  entryMetadataSchema,
+  syncTagSchema,
+  subscriptionCreatedDataSchema,
+  feedCreatedDataSchema,
+} from "@/lib/events/schemas";
 
 /**
  * Event types that can be published.
@@ -240,6 +247,121 @@ export type UserEvent =
   | TagCreatedEvent
   | TagUpdatedEvent
   | TagDeletedEvent;
+
+// ============================================================================
+// Server-Side Parsing Schemas
+// ============================================================================
+
+/**
+ * Zod schema for feed events received from Redis pub/sub.
+ * Reuses entryMetadataSchema from the shared event schemas.
+ */
+const feedEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("new_entry"),
+    feedId: z.string(),
+    entryId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+    feedType: z.enum(["web", "email", "saved"]).optional(),
+  }),
+  z.object({
+    type: z.literal("entry_updated"),
+    feedId: z.string(),
+    entryId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+    feedType: z.enum(["web", "email", "saved"]).optional(),
+    metadata: entryMetadataSchema,
+  }),
+]);
+
+/**
+ * Zod schema for user events received from Redis pub/sub.
+ * Composes from shared sub-schemas (syncTagSchema, subscriptionCreatedDataSchema, etc.)
+ * to stay in sync with the client-side event definitions.
+ */
+const userEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("subscription_created"),
+    userId: z.string(),
+    feedId: z.string(),
+    subscriptionId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+    subscription: subscriptionCreatedDataSchema,
+    feed: feedCreatedDataSchema,
+  }),
+  z.object({
+    type: z.literal("subscription_updated"),
+    userId: z.string(),
+    subscriptionId: z.string(),
+    tags: z.array(syncTagSchema),
+    customTitle: z.string().nullable(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal("subscription_deleted"),
+    userId: z.string(),
+    feedId: z.string(),
+    subscriptionId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal("import_progress"),
+    userId: z.string(),
+    importId: z.string(),
+    feedUrl: z.string(),
+    feedStatus: z.enum(["imported", "skipped", "failed"]),
+    imported: z.number(),
+    skipped: z.number(),
+    failed: z.number(),
+    total: z.number(),
+    timestamp: z.string(),
+  }),
+  z.object({
+    type: z.literal("import_completed"),
+    userId: z.string(),
+    importId: z.string(),
+    imported: z.number(),
+    skipped: z.number(),
+    failed: z.number(),
+    total: z.number(),
+    timestamp: z.string(),
+  }),
+  z.object({
+    type: z.literal("entry_state_changed"),
+    userId: z.string(),
+    entryId: z.string(),
+    read: z.boolean(),
+    starred: z.boolean(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal("tag_created"),
+    userId: z.string(),
+    tag: syncTagSchema,
+    timestamp: z.string(),
+    updatedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal("tag_updated"),
+    userId: z.string(),
+    tag: syncTagSchema,
+    timestamp: z.string(),
+    updatedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal("tag_deleted"),
+    userId: z.string(),
+    tagId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+  }),
+]);
 
 /**
  * Returns the channel name for feed-specific events.
@@ -748,49 +870,8 @@ export function createSubscriberClient(): Redis | null {
  */
 export function parseFeedEvent(message: string): FeedEvent | null {
   try {
-    const parsed: unknown = JSON.parse(message);
-
-    // Type guard to validate the event structure
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "type" in parsed &&
-      "feedId" in parsed &&
-      "entryId" in parsed &&
-      "timestamp" in parsed
-    ) {
-      const event = parsed as Record<string, unknown>;
-
-      if (
-        typeof event.feedId === "string" &&
-        typeof event.entryId === "string" &&
-        typeof event.timestamp === "string"
-      ) {
-        if (event.type === "new_entry") {
-          return event as unknown as NewEntryEvent;
-        }
-
-        if (
-          event.type === "entry_updated" &&
-          typeof event.metadata === "object" &&
-          event.metadata !== null
-        ) {
-          const metadata = event.metadata as Record<string, unknown>;
-          // Validate metadata structure (all fields can be null or correct type)
-          if (
-            (metadata.title === null || typeof metadata.title === "string") &&
-            (metadata.author === null || typeof metadata.author === "string") &&
-            (metadata.summary === null || typeof metadata.summary === "string") &&
-            (metadata.url === null || typeof metadata.url === "string") &&
-            (metadata.publishedAt === null || typeof metadata.publishedAt === "string")
-          ) {
-            return event as unknown as EntryUpdatedEvent;
-          }
-        }
-      }
-    }
-
-    return null;
+    const result = feedEventSchema.safeParse(JSON.parse(message));
+    return result.success ? result.data : null;
   } catch {
     return null;
   }
@@ -804,264 +885,8 @@ export function parseFeedEvent(message: string): FeedEvent | null {
  */
 export function parseUserEvent(message: string): UserEvent | null {
   try {
-    const parsed: unknown = JSON.parse(message);
-
-    // Type guard to validate the event structure
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "type" in parsed &&
-      "timestamp" in parsed
-    ) {
-      const event = parsed as Record<string, unknown>;
-
-      if (
-        event.type === "subscription_created" &&
-        typeof event.userId === "string" &&
-        typeof event.feedId === "string" &&
-        typeof event.subscriptionId === "string" &&
-        typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string" &&
-        typeof event.subscription === "object" &&
-        event.subscription !== null &&
-        typeof event.feed === "object" &&
-        event.feed !== null
-      ) {
-        const sub = event.subscription as Record<string, unknown>;
-        const feed = event.feed as Record<string, unknown>;
-
-        // Validate subscription structure
-        if (
-          typeof sub.id !== "string" ||
-          typeof sub.feedId !== "string" ||
-          (sub.customTitle !== null && typeof sub.customTitle !== "string") ||
-          typeof sub.subscribedAt !== "string" ||
-          typeof sub.unreadCount !== "number" ||
-          !Array.isArray(sub.tags)
-        ) {
-          return null;
-        }
-
-        // Validate feed structure
-        if (
-          typeof feed.id !== "string" ||
-          (feed.type !== "web" && feed.type !== "email" && feed.type !== "saved") ||
-          (feed.url !== null && typeof feed.url !== "string") ||
-          (feed.title !== null && typeof feed.title !== "string") ||
-          (feed.description !== null && typeof feed.description !== "string") ||
-          (feed.siteUrl !== null && typeof feed.siteUrl !== "string")
-        ) {
-          return null;
-        }
-
-        return {
-          type: "subscription_created",
-          userId: event.userId,
-          feedId: event.feedId,
-          subscriptionId: event.subscriptionId,
-          timestamp: event.timestamp,
-          updatedAt: event.updatedAt,
-          subscription: {
-            id: sub.id,
-            feedId: sub.feedId,
-            customTitle: sub.customTitle as string | null,
-            subscribedAt: sub.subscribedAt,
-            unreadCount: sub.unreadCount,
-            tags: sub.tags as Array<{ id: string; name: string; color: string | null }>,
-          },
-          feed: {
-            id: feed.id,
-            type: feed.type,
-            url: feed.url as string | null,
-            title: feed.title as string | null,
-            description: feed.description as string | null,
-            siteUrl: feed.siteUrl as string | null,
-          },
-        };
-      }
-
-      if (
-        event.type === "subscription_deleted" &&
-        typeof event.userId === "string" &&
-        typeof event.feedId === "string" &&
-        typeof event.subscriptionId === "string" &&
-        typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string"
-      ) {
-        return {
-          type: "subscription_deleted",
-          userId: event.userId,
-          feedId: event.feedId,
-          subscriptionId: event.subscriptionId,
-          timestamp: event.timestamp,
-          updatedAt: event.updatedAt,
-        };
-      }
-
-      if (
-        event.type === "subscription_updated" &&
-        typeof event.userId === "string" &&
-        typeof event.subscriptionId === "string" &&
-        Array.isArray(event.tags) &&
-        (event.customTitle === null || typeof event.customTitle === "string") &&
-        typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string"
-      ) {
-        return {
-          type: "subscription_updated",
-          userId: event.userId,
-          subscriptionId: event.subscriptionId,
-          tags: event.tags as Array<{ id: string; name: string; color: string | null }>,
-          customTitle: event.customTitle as string | null,
-          timestamp: event.timestamp,
-          updatedAt: event.updatedAt,
-        };
-      }
-
-      if (
-        event.type === "import_progress" &&
-        typeof event.userId === "string" &&
-        typeof event.importId === "string" &&
-        typeof event.feedUrl === "string" &&
-        (event.feedStatus === "imported" ||
-          event.feedStatus === "skipped" ||
-          event.feedStatus === "failed") &&
-        typeof event.imported === "number" &&
-        typeof event.skipped === "number" &&
-        typeof event.failed === "number" &&
-        typeof event.total === "number" &&
-        typeof event.timestamp === "string"
-      ) {
-        return {
-          type: "import_progress",
-          userId: event.userId,
-          importId: event.importId,
-          feedUrl: event.feedUrl,
-          feedStatus: event.feedStatus,
-          imported: event.imported,
-          skipped: event.skipped,
-          failed: event.failed,
-          total: event.total,
-          timestamp: event.timestamp,
-        };
-      }
-
-      if (
-        event.type === "import_completed" &&
-        typeof event.userId === "string" &&
-        typeof event.importId === "string" &&
-        typeof event.imported === "number" &&
-        typeof event.skipped === "number" &&
-        typeof event.failed === "number" &&
-        typeof event.total === "number" &&
-        typeof event.timestamp === "string"
-      ) {
-        return {
-          type: "import_completed",
-          userId: event.userId,
-          importId: event.importId,
-          imported: event.imported,
-          skipped: event.skipped,
-          failed: event.failed,
-          total: event.total,
-          timestamp: event.timestamp,
-        };
-      }
-
-      if (
-        event.type === "entry_state_changed" &&
-        typeof event.userId === "string" &&
-        typeof event.entryId === "string" &&
-        typeof event.read === "boolean" &&
-        typeof event.starred === "boolean" &&
-        typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string"
-      ) {
-        return {
-          type: "entry_state_changed",
-          userId: event.userId,
-          entryId: event.entryId,
-          read: event.read,
-          starred: event.starred,
-          timestamp: event.timestamp,
-          updatedAt: event.updatedAt,
-        };
-      }
-
-      if (
-        event.type === "tag_created" &&
-        typeof event.userId === "string" &&
-        typeof event.tag === "object" &&
-        event.tag !== null &&
-        typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string"
-      ) {
-        const tag = event.tag as Record<string, unknown>;
-        if (
-          typeof tag.id === "string" &&
-          typeof tag.name === "string" &&
-          (tag.color === null || typeof tag.color === "string")
-        ) {
-          return {
-            type: "tag_created",
-            userId: event.userId,
-            tag: {
-              id: tag.id,
-              name: tag.name,
-              color: tag.color as string | null,
-            },
-            timestamp: event.timestamp,
-            updatedAt: event.updatedAt,
-          };
-        }
-      }
-
-      if (
-        event.type === "tag_updated" &&
-        typeof event.userId === "string" &&
-        typeof event.tag === "object" &&
-        event.tag !== null &&
-        typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string"
-      ) {
-        const tag = event.tag as Record<string, unknown>;
-        if (
-          typeof tag.id === "string" &&
-          typeof tag.name === "string" &&
-          (tag.color === null || typeof tag.color === "string")
-        ) {
-          return {
-            type: "tag_updated",
-            userId: event.userId,
-            tag: {
-              id: tag.id,
-              name: tag.name,
-              color: tag.color as string | null,
-            },
-            timestamp: event.timestamp,
-            updatedAt: event.updatedAt,
-          };
-        }
-      }
-
-      if (
-        event.type === "tag_deleted" &&
-        typeof event.userId === "string" &&
-        typeof event.tagId === "string" &&
-        typeof event.timestamp === "string" &&
-        typeof event.updatedAt === "string"
-      ) {
-        return {
-          type: "tag_deleted",
-          userId: event.userId,
-          tagId: event.tagId,
-          timestamp: event.timestamp,
-          updatedAt: event.updatedAt,
-        };
-      }
-    }
-
-    return null;
+    const result = userEventSchema.safeParse(JSON.parse(message));
+    return result.success ? result.data : null;
   } catch {
     return null;
   }
