@@ -17,6 +17,19 @@ export type CachedSubscription = NonNullable<
 >["items"][number];
 
 /**
+ * Fallback map for subscriptions received via SSE events that may not be in
+ * any React Query cache. This handles the case where a subscription_created
+ * event arrives but the subscription's query cache hasn't been populated yet
+ * (e.g., the Uncategorized section is collapsed in the sidebar, so the
+ * per-tag infinite query hasn't been fetched). Without this, subsequent
+ * new_entry events can't determine the subscription's tags, causing
+ * tag/uncategorized unread counts to not update.
+ *
+ * Populated by addSubscriptionToCache, cleaned by removeSubscriptionFromCache.
+ */
+const sseSubscriptionFallback = new Map<string, CachedSubscription>();
+
+/**
  * Page structure in subscription infinite query cache.
  */
 interface CachedSubscriptionPage {
@@ -89,6 +102,15 @@ function getAllCachedSubscriptions(
     });
   }
 
+  // Fallback: check SSE subscription map for subscriptions not in any query cache.
+  // This covers newly-created subscriptions whose query caches haven't been populated
+  // (e.g., Uncategorized section is collapsed so the infinite query was never fetched).
+  for (const [id, s] of sseSubscriptionFallback) {
+    if (!subscriptionMap.has(id)) {
+      subscriptionMap.set(id, s);
+    }
+  }
+
   return subscriptionMap;
 }
 
@@ -153,7 +175,10 @@ export function findCachedSubscription(
       found = s;
     }
   });
-  return found;
+  if (found) return found;
+
+  // Fallback: check SSE subscription map
+  return sseSubscriptionFallback.get(subscriptionId);
 }
 
 /**
@@ -285,6 +310,10 @@ export function addSubscriptionToCache(
     fetchFullContent: boolean;
   }
 ): void {
+  // Store in SSE fallback map so tag delta calculations can find this
+  // subscription even if no query cache has been populated for it yet.
+  sseSubscriptionFallback.set(subscription.id, subscription);
+
   utils.subscriptions.list.setData(undefined, (oldData) => {
     if (!oldData) return oldData;
 
@@ -308,6 +337,8 @@ export function addSubscriptionToCache(
  * @param subscriptionId - ID of the subscription to remove
  */
 export function removeSubscriptionFromCache(utils: TRPCClientUtils, subscriptionId: string): void {
+  sseSubscriptionFallback.delete(subscriptionId);
+
   utils.subscriptions.list.setData(undefined, (oldData) => {
     if (!oldData) return oldData;
     return {
