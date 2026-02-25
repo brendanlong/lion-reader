@@ -35,7 +35,7 @@ Icons are in `@/components/ui/icon-button`. Use these instead of duplicating SVG
 - **Files**: `UploadIcon`, `DownloadIcon`, `ExternalLinkIcon`, `DocumentIcon`
 - **Sort**: `SortDescendingIcon`, `SortAscendingIcon`
 - **Empty state**: `DefaultEmptyIcon`
-- **Brand**: `GoogleIcon`, `AppleIcon`, `DiscordIcon`
+- **Brand**: `GoogleIcon`, `AppleIcon`, `DiscordIcon`, `ChromeIcon`, `FirefoxIcon`
 - **Network**: `WifiOffIcon`, `WifiOnIcon`
 - **Loading**: `SpinnerIcon` (animated)
 
