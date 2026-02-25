@@ -8,7 +8,12 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
-import { BookmarkIcon, ChevronRightIcon } from "@/components/ui/icon-button";
+import {
+  BookmarkIcon,
+  ChevronRightIcon,
+  ChromeIcon,
+  FirefoxIcon,
+} from "@/components/ui/icon-button";
 
 export function BookmarkletSettings() {
   const [showCode, setShowCode] = useState(false);
@@ -64,9 +69,7 @@ export function BookmarkletSettings() {
               rel="noopener noreferrer"
               className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2.5 font-medium text-blue-800 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-100 hover:shadow dark:border-blue-700 dark:bg-blue-950 dark:text-blue-200 dark:hover:border-blue-600 dark:hover:bg-blue-900"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.39 14.74L5.09 7.2A7.96 7.96 0 0112 4c2.85 0 5.35 1.5 6.76 3.74h-5.82c-.78 0-1.49.35-1.97.91l-1.36 3.09zm1.39.26c-1.69 0-3-1.31-3-3s1.31-3 3-3 3 1.31 3 3-1.31 3-3 3zm5.91-2.2L12.4 4.54c3.66.49 6.56 3.39 7.05 7.05l-1.54 3.21z" />
-              </svg>
+              <ChromeIcon className="h-4 w-4" />
               Install Chrome Extension
             </a>
             <a
@@ -75,9 +78,7 @@ export function BookmarkletSettings() {
               rel="noopener noreferrer"
               className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-4 py-2.5 font-medium text-orange-800 shadow-sm transition-all hover:border-orange-400 hover:bg-orange-100 hover:shadow dark:border-orange-700 dark:bg-orange-950 dark:text-orange-200 dark:hover:border-orange-600 dark:hover:bg-orange-900"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12.001 1.5c-.707 0-1.415.14-2.08.42L4.5 4.42A4.5 4.5 0 002 8.42v7.16a4.5 4.5 0 002.5 4l5.42 2.5c.665.28 1.373.42 2.08.42s1.415-.14 2.08-.42l5.42-2.5a4.5 4.5 0 002.5-4V8.42a4.5 4.5 0 00-2.5-4l-5.42-2.5A5.1 5.1 0 0012 1.5zm0 2c.45 0 .9.09 1.32.27l5.18 2.39c.96.44 1.5 1.38 1.5 2.42v6.84c0 1.04-.54 1.98-1.5 2.42l-5.18 2.39c-.42.18-.87.27-1.32.27s-.9-.09-1.32-.27l-5.18-2.39c-.96-.44-1.5-1.38-1.5-2.42V8.58c0-1.04.54-1.98 1.5-2.42l5.18-2.39c.42-.18.87-.27 1.32-.27z" />
-              </svg>
+              <FirefoxIcon className="h-4 w-4" />
               Install Firefox Extension
             </a>
           </div>
