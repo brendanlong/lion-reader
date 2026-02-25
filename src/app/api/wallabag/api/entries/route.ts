@@ -72,8 +72,8 @@ export async function GET(request: Request): Promise<Response> {
     baseParams.unstarredOnly = true;
   }
 
-  // Get total count for pagination metadata
-  const counts = await entriesService.countEntries(db, auth.userId, {
+  // Get total count for pagination metadata (Wallabag API needs total for offset pagination)
+  const total = await entriesService.countTotalEntries(db, auth.userId, {
     type: "saved",
     unreadOnly: params.archive === false ? true : undefined,
     readOnly: params.archive === true ? true : undefined,
@@ -94,9 +94,7 @@ export async function GET(request: Request): Promise<Response> {
     if (!cursor) {
       // Requested page is beyond available data
       const baseUrl = `${url.origin}/api/wallabag/api/entries`;
-      return jsonResponse(
-        createPaginatedResponse([], params.page, params.perPage, counts.total, baseUrl)
-      );
+      return jsonResponse(createPaginatedResponse([], params.page, params.perPage, total, baseUrl));
     }
   }
 
@@ -125,7 +123,7 @@ export async function GET(request: Request): Promise<Response> {
 
   const baseUrl = `${url.origin}/api/wallabag/api/entries`;
   return jsonResponse(
-    createPaginatedResponse(formattedItems, params.page, params.perPage, counts.total, baseUrl)
+    createPaginatedResponse(formattedItems, params.page, params.perPage, total, baseUrl)
   );
 }
 

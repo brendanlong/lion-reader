@@ -177,11 +177,11 @@ const entryMutationResultSchema = z.object({
  */
 const unreadCountsSchema = z.object({
   // Always present
-  all: z.object({ total: z.number(), unread: z.number() }),
-  starred: z.object({ total: z.number(), unread: z.number() }),
+  all: z.object({ unread: z.number() }),
+  starred: z.object({ unread: z.number() }),
 
   // Only for saved articles
-  saved: z.object({ total: z.number(), unread: z.number() }).optional(),
+  saved: z.object({ unread: z.number() }).optional(),
 
   // Only for web/email entries (have subscriptions)
   subscription: z.object({ id: z.string(), unread: z.number() }).optional(),
@@ -195,9 +195,9 @@ const unreadCountsSchema = z.object({
  */
 const bulkUnreadCountsSchema = z.object({
   // Always present
-  all: z.object({ total: z.number(), unread: z.number() }),
-  starred: z.object({ total: z.number(), unread: z.number() }),
-  saved: z.object({ total: z.number(), unread: z.number() }),
+  all: z.object({ unread: z.number() }),
+  starred: z.object({ unread: z.number() }),
+  saved: z.object({ unread: z.number() }),
 
   // Per-subscription counts (only subscriptions that were affected)
   subscriptions: z.array(z.object({ id: z.string(), unread: z.number() })),
@@ -999,7 +999,6 @@ export const entriesRouter = createTRPCRouter({
     )
     .output(
       z.object({
-        total: z.number(),
         unread: z.number(),
       })
     )

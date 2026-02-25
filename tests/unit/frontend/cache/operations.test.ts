@@ -122,15 +122,6 @@ describe("handleEntryStarred", () => {
     expect(entryOps.length).toBeGreaterThan(0);
   });
 
-  it("updates starred count - total always +1", () => {
-    handleEntryStarred(mockUtils.utils, "entry-1", true); // read entry
-
-    const countOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
-    );
-    expect(countOps.length).toBeGreaterThan(0);
-  });
-
   it("updates starred unread count +1 for unread entry", () => {
     handleEntryStarred(mockUtils.utils, "entry-1", false); // unread entry
 
@@ -144,11 +135,11 @@ describe("handleEntryStarred", () => {
   it("does not change starred unread count for read entry", () => {
     handleEntryStarred(mockUtils.utils, "entry-1", true); // read entry
 
-    // The unread delta should be 0 (only total changes)
+    // No count update since only unread counts are tracked and the entry is read
     const countOps = mockUtils.operations.filter(
       (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
     );
-    expect(countOps.length).toBeGreaterThan(0);
+    expect(countOps.length).toBe(0);
   });
 });
 
@@ -168,13 +159,14 @@ describe("handleEntryUnstarred", () => {
     expect(entryOps.length).toBeGreaterThan(0);
   });
 
-  it("updates starred count - total always -1", () => {
+  it("does not change starred unread count for read entry", () => {
     handleEntryUnstarred(mockUtils.utils, "entry-1", true); // read entry
 
+    // No count update since only unread counts are tracked and the entry is read
     const countOps = mockUtils.operations.filter(
       (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
     );
-    expect(countOps.length).toBeGreaterThan(0);
+    expect(countOps.length).toBe(0);
   });
 
   it("updates starred unread count -1 for unread entry", () => {
@@ -592,70 +584,60 @@ describe("cache update logic verification", () => {
   });
 
   describe("handleEntryStarred cache state updates", () => {
-    it("updates starred count total and unread for unread entry", () => {
-      mockUtils.setCache("entries", "count", { starredOnly: true }, { total: 5, unread: 2 });
+    it("increments starred unread count for unread entry", () => {
+      mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: 2 });
 
       handleEntryStarred(mockUtils.utils, "entry-1", false); // unread entry
 
       const countData = mockUtils.getCache("entries", "count", { starredOnly: true }) as {
-        total: number;
         unread: number;
       };
-      expect(countData.total).toBe(6); // +1
       expect(countData.unread).toBe(3); // +1
     });
 
-    it("updates only starred count total for read entry", () => {
-      mockUtils.setCache("entries", "count", { starredOnly: true }, { total: 5, unread: 2 });
+    it("does not change starred unread count for read entry", () => {
+      mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: 2 });
 
       handleEntryStarred(mockUtils.utils, "entry-1", true); // read entry
 
       const countData = mockUtils.getCache("entries", "count", { starredOnly: true }) as {
-        total: number;
         unread: number;
       };
-      expect(countData.total).toBe(6); // +1
       expect(countData.unread).toBe(2); // unchanged
     });
   });
 
   describe("handleEntryUnstarred cache state updates", () => {
-    it("decrements starred count total and unread for unread entry", () => {
-      mockUtils.setCache("entries", "count", { starredOnly: true }, { total: 5, unread: 2 });
+    it("decrements starred unread count for unread entry", () => {
+      mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: 2 });
 
       handleEntryUnstarred(mockUtils.utils, "entry-1", false); // unread entry
 
       const countData = mockUtils.getCache("entries", "count", { starredOnly: true }) as {
-        total: number;
         unread: number;
       };
-      expect(countData.total).toBe(4); // -1
       expect(countData.unread).toBe(1); // -1
     });
 
-    it("decrements only starred count total for read entry", () => {
-      mockUtils.setCache("entries", "count", { starredOnly: true }, { total: 5, unread: 2 });
+    it("does not change starred unread count for read entry", () => {
+      mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: 2 });
 
       handleEntryUnstarred(mockUtils.utils, "entry-1", true); // read entry
 
       const countData = mockUtils.getCache("entries", "count", { starredOnly: true }) as {
-        total: number;
         unread: number;
       };
-      expect(countData.total).toBe(4); // -1
       expect(countData.unread).toBe(2); // unchanged
     });
 
     it("does not decrement below zero", () => {
-      mockUtils.setCache("entries", "count", { starredOnly: true }, { total: 0, unread: 0 });
+      mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: 0 });
 
       handleEntryUnstarred(mockUtils.utils, "entry-1", false); // unread entry
 
       const countData = mockUtils.getCache("entries", "count", { starredOnly: true }) as {
-        total: number;
         unread: number;
       };
-      expect(countData.total).toBe(0); // clamped
       expect(countData.unread).toBe(0); // clamped
     });
   });

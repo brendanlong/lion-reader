@@ -634,7 +634,6 @@ describe("Entries", () => {
 
       const result = await caller.entries.count({});
 
-      expect(result.total).toBe(3);
       expect(result.unread).toBe(2);
     });
 
@@ -656,7 +655,6 @@ describe("Entries", () => {
 
       const result = await caller.entries.count({ unreadOnly: true });
 
-      expect(result.total).toBe(2);
       expect(result.unread).toBe(2);
     });
   });

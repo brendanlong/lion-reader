@@ -22,15 +22,15 @@ import { visibleEntries, subscriptionTags, userFeeds } from "@/server/db/schema"
  * Global entry counts (all articles, starred).
  */
 export interface GlobalCounts {
-  all: { total: number; unread: number };
-  starred: { total: number; unread: number };
+  all: { unread: number };
+  starred: { unread: number };
 }
 
 /**
  * Saved article counts.
  */
 export interface SavedCounts {
-  saved: { total: number; unread: number };
+  saved: { unread: number };
 }
 
 /**
@@ -55,11 +55,11 @@ export interface SubscriptionCounts {
  */
 export interface UnreadCounts {
   // Always present
-  all: { total: number; unread: number };
-  starred: { total: number; unread: number };
+  all: { unread: number };
+  starred: { unread: number };
 
   // Only for saved articles
-  saved?: { total: number; unread: number };
+  saved?: { unread: number };
 
   // Only for web/email entries (have subscriptions)
   subscription?: { id: string; unread: number };
@@ -88,19 +88,17 @@ export async function getEntryRelatedCounts(
   userId: string,
   entryId: string
 ): Promise<UnreadCounts> {
-  // Single query: global counts + saved counts + subscription count + entry info
-  // The entry info (subscriptionId, type) is extracted during the same full scan
+  // Single query: unread counts + entry info
+  // The entry info (subscriptionId, type) is extracted during the same scan
   // using MAX with a CASE filter, eliminating a separate round trip.
+  // Only counts unread entries (no total), allowing Postgres to use partial indexes.
   const result = await db
     .select({
-      // Global counts
-      allTotal: sql<number>`count(*)::int`,
+      // Global unread counts
       allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      // Starred counts
-      starredTotal: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
+      // Starred unread counts
       starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
-      // Saved counts
-      savedTotal: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
+      // Saved unread counts
       savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
       // Entry info extracted from the same scan
       entrySubscriptionId: sql<
@@ -115,8 +113,8 @@ export async function getEntryRelatedCounts(
 
   if (result.length === 0) {
     return {
-      all: { total: 0, unread: 0 },
-      starred: { total: 0, unread: 0 },
+      all: { unread: 0 },
+      starred: { unread: 0 },
     };
   }
 
@@ -125,8 +123,8 @@ export async function getEntryRelatedCounts(
   // Entry not found in this user's visible entries
   if (!counts.entryType) {
     return {
-      all: { total: 0, unread: 0 },
-      starred: { total: 0, unread: 0 },
+      all: { unread: 0 },
+      starred: { unread: 0 },
     };
   }
 
@@ -134,15 +132,15 @@ export async function getEntryRelatedCounts(
   const type = counts.entryType as "web" | "email" | "saved";
 
   const baseCounts: UnreadCounts = {
-    all: { total: counts.allTotal, unread: counts.allUnread },
-    starred: { total: counts.starredTotal, unread: counts.starredUnread },
+    all: { unread: counts.allUnread },
+    starred: { unread: counts.starredUnread },
   };
 
   // For saved articles, include saved counts and return (no subscription/tag queries needed)
   if (type === "saved") {
     return {
       ...baseCounts,
-      saved: { total: counts.savedTotal, unread: counts.savedUnread },
+      saved: { unread: counts.savedUnread },
     };
   }
 
@@ -251,9 +249,9 @@ async function getSubscriptionTagCounts(
  */
 export interface BulkUnreadCounts {
   // Always present
-  all: { total: number; unread: number };
-  starred: { total: number; unread: number };
-  saved: { total: number; unread: number };
+  all: { unread: number };
+  starred: { unread: number };
+  saved: { unread: number };
 
   // Per-subscription counts (only subscriptions that were affected)
   subscriptions: Array<{ id: string; unread: number }>;
@@ -284,32 +282,27 @@ export async function getBulkEntryRelatedCounts(
     ...new Set(entries.map((e) => e.subscriptionId).filter((id) => id !== null)),
   ] as string[];
 
-  // Query 1: Get global counts + saved counts + per-subscription counts in one query
+  // Query 1: Get unread counts for global + starred + saved in one query.
+  // Only counts unread entries (no total), allowing Postgres to use partial indexes.
   const globalResult = await db
     .select({
-      allTotal: sql<number>`count(*)::int`,
       allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      starredTotal: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
       starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
-      savedTotal: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
       savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
     })
     .from(visibleEntries)
     .where(eq(visibleEntries.userId, userId));
 
   const globalCounts = globalResult[0] ?? {
-    allTotal: 0,
     allUnread: 0,
-    starredTotal: 0,
     starredUnread: 0,
-    savedTotal: 0,
     savedUnread: 0,
   };
 
   const baseCounts: BulkUnreadCounts = {
-    all: { total: globalCounts.allTotal, unread: globalCounts.allUnread },
-    starred: { total: globalCounts.starredTotal, unread: globalCounts.starredUnread },
-    saved: { total: globalCounts.savedTotal, unread: globalCounts.savedUnread },
+    all: { unread: globalCounts.allUnread },
+    starred: { unread: globalCounts.starredUnread },
+    saved: { unread: globalCounts.savedUnread },
     subscriptions: [],
     tags: [],
   };
@@ -413,17 +406,15 @@ export async function getNewEntryRelatedCounts(
   entryType: "web" | "email" | "saved",
   subscriptionId: string | null
 ): Promise<UnreadCounts> {
-  // Query global + saved + subscription counts in one query
+  // Query unread counts for global + starred + saved + subscription in one query.
+  // Only counts unread entries (no total), allowing Postgres to use partial indexes.
   const result = await db
     .select({
-      // Global counts
-      allTotal: sql<number>`count(*)::int`,
+      // Global unread counts
       allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      // Starred counts
-      starredTotal: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
+      // Starred unread counts
       starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
-      // Saved counts
-      savedTotal: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
+      // Saved unread counts
       savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
       // Subscription count (only computed if subscriptionId provided)
       subscriptionUnread:
@@ -435,25 +426,22 @@ export async function getNewEntryRelatedCounts(
     .where(eq(visibleEntries.userId, userId));
 
   const counts = result[0] ?? {
-    allTotal: 0,
     allUnread: 0,
-    starredTotal: 0,
     starredUnread: 0,
-    savedTotal: 0,
     savedUnread: 0,
     subscriptionUnread: 0,
   };
 
   const baseCounts: UnreadCounts = {
-    all: { total: counts.allTotal, unread: counts.allUnread },
-    starred: { total: counts.starredTotal, unread: counts.starredUnread },
+    all: { unread: counts.allUnread },
+    starred: { unread: counts.starredUnread },
   };
 
   // For saved articles, include saved counts
   if (entryType === "saved") {
     return {
       ...baseCounts,
-      saved: { total: counts.savedTotal, unread: counts.savedUnread },
+      saved: { unread: counts.savedUnread },
     };
   }
 
