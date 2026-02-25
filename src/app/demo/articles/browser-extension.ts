@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Save articles to Lion Reader with one click using the browser extension for Firefox and Chrome.",
   publishedAt: new Date("2026-01-10T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>The Lion Reader browser extension lets you save any web page for later reading with a single click, a keyboard shortcut, or the right-click context menu. Available for <strong>Firefox</strong> (published on AMO) and <strong>Chrome</strong> (coming soon), the extension automatically extracts article content using Mozilla Readability, stores an API token for future saves, and handles Google Docs with automatic OAuth.</p>`,
+  summaryHtml: `<p>The Lion Reader browser extension lets you save any web page for later reading with a single click, a keyboard shortcut, or the right-click context menu. Available for <strong>Firefox</strong> and <strong>Chrome</strong>, the extension automatically extracts article content using Mozilla Readability, stores an API token for future saves, and handles Google Docs with automatic OAuth.</p>`,
   contentHtml: `
     <h2>Save While You Browse</h2>
 
@@ -41,7 +41,7 @@ const article: DemoArticle = {
 
     <ul>
       <li><strong>Firefox</strong> &mdash; Install from <a href="https://addons.mozilla.org/en-US/firefox/addon/lion-reader/" target="_blank" rel="noopener noreferrer">Firefox Add-ons (AMO)</a></li>
-      <li><strong>Chrome</strong> &mdash; Coming soon to the Chrome Web Store. In the meantime, the extension can be loaded manually for development.</li>
+      <li><strong>Chrome</strong> &mdash; Install from the <a href="https://chromewebstore.google.com/detail/lion-reader/mpjddkjjkckmclaifjfokjppfoenmlpl" target="_blank" rel="noopener noreferrer">Chrome Web Store</a></li>
     </ul>
 
     <h3>Self-Hosted Instances</h3>

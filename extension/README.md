@@ -21,6 +21,11 @@ This extension uses Manifest V3 (WebExtensions API) and works on:
 
 ## Installation
 
+### From Store
+
+- **Chrome/Edge:** [Chrome Web Store](https://chromewebstore.google.com/detail/lion-reader/mpjddkjjkckmclaifjfokjppfoenmlpl)
+- **Firefox:** [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/lion-reader/)
+
 ### From Source (Development)
 
 **Chrome/Edge:**
