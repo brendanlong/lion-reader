@@ -2,9 +2,7 @@
  * Lion Reader Custom Service Worker Extensions
  *
  * This file extends the auto-generated service worker from next-pwa.
- * It handles:
- * 1. Share Target API for URLs and files
- * 2. Offline fallback for navigation requests
+ * It handles the Share Target API for URLs and files.
  *
  * For URL shares, the service worker redirects to /save which handles
  * saving the article and auto-closes itself.
@@ -144,34 +142,9 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
     return; // Don't continue to other handlers
   }
 
-  // Only handle navigation requests (not API calls, assets, etc.)
-  // Assets are handled by Workbox's precaching and runtime caching
-  if (event.request.mode !== "navigate") {
-    return;
-  }
-
-  // For navigation requests, try network first, fall back to cached homepage
-  event.respondWith(
-    fetch(event.request).catch(async () => {
-      // If offline, try to serve cached homepage from Workbox precache
-      const cache = await caches.open("workbox-precache-v2");
-      const cachedResponse = await cache.match("/");
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      // Fallback to the offline page that Workbox may have cached
-      const offlineResponse = await caches.match("/~offline");
-      if (offlineResponse) {
-        return offlineResponse;
-      }
-      // Last resort: return a basic offline response
-      return new Response("You are offline", {
-        status: 503,
-        statusText: "Service Unavailable",
-        headers: { "Content-Type": "text/plain" },
-      });
-    })
-  );
+  // Navigation requests are NOT intercepted. Letting the browser handle them
+  // natively preserves streaming SSR without any service worker overhead.
+  // Non-navigation assets are handled by Workbox's precaching and runtime caching.
 }) as EventListener);
 
 export {};
