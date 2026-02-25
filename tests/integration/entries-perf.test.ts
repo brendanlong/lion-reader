@@ -4,16 +4,15 @@
  * These tests create realistic data volumes and time each phase of the mutation
  * to identify bottlenecks (UPDATE, visibleEntries SELECT, count queries, Redis pub/sub).
  *
- * Run with: pnpm test:integration -- tests/integration/entries-perf.test.ts
+ * Skipped by default because setup takes ~10 minutes to insert 10M rows.
+ * Run with: RUN_PERF_TESTS=1 pnpm test:integration -- tests/integration/entries-perf.test.ts
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
-  feeds,
-  entries,
   subscriptions,
   subscriptionFeeds,
   userEntries,
@@ -24,54 +23,36 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 
-/** Helper to create a SQL uuid array literal for use with ANY() */
-function sqlUuidArray(ids: string[]) {
-  return sql.raw(`ARRAY[${ids.map((id) => `'${id}'`).join(",")}]::uuid[]`);
+/** Format a JS string array as a PostgreSQL array literal for parameterized queries */
+function pgUuidArray(ids: string[]) {
+  return `{${ids.join(",")}}`;
 }
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-/** Number of feeds to create per user */
-const NUM_FEEDS = 20;
+/** Total number of feeds (shared across users) */
+const NUM_FEEDS = 10_000;
 
 /** Number of entries per feed */
-const ENTRIES_PER_FEED = 50;
+const ENTRIES_PER_FEED = 1_000;
 
-/** Total entries per user: NUM_FEEDS * ENTRIES_PER_FEED = 1000
- *
- * For profiling, increase to NUM_FEEDS=50, ENTRIES_PER_FEED=100 (5000 entries).
- * At 5K entries, the bottlenecks become clearly visible:
- *
- * setStarred decomposed (5K entries):
- *   1. UPDATE user_entries:                     4.8ms  (6.8%)
- *   2. SELECT visible_entries (1 entry):        0.6ms  (0.9%)
- *   3a. getEntryRelatedCounts: global scan:    19.6ms (27.8%) << visible_entries full scan
- *   3b. subscription count:                     4.5ms  (6.4%)
- *   3c. tag counts:                            40.8ms (57.8%) << BOTTLENECK
- *   4. Redis publish:                           0.3ms  (0.4%)
- *   TOTAL:                                     70.6ms
- *
- * markRead decomposed (5K entries, 10 entry batch):
- *   1. UPDATE user_entries:                     1.4ms  (0.5%)
- *   2. SELECT visible_entries (10 entries):     1.0ms  (0.4%)
- *   3a. getBulkCounts: global scan:            18.9ms  (6.8%) << visible_entries full scan
- *   3b. per-subscription counts:                4.5ms  (1.6%)
- *   3c. tag lookups:                            0.3ms  (0.1%)
- *   3d. tag unread counts:                     36.8ms (13.3%) << tag JOIN through view
- *   3e. uncategorized count:                  214.3ms (77.3%) << BOTTLENECK
- *   TOTAL:                                    277.3ms
- *
- * Key finding: the actual mutations (UPDATE, SELECT) are fast (<5ms).
- * 90%+ of latency is in the count queries that scan visible_entries view.
- * visible_entries is a 4-way join (user_entries + entries + subscriptions + predictions).
- * The uncategorized count uses NOT EXISTS with the user_feeds view, compounding the cost.
- * At production scale (10K-50K entries), these queries likely reach 500-800ms+.
- */
+/** Total entries: NUM_FEEDS * ENTRIES_PER_FEED = 10,000,000 */
 
-/** Number of tags */
+/** Number of users */
+const NUM_USERS = 20;
+
+/** Feeds per user (each user subscribes to a distinct set) */
+const FEEDS_PER_USER = NUM_FEEDS / NUM_USERS; // 500
+
+/** Entries per user: FEEDS_PER_USER * ENTRIES_PER_FEED = 500,000 */
+
+/** Number of tags per user */
 const NUM_TAGS = 5;
+
+/** Feeds left uncategorized per user (no tags assigned) */
+const UNCATEGORIZED_FEEDS_PER_USER = 50;
 
 // ============================================================================
 // Helpers
@@ -149,160 +130,306 @@ async function timeAsync<T>(
 // Test Setup
 // ============================================================================
 
+/** The primary user we run most profiling queries against */
 let testUserId: string;
-const testEntryIds: string[] = [];
-const testFeedIds: string[] = [];
-const testSubscriptionIds: string[] = [];
-const testTagIds: string[] = [];
+/** Sample entry IDs for the test user (fetched after bulk insert) */
+let testEntryIds: string[] = [];
+/** Subscription IDs for the test user (fetched after bulk insert) */
+let testSubscriptionIds: string[] = [];
+/** Tag IDs for the test user (fetched after bulk insert) */
+let testTagIds: string[] = [];
 
 async function cleanupTestData() {
-  await db.delete(subscriptionTags);
-  await db.delete(tags);
-  await db.delete(userEntries);
-  await db.delete(entries);
-  await db.delete(subscriptionFeeds);
-  await db.delete(subscriptions);
-  await db.delete(feeds);
-  await db.delete(users);
+  // Use TRUNCATE for speed on large tables
+  await db.execute(sql`TRUNCATE subscription_tags, tags, user_entries, entries,
+    subscription_feeds, subscriptions, feeds, users CASCADE`);
 }
 
-describe("Entries Performance Profiling", () => {
+describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", () => {
   beforeAll(async () => {
     await cleanupTestData();
 
     console.log("\n--- Setting up test data ---");
+    console.log(
+      `  ${NUM_FEEDS} feeds × ${ENTRIES_PER_FEED} entries = ${(NUM_FEEDS * ENTRIES_PER_FEED).toLocaleString()} total entries`
+    );
+    console.log(
+      `  ${NUM_USERS} users × ${FEEDS_PER_USER} feeds = ${(FEEDS_PER_USER * ENTRIES_PER_FEED).toLocaleString()} entries per user`
+    );
     const setupStart = performance.now();
 
-    // Create user
-    testUserId = generateUuidv7();
-    await db.insert(users).values({
-      id: testUserId,
-      email: `perf-test-${testUserId}@test.com`,
-      passwordHash: "test-hash",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    // Step 1: Create users (small, use JS)
+    const userIds: string[] = [];
+    for (let i = 0; i < NUM_USERS; i++) {
+      userIds.push(generateUuidv7());
+    }
+    testUserId = userIds[0];
 
-    // Create tags in batch
-    const tagBatch = [];
-    for (let t = 0; t < NUM_TAGS; t++) {
-      const tagId = generateUuidv7();
-      testTagIds.push(tagId);
-      tagBatch.push({
-        id: tagId,
-        userId: testUserId,
-        name: `Tag ${t}`,
+    await db.insert(users).values(
+      userIds.map((id) => ({
+        id,
+        email: `perf-test-${id}@test.com`,
+        passwordHash: "test-hash",
         createdAt: new Date(),
         updatedAt: new Date(),
-      });
-    }
-    await db.insert(tags).values(tagBatch);
-
-    // Generate all data in memory first, then batch insert
-    const feedBatch = [];
-    const subscriptionBatch = [];
-    const subscriptionFeedBatch = [];
-    const subscriptionTagBatch = [];
-    const allEntries = [];
-    const allUserEntries = [];
-
-    for (let f = 0; f < NUM_FEEDS; f++) {
-      const feedId = generateUuidv7();
-      testFeedIds.push(feedId);
-      const now = new Date();
-
-      feedBatch.push({
-        id: feedId,
-        type: "web" as const,
-        url: `https://perf-test-${f}.example.com/feed.xml`,
-        title: `Perf Feed ${f}`,
-        lastFetchedAt: now,
-        lastEntriesUpdatedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      const subId = generateUuidv7();
-      testSubscriptionIds.push(subId);
-      subscriptionBatch.push({
-        id: subId,
-        userId: testUserId,
-        feedId,
-        subscribedAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000), // 1 year ago
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      subscriptionFeedBatch.push({
-        subscriptionId: subId,
-        feedId,
-        userId: testUserId,
-      });
-
-      // Assign each subscription to 1-2 tags (some uncategorized)
-      if (f < NUM_FEEDS - 3) {
-        // Leave 3 subscriptions uncategorized
-        const tagIdx = f % NUM_TAGS;
-        subscriptionTagBatch.push({
-          subscriptionId: subId,
-          tagId: testTagIds[tagIdx],
-        });
-      }
-
-      for (let e = 0; e < ENTRIES_PER_FEED; e++) {
-        const entryId = generateUuidv7();
-        testEntryIds.push(entryId);
-        const entryTime = new Date(
-          Date.now() - (NUM_FEEDS * ENTRIES_PER_FEED - (f * ENTRIES_PER_FEED + e)) * 60000
-        );
-
-        allEntries.push({
-          id: entryId,
-          feedId,
-          type: "web" as const,
-          guid: `guid-${entryId}`,
-          title: `Entry ${f}-${e}`,
-          contentCleaned: `Content for entry ${f}-${e}. This is test content.`,
-          contentHash: `hash-${entryId}`,
-          fetchedAt: entryTime,
-          publishedAt: entryTime,
-          lastSeenAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        allUserEntries.push({
-          userId: testUserId,
-          entryId,
-          read: e < ENTRIES_PER_FEED / 2, // half read, half unread
-          starred: e % 10 === 0, // 10% starred
-          readChangedAt: entryTime,
-          starredChangedAt: entryTime,
-          updatedAt: now,
-        });
-      }
-    }
-
-    // Batch insert all data
-    await db.insert(feeds).values(feedBatch);
-    await db.insert(subscriptions).values(subscriptionBatch);
-    await db.insert(subscriptionFeeds).values(subscriptionFeedBatch);
-    await db.insert(subscriptionTags).values(subscriptionTagBatch);
-    await db.insert(entries).values(allEntries);
-    await db.insert(userEntries).values(allUserEntries);
-
-    const setupMs = performance.now() - setupStart;
+      }))
+    );
     console.log(
-      `Setup: ${testEntryIds.length} entries across ${NUM_FEEDS} feeds in ${setupMs.toFixed(0)}ms`
+      `  Users created: ${userIds.length} (${(performance.now() - setupStart).toFixed(0)}ms)`
     );
 
-    // Print table sizes for reference
-    const [entryCount] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(userEntries)
-      .where(eq(userEntries.userId, testUserId));
-    console.log(`user_entries rows for test user: ${entryCount.count}`);
-  }, 120000);
+    // Step 2: Create tags for each user (small, use JS)
+    const allTagValues: {
+      id: string;
+      userId: string;
+      name: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }[] = [];
+    const tagIdsByUser = new Map<string, string[]>();
+    for (const userId of userIds) {
+      const userTagIds: string[] = [];
+      for (let t = 0; t < NUM_TAGS; t++) {
+        const tagId = generateUuidv7();
+        userTagIds.push(tagId);
+        allTagValues.push({
+          id: tagId,
+          userId,
+          name: `Tag ${t}`,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+      tagIdsByUser.set(userId, userTagIds);
+    }
+    await db.insert(tags).values(allTagValues);
+    testTagIds = tagIdsByUser.get(testUserId)!;
+    console.log(
+      `  Tags created: ${allTagValues.length} (${(performance.now() - setupStart).toFixed(0)}ms)`
+    );
+
+    // Step 3: Bulk-create feeds using generate_series (10,000 feeds)
+    const feedsStart = performance.now();
+    await db.execute(sql`
+      INSERT INTO feeds (id, type, url, title, last_fetched_at, last_entries_updated_at, created_at, updated_at)
+      SELECT
+        gen_random_uuid(),
+        'web',
+        'https://perf-test-' || i || '.example.com/feed.xml',
+        'Perf Feed ' || i,
+        now(),
+        now(),
+        now(),
+        now()
+      FROM generate_series(1, ${NUM_FEEDS}) AS i
+    `);
+    console.log(`  Feeds created: ${NUM_FEEDS} (${(performance.now() - feedsStart).toFixed(0)}ms)`);
+
+    // Step 4: Fetch feed IDs ordered so we can partition them across users
+    const feedRows = await db.execute(sql`
+      SELECT id FROM feeds ORDER BY url
+    `);
+    const allFeedIds = feedRows.rows.map((r: Record<string, unknown>) => r.id as string);
+
+    // Step 5: Create subscriptions + subscription_feeds for each user
+    // Each user gets FEEDS_PER_USER distinct feeds
+    const subsStart = performance.now();
+    for (let u = 0; u < NUM_USERS; u++) {
+      const userId = userIds[u];
+      const userFeedIds = allFeedIds.slice(u * FEEDS_PER_USER, (u + 1) * FEEDS_PER_USER);
+
+      // Build subscription + subscription_feeds values in chunks
+      const CHUNK = 1000;
+      for (let c = 0; c < userFeedIds.length; c += CHUNK) {
+        const chunk = userFeedIds.slice(c, c + CHUNK);
+        const subValues = chunk.map((feedId) => ({
+          id: generateUuidv7(),
+          userId,
+          feedId,
+          subscribedAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }));
+        await db.insert(subscriptions).values(subValues);
+
+        const sfValues = subValues.map((s) => ({
+          subscriptionId: s.id,
+          feedId: s.feedId,
+          userId,
+        }));
+        await db.insert(subscriptionFeeds).values(sfValues);
+      }
+    }
+    console.log(
+      `  Subscriptions created: ${NUM_FEEDS} (${(performance.now() - subsStart).toFixed(0)}ms)`
+    );
+
+    // Step 6: Assign tags to subscriptions (leave some uncategorized)
+    const tagsStart = performance.now();
+    for (let u = 0; u < NUM_USERS; u++) {
+      const userId = userIds[u];
+      const userTags = tagIdsByUser.get(userId)!;
+
+      // Fetch this user's subscription IDs
+      const subRows = await db.execute(sql`
+        SELECT id FROM subscriptions
+        WHERE user_id = ${userId} AND unsubscribed_at IS NULL
+        ORDER BY id
+      `);
+      const userSubIds = subRows.rows.map((r: Record<string, unknown>) => r.id as string);
+
+      // Assign tags to all but the last UNCATEGORIZED_FEEDS_PER_USER subscriptions
+      const taggedCount = userSubIds.length - UNCATEGORIZED_FEEDS_PER_USER;
+      const stValues: { subscriptionId: string; tagId: string }[] = [];
+      for (let i = 0; i < taggedCount; i++) {
+        stValues.push({
+          subscriptionId: userSubIds[i],
+          tagId: userTags[i % NUM_TAGS],
+        });
+      }
+
+      // Insert in chunks
+      const CHUNK = 2000;
+      for (let c = 0; c < stValues.length; c += CHUNK) {
+        await db.insert(subscriptionTags).values(stValues.slice(c, c + CHUNK));
+      }
+    }
+    console.log(`  Subscription tags assigned (${(performance.now() - tagsStart).toFixed(0)}ms)`);
+
+    // Step 7: Bulk-create entries using generate_series
+    // This is the big one: 10M rows. Do it in feed-batches using SQL.
+    const entriesStart = performance.now();
+    const FEED_BATCH = 500; // Create entries for 500 feeds at a time
+    for (let b = 0; b < NUM_FEEDS; b += FEED_BATCH) {
+      const batchEnd = Math.min(b + FEED_BATCH, NUM_FEEDS);
+      const batchFeedIds = allFeedIds.slice(b, batchEnd);
+
+      // Use unnest + generate_series cross join for maximum insert speed
+      await db.execute(sql`
+        INSERT INTO entries (id, feed_id, type, guid, title, content_cleaned, content_hash,
+                            fetched_at, published_at, last_seen_at, created_at, updated_at)
+        SELECT
+          gen_random_uuid(),
+          f.feed_id,
+          'web',
+          f.feed_id || '-' || e.i,
+          'Entry ' || e.i,
+          'Test content for entry ' || e.i || ' in feed.',
+          f.feed_id || '-' || e.i,
+          now() - ((${ENTRIES_PER_FEED} - e.i) || ' minutes')::interval,
+          now() - ((${ENTRIES_PER_FEED} - e.i) || ' minutes')::interval,
+          now(),
+          now(),
+          now()
+        FROM unnest(${pgUuidArray(batchFeedIds)}::uuid[]) AS f(feed_id)
+        CROSS JOIN generate_series(1, ${ENTRIES_PER_FEED}) AS e(i)
+      `);
+
+      const entriesInserted = batchEnd * ENTRIES_PER_FEED;
+      const elapsed = ((performance.now() - entriesStart) / 1000).toFixed(1);
+      console.log(
+        `  Entries: ${entriesInserted.toLocaleString()} / ${(NUM_FEEDS * ENTRIES_PER_FEED).toLocaleString()} (${elapsed}s)`
+      );
+    }
+    console.log(
+      `  Entries created: ${(NUM_FEEDS * ENTRIES_PER_FEED).toLocaleString()} (${((performance.now() - entriesStart) / 1000).toFixed(1)}s)`
+    );
+
+    // Step 8: Create user_entries for each user
+    // Each user needs entries for their FEEDS_PER_USER feeds
+    const ueStart = performance.now();
+    for (let u = 0; u < NUM_USERS; u++) {
+      const userId = userIds[u];
+      const userFeedIds = allFeedIds.slice(u * FEEDS_PER_USER, (u + 1) * FEEDS_PER_USER);
+
+      // Insert in feed-batches
+      const FEED_BATCH_UE = 100;
+      for (let b = 0; b < userFeedIds.length; b += FEED_BATCH_UE) {
+        const batchFeedIds = userFeedIds.slice(b, b + FEED_BATCH_UE);
+
+        await db.execute(sql`
+          INSERT INTO user_entries (user_id, entry_id, read, starred, read_changed_at, starred_changed_at, updated_at)
+          SELECT
+            ${userId}::uuid,
+            e.id,
+            (row_number() OVER (PARTITION BY e.feed_id ORDER BY e.id)) <= ${ENTRIES_PER_FEED / 2},
+            (row_number() OVER (PARTITION BY e.feed_id ORDER BY e.id)) % 10 = 0,
+            e.published_at,
+            e.published_at,
+            now()
+          FROM entries e
+          WHERE e.feed_id = ANY(${pgUuidArray(batchFeedIds)}::uuid[])
+        `);
+      }
+
+      const ueInserted = (u + 1) * FEEDS_PER_USER * ENTRIES_PER_FEED;
+      const elapsed = ((performance.now() - ueStart) / 1000).toFixed(1);
+      console.log(
+        `  user_entries: user ${u + 1}/${NUM_USERS} — ${ueInserted.toLocaleString()} / ${(NUM_FEEDS * ENTRIES_PER_FEED).toLocaleString()} (${elapsed}s)`
+      );
+    }
+    console.log(`  user_entries created (${((performance.now() - ueStart) / 1000).toFixed(1)}s)`);
+
+    // Step 9: Fetch sample IDs for the test user
+    const sampleRows = await db.execute(sql`
+      SELECT ue.entry_id as id
+      FROM user_entries ue
+      WHERE ue.user_id = ${testUserId}
+      ORDER BY ue.entry_id
+      LIMIT 1000
+    `);
+    testEntryIds = sampleRows.rows.map((r: Record<string, unknown>) => r.id as string);
+
+    const subRows = await db.execute(sql`
+      SELECT id FROM subscriptions
+      WHERE user_id = ${testUserId} AND unsubscribed_at IS NULL
+      ORDER BY id
+    `);
+    testSubscriptionIds = subRows.rows.map((r: Record<string, unknown>) => r.id as string);
+
+    // Step 10: ANALYZE tables for accurate query plans
+    const analyzeStart = performance.now();
+    await db.execute(sql`ANALYZE entries`);
+    await db.execute(sql`ANALYZE user_entries`);
+    await db.execute(sql`ANALYZE feeds`);
+    await db.execute(sql`ANALYZE subscriptions`);
+    await db.execute(sql`ANALYZE subscription_feeds`);
+    await db.execute(sql`ANALYZE subscription_tags`);
+    await db.execute(sql`ANALYZE tags`);
+    console.log(`  ANALYZE complete (${(performance.now() - analyzeStart).toFixed(0)}ms)`);
+
+    const setupMs = performance.now() - setupStart;
+    console.log(`\nSetup complete in ${(setupMs / 1000).toFixed(1)}s`);
+
+    // Print table sizes
+    const sizeResult = await db.execute(sql`
+      SELECT
+        relname AS table_name,
+        n_live_tup AS rows,
+        pg_size_pretty(pg_total_relation_size(relid)) AS total_size
+      FROM pg_stat_user_tables
+      WHERE schemaname = 'public'
+      ORDER BY pg_total_relation_size(relid) DESC
+      LIMIT 10
+    `);
+    console.log("\nTable sizes:");
+    for (const row of sizeResult.rows) {
+      const r = row as Record<string, unknown>;
+      console.log(
+        `  ${String(r.table_name).padEnd(25)} ${String(r.rows).padStart(12)} rows  ${r.total_size}`
+      );
+    }
+
+    // Print per-user entry count
+    const [countRow] = await db
+      .execute(
+        sql`
+      SELECT count(*)::int as cnt FROM user_entries WHERE user_id = ${testUserId}
+    `
+      )
+      .then((r) => r.rows as { cnt: number }[]);
+    console.log(`\nTest user entry count: ${countRow.cnt.toLocaleString()}`);
+  }, 3600000); // 1 hour timeout for setup
 
   afterAll(async () => {
     await cleanupTestData();
@@ -342,7 +469,7 @@ describe("Entries Performance Profiling", () => {
         db.execute(sql`
           SELECT ve.id, ve.read, ve.starred, ve.updated_at, ve.score, ve.subscription_id, ve.type
           FROM visible_entries ve
-          WHERE ve.user_id = ${testUserId} AND ve.id = ANY(${sqlUuidArray(tenIds)})
+          WHERE ve.user_id = ${testUserId} AND ve.id = ANY(${pgUuidArray(tenIds)}::uuid[])
         `)
       );
       timings.push(t3);
@@ -414,8 +541,8 @@ describe("Entries Performance Profiling", () => {
       printTimings("Raw Query Profiling", timings);
 
       // Assertions to keep test framework happy
-      expect(t1.ms).toBeLessThan(5000);
-    });
+      expect(t1.ms).toBeLessThan(60000);
+    }, 300000);
 
     it("profiles EXPLAIN ANALYZE for global counts through visible_entries", async () => {
       const result = await db.execute(sql`
@@ -437,7 +564,7 @@ describe("Entries Performance Profiling", () => {
       }
 
       expect(result.rows.length).toBeGreaterThan(0);
-    });
+    }, 300000);
 
     it("profiles EXPLAIN ANALYZE for direct user_entries counts", async () => {
       const result = await db.execute(sql`
@@ -457,7 +584,7 @@ describe("Entries Performance Profiling", () => {
       }
 
       expect(result.rows.length).toBeGreaterThan(0);
-    });
+    }, 300000);
 
     it("profiles EXPLAIN ANALYZE for visible_entries single entry lookup", async () => {
       const entryId = testEntryIds[0];
@@ -474,7 +601,7 @@ describe("Entries Performance Profiling", () => {
       }
 
       expect(result.rows.length).toBeGreaterThan(0);
-    });
+    }, 300000);
 
     it("profiles alternative: counts from user_entries + entries join (no subscriptions join)", async () => {
       const subId = testSubscriptionIds[0];
@@ -524,8 +651,8 @@ describe("Entries Performance Profiling", () => {
       timings.push(t3);
 
       printTimings("Alternative Count Strategies", timings);
-      expect(t1.ms).toBeLessThan(5000);
-    });
+      expect(t1.ms).toBeLessThan(60000);
+    }, 300000);
   });
 
   // ============================================================================
@@ -571,8 +698,8 @@ describe("Entries Performance Profiling", () => {
       const p50 = times.sort((a, b) => a - b)[Math.floor(times.length / 2)];
       console.log(`  Average: ${avg.toFixed(1)}ms, P50: ${p50.toFixed(1)}ms`);
 
-      expect(tTotal.ms).toBeLessThan(10000);
-    });
+      expect(tTotal.ms).toBeLessThan(120000);
+    }, 600000);
 
     it("profiles entries.markRead with 1 entry", async () => {
       const ctx = createAuthContext(testUserId);
@@ -597,8 +724,8 @@ describe("Entries Performance Profiling", () => {
       const avg = times.reduce((a, b) => a + b, 0) / times.length;
       console.log(`  Average: ${avg.toFixed(1)}ms`);
 
-      expect(times[0]).toBeLessThan(10000);
-    });
+      expect(times[0]).toBeLessThan(120000);
+    }, 600000);
 
     it("profiles entries.markRead with 10 entries", async () => {
       const ctx = createAuthContext(testUserId);
@@ -618,8 +745,8 @@ describe("Entries Performance Profiling", () => {
       }
 
       printTimings("entries.markRead (10 entries) E2E", timings);
-      expect(timings[0].ms).toBeLessThan(10000);
-    });
+      expect(timings[0].ms).toBeLessThan(120000);
+    }, 600000);
 
     it("profiles entries.markRead with 50 entries", async () => {
       const ctx = createAuthContext(testUserId);
@@ -635,8 +762,8 @@ describe("Entries Performance Profiling", () => {
       );
 
       printTimings("entries.markRead (50 entries) E2E", [timing]);
-      expect(timing.ms).toBeLessThan(10000);
-    });
+      expect(timing.ms).toBeLessThan(120000);
+    }, 600000);
   });
 
   // ============================================================================
@@ -745,8 +872,8 @@ describe("Entries Performance Profiling", () => {
         console.log(`  2nd slowest: "${sorted[1].label}" at ${sorted[1].ms.toFixed(1)}ms`);
       }
 
-      expect(t1.ms).toBeLessThan(10000);
-    });
+      expect(t1.ms).toBeLessThan(120000);
+    }, 600000);
   });
 
   // ============================================================================
@@ -763,7 +890,7 @@ describe("Entries Performance Profiling", () => {
         db.execute(sql`
           UPDATE user_entries
           SET read = true, read_changed_at = now(), updated_at = now(), has_marked_read_on_list = true
-          WHERE user_id = ${testUserId} AND entry_id = ANY(${sqlUuidArray(entryIds)})
+          WHERE user_id = ${testUserId} AND entry_id = ANY(${pgUuidArray(entryIds)}::uuid[])
             AND read_changed_at <= now()
         `)
       );
@@ -777,7 +904,7 @@ describe("Entries Performance Profiling", () => {
           SELECT id, subscription_id, read, starred, type, updated_at, score,
                  has_marked_read_on_list, has_marked_unread, has_starred
           FROM visible_entries
-          WHERE user_id = ${testUserId} AND id = ANY(${sqlUuidArray(entryIds)})
+          WHERE user_id = ${testUserId} AND id = ANY(${pgUuidArray(entryIds)}::uuid[])
         `)
       );
       timings.push(t2);
@@ -815,7 +942,7 @@ describe("Entries Performance Profiling", () => {
             db.execute(sql`
             SELECT subscription_id, count(*) FILTER (WHERE NOT read)::int as unread
             FROM visible_entries
-            WHERE user_id = ${testUserId} AND subscription_id = ANY(${sqlUuidArray(subIds)})
+            WHERE user_id = ${testUserId} AND subscription_id = ANY(${pgUuidArray(subIds)}::uuid[])
             GROUP BY subscription_id
           `)
         );
@@ -828,7 +955,7 @@ describe("Entries Performance Profiling", () => {
           db.execute(sql`
             SELECT subscription_id, tag_id
             FROM subscription_tags
-            WHERE subscription_id = ANY(${sqlUuidArray(subIds)})
+            WHERE subscription_id = ANY(${pgUuidArray(subIds)}::uuid[])
           `)
         );
         timings.push(t3c);
@@ -843,7 +970,7 @@ describe("Entries Performance Profiling", () => {
           WHERE ve.user_id = ${testUserId}
             AND st.tag_id IN (
               SELECT st2.tag_id FROM subscription_tags st2
-              WHERE st2.subscription_id = ANY(${sqlUuidArray(subIds)})
+              WHERE st2.subscription_id = ANY(${pgUuidArray(subIds)}::uuid[])
             )
           GROUP BY st.tag_id
         `)
@@ -876,8 +1003,8 @@ describe("Entries Performance Profiling", () => {
         console.log(`  3rd slowest: "${sorted[2].label}" at ${sorted[2].ms.toFixed(1)}ms`);
       }
 
-      expect(t1.ms).toBeLessThan(10000);
-    });
+      expect(t1.ms).toBeLessThan(120000);
+    }, 600000);
   });
 
   // ============================================================================
@@ -926,6 +1053,6 @@ describe("Entries Performance Profiling", () => {
       }
 
       expect(unreadPlan.rows.length).toBeGreaterThan(0);
-    });
+    }, 300000);
   });
 });
