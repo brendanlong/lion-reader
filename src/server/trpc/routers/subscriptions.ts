@@ -33,7 +33,11 @@ import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import { ensureFeedJob, createJob } from "@/server/jobs/queue";
-import { publishSubscriptionCreated, publishSubscriptionDeleted } from "@/server/redis/pubsub";
+import {
+  publishSubscriptionCreated,
+  publishSubscriptionDeleted,
+  publishSubscriptionUpdated,
+} from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
@@ -782,6 +786,21 @@ export const subscriptionsRouter = createTRPCRouter({
       }));
       const unreadCount = unreadResult[0]?.count ?? 0;
 
+      // Publish SSE event for other tabs/devices
+      publishSubscriptionUpdated(
+        userId,
+        subscription.id,
+        now,
+        subscriptionTagsList,
+        subscription.customTitle
+      ).catch((err) => {
+        logger.error("Failed to publish subscription_updated event", {
+          err,
+          userId,
+          subscriptionId: subscription.id,
+        });
+      });
+
       // Return flat format
       return {
         id: subscription.id,
@@ -1177,15 +1196,39 @@ export const subscriptionsRouter = createTRPCRouter({
         throw errors.subscriptionNotFound();
       }
 
-      // If tagIds is empty, just delete all existing tags
+      const now = new Date();
+
       if (input.tagIds.length === 0) {
+        // Delete all existing tags for the subscription
         await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+
+        // Update subscription's updated_at for sync cursor tracking
+        await ctx.db
+          .update(subscriptions)
+          .set({ updatedAt: now })
+          .where(eq(subscriptions.id, input.id));
+
+        // Publish SSE event with empty tags
+        publishSubscriptionUpdated(
+          userId,
+          input.id,
+          now,
+          [],
+          existingSubscription[0].customTitle
+        ).catch((err) => {
+          logger.error("Failed to publish subscription_updated event", {
+            err,
+            userId,
+            subscriptionId: input.id,
+          });
+        });
+
         return {};
       }
 
-      // Verify all tag IDs belong to the current user
+      // Verify all tag IDs belong to the current user and get tag details
       const userTags = await ctx.db
-        .select({ id: tags.id })
+        .select({ id: tags.id, name: tags.name, color: tags.color })
         .from(tags)
         .where(and(eq(tags.userId, userId), inArray(tags.id, input.tagIds)));
 
@@ -1200,7 +1243,6 @@ export const subscriptionsRouter = createTRPCRouter({
       await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
 
       // Insert new subscription_tags entries
-      const now = new Date();
       await ctx.db.insert(subscriptionTags).values(
         input.tagIds.map((tagId) => ({
           subscriptionId: input.id,
@@ -1208,6 +1250,33 @@ export const subscriptionsRouter = createTRPCRouter({
           createdAt: now,
         }))
       );
+
+      // Update subscription's updated_at for sync cursor tracking
+      await ctx.db
+        .update(subscriptions)
+        .set({ updatedAt: now })
+        .where(eq(subscriptions.id, input.id));
+
+      // Publish SSE event with new tags
+      const tagsList = userTags.map((t) => ({
+        id: t.id,
+        name: t.name,
+        color: t.color,
+      }));
+
+      publishSubscriptionUpdated(
+        userId,
+        input.id,
+        now,
+        tagsList,
+        existingSubscription[0].customTitle
+      ).catch((err) => {
+        logger.error("Failed to publish subscription_updated event", {
+          err,
+          userId,
+          subscriptionId: input.id,
+        });
+      });
 
       return {};
     }),

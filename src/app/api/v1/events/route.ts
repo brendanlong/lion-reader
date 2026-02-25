@@ -9,6 +9,7 @@
  * - entry_updated: An existing entry's content was updated
  * - entry_state_changed: Entry read/starred state changed
  * - subscription_created: User subscribed to a new feed
+ * - subscription_updated: Subscription properties changed (tags, custom title)
  * - subscription_deleted: User unsubscribed from a feed
  * - tag_created: User created a new tag
  * - tag_updated: User updated a tag
@@ -329,42 +330,21 @@ export async function GET(req: Request): Promise<Response> {
 
         // Handle incoming messages
         subscriber.on("message", (channel: string, message: string) => {
-          // Handle user events (subscription_created, subscription_deleted, import_progress, import_completed)
+          // Handle user events (subscriptions, tags, imports, entry state)
           if (channel === userEventsChannel) {
             const event = parseUserEvent(message);
             if (!event) return;
 
+            // Handle side effects for subscription lifecycle events
             if (event.type === "subscription_created") {
-              // Subscribe to the new feed's channel with subscription mapping
               subscribeToFeed(event.feedId, event.subscriptionId);
-
-              // Forward the event to the client
-              send(formatSSEUserEvent(event));
-              trackSSEEventSent(event.type);
             } else if (event.type === "subscription_deleted") {
-              // Unsubscribe from the feed's channel
               unsubscribeFromFeed(event.feedId);
-
-              // Forward the event to the client
-              send(formatSSEUserEvent(event));
-              trackSSEEventSent(event.type);
-            } else if (event.type === "import_progress" || event.type === "import_completed") {
-              // Forward import events to the client
-              send(formatSSEUserEvent(event));
-              trackSSEEventSent(event.type);
-            } else if (event.type === "entry_state_changed") {
-              // Forward entry state change events to the client
-              send(formatSSEUserEvent(event));
-              trackSSEEventSent(event.type);
-            } else if (
-              event.type === "tag_created" ||
-              event.type === "tag_updated" ||
-              event.type === "tag_deleted"
-            ) {
-              // Forward tag events to the client
-              send(formatSSEUserEvent(event));
-              trackSSEEventSent(event.type);
             }
+
+            // All user events are forwarded to the client
+            send(formatSSEUserEvent(event));
+            trackSSEEventSent(event.type);
             return;
           }
 

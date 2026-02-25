@@ -893,32 +893,49 @@ export const syncRouter = createTRPCRouter({
           }
         }
 
+        const subscriptionsCursorDate = new Date(subscriptionsCursor);
         for (const { subscription, feed, updatedAtRaw } of subscriptionResults) {
           if (subscription.unsubscribedAt === null) {
-            allEvents.push({
-              type: "subscription_created" as const,
-              subscriptionId: subscription.id,
-              feedId: subscription.feedId,
-              timestamp: updatedAtRaw,
-              updatedAt: updatedAtRaw,
-              subscription: {
-                id: subscription.id,
+            // Distinguish new subscriptions from updated ones:
+            // If subscribedAt is after the cursor, it's a new subscription.
+            // Otherwise, it's an existing subscription whose properties changed.
+            const isNew = subscription.subscribedAt > subscriptionsCursorDate;
+            if (isNew) {
+              allEvents.push({
+                type: "subscription_created" as const,
+                subscriptionId: subscription.id,
                 feedId: subscription.feedId,
-                customTitle: subscription.customTitle,
-                subscribedAt: subscription.subscribedAt.toISOString(),
-                unreadCount: unreadBySubscription.get(subscription.id) ?? 0,
+                timestamp: updatedAtRaw,
+                updatedAt: updatedAtRaw,
+                subscription: {
+                  id: subscription.id,
+                  feedId: subscription.feedId,
+                  customTitle: subscription.customTitle,
+                  subscribedAt: subscription.subscribedAt.toISOString(),
+                  unreadCount: unreadBySubscription.get(subscription.id) ?? 0,
+                  tags: tagsBySubscription.get(subscription.id) ?? [],
+                },
+                feed: {
+                  id: feed.id,
+                  type: feed.type,
+                  url: feed.url,
+                  title: feed.title,
+                  description: feed.description,
+                  siteUrl: feed.siteUrl,
+                },
+                _sortTime: subscription.updatedAt,
+              });
+            } else {
+              allEvents.push({
+                type: "subscription_updated" as const,
+                subscriptionId: subscription.id,
                 tags: tagsBySubscription.get(subscription.id) ?? [],
-              },
-              feed: {
-                id: feed.id,
-                type: feed.type,
-                url: feed.url,
-                title: feed.title,
-                description: feed.description,
-                siteUrl: feed.siteUrl,
-              },
-              _sortTime: subscription.updatedAt,
-            });
+                customTitle: subscription.customTitle,
+                timestamp: updatedAtRaw,
+                updatedAt: updatedAtRaw,
+                _sortTime: subscription.updatedAt,
+              });
+            }
           } else {
             allEvents.push({
               type: "subscription_deleted" as const,
