@@ -207,7 +207,11 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       event.type === "entry_state_changed"
     ) {
       cursorType = "entries";
-    } else if (event.type === "subscription_created" || event.type === "subscription_deleted") {
+    } else if (
+      event.type === "subscription_created" ||
+      event.type === "subscription_updated" ||
+      event.type === "subscription_deleted"
+    ) {
       cursorType = "subscriptions";
     } else if (
       event.type === "tag_created" ||
@@ -448,6 +452,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         eventSource.addEventListener("entry_updated", handleEvent);
         eventSource.addEventListener("entry_state_changed", handleEvent);
         eventSource.addEventListener("subscription_created", handleEvent);
+        eventSource.addEventListener("subscription_updated", handleEvent);
         eventSource.addEventListener("subscription_deleted", handleEvent);
         eventSource.addEventListener("tag_created", handleEvent);
         eventSource.addEventListener("tag_updated", handleEvent);

@@ -110,6 +110,22 @@ export interface SubscriptionCreatedEvent {
 }
 
 /**
+ * Event published when a subscription's properties change (tags, custom title, etc.).
+ * This is sent to all of the user's active SSE connections so they can
+ * update the subscription in their caches.
+ */
+export interface SubscriptionUpdatedEvent {
+  type: "subscription_updated";
+  userId: string;
+  subscriptionId: string;
+  tags: Array<{ id: string; name: string; color: string | null }>;
+  customTitle: string | null;
+  timestamp: string;
+  /** Database updated_at for cursor tracking (subscriptions cursor) */
+  updatedAt: string;
+}
+
+/**
  * Event published when a user unsubscribes from a feed.
  * This is sent to all of the user's active SSE connections so they can:
  * 1. Remove the feedId from their filter set
@@ -216,6 +232,7 @@ export interface TagDeletedEvent {
  */
 export type UserEvent =
   | SubscriptionCreatedEvent
+  | SubscriptionUpdatedEvent
   | SubscriptionDeletedEvent
   | ImportProgressEvent
   | ImportCompletedEvent
@@ -467,6 +484,41 @@ export async function publishSubscriptionDeleted(
     userId,
     feedId,
     subscriptionId,
+    timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes a subscription_updated event when a subscription's properties change.
+ * This notifies all of the user's SSE connections to update their subscription caches.
+ *
+ * @param userId - The ID of the user who owns the subscription
+ * @param subscriptionId - The ID of the updated subscription
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @param tags - The subscription's current tags
+ * @param customTitle - The subscription's custom title (null for default)
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishSubscriptionUpdated(
+  userId: string,
+  subscriptionId: string,
+  updatedAt: Date,
+  tags: Array<{ id: string; name: string; color: string | null }>,
+  customTitle: string | null
+): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: SubscriptionUpdatedEvent = {
+    type: "subscription_updated",
+    userId,
+    subscriptionId,
+    tags,
+    customTitle,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
@@ -841,6 +893,26 @@ export function parseUserEvent(message: string): UserEvent | null {
           userId: event.userId,
           feedId: event.feedId,
           subscriptionId: event.subscriptionId,
+          timestamp: event.timestamp,
+          updatedAt: event.updatedAt,
+        };
+      }
+
+      if (
+        event.type === "subscription_updated" &&
+        typeof event.userId === "string" &&
+        typeof event.subscriptionId === "string" &&
+        Array.isArray(event.tags) &&
+        (event.customTitle === null || typeof event.customTitle === "string") &&
+        typeof event.timestamp === "string" &&
+        typeof event.updatedAt === "string"
+      ) {
+        return {
+          type: "subscription_updated",
+          userId: event.userId,
+          subscriptionId: event.subscriptionId,
+          tags: event.tags as Array<{ id: string; name: string; color: string | null }>,
+          customTitle: event.customTitle as string | null,
           timestamp: event.timestamp,
           updatedAt: event.updatedAt,
         };

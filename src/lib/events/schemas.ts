@@ -130,6 +130,15 @@ export const subscriptionDeletedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
+export const subscriptionUpdatedEventSchema = z.object({
+  type: z.literal("subscription_updated"),
+  subscriptionId: z.string(),
+  tags: z.array(syncTagSchema),
+  customTitle: z.string().nullable(),
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+});
+
 export const tagCreatedEventSchema = z.object({
   type: z.literal("tag_created"),
   tag: syncTagSchema,
@@ -202,6 +211,7 @@ const coreEventSchema = z.discriminatedUnion("type", [
   entryStateChangedEventSchema,
   subscriptionCreatedEventSchema,
   subscriptionDeletedEventSchema,
+  subscriptionUpdatedEventSchema,
   tagCreatedEventSchema,
   tagUpdatedEventSchema,
   tagDeletedEventSchema,
@@ -237,6 +247,7 @@ export const serverSyncEventSchema = z.discriminatedUnion("type", [
   entryStateChangedEventSchema.extend(strictTimestamp),
   subscriptionCreatedEventSchema.extend(strictTimestamp),
   subscriptionDeletedEventSchema.extend(strictTimestamp),
+  subscriptionUpdatedEventSchema.extend(strictTimestamp),
   tagCreatedEventSchema.extend(strictTimestamp),
   tagUpdatedEventSchema.extend(strictTimestamp),
   tagDeletedEventSchema.extend(strictTimestamp),

@@ -330,6 +330,35 @@ export function addSubscriptionToCache(
 }
 
 /**
+ * Updates a subscription's properties in the unparameterized subscriptions.list cache
+ * and the SSE fallback map.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param subscriptionId - ID of the subscription to update
+ * @param updates - Properties to update on the subscription
+ */
+export function updateSubscriptionInCache(
+  utils: TRPCClientUtils,
+  subscriptionId: string,
+  updates: Partial<Pick<CachedSubscription, "tags" | "title">>
+): void {
+  // Update in SSE fallback map
+  const fallback = sseSubscriptionFallback.get(subscriptionId);
+  if (fallback) {
+    sseSubscriptionFallback.set(subscriptionId, { ...fallback, ...updates });
+  }
+
+  // Update in unparameterized subscriptions.list cache
+  utils.subscriptions.list.setData(undefined, (oldData) => {
+    if (!oldData) return oldData;
+    return {
+      ...oldData,
+      items: oldData.items.map((s) => (s.id === subscriptionId ? { ...s, ...updates } : s)),
+    };
+  });
+}
+
+/**
  * Removes a subscription from the subscriptions.list cache.
  * Used for optimistic updates when unsubscribing.
  *

@@ -10,7 +10,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "./operations";
 import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
-import { applySyncTagChanges, removeSyncTags } from "./count-cache";
+import { applySyncTagChanges, removeSyncTags, updateSubscriptionInCache } from "./count-cache";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
 import type { SyncEvent } from "@/lib/events/schemas";
@@ -88,6 +88,17 @@ export function handleSyncEvent(
       );
       break;
     }
+
+    case "subscription_updated":
+      // Update the subscription's tags and title in cache, then invalidate
+      // tag-related queries to get fresh feedCount/unreadCount
+      updateSubscriptionInCache(utils, event.subscriptionId, {
+        tags: event.tags,
+        ...(event.customTitle !== null ? { title: event.customTitle } : {}),
+      });
+      utils.tags.list.invalidate();
+      utils.subscriptions.list.invalidate();
+      break;
 
     case "subscription_deleted":
       // Check if already removed (optimistic update from same tab)
