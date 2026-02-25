@@ -14,12 +14,48 @@ import {
   feeds,
   subscriptionFeeds,
   subscriptions,
+  subscriptionTags,
   userEntries,
   tags,
   visibleEntries,
-  subscriptionTags,
 } from "@/server/db/schema";
 import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import type { Database } from "@/server/db";
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Batch-fetch tags grouped by subscription ID.
+ * Shared between sync.changes and sync.events to avoid N+1 queries.
+ */
+async function fetchTagsBySubscriptionIds(
+  db: Database,
+  subscriptionIds: string[]
+): Promise<Map<string, Array<z.infer<typeof syncTagSchema>>>> {
+  const result = new Map<string, Array<z.infer<typeof syncTagSchema>>>();
+  if (subscriptionIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      subscriptionId: subscriptionTags.subscriptionId,
+      tagId: tags.id,
+      tagName: tags.name,
+      tagColor: tags.color,
+    })
+    .from(subscriptionTags)
+    .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
+    .where(inArray(subscriptionTags.subscriptionId, subscriptionIds));
+
+  for (const row of rows) {
+    const existing = result.get(row.subscriptionId) ?? [];
+    existing.push({ id: row.tagId, name: row.tagName, color: row.tagColor });
+    result.set(row.subscriptionId, existing);
+  }
+
+  return result;
+}
 
 // ============================================================================
 // Constants
@@ -77,6 +113,15 @@ const syncSubscriptionSchema = z.object({
 });
 
 /**
+ * Updated subscription for sync (properties that can change: tags, customTitle).
+ */
+const syncSubscriptionUpdatedSchema = z.object({
+  id: z.string(),
+  customTitle: z.string().nullable(),
+  tags: z.array(syncTagSchema),
+});
+
+/**
  * Updated tag for sync (includes all modifiable fields).
  * Same shape as syncTagSchema — kept as a separate reference for clarity.
  */
@@ -118,6 +163,7 @@ const syncChangesOutputSchema = z.object({
   }),
   subscriptions: z.object({
     created: z.array(syncSubscriptionSchema),
+    updated: z.array(syncSubscriptionUpdatedSchema),
     removed: z.array(z.string()),
   }),
   tags: z.object({
@@ -416,9 +462,12 @@ export const syncRouter = createTRPCRouter({
       // Uses a single updated_at cursor - unsubscribing also updates updated_at
       // ========================================================================
       let createdSubscriptions: z.infer<typeof syncSubscriptionSchema>[] = [];
+      const updatedSubscriptions: z.infer<typeof syncSubscriptionUpdatedSchema>[] = [];
       const removedSubscriptionIds: string[] = [];
 
       if (subscriptionsCursorStr) {
+        const subscriptionsCursorDate = new Date(subscriptionsCursorStr);
+
         // For incremental sync, get all subscriptions changed since cursor
         // This includes new, modified, and unsubscribed - split by unsubscribedAt
         const changedSubscriptionResults = await ctx.db
@@ -443,10 +492,16 @@ export const syncRouter = createTRPCRouter({
           outputSubscriptionsCursor = lastSub.updatedAtRaw;
         }
 
-        // Split into active and removed
+        // Collect active subscriptions that are updates (not new) for batch tag fetching
+        const updatedSubscriptionIds: string[] = [];
+
+        // Split into created, updated, and removed
         for (const { subscription, feed } of changedSubscriptionResults) {
-          if (subscription.unsubscribedAt === null) {
-            // Active subscription (new or modified)
+          if (subscription.unsubscribedAt !== null) {
+            // Removed subscription
+            removedSubscriptionIds.push(subscription.id);
+          } else if (subscription.subscribedAt > subscriptionsCursorDate) {
+            // Truly new subscription (subscribed after the cursor)
             createdSubscriptions.push({
               id: subscription.id,
               feedId: subscription.feedId,
@@ -457,9 +512,20 @@ export const syncRouter = createTRPCRouter({
               subscribedAt: subscription.subscribedAt,
             });
           } else {
-            // Removed subscription
-            removedSubscriptionIds.push(subscription.id);
+            // Existing subscription whose properties changed (tags, customTitle, etc.)
+            updatedSubscriptionIds.push(subscription.id);
+            updatedSubscriptions.push({
+              id: subscription.id,
+              customTitle: subscription.customTitle,
+              tags: [], // populated below via batch fetch
+            });
           }
+        }
+
+        // Batch-fetch tags for updated subscriptions
+        const tagsBySubscription = await fetchTagsBySubscriptionIds(ctx.db, updatedSubscriptionIds);
+        for (const sub of updatedSubscriptions) {
+          sub.tags = tagsBySubscription.get(sub.id) ?? [];
         }
       } else {
         // Initial sync: get all active subscriptions and set cursor to max(updated_at)
@@ -640,6 +706,7 @@ export const syncRouter = createTRPCRouter({
         },
         subscriptions: {
           created: createdSubscriptions,
+          updated: updatedSubscriptions,
           removed: removedSubscriptionIds,
         },
         tags: {
@@ -837,33 +904,10 @@ export const syncRouter = createTRPCRouter({
         );
 
         // Batch-fetch tags for all active subscriptions in one query
-        const tagsBySubscription = new Map<
-          string,
-          Array<{ id: string; name: string; color: string | null }>
-        >();
-        if (activeSubscriptions.length > 0) {
-          const allTagResults = await ctx.db
-            .select({
-              subscriptionId: subscriptionTags.subscriptionId,
-              tagId: tags.id,
-              tagName: tags.name,
-              tagColor: tags.color,
-            })
-            .from(subscriptionTags)
-            .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
-            .where(
-              inArray(
-                subscriptionTags.subscriptionId,
-                activeSubscriptions.map(({ subscription }) => subscription.id)
-              )
-            );
-
-          for (const row of allTagResults) {
-            const existing = tagsBySubscription.get(row.subscriptionId) ?? [];
-            existing.push({ id: row.tagId, name: row.tagName, color: row.tagColor });
-            tagsBySubscription.set(row.subscriptionId, existing);
-          }
-        }
+        const tagsBySubscription = await fetchTagsBySubscriptionIds(
+          ctx.db,
+          activeSubscriptions.map(({ subscription }) => subscription.id)
+        );
 
         // Batch-fetch unread counts for all active subscriptions in one query
         const unreadBySubscription = new Map<string, number>();
