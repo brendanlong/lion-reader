@@ -3,6 +3,7 @@
  *
  * Displays feeds with fetch errors and allows users to retry fetching.
  * Shows error messages, failure counts, and last fetch times.
+ * Optionally allows filing GitHub issues for broken feeds.
  */
 
 "use client";
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { CheckIcon, AlertCircleIcon } from "@/components/ui/icon-button";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
+import { FileIssueDialog } from "@/components/settings/FileIssueDialog";
 
 // ============================================================================
 // Types
@@ -43,6 +45,7 @@ export default function BrokenFeedsSettingsContent() {
     id: string;
     title: string;
   } | null>(null);
+  const [fileIssueTarget, setFileIssueTarget] = useState<BrokenFeed | null>(null);
 
   const utils = trpc.useUtils();
   const brokenQuery = trpc.brokenFeeds.list.useQuery();
@@ -66,11 +69,31 @@ export default function BrokenFeedsSettingsContent() {
     },
   });
 
+  const fileIssueMutation = trpc.brokenFeeds.fileIssue.useMutation({
+    onSuccess: (data) => {
+      setFileIssueTarget(null);
+      toast.success("Issue filed successfully", {
+        action: {
+          label: "View Issue",
+          onClick: () => window.open(data.issueUrl, "_blank"),
+        },
+      });
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to file issue");
+    },
+  });
+
   const handleUnsubscribe = (subscriptionId: string, title: string) => {
     setUnsubscribeTarget({ id: subscriptionId, title });
   };
 
+  const handleFileIssue = (feed: BrokenFeed) => {
+    setFileIssueTarget(feed);
+  };
+
   const feeds = brokenQuery.data?.items ?? [];
+  const canFileIssues = brokenQuery.data?.canFileIssues ?? false;
 
   return (
     <div>
@@ -91,7 +114,13 @@ export default function BrokenFeedsSettingsContent() {
         errorMessage="Failed to load broken feeds. Please try again."
         emptyState={<EmptyState />}
         renderItem={(feed) => (
-          <BrokenFeedRow key={feed.feedId} feed={feed} onUnsubscribe={handleUnsubscribe} />
+          <BrokenFeedRow
+            key={feed.feedId}
+            feed={feed}
+            canFileIssues={canFileIssues}
+            onUnsubscribe={handleUnsubscribe}
+            onFileIssue={handleFileIssue}
+          />
         )}
       />
 
@@ -106,6 +135,21 @@ export default function BrokenFeedsSettingsContent() {
           }
         }}
         onCancel={() => setUnsubscribeTarget(null)}
+      />
+
+      {/* File Issue Dialog */}
+      <FileIssueDialog
+        isOpen={fileIssueTarget !== null}
+        feedTitle={fileIssueTarget ? getFeedDisplayName(fileIssueTarget) : ""}
+        feedUrl={fileIssueTarget?.url ?? null}
+        lastError={fileIssueTarget?.lastError ?? null}
+        isLoading={fileIssueMutation.isPending}
+        onConfirm={() => {
+          if (fileIssueTarget) {
+            fileIssueMutation.mutate({ feedId: fileIssueTarget.feedId });
+          }
+        }}
+        onCancel={() => setFileIssueTarget(null)}
       />
     </div>
   );
@@ -137,10 +181,12 @@ function EmptyState() {
 
 interface BrokenFeedRowProps {
   feed: BrokenFeed;
+  canFileIssues: boolean;
   onUnsubscribe: (subscriptionId: string, title: string) => void;
+  onFileIssue: (feed: BrokenFeed) => void;
 }
 
-function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
+function BrokenFeedRow({ feed, canFileIssues, onUnsubscribe, onFileIssue }: BrokenFeedRowProps) {
   const [isRetrying, setIsRetrying] = useState(false);
 
   const utils = trpc.useUtils();
@@ -208,6 +254,11 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
 
         {/* Action Buttons */}
         <div className="flex shrink-0 gap-2">
+          {canFileIssues && (
+            <Button variant="secondary" size="sm" onClick={() => onFileIssue(feed)}>
+              File Issue
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={handleRetry} loading={isRetrying}>
             Retry Now
           </Button>

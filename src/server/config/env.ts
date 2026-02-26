@@ -141,6 +141,20 @@ export const githubConfig = {
    * If not set, the GitHub plugin will still work but with lower rate limits.
    */
   apiToken: process.env.GITHUB_API_TOKEN,
+
+  /**
+   * GitHub token for filing issues on the Lion Reader repo (optional).
+   *
+   * This token needs "Issues: Read and write" permission on the
+   * brendanlong/lion-reader repository.
+   *
+   * Create a fine-grained token at: https://github.com/settings/tokens?type=beta
+   * - Repository access: Only select repositories -> brendanlong/lion-reader
+   * - Permissions: Issues -> Read and write
+   *
+   * If not set, the "File Issue" button will not appear on the broken feeds page.
+   */
+  issuesToken: process.env.GITHUB_ISSUES_TOKEN,
 };
 
 /**
