@@ -57,6 +57,9 @@ RUN pnpm build:server
 # Build worker bundle (single optimized JS file)
 RUN pnpm build:worker
 
+# Build worker-thread bundle (piscina entry point for CPU-intensive tasks)
+RUN pnpm build:worker-thread
+
 # Build Discord bot bundle (single optimized JS file)
 RUN pnpm build:discord-bot
 
@@ -101,6 +104,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/migrations ./migrations
 # Copy bundled scripts (no longer need tsx, tsconfig, or src/)
 COPY --from=builder /app/dist/server.js ./dist/server.js
 COPY --from=builder /app/dist/worker.js ./dist/worker.js
+COPY --from=builder /app/dist/worker-thread.js ./dist/worker-thread.js
 COPY --from=builder /app/dist/migrate.js ./dist/migrate.js
 COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
 

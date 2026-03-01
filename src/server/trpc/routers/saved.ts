@@ -36,7 +36,8 @@ import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
-import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
+import { absolutizeUrls } from "@/server/feed/content-cleaner";
+import { cleanContentInWorker } from "@/server/worker-thread/pool";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import {
@@ -556,7 +557,9 @@ export const savedRouter = createTRPCRouter({
       // Skip for Google Docs API content and plugins that request skipReadability
       const shouldSkipReadability =
         Boolean(googleDocsContent) || (pluginContent?.skipReadability ?? false);
-      const cleaned = shouldSkipReadability ? null : cleanContent(html, { url: contentUrl });
+      const cleaned = shouldSkipReadability
+        ? null
+        : await cleanContentInWorker(html, { url: contentUrl });
 
       // Generate excerpt
       let excerpt: string | null = null;

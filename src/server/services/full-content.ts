@@ -7,7 +7,8 @@
  */
 
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
-import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
+import { absolutizeUrls } from "@/server/feed/content-cleaner";
+import { cleanContentInWorker } from "@/server/worker-thread/pool";
 import { pluginRegistry } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { processMarkdown } from "@/server/markdown";
@@ -73,7 +74,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
           }
 
           // Run Readability on plugin content
-          const cleaned = cleanContent(html, { url: resolveUrl });
+          const cleaned = await cleanContentInWorker(html, { url: resolveUrl });
 
           return {
             success: true,
@@ -117,7 +118,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
     const contentOriginal = absolutizeUrls(html, resolveUrl);
 
     // Clean the content using Readability
-    const cleaned = cleanContent(html, { url: resolveUrl });
+    const cleaned = await cleanContentInWorker(html, { url: resolveUrl });
 
     if (!cleaned) {
       return {

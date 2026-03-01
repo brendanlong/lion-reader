@@ -13,6 +13,10 @@ if (!connectionString) {
 
 export const pool = new Pool({
   connectionString,
+  // Default pg pool is 10, which can cause request queuing under moderate concurrency.
+  // Fly.io managed Postgres allows 300 connections; with 2 app + 1 worker + 1 discord
+  // process, peak usage during deploys (3 app) is ~3×20 + 10 + 10 = 80, well under limit.
+  max: parseInt(process.env.PG_POOL_MAX || "20", 10),
   // Close idle connections before Fly.io's 60s proxy timeout to avoid "server conn crashed?" errors
   idleTimeoutMillis: 30000,
 });
