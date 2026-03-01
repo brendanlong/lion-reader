@@ -14,7 +14,7 @@
  * Format: LionReader/1.0[-COMMIT] [context] (+APP_URL; GITHUB_URL; EMAIL; SUBSCRIBERS)
  */
 
-import { fetcherConfig } from "../config/env";
+import { appUrl, fetcherConfig } from "../config/env";
 
 // ============================================================================
 // Constants
@@ -93,10 +93,8 @@ export function buildUserAgent(options?: UserAgentOptions): string {
   // Build comment section with URLs and contact info
   const parts: string[] = [];
 
-  if (fetcherConfig.appUrl) {
-    // App URL gets the + prefix as primary contact point
-    parts.push(`+${fetcherConfig.appUrl}`);
-  }
+  // App URL gets the + prefix as primary contact point
+  parts.push(`+${appUrl}`);
 
   // Always include GitHub URL
   parts.push(GITHUB_URL);

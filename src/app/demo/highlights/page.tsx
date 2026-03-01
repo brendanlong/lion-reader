@@ -25,6 +25,7 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     title,
     description,
     openGraph: { ...defaultOpenGraph, title, description },
+    ...(entryId && { alternates: { canonical: `/demo/all?entry=${entryId}` } }),
   };
 }
 

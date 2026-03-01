@@ -53,6 +53,9 @@ export const signupConfig = {
   allowedSignupProviders: parseAllowedSignupProviders(),
 };
 
+/** Public-facing app URL. Used for sitemap, robots.txt, metadata, and User-Agent header. */
+export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://lionreader.com";
+
 /**
  * Feed fetcher configuration.
  * These values are included in the User-Agent header for feed requests.
@@ -60,8 +63,6 @@ export const signupConfig = {
 export const fetcherConfig = {
   /** Optional contact email to include in User-Agent header. */
   contactEmail: process.env.FETCHER_CONTACT_EMAIL,
-  /** App URL to include in User-Agent header (uses NEXT_PUBLIC_APP_URL). */
-  appUrl: process.env.NEXT_PUBLIC_APP_URL,
   /** Git commit SHA, injected at build time via next.config.ts. */
   commitSha: process.env.GIT_COMMIT_SHA,
 };

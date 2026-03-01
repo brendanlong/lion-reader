@@ -30,6 +30,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     title,
     description,
     openGraph: { ...defaultOpenGraph, title, description },
+    ...(entryId && { alternates: { canonical: `/demo/all?entry=${entryId}` } }),
   };
 }
 
