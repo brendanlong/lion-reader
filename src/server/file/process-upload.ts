@@ -9,7 +9,7 @@
  */
 
 import * as mammoth from "mammoth";
-import { cleanContentInWorker } from "@/server/worker-thread/pool";
+import { cleanContent } from "@/server/feed/content-cleaner";
 import { generateSummary } from "@/server/html/strip-html";
 import { logger } from "@/lib/logger";
 import { processMarkdown as convertMarkdown } from "@/server/markdown";
@@ -110,7 +110,7 @@ async function processDocx(buffer: Buffer, filename: string): Promise<ProcessedF
   const fullHtml = `<!DOCTYPE html><html><body>${rawHtml}</body></html>`;
 
   // Clean with Readability
-  const cleaned = await cleanContentInWorker(fullHtml, { minCleanedLength: 10 });
+  const cleaned = cleanContent(fullHtml, { minCleanedLength: 10 });
 
   // Use cleaned content if available, otherwise use raw mammoth output
   const contentCleaned = cleaned?.content ?? rawHtml;
@@ -130,7 +130,7 @@ async function processDocx(buffer: Buffer, filename: string): Promise<ProcessedF
  */
 async function processHtml(content: string, filename: string): Promise<ProcessedFile> {
   // Clean with Readability
-  const cleaned = await cleanContentInWorker(content, { minCleanedLength: 10 });
+  const cleaned = cleanContent(content, { minCleanedLength: 10 });
 
   if (cleaned) {
     return {

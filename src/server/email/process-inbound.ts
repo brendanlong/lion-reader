@@ -9,7 +9,7 @@ import { createHash } from "crypto";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import { generateSummary } from "../html/strip-html";
-import { cleanContentInWorker } from "@/server/worker-thread/pool";
+import { cleanContent } from "@/server/feed/content-cleaner";
 import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
 import {
   feeds,
@@ -398,7 +398,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   // Set to null if cleaning fails - UI only shows toggle when both versions exist.
   let contentCleaned: string | null = null;
   if (email.html) {
-    const cleaned = await cleanContentInWorker(email.html, {
+    const cleaned = cleanContent(email.html, {
       minContentLength: 50,
       minCleanedLength: 20,
     });
