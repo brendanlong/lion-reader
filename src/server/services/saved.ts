@@ -16,7 +16,7 @@ import { fetchHtmlPage, HttpFetchError, ContentTooLargeError } from "@/server/ht
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
 import { wrapHtmlFragment } from "@/server/http/html";
-import { cleanContent } from "@/server/feed/content-cleaner";
+import { cleanContentInWorker } from "@/server/worker-thread/pool";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import { logger } from "@/lib/logger";
@@ -419,7 +419,9 @@ export async function saveArticle(
 
   // Run Readability for clean content (skip for plugins that request it, or for Markdown)
   const shouldSkipReadability = pluginContent?.skipReadability || markdownResult !== null;
-  const cleaned = shouldSkipReadability ? null : cleanContent(html!, { url: contentUrl });
+  const cleaned = shouldSkipReadability
+    ? null
+    : await cleanContentInWorker(html!, { url: contentUrl });
 
   // Generate excerpt - prefer frontmatter summary for Markdown content
   let excerpt: string | null = null;

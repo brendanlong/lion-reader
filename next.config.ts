@@ -116,7 +116,7 @@ const nextConfig: NextConfig = {
   },
   // Packages that should be loaded from node_modules at runtime, not bundled
   // html-rewriter-wasm contains a WASM file that can't be bundled by Next.js
-  serverExternalPackages: ["html-rewriter-wasm"],
+  serverExternalPackages: ["html-rewriter-wasm", "piscina"],
   // Handle piper-tts-web which has conditional Node.js code (require('fs'))
   // that the bundler tries to resolve even though it only runs in Node.js
   webpack: (config, { isServer }) => {

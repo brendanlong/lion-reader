@@ -12,7 +12,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { feeds } from "@/server/db/schema";
 import { handleVerificationChallenge, verifyHmacSignature } from "@/server/feed/websub";
-import { parseFeed } from "@/server/feed/parser";
+import { parseFeedInWorker } from "@/server/worker-thread/pool";
 import { processEntries } from "@/server/feed/entry-processor";
 import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "@/server/feed/scheduling";
 import { updateFeedJobNextRun } from "@/server/jobs/queue";
@@ -156,7 +156,7 @@ export async function POST(
   // Parse the pushed feed content
   let parsedFeed;
   try {
-    parsedFeed = await parseFeed(bodyText);
+    parsedFeed = await parseFeedInWorker(bodyText);
   } catch (error) {
     logger.warn("WebSub notification with invalid feed content", {
       feedId,

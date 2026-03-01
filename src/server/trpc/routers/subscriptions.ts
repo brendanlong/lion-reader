@@ -30,7 +30,7 @@ import {
   type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { parseFeed } from "@/server/feed/parser";
+import { parseFeedInWorker } from "@/server/worker-thread/pool";
 import { discoverFeeds } from "@/server/feed/discovery";
 import { deriveGuid } from "@/server/feed/entry-processor";
 import { getDomainFromUrl } from "@/server/feed/types";
@@ -406,7 +406,7 @@ async function subscribeToNewOrUnfetchedFeed(
   // Parse the feed
   let parsedFeed;
   try {
-    parsedFeed = parseFeed(feedContent);
+    parsedFeed = await parseFeedInWorker(feedContent);
   } catch {
     throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
   }
