@@ -14,6 +14,7 @@
  * - nt: newest timestamp (unix seconds)
  * - r: sort order ("o" for oldest first)
  * - xt: exclude stream ID
+ * - it: include tag (e.g., user/-/state/com.google/read to include only read items)
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
@@ -50,6 +51,7 @@ export async function GET(request: Request): Promise<Response> {
   const continuation = searchParams.get("c") ?? undefined;
   const sortOrder = searchParams.get("r") === "o" ? "oldest" : "newest";
   const excludeTarget = searchParams.get("xt");
+  const includeTarget = searchParams.get("it");
   const olderThan = searchParams.get("ot");
   const newerThan = searchParams.get("nt");
 
@@ -98,6 +100,9 @@ export async function GET(request: Request): Promise<Response> {
         case "starred":
           listParams.starredOnly = true;
           break;
+        case "read":
+          listParams.readOnly = true;
+          break;
         default:
           return errorResponse(`Unsupported state: ${parsedStream.state}`, 400);
       }
@@ -115,6 +120,25 @@ export async function GET(request: Request): Promise<Response> {
 
   if (excludeTarget && isState(excludeTarget, "read")) {
     listParams.unreadOnly = true;
+  }
+
+  // Handle include target (it parameter) — e.g., it=user/-/state/com.google/read
+  if (includeTarget) {
+    try {
+      const parsed = parseStreamId(includeTarget);
+      if (parsed.type === "state") {
+        switch (parsed.state) {
+          case "read":
+            listParams.readOnly = true;
+            break;
+          case "starred":
+            listParams.starredOnly = true;
+            break;
+        }
+      }
+    } catch {
+      // Ignore invalid stream IDs for the 'it' parameter
+    }
   }
 
   const result = await entriesService.listEntries(db, listParams);
