@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
-
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://lionreader.com";
+import { appUrl } from "@/server/config/env";
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -17,8 +16,8 @@ export default function robots(): MetadataRoute.Robots {
         "/subscription/",
         "/tag/",
         "/subscribe",
-        "/settings/",
-        "/admin/",
+        "/settings",
+        "/admin",
         "/api/",
         "/auth/",
         "/complete-signup",

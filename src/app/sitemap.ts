@@ -1,8 +1,7 @@
 import type { MetadataRoute } from "next";
+import { appUrl } from "@/server/config/env";
 import { DEMO_ARTICLES } from "./demo/articles";
 import { DEMO_SUBSCRIPTIONS, DEMO_TAGS } from "./demo/data";
-
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://lionreader.com";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const demoSubscriptionPages = DEMO_SUBSCRIPTIONS.map((sub) => ({
