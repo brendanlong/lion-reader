@@ -2,14 +2,16 @@
  * /demo/highlights — Highlights demo page
  *
  * Server component that renders EntryArticle with static demo data when
- * ?entry= is present, enabling SSR of entry content for SEO. After
- * hydration, DemoLayoutContent switches to DemoRouter for interactivity.
+ * ?entry= is present, or a static list of initially-starred entries
+ * with crawlable links when no entry is selected. After hydration,
+ * DemoLayoutContent switches to DemoRouter for full client-side interactivity.
  */
 
 import { type Metadata } from "next";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { defaultOpenGraph } from "@/lib/metadata";
-import { getDemoEntry, getDemoEntryArticleProps } from "../data";
+import { getDemoEntry, getDemoEntryArticleProps, DEMO_ENTRIES, sortNewestFirst } from "../data";
+import { DemoEntryListSSR } from "../DemoEntryListSSR";
 
 interface Props {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -34,7 +36,12 @@ export default async function DemoHighlightsPage({ searchParams }: Props) {
   const entryId = typeof sp.entry === "string" ? sp.entry : undefined;
   const entry = entryId ? getDemoEntry(entryId) : undefined;
 
-  if (!entry) return null;
+  if (entry) {
+    return <EntryArticle {...getDemoEntryArticleProps(entry)} />;
+  }
 
-  return <EntryArticle {...getDemoEntryArticleProps(entry)} />;
+  const starredEntries = sortNewestFirst(DEMO_ENTRIES.filter((e) => e.starred));
+  return (
+    <DemoEntryListSSR entries={starredEntries} backHref="/demo/highlights" title="Highlights" />
+  );
 }
