@@ -142,7 +142,7 @@ export const DEMO_ENTRIES: DemoEntry[] = DEMO_ARTICLES.map(articleToEntry);
 // ============================================================================
 
 /** Sort entries newest-first by publishedAt date */
-function sortNewestFirst(entries: DemoEntry[]): DemoEntry[] {
+export function sortNewestFirst(entries: DemoEntry[]): DemoEntry[] {
   return [...entries].sort(
     (a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0)
   );
