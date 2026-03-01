@@ -107,8 +107,7 @@ async function handleStreamContents(
           listParams.starredOnly = true;
           break;
         case "read":
-          // Read entries — not directly supported by list params,
-          // but we can handle via exclude logic below
+          listParams.readOnly = true;
           break;
         default:
           return errorResponse(`Unsupported state: ${parsedStream.state}`, 400);
