@@ -24,8 +24,7 @@ import {
 import { fetchFullContent } from "../services/full-content";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../feed/fetcher";
 import type { WebSubLinkHeaders } from "../feed/link-header";
-import { parseFeedInWorker } from "@/server/worker-thread/pool";
-import type { ParsedFeed } from "@/server/feed/types";
+import { parseFeed } from "../feed/parser";
 import { processEntries } from "../feed/entry-processor";
 import { calculateNextFetch } from "../feed/scheduling";
 import {
@@ -318,9 +317,9 @@ async function processSuccessfulFetch(
   const bodyText = body.toString("utf-8");
 
   // Parse the feed content
-  let parsedFeed: ParsedFeed;
+  let parsedFeed;
   try {
-    parsedFeed = await parseFeedInWorker(bodyText);
+    parsedFeed = parseFeed(bodyText);
   } catch (error) {
     // Parsing failed - treat as error
     // Also clear any redirect tracking since the destination doesn't have a valid feed
