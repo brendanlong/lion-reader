@@ -22,9 +22,9 @@ export function getAuthorizationServerMetadata() {
 
   return {
     issuer,
-    authorization_endpoint: `${issuer}/authorize`,
-    token_endpoint: `${issuer}/token`,
-    registration_endpoint: `${issuer}/register`,
+    authorization_endpoint: `${issuer}/oauth/authorize`,
+    token_endpoint: `${issuer}/oauth/token`,
+    registration_endpoint: `${issuer}/oauth/register`,
     scopes_supported: Object.values(OAUTH_SCOPES),
     response_types_supported: ["code"],
     response_modes_supported: ["query"],

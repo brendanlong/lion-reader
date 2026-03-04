@@ -17,7 +17,6 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
-  ListResourcesRequestSchema,
   McpError,
   ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -128,10 +127,6 @@ function createMcpServer(userId: string): Server {
         },
       ],
     };
-  });
-
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    return { resources: [] };
   });
 
   return server;
