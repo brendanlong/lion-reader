@@ -1,15 +1,25 @@
 /**
  * MCP (Model Context Protocol) HTTP Endpoint
  *
- * Serves the MCP server over HTTP with authentication.
+ * Serves the MCP server over Streamable HTTP transport with authentication.
  * Supports both OAuth 2.1 tokens and legacy API tokens.
- * This allows Claude Desktop and other MCP clients to connect to Lion Reader
- * hosted at lionreader.com or localhost:3000.
  *
- * Uses @modelcontextprotocol/server-fetch as the client-side proxy.
+ * Uses WebStandardStreamableHTTPServerTransport from the MCP SDK,
+ * which handles protocol negotiation, SSE streaming, and session management.
+ *
+ * Stateless mode: each request creates a fresh server+transport pair.
+ * This is appropriate for Next.js serverless route handlers.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  McpError,
+  ErrorCode,
+} from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/server/db";
 import { registerTools } from "@/server/mcp/tools";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
@@ -70,206 +80,155 @@ function buildWwwAuthenticateHeader(): string {
 }
 
 // ============================================================================
-// MCP Request Handlers
+// MCP Server Factory
 // ============================================================================
 
-interface MCPRequest {
-  jsonrpc: "2.0";
-  id?: number | string;
-  method: string;
-  params?: Record<string, unknown>;
+/**
+ * Creates a new MCP Server instance with tools registered.
+ * Each request gets its own server instance (stateless pattern).
+ *
+ * @param userId - The authenticated user's ID, injected into tool handlers
+ */
+function createMcpServer(userId: string): Server {
+  const server = new Server(
+    {
+      name: "lion-reader",
+      version: "1.0.0",
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const tools = registerTools();
+    return { tools };
+  });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    const tools = registerTools();
+    const tool = tools.find((t) => t.name === name);
+
+    if (!tool) {
+      throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    }
+
+    // Spread user args first, then set userId so it can't be overridden
+    const result = await tool.handler(db, { ...(args ?? {}), userId });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+  });
+
+  return server;
 }
 
-interface MCPResponse {
-  jsonrpc: "2.0";
-  id?: number | string;
-  result?: unknown;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
+// ============================================================================
+// Unauthorized Response
+// ============================================================================
+
+function unauthorizedResponse(): Response {
+  logger.warn("MCP request unauthorized");
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers: {
+      "Content-Type": "application/json",
+      "WWW-Authenticate": buildWwwAuthenticateHeader(),
+    },
+  });
 }
+
+// ============================================================================
+// Request Handler
+// ============================================================================
 
 /**
- * Handle MCP protocol requests.
+ * Handles an MCP request using the Streamable HTTP transport.
+ * Creates a stateless server+transport pair per request.
  */
-async function handleMCPRequest(userId: string, request: MCPRequest): Promise<MCPResponse> {
-  const { id, method, params } = request;
+async function handleMcpRequest(request: NextRequest): Promise<Response> {
+  // Authenticate request
+  const userId = await authenticateRequest(request);
+  if (!userId) {
+    return unauthorizedResponse();
+  }
+
+  // Create a stateless MCP server and transport for this request
+  const server = createMcpServer(userId);
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined, // Stateless mode
+    enableJsonResponse: true, // Use JSON responses (our tools are fast DB queries)
+  });
+
+  await server.connect(transport);
 
   try {
-    switch (method) {
-      case "initialize": {
-        // Log the initialize request for debugging
-        logger.info("MCP initialize request", { userId, params });
-
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: {
-            protocolVersion: "2024-11-05",
-            serverInfo: {
-              name: "lion-reader",
-              version: "1.0.0",
-            },
-            capabilities: {
-              tools: {},
-            },
-          },
-        };
-      }
-
-      case "tools/list": {
-        const tools = registerTools();
-        // Return only MCP-compatible tool metadata (exclude handler)
-        const toolList = tools.map(({ name, description, inputSchema }) => ({
-          name,
-          description,
-          inputSchema,
-        }));
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: { tools: toolList },
-        };
-      }
-
-      case "tools/call": {
-        const { name, arguments: args } = params as {
-          name: string;
-          arguments?: Record<string, unknown>;
-        };
-        const tools = registerTools();
-        const tool = tools.find((t) => t.name === name);
-
-        if (!tool) {
-          return {
-            jsonrpc: "2.0",
-            id,
-            error: {
-              code: -32601,
-              message: `Tool not found: ${name}`,
-            },
-          };
-        }
-
-        // Inject userId into args
-        const result = await tool.handler(db, { userId, ...(args ?? {}) });
-
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(result, null, 2),
-              },
-            ],
-          },
-        };
-      }
-
-      case "resources/list": {
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: { resources: [] },
-        };
-      }
-
-      default: {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: {
-            code: -32601,
-            message: `Method not found: ${method}`,
-          },
-        };
-      }
-    }
+    const response = await transport.handleRequest(request);
+    logger.info("MCP request handled", { userId, method: request.method });
+    return response;
   } catch (error) {
-    logger.error("MCP request error", { method, userId, error });
-    return {
-      jsonrpc: "2.0",
-      id,
-      error: {
-        code: -32603,
-        message: error instanceof Error ? error.message : "Internal error",
-      },
-    };
+    logger.error("MCP endpoint error", { userId, error });
+    return new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        error: {
+          code: -32603,
+          message: "Internal server error",
+        },
+        id: null,
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  } finally {
+    // Clean up transport and server
+    await transport.close();
+    await server.close();
   }
 }
 
 // ============================================================================
-// HTTP Endpoint
+// HTTP Method Handlers
 // ============================================================================
 
 /**
  * POST /api/mcp - Handle MCP JSON-RPC requests
+ *
+ * The Streamable HTTP transport handles:
+ * - initialize requests (protocol negotiation)
+ * - tools/list requests
+ * - tools/call requests
+ * - notifications
  */
 export async function POST(request: NextRequest) {
-  // Authenticate request
-  const userId = await authenticateRequest(request);
-  if (!userId) {
-    logger.warn("MCP request unauthorized");
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      {
-        status: 401,
-        headers: {
-          "WWW-Authenticate": buildWwwAuthenticateHeader(),
-        },
-      }
-    );
-  }
+  return handleMcpRequest(request);
+}
 
-  try {
-    const mcpRequest = (await request.json()) as MCPRequest;
-    logger.info("MCP request received", { userId, method: mcpRequest.method, id: mcpRequest.id });
+/**
+ * GET /api/mcp - SSE endpoint for server-initiated messages
+ *
+ * In stateless mode, returns 405 since there are no persistent sessions.
+ */
+export function GET() {
+  return new Response(null, { status: 405 });
+}
 
-    // Validate JSON-RPC format
-    if (mcpRequest.jsonrpc !== "2.0" || !mcpRequest.method) {
-      logger.warn("Invalid MCP request format", { mcpRequest });
-      return NextResponse.json(
-        {
-          jsonrpc: "2.0",
-          id: mcpRequest.id,
-          error: {
-            code: -32600,
-            message: "Invalid Request",
-          },
-        },
-        { status: 400 }
-      );
-    }
-
-    // Handle the request
-    const response = await handleMCPRequest(userId, mcpRequest);
-    logger.info("MCP response sent", {
-      userId,
-      method: mcpRequest.method,
-      id: mcpRequest.id,
-      hasError: !!response.error,
-    });
-
-    return NextResponse.json(response, {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-  } catch (error) {
-    logger.error("MCP endpoint error", { userId, error });
-    return NextResponse.json(
-      {
-        jsonrpc: "2.0",
-        error: {
-          code: -32700,
-          message: "Parse error",
-        },
-      },
-      { status: 500 }
-    );
-  }
+/**
+ * DELETE /api/mcp - Session termination
+ *
+ * In stateless mode, returns 405 since there are no sessions to terminate.
+ */
+export function DELETE() {
+  return new Response(null, { status: 405 });
 }
