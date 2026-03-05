@@ -32,15 +32,22 @@ import { logger } from "@/lib/logger";
 // Authentication
 // ============================================================================
 
+type AuthSuccess = { success: true; userId: string };
+type AuthFailure = { success: false; reason: string };
+type AuthResult = AuthSuccess | AuthFailure;
+
 /**
  * Extract and validate token from request headers.
  * Supports both OAuth 2.1 access tokens and legacy API tokens.
- * Returns userId if valid, null otherwise.
+ * Returns userId if valid, or a reason string for failure.
  */
-async function authenticateRequest(request: NextRequest): Promise<string | null> {
+async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
   const authHeader = request.headers.get("authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return null;
+  if (!authHeader) {
+    return { success: false, reason: "no_authorization_header" };
+  }
+  if (!authHeader.startsWith("Bearer ")) {
+    return { success: false, reason: "invalid_authorization_scheme" };
   }
 
   const token = authHeader.slice(7); // Remove "Bearer " prefix
@@ -50,10 +57,13 @@ async function authenticateRequest(request: NextRequest): Promise<string | null>
   if (oauthToken) {
     // Check if OAuth token has MCP scope
     if (!oauthToken.scopes.includes(OAUTH_SCOPES.MCP)) {
-      logger.warn("OAuth token missing MCP scope", { userId: oauthToken.userId });
-      return null;
+      logger.warn("MCP auth: OAuth token missing MCP scope", {
+        userId: oauthToken.userId,
+        scopes: oauthToken.scopes,
+      });
+      return { success: false, reason: "oauth_token_missing_mcp_scope" };
     }
-    return oauthToken.userId;
+    return { success: true, userId: oauthToken.userId };
   }
 
   // Fall back to API token (legacy system)
@@ -61,13 +71,16 @@ async function authenticateRequest(request: NextRequest): Promise<string | null>
   if (apiTokenData) {
     // Check if token has MCP scope
     if (!apiTokenData.token.scopes.includes(API_TOKEN_SCOPES.MCP)) {
-      logger.warn("API token missing MCP scope", { userId: apiTokenData.user.id });
-      return null;
+      logger.warn("MCP auth: API token missing MCP scope", {
+        userId: apiTokenData.user.id,
+        scopes: apiTokenData.token.scopes,
+      });
+      return { success: false, reason: "api_token_missing_mcp_scope" };
     }
-    return apiTokenData.user.id;
+    return { success: true, userId: apiTokenData.user.id };
   }
 
-  return null;
+  return { success: false, reason: "token_invalid_expired_or_revoked" };
 }
 
 /**
@@ -136,8 +149,8 @@ function createMcpServer(userId: string): Server {
 // Unauthorized Response
 // ============================================================================
 
-function unauthorizedResponse(): Response {
-  logger.warn("MCP request unauthorized");
+function unauthorizedResponse(reason: string): Response {
+  logger.warn("MCP auth unauthorized", { reason });
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
     status: 401,
     headers: {
@@ -157,10 +170,11 @@ function unauthorizedResponse(): Response {
  */
 async function handleMcpRequest(request: NextRequest): Promise<Response> {
   // Authenticate request
-  const userId = await authenticateRequest(request);
-  if (!userId) {
-    return unauthorizedResponse();
+  const auth = await authenticateRequest(request);
+  if (!auth.success) {
+    return unauthorizedResponse(auth.reason);
   }
+  const { userId } = auth;
 
   // Create a stateless MCP server and transport for this request
   const server = createMcpServer(userId);

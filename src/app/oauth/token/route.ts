@@ -19,6 +19,28 @@ import {
 import { isValidCodeVerifier, OAUTH_ERRORS, createOAuthError } from "@/server/oauth/utils";
 
 /**
+ * Extracts client_id and client_secret from the Authorization header
+ * when using client_secret_basic authentication (RFC 6749 Section 2.3.1).
+ */
+function extractBasicAuth(request: NextRequest): { clientId: string; clientSecret: string } | null {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Basic ")) {
+    return null;
+  }
+  try {
+    const decoded = atob(authHeader.slice(6));
+    const colonIndex = decoded.indexOf(":");
+    if (colonIndex === -1) return null;
+    return {
+      clientId: decodeURIComponent(decoded.slice(0, colonIndex)),
+      clientSecret: decodeURIComponent(decoded.slice(colonIndex + 1)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Token request via form data (standard OAuth)
  */
 export async function POST(request: NextRequest) {
@@ -36,6 +58,13 @@ export async function POST(request: NextRequest) {
       createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Unsupported content type"),
       { status: 400 }
     );
+  }
+
+  // Support client_secret_basic: extract client_id from Authorization header
+  // if not present in body (RFC 6749 Section 2.3.1)
+  const basicAuth = extractBasicAuth(request);
+  if (basicAuth && !body.client_id) {
+    body.client_id = basicAuth.clientId;
   }
 
   const grantType = body.grant_type;

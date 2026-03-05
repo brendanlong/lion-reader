@@ -306,6 +306,7 @@ export async function createTokens(params: CreateTokensParams): Promise<TokenPai
     clientId: params.clientId,
     userId: params.userId,
     scopes: params.scopes,
+    resource: params.resource ?? null,
     accessTokenId,
     expiresAt: refreshTokenExpiry,
   });
@@ -402,11 +403,12 @@ export async function rotateRefreshToken(
 
   const oldRefreshToken = result[0];
 
-  // Create new tokens
+  // Create new tokens, preserving resource binding
   const newTokens = await createTokens({
     clientId: oldRefreshToken.clientId,
     userId: oldRefreshToken.userId,
     scopes: oldRefreshToken.scopes,
+    resource: oldRefreshToken.resource,
   });
 
   // Get the new refresh token ID to link rotation chain
