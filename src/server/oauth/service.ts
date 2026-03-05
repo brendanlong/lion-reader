@@ -55,6 +55,7 @@ export interface ResolvedClient {
   grantTypes: string[];
   scopes: string[] | null;
   isPublic: boolean;
+  clientSecretHash: string | null;
   fromDatabase: boolean;
 }
 
@@ -105,6 +106,7 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
       grantTypes: client.grantTypes,
       scopes: client.scopes,
       isPublic: client.isPublic,
+      clientSecretHash: client.clientSecretHash,
       fromDatabase: true,
     };
   }
@@ -121,6 +123,7 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
           grantTypes: metadata.grant_types ?? ["authorization_code", "refresh_token"],
           scopes: metadata.scope ? metadata.scope.split(" ") : null,
           isPublic: true, // CIMD clients are always public
+          clientSecretHash: null,
           fromDatabase: false,
         };
       }
@@ -610,7 +613,7 @@ export async function registerClient(
 
   // Validate token_endpoint_auth_method
   const authMethod = request.token_endpoint_auth_method ?? "none";
-  const supportedAuthMethods = ["none", "client_secret_basic", "client_secret_post"];
+  const supportedAuthMethods = ["none", "client_secret_post"];
   if (!supportedAuthMethods.includes(authMethod)) {
     return {
       success: false,
