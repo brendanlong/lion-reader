@@ -211,52 +211,14 @@ export const syncRouter = createTRPCRouter({
       let hasMore = false;
 
       // ========================================================================
-      // Entry state changes (read/starred) - from user_entries.updated_at
+      // Entry changes (metadata and/or state) - combined query using GREATEST
+      // Uses GREATEST(entries.updated_at, user_entries.updated_at) > cursor
+      // to catch all changes with a single cursor, avoiding missed updates
+      // when one timestamp advances past the other (see #738).
       // ========================================================================
       if (entriesCursor) {
-        const entryStateResults = await ctx.db
-          .select({
-            id: userEntries.entryId,
-            read: userEntries.read,
-            starred: userEntries.starred,
-            updatedAt: userEntries.updatedAt,
-            updatedAtRaw: sql<string>`to_char(${userEntries.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-          })
-          .from(userEntries)
-          .where(
-            and(
-              eq(userEntries.userId, userId),
-              sql`${userEntries.updatedAt} > ${entriesCursor}::timestamptz`
-            )
-          )
-          .orderBy(userEntries.updatedAt)
-          .limit(MAX_ENTRIES + 1);
-
-        if (entryStateResults.length > MAX_ENTRIES) {
-          hasMore = true;
-          entryStateResults.pop();
-        }
-
-        for (const row of entryStateResults) {
-          allEvents.push({
-            type: "entry_state_changed" as const,
-            entryId: row.id,
-            read: row.read,
-            starred: row.starred,
-            timestamp: row.updatedAtRaw,
-            updatedAt: row.updatedAtRaw,
-            _sortTime: row.updatedAt,
-          });
-        }
-
-        // ======================================================================
-        // Entry metadata changes - from entries.updated_at
-        // Only include entries the user has access to (via user_entries)
-        // Generates new_entry events for newly created entries and
-        // entry_updated events for metadata changes on existing entries.
-        // ======================================================================
         const entriesCursorDate = new Date(entriesCursor);
-        const entryMetadataResults = await ctx.db
+        const changedEntryResults = await ctx.db
           .select({
             id: entries.id,
             title: entries.title,
@@ -265,65 +227,94 @@ export const syncRouter = createTRPCRouter({
             url: entries.url,
             publishedAt: entries.publishedAt,
             createdAt: entries.createdAt,
-            updatedAt: entries.updatedAt,
-            updatedAtRaw: sql<string>`to_char(${entries.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+            entryUpdatedAt: entries.updatedAt,
+            read: userEntries.read,
+            starred: userEntries.starred,
+            userEntryUpdatedAt: userEntries.updatedAt,
             subscriptionId: subscriptions.id,
             feedType: feeds.type,
+            // Raw ISO string with µs precision for cursor/timestamp output
+            maxUpdatedAtRaw: sql<string>`to_char(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
-          .from(entries)
-          .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+          .from(userEntries)
+          .innerJoin(entries, eq(entries.id, userEntries.entryId))
           .innerJoin(feeds, eq(feeds.id, entries.feedId))
           .leftJoin(
             subscriptionFeeds,
-            and(eq(subscriptionFeeds.userId, userId), eq(subscriptionFeeds.feedId, entries.feedId))
+            and(
+              eq(subscriptionFeeds.userId, userEntries.userId),
+              eq(subscriptionFeeds.feedId, entries.feedId)
+            )
           )
           .leftJoin(subscriptions, eq(subscriptions.id, subscriptionFeeds.subscriptionId))
           .where(
             and(
               eq(userEntries.userId, userId),
-              sql`${entries.updatedAt} > ${entriesCursor}::timestamptz`,
+              sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) > ${entriesCursor}::timestamptz`,
               // Visibility: match visible_entries view logic
               // LEFT JOIN produces NULL unsubscribedAt for saved articles (no subscription),
               // and NULL IS NULL = TRUE, so saved articles pass this check
               sql`(${subscriptions.unsubscribedAt} IS NULL OR ${userEntries.starred} = true)`
             )
           )
-          .orderBy(entries.updatedAt)
+          .orderBy(sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`)
           .limit(MAX_ENTRIES + 1);
 
-        if (entryMetadataResults.length > MAX_ENTRIES) {
+        if (changedEntryResults.length > MAX_ENTRIES) {
           hasMore = true;
-          entryMetadataResults.pop();
+          changedEntryResults.pop();
         }
 
-        for (const row of entryMetadataResults) {
-          if (row.createdAt > entriesCursorDate) {
-            // New entry created after cursor - emit new_entry for count updates
+        // Differentiate event types based on which timestamps changed.
+        // Both metadata and state can change simultaneously, so emit separate
+        // events for each — the frontend handles them with different cache updates.
+        for (const row of changedEntryResults) {
+          const entryMetadataChanged = row.entryUpdatedAt > entriesCursorDate;
+          const entryStateChanged = row.userEntryUpdatedAt > entriesCursorDate;
+
+          if (entryMetadataChanged) {
+            if (row.createdAt > entriesCursorDate) {
+              // New entry created after cursor - emit new_entry for count updates
+              allEvents.push({
+                type: "new_entry" as const,
+                subscriptionId: row.subscriptionId,
+                entryId: row.id,
+                timestamp: row.maxUpdatedAtRaw,
+                updatedAt: row.maxUpdatedAtRaw,
+                feedType: row.feedType,
+                _sortTime: new Date(row.maxUpdatedAtRaw),
+              });
+            } else {
+              // Existing entry with metadata changes
+              allEvents.push({
+                type: "entry_updated" as const,
+                subscriptionId: row.subscriptionId,
+                entryId: row.id,
+                timestamp: row.maxUpdatedAtRaw,
+                updatedAt: row.maxUpdatedAtRaw,
+                metadata: {
+                  title: row.title,
+                  author: row.author,
+                  summary: row.summary,
+                  url: row.url,
+                  publishedAt: row.publishedAt?.toISOString() ?? null,
+                },
+                _sortTime: new Date(row.maxUpdatedAtRaw),
+              });
+            }
+          }
+
+          if (entryStateChanged) {
+            // User state changed (read/starred) - emit separately from metadata
+            // so the frontend updates both the entry content and read/starred state
             allEvents.push({
-              type: "new_entry" as const,
-              subscriptionId: row.subscriptionId,
+              type: "entry_state_changed" as const,
               entryId: row.id,
-              timestamp: row.updatedAtRaw,
-              updatedAt: row.updatedAtRaw,
-              feedType: row.feedType,
-              _sortTime: row.updatedAt,
-            });
-          } else {
-            // Existing entry with metadata changes
-            allEvents.push({
-              type: "entry_updated" as const,
-              subscriptionId: row.subscriptionId,
-              entryId: row.id,
-              timestamp: row.updatedAtRaw,
-              updatedAt: row.updatedAtRaw,
-              metadata: {
-                title: row.title,
-                author: row.author,
-                summary: row.summary,
-                url: row.url,
-                publishedAt: row.publishedAt?.toISOString() ?? null,
-              },
-              _sortTime: row.updatedAt,
+              read: row.read,
+              starred: row.starred,
+              timestamp: row.maxUpdatedAtRaw,
+              updatedAt: row.maxUpdatedAtRaw,
+              _sortTime: new Date(row.maxUpdatedAtRaw),
             });
           }
         }
