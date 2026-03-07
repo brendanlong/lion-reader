@@ -9,8 +9,10 @@
 
 import { NextResponse } from "next/server";
 import { getAuthorizationServerMetadata } from "@/server/oauth/config";
+import { logger } from "@/lib/logger";
 
 export async function GET() {
+  logger.info("OAuth authorization server metadata requested");
   const metadata = getAuthorizationServerMetadata();
 
   return NextResponse.json(metadata, {

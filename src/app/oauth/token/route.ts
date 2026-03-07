@@ -11,6 +11,7 @@
 
 import crypto from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import {
   resolveClient,
   validateAndConsumeAuthCode,
@@ -29,6 +30,7 @@ import {
  * Token request via form data (standard OAuth)
  */
 export async function POST(request: NextRequest) {
+  logger.info("OAuth token request");
   // Parse form data or JSON body
   let body: Record<string, string>;
 

@@ -25,6 +25,7 @@ import {
   createOAuthError,
 } from "@/server/oauth/utils";
 import { getIssuer } from "@/server/oauth/config";
+import { logger } from "@/lib/logger";
 
 /**
  * Extracts session token from cookies.
@@ -68,6 +69,7 @@ function buildSuccessRedirect(redirectUri: string, code: string, state?: string)
 }
 
 export async function GET(request: NextRequest) {
+  logger.info("OAuth authorize GET", { url: request.nextUrl.pathname + request.nextUrl.search });
   const searchParams = request.nextUrl.searchParams;
 
   // Extract required parameters

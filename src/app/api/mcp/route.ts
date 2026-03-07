@@ -85,11 +85,12 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
 
 /**
  * Builds WWW-Authenticate header for 401 responses.
- * Includes resource_metadata URL per MCP specification.
+ * Includes resource_metadata URL and scope per MCP specification (RFC 9728 / RFC 6750).
  */
 function buildWwwAuthenticateHeader(): string {
   const metadata = getProtectedResourceMetadata();
-  return `Bearer resource_metadata="${metadata.resource}/.well-known/oauth-protected-resource"`;
+  const scopes = Object.values(OAUTH_SCOPES);
+  return `Bearer resource_metadata="${metadata.resource}/.well-known/oauth-protected-resource", scope="${scopes.join(" ")}"`;
 }
 
 // ============================================================================
@@ -232,17 +233,31 @@ export async function POST(request: NextRequest) {
 /**
  * GET /api/mcp - SSE endpoint for server-initiated messages
  *
- * In stateless mode, returns 405 since there are no persistent sessions.
+ * Auth is checked first so unauthenticated clients receive 401 with
+ * WWW-Authenticate header for OAuth discovery (MCP spec requirement).
+ * In stateless mode, authenticated requests return 405 since there are
+ * no persistent sessions for SSE streaming.
  */
-export function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await authenticateRequest(request);
+  if (!auth.success) {
+    return unauthorizedResponse(auth.reason);
+  }
   return new Response(null, { status: 405 });
 }
 
 /**
  * DELETE /api/mcp - Session termination
  *
- * In stateless mode, returns 405 since there are no sessions to terminate.
+ * Auth is checked first so unauthenticated clients receive 401 with
+ * WWW-Authenticate header for OAuth discovery (MCP spec requirement).
+ * In stateless mode, authenticated requests return 405 since there are
+ * no sessions to terminate.
  */
-export function DELETE() {
+export async function DELETE(request: NextRequest) {
+  const auth = await authenticateRequest(request);
+  if (!auth.success) {
+    return unauthorizedResponse(auth.reason);
+  }
   return new Response(null, { status: 405 });
 }
