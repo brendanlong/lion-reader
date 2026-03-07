@@ -78,20 +78,11 @@ export interface ScorePrediction {
 
 /**
  * Computes the effective score for an entry.
- * Priority: explicit score > implicit signals
- *
- * Implicit score mapping:
- * - has_starred = +2
- * - has_marked_unread = 0 (overrides read-on-list but no positive bonus)
- * - type = 'saved' = +1
- * - has_marked_read_on_list = -1
- * - default = 0
+ * Priority: explicit score > starred (+2) > saved (+1) > default (0)
  */
 function computeEffectiveScore(row: {
   score: number | null;
   hasStarred: boolean;
-  hasMarkedUnread: boolean;
-  hasMarkedReadOnList: boolean;
   type: "web" | "email" | "saved";
 }): number {
   // Explicit score takes priority
@@ -101,9 +92,7 @@ function computeEffectiveScore(row: {
 
   // Implicit score based on user actions
   if (row.hasStarred) return 2;
-  if (row.hasMarkedUnread) return 0;
   if (row.type === "saved") return 1;
-  if (row.hasMarkedReadOnList) return -1;
 
   return 0;
 }
@@ -157,8 +146,6 @@ async function getTrainingData(db: typeof dbType, userId: string): Promise<Train
       type: entries.type,
       score: userEntries.score,
       hasStarred: userEntries.hasStarred,
-      hasMarkedUnread: userEntries.hasMarkedUnread,
-      hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
     })
     .from(userEntries)
     .innerJoin(entries, eq(entries.id, userEntries.entryId))

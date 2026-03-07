@@ -333,12 +333,7 @@ function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>
   const { hasStarred, hasMarkedUnread, hasMarkedReadOnList, contentHash, ...rest } = row;
   return {
     ...rest,
-    implicitScore: entriesService.computeImplicitScore(
-      hasStarred,
-      hasMarkedUnread,
-      hasMarkedReadOnList,
-      row.type
-    ),
+    implicitScore: entriesService.computeImplicitScore(hasStarred, row.type),
     fetchFullContent: row.fetchFullContent ?? false,
   };
 }
@@ -424,12 +419,7 @@ async function updateEntryStarred(
     starred: row.starred,
     updatedAt: row.updatedAt,
     score: row.score,
-    implicitScore: entriesService.computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
+    implicitScore: entriesService.computeImplicitScore(row.hasStarred, row.type),
   };
 }
 
@@ -678,12 +668,7 @@ export const entriesRouter = createTRPCRouter({
         type: e.type,
         updatedAt: e.updatedAt,
         score: e.score,
-        implicitScore: entriesService.computeImplicitScore(
-          e.hasStarred,
-          e.hasMarkedUnread,
-          e.hasMarkedReadOnList,
-          e.type
-        ),
+        implicitScore: entriesService.computeImplicitScore(e.hasStarred, e.type),
       }));
 
       // Get absolute counts for all affected lists

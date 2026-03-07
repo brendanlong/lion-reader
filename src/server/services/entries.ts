@@ -142,22 +142,16 @@ export interface MarkReadResult {
 /**
  * Computes the implicit score from boolean signal flags and entry type.
  *
- * Priority: starred (+2) > unread (0) > read-on-list (-1) > saved default (+1) > default (0)
+ * Priority: starred (+2) > saved (+1) > default (0)
  *
- * Marking unread overrides read-on-list (returns 0 instead of -1) but doesn't
- * give a positive bonus. Saved articles default to +1 because the user explicitly
- * saved them, indicating interest.
+ * Saved articles default to +1 because the user explicitly saved them,
+ * indicating interest.
  */
 export function computeImplicitScore(
   hasStarred: boolean,
-  hasMarkedUnread: boolean,
-  hasMarkedReadOnList: boolean,
   type?: "web" | "email" | "saved"
 ): number {
   if (hasStarred) return 2;
-  if (hasMarkedUnread) return 0;
-  if (hasMarkedReadOnList) return -1;
-  // Saved articles default to +1 since user explicitly saved them
   if (type === "saved") return 1;
   return 0;
 }
@@ -226,12 +220,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     feedTitle: row.feedTitle,
     siteName: row.siteName,
     score: row.score,
-    implicitScore: computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
+    implicitScore: computeImplicitScore(row.hasStarred, row.type),
     predictedScore: row.predictedScore,
   };
 }
@@ -658,12 +647,7 @@ export async function getEntry(
   return {
     ...row,
     score: row.score,
-    implicitScore: computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
+    implicitScore: computeImplicitScore(row.hasStarred, row.type),
   };
 }
 
@@ -715,12 +699,7 @@ export async function getEntries(
     resultMap.set(row.id, {
       ...row,
       score: row.score,
-      implicitScore: computeImplicitScore(
-        row.hasStarred,
-        row.hasMarkedUnread,
-        row.hasMarkedReadOnList,
-        row.type
-      ),
+      implicitScore: computeImplicitScore(row.hasStarred, row.type),
     });
   }
 
@@ -1076,11 +1055,6 @@ export async function setEntryScore(
     starred: row.starred,
     updatedAt: row.updatedAt,
     score: row.score,
-    implicitScore: computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
+    implicitScore: computeImplicitScore(row.hasStarred, row.type),
   };
 }
