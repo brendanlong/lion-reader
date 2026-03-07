@@ -132,15 +132,15 @@ UPDATE user_entries SET read = true WHERE entry_id = 'entry-1'
 
 ### Polling Mode (SSE unavailable)
 
-1. **Client** calls `sync.changes({ since: lastSyncedAt })` every 30s
-2. **Server** returns incremental changes
-3. **Client** pushes changes to Zustand (same interface as SSE)
+1. **Client** calls `sync.events({ cursors })` every 30s
+2. **Server** returns incremental events (same format as SSE)
+3. **Client** pushes events to Zustand (same interface as SSE)
 4. **Zustand** accumulates deltas
 
 ### SSE Reconnection
 
 1. **SSE** reconnects
-2. **Client** calls `sync.changes({ since: lastSyncedAt })` for catch-up
+2. **Client** calls `sync.events({ cursors })` for catch-up
 3. **Zustand** applies final deltas (idempotent)
 4. **SSE** takes over from polling
 
@@ -350,15 +350,13 @@ export function useRealtimeUpdates(initialSyncCursor: string) {
 
   // Polling uses same interface
   const performSync = useCallback(async () => {
-    const result = await utils.client.sync.changes.query({
-      since: lastSyncedAtRef.current,
+    const result = await utils.client.sync.events.query({
+      cursors: cursorsRef.current,
     });
 
-    lastSyncedAtRef.current = result.syncedAt;
-
     // Push to Zustand (same as SSE)
-    for (const entry of result.entries.created) {
-      useRealtimeStore.getState().onNewEntry(entry.id, entry.subscriptionId);
+    for (const event of result.events) {
+      handleSyncEvent(event);
     }
   }, []);
 }
