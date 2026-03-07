@@ -337,20 +337,16 @@ export const syncRouter = createTRPCRouter({
               eq(subscriptionFeeds.feedId, entries.feedId)
             )
           )
-          .leftJoin(
-            subscriptions,
-            and(
-              eq(subscriptions.id, subscriptionFeeds.subscriptionId),
-              isNull(subscriptions.unsubscribedAt)
-            )
-          )
+          .leftJoin(subscriptions, eq(subscriptions.id, subscriptionFeeds.subscriptionId))
           .where(
             and(
               eq(userEntries.userId, userId),
               // Pass cursor string directly to Postgres to preserve µs precision
               sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) > ${entriesCursorStr}::timestamptz`,
-              // Visibility: either from active subscription or starred
-              sql`(${subscriptions.id} IS NOT NULL OR ${userEntries.starred} = true)`
+              // Visibility: match visible_entries view logic
+              // LEFT JOIN produces NULL unsubscribedAt for saved articles (no subscription),
+              // and NULL IS NULL = TRUE, so saved articles pass this check
+              sql`(${subscriptions.unsubscribedAt} IS NULL OR ${userEntries.starred} = true)`
             )
           )
           .orderBy(sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`)
@@ -817,7 +813,10 @@ export const syncRouter = createTRPCRouter({
         // ======================================================================
         // Entry metadata changes - from entries.updated_at
         // Only include entries the user has access to (via user_entries)
+        // Generates new_entry events for newly created entries and
+        // entry_updated events for metadata changes on existing entries.
         // ======================================================================
+        const entriesCursorDate = new Date(entriesCursor);
         const entryMetadataResults = await ctx.db
           .select({
             id: entries.id,
@@ -826,29 +825,28 @@ export const syncRouter = createTRPCRouter({
             summary: entries.summary,
             url: entries.url,
             publishedAt: entries.publishedAt,
+            createdAt: entries.createdAt,
             updatedAt: entries.updatedAt,
             updatedAtRaw: sql<string>`to_char(${entries.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
             subscriptionId: subscriptions.id,
+            feedType: feeds.type,
           })
           .from(entries)
           .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+          .innerJoin(feeds, eq(feeds.id, entries.feedId))
           .leftJoin(
             subscriptionFeeds,
             and(eq(subscriptionFeeds.userId, userId), eq(subscriptionFeeds.feedId, entries.feedId))
           )
-          .leftJoin(
-            subscriptions,
-            and(
-              eq(subscriptions.id, subscriptionFeeds.subscriptionId),
-              isNull(subscriptions.unsubscribedAt)
-            )
-          )
+          .leftJoin(subscriptions, eq(subscriptions.id, subscriptionFeeds.subscriptionId))
           .where(
             and(
               eq(userEntries.userId, userId),
               sql`${entries.updatedAt} > ${entriesCursor}::timestamptz`,
-              // Visibility: either from active subscription or starred
-              sql`(${subscriptions.id} IS NOT NULL OR ${userEntries.starred} = true)`
+              // Visibility: match visible_entries view logic
+              // LEFT JOIN produces NULL unsubscribedAt for saved articles (no subscription),
+              // and NULL IS NULL = TRUE, so saved articles pass this check
+              sql`(${subscriptions.unsubscribedAt} IS NULL OR ${userEntries.starred} = true)`
             )
           )
           .orderBy(entries.updatedAt)
@@ -860,21 +858,35 @@ export const syncRouter = createTRPCRouter({
         }
 
         for (const row of entryMetadataResults) {
-          allEvents.push({
-            type: "entry_updated" as const,
-            subscriptionId: row.subscriptionId,
-            entryId: row.id,
-            timestamp: row.updatedAtRaw,
-            updatedAt: row.updatedAtRaw,
-            metadata: {
-              title: row.title,
-              author: row.author,
-              summary: row.summary,
-              url: row.url,
-              publishedAt: row.publishedAt?.toISOString() ?? null,
-            },
-            _sortTime: row.updatedAt,
-          });
+          if (row.createdAt > entriesCursorDate) {
+            // New entry created after cursor - emit new_entry for count updates
+            allEvents.push({
+              type: "new_entry" as const,
+              subscriptionId: row.subscriptionId,
+              entryId: row.id,
+              timestamp: row.updatedAtRaw,
+              updatedAt: row.updatedAtRaw,
+              feedType: row.feedType,
+              _sortTime: row.updatedAt,
+            });
+          } else {
+            // Existing entry with metadata changes
+            allEvents.push({
+              type: "entry_updated" as const,
+              subscriptionId: row.subscriptionId,
+              entryId: row.id,
+              timestamp: row.updatedAtRaw,
+              updatedAt: row.updatedAtRaw,
+              metadata: {
+                title: row.title,
+                author: row.author,
+                summary: row.summary,
+                url: row.url,
+                publishedAt: row.publishedAt?.toISOString() ?? null,
+              },
+              _sortTime: row.updatedAt,
+            });
+          }
         }
       }
 
