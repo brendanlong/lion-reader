@@ -29,6 +29,8 @@ export interface WorkerConfig {
   pollIntervalMs?: number;
   /** Maximum concurrent jobs to process (default: 5) */
   concurrency?: number;
+  /** Maximum time a single job can run before being timed out (default: no timeout) */
+  jobTimeoutMs?: number;
   /** Job types to process (default: all types) */
   jobTypes?: string[];
   /** Logger function for worker events */
@@ -113,6 +115,21 @@ export interface WorkerStats {
   totalSucceeded: number;
   /** Total jobs that failed */
   totalFailed: number;
+  /** Timestamp of last worker loop activity (job completed, polled, or claimed) */
+  lastActivityAt: Date;
+}
+
+/**
+ * Error thrown when a job exceeds its timeout.
+ */
+export class JobTimeoutError extends Error {
+  constructor(
+    public readonly jobId: string,
+    public readonly timeoutMs: number
+  ) {
+    super(`Job ${jobId} timed out after ${timeoutMs}ms`);
+    this.name = "JobTimeoutError";
+  }
 }
 
 /**
@@ -121,6 +138,7 @@ export interface WorkerStats {
 interface InternalWorkerConfig {
   pollIntervalMs: number;
   concurrency: number;
+  jobTimeoutMs?: number;
   jobTypes?: string[];
   logger: WorkerLogger;
   claimJob: ClaimJobFn;
@@ -135,8 +153,16 @@ interface InternalWorkerConfig {
  * @returns Worker instance
  */
 export function createWorkerCore(config: InternalWorkerConfig): Worker {
-  const { pollIntervalMs, concurrency, jobTypes, logger, claimJob, processJob, onJobError } =
-    config;
+  const {
+    pollIntervalMs,
+    concurrency,
+    jobTimeoutMs,
+    jobTypes,
+    logger,
+    claimJob,
+    processJob,
+    onJobError,
+  } = config;
 
   // Worker state
   const state: WorkerState = {
@@ -150,6 +176,35 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
   let totalProcessed = 0;
   let totalSucceeded = 0;
   let totalFailed = 0;
+  let lastActivityAt = new Date();
+
+  /**
+   * Update the last activity timestamp to track worker liveness.
+   */
+  function touchActivity(): void {
+    lastActivityAt = new Date();
+  }
+
+  /**
+   * Wraps processJob with an optional timeout. If the job doesn't complete
+   * within jobTimeoutMs, the promise rejects with a JobTimeoutError.
+   * The underlying job may still be running, but the worker loop moves on.
+   */
+  function processJobWithTimeout(job: Job): Promise<void> {
+    if (!jobTimeoutMs) {
+      return processJob(job);
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new JobTimeoutError(job.id, jobTimeoutMs));
+      }, jobTimeoutMs);
+
+      processJob(job)
+        .then(resolve, reject)
+        .finally(() => clearTimeout(timeoutId));
+    });
+  }
 
   /**
    * Main run loop - claims and processes jobs continuously.
@@ -159,28 +214,38 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
       // Fill up to capacity
       while (state.currentlyExecuting.size < concurrency && !state.shuttingDown) {
         const job = await claimJob({ types: jobTypes });
+        touchActivity();
         if (job === null) break;
 
         // Wrap processJob with .catch() to ensure no unhandled rejections escape
         // into Promise.race()/Promise.all(). The error is already logged and
         // reported to Sentry inside processJob, so we just need to prevent
         // the rejection from propagating.
-        const promise = processJob(job)
+        const promise = processJobWithTimeout(job)
           .then(() => {
             totalSucceeded++;
           })
           .catch((error) => {
             totalFailed++;
-            // This should rarely happen since processJob has its own try/catch,
-            // but handle it defensively
-            logger.error("Unexpected error in job execution", {
-              jobId: job.id,
-              error: error instanceof Error ? error.message : "Unknown error",
-            });
+            if (error instanceof JobTimeoutError) {
+              logger.error("Job timed out", {
+                jobId: job.id,
+                type: job.type,
+                timeoutMs: jobTimeoutMs,
+              });
+            } else {
+              // This should rarely happen since processJob has its own try/catch,
+              // but handle it defensively
+              logger.error("Unexpected error in job execution", {
+                jobId: job.id,
+                error: error instanceof Error ? error.message : "Unknown error",
+              });
+            }
             onJobError?.(job, error);
           })
           .finally(() => {
             totalProcessed++;
+            touchActivity();
             state.currentlyExecuting.delete(promise);
           });
         state.currentlyExecuting.add(promise);
@@ -200,6 +265,8 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
         // No jobs at all — poll after delay
         await sleep(pollIntervalMs);
       }
+
+      touchActivity();
     }
 
     // Graceful shutdown: wait for in-flight jobs
@@ -279,6 +346,7 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
       totalProcessed,
       totalSucceeded,
       totalFailed,
+      lastActivityAt,
     };
   }
 

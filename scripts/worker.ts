@@ -15,12 +15,19 @@
  */
 
 import { startWorkerWithSignalHandling } from "../src/server/jobs/worker";
-import { startMetricsServer } from "../src/server/metrics/server";
+import { startMetricsServer, setHealthChecker } from "../src/server/metrics/server";
 import { notifyWorkerStarted } from "../src/server/notifications/discord-webhook";
 import { logger } from "../src/lib/logger";
 
 const pollIntervalMs = parseInt(process.env.WORKER_POLL_INTERVAL_MS ?? "5000", 10);
 const concurrency = parseInt(process.env.WORKER_CONCURRENCY ?? "3", 10);
+
+/**
+ * How long the worker loop can be inactive before the health check reports unhealthy.
+ * This should be longer than the job timeout (5 min) to avoid false positives.
+ * Set to 10 minutes: enough time for a job to time out + cleanup.
+ */
+const LIVENESS_THRESHOLD_MS = 10 * 60 * 1000;
 
 logger.info("Starting standalone worker", {
   pollIntervalMs,
@@ -41,8 +48,37 @@ startWorkerWithSignalHandling({
   pollIntervalMs,
   concurrency,
 })
-  .then(() => {
+  .then((worker) => {
     logger.info("Worker started successfully");
+
+    // Register liveness health checker now that the worker is running.
+    // Fly.io will restart the machine if /health returns 503.
+    setHealthChecker(() => {
+      const stats = worker.getStats();
+      const staleDurationMs = Date.now() - stats.lastActivityAt.getTime();
+
+      if (staleDurationMs > LIVENESS_THRESHOLD_MS) {
+        return {
+          status: "unhealthy",
+          details: {
+            reason: "worker_loop_stale",
+            lastActivityAt: stats.lastActivityAt.toISOString(),
+            staleDurationMs,
+            thresholdMs: LIVENESS_THRESHOLD_MS,
+            activeJobs: stats.activeJobs,
+          },
+        };
+      }
+
+      return {
+        status: "healthy",
+        details: {
+          activeJobs: stats.activeJobs,
+          totalProcessed: stats.totalProcessed,
+          lastActivityAt: stats.lastActivityAt.toISOString(),
+        },
+      };
+    });
   })
   .catch((error) => {
     logger.error("Failed to start worker", { error });

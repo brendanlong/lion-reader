@@ -325,6 +325,59 @@ export function trackSSEEventSent(eventType: string): void {
 }
 
 // ============================================================================
+// Database Pool Metrics
+// ============================================================================
+
+/**
+ * Gauge for database connection pool total connections.
+ */
+const dbPoolTotalConnections = metricsEnabled
+  ? new Gauge({
+      name: "db_pool_total_connections",
+      help: "Total connections in the database pool",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Gauge for database connection pool idle connections.
+ */
+const dbPoolIdleConnections = metricsEnabled
+  ? new Gauge({
+      name: "db_pool_idle_connections",
+      help: "Idle connections in the database pool",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Gauge for database connection pool waiting requests.
+ */
+const dbPoolWaitingRequests = metricsEnabled
+  ? new Gauge({
+      name: "db_pool_waiting_requests",
+      help: "Requests waiting for a database connection",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Updates database pool metrics from pg Pool stats.
+ * This function has zero overhead when metrics are disabled.
+ */
+export function updateDbPoolMetrics(stats: {
+  totalCount: number;
+  idleCount: number;
+  waitingCount: number;
+}): void {
+  if (!metricsEnabled) return;
+
+  dbPoolTotalConnections?.set(stats.totalCount);
+  dbPoolIdleConnections?.set(stats.idleCount);
+  dbPoolWaitingRequests?.set(stats.waitingCount);
+}
+
+// ============================================================================
 // Business Metrics
 // ============================================================================
 
