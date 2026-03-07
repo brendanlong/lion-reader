@@ -284,6 +284,7 @@ export const oauthRefreshTokens = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     scopes: text("scopes").array().notNull(),
+    resource: text("resource"), // RFC 8707 audience, carried through rotation
     accessTokenId: uuid("access_token_id").references(() => oauthAccessTokens.id, {
       onDelete: "set null",
     }),
