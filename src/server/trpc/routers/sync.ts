@@ -826,7 +826,9 @@ export const syncRouter = createTRPCRouter({
           changedEntryResults.pop();
         }
 
-        // Differentiate event types based on which timestamps changed
+        // Differentiate event types based on which timestamps changed.
+        // Both metadata and state can change simultaneously, so emit separate
+        // events for each — the frontend handles them with different cache updates.
         for (const row of changedEntryResults) {
           const entryMetadataChanged = row.entryUpdatedAt > entriesCursorDate;
           const entryStateChanged = row.userEntryUpdatedAt > entriesCursorDate;
@@ -861,8 +863,11 @@ export const syncRouter = createTRPCRouter({
                 _sortTime: new Date(row.maxUpdatedAtRaw),
               });
             }
-          } else if (entryStateChanged) {
-            // Only user state changed (read/starred) - lightweight update
+          }
+
+          if (entryStateChanged) {
+            // User state changed (read/starred) - emit separately from metadata
+            // so the frontend updates both the entry content and read/starred state
             allEvents.push({
               type: "entry_state_changed" as const,
               entryId: row.id,
