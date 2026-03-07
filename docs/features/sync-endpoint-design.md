@@ -8,9 +8,10 @@ Currently, the web client relies on Server-Sent Events (SSE) via Redis pub/sub f
 
 This feature adds:
 
-1. A `/sync` endpoint for incremental pull-based synchronization
-2. Graceful SSE degradation when Redis is unavailable
-3. Client-side polling fallback with periodic SSE reconnection attempts
+1. A `sync.events` endpoint for incremental pull-based synchronization (returns events in the same format as SSE)
+2. A `sync.cursors` endpoint for establishing initial cursors efficiently
+3. Graceful SSE degradation when Redis is unavailable
+4. Client-side polling fallback with periodic SSE reconnection attempts
 
 ### Key Design Decisions
 
@@ -47,7 +48,7 @@ This feature adds:
 │         └──────────────────────────────────────────────────────│
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              │ GET /api/trpc/sync.changes?since=...
+                              │ GET /api/trpc/sync.events?cursors=...
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Server                                   │
@@ -96,17 +97,23 @@ GET /api/v1/events
 
 ## API Design
 
-### Sync Endpoint
+### Sync Events Endpoint
 
 ```
-GET /api/trpc/sync.changes
+GET /api/trpc/sync.events
 ```
+
+Returns events in the same format as SSE, allowing the client to use identical event handlers (`handleSyncEvent`) for both SSE and sync.
 
 **Input:**
 
 ```typescript
 {
-  since?: string;  // ISO 8601 timestamp, omit for initial sync
+  cursors?: {
+    entries?: string;        // ISO 8601 timestamp
+    subscriptions?: string;  // ISO 8601 timestamp
+    tags?: string;           // ISO 8601 timestamp
+  }
 }
 ```
 
@@ -114,64 +121,27 @@ GET /api/trpc/sync.changes
 
 ```typescript
 {
-  entries: {
-    // New entries created since timestamp
-    created: Array<{
-      id: string;
-      feedId: string;
-      type: "web" | "email" | "saved";
-      url: string | null;
-      title: string | null;
-      author: string | null;
-      summary: string | null;
-      publishedAt: string | null;  // ISO 8601
-      fetchedAt: string;
-      read: boolean;
-      starred: boolean;
-      feedTitle: string | null;
-      siteName: string | null;
-    }>;
+  // Array of events in SSE-compatible format
+  events: Array<ServerSyncEvent>;
+  hasMore: boolean;
+}
+```
 
-    // Entries with state changes (read/starred toggled)
-    updated: Array<{
-      id: string;
-      read: boolean;
-      starred: boolean;
-    }>;
+### Sync Cursors Endpoint
 
-    // Entry IDs no longer visible (unsubscribed from feed, not starred)
-    removed: string[];
-  };
+```
+GET /api/trpc/sync.cursors
+```
 
-  subscriptions: {
-    // New subscriptions
-    created: Array<{
-      id: string;
-      feedId: string;
-      feedTitle: string | null;
-      feedUrl: string | null;
-      customTitle: string | null;
-      subscribedAt: string;
-    }>;
+Efficiently establishes cursors for real-time updates without fetching data. Used during SSR to get initial cursors for the client-side SSE connection.
 
-    // Unsubscribed feeds
-    removed: string[];  // subscription IDs
-  };
+**Output:**
 
-  tags: {
-    // New or updated tags
-    created: Array<{
-      id: string;
-      name: string;
-      color: string | null;
-    }>;
-
-    // Deleted tags
-    removed: string[];  // tag IDs
-  };
-
-  // Use this as the `since` value for next sync
-  syncedAt: string;  // ISO 8601 timestamp
+```typescript
+{
+  entries: string | null; // max(GREATEST(entries.updated_at, user_entries.updated_at))
+  subscriptions: string | null; // max(subscriptions.updated_at)
+  tags: string | null; // max(tags.updated_at)
 }
 ```
 
@@ -255,10 +225,10 @@ const SSE_RETRY_INTERVAL_MS = 60_000; // 1 minute
 
 ```typescript
 // On SSE connection established
-function onSSEConnected(lastSyncedAt: string | null) {
-  if (lastSyncedAt) {
+function onSSEConnected(cursors: SyncCursors | null) {
+  if (cursors) {
     // Catch up on any missed events
-    syncChanges({ since: lastSyncedAt });
+    syncEvents({ cursors });
   }
   setSyncMode({ type: "sse", status: "connected" });
 }
@@ -267,7 +237,6 @@ function onSSEConnected(lastSyncedAt: string | null) {
 function onSSEUnavailable() {
   setSyncMode({
     type: "polling",
-    lastSync: new Date().toISOString(),
     retrySSEAt: Date.now() + SSE_RETRY_INTERVAL_MS,
   });
   startPolling();
@@ -275,11 +244,12 @@ function onSSEUnavailable() {
 
 // Polling loop
 async function poll() {
-  const result = await syncChanges({ since: lastSync });
-  setLastSync(result.syncedAt);
+  const result = await syncEvents({ cursors: currentCursors });
 
-  // Apply changes to React Query cache
-  applyChangesToCache(result);
+  // Apply events to React Query cache (same handler as SSE)
+  for (const event of result.events) {
+    handleSyncEvent(event);
+  }
 
   // Check if we should retry SSE
   if (Date.now() >= retrySSEAt) {
@@ -323,7 +293,7 @@ The sync endpoint should NOT be cached as it returns time-sensitive data.
 
 1. Add migration for `user_entries.updated_at`
 2. Update entry mutations to set `updated_at`
-3. Implement `sync.changes` tRPC procedure
+3. Implement `sync.events` and `sync.cursors` tRPC procedures
 4. Add Redis health check to SSE endpoint
 
 ### Phase 2: Client

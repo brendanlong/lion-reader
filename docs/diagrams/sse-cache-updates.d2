@@ -163,7 +163,7 @@ frontend: Frontend (useRealtimeUpdates) {
 
     description: |
       When SSE unavailable (503):
-      - Poll sync.changes every 30s
+      - Poll sync.events every 30s
       - Retry SSE every 60s
       - Uses granular cursors per entity type
     |
