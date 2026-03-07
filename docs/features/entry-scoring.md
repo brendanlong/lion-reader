@@ -23,11 +23,11 @@ Implicit scores are computed from user actions that indicate interest or disinte
 | Action                      | Flag                      | Implicit Score | Rationale                          |
 | --------------------------- | ------------------------- | -------------- | ---------------------------------- |
 | Star an entry               | `has_starred`             | +2             | Starring indicates strong interest |
-| Mark unread (from anywhere) | `has_marked_unread`       | +1             | User wants to revisit this content |
-| Mark read from entry list   | `has_marked_read_on_list` | -1             | Dismissed without opening          |
 | Save an article             | Entry type = `saved`      | +1             | User explicitly chose to save it   |
+| Mark unread (from anywhere) | `has_marked_unread`       | 0              | Overrides read-on-list penalty     |
+| Mark read from entry list   | `has_marked_read_on_list` | -1             | Dismissed without opening          |
 
-**Priority order**: starred (+2) > unread (+1) > read-on-list (-1) > saved default (+1) > default (0)
+**Priority order**: starred (+2) > saved (+1) > unread (0) > read-on-list (-1) > default (0)
 
 ### Display Score
 
@@ -71,9 +71,9 @@ export function computeImplicitScore(
   type?: "web" | "email" | "saved"
 ): number {
   if (hasStarred) return 2;
-  if (hasMarkedUnread) return 1;
-  if (hasMarkedReadOnList) return -1;
   if (type === "saved") return 1; // Saved articles default to +1
+  if (hasMarkedUnread) return 0;
+  if (hasMarkedReadOnList) return -1;
   return 0;
 }
 ```

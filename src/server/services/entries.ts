@@ -142,11 +142,12 @@ export interface MarkReadResult {
 /**
  * Computes the implicit score from boolean signal flags and entry type.
  *
- * Priority: starred (+2) > unread (0) > read-on-list (-1) > saved default (+1) > default (0)
+ * Priority: starred (+2) > saved (+1) > unread (0) > read-on-list (-1) > default (0)
  *
- * Marking unread overrides read-on-list (returns 0 instead of -1) but doesn't
- * give a positive bonus. Saved articles default to +1 because the user explicitly
- * saved them, indicating interest.
+ * Saved articles default to +1 because the user explicitly saved them,
+ * indicating interest. This takes priority over mark-unread (0) and
+ * read-on-list (-1). Marking unread overrides read-on-list (returns 0
+ * instead of -1) but doesn't give a positive bonus.
  */
 export function computeImplicitScore(
   hasStarred: boolean,
@@ -155,10 +156,10 @@ export function computeImplicitScore(
   type?: "web" | "email" | "saved"
 ): number {
   if (hasStarred) return 2;
-  if (hasMarkedUnread) return 0;
-  if (hasMarkedReadOnList) return -1;
   // Saved articles default to +1 since user explicitly saved them
   if (type === "saved") return 1;
+  if (hasMarkedUnread) return 0;
+  if (hasMarkedReadOnList) return -1;
   return 0;
 }
 

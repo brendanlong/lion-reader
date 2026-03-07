@@ -82,8 +82,8 @@ export interface ScorePrediction {
  *
  * Implicit score mapping:
  * - has_starred = +2
- * - has_marked_unread = 0 (overrides read-on-list but no positive bonus)
  * - type = 'saved' = +1
+ * - has_marked_unread = 0 (overrides read-on-list but no positive bonus)
  * - has_marked_read_on_list = -1
  * - default = 0
  */
@@ -101,8 +101,8 @@ function computeEffectiveScore(row: {
 
   // Implicit score based on user actions
   if (row.hasStarred) return 2;
-  if (row.hasMarkedUnread) return 0;
   if (row.type === "saved") return 1;
+  if (row.hasMarkedUnread) return 0;
   if (row.hasMarkedReadOnList) return -1;
 
   return 0;
