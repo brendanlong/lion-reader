@@ -543,4 +543,159 @@ describe("Worker", () => {
       expect(warnCalls).toContain("Worker is not running");
     });
   });
+
+  describe("job timeout", () => {
+    it("times out a job that takes too long", async () => {
+      const errors: string[] = [];
+      let jobsClaimed = 0;
+      const testLogger: WorkerLogger = {
+        info: () => {},
+        warn: () => {},
+        error: (msg) => errors.push(msg),
+      };
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        jobTimeoutMs: 50, // Very short timeout for testing
+        logger: testLogger,
+        claimJob: async () => {
+          if (jobsClaimed === 0) {
+            jobsClaimed++;
+            return createMockJob("slow-job");
+          }
+          return null;
+        },
+        processJob: async () => {
+          // This job will never complete on its own
+          await new Promise(() => {});
+        },
+      });
+
+      await worker.start();
+
+      // Wait for the timeout to fire
+      await tick(200);
+
+      expect(errors).toContain("Job timed out");
+      expect(worker.getStats().totalFailed).toBe(1);
+
+      await worker.stop();
+    });
+
+    it("does not time out jobs that complete in time", async () => {
+      let jobsClaimed = 0;
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        jobTimeoutMs: 500, // Generous timeout
+        logger: silentLogger,
+        claimJob: async () => {
+          if (jobsClaimed === 0) {
+            jobsClaimed++;
+            return createMockJob("fast-job");
+          }
+          return null;
+        },
+        processJob: async () => {
+          await tick(10); // Quick job
+        },
+      });
+
+      await worker.start();
+      await tick(100);
+
+      expect(worker.getStats().totalSucceeded).toBe(1);
+      expect(worker.getStats().totalFailed).toBe(0);
+
+      await worker.stop();
+    });
+
+    it("continues processing after a timed-out job", async () => {
+      let jobsClaimed = 0;
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        jobTimeoutMs: 50,
+        logger: silentLogger,
+        claimJob: async () => {
+          jobsClaimed++;
+          if (jobsClaimed === 1) {
+            return createMockJob("slow-job"); // Will timeout
+          }
+          if (jobsClaimed === 2) {
+            return createMockJob("fast-job"); // Should succeed
+          }
+          return null;
+        },
+        processJob: async (job) => {
+          if (job.id === "slow-job") {
+            await new Promise(() => {}); // Never completes
+          }
+          // fast-job completes immediately
+        },
+      });
+
+      await worker.start();
+      await tick(200);
+
+      // Slow job timed out, fast job succeeded
+      expect(worker.getStats().totalFailed).toBe(1);
+      expect(worker.getStats().totalSucceeded).toBe(1);
+
+      await worker.stop();
+    });
+  });
+
+  describe("liveness tracking", () => {
+    it("updates lastActivityAt when polling", async () => {
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        logger: silentLogger,
+        claimJob: async () => null,
+        processJob: async () => {},
+      });
+
+      const beforeStart = new Date();
+      await worker.start();
+      await tick(50);
+
+      const stats = worker.getStats();
+      expect(stats.lastActivityAt.getTime()).toBeGreaterThanOrEqual(beforeStart.getTime());
+
+      await worker.stop();
+    });
+
+    it("updates lastActivityAt when jobs complete", async () => {
+      let jobsClaimed = 0;
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        logger: silentLogger,
+        claimJob: async () => {
+          if (jobsClaimed === 0) {
+            jobsClaimed++;
+            return createMockJob("1");
+          }
+          return null;
+        },
+        processJob: async () => {
+          await tick(20);
+        },
+      });
+
+      await worker.start();
+      await tick(100);
+
+      const stats = worker.getStats();
+      // lastActivityAt should be very recent (after job completed)
+      expect(Date.now() - stats.lastActivityAt.getTime()).toBeLessThan(200);
+
+      await worker.stop();
+    });
+  });
 });

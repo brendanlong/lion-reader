@@ -14,6 +14,30 @@ import { logger } from "@/lib/logger";
 let server: Server | null = null;
 
 /**
+ * Health check response from a liveness checker.
+ */
+export interface HealthCheckResult {
+  status: "healthy" | "unhealthy";
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Function that checks whether the process is healthy beyond just being alive.
+ * Used by the worker to report whether the job loop is making progress.
+ */
+export type HealthChecker = () => HealthCheckResult;
+
+let healthChecker: HealthChecker | null = null;
+
+/**
+ * Registers a health checker function that the /health endpoint will use.
+ * When set, /health returns 503 if the checker reports unhealthy.
+ */
+export function setHealthChecker(checker: HealthChecker): void {
+  healthChecker = checker;
+}
+
+/**
  * Starts the internal metrics HTTP server.
  *
  * The server responds to GET /metrics with Prometheus-formatted metrics.
@@ -50,9 +74,17 @@ export function startMetricsServer(port = 9091): Server | null {
         res.end("Internal Server Error");
       }
     } else if (req.method === "GET" && req.url === "/health") {
-      // Simple health check for Fly.io - just confirms the process is running
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "healthy" }));
+      // Health check for Fly.io - checks process liveness and worker progress
+      if (healthChecker) {
+        const result = healthChecker();
+        const statusCode = result.status === "healthy" ? 200 : 503;
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } else {
+        // Fallback: just confirm the process is running
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "healthy" }));
+      }
     } else {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");

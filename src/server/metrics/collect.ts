@@ -6,9 +6,14 @@
  */
 
 import { sql } from "drizzle-orm";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { users, subscriptions, entries, feeds, jobs } from "../db/schema";
-import { metricsEnabled, updateBusinessMetrics, updateJobQueueMetrics } from "./metrics";
+import {
+  metricsEnabled,
+  updateBusinessMetrics,
+  updateJobQueueMetrics,
+  updateDbPoolMetrics,
+} from "./metrics";
 
 /**
  * Collects and updates all business metrics from the database.
@@ -91,11 +96,26 @@ async function collectJobQueueMetrics(): Promise<void> {
 }
 
 /**
+ * Collects database connection pool metrics.
+ * These are synchronous reads from the pg Pool object.
+ */
+function collectPoolMetrics(): void {
+  if (!metricsEnabled) return;
+
+  updateDbPoolMetrics({
+    totalCount: pool.totalCount,
+    idleCount: pool.idleCount,
+    waitingCount: pool.waitingCount,
+  });
+}
+
+/**
  * Collects all metrics before returning them.
  * Called by the /api/metrics endpoint to ensure metrics are up-to-date.
  */
 export async function collectAllMetrics(): Promise<void> {
   if (!metricsEnabled) return;
 
+  collectPoolMetrics();
   await Promise.all([collectBusinessMetrics(), collectJobQueueMetrics()]);
 }

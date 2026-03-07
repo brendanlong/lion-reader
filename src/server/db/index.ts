@@ -34,6 +34,31 @@ pool.on("error", (err) => {
   });
 });
 
+// Log warnings when pool has waiting requests, indicating connection pressure.
+// Check every 10 seconds to avoid log spam while still catching issues.
+const POOL_MONITOR_INTERVAL_MS = 10_000;
+let poolMonitorTimer: ReturnType<typeof setInterval> | null = null;
+
+function startPoolMonitor(): void {
+  if (poolMonitorTimer) return;
+
+  poolMonitorTimer = setInterval(() => {
+    if (pool.waitingCount > 0) {
+      logger.warn("Database pool has waiting requests", {
+        waitingCount: pool.waitingCount,
+        totalCount: pool.totalCount,
+        idleCount: pool.idleCount,
+        maxConnections: pool.options.max,
+      });
+    }
+  }, POOL_MONITOR_INTERVAL_MS);
+
+  // Don't prevent process exit
+  poolMonitorTimer.unref();
+}
+
+startPoolMonitor();
+
 export const db = drizzle(pool, {
   schema,
   logger: {

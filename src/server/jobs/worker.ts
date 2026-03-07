@@ -38,6 +38,13 @@ import { createWorkerCore, type WorkerLogger, type Worker } from "./worker-core"
 export type { WorkerLogger, Worker, WorkerStats } from "./worker-core";
 
 /**
+ * Default job timeout: 5 minutes.
+ * Prevents a hung job (e.g., stuck DB query, pathological XML parsing)
+ * from blocking the worker loop forever.
+ */
+const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
  * Worker configuration options.
  */
 export interface WorkerConfig {
@@ -45,6 +52,8 @@ export interface WorkerConfig {
   pollIntervalMs?: number;
   /** Maximum concurrent jobs to process (default: 5) */
   concurrency?: number;
+  /** Maximum time a single job can run before being timed out (default: 5 minutes) */
+  jobTimeoutMs?: number;
   /** Job types to process (default: all types) */
   jobTypes?: JobType[];
   /** Logger function for worker events */
@@ -81,6 +90,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
   const {
     pollIntervalMs = 5000,
     concurrency = 5,
+    jobTimeoutMs = DEFAULT_JOB_TIMEOUT_MS,
     jobTypes,
     logger = defaultLogger,
     _claimJob: claimJobOverride,
@@ -93,6 +103,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
     return createWorkerCore({
       pollIntervalMs,
       concurrency,
+      jobTimeoutMs,
       jobTypes,
       logger,
       claimJob,
@@ -274,6 +285,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
   return createWorkerCore({
     pollIntervalMs,
     concurrency,
+    jobTimeoutMs,
     jobTypes,
     logger,
     claimJob,
