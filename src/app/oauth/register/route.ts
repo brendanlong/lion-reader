@@ -9,11 +9,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { registerClient, type ClientRegistrationRequest } from "@/server/oauth/service";
+import { logger } from "@/lib/logger";
 
 /**
  * Register a new OAuth client
  */
 export async function POST(request: NextRequest) {
+  logger.info("OAuth client registration requested");
   // Parse JSON body
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {

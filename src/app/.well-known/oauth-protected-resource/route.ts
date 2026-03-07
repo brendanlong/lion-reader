@@ -9,8 +9,10 @@
 
 import { NextResponse } from "next/server";
 import { getProtectedResourceMetadata } from "@/server/oauth/config";
+import { logger } from "@/lib/logger";
 
 export async function GET() {
+  logger.info("OAuth protected resource metadata requested");
   const metadata = getProtectedResourceMetadata();
 
   return NextResponse.json(metadata, {
