@@ -218,6 +218,7 @@ export const syncRouter = createTRPCRouter({
       // ========================================================================
       if (entriesCursor) {
         const entriesCursorDate = new Date(entriesCursor);
+        const greatestUpdatedAt = sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`;
         const changedEntryResults = await ctx.db
           .select({
             id: entries.id,
@@ -234,7 +235,7 @@ export const syncRouter = createTRPCRouter({
             subscriptionId: subscriptions.id,
             feedType: feeds.type,
             // Raw ISO string with µs precision for cursor/timestamp output
-            maxUpdatedAtRaw: sql<string>`to_char(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+            maxUpdatedAtRaw: sql<string>`to_char(${greatestUpdatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
           .from(userEntries)
           .innerJoin(entries, eq(entries.id, userEntries.entryId))
@@ -250,14 +251,14 @@ export const syncRouter = createTRPCRouter({
           .where(
             and(
               eq(userEntries.userId, userId),
-              sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) > ${entriesCursor}::timestamptz`,
+              sql`${greatestUpdatedAt} > ${entriesCursor}::timestamptz`,
               // Visibility: match visible_entries view logic
               // LEFT JOIN produces NULL unsubscribedAt for saved articles (no subscription),
               // and NULL IS NULL = TRUE, so saved articles pass this check
               sql`(${subscriptions.unsubscribedAt} IS NULL OR ${userEntries.starred} = true)`
             )
           )
-          .orderBy(sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`)
+          .orderBy(greatestUpdatedAt)
           .limit(MAX_ENTRIES + 1);
 
         if (changedEntryResults.length > MAX_ENTRIES) {
@@ -271,6 +272,7 @@ export const syncRouter = createTRPCRouter({
         for (const row of changedEntryResults) {
           const entryMetadataChanged = row.entryUpdatedAt > entriesCursorDate;
           const entryStateChanged = row.userEntryUpdatedAt > entriesCursorDate;
+          const sortTime = new Date(row.maxUpdatedAtRaw);
 
           if (entryMetadataChanged) {
             if (row.createdAt > entriesCursorDate) {
@@ -282,7 +284,7 @@ export const syncRouter = createTRPCRouter({
                 timestamp: row.maxUpdatedAtRaw,
                 updatedAt: row.maxUpdatedAtRaw,
                 feedType: row.feedType,
-                _sortTime: new Date(row.maxUpdatedAtRaw),
+                _sortTime: sortTime,
               });
             } else {
               // Existing entry with metadata changes
@@ -299,7 +301,7 @@ export const syncRouter = createTRPCRouter({
                   url: row.url,
                   publishedAt: row.publishedAt?.toISOString() ?? null,
                 },
-                _sortTime: new Date(row.maxUpdatedAtRaw),
+                _sortTime: sortTime,
               });
             }
           }
@@ -314,7 +316,7 @@ export const syncRouter = createTRPCRouter({
               starred: row.starred,
               timestamp: row.maxUpdatedAtRaw,
               updatedAt: row.maxUpdatedAtRaw,
-              _sortTime: new Date(row.maxUpdatedAtRaw),
+              _sortTime: sortTime,
             });
           }
         }
