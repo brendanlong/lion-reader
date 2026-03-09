@@ -531,6 +531,7 @@ const userEndpoints = {
             entryCount: z.number(),
             scoringModelSize: z.number().nullable(),
             scoringModelMemoryEstimate: z.number().nullable(),
+            scoringModelTrainedAt: z.date().nullable(),
           })
         ),
         nextCursor: z.string().optional(),
@@ -583,6 +584,13 @@ const userEndpoints = {
          WHERE ${userScoreModels.userId} = ${users.id})
       `;
 
+      // Subquery: scoring model trained_at timestamp
+      const scoringModelTrainedAtSq = sql<Date | null>`
+        (SELECT ${userScoreModels.trainedAt}
+         FROM ${userScoreModels}
+         WHERE ${userScoreModels.userId} = ${users.id})
+      `;
+
       const conditions = [];
 
       // Cursor-based pagination: id < cursor (order by id DESC, since UUIDv7 is time-ordered)
@@ -609,6 +617,7 @@ const userEndpoints = {
           scoringModelMemoryEstimate: scoringModelMemoryEstimateSq.as(
             "scoring_model_memory_estimate"
           ),
+          scoringModelTrainedAt: scoringModelTrainedAtSq.as("scoring_model_trained_at"),
         })
         .from(users)
         .where(whereClause)
@@ -630,6 +639,9 @@ const userEndpoints = {
           scoringModelSize: row.scoringModelSize != null ? Number(row.scoringModelSize) : null,
           scoringModelMemoryEstimate:
             row.scoringModelMemoryEstimate != null ? Number(row.scoringModelMemoryEstimate) : null,
+          scoringModelTrainedAt: row.scoringModelTrainedAt
+            ? new Date(row.scoringModelTrainedAt)
+            : null,
         })),
         nextCursor,
       };
