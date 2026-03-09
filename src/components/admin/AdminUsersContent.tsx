@@ -84,6 +84,7 @@ interface User {
   entryCount: number;
   scoringModelSize: number | null;
   scoringModelMemoryEstimate: number | null;
+  scoringModelTrainedAt: Date | null;
 }
 
 function UserRow({ user }: { user: User }) {
@@ -127,6 +128,9 @@ function UserRow({ user }: { user: User }) {
           Scoring model: {formatBytes(user.scoringModelSize)}
           {user.scoringModelMemoryEstimate != null && (
             <span> (est. memory: {formatBytes(user.scoringModelMemoryEstimate)})</span>
+          )}
+          {user.scoringModelTrainedAt != null && (
+            <span> · trained {formatDate(user.scoringModelTrainedAt)}</span>
           )}
         </div>
       )}
