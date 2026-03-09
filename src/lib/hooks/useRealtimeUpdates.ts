@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Temporal } from "temporal-polyfill";
 import { trpc } from "@/lib/trpc/client";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import { syncEventSchema, type SyncEvent } from "@/lib/events/schemas";
@@ -223,7 +224,13 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
     if (cursorType) {
       const currentCursor = cursorsRef.current[cursorType];
-      if (!currentCursor || new Date(event.updatedAt) > new Date(currentCursor)) {
+      if (
+        !currentCursor ||
+        Temporal.Instant.compare(
+          Temporal.Instant.from(event.updatedAt),
+          Temporal.Instant.from(currentCursor)
+        ) > 0
+      ) {
         cursorsRef.current = {
           ...cursorsRef.current,
           [cursorType]: event.updatedAt,

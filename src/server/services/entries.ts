@@ -17,6 +17,7 @@ import {
 } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
 import { buildEntryFeedFilter, buildEntryFilterConditions } from "./entry-filters";
+import { microsecondISO } from "@/server/db/temporal";
 
 // ============================================================================
 // Types
@@ -423,12 +424,12 @@ export async function listEntries(
       ? visibleEntries.readChangedAt
       : sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
 
-  // Raw ISO string version of sortColumn with microsecond precision.
-  // Used for cursor encoding to avoid JavaScript Date truncation.
+  // µs-precision ISO string version of sortColumn for cursor encoding.
+  // Uses microsecondISO() helper to avoid JavaScript Date truncation (#680).
   const sortTsRawExpr =
     params.sortBy === "readChanged"
-      ? sql<string>`to_char(${visibleEntries.readChangedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
-      : sql<string>`to_char(COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+      ? microsecondISO(visibleEntries.readChangedAt)
+      : microsecondISO(sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`);
 
   // Cursor condition
   // Pass timestamp string directly to Postgres (::timestamptz) to preserve

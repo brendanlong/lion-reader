@@ -1,9 +1,18 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, types } from "pg";
 import * as Sentry from "@sentry/nextjs";
 
 import { logger } from "@/lib/logger";
 import * as schema from "./schema";
+
+// Return raw strings for timestamptz instead of JavaScript Date objects.
+// Date only has millisecond precision, losing the microseconds that Postgres
+// stores. Raw strings preserve full precision for Temporal.Instant conversion
+// in the temporalTimestamp custom type. Drizzle's built-in timestamp() columns
+// still work because their mapFromDriverValue calls new Date(string).
+// See: https://github.com/brendanlong/lion-reader/issues/683
+types.setTypeParser(types.builtins.TIMESTAMPTZ, (val) => val);
+types.setTypeParser(types.builtins.TIMESTAMP, (val) => val);
 
 const connectionString = process.env.DATABASE_URL;
 
