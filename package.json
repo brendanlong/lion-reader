@@ -36,7 +36,10 @@
     "test:integration": "pnpm db:migrate:test && pnpm db:schema:test && dotenv -o -e .env.test -- vitest run tests/integration",
     "worker": "tsx scripts/worker.ts",
     "mcp:serve": "dotenv -- tsx src/server/mcp/bin.ts",
-    "discord-bot": "dotenv -- tsx scripts/discord-bot.ts"
+    "discord-bot": "dotenv -- tsx scripts/discord-bot.ts",
+    "benchmark": "dotenv -- tsx benchmarks/run.ts",
+    "benchmark:seed": "dotenv -- tsx benchmarks/seed.ts",
+    "benchmark:run": "dotenv -- tsx benchmarks/run.ts --skip-seed"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": [

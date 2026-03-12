@@ -162,3 +162,6 @@ extension/*.zip
 # source maps
 *.js.map
 
+# Benchmark results (committed to gh-pages branch, not main)
+benchmarks/results/
+
