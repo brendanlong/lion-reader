@@ -1,0 +1,116 @@
+name: API Benchmarks
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Only allow one benchmark run at a time to avoid resource contention
+concurrency:
+  group: benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: benchmark
+          POSTGRES_USER: benchmark
+          POSTGRES_PASSWORD: benchmark
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run database migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: postgresql://benchmark:benchmark@localhost:5432/benchmark
+
+      - name: Run benchmarks
+        run: pnpm benchmark
+        env:
+          DATABASE_URL: postgresql://benchmark:benchmark@localhost:5432/benchmark
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: production
+        timeout-minutes: 20
+
+      - name: Upload results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: benchmarks/results/*.json
+          retention-days: 90
+
+      - name: Publish to GitHub Pages
+        if: success() && github.ref == 'refs/heads/master'
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Get the result file
+          RESULT_FILE=$(ls benchmarks/results/*.json | head -1)
+          RESULT_BASENAME=$(basename "$RESULT_FILE")
+
+          # Switch to gh-pages branch (create if needed)
+          git fetch origin gh-pages || true
+          git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
+
+          # Ensure results directory exists
+          mkdir -p results
+
+          # Copy new result
+          git checkout "${{ github.sha }}" -- benchmarks/results/"$RESULT_BASENAME" 2>/dev/null || true
+          cp benchmarks/results/"$RESULT_BASENAME" results/ 2>/dev/null || cp "$RESULT_FILE" results/
+
+          # Copy dashboard
+          git checkout "${{ github.sha }}" -- benchmarks/dashboard.html 2>/dev/null || true
+          cp benchmarks/dashboard.html index.html 2>/dev/null || true
+
+          # Update index.json manifest
+          node -e "
+            const fs = require('fs');
+            const dir = 'results';
+            const files = fs.readdirSync(dir).filter(f => f.endsWith('.json') && f !== 'index.json').sort();
+            fs.writeFileSync(dir + '/index.json', JSON.stringify({ files }, null, 2));
+          "
+
+          # Commit and push
+          git add results/ index.html
+          git commit -m "Update benchmark results for ${{ github.sha }}" || echo "No changes to commit"
+          git push origin gh-pages || echo "Failed to push to gh-pages"
+
+          # Return to original branch
+          git checkout "${{ github.sha }}"
