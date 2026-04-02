@@ -442,6 +442,13 @@
       "when": 1770638800000,
       "tag": "0063_refresh_token_resource",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1770648800000,
+      "tag": "0064_nullable_read_changed_at",
+      "breakpoints": true
     }
   ]
 }

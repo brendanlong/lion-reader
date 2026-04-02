@@ -4,7 +4,20 @@
  * Business logic for entry operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, desc, asc, inArray, sql, isNull, lte } from "drizzle-orm";
+import {
+  eq,
+  and,
+  desc,
+  asc,
+  inArray,
+  notInArray,
+  sql,
+  isNull,
+  isNotNull,
+  lte,
+  or,
+  type SQL,
+} from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   entries,
@@ -417,6 +430,11 @@ export async function listEntries(
     return { items, nextCursor };
   }
 
+  // Recently Read: exclude entries that were never explicitly read-state-changed
+  if (params.sortBy === "readChanged") {
+    conditions.push(isNotNull(visibleEntries.readChangedAt));
+  }
+
   // Sort column - readChanged sorts by when read state was last changed
   const sortColumn =
     params.sortBy === "readChanged"
@@ -763,7 +781,7 @@ export async function markEntriesRead(
       and(
         eq(userEntries.userId, userId),
         inArray(userEntries.entryId, entryIds),
-        lte(userEntries.readChangedAt, changedAt)
+        or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))
       )
     );
 
@@ -845,6 +863,159 @@ export async function markEntriesRead(
     .groupBy(affectedTagsSubquery.tagId);
 
   return { entries: finalEntries, subscriptionUnreadCounts, tagUnreadCounts };
+}
+
+/**
+ * Marks all unread entries matching the given filters as read.
+ *
+ * Shared implementation used by both the tRPC markAllRead mutation and the
+ * Google Reader API mark-all-as-read endpoint.
+ *
+ * Uses idempotent updates: only applies if changedAt is newer than the stored
+ * read_changed_at timestamp (or if read_changed_at is NULL).
+ *
+ * @returns The entry IDs that were marked as read.
+ */
+export async function markAllEntriesRead(
+  db: typeof dbType,
+  params: {
+    userId: string;
+    feedIds?: string[];
+    subscriptionId?: string;
+    tagId?: string;
+    uncategorized?: boolean;
+    starredOnly?: boolean;
+    type?: "web" | "email" | "saved";
+    before?: Date;
+    changedAt?: Date;
+  }
+): Promise<string[]> {
+  const changedAt = params.changedAt ?? new Date();
+
+  const conditions: SQL[] = [
+    eq(userEntries.userId, params.userId),
+    eq(userEntries.read, false),
+    or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))!,
+  ];
+
+  // Filter by explicit feed IDs (used by GReader route after stream resolution)
+  if (params.feedIds) {
+    const entryIdsSubquery = db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(inArray(entries.feedId, params.feedIds));
+
+    conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
+  }
+
+  // Filter by subscriptionId (single subquery, no extra roundtrip)
+  if (params.subscriptionId) {
+    const entryIdsSubquery = db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(
+        inArray(
+          entries.feedId,
+          db
+            .select({ feedId: subscriptionFeeds.feedId })
+            .from(subscriptionFeeds)
+            .innerJoin(
+              subscriptions,
+              and(
+                eq(subscriptions.id, subscriptionFeeds.subscriptionId),
+                eq(subscriptions.userId, params.userId),
+                isNull(subscriptions.unsubscribedAt)
+              )
+            )
+            .where(eq(subscriptionFeeds.subscriptionId, params.subscriptionId))
+        )
+      );
+
+    conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
+  }
+
+  // Filter by tag (scoped to user via subscription_tags → subscription_feeds)
+  if (params.tagId) {
+    const taggedFeedIdsSubquery = db
+      .select({ feedId: subscriptionFeeds.feedId })
+      .from(subscriptionTags)
+      .innerJoin(
+        subscriptionFeeds,
+        eq(subscriptionTags.subscriptionId, subscriptionFeeds.subscriptionId)
+      )
+      .where(eq(subscriptionTags.tagId, params.tagId));
+
+    const taggedEntryIdsSubquery = db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(inArray(entries.feedId, taggedFeedIdsSubquery));
+
+    conditions.push(inArray(userEntries.entryId, taggedEntryIdsSubquery));
+  }
+
+  // Filter by uncategorized (no tags)
+  if (params.uncategorized) {
+    const taggedSubscriptionIdsSubquery = db
+      .select({ subscriptionId: subscriptionTags.subscriptionId })
+      .from(subscriptionTags);
+
+    const uncategorizedFeedIdsSubquery = db
+      .select({ feedId: subscriptionFeeds.feedId })
+      .from(subscriptions)
+      .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
+      .where(
+        and(
+          eq(subscriptions.userId, params.userId),
+          isNull(subscriptions.unsubscribedAt),
+          notInArray(subscriptions.id, taggedSubscriptionIdsSubquery)
+        )
+      );
+
+    const uncategorizedEntryIdsSubquery = db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(inArray(entries.feedId, uncategorizedFeedIdsSubquery));
+
+    conditions.push(inArray(userEntries.entryId, uncategorizedEntryIdsSubquery));
+  }
+
+  // Filter by starred only
+  if (params.starredOnly) {
+    conditions.push(eq(userEntries.starred, true));
+  }
+
+  // Filter by feed type
+  if (params.type) {
+    const typeEntryIdsSubquery = db
+      .select({ id: entries.id })
+      .from(entries)
+      .innerJoin(feeds, eq(entries.feedId, feeds.id))
+      .where(eq(feeds.type, params.type));
+
+    conditions.push(inArray(userEntries.entryId, typeEntryIdsSubquery));
+  }
+
+  // Filter by before date
+  if (params.before) {
+    const beforeEntryIdsSubquery = db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(lte(entries.fetchedAt, params.before));
+
+    conditions.push(inArray(userEntries.entryId, beforeEntryIdsSubquery));
+  }
+
+  const result = await db
+    .update(userEntries)
+    .set({
+      read: true,
+      readChangedAt: changedAt,
+      updatedAt: new Date(),
+    })
+    .where(and(...conditions))
+    .returning({ entryId: userEntries.entryId });
+
+  return result.map((r) => r.entryId);
 }
 
 /**
