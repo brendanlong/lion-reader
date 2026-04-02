@@ -649,13 +649,15 @@ export const userEntries = pgTable(
 
     // Timestamps for idempotent updates - tracks when each field was last set
     // Used for conditional updates: only apply if incoming timestamp is newer
-    readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull().defaultNow(),
+    // NULL means the user has never explicitly changed the read state
+    readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
     starredChangedAt: timestamp("starred_changed_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
 
     // Timestamp for tracking state changes (for sync endpoint)
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId] }),
@@ -742,7 +744,7 @@ export const visibleEntries = pgView("visible_entries", {
   predictedScore: real("predicted_score"), // ML-predicted score, nullable
   predictionConfidence: real("prediction_confidence"), // confidence of prediction, nullable
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
-  readChangedAt: timestamp("read_changed_at", { withTimezone: true }).notNull(),
+  readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
   wallabagId: integer("wallabag_id"), // Wallabag API integer ID (generated column from entries table)
 }).existing();
 

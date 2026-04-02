@@ -15,15 +15,8 @@ import { parseFormData, textResponse, errorResponse } from "@/server/google-read
 import { parseStreamId } from "@/server/google-reader/streams";
 import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { resolveTagByName } from "@/server/google-reader/tags";
-import { eq, and, isNull, lte, inArray, type SQL } from "drizzle-orm";
 import { db } from "@/server/db";
-import {
-  userEntries,
-  entries,
-  subscriptionFeeds,
-  subscriptions,
-  subscriptionTags,
-} from "@/server/db/schema";
+import { markAllEntriesRead } from "@/server/services/entries";
 
 export const dynamic = "force-dynamic";
 
@@ -49,26 +42,7 @@ export async function POST(request: Request): Promise<Response> {
   const tsStr = params.get("ts");
   const beforeDate = tsStr ? new Date(parseInt(tsStr, 10) / 1000) : undefined;
 
-  const now = new Date();
-
-  // Build conditions for the update
-  const conditions: SQL[] = [
-    eq(userEntries.userId, userId),
-    eq(userEntries.read, false),
-    lte(userEntries.readChangedAt, now),
-  ];
-
-  // Add timestamp filter if provided
-  if (beforeDate) {
-    const beforeEntryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(lte(entries.fetchedAt, beforeDate));
-
-    conditions.push(inArray(userEntries.entryId, beforeEntryIdsSubquery));
-  }
-
-  // Filter by stream
+  // Translate GReader stream into shared service params
   switch (parsedStream.type) {
     case "feed": {
       const subscriptionId = await feedStreamIdToSubscriptionUuid(
@@ -80,41 +54,27 @@ export async function POST(request: Request): Promise<Response> {
         return textResponse("OK");
       }
 
-      // Look up feed IDs for this subscription via subscription_feeds junction table
-      const feedIdsResult = await db
-        .select({ feedId: subscriptionFeeds.feedId })
-        .from(subscriptionFeeds)
-        .innerJoin(
-          subscriptions,
-          and(
-            eq(subscriptions.id, subscriptionFeeds.subscriptionId),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .where(eq(subscriptionFeeds.subscriptionId, subscriptionId));
-
-      if (feedIdsResult.length === 0) {
-        return textResponse("OK");
-      }
-
-      const feedIds = feedIdsResult.map((r) => r.feedId);
-
-      const entryIdsSubquery = db
-        .select({ id: entries.id })
-        .from(entries)
-        .where(inArray(entries.feedId, feedIds));
-
-      conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
+      await markAllEntriesRead(db, {
+        userId,
+        subscriptionId,
+        before: beforeDate,
+      });
       break;
     }
     case "state": {
       switch (parsedStream.state) {
         case "reading-list":
-          // All entries — no additional filter
+          await markAllEntriesRead(db, {
+            userId,
+            before: beforeDate,
+          });
           break;
         case "starred":
-          conditions.push(eq(userEntries.starred, true));
+          await markAllEntriesRead(db, {
+            userId,
+            starredOnly: true,
+            before: beforeDate,
+          });
           break;
         default:
           return errorResponse(
@@ -130,37 +90,14 @@ export async function POST(request: Request): Promise<Response> {
         return textResponse("OK");
       }
 
-      // Subquery for feed IDs from subscriptions with this tag via subscription_feeds
-      const taggedFeedIdsSubquery = db
-        .select({
-          feedId: subscriptionFeeds.feedId,
-        })
-        .from(subscriptionTags)
-        .innerJoin(
-          subscriptionFeeds,
-          eq(subscriptionTags.subscriptionId, subscriptionFeeds.subscriptionId)
-        )
-        .where(eq(subscriptionTags.tagId, tag.id));
-
-      const taggedEntryIdsSubquery = db
-        .select({ id: entries.id })
-        .from(entries)
-        .where(inArray(entries.feedId, taggedFeedIdsSubquery));
-
-      conditions.push(inArray(userEntries.entryId, taggedEntryIdsSubquery));
+      await markAllEntriesRead(db, {
+        userId,
+        tagId: tag.id,
+        before: beforeDate,
+      });
       break;
     }
   }
-
-  // Execute the update
-  await db
-    .update(userEntries)
-    .set({
-      read: true,
-      readChangedAt: now,
-      updatedAt: now,
-    })
-    .where(and(...conditions));
 
   return textResponse("OK");
 }
