@@ -1,7 +1,7 @@
 /**
  * Admin Root Page
  *
- * Redirects to /admin/invites which is the default admin tab.
+ * Redirects to /admin/overview which is the default admin tab.
  * Uses client-side redirect to avoid SSR.
  */
 
@@ -15,7 +15,7 @@ export default function AdminPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/admin/invites");
+    router.replace("/admin/overview");
   }, [router]);
 
   return (
