@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/icon-button";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
-import { SWIPE_CONFIG } from "@/components/entries/EntryContentHelpers";
+import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
 import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
@@ -208,38 +208,11 @@ function DemoRouterContent() {
     onNavigatePrevious: goToPreviousEntry,
   });
 
-  // Swipe gesture handlers for entry detail view
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      if (!entryId) return;
-      const touch = e.touches[0];
-      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
-    },
-    [entryId]
-  );
-
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (!touchStartRef.current) return;
-
-      const touch = e.changedTouches[0];
-      const deltaX = touch.clientX - touchStartRef.current.x;
-      const deltaY = touch.clientY - touchStartRef.current.y;
-      touchStartRef.current = null;
-
-      if (Math.abs(deltaY) > SWIPE_CONFIG.MAX_VERTICAL_DISTANCE) return;
-      if (Math.abs(deltaX) < SWIPE_CONFIG.SWIPE_THRESHOLD) return;
-
-      if (deltaX < 0 && nextEntryId) {
-        openEntry(nextEntryId);
-      } else if (deltaX > 0 && previousEntryId) {
-        openEntry(previousEntryId);
-      }
-    },
-    [nextEntryId, previousEntryId, openEntry]
-  );
+  const { onTouchStart: handleTouchStart, onTouchEnd: handleTouchEnd } = useSwipeGesture({
+    onSwipeLeft: nextEntryId ? () => openEntry(nextEntryId) : undefined,
+    onSwipeRight: previousEntryId ? () => openEntry(previousEntryId) : undefined,
+    enabled: Boolean(entryId),
+  });
 
   // Auto-mark entry as read when viewing it (like the real app)
   const hasSentMarkRead = useRef<string | null>(null);

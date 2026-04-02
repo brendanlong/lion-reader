@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, useMemo, useCallback } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import DOMPurify from "isomorphic-dompurify";
 
@@ -51,7 +51,7 @@ import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useImagePrefetch } from "@/lib/hooks/useImagePrefetch";
-import { SWIPE_CONFIG } from "./EntryContentHelpers";
+import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
 import { VoteControls } from "./VoteControls";
@@ -206,7 +206,6 @@ export function EntryContentBody({
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const actionButtonsRef = useRef<HTMLDivElement>(null);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Determine if we're showing full content
   // Full content is shown if:
@@ -340,50 +339,11 @@ export function EntryContentBody({
     narration.state.status,
   ]);
 
-  // Swipe gesture handlers
-  const swipeEnabled = Boolean(onSwipeNext || onSwipePrevious);
-
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      if (!swipeEnabled) return;
-      const touch = e.touches[0];
-      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
-    },
-    [swipeEnabled]
-  );
-
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (!swipeEnabled || !touchStartRef.current) return;
-
-      const touch = e.changedTouches[0];
-      const deltaX = touch.clientX - touchStartRef.current.x;
-      const deltaY = touch.clientY - touchStartRef.current.y;
-
-      // Reset touch start
-      touchStartRef.current = null;
-
-      // Check if vertical movement is too large (user is scrolling, not swiping)
-      if (Math.abs(deltaY) > SWIPE_CONFIG.MAX_VERTICAL_DISTANCE) {
-        return;
-      }
-
-      // Check if horizontal movement meets threshold
-      if (Math.abs(deltaX) < SWIPE_CONFIG.SWIPE_THRESHOLD) {
-        return;
-      }
-
-      // Determine swipe direction
-      if (deltaX < 0 && onSwipeNext) {
-        // Swipe left -> next entry
-        onSwipeNext();
-      } else if (deltaX > 0 && onSwipePrevious) {
-        // Swipe right -> previous entry
-        onSwipePrevious();
-      }
-    },
-    [swipeEnabled, onSwipeNext, onSwipePrevious]
-  );
+  const { onTouchStart: handleTouchStart, onTouchEnd: handleTouchEnd } = useSwipeGesture({
+    onSwipeLeft: onSwipeNext,
+    onSwipeRight: onSwipePrevious,
+    enabled: Boolean(onSwipeNext || onSwipePrevious),
+  });
 
   // Keyboard shortcut: m to toggle read/unread
   useHotkeys(
