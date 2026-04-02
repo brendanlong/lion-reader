@@ -26,7 +26,7 @@ export function formatRelativeTime(date: Date): string {
     return `${diffDays} ${diffDays === 1 ? "day" : "days"} ago`;
   } else if (diffDays < 30) {
     return `${diffWeeks} ${diffWeeks === 1 ? "week" : "weeks"} ago`;
-  } else if (diffMonths < 12) {
+  } else if (diffYears < 1) {
     return `${diffMonths} ${diffMonths === 1 ? "month" : "months"} ago`;
   } else {
     return `${diffYears} ${diffYears === 1 ? "year" : "years"} ago`;
