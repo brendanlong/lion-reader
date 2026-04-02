@@ -728,11 +728,12 @@ const overviewEndpoints = {
         // Total web feeds
         ctx.db.select({ count: count() }).from(feeds).where(eq(feeds.type, "web")),
 
-        // Feeds with at least one active subscriber
+        // Web feeds with at least one active subscriber
         ctx.db
           .select({ count: sql<number>`COUNT(DISTINCT ${subscriptions.feedId})` })
           .from(subscriptions)
-          .where(isNull(subscriptions.unsubscribedAt)),
+          .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+          .where(and(isNull(subscriptions.unsubscribedAt), eq(feeds.type, "web"))),
 
         // Broken feeds (consecutive failures > 0)
         ctx.db
