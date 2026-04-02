@@ -698,14 +698,12 @@ const overviewEndpoints = {
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      // Run all counts in parallel
+      // Run counts in parallel, combining queries that scan the same table
       const [
         totalUsersResult,
-        activeUsers7dResult,
-        activeUsers30dResult,
-        totalFeedsResult,
+        activeUsersResult,
+        feedStatsResult,
         feedsWithSubsResult,
-        brokenFeedsResult,
         totalEntriesResult,
         totalSubscriptionsResult,
         pendingInvitesResult,
@@ -713,20 +711,23 @@ const overviewEndpoints = {
         // Total users
         ctx.db.select({ count: count() }).from(users),
 
-        // Active users last 7 days (had a session active)
+        // Active users: single scan with conditional aggregation
         ctx.db
-          .select({ count: sql<number>`COUNT(DISTINCT ${sessions.userId})` })
-          .from(sessions)
-          .where(gt(sessions.lastActiveAt, sevenDaysAgo)),
-
-        // Active users last 30 days
-        ctx.db
-          .select({ count: sql<number>`COUNT(DISTINCT ${sessions.userId})` })
+          .select({
+            active7d: sql<number>`COUNT(DISTINCT CASE WHEN ${sessions.lastActiveAt} > ${sevenDaysAgo} THEN ${sessions.userId} END)`,
+            active30d: sql<number>`COUNT(DISTINCT ${sessions.userId})`,
+          })
           .from(sessions)
           .where(gt(sessions.lastActiveAt, thirtyDaysAgo)),
 
-        // Total web feeds
-        ctx.db.select({ count: count() }).from(feeds).where(eq(feeds.type, "web")),
+        // Feed stats: single scan for total and broken counts
+        ctx.db
+          .select({
+            total: count(),
+            broken: sql<number>`COUNT(*) FILTER (WHERE ${feeds.consecutiveFailures} > 0)`,
+          })
+          .from(feeds)
+          .where(eq(feeds.type, "web")),
 
         // Web feeds with at least one active subscriber
         ctx.db
@@ -734,12 +735,6 @@ const overviewEndpoints = {
           .from(subscriptions)
           .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
           .where(and(isNull(subscriptions.unsubscribedAt), eq(feeds.type, "web"))),
-
-        // Broken feeds (consecutive failures > 0)
-        ctx.db
-          .select({ count: count() })
-          .from(feeds)
-          .where(and(eq(feeds.type, "web"), gt(feeds.consecutiveFailures, 0))),
 
         // Total entries
         ctx.db.select({ count: count() }).from(entries),
@@ -759,11 +754,11 @@ const overviewEndpoints = {
 
       return {
         totalUsers: Number(totalUsersResult[0].count),
-        activeUsersLast7Days: Number(activeUsers7dResult[0].count),
-        activeUsersLast30Days: Number(activeUsers30dResult[0].count),
-        totalFeeds: Number(totalFeedsResult[0].count),
+        activeUsersLast7Days: Number(activeUsersResult[0].active7d),
+        activeUsersLast30Days: Number(activeUsersResult[0].active30d),
+        totalFeeds: Number(feedStatsResult[0].total),
         totalFeedsWithSubscribers: Number(feedsWithSubsResult[0].count),
-        brokenFeeds: Number(brokenFeedsResult[0].count),
+        brokenFeeds: Number(feedStatsResult[0].broken),
         totalEntries: Number(totalEntriesResult[0].count),
         totalSubscriptions: Number(totalSubscriptionsResult[0].count),
         pendingInvites: Number(pendingInvitesResult[0].count),
