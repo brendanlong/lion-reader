@@ -91,6 +91,14 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(sixMonthsAgo)).toBe("6 months ago");
   });
 
+  it("returns months for times near the year boundary (360-364 days)", () => {
+    const now = new Date();
+
+    // 362 days: diffMonths=12 but diffYears=0, should show months not "0 years ago"
+    const almostOneYear = new Date(now.getTime() - 362 * 24 * 60 * 60 * 1000);
+    expect(formatRelativeTime(almostOneYear)).toBe("12 months ago");
+  });
+
   it("returns years for times 1+ years ago", () => {
     const now = new Date();
 
