@@ -873,6 +873,126 @@ describe("Entries", () => {
       expect(dbEntry[0].starredChangedAt?.toISOString()).toBe(newTimestamp.toISOString());
     });
 
+    it("re-marking read bumps timestamp to protect against late-arriving offline unread", async () => {
+      // Scenario:
+      // 1. Mark read at time 1
+      // 2. Mark unread at time 2 (offline, queued)
+      // 3. Mark read at time 3 (online)
+      // 4. Event from (2) arrives with changedAt=time2
+      // Final state should be read, because time3 > time2
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const time0 = new Date("2024-01-01T00:00:00Z");
+      const time1 = new Date("2024-01-02T00:00:00Z");
+      const time2 = new Date("2024-01-03T00:00:00Z");
+      const time3 = new Date("2024-01-04T00:00:00Z");
+
+      const entryId = await createTestEntry(feedId, { title: "Entry" });
+      await createUserEntry(userId, entryId, { read: false, readChangedAt: time0 });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Step 1: Mark read at time 1
+      await caller.entries.markRead({
+        entries: [{ id: entryId, changedAt: time1 }],
+        read: true,
+      });
+
+      // Step 3: Mark read again at time 3 (skipping offline step 2)
+      await caller.entries.markRead({
+        entries: [{ id: entryId, changedAt: time3 }],
+        read: true,
+      });
+
+      // Verify readChangedAt was bumped to time3
+      const dbEntryBefore = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntryBefore[0].read).toBe(true);
+      expect(dbEntryBefore[0].readChangedAt?.toISOString()).toBe(time3.toISOString());
+
+      // Step 4: Late-arriving offline event from step 2 (mark unread at time 2)
+      await caller.entries.markRead({
+        entries: [{ id: entryId, changedAt: time2 }],
+        read: false,
+      });
+
+      // Final state should still be read with time3 timestamp
+      const dbEntryAfter = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntryAfter[0].read).toBe(true);
+      expect(dbEntryAfter[0].readChangedAt?.toISOString()).toBe(time3.toISOString());
+    });
+
+    it("re-starring bumps timestamp to protect against late-arriving offline unstar", async () => {
+      // Same scenario as above but for starred state
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const time0 = new Date("2024-01-01T00:00:00Z");
+      const time1 = new Date("2024-01-02T00:00:00Z");
+      const time2 = new Date("2024-01-03T00:00:00Z");
+      const time3 = new Date("2024-01-04T00:00:00Z");
+
+      const entryId = await createTestEntry(feedId, { title: "Entry" });
+      await createUserEntry(userId, entryId, { starred: false, starredChangedAt: time0 });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Step 1: Star at time 1
+      await caller.entries.setStarred({
+        id: entryId,
+        starred: true,
+        changedAt: time1,
+      });
+
+      // Step 3: Star again at time 3
+      await caller.entries.setStarred({
+        id: entryId,
+        starred: true,
+        changedAt: time3,
+      });
+
+      // Verify starredChangedAt was bumped to time3
+      const dbEntryBefore = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntryBefore[0].starred).toBe(true);
+      expect(dbEntryBefore[0].starredChangedAt?.toISOString()).toBe(time3.toISOString());
+
+      // Step 4: Late-arriving offline event from step 2 (unstar at time 2)
+      await caller.entries.setStarred({
+        id: entryId,
+        starred: false,
+        changedAt: time2,
+      });
+
+      // Final state should still be starred with time3 timestamp
+      const dbEntryAfter = await db
+        .select()
+        .from(userEntries)
+        .where(eq(userEntries.entryId, entryId))
+        .limit(1);
+
+      expect(dbEntryAfter[0].starred).toBe(true);
+      expect(dbEntryAfter[0].starredChangedAt?.toISOString()).toBe(time3.toISOString());
+    });
+
     it("star idempotency - older timestamp rejected", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");
