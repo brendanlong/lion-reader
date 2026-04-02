@@ -12,7 +12,7 @@ process.env.ADMIN_SECRET = "test-admin-secret";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, subscriptions, invites, jobs } from "../../src/server/db/schema";
+import { users, feeds, subscriptions, invites, jobs, sessions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -391,6 +391,30 @@ describe("Admin API", () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].email).toContain("findme-unique");
+    });
+
+    it("returns lastActiveAt from sessions", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const userId = await createTestUser("active-user");
+
+      // Create a session for this user
+      const sessionId = generateUuidv7();
+      const sessionTime = new Date("2026-03-15T12:00:00Z");
+      await db.insert(sessions).values({
+        id: sessionId,
+        userId,
+        tokenHash: `test-hash-${sessionId}`,
+        expiresAt: new Date("2027-01-01T00:00:00Z"),
+        lastActiveAt: sessionTime,
+      });
+
+      const result = await caller.admin.listUsers({ search: "active-user" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].lastActiveAt).toBeInstanceOf(Date);
+      expect(result.items[0].lastActiveAt!.getTime()).toBe(sessionTime.getTime());
     });
 
     it("pagination works", async () => {
