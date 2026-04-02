@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { ClientLink } from "@/components/ui/client-link";
 import { AdminTRPCProvider } from "@/components/admin/AdminTRPCProvider";
+import AdminOverviewContent from "@/components/admin/AdminOverviewContent";
 import AdminInvitesContent from "@/components/admin/AdminInvitesContent";
 import AdminFeedsContent from "@/components/admin/AdminFeedsContent";
 import AdminUsersContent from "@/components/admin/AdminUsersContent";
@@ -27,6 +28,7 @@ import AdminUsersContent from "@/components/admin/AdminUsersContent";
 const ADMIN_TOKEN_KEY = "lion-reader-admin-token";
 
 const adminTabs = [
+  { href: "/admin/overview", label: "Overview" },
   { href: "/admin/invites", label: "Invites" },
   { href: "/admin/feeds", label: "Feed Health" },
   { href: "/admin/users", label: "Users" },
@@ -179,6 +181,8 @@ function AdminContentRouter() {
   const pathname = usePathname();
 
   switch (pathname) {
+    case "/admin/overview":
+      return <AdminOverviewContent />;
     case "/admin/invites":
       return <AdminInvitesContent />;
     case "/admin/feeds":
@@ -186,7 +190,7 @@ function AdminContentRouter() {
     case "/admin/users":
       return <AdminUsersContent />;
     default:
-      return <AdminInvitesContent />;
+      return <AdminOverviewContent />;
   }
 }
 

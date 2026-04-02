@@ -456,6 +456,13 @@
       "when": 1770658800000,
       "tag": "0065_backfill_subscription_feeds",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1770668800000,
+      "tag": "0066_sessions_last_active_index",
+      "breakpoints": true
     }
   ]
 }

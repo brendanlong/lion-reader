@@ -18,6 +18,7 @@ import {
   invites,
   jobs,
   oauthAccounts,
+  sessions,
   userEntries,
   userScoreModels,
 } from "@/server/db/schema";
@@ -529,6 +530,7 @@ const userEndpoints = {
             providers: z.array(z.string()),
             subscriptionCount: z.number(),
             entryCount: z.number(),
+            lastActiveAt: z.date().nullable(),
             scoringModelSize: z.number().nullable(),
             scoringModelMemoryEstimate: z.number().nullable(),
             scoringModelTrainedAt: z.date().nullable(),
@@ -584,6 +586,14 @@ const userEndpoints = {
          WHERE ${userScoreModels.userId} = ${users.id})
       `;
 
+      // Subquery: most recent session activity (includes revoked sessions —
+      // a revoked session still indicates the user was active at that time)
+      const lastActiveAtSq = sql<Date | null>`
+        (SELECT MAX(${sessions.lastActiveAt})
+         FROM ${sessions}
+         WHERE ${sessions.userId} = ${users.id})
+      `;
+
       // Subquery: scoring model trained_at timestamp
       const scoringModelTrainedAtSq = sql<Date | null>`
         (SELECT ${userScoreModels.trainedAt}
@@ -613,6 +623,7 @@ const userEndpoints = {
           providers: providersSq.as("providers"),
           subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
           entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
+          lastActiveAt: lastActiveAtSq.as("last_active_at"),
           scoringModelSize: scoringModelSizeSq.as("scoring_model_size"),
           scoringModelMemoryEstimate: scoringModelMemoryEstimateSq.as(
             "scoring_model_memory_estimate"
@@ -636,6 +647,7 @@ const userEndpoints = {
           providers: Array.isArray(row.providers) ? (row.providers as string[]) : ([] as string[]),
           subscriptionCount: Number(row.subscriptionCount),
           entryCount: Number(row.entryCount),
+          lastActiveAt: row.lastActiveAt ? new Date(row.lastActiveAt) : null,
           scoringModelSize: row.scoringModelSize != null ? Number(row.scoringModelSize) : null,
           scoringModelMemoryEstimate:
             row.scoringModelMemoryEstimate != null ? Number(row.scoringModelMemoryEstimate) : null,
@@ -649,10 +661,118 @@ const userEndpoints = {
 } as const;
 
 // ============================================================================
+// OVERVIEW ENDPOINTS
+// ============================================================================
+
+const overviewEndpoints = {
+  /**
+   * Get system overview stats.
+   *
+   * Returns aggregate counts for users, feeds, entries, and active user metrics.
+   */
+  getOverview: adminProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/admin/overview",
+        tags: ["Admin"],
+        summary: "Get system overview statistics",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        totalUsers: z.number(),
+        activeUsersLast7Days: z.number(),
+        activeUsersLast30Days: z.number(),
+        totalFeeds: z.number(),
+        totalFeedsWithSubscribers: z.number(),
+        brokenFeeds: z.number(),
+        totalEntries: z.number(),
+        totalSubscriptions: z.number(),
+        pendingInvites: z.number(),
+      })
+    )
+    .query(async ({ ctx }) => {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Run counts in parallel, combining queries that scan the same table
+      const [
+        totalUsersResult,
+        activeUsersResult,
+        feedStatsResult,
+        feedsWithSubsResult,
+        totalEntriesResult,
+        totalSubscriptionsResult,
+        pendingInvitesResult,
+      ] = await Promise.all([
+        // Total users
+        ctx.db.select({ count: count() }).from(users),
+
+        // Active users: single scan with conditional aggregation
+        ctx.db
+          .select({
+            active7d: sql<number>`COUNT(DISTINCT CASE WHEN ${sessions.lastActiveAt} > ${sevenDaysAgo} THEN ${sessions.userId} END)`,
+            active30d: sql<number>`COUNT(DISTINCT ${sessions.userId})`,
+          })
+          .from(sessions)
+          .where(gt(sessions.lastActiveAt, thirtyDaysAgo)),
+
+        // Feed stats: single scan for total and broken counts
+        ctx.db
+          .select({
+            total: count(),
+            broken: sql<number>`COUNT(*) FILTER (WHERE ${feeds.consecutiveFailures} > 0)`,
+          })
+          .from(feeds)
+          .where(eq(feeds.type, "web")),
+
+        // Web feeds with at least one active subscriber
+        ctx.db
+          .select({ count: sql<number>`COUNT(DISTINCT ${subscriptions.feedId})` })
+          .from(subscriptions)
+          .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+          .where(and(isNull(subscriptions.unsubscribedAt), eq(feeds.type, "web"))),
+
+        // Total entries
+        ctx.db.select({ count: count() }).from(entries),
+
+        // Total active subscriptions
+        ctx.db
+          .select({ count: count() })
+          .from(subscriptions)
+          .where(isNull(subscriptions.unsubscribedAt)),
+
+        // Pending invites
+        ctx.db
+          .select({ count: count() })
+          .from(invites)
+          .where(and(isNull(invites.usedAt), gt(invites.expiresAt, now))),
+      ]);
+
+      return {
+        totalUsers: Number(totalUsersResult[0].count),
+        activeUsersLast7Days: Number(activeUsersResult[0].active7d),
+        activeUsersLast30Days: Number(activeUsersResult[0].active30d),
+        totalFeeds: Number(feedStatsResult[0].total),
+        totalFeedsWithSubscribers: Number(feedsWithSubsResult[0].count),
+        brokenFeeds: Number(feedStatsResult[0].broken),
+        totalEntries: Number(totalEntriesResult[0].count),
+        totalSubscriptions: Number(totalSubscriptionsResult[0].count),
+        pendingInvites: Number(pendingInvitesResult[0].count),
+      };
+    }),
+} as const;
+
+// ============================================================================
 // ROUTER
 // ============================================================================
 
 export const adminRouter = createTRPCRouter({
+  // Overview
+  ...overviewEndpoints,
   // Invites
   ...inviteEndpoints,
   // Feed health
