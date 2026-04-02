@@ -586,12 +586,12 @@ const userEndpoints = {
          WHERE ${userScoreModels.userId} = ${users.id})
       `;
 
-      // Subquery: most recent session activity
+      // Subquery: most recent session activity (includes revoked sessions —
+      // a revoked session still indicates the user was active at that time)
       const lastActiveAtSq = sql<Date | null>`
         (SELECT MAX(${sessions.lastActiveAt})
          FROM ${sessions}
-         WHERE ${sessions.userId} = ${users.id}
-           AND ${sessions.revokedAt} IS NULL)
+         WHERE ${sessions.userId} = ${users.id})
       `;
 
       // Subquery: scoring model trained_at timestamp
@@ -717,13 +717,13 @@ const overviewEndpoints = {
         ctx.db
           .select({ count: sql<number>`COUNT(DISTINCT ${sessions.userId})` })
           .from(sessions)
-          .where(and(gt(sessions.lastActiveAt, sevenDaysAgo), isNull(sessions.revokedAt))),
+          .where(gt(sessions.lastActiveAt, sevenDaysAgo)),
 
         // Active users last 30 days
         ctx.db
           .select({ count: sql<number>`COUNT(DISTINCT ${sessions.userId})` })
           .from(sessions)
-          .where(and(gt(sessions.lastActiveAt, thirtyDaysAgo), isNull(sessions.revokedAt))),
+          .where(gt(sessions.lastActiveAt, thirtyDaysAgo)),
 
         // Total web feeds
         ctx.db.select({ count: count() }).from(feeds).where(eq(feeds.type, "web")),

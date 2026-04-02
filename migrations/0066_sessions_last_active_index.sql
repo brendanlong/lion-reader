@@ -1,5 +1,3 @@
--- Add partial index on sessions.last_active_at for active (non-revoked) sessions.
--- Used by admin overview queries to efficiently count active users in time windows.
+-- Add index on sessions.last_active_at for admin overview active-user queries.
 CREATE INDEX CONCURRENTLY idx_sessions_last_active
-  ON sessions (last_active_at)
-  WHERE revoked_at IS NULL;
+  ON sessions (last_active_at);
