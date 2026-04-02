@@ -26,8 +26,11 @@ Implicit scores are computed from user actions that indicate interest or disinte
 | Save an article             | Entry type = `saved`      | +1             | User explicitly chose to save it   |
 | Mark unread (from anywhere) | `has_marked_unread`       | 0              | Overrides read-on-list penalty     |
 | Mark read from entry list   | `has_marked_read_on_list` | -1             | Dismissed without opening          |
+| Read (no other signal)      | `read = true`             | 0              | Consumed but no strong signal      |
 
 **Priority order**: starred (+2) > saved (+1) > unread (0) > read-on-list (-1) > default (0)
+
+**Note**: Unread entries without a scoring signal (no explicit score or star) are excluded from model training. Marking an article unread indicates the user hasn't made a decision about it yet, so it should not influence the model.
 
 ### Display Score
 

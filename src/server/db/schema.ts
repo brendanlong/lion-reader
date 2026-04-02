@@ -642,7 +642,7 @@ export const userEntries = pgTable(
     scoreChangedAt: timestamp("score_changed_at", { withTimezone: true }),
 
     // Implicit signal flags - track user actions that imply interest/disinterest
-    // Priority for implicit score: starred (+2) > unread (+1) > read-on-list (-1) > default (0)
+    // Priority for implicit score: starred (+2) > saved (+1) > read-on-list (-1) > default (0)
     hasMarkedReadOnList: boolean("has_marked_read_on_list").notNull().default(false),
     hasMarkedUnread: boolean("has_marked_unread").notNull().default(false),
     hasStarred: boolean("has_starred").notNull().default(false),
