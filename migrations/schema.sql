@@ -673,6 +673,8 @@ CREATE INDEX idx_opml_imports_status ON public.opml_imports USING btree (status)
 
 CREATE INDEX idx_opml_imports_user ON public.opml_imports USING btree (user_id);
 
+CREATE INDEX idx_sessions_last_active ON public.sessions USING btree (last_active_at) WHERE (revoked_at IS NULL);
+
 CREATE INDEX idx_sessions_token ON public.sessions USING btree (token_hash);
 
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
