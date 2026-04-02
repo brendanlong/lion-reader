@@ -83,9 +83,9 @@ export interface ScorePrediction {
  * Implicit score mapping:
  * - has_starred = +2
  * - type = 'saved' = +1
- * - has_marked_unread = 0 (overrides read-on-list but no positive bonus)
+ * - has_marked_unread = 0 (overrides read-on-list penalty)
  * - has_marked_read_on_list = -1
- * - default = 0
+ * - default (read but no other signal) = 0
  */
 function computeEffectiveScore(row: {
   score: number | null;
@@ -143,10 +143,12 @@ function extractEntryText(entry: {
 
 /**
  * Fetches training data for a user.
- * Returns entries that have either explicit scores or implicit signals.
+ * Only includes entries the user has actually engaged with: read, starred,
+ * or explicitly scored. Unread entries without a scoring signal are excluded
+ * since the user hasn't made a decision about them yet.
  */
 async function getTrainingData(db: typeof dbType, userId: string): Promise<TrainingData[]> {
-  // Query entries with scores or implicit signals
+  // Query entries with explicit decisions (read, starred, or scored)
   const rows = await db
     .select({
       entryId: entries.id,
@@ -165,12 +167,11 @@ async function getTrainingData(db: typeof dbType, userId: string): Promise<Train
     .where(
       and(
         eq(userEntries.userId, userId),
-        // Only include entries with signals (score or implicit)
+        // Only include entries the user has engaged with
         or(
           isNotNull(userEntries.score),
           eq(userEntries.hasStarred, true),
-          eq(userEntries.hasMarkedUnread, true),
-          eq(userEntries.hasMarkedReadOnList, true),
+          eq(userEntries.read, true),
           eq(entries.type, "saved")
         )
       )

@@ -266,9 +266,9 @@ SELECT
     ue.score,
     CASE
       WHEN ue.has_starred THEN 2
-      WHEN ue.has_marked_unread THEN 1
-      WHEN ue.has_marked_read_on_list THEN -1
       WHEN e.type = 'saved' THEN 1
+      WHEN ue.has_marked_unread THEN 0
+      WHEN ue.has_marked_read_on_list THEN -1
       ELSE 0
     END
   ) AS score
@@ -276,11 +276,13 @@ FROM user_entries ue
 JOIN entries e ON e.id = ue.entry_id
 JOIN feeds f ON f.id = e.feed_id
 WHERE ue.user_id = $1
-  -- Only entries with interaction signals
+  -- Only entries the user has engaged with (read, starred, or scored)
+  -- Unread entries are excluded: marking unread means no decision yet
   AND (
     ue.score IS NOT NULL
-    OR ue.starred_changed_at IS NOT NULL
-    OR ue.read_changed_at IS NOT NULL
+    OR ue.has_starred
+    OR ue.read
+    OR e.type = 'saved'
   )
   -- Exclude very old entries (optional, for memory)
   AND e.fetched_at > NOW() - INTERVAL '1 year'
