@@ -16,15 +16,8 @@ WHERE NOT EXISTS (
 );
 --> statement-breakpoint
 
--- Subscribe all users who aren't already subscribed (or reactivate soft-deleted subscriptions)
--- First, reactivate any soft-deleted subscriptions
-UPDATE subscriptions
-SET unsubscribed_at = NULL, subscribed_at = NOW(), updated_at = NOW()
-WHERE feed_id = (SELECT id FROM feeds WHERE url = 'https://announcements.lionreader.com/feed.xml')
-  AND unsubscribed_at IS NOT NULL;
---> statement-breakpoint
-
--- Then create new subscriptions for users who have never subscribed
+-- Subscribe users who have never been subscribed to this feed.
+-- Users who previously unsubscribed are intentionally left alone (respect user intent).
 INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at)
 SELECT
   gen_random_uuid(),

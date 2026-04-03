@@ -16,7 +16,6 @@ import { signupConfig, type SignupProvider } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { errors } from "@/server/trpc/errors";
 import type { Database } from "@/server/db";
-import { autoSubscribeNewUser } from "@/server/auth/auto-subscribe";
 
 /**
  * Parameters for creating a new user
@@ -133,10 +132,9 @@ export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<
     updatedAt: now,
   });
 
-  const result = { userId, email, createdAt: now };
-
-  // Auto-subscribe to announcements feed (fire-and-forget, runs outside the transaction)
-  autoSubscribeNewUser(userId);
-
-  return result;
+  return {
+    userId,
+    email,
+    createdAt: now,
+  };
 }
