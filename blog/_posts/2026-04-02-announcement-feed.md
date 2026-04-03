@@ -15,4 +15,4 @@ Some features you should be aware of if you haven't seen the demo site:
 - APIs for native apps ([Google Reader / FreshRSS](https://lionreader.com/demo/all?entry=google-reader-api) + [Wallabag](https://lionreader.com/demo/all?entry=wallabag-api))
 - [MCP server](https://lionreader.com/demo/all?entry=mcp-server) for AI usage (ask your AI to upload its reports to Lion Reader!)
 
-Also, if you ever have any bugs reports or feature requests, please [report them on GitHub](https://github.com/brendanlong/lion-reader/issues) or [email me](mailto:self@brendanlong.com).
+Also, if you ever have any bug reports or feature requests, please [report them on GitHub](https://github.com/brendanlong/lion-reader/issues) or [email me](mailto:self@brendanlong.com).
