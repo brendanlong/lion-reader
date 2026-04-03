@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count } from "drizzle-orm";
+import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count, max } from "drizzle-orm";
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
@@ -545,14 +545,14 @@ const userEndpoints = {
       const search = input?.search;
 
       // Subquery: OAuth provider names as a JSON array
-      const providersSq = sql<string[]>`
-        COALESCE(
-          (SELECT json_agg(DISTINCT ${oauthAccounts.provider})
-           FROM ${oauthAccounts}
-           WHERE ${oauthAccounts.userId} = ${users.id}),
-          '[]'::json
-        )
-      `;
+      const providersSq = ctx.db
+        .select({
+          providers: sql<
+            string[]
+          >`COALESCE(json_agg(DISTINCT ${oauthAccounts.provider}), '[]'::json)`.as("providers"),
+        })
+        .from(oauthAccounts)
+        .where(eq(oauthAccounts.userId, users.id));
 
       // Subquery: count of active subscriptions
       const subscriptionCountSq = ctx.db
@@ -567,39 +567,40 @@ const userEndpoints = {
         .where(eq(userEntries.userId, users.id));
 
       // Subquery: scoring model size (length of model_data text)
-      const scoringModelSizeSq = sql<number | null>`
-        (SELECT LENGTH(${userScoreModels.modelData})
-         FROM ${userScoreModels}
-         WHERE ${userScoreModels.userId} = ${users.id})
-      `;
+      const scoringModelSizeSq = ctx.db
+        .select({
+          size: sql<number>`LENGTH(${userScoreModels.modelData})`.as("size"),
+        })
+        .from(userScoreModels)
+        .where(eq(userScoreModels.userId, users.id));
 
       // Subquery: scoring model memory estimate based on vocabulary size
       // Rough estimate: vocabulary entries * ~100 bytes each
-      const scoringModelMemoryEstimateSq = sql<number | null>`
-        (SELECT jsonb_array_length(
-           CASE WHEN jsonb_typeof(${userScoreModels.vocabulary}) = 'object'
-                THEN jsonb_path_query_array(${userScoreModels.vocabulary}, '$.*')
-                ELSE '[]'::jsonb
-           END
-         ) * 100
-         FROM ${userScoreModels}
-         WHERE ${userScoreModels.userId} = ${users.id})
-      `;
+      const scoringModelMemoryEstimateSq = ctx.db
+        .select({
+          estimate: sql<number>`
+            jsonb_array_length(
+              CASE WHEN jsonb_typeof(${userScoreModels.vocabulary}) = 'object'
+                   THEN jsonb_path_query_array(${userScoreModels.vocabulary}, '$.*')
+                   ELSE '[]'::jsonb
+              END
+            ) * 100`.as("estimate"),
+        })
+        .from(userScoreModels)
+        .where(eq(userScoreModels.userId, users.id));
 
       // Subquery: most recent session activity (includes revoked sessions —
       // a revoked session still indicates the user was active at that time)
-      const lastActiveAtSq = sql<Date | null>`
-        (SELECT MAX(${sessions.lastActiveAt})
-         FROM ${sessions}
-         WHERE ${sessions.userId} = ${users.id})
-      `;
+      const lastActiveAtSq = ctx.db
+        .select({ max: max(sessions.lastActiveAt).as("max") })
+        .from(sessions)
+        .where(eq(sessions.userId, users.id));
 
       // Subquery: scoring model trained_at timestamp
-      const scoringModelTrainedAtSq = sql<Date | null>`
-        (SELECT ${userScoreModels.trainedAt}
-         FROM ${userScoreModels}
-         WHERE ${userScoreModels.userId} = ${users.id})
-      `;
+      const scoringModelTrainedAtSq = ctx.db
+        .select({ trainedAt: userScoreModels.trainedAt })
+        .from(userScoreModels)
+        .where(eq(userScoreModels.userId, users.id));
 
       const conditions = [];
 
@@ -620,15 +621,17 @@ const userEndpoints = {
           id: users.id,
           email: users.email,
           createdAt: users.createdAt,
-          providers: providersSq.as("providers"),
+          providers: sql<string[]>`(${providersSq})`.as("providers"),
           subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
           entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
-          lastActiveAt: lastActiveAtSq.as("last_active_at"),
-          scoringModelSize: scoringModelSizeSq.as("scoring_model_size"),
-          scoringModelMemoryEstimate: scoringModelMemoryEstimateSq.as(
+          lastActiveAt: sql<Date | null>`(${lastActiveAtSq})`.as("last_active_at"),
+          scoringModelSize: sql<number | null>`(${scoringModelSizeSq})`.as("scoring_model_size"),
+          scoringModelMemoryEstimate: sql<number | null>`(${scoringModelMemoryEstimateSq})`.as(
             "scoring_model_memory_estimate"
           ),
-          scoringModelTrainedAt: scoringModelTrainedAtSq.as("scoring_model_trained_at"),
+          scoringModelTrainedAt: sql<Date | null>`(${scoringModelTrainedAtSq})`.as(
+            "scoring_model_trained_at"
+          ),
         })
         .from(users)
         .where(whereClause)
