@@ -45,7 +45,7 @@ import {
 } from "../redis/pubsub";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isLessWrongUserFeedUrl } from "../feed/lesswrong";
-import { createOrReactivateSubscription } from "../trpc/routers/subscriptions";
+import { createOrReactivateSubscription } from "@/server/services/subscriptions";
 import {
   findPermanentRedirectUrl,
   isHttpToHttpsUpgrade,
