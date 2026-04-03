@@ -1,0 +1,19 @@
+title: Lion Reader Announcements
+description: Service announcements and feature updates for Lion Reader
+url: "https://announcements.lionreader.com"
+baseurl: ""
+
+theme: minima
+
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
+feed:
+  path: feed.xml
+
+permalink: /:year/:month/:day/:title/
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
