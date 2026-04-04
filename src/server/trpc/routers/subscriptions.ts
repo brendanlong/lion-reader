@@ -34,7 +34,7 @@ import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
-import { ensureFeedJob, createJob } from "@/server/jobs/queue";
+import { createJob } from "@/server/jobs/queue";
 import {
   publishSubscriptionCreated,
   publishSubscriptionDeleted,
@@ -96,67 +96,41 @@ const subscriptionOutputSchema = z.object({
  */
 function publishAndFormatSubscription(
   userId: string,
-  feedId: string,
   result: subscriptionsService.CreateSubscriptionResult,
-  feedRecord: {
-    type: "web" | "email" | "saved";
-    url: string | null;
-    title: string | null;
-    description: string | null;
-    siteUrl: string | null;
-  },
   tags: Array<{ id: string; name: string; color: string | null }> = []
 ): z.infer<typeof subscriptionOutputSchema> {
-  // Skip SSE event for idempotent returns (subscription was already active)
-  if (result.alreadyActive) {
-    return {
-      id: result.subscriptionId,
-      type: feedRecord.type,
-      url: feedRecord.url,
-      title: feedRecord.title,
-      originalTitle: feedRecord.title,
-      description: feedRecord.description,
-      siteUrl: feedRecord.siteUrl,
-      subscribedAt: result.subscribedAt,
-      unreadCount: result.unreadCount,
-      tags,
-      fetchFullContent: false,
-    };
+  if (!result.alreadyActive) {
+    publishSubscriptionCreated(
+      userId,
+      result.feed.id,
+      result.subscriptionId,
+      result.subscribedAt,
+      {
+        id: result.subscriptionId,
+        feedId: result.feed.id,
+        customTitle: null,
+        subscribedAt: result.subscribedAt.toISOString(),
+        unreadCount: result.unreadCount,
+        tags,
+      },
+      result.feed
+    ).catch((err) => {
+      logger.error("Failed to publish subscription_created event", {
+        err,
+        userId,
+        feedId: result.feed.id,
+      });
+    });
   }
-
-  publishSubscriptionCreated(
-    userId,
-    feedId,
-    result.subscriptionId,
-    result.subscribedAt,
-    {
-      id: result.subscriptionId,
-      feedId,
-      customTitle: null,
-      subscribedAt: result.subscribedAt.toISOString(),
-      unreadCount: result.unreadCount,
-      tags,
-    },
-    {
-      id: feedId,
-      type: feedRecord.type,
-      url: feedRecord.url,
-      title: feedRecord.title,
-      description: feedRecord.description,
-      siteUrl: feedRecord.siteUrl,
-    }
-  ).catch((err) => {
-    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-  });
 
   return {
     id: result.subscriptionId,
-    type: feedRecord.type,
-    url: feedRecord.url,
-    title: feedRecord.title,
-    originalTitle: feedRecord.title,
-    description: feedRecord.description,
-    siteUrl: feedRecord.siteUrl,
+    type: result.feed.type,
+    url: result.feed.url,
+    title: result.feed.title,
+    originalTitle: result.feed.title,
+    description: result.feed.description,
+    siteUrl: result.feed.siteUrl,
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
     tags,
@@ -165,45 +139,27 @@ function publishAndFormatSubscription(
 }
 
 /**
- * Ensure a feed (existing or new) is ready for subscription:
- * create or find the feed, ensure a job exists.
- * Returns the feed record and its ID.
+ * Fetch a URL, discover feeds if HTML, parse the feed content,
+ * and return metadata for subscription creation.
  */
-async function ensureOrCreateFeed(
-  db: typeof import("@/server/db").db,
-  inputUrl: string
-): Promise<{ feedId: string; feedRecord: typeof feeds.$inferSelect }> {
-  // Fetch the URL
+async function fetchAndResolveFeed(inputUrl: string): Promise<{
+  url: string;
+  title: string | null;
+  description: string | null;
+  siteUrl: string | null;
+}> {
   const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(inputUrl);
 
-  // If HTML, try to discover feeds
   let feedContent: string;
   let finalFeedUrl: string;
+
   if (isHtmlContent(contentType, content)) {
     const discoveredFeeds = discoverFeeds(content, initialFinalUrl);
-
     if (discoveredFeeds.length === 0) {
       throw errors.validation("No feeds found at this URL");
     }
 
-    // Use the first discovered feed
-    const discoveredUrl = discoveredFeeds[0].url;
-
-    // Check if the discovered feed URL exists and has been fetched
-    const existingDiscoveredFeed = await db
-      .select()
-      .from(feeds)
-      .where(eq(feeds.url, discoveredUrl))
-      .limit(1);
-
-    if (existingDiscoveredFeed.length > 0 && existingDiscoveredFeed[0].lastFetchedAt !== null) {
-      const feedRecord = existingDiscoveredFeed[0] as typeof feeds.$inferSelect;
-      await ensureFeedJob(feedRecord.id);
-      return { feedId: feedRecord.id, feedRecord };
-    }
-
-    // Fetch the discovered feed URL
-    const discoveredFetch = await fetchUrl(discoveredUrl);
+    const discoveredFetch = await fetchUrl(discoveredFeeds[0].url);
     feedContent = discoveredFetch.text;
     finalFeedUrl = discoveredFetch.finalUrl;
   } else {
@@ -211,7 +167,6 @@ async function ensureOrCreateFeed(
     finalFeedUrl = initialFinalUrl;
   }
 
-  // Parse the feed
   let parsedFeed;
   try {
     parsedFeed = await parseFeedInWorker(feedContent);
@@ -219,23 +174,8 @@ async function ensureOrCreateFeed(
     throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
   }
 
-  const feedUrl = finalFeedUrl;
-
-  // Check if feed already exists (by final URL)
-  const existingFeed = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
-
-  if (existingFeed.length > 0) {
-    const feedRecord = existingFeed[0];
-    await ensureFeedJob(feedRecord.id);
-    return { feedId: feedRecord.id, feedRecord };
-  }
-
-  // Create new feed with conflict handling for concurrent requests
-  const feedId = generateUuidv7();
-  const now = new Date();
-
-  let feedTitle = parsedFeed.title || getDomainFromUrl(feedUrl);
-  const lessWrongUserId = extractUserIdFromFeedUrl(feedUrl);
+  let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
+  const lessWrongUserId = extractUserIdFromFeedUrl(finalFeedUrl);
   if (lessWrongUserId && feedTitle) {
     const lwUser = await fetchLessWrongUserById(lessWrongUserId);
     if (lwUser?.displayName) {
@@ -243,36 +183,12 @@ async function ensureOrCreateFeed(
     }
   }
 
-  const newFeed = {
-    id: feedId,
-    type: "web" as const,
-    url: feedUrl,
-    title: feedTitle,
+  return {
+    url: finalFeedUrl,
+    title: feedTitle ?? null,
     description: parsedFeed.description || null,
     siteUrl: parsedFeed.siteUrl || null,
-    nextFetchAt: now,
-    createdAt: now,
-    updatedAt: now,
   };
-
-  const [insertedFeed] = await db
-    .insert(feeds)
-    .values(newFeed)
-    .onConflictDoNothing({ target: feeds.url })
-    .returning();
-
-  if (!insertedFeed) {
-    // Another request created this feed concurrently - use theirs
-    const [concurrentFeed] = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
-    if (!concurrentFeed) {
-      throw new Error(`Feed disappeared after concurrent insert: ${feedUrl}`);
-    }
-    await ensureFeedJob(concurrentFeed.id);
-    return { feedId: concurrentFeed.id, feedRecord: concurrentFeed };
-  }
-
-  await ensureFeedJob(feedId);
-  return { feedId, feedRecord: insertedFeed as typeof feeds.$inferSelect };
 }
 
 // ============================================================================
@@ -317,28 +233,19 @@ export const subscriptionsRouter = createTRPCRouter({
 
       // Check if this exact URL already exists as a feed that's been fetched.
       // If so, we can skip the network request entirely.
-      const existingFeedByUrl = await ctx.db
-        .select()
+      const existingFeed = await ctx.db
+        .select({ lastFetchedAt: feeds.lastFetchedAt })
         .from(feeds)
         .where(eq(feeds.url, feedUrl))
         .limit(1);
 
-      const canSkipFetch =
-        existingFeedByUrl.length > 0 && existingFeedByUrl[0].lastFetchedAt !== null;
+      const canSkipFetch = existingFeed.length > 0 && existingFeed[0].lastFetchedAt !== null;
 
-      let feedId: string;
-      let feedRecord: typeof feeds.$inferSelect;
+      // Fetch and parse only if we don't already know this feed
+      const feedInput = canSkipFetch ? { url: feedUrl } : await fetchAndResolveFeed(feedUrl);
 
-      if (canSkipFetch) {
-        feedRecord = existingFeedByUrl[0] as typeof feeds.$inferSelect;
-        feedId = feedRecord.id;
-        await ensureFeedJob(feedId);
-      } else {
-        ({ feedId, feedRecord } = await ensureOrCreateFeed(ctx.db, feedUrl));
-      }
-
-      const result = await subscriptionsService.createSubscription(ctx.db, userId, feedId);
-      return publishAndFormatSubscription(userId, feedId, result, feedRecord);
+      const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput);
+      return publishAndFormatSubscription(userId, result);
     }),
 
   /**

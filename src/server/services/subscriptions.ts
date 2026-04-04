@@ -19,6 +19,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
+import { ensureFeedJob } from "@/server/jobs/queue";
 import { errors } from "@/server/trpc/errors";
 
 // ============================================================================
@@ -288,6 +289,17 @@ export async function getSubscription(
 // ============================================================================
 
 /**
+ * Feed data for creating a subscription. For existing feeds, only `url` is required.
+ * Other fields are used when creating new feed records.
+ */
+export interface CreateSubscriptionFeedInput {
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  siteUrl?: string | null;
+}
+
+/**
  * Result of creating a subscription.
  */
 export interface CreateSubscriptionResult {
@@ -299,127 +311,163 @@ export interface CreateSubscriptionResult {
   unreadCount: number;
   /** True if the subscription already existed and was active (idempotent return) */
   alreadyActive: boolean;
+  /** Feed data (from existing or newly created feed) */
+  feed: {
+    id: string;
+    type: "web" | "email" | "saved";
+    url: string | null;
+    title: string | null;
+    description: string | null;
+    siteUrl: string | null;
+  };
 }
 
 /**
- * Creates a new subscription or reactivates a soft-deleted one. Idempotent:
- * if the user already has an active subscription to this feed, returns it.
+ * Creates a new subscription to a feed. Handles the full flow:
+ * 1. Upserts the feed record (creates if new, uses existing otherwise)
+ * 2. Ensures a background fetch job exists for the feed
+ * 3. Checks subscription cap (with idempotent return if already subscribed)
+ * 4. Upserts the subscription (creates new or reactivates soft-deleted)
+ * 5. Populates initial user_entries so the user sees current feed content
  *
- * Uses the feed's lastEntriesUpdatedAt to populate initial user_entries so
- * the user sees current feed content immediately.
+ * Idempotent: if the user already has an active subscription, returns it.
  */
 export async function createSubscription(
   db: typeof dbType,
   userId: string,
-  feedId: string
+  feed: CreateSubscriptionFeedInput
 ): Promise<CreateSubscriptionResult> {
-  // Look up the feed's lastEntriesUpdatedAt for entry population
-  const [feed] = await db
-    .select({ lastEntriesUpdatedAt: feeds.lastEntriesUpdatedAt })
-    .from(feeds)
-    .where(eq(feeds.id, feedId))
-    .limit(1);
+  // 1. Upsert feed — insert if new, otherwise use existing
+  const newFeedId = generateUuidv7();
+  const now = new Date();
+  await db
+    .insert(feeds)
+    .values({
+      id: newFeedId,
+      type: "web",
+      url: feed.url,
+      title: feed.title ?? null,
+      description: feed.description ?? null,
+      siteUrl: feed.siteUrl ?? null,
+      nextFetchAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: feeds.url });
 
-  if (!feed) {
-    throw errors.notFound("Feed not found");
+  const [feedRecord] = await db.select().from(feeds).where(eq(feeds.url, feed.url)).limit(1);
+  if (!feedRecord) {
+    throw new Error(`Feed disappeared after upsert: ${feed.url}`);
   }
 
-  // Check for existing subscription
-  const [existingSub] = await db
+  const feedId = feedRecord.id;
+  const feedData = {
+    id: feedId,
+    type: feedRecord.type,
+    url: feedRecord.url,
+    title: feedRecord.title,
+    description: feedRecord.description,
+    siteUrl: feedRecord.siteUrl,
+  };
+
+  // 2. Ensure background fetch job exists
+  await ensureFeedJob(feedId);
+
+  // 3. Check subscription cap; if at cap, return existing or throw
+  const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
+  const [{ activeCount }] = await db
+    .select({ activeCount: sql<number>`count(*)::int` })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+  if (activeCount >= maxSubs) {
+    // Over cap — check if we're already subscribed to this specific feed
+    const [existingSub] = await db
+      .select({
+        id: subscriptions.id,
+        subscribedAt: subscriptions.subscribedAt,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.feedId, feedId),
+          isNull(subscriptions.unsubscribedAt)
+        )
+      )
+      .limit(1);
+
+    if (existingSub) {
+      const viewResults = await buildSubscriptionBaseQuery(db, userId)
+        .where(eq(userFeeds.id, existingSub.id))
+        .limit(1);
+
+      return {
+        subscriptionId: existingSub.id,
+        subscribedAt: existingSub.subscribedAt,
+        unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
+        alreadyActive: true,
+        feed: feedData,
+      };
+    }
+
+    throw errors.maxSubscriptionsReached(maxSubs);
+  }
+
+  // 4. Upsert subscription — insert new or reactivate soft-deleted
+  const newSubscriptionId = generateUuidv7();
+  const subscribedAt = new Date();
+
+  await db.execute(sql`
+    INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at)
+    VALUES (${newSubscriptionId}, ${userId}, ${feedId}, ${subscribedAt}, ${subscribedAt}, ${subscribedAt})
+    ON CONFLICT (user_id, feed_id) DO UPDATE SET
+      unsubscribed_at = NULL,
+      subscribed_at = ${subscribedAt},
+      updated_at = ${subscribedAt}
+    WHERE subscriptions.unsubscribed_at IS NOT NULL
+  `);
+
+  // Get the actual subscription (may be newly inserted, reactivated, or unchanged)
+  const [sub] = await db
     .select()
     .from(subscriptions)
     .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
     .limit(1);
 
-  let subscriptionId: string;
-  let subscribedAt: Date;
+  const alreadyActive = sub.subscribedAt.getTime() !== subscribedAt.getTime();
 
-  if (existingSub && existingSub.unsubscribedAt === null) {
-    // Already active - idempotent return
-    // Get unread count from the view
-    const viewResults = await buildSubscriptionBaseQuery(db, userId)
-      .where(eq(userFeeds.id, existingSub.id))
-      .limit(1);
+  // 5. Upsert subscription_feeds
+  await db
+    .insert(subscriptionFeeds)
+    .values({ subscriptionId: sub.id, feedId, userId })
+    .onConflictDoNothing();
 
-    return {
-      subscriptionId: existingSub.id,
-      subscribedAt: existingSub.subscribedAt,
-      unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
-      alreadyActive: true,
-    };
-  } else if (existingSub) {
-    // Reactivate soft-deleted subscription (no count check needed - user already had this slot)
-    subscriptionId = existingSub.id;
-    subscribedAt = new Date();
+  // 6. Populate user_entries using INSERT...SELECT
+  let unreadCount = 0;
+  if (!alreadyActive && feedRecord.lastEntriesUpdatedAt) {
+    const result = await db.execute<{ entry_id: string }>(sql`
+      INSERT INTO user_entries (user_id, entry_id)
+      SELECT ${userId}, e.id
+      FROM entries e
+      WHERE e.feed_id = ${feedId}
+        AND e.last_seen_at = ${feedRecord.lastEntriesUpdatedAt}
+      ON CONFLICT DO NOTHING
+    `);
+    unreadCount = result.rowCount ?? 0;
 
-    await db
-      .update(subscriptions)
-      .set({
-        unsubscribedAt: null,
-        subscribedAt,
-        updatedAt: subscribedAt,
-      })
-      .where(eq(subscriptions.id, subscriptionId));
-  } else {
-    // Enforce subscription count limit
-    const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
-    const [{ activeCount }] = await db
-      .select({ activeCount: sql<number>`count(*)::int` })
-      .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
-
-    if (activeCount >= maxSubs) {
-      throw errors.maxSubscriptionsReached(maxSubs);
-    }
-
-    // Create new subscription
-    subscriptionId = generateUuidv7();
-    subscribedAt = new Date();
-
-    await db.insert(subscriptions).values({
-      id: subscriptionId,
+    logger.debug("Populated initial user entries via lastSeenAt", {
       userId,
       feedId,
-      subscribedAt,
-      createdAt: subscribedAt,
-      updatedAt: subscribedAt,
+      entryCount: unreadCount,
     });
-
-    // Add the feed to the subscription_feeds junction table
-    await db
-      .insert(subscriptionFeeds)
-      .values({ subscriptionId, feedId, userId })
-      .onConflictDoNothing();
-  }
-
-  // Populate user_entries for initial unread entries using lastEntriesUpdatedAt
-  let unreadCount = 0;
-
-  if (feed.lastEntriesUpdatedAt) {
-    const matchingEntries = await db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, feed.lastEntriesUpdatedAt)));
-
-    if (matchingEntries.length > 0) {
-      await db
-        .insert(userEntries)
-        .values(matchingEntries.map((entry) => ({ userId, entryId: entry.id })))
-        .onConflictDoNothing();
-      unreadCount = matchingEntries.length;
-
-      logger.debug("Populated initial user entries via lastSeenAt", {
-        userId,
-        feedId,
-        entryCount: matchingEntries.length,
-      });
-    }
   }
 
   return {
-    subscriptionId,
-    subscribedAt,
+    subscriptionId: sub.id,
+    subscribedAt: sub.subscribedAt,
     unreadCount,
-    alreadyActive: false,
+    alreadyActive,
+    feed: feedData,
   };
 }

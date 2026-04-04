@@ -1531,53 +1531,14 @@ export async function handleProcessOpmlImport(
       }
 
       try {
-        // Check if feed already exists in database
-        const existingFeed = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
-
-        let feedId: string;
-
-        if (existingFeed.length > 0) {
-          feedId = existingFeed[0].id;
-          await ensureFeedJob(feedId);
-        } else {
-          // Create new feed record with conflict handling for concurrent imports
-          feedId = generateUuidv7();
-          const now = new Date();
-
-          const [insertedFeed] = await db
-            .insert(feeds)
-            .values({
-              id: feedId,
-              type: "web" as const,
-              url: feedUrl,
-              title: feedTitle,
-              siteUrl: opmlFeed.htmlUrl ?? null,
-              nextFetchAt: now,
-              createdAt: now,
-              updatedAt: now,
-            })
-            .onConflictDoNothing({ target: feeds.url })
-            .returning();
-
-          if (!insertedFeed) {
-            // Another request created this feed concurrently
-            const [concurrentFeed] = await db
-              .select()
-              .from(feeds)
-              .where(eq(feeds.url, feedUrl))
-              .limit(1);
-            if (!concurrentFeed) {
-              throw new Error(`Feed disappeared after concurrent insert: ${feedUrl}`);
-            }
-            feedId = concurrentFeed.id;
-          }
-
-          await ensureFeedJob(feedId);
-        }
-
-        const subscriptionResult = await createSubscription(db, userId, feedId);
+        const subscriptionResult = await createSubscription(db, userId, {
+          url: feedUrl,
+          title: feedTitle,
+          siteUrl: opmlFeed.htmlUrl ?? null,
+        });
 
         const actualSubscriptionId = subscriptionResult.subscriptionId;
+        const feedId = subscriptionResult.feed.id;
 
         // Associate subscription with tags from categories
         // Also collect tag info for the subscription_created event
@@ -1617,35 +1578,26 @@ export async function handleProcessOpmlImport(
           }
         }
 
-        // Get feed info for the event (either from existing feed or newly created)
-        const feedType = existingFeed.length > 0 ? existingFeed[0].type : ("web" as const);
-        const feedDescription = existingFeed.length > 0 ? existingFeed[0].description : null;
-
-        // Publish subscription_created event with full data (fire and forget)
-        publishSubscriptionCreated(
-          userId,
-          feedId,
-          actualSubscriptionId,
-          subscriptionResult.subscribedAt, // subscribedAt is used for both subscribedAt and updatedAt
-          {
-            id: actualSubscriptionId,
+        // Publish subscription_created event (fire and forget, skip for already-active)
+        if (!subscriptionResult.alreadyActive) {
+          publishSubscriptionCreated(
+            userId,
             feedId,
-            customTitle: null,
-            subscribedAt: subscriptionResult.subscribedAt.toISOString(),
-            unreadCount: subscriptionResult.unreadCount,
-            tags: subscriptionTagsList,
-          },
-          {
-            id: feedId,
-            type: feedType,
-            url: feedUrl,
-            title: feedTitle,
-            description: feedDescription,
-            siteUrl: opmlFeed.htmlUrl ?? null,
-          }
-        ).catch((err) => {
-          logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-        });
+            actualSubscriptionId,
+            subscriptionResult.subscribedAt,
+            {
+              id: actualSubscriptionId,
+              feedId,
+              customTitle: null,
+              subscribedAt: subscriptionResult.subscribedAt.toISOString(),
+              unreadCount: subscriptionResult.unreadCount,
+              tags: subscriptionTagsList,
+            },
+            subscriptionResult.feed
+          ).catch((err) => {
+            logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+          });
+        }
 
         // Add to existing URLs set to prevent duplicates within this import
         existingUrls.add(feedUrl);
