@@ -1,0 +1,133 @@
+name: Weekly Changelog
+
+on:
+  schedule:
+    - cron: "0 16 * * 1" # Every Monday at 4pm UTC
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get commits since last changelog
+        id: commits
+        run: |
+          # Find the date of the most recent changelog post
+          LAST_POST=$(ls blog/_changelog/*.md 2>/dev/null | sort | tail -1)
+          if [ -n "$LAST_POST" ]; then
+            # Extract date from filename (YYYY-MM-DD-title.md)
+            SINCE_DATE=$(basename "$LAST_POST" | grep -oP '^\d{4}-\d{2}-\d{2}')
+          else
+            # No changelog posts yet — use 30 days ago
+            SINCE_DATE=$(date -d '30 days ago' +%Y-%m-%d)
+          fi
+          echo "since=$SINCE_DATE" >> "$GITHUB_OUTPUT"
+
+          # Get commit log since that date
+          COMMITS=$(git log --since="$SINCE_DATE" --format="%h %s" --no-merges origin/master)
+          if [ -z "$COMMITS" ]; then
+            echo "No new commits since $SINCE_DATE"
+            echo "has_commits=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_commits=true" >> "$GITHUB_OUTPUT"
+            # Save commits to file for the next step
+            echo "$COMMITS" > /tmp/commits.txt
+            echo "Found $(echo "$COMMITS" | wc -l) commits since $SINCE_DATE"
+          fi
+
+      - name: Generate changelog with Claude
+        if: steps.commits.outputs.has_commits == 'true'
+        id: generate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          COMMITS=$(cat /tmp/commits.txt)
+          TODAY=$(date +%Y-%m-%d)
+
+          # Build the prompt
+          PROMPT=$(cat <<'PROMPT_EOF'
+          You are writing a changelog entry for Lion Reader, an open-source RSS reader.
+
+          Below are the git commits since the last changelog post. Write a brief, friendly summary of user-visible changes. Guidelines:
+
+          - Focus on HIGH-LEVEL user-visible changes only (new features, UI improvements, bug fixes users would notice)
+          - Ignore internal refactors, CI changes, dependency bumps, code cleanup, and work-in-progress commits
+          - Group related commits into a single bullet point
+          - Use past tense ("Added", "Fixed", "Improved")
+          - Keep it concise — a few bullet points is ideal
+          - Do NOT include commit hashes
+
+          If there are genuinely no user-visible changes worth mentioning, respond with exactly the word SKIP and nothing else.
+
+          Otherwise, respond with ONLY the markdown body content (no frontmatter, no title). Start directly with the bullet points or a brief intro sentence followed by bullet points.
+
+          Commits:
+          PROMPT_EOF
+          )
+
+          # Call Claude API
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "content-type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "$(jq -n \
+              --arg prompt "$PROMPT" \
+              --arg commits "$COMMITS" \
+              '{
+                model: "claude-sonnet-4-6-20250514",
+                max_tokens: 1024,
+                messages: [{
+                  role: "user",
+                  content: ($prompt + "\n" + $commits)
+                }]
+              }')")
+
+          # Extract the text content
+          BODY=$(echo "$RESPONSE" | jq -r '.content[0].text // empty')
+
+          if [ -z "$BODY" ]; then
+            echo "Error: Empty response from Claude API"
+            echo "$RESPONSE" | jq .
+            exit 1
+          fi
+
+          if [ "$BODY" = "SKIP" ]; then
+            echo "No user-visible changes worth mentioning — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # Write the post file
+          FILENAME="blog/_changelog/${TODAY}-changelog.md"
+          mkdir -p blog/_changelog
+          {
+            echo "---"
+            echo "title: \"Changelog: week of $(date +'%B %-d, %Y')\""
+            echo "date: ${TODAY}"
+            echo "author: Lion Reader"
+            echo "---"
+            echo ""
+            echo "$BODY"
+          } > "$FILENAME"
+
+          echo "Created $FILENAME"
+          cat "$FILENAME"
+
+      - name: Commit and push
+        if: steps.commits.outputs.has_commits == 'true' && steps.generate.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add blog/_changelog/
+          git commit -m "Add weekly changelog post for $(date +%Y-%m-%d)"
+          git push
