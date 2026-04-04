@@ -51,7 +51,6 @@ const ErrorCodes = {
   SIGNUP_PROVIDER_NOT_ALLOWED: "SIGNUP_PROVIDER_NOT_ALLOWED",
 
   // Conflict errors (409)
-  ALREADY_SUBSCRIBED: "ALREADY_SUBSCRIBED",
   OAUTH_ALREADY_LINKED: "OAUTH_ALREADY_LINKED",
   CANNOT_UNLINK_ONLY_AUTH: "CANNOT_UNLINK_ONLY_AUTH",
 
@@ -119,7 +118,6 @@ const errorCodeToTRPCCode: Record<
   INVITE_ALREADY_USED: "BAD_REQUEST",
   MAX_INGEST_ADDRESSES_REACHED: "BAD_REQUEST",
   SIGNUP_PROVIDER_NOT_ALLOWED: "FORBIDDEN",
-  ALREADY_SUBSCRIBED: "CONFLICT",
   OAUTH_ALREADY_LINKED: "CONFLICT",
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
   RATE_LIMITED: "TOO_MANY_REQUESTS",
@@ -226,9 +224,6 @@ export const errors = {
 
   oauthCallbackFailed: (reason: string) =>
     createError(ErrorCodes.OAUTH_CALLBACK_FAILED, `OAuth callback failed: ${reason}`),
-
-  alreadySubscribed: () =>
-    createError(ErrorCodes.ALREADY_SUBSCRIBED, "You are already subscribed to this feed"),
 
   oauthAlreadyLinked: (provider: string) =>
     createError(

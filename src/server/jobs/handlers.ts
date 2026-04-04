@@ -45,7 +45,7 @@ import {
 } from "../redis/pubsub";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isLessWrongUserFeedUrl } from "../feed/lesswrong";
-import { createOrReactivateSubscription } from "../trpc/routers/subscriptions";
+import { createSubscription } from "../services/subscriptions";
 import {
   findPermanentRedirectUrl,
   isHttpToHttpsUpgrade,
@@ -1537,45 +1537,42 @@ export async function handleProcessOpmlImport(
         let feedId: string;
 
         if (existingFeed.length > 0) {
-          // Feed exists - ensure job exists
           feedId = existingFeed[0].id;
-          const job = await ensureFeedJob(feedId);
-          if (job.nextRunAt) {
-            await db
-              .update(feeds)
-              .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
-              .where(eq(feeds.id, feedId));
-          }
+          await ensureFeedJob(feedId);
         } else {
-          // Create new feed record
+          // Create new feed record with conflict handling for concurrent imports
           feedId = generateUuidv7();
           const now = new Date();
 
-          await db.insert(feeds).values({
-            id: feedId,
-            type: "web" as const, // All URL-based feeds use "web" type
-            url: feedUrl,
-            title: feedTitle,
-            siteUrl: opmlFeed.htmlUrl ?? null,
-            nextFetchAt: now, // Schedule immediate fetch
-            createdAt: now,
-            updatedAt: now,
-          });
+          const [insertedFeed] = await db
+            .insert(feeds)
+            .values({
+              id: feedId,
+              type: "web" as const,
+              url: feedUrl,
+              title: feedTitle,
+              siteUrl: opmlFeed.htmlUrl ?? null,
+              nextFetchAt: now,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .onConflictDoNothing({ target: feeds.url })
+            .returning();
 
-          // Create job for the new feed (will be claimed via data-driven eligibility)
+          if (!insertedFeed) {
+            // Another request created this feed concurrently
+            const [concurrentFeed] = await db
+              .select()
+              .from(feeds)
+              .where(eq(feeds.url, feedUrl))
+              .limit(1);
+            feedId = concurrentFeed.id;
+          }
+
           await ensureFeedJob(feedId);
         }
 
-        // Create or reactivate subscription with entry population
-        // Use lastSeenAt if feed has been fetched, otherwise no entries (feed will be fetched soon)
-        const subscriptionResult = await createOrReactivateSubscription(db, {
-          userId,
-          feedId,
-          entrySource:
-            existingFeed.length > 0 && existingFeed[0].lastEntriesUpdatedAt
-              ? { type: "lastSeenAt", lastEntriesUpdatedAt: existingFeed[0].lastEntriesUpdatedAt }
-              : { type: "none" },
-        });
+        const subscriptionResult = await createSubscription(db, userId, feedId);
 
         const actualSubscriptionId = subscriptionResult.subscriptionId;
 

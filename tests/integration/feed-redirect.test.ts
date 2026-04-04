@@ -24,7 +24,7 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { createOrEnableFeedJob } from "../../src/server/jobs/queue";
+import { ensureFeedJob } from "../../src/server/jobs/queue";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 
@@ -377,7 +377,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [oldEntry1]);
 
       // Create job for old feed
-      await createOrEnableFeedJob(oldFeedId);
+      await ensureFeedJob(oldFeedId);
 
       // Simulate the redirect migration
       await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
@@ -537,7 +537,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userB, [oldEntry]);
 
       // Create job for old feed
-      await createOrEnableFeedJob(oldFeedId);
+      await ensureFeedJob(oldFeedId);
 
       // Simulate the redirect migration
       await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
@@ -625,7 +625,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [oldOnlyEntry, sharedEntryOld]);
 
       // Create job for old feed
-      await createOrEnableFeedJob(oldFeedId);
+      await ensureFeedJob(oldFeedId);
 
       // Perform the redirect migration
       await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
