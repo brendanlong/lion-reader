@@ -56,7 +56,6 @@ import {
   splitIntoParagraphs,
   mapPlaybackStatus,
 } from "./useNarrationTypes";
-import { useWakeLock } from "@/lib/hooks/useWakeLock";
 
 // Re-export types for consumers
 export type { UseNarrationConfig, UseNarrationReturn };
@@ -81,10 +80,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const [state, setState] = useState<NarrationState>(DEFAULT_NARRATION_STATE);
   const [isLoading, setIsLoading] = useState(false);
   const [narrationText, setNarrationText] = useState<string | null>(null);
-
-  // Keep screen on while narration is actively playing or loading
-  useWakeLock(state.status === "playing" || state.status === "loading");
-
   // Defer browser support check until after hydration to avoid SSR mismatch
   // useSyncExternalStore ensures the check runs after hydration without cascading renders
   const isSupported = useSyncExternalStore(
