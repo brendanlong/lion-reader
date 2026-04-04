@@ -443,10 +443,10 @@ export async function createSubscription(
     .values({ subscriptionId: sub.id, feedId, userId })
     .onConflictDoNothing();
 
-  // 6. Populate user_entries using INSERT...SELECT
+  // 6. Populate user_entries using INSERT...SELECT and count unread
   let unreadCount = 0;
   if (!alreadyActive && feedRecord.lastEntriesUpdatedAt) {
-    const result = await db.execute<{ entry_id: string }>(sql`
+    await db.execute(sql`
       INSERT INTO user_entries (user_id, entry_id)
       SELECT ${userId}, e.id
       FROM entries e
@@ -454,7 +454,16 @@ export async function createSubscription(
         AND e.last_seen_at = ${feedRecord.lastEntriesUpdatedAt}
       ON CONFLICT DO NOTHING
     `);
-    unreadCount = result.rowCount ?? 0;
+
+    // Count unread entries (rowCount may be 0 for reactivations where entries already exist)
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(userEntries)
+      .innerJoin(entries, eq(entries.id, userEntries.entryId))
+      .where(
+        and(eq(userEntries.userId, userId), eq(entries.feedId, feedId), eq(userEntries.read, false))
+      );
+    unreadCount = count;
 
     logger.debug("Populated initial user entries via lastSeenAt", {
       userId,
