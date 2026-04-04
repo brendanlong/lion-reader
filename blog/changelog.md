@@ -6,7 +6,7 @@ permalink: /changelog/
 
 Weekly summaries of user-visible changes in Lion Reader. Subscribe to the [changelog feed](/changelog.xml) for updates.
 
-{% for post in site.changelog reversed %}
+{% for post in site.changelog %}
 
 ## [{{ post.title }}]({{ post.url | relative_url }})
 
