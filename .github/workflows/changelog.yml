@@ -18,30 +18,48 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.PUSH_TOKEN }}
 
-      - name: Get commits since last changelog
+      - name: Get commits and PRs since last changelog
         id: commits
+        env:
+          GH_TOKEN: ${{ secrets.PUSH_TOKEN }}
         run: |
           # Find the date of the most recent changelog post
           LAST_POST=$(ls blog/_changelog/*.md 2>/dev/null | sort | tail -1)
           if [ -n "$LAST_POST" ]; then
             # Extract date from filename (YYYY-MM-DD-title.md)
             SINCE_DATE=$(basename "$LAST_POST" | grep -oP '^\d{4}-\d{2}-\d{2}')
+            # Save previous changelog content so the model can avoid repeating it
+            cat "$LAST_POST" > /tmp/previous_changelog.txt
           else
             # No changelog posts yet — use 30 days ago
             SINCE_DATE=$(date -d '30 days ago' +%Y-%m-%d)
           fi
           echo "since=$SINCE_DATE" >> "$GITHUB_OUTPUT"
 
-          # Get commit log since that date
-          COMMITS=$(git log --since="$SINCE_DATE" --format="%h %s" --no-merges origin/master)
+          # Get commit log since that date (with full hash for GitHub links)
+          COMMITS=$(git log --since="$SINCE_DATE" --format="%H %s" --no-merges origin/master)
           if [ -z "$COMMITS" ]; then
             echo "No new commits since $SINCE_DATE"
             echo "has_commits=false" >> "$GITHUB_OUTPUT"
           else
             echo "has_commits=true" >> "$GITHUB_OUTPUT"
-            # Save commits to file for the next step
             echo "$COMMITS" > /tmp/commits.txt
             echo "Found $(echo "$COMMITS" | wc -l) commits since $SINCE_DATE"
+          fi
+
+          # Get merged PRs since that date
+          REPO="${GITHUB_REPOSITORY}"
+          PRS=$(gh pr list --repo "$REPO" --state merged \
+            --search "merged:>=$SINCE_DATE" \
+            --json number,title,url,mergedAt \
+            --jq '.[] | "#\(.number) \(.title) (\(.url))"' \
+            --limit 100 2>/dev/null || true)
+          if [ -n "$PRS" ]; then
+            echo "$PRS" > /tmp/prs.txt
+            echo "Found $(echo "$PRS" | wc -l) merged PRs since $SINCE_DATE"
+          else
+            echo "No merged PRs found since $SINCE_DATE"
+            echo "" > /tmp/prs.txt
           fi
 
       - name: Generate changelog with Claude
@@ -51,28 +69,68 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           COMMITS=$(cat /tmp/commits.txt)
+          PRS=$(cat /tmp/prs.txt)
+          PREV_CHANGELOG=$(cat /tmp/previous_changelog.txt 2>/dev/null || true)
           TODAY=$(date +%Y-%m-%d)
+          REPO="${GITHUB_REPOSITORY}"
 
           # Build the prompt
           PROMPT=$(cat <<'PROMPT_EOF'
           You are writing a changelog entry for Lion Reader, an open-source RSS reader.
 
-          Below are the git commits since the last changelog post. Write a brief, friendly summary of user-visible changes. Guidelines:
+          Below are the git commits and merged pull requests since the last changelog post. Write a brief, friendly summary of user-visible changes. Guidelines:
 
           - Focus on HIGH-LEVEL user-visible changes only (new features, UI improvements, bug fixes users would notice)
           - Ignore internal refactors, CI changes, dependency bumps, code cleanup, and work-in-progress commits
-          - Group related commits into a single bullet point
+          - Group related commits/PRs into a single bullet point
           - Use past tense ("Added", "Fixed", "Improved")
           - Keep it concise — a few bullet points is ideal
-          - Do NOT include commit hashes
+          - Include relevant links where they add value:
+            - Link to PRs when describing features or fixes (e.g., "Fixed swipe gestures ([#123](url))")
+            - Link to new pages/feeds when mentioning them (e.g., the announcements blog, RSS feeds)
+            - Don't over-link — one link per bullet point is usually enough
+            - Don't link to commits directly; prefer PR links when available
+          - Do NOT include raw commit hashes in the text
+          - Do NOT repeat anything already covered in the previous changelog post (provided below). Some commits/PRs may overlap with the previous period — skip those entirely.
+
+          Useful links for context (include where relevant):
+          - Lion Reader app: https://lionreader.com
+          - Announcements blog: https://announcements.lionreader.com
+          - Announcements RSS feed: https://announcements.lionreader.com/feed.xml
+          - Changelog page: https://announcements.lionreader.com/changelog/
+          - Changelog RSS feed: https://announcements.lionreader.com/changelog.xml
+          PROMPT_EOF
+          )
+
+          # Append repo URL so commit links can be constructed
+          PROMPT="${PROMPT}
+          - GitHub repo: https://github.com/${REPO}"
+
+          PROMPT="${PROMPT}
 
           If there are genuinely no user-visible changes worth mentioning, respond with exactly the word SKIP and nothing else.
 
-          Otherwise, respond with ONLY the markdown body content (no frontmatter, no title). Start directly with the bullet points or a brief intro sentence followed by bullet points.
+          Otherwise, respond with ONLY the markdown body content (no frontmatter, no title). Start directly with the bullet points or a brief intro sentence followed by bullet points."
 
-          Commits:
-          PROMPT_EOF
-          )
+          # Build the input with both commits and PRs
+          INPUT="${PROMPT}
+
+          Commits (hash followed by subject):
+          ${COMMITS}"
+
+          if [ -n "$PRS" ]; then
+            INPUT="${INPUT}
+
+          Merged Pull Requests:
+          ${PRS}"
+          fi
+
+          if [ -n "$PREV_CHANGELOG" ]; then
+            INPUT="${INPUT}
+
+          Previous changelog post (do not repeat anything from this):
+          ${PREV_CHANGELOG}"
+          fi
 
           # Call Claude API
           RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
@@ -80,14 +138,13 @@ jobs:
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -d "$(jq -n \
-              --arg prompt "$PROMPT" \
-              --arg commits "$COMMITS" \
+              --arg input "$INPUT" \
               '{
                 model: "claude-sonnet-4-6",
                 max_tokens: 1024,
                 messages: [{
                   role: "user",
-                  content: ($prompt + "\n" + $commits)
+                  content: $input
                 }]
               }')")
 
