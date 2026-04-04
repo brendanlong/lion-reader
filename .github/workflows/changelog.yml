@@ -82,6 +82,7 @@ jobs:
 
           - Focus on HIGH-LEVEL user-visible changes only (new features, UI improvements, bug fixes users would notice)
           - Ignore internal refactors, CI changes, dependency bumps, code cleanup, and work-in-progress commits
+          - Skip any commits that were also reverted
           - Group related commits/PRs into a single bullet point
           - Use past tense ("Added", "Fixed", "Improved")
           - Keep it concise — a few bullet points is ideal
