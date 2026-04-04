@@ -1566,6 +1566,9 @@ export async function handleProcessOpmlImport(
               .from(feeds)
               .where(eq(feeds.url, feedUrl))
               .limit(1);
+            if (!concurrentFeed) {
+              throw new Error(`Feed disappeared after concurrent insert: ${feedUrl}`);
+            }
             feedId = concurrentFeed.id;
           }
 

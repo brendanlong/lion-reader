@@ -297,6 +297,8 @@ export interface CreateSubscriptionResult {
   subscribedAt: Date;
   /** Number of unread entries populated */
   unreadCount: number;
+  /** True if the subscription already existed and was active (idempotent return) */
+  alreadyActive: boolean;
 }
 
 /**
@@ -343,6 +345,7 @@ export async function createSubscription(
       subscriptionId: existingSub.id,
       subscribedAt: existingSub.subscribedAt,
       unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
+      alreadyActive: true,
     };
   } else if (existingSub) {
     // Reactivate soft-deleted subscription (no count check needed - user already had this slot)
@@ -417,5 +420,6 @@ export async function createSubscription(
     subscriptionId,
     subscribedAt,
     unreadCount,
+    alreadyActive: false,
   };
 }

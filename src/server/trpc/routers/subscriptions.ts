@@ -107,6 +107,23 @@ function publishAndFormatSubscription(
   },
   tags: Array<{ id: string; name: string; color: string | null }> = []
 ): z.infer<typeof subscriptionOutputSchema> {
+  // Skip SSE event for idempotent returns (subscription was already active)
+  if (result.alreadyActive) {
+    return {
+      id: result.subscriptionId,
+      type: feedRecord.type,
+      url: feedRecord.url,
+      title: feedRecord.title,
+      originalTitle: feedRecord.title,
+      description: feedRecord.description,
+      siteUrl: feedRecord.siteUrl,
+      subscribedAt: result.subscribedAt,
+      unreadCount: result.unreadCount,
+      tags,
+      fetchFullContent: false,
+    };
+  }
+
   publishSubscriptionCreated(
     userId,
     feedId,
@@ -247,6 +264,9 @@ async function ensureOrCreateFeed(
   if (!insertedFeed) {
     // Another request created this feed concurrently - use theirs
     const [concurrentFeed] = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
+    if (!concurrentFeed) {
+      throw new Error(`Feed disappeared after concurrent insert: ${feedUrl}`);
+    }
     await ensureFeedJob(concurrentFeed.id);
     return { feedId: concurrentFeed.id, feedRecord: concurrentFeed };
   }
