@@ -7,16 +7,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Wait 7 days for other people to find security problems
+    # https://daniakash.com/posts/simplest-supply-chain-defense/
+    cooldown:
+      default-days: 7
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
 
-# Wait 7 days for other people to find security problems
-# https://daniakash.com/posts/simplest-supply-chain-defense/
-cooldown:
-  default-days: 7
