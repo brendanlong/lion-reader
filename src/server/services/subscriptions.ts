@@ -20,6 +20,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob } from "@/server/jobs/queue";
+import { publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { errors } from "@/server/trpc/errors";
 
 // ============================================================================
@@ -469,6 +470,27 @@ export async function createSubscription(
       userId,
       feedId,
       entryCount: unreadCount,
+    });
+  }
+
+  // 7. Publish SSE event for new/reactivated subscriptions
+  if (!alreadyActive) {
+    publishSubscriptionCreated(
+      userId,
+      feedId,
+      sub.id,
+      sub.subscribedAt,
+      {
+        id: sub.id,
+        feedId,
+        customTitle: null,
+        subscribedAt: sub.subscribedAt.toISOString(),
+        unreadCount,
+        tags: [],
+      },
+      feedData
+    ).catch((err) => {
+      logger.error("Failed to publish subscription_created event", { err, userId, feedId });
     });
   }
 

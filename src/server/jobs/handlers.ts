@@ -41,7 +41,7 @@ import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from ".
 import {
   publishImportProgress,
   publishImportCompleted,
-  publishSubscriptionCreated,
+  publishSubscriptionUpdated,
 } from "../redis/pubsub";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isLessWrongUserFeedUrl } from "../feed/lesswrong";
@@ -1541,8 +1541,6 @@ export async function handleProcessOpmlImport(
         const feedId = subscriptionResult.feed.id;
 
         // Associate subscription with tags from categories
-        // Also collect tag info for the subscription_created event
-        const subscriptionTagsList: Array<{ id: string; name: string; color: string | null }> = [];
         if (opmlFeed.category && opmlFeed.category.length > 0) {
           const tagInfos = opmlFeed.category
             .map((categoryName) => tagNameToInfo.get(categoryName))
@@ -1567,8 +1565,20 @@ export async function handleProcessOpmlImport(
               }))
             );
 
-            // Track tags for event
-            subscriptionTagsList.push(...tagInfos);
+            // Publish update event so the UI picks up the tags
+            publishSubscriptionUpdated(
+              userId,
+              actualSubscriptionId,
+              tagNow,
+              tagInfos,
+              null // no custom title
+            ).catch((err) => {
+              logger.error("Failed to publish subscription_updated event", {
+                err,
+                userId,
+                feedId,
+              });
+            });
 
             logger.debug("OPML import: associated subscription with tags", {
               subscriptionId: actualSubscriptionId,
@@ -1576,27 +1586,6 @@ export async function handleProcessOpmlImport(
               feedUrl,
             });
           }
-        }
-
-        // Publish subscription_created event (fire and forget, skip for already-active)
-        if (!subscriptionResult.alreadyActive) {
-          publishSubscriptionCreated(
-            userId,
-            feedId,
-            actualSubscriptionId,
-            subscriptionResult.subscribedAt,
-            {
-              id: actualSubscriptionId,
-              feedId,
-              customTitle: null,
-              subscribedAt: subscriptionResult.subscribedAt.toISOString(),
-              unreadCount: subscriptionResult.unreadCount,
-              tags: subscriptionTagsList,
-            },
-            subscriptionResult.feed
-          ).catch((err) => {
-            logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-          });
         }
 
         // Add to existing URLs set to prevent duplicates within this import

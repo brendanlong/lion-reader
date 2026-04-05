@@ -35,11 +35,7 @@ import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import { createJob } from "@/server/jobs/queue";
-import {
-  publishSubscriptionCreated,
-  publishSubscriptionDeleted,
-  publishSubscriptionUpdated,
-} from "@/server/redis/pubsub";
+import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
@@ -92,37 +88,11 @@ const subscriptionOutputSchema = z.object({
 // ============================================================================
 
 /**
- * After creating/reactivating a subscription, publish SSE event and format the API response.
+ * Format a CreateSubscriptionResult into the API response shape.
  */
-function publishAndFormatSubscription(
-  userId: string,
-  result: subscriptionsService.CreateSubscriptionResult,
-  tags: Array<{ id: string; name: string; color: string | null }> = []
+function formatSubscriptionResponse(
+  result: subscriptionsService.CreateSubscriptionResult
 ): z.infer<typeof subscriptionOutputSchema> {
-  if (!result.alreadyActive) {
-    publishSubscriptionCreated(
-      userId,
-      result.feed.id,
-      result.subscriptionId,
-      result.subscribedAt,
-      {
-        id: result.subscriptionId,
-        feedId: result.feed.id,
-        customTitle: null,
-        subscribedAt: result.subscribedAt.toISOString(),
-        unreadCount: result.unreadCount,
-        tags,
-      },
-      result.feed
-    ).catch((err) => {
-      logger.error("Failed to publish subscription_created event", {
-        err,
-        userId,
-        feedId: result.feed.id,
-      });
-    });
-  }
-
   return {
     id: result.subscriptionId,
     type: result.feed.type,
@@ -133,7 +103,7 @@ function publishAndFormatSubscription(
     siteUrl: result.feed.siteUrl,
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
-    tags,
+    tags: [],
     fetchFullContent: false,
   };
 }
@@ -245,7 +215,7 @@ export const subscriptionsRouter = createTRPCRouter({
       const feedInput = canSkipFetch ? { url: feedUrl } : await fetchAndResolveFeed(feedUrl);
 
       const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput);
-      return publishAndFormatSubscription(userId, result);
+      return formatSubscriptionResponse(result);
     }),
 
   /**
