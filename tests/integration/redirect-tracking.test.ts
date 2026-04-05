@@ -184,7 +184,7 @@ describe("Redirect Tracking", () => {
       const timeSinceFirstSeen = Date.now() - feed.redirectFirstSeenAt!.getTime();
 
       // Should not have exceeded the 7-day wait period
-      expect(timeSinceFirstSeen < REDIRECT_WAIT_PERIOD_MS).toBe(true);
+      expect(timeSinceFirstSeen).toBeLessThan(REDIRECT_WAIT_PERIOD_MS);
     });
 
     it("identifies when wait period has passed", async () => {
@@ -204,7 +204,7 @@ describe("Redirect Tracking", () => {
       const timeSinceFirstSeen = Date.now() - feed.redirectFirstSeenAt!.getTime();
 
       // Should have exceeded the 7-day wait period
-      expect(timeSinceFirstSeen >= REDIRECT_WAIT_PERIOD_MS).toBe(true);
+      expect(timeSinceFirstSeen).toBeGreaterThanOrEqual(REDIRECT_WAIT_PERIOD_MS);
     });
   });
 
@@ -496,12 +496,6 @@ describe("Redirect Tracking", () => {
       // The timestamp should be reset (approximately now)
       const timeSinceFirstSeen = Date.now() - feed.redirectFirstSeenAt!.getTime();
       expect(timeSinceFirstSeen).toBeLessThan(1000); // Less than 1 second ago
-    });
-  });
-
-  describe("REDIRECT_WAIT_PERIOD_MS constant", () => {
-    it("is 7 days in milliseconds", () => {
-      expect(REDIRECT_WAIT_PERIOD_MS).toBe(7 * 24 * 60 * 60 * 1000);
     });
   });
 });

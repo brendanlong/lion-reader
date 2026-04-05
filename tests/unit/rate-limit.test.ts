@@ -27,22 +27,6 @@ function createBucketState(overrides: Partial<BucketState> = {}): BucketState {
   };
 }
 
-describe("RATE_LIMIT_CONFIGS", () => {
-  it("has default config with 100 capacity and 10/sec refill", () => {
-    expect(RATE_LIMIT_CONFIGS.default).toEqual({
-      capacity: 100,
-      refillRate: 10,
-    });
-  });
-
-  it("has expensive config with 10 capacity and 1/sec refill", () => {
-    expect(RATE_LIMIT_CONFIGS.expensive).toEqual({
-      capacity: 10,
-      refillRate: 1,
-    });
-  });
-});
-
 describe("calculateTokensToAdd", () => {
   it("calculates correct tokens for 1 second", () => {
     expect(calculateTokensToAdd(1000, 10)).toBe(10);

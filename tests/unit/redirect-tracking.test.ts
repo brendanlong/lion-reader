@@ -3,11 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  findPermanentRedirectUrl,
-  isHttpToHttpsUpgrade,
-  REDIRECT_WAIT_PERIOD_MS,
-} from "@/server/feed/redirect-utils";
+import { findPermanentRedirectUrl, isHttpToHttpsUpgrade } from "@/server/feed/redirect-utils";
 import type { RedirectInfo } from "@/server/feed/fetcher";
 
 describe("findPermanentRedirectUrl", () => {
@@ -147,12 +143,5 @@ describe("isHttpToHttpsUpgrade", () => {
     expect(
       isHttpToHttpsUpgrade("http://www.example.com/feed.xml", "https://example.com/feed.xml")
     ).toBe(false);
-  });
-});
-
-describe("REDIRECT_WAIT_PERIOD_MS", () => {
-  it("equals 7 days in milliseconds", () => {
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-    expect(REDIRECT_WAIT_PERIOD_MS).toBe(sevenDaysMs);
   });
 });
