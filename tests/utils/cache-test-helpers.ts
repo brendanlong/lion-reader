@@ -1,0 +1,429 @@
+/**
+ * Test helpers for handleSyncEvent integration tests.
+ *
+ * Provides cache seeding, event factory functions, and QueryClient setup
+ * for testing the full event → cache-state pipeline.
+ */
+
+import { QueryClient } from "@tanstack/react-query";
+import { createMockTrpcUtils } from "./trpc-mock";
+import type { SyncEvent } from "@/lib/events/schemas";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface SeededSubscription {
+  id: string;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  originalTitle: string | null;
+  description: string | null;
+  siteUrl: string | null;
+  subscribedAt: Date;
+  unreadCount: number;
+  tags: Array<{ id: string; name: string; color: string | null }>;
+  fetchFullContent: boolean;
+}
+
+export interface SeededTag {
+  id: string;
+  name: string;
+  color: string | null;
+  feedCount: number;
+  unreadCount: number;
+  createdAt: Date;
+}
+
+export interface SeededEntry {
+  id: string;
+  feedId: string;
+  subscriptionId: string | null;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  updatedAt: Date;
+  read: boolean;
+  starred: boolean;
+  feedTitle: string | null;
+  score: number | null;
+  implicitScore: number;
+  siteName: string | null;
+  predictedScore: number | null;
+}
+
+// ============================================================================
+// Default Seed Data
+//
+// Relationships between seed values:
+//   tag-1 (Tech):    feedCount=2 (sub-1, sub-3), unreadCount=15 (sub-1:5 + sub-3:10)
+//   tag-2 (Science): feedCount=1 (sub-3),        unreadCount=10 (sub-3:10)
+//   uncategorized:   feedCount=1 (sub-2),         unreadCount=3  (sub-2:3)
+//   All Articles:    unread=18 (sub-1:5 + sub-2:3 + sub-3:10)
+//   Starred:         unread=2
+//   Saved:           unread=1
+// ============================================================================
+
+export const DEFAULT_SUBSCRIPTIONS: SeededSubscription[] = [
+  {
+    id: "sub-1",
+    type: "web",
+    url: "https://example.com/feed1.xml",
+    title: "Feed One",
+    originalTitle: "Feed One",
+    description: "First feed",
+    siteUrl: "https://example.com",
+    subscribedAt: new Date("2024-01-01"),
+    unreadCount: 5,
+    tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
+    fetchFullContent: false,
+  },
+  {
+    id: "sub-2",
+    type: "web",
+    url: "https://example.com/feed2.xml",
+    title: "Feed Two",
+    originalTitle: "Feed Two",
+    description: "Second feed",
+    siteUrl: "https://example.com",
+    subscribedAt: new Date("2024-01-02"),
+    unreadCount: 3,
+    tags: [],
+    fetchFullContent: false,
+  },
+  {
+    id: "sub-3",
+    type: "web",
+    url: "https://example.com/feed3.xml",
+    title: "Feed Three",
+    originalTitle: "Feed Three",
+    description: "Third feed",
+    siteUrl: "https://example.com",
+    subscribedAt: new Date("2024-01-03"),
+    unreadCount: 10,
+    tags: [
+      { id: "tag-1", name: "Tech", color: "#ff0000" },
+      { id: "tag-2", name: "Science", color: "#00ff00" },
+    ],
+    fetchFullContent: false,
+  },
+];
+
+export const DEFAULT_TAGS: SeededTag[] = [
+  {
+    id: "tag-1",
+    name: "Tech",
+    color: "#ff0000",
+    feedCount: 2,
+    unreadCount: 15,
+    createdAt: new Date("2024-01-01"),
+  },
+  {
+    id: "tag-2",
+    name: "Science",
+    color: "#00ff00",
+    feedCount: 1,
+    unreadCount: 10,
+    createdAt: new Date("2024-01-01"),
+  },
+];
+
+export const DEFAULT_UNCATEGORIZED = { feedCount: 1, unreadCount: 3 };
+
+export const DEFAULT_ENTRIES: SeededEntry[] = [
+  {
+    id: "entry-1",
+    feedId: "feed-1",
+    subscriptionId: "sub-1",
+    type: "web",
+    url: "https://example.com/1",
+    title: "Old Title",
+    author: "Author One",
+    summary: "Summary one",
+    publishedAt: new Date("2024-06-01"),
+    fetchedAt: new Date("2024-06-01"),
+    updatedAt: new Date("2024-06-01"),
+    read: false,
+    starred: true,
+    feedTitle: "Feed One",
+    score: null,
+    implicitScore: 0,
+    siteName: null,
+    predictedScore: null,
+  },
+  {
+    id: "entry-2",
+    feedId: "feed-1",
+    subscriptionId: "sub-1",
+    type: "web",
+    url: "https://example.com/2",
+    title: "Entry Two",
+    author: "Author Two",
+    summary: "Summary two",
+    publishedAt: new Date("2024-06-02"),
+    fetchedAt: new Date("2024-06-02"),
+    updatedAt: new Date("2024-06-02"),
+    read: false,
+    starred: false,
+    feedTitle: "Feed One",
+    score: null,
+    implicitScore: 0,
+    siteName: null,
+    predictedScore: null,
+  },
+  {
+    id: "entry-3",
+    feedId: "feed-2",
+    subscriptionId: "sub-2",
+    type: "web",
+    url: "https://example.com/3",
+    title: "Entry Three",
+    author: "Author Three",
+    summary: "Summary three",
+    publishedAt: new Date("2024-06-03"),
+    fetchedAt: new Date("2024-06-03"),
+    updatedAt: new Date("2024-06-03"),
+    read: true,
+    starred: false,
+    feedTitle: "Feed Two",
+    score: null,
+    implicitScore: 0,
+    siteName: null,
+    predictedScore: null,
+  },
+];
+
+// ============================================================================
+// Cache Setup
+// ============================================================================
+
+/**
+ * Creates a QueryClient with seeded entry list data in the infinite query format
+ * that tRPC uses: [["entries", "list"], { input: {...}, type: "infinite" }].
+ */
+export function createSeededQueryClient(entries: SeededEntry[] = DEFAULT_ENTRIES): QueryClient {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+
+  // Seed the "All entries" infinite query (no filters)
+  queryClient.setQueryData([["entries", "list"], { input: { limit: 25 }, type: "infinite" }], {
+    pages: [{ items: entries, nextCursor: undefined }],
+    pageParams: [undefined],
+  });
+
+  return queryClient;
+}
+
+/**
+ * Seeds the mock tRPC utils cache with default subscription, tag, and entry count data.
+ */
+export function seedCacheState(
+  mockUtils: ReturnType<typeof createMockTrpcUtils>,
+  options: {
+    subscriptions?: SeededSubscription[];
+    tags?: SeededTag[];
+    uncategorized?: { feedCount: number; unreadCount: number };
+    allUnread?: number;
+    starredUnread?: number;
+    savedUnread?: number;
+    entries?: Array<{ id: string; entry: SeededEntry }>;
+  } = {}
+): void {
+  const subs = options.subscriptions ?? DEFAULT_SUBSCRIPTIONS;
+  const tagItems = options.tags ?? DEFAULT_TAGS;
+  const uncategorized = options.uncategorized ?? DEFAULT_UNCATEGORIZED;
+  const allUnread = options.allUnread ?? 18;
+  const starredUnread = options.starredUnread ?? 2;
+  const savedUnread = options.savedUnread ?? 1;
+
+  // Seed subscriptions.list (unparameterized)
+  mockUtils.setCache("subscriptions", "list", undefined, { items: subs });
+
+  // Seed tags.list
+  mockUtils.setCache("tags", "list", undefined, {
+    items: tagItems,
+    uncategorized,
+  });
+
+  // Seed entries.count for various filters
+  mockUtils.setCache("entries", "count", {}, { unread: allUnread });
+  mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: starredUnread });
+  mockUtils.setCache("entries", "count", { type: "saved" }, { unread: savedUnread });
+
+  // Seed individual entry caches
+  const entriesToSeed = options.entries ?? [{ id: "entry-1", entry: DEFAULT_ENTRIES[0] }];
+  for (const { id, entry } of entriesToSeed) {
+    mockUtils.setCache("entries", "get", { id }, { entry });
+  }
+}
+
+// ============================================================================
+// Event Factories
+// ============================================================================
+
+const defaultTimestamp = "2024-07-01T00:00:00.000Z";
+
+export function createNewEntryEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "new_entry" }>> = {}
+): Extract<SyncEvent, { type: "new_entry" }> {
+  return {
+    type: "new_entry",
+    subscriptionId: "sub-1",
+    entryId: "new-entry-1",
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    feedType: "web",
+    ...overrides,
+  };
+}
+
+export function createEntryUpdatedEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "entry_updated" }>> = {}
+): Extract<SyncEvent, { type: "entry_updated" }> {
+  return {
+    type: "entry_updated",
+    subscriptionId: "sub-1",
+    entryId: "entry-1",
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    metadata: {
+      title: "Updated Title",
+      author: "Updated Author",
+      summary: "Updated Summary",
+      url: "https://example.com/updated",
+      publishedAt: "2024-07-01T00:00:00.000Z",
+    },
+    ...overrides,
+  };
+}
+
+export function createEntryStateChangedEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "entry_state_changed" }>> = {}
+): Extract<SyncEvent, { type: "entry_state_changed" }> {
+  return {
+    type: "entry_state_changed",
+    entryId: "entry-1",
+    read: true,
+    starred: true,
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    ...overrides,
+  };
+}
+
+export function createSubscriptionCreatedEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "subscription_created" }>> = {}
+): Extract<SyncEvent, { type: "subscription_created" }> {
+  return {
+    type: "subscription_created",
+    subscriptionId: "sub-new",
+    feedId: "feed-new",
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    subscription: {
+      id: "sub-new",
+      feedId: "feed-new",
+      customTitle: null,
+      subscribedAt: defaultTimestamp,
+      unreadCount: 7,
+      tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
+    },
+    feed: {
+      id: "feed-new",
+      type: "web",
+      url: "https://example.com/new-feed.xml",
+      title: "New Feed",
+      description: "A new feed",
+      siteUrl: "https://example.com",
+    },
+    ...overrides,
+  };
+}
+
+export function createSubscriptionUpdatedEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "subscription_updated" }>> = {}
+): Extract<SyncEvent, { type: "subscription_updated" }> {
+  return {
+    type: "subscription_updated",
+    subscriptionId: "sub-1",
+    tags: [{ id: "tag-2", name: "Science", color: "#00ff00" }],
+    customTitle: null,
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    ...overrides,
+  };
+}
+
+export function createSubscriptionDeletedEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "subscription_deleted" }>> = {}
+): Extract<SyncEvent, { type: "subscription_deleted" }> {
+  return {
+    type: "subscription_deleted",
+    subscriptionId: "sub-1",
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    ...overrides,
+  };
+}
+
+export function createTagCreatedEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "tag_created" }>> = {}
+): Extract<SyncEvent, { type: "tag_created" }> {
+  return {
+    type: "tag_created",
+    tag: { id: "tag-new", name: "New Tag", color: "#0000ff" },
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    ...overrides,
+  };
+}
+
+export function createTagUpdatedEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "tag_updated" }>> = {}
+): Extract<SyncEvent, { type: "tag_updated" }> {
+  return {
+    type: "tag_updated",
+    tag: { id: "tag-1", name: "Technology", color: "#ff00ff" },
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    ...overrides,
+  };
+}
+
+export function createTagDeletedEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "tag_deleted" }>> = {}
+): Extract<SyncEvent, { type: "tag_deleted" }> {
+  return {
+    type: "tag_deleted",
+    tagId: "tag-1",
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    ...overrides,
+  };
+}
+
+export function createImportProgressEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "import_progress" }>> = {}
+): Extract<SyncEvent, { type: "import_progress" }> {
+  return {
+    type: "import_progress",
+    importId: "import-1",
+    feedUrl: "https://example.com/feed.xml",
+    feedStatus: "imported",
+    imported: 5,
+    skipped: 0,
+    failed: 0,
+    total: 10,
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    ...overrides,
+  };
+}
