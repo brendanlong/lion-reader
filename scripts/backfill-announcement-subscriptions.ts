@@ -1,7 +1,7 @@
 /**
  * Backfill script: subscribe existing users to the announcement feed.
  *
- * Usage: dotenv -- tsx scripts/backfill-announcement-subscriptions.ts
+ * Usage: pnpm exec tsx scripts/backfill-announcement-subscriptions.ts [--dry-run]
  *
  * This script subscribes all existing users to the announcement feed who:
  * - Don't already have an active subscription to it
@@ -20,6 +20,7 @@ import { createSubscription } from "../src/server/services/subscriptions";
 
 const ANNOUNCEMENT_FEED_URL = announcementFeedConfig.url;
 const BATCH_CONCURRENCY = 10;
+const DRY_RUN = process.argv.includes("--dry-run");
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -61,6 +62,11 @@ async function main() {
     );
 
   console.log(`Found ${usersToSubscribe.length} users to subscribe`);
+
+  if (DRY_RUN) {
+    console.log("Dry run mode — no changes made.");
+    return;
+  }
 
   let succeeded = 0;
   let failed = 0;
