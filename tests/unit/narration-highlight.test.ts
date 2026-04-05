@@ -83,16 +83,14 @@ describe("computeHighlightedParagraphs", () => {
 
   describe("realistic scenarios", () => {
     it("handles sequential playback through article", () => {
-      // Simulate playing through paragraphs 0-4
-      const playSequence = [0, 1, 2, 3, 4];
-
-      playSequence.forEach((index) => {
-        expect(computeHighlightedParagraphs(index, true)).toEqual(new Set([index]));
-      });
+      expect(computeHighlightedParagraphs(0, true)).toEqual(new Set([0]));
+      expect(computeHighlightedParagraphs(1, true)).toEqual(new Set([1]));
+      expect(computeHighlightedParagraphs(2, true)).toEqual(new Set([2]));
+      expect(computeHighlightedParagraphs(3, true)).toEqual(new Set([3]));
+      expect(computeHighlightedParagraphs(4, true)).toEqual(new Set([4]));
     });
 
     it("handles skipping to a later paragraph", () => {
-      // User skips from paragraph 0 to paragraph 10
       expect(computeHighlightedParagraphs(0, true)).toEqual(new Set([0]));
       expect(computeHighlightedParagraphs(10, true)).toEqual(new Set([10]));
     });

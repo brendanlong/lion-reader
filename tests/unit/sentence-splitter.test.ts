@@ -39,11 +39,11 @@ describe("splitIntoSentences", () => {
     const text = 'He said "This is a pen. I like it." Then he left.';
     const sentences = splitIntoSentences(text);
 
-    // sentence-splitter may keep the entire text as one sentence when
-    // the closing quote comes at the end without a period after "left"
-    // This is acceptable behavior - the key is that it doesn't break
-    expect(sentences.length).toBeGreaterThanOrEqual(1);
-    expect(sentences[0]).toContain("He said");
+    // sentence-splitter may keep the entire quoted text as one sentence or split it.
+    // Verify that all the original text is preserved across the sentences.
+    const rejoined = sentences.join(" ");
+    expect(rejoined).toContain("He said");
+    expect(rejoined).toContain("Then he left.");
   });
 
   it("returns the original text for text without sentence-ending punctuation", () => {
@@ -63,8 +63,10 @@ describe("splitIntoSentences", () => {
     const text = "What?! Really?! Yes!!!";
     const sentences = splitIntoSentences(text);
 
-    expect(sentences.length).toBeGreaterThan(0);
-    // The exact splitting depends on the library's behavior
+    // Verify all text is preserved across sentences
+    const rejoined = sentences.join(" ");
+    expect(rejoined).toContain("What?!");
+    expect(rejoined).toContain("Yes!!!");
   });
 
   it("handles newlines within a paragraph", () => {

@@ -21,12 +21,10 @@ import {
 } from "../../src/server/google-reader/streams";
 
 describe("uuidToInt64", () => {
-  it("produces a positive 63-bit integer", () => {
+  it("produces the expected 63-bit integer", () => {
     const uuid = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b";
     const result = uuidToInt64(uuid);
-    expect(result).toBeGreaterThan(BigInt(0));
-    // 63-bit max is 2^63 - 1
-    expect(result).toBeLessThan(BigInt(2) ** BigInt(63));
+    expect(result).toBe(BigInt("56525179323085689"));
   });
 
   it("is deterministic — same UUID produces same int64", () => {
@@ -40,9 +38,8 @@ describe("uuidToInt64", () => {
     // These UUIDs differ in rand_a (byte 7) which is within the 15 extracted random bits
     const uuid1 = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b";
     const uuid2 = "0191a2b3-c4d5-7e7f-8a9b-0c1d2e3f4a5b";
-    const result1 = uuidToInt64(uuid1);
-    const result2 = uuidToInt64(uuid2);
-    expect(result1).not.toBe(result2);
+    expect(uuidToInt64(uuid1)).toBe(BigInt("56525179323085689"));
+    expect(uuidToInt64(uuid2)).toBe(BigInt("56525179323085817"));
   });
 
   it("UUIDs differing only in non-extracted bits may collide (known limitation)", () => {
@@ -63,9 +60,8 @@ describe("uuidToInt64", () => {
     const uuid1 = "01000000-0000-7000-8000-000000000000";
     // UUID with later timestamp
     const uuid2 = "02000000-0000-7000-8000-000000000000";
-    const result1 = uuidToInt64(uuid1);
-    const result2 = uuidToInt64(uuid2);
-    expect(result2).toBeGreaterThan(result1);
+    expect(uuidToInt64(uuid1)).toBe(BigInt("36028797018963968"));
+    expect(uuidToInt64(uuid2)).toBe(BigInt("72057594037927936"));
   });
 });
 
@@ -150,10 +146,9 @@ describe("parseItemId", () => {
 
 describe("subscriptionToStreamId", () => {
   it("formats as feed/{int64}", () => {
-    // A UUID that converts to some int64
     const uuid = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b";
     const result = subscriptionToStreamId(uuid);
-    expect(result).toMatch(/^feed\/\d+$/);
+    expect(result).toBe("feed/56525179323085689");
   });
 });
 

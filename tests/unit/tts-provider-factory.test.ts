@@ -114,7 +114,8 @@ describe("createTTSProvider", () => {
         settings: { provider: "browser" },
       });
 
-      expect(typeof result.primaryAvailable).toBe("boolean");
+      // Browser speechSynthesis is mocked as available in the test setup
+      expect(result.primaryAvailable).toBe(true);
     });
   });
 
