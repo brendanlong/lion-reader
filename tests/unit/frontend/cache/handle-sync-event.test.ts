@@ -186,20 +186,19 @@ describe("handleSyncEvent - new_entry", () => {
     expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(11); // +1
   });
 
-  it("does not update counts when feedType is undefined", () => {
+  it("updates counts for email feed type", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createNewEntryEvent({
-        feedType: undefined,
+        subscriptionId: "sub-1",
+        feedType: "email",
       })
     );
 
-    // All counts should be unchanged
-    expect(getEntriesCount({})?.unread).toBe(18);
-    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1);
     const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6);
+    expect(getEntriesCount({})?.unread).toBe(19);
   });
 });
 
@@ -330,10 +329,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
     expect(entry?.read).toBe(false);
   });
 
-  it("does not update entries.get (known limitation)", () => {
-    // entry_state_changed only updates entries.list, not entries.get.
-    // This is a known gap: the detail view can show stale read/starred state
-    // when changes come from another tab via sync.
+  it("updates entries.get for cached entry", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
@@ -345,9 +341,8 @@ describe("handleSyncEvent - entry_state_changed", () => {
     );
 
     const cached = getEntryGet("entry-1");
-    // entries.get is NOT updated by entry_state_changed - stays at original values
-    expect(cached?.entry.read).toBe(false);
-    expect(cached?.entry.starred).toBe(true);
+    expect(cached?.entry.read).toBe(true);
+    expect(cached?.entry.starred).toBe(false);
   });
 
   it("does not crash for non-cached entry", () => {
