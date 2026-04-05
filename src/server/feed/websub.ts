@@ -544,12 +544,9 @@ export async function verifyHmacSignature(
     return false;
   }
 
-  // Map algorithm names (hub may use sha1, sha256, sha384, sha512)
-  const hmacAlgorithm = algorithm.replace("sha", "sha");
-
   try {
-    // Compute expected signature
-    const hmac = createHmac(hmacAlgorithm, subscription.callbackSecret);
+    // Compute expected signature (hub sends sha1, sha256, etc. which Node crypto accepts directly)
+    const hmac = createHmac(algorithm, subscription.callbackSecret);
     hmac.update(body);
     const computedDigest = hmac.digest("hex");
 
