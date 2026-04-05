@@ -65,7 +65,7 @@
     "concurrently": "^9.2.1",
     "discord.js": "^14.25.1",
     "dotenv-cli": "^11.0.0",
-    "drizzle-kit": "^0.31.9",
+    "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.1",
     "fast-xml-parser": "^5.3.6",
     "google-auth-library": "^10.5.0",

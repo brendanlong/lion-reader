@@ -60,8 +60,8 @@ importers:
         specifier: ^11.0.0
         version: 11.0.0
       drizzle-kit:
-        specifier: ^0.31.9
-        version: 0.31.9
+        specifier: ^0.31.10
+        version: 0.31.10
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.18.0)
@@ -215,7 +215,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
-        version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.33)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.30.2)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+        version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.33)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.30.2)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.2)
 
 packages:
 
@@ -3021,6 +3021,9 @@ packages:
   '@types/node@20.19.33':
     resolution: {integrity: sha512-Rs1bVAIdBs5gbTIKza/tgpMuG1k3U/UMJLWecIMxNdJFDMzcM5LOiLVRYh3PilWEYDIeUDv7bpiHPLPsbydGcw==}
 
+  '@types/node@20.19.39':
+    resolution: {integrity: sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw==}
+
   '@types/pg-pool@2.0.7':
     resolution: {integrity: sha512-U4CwmGVQcbEuqpyju8/ptOKg6gEC+Tqsvj2xS9o1g71bUh8twxnC6ZL5rZKCsGN0iyH0CwgUyc9VR5owNQF9Ng==}
 
@@ -3285,6 +3288,7 @@ packages:
   '@xmldom/xmldom@0.8.11':
     resolution: {integrity: sha512-cQzWCtO6C8TQiYl1ruKNn2U6Ao4o4WBBcbL61yJl84x+j5sOWWFU9X7DpND8XZG3daDppSsigMdfAIl2upQBRw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   '@xtuc/ieee754@1.2.0':
     resolution: {integrity: sha512-DX8nKgqcGwsc0eJSqYt5lwP4DH5FlHnmuWWBRy7X0NcaGR0ZtuyeESgMwTYVEtxmsNGY+qit4QYT/MIYTOTPeA==}
@@ -3318,6 +3322,11 @@ packages:
 
   acorn@8.15.0:
     resolution: {integrity: sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg==}
+    engines: {node: '>=0.4.0'}
+    hasBin: true
+
+  acorn@8.16.0:
+    resolution: {integrity: sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==}
     engines: {node: '>=0.4.0'}
     hasBin: true
 
@@ -3866,8 +3875,8 @@ packages:
     resolution: {integrity: sha512-IO8C/dzEb6O3F9/twg6ZLXz164a2fhTnEWb95H23Dm4OuN+92NmEAlTrupP9VW6Jm3sO26tQlqyvyi4CsnY9GA==}
     engines: {node: '>=12'}
 
-  drizzle-kit@0.31.9:
-    resolution: {integrity: sha512-GViD3IgsXn7trFyBUUHyTFBpH/FsHTxYJ66qdbVggxef4UBPHRYxQaRzYLTuekYnk9i5FIEL9pbBIwMqX/Uwrg==}
+  drizzle-kit@0.31.10:
+    resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
     hasBin: true
 
   drizzle-orm@0.45.1:
@@ -4003,6 +4012,10 @@ packages:
     resolution: {integrity: sha512-phv3E1Xl4tQOShqSte26C7Fl84EwUdZsyOuSSk9qtAGyyQs2s3jJzComh+Abf4g187lUUAvH+H26omrqia2aGg==}
     engines: {node: '>=10.13.0'}
 
+  enhanced-resolve@5.20.1:
+    resolution: {integrity: sha512-Qohcme7V1inbAfvjItgw0EaxVX5q2rdVEZHRBrEQdRZTssLDGsL8Lwrznl8oQ/6kuTJONLaDcGjkNP247XEhcA==}
+    engines: {node: '>=10.13.0'}
+
   entities@4.5.0:
     resolution: {integrity: sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==}
     engines: {node: '>=0.12'}
@@ -4056,11 +4069,6 @@ packages:
   es-to-primitive@1.3.0:
     resolution: {integrity: sha512-w+5mJ3GuFL+NjVtJlvydShqE1eN3h3PbI7/5LAsYJP/2qtuMXjfL2LpHSRqo4b4eSF5K/DH1JXKUAHSB2UW50g==}
     engines: {node: '>= 0.4'}
-
-  esbuild-register@3.6.0:
-    resolution: {integrity: sha512-H2/S7Pm8a9CL1uhp9OvjwrBh5Pvx0H8qVOxNu8Wed9Y7qv56MPtq+GGM8RJpq6glYJn9Wspr8uw7l55uyinNeg==}
-    peerDependencies:
-      esbuild: '>=0.12 <1'
 
   esbuild@0.18.20:
     resolution: {integrity: sha512-ceqxoedUrcayh7Y7ZX6NdbbDzGROiyVBgC4PriJThBKSVPWnnFHZAkfI1lJT8QFkOwH4qOS2SJkS4wvpGl8BpA==}
@@ -4451,6 +4459,9 @@ packages:
 
   get-tsconfig@4.13.6:
     resolution: {integrity: sha512-shZT/QMiSHc/YBLxxOkMtgSid5HFoauqCE3/exfsEcwg1WkeqjG+V40yBbBrsD+jW2HDXcs28xOfcbm2jI8Ddw==}
+
+  get-tsconfig@4.13.7:
+    resolution: {integrity: sha512-7tN6rFgBlMgpBML5j8typ92BKFi2sFQvIdpAqLA2beia5avZDrMs0FLZiM5etShWq5irVyGcGMEA1jcDaK7A/Q==}
 
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
@@ -6067,6 +6078,10 @@ packages:
     resolution: {integrity: sha512-g9ljZiwki/LfxmQADO3dEY1CbpmXT5Hm2fJ+QaGKwSXUylMybePR7/67YW7jOrrvjEgL1Fmz5kzyAjWVWLlucg==}
     engines: {node: '>=6'}
 
+  tapable@2.3.2:
+    resolution: {integrity: sha512-1MOpMXuhGzGL5TTCZFItxCc0AARf1EZFQkGqMm7ERKj8+Hgr5oLvJOVFcC+lRmR8hCe2S3jC4T5D7Vg/d7/fhA==}
+    engines: {node: '>=6'}
+
   tdigest@0.1.2:
     resolution: {integrity: sha512-+G0LLgjjo9BZX2MfdvPfH+MKLCrxlXSYec5DaPYP1fe6Iyhf0/fSmJ0bFiZ1F8BT6cGXl2LpltQptzjXKWEkKA==}
 
@@ -6078,8 +6093,8 @@ packages:
     resolution: {integrity: sha512-G13vtMYPT/J8A4X2SjdtBTphZlrp1gKv6hZiOjw14RCWg6GbHuQBGtjlx75xLbYV/wEc0D7G5K4rxKP/cXk8Bw==}
     engines: {node: '>=10'}
 
-  terser-webpack-plugin@5.3.16:
-    resolution: {integrity: sha512-h9oBFCWrq78NyWWVcSwZarJkZ01c2AyGrzs1crmHZO3QUg9D61Wu4NPjBy69n7JqylFF5y+CsUZYmYEIZ3mR+Q==}
+  terser-webpack-plugin@5.4.0:
+    resolution: {integrity: sha512-Bn5vxm48flOIfkdl5CaD2+1CiUVbonWQ3KQPyP7/EuIl9Gbzq/gQFOzaMFUEgVjB1396tcK0SG8XcNJ/2kDH8g==}
     engines: {node: '>= 10.13.0'}
     peerDependencies:
       '@swc/core': '*'
@@ -6096,6 +6111,11 @@ packages:
 
   terser@5.46.0:
     resolution: {integrity: sha512-jTwoImyr/QbOWFFso3YoU3ik0jBBDJ6JTOQiy/J2YxVJdZCc+5u7skhNwiOR3FQIygFqVUPHl7qbbxtjW2K3Qg==}
+    engines: {node: '>=10'}
+    hasBin: true
+
+  terser@5.46.1:
+    resolution: {integrity: sha512-vzCjQO/rgUuK9sf8VJZvjqiqiHFaZLnOiimmUuOKODxWL8mm/xua7viT7aqX7dgPY60otQjUotzFMmCB4VdmqQ==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -7939,7 +7959,7 @@ snapshots:
   '@esbuild-kit/esm-loader@2.6.5':
     dependencies:
       '@esbuild-kit/core-utils': 3.3.2
-      get-tsconfig: 4.13.6
+      get-tsconfig: 4.13.7
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true
@@ -9780,6 +9800,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/node@20.19.39':
+    dependencies:
+      undici-types: 6.21.0
+
   '@types/pg-pool@2.0.7':
     dependencies:
       '@types/pg': 8.16.0
@@ -9975,13 +9999,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.0.3
 
-  '@vitest/mocker@4.0.18(vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))':
+  '@vitest/mocker@4.0.18(vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
       '@vitest/spy': 4.0.18
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      vite: 7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.2)
 
   '@vitest/pretty-format@4.0.18':
     dependencies:
@@ -10102,15 +10126,17 @@ snapshots:
     dependencies:
       acorn: 8.15.0
 
-  acorn-import-phases@1.0.4(acorn@8.15.0):
+  acorn-import-phases@1.0.4(acorn@8.16.0):
     dependencies:
-      acorn: 8.15.0
+      acorn: 8.16.0
 
   acorn-jsx@5.3.2(acorn@8.15.0):
     dependencies:
       acorn: 8.15.0
 
   acorn@8.15.0: {}
+
+  acorn@8.16.0: {}
 
   agent-base@6.0.2:
     dependencies:
@@ -10686,14 +10712,12 @@ snapshots:
 
   dotenv@17.3.1: {}
 
-  drizzle-kit@0.31.9:
+  drizzle-kit@0.31.10:
     dependencies:
       '@drizzle-team/brocli': 0.10.2
       '@esbuild-kit/esm-loader': 2.6.5
       esbuild: 0.25.12
-      esbuild-register: 3.6.0(esbuild@0.25.12)
-    transitivePeerDependencies:
-      - supports-color
+      tsx: 4.21.0
 
   drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.18.0):
     optionalDependencies:
@@ -10737,6 +10761,11 @@ snapshots:
     dependencies:
       graceful-fs: 4.2.11
       tapable: 2.3.0
+
+  enhanced-resolve@5.20.1:
+    dependencies:
+      graceful-fs: 4.2.11
+      tapable: 2.3.2
 
   entities@4.5.0: {}
 
@@ -10850,13 +10879,6 @@ snapshots:
       is-callable: 1.2.7
       is-date-object: 1.1.0
       is-symbol: 1.1.1
-
-  esbuild-register@3.6.0(esbuild@0.25.12):
-    dependencies:
-      debug: 4.4.3
-      esbuild: 0.25.12
-    transitivePeerDependencies:
-      - supports-color
 
   esbuild@0.18.20:
     optionalDependencies:
@@ -11437,6 +11459,10 @@ snapshots:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
+  get-tsconfig@4.13.7:
+    dependencies:
+      resolve-pkg-maps: 1.0.0
+
   glob-parent@5.1.2:
     dependencies:
       is-glob: 4.0.3
@@ -11854,7 +11880,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 20.19.33
+      '@types/node': 20.19.39
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -13145,6 +13171,8 @@ snapshots:
 
   tapable@2.3.0: {}
 
+  tapable@2.3.2: {}
+
   tdigest@0.1.2:
     dependencies:
       bintrees: 1.0.2
@@ -13158,13 +13186,12 @@ snapshots:
       type-fest: 0.16.0
       unique-string: 2.0.0
 
-  terser-webpack-plugin@5.3.16(esbuild@0.27.3)(webpack@5.104.1(esbuild@0.27.3)):
+  terser-webpack-plugin@5.4.0(esbuild@0.27.3)(webpack@5.104.1(esbuild@0.27.3)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
       schema-utils: 4.3.3
-      serialize-javascript: 6.0.2
-      terser: 5.46.0
+      terser: 5.46.1
       webpack: 5.104.1(esbuild@0.27.3)
     optionalDependencies:
       esbuild: 0.27.3
@@ -13173,6 +13200,13 @@ snapshots:
     dependencies:
       '@jridgewell/source-map': 0.3.11
       acorn: 8.15.0
+      commander: 2.20.3
+      source-map-support: 0.5.21
+
+  terser@5.46.1:
+    dependencies:
+      '@jridgewell/source-map': 0.3.11
+      acorn: 8.16.0
       commander: 2.20.3
       source-map-support: 0.5.21
 
@@ -13406,7 +13440,7 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
+  vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       esbuild: 0.27.3
       fdir: 6.5.0(picomatch@4.0.3)
@@ -13419,14 +13453,14 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.6.1
       lightningcss: 1.30.2
-      terser: 5.46.0
+      terser: 5.46.1
       tsx: 4.21.0
       yaml: 2.8.2
 
-  vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.33)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.30.2)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
+  vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.33)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.30.2)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       '@vitest/expect': 4.0.18
-      '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vitest/pretty-format': 4.0.18
       '@vitest/runner': 4.0.18
       '@vitest/snapshot': 4.0.18
@@ -13443,7 +13477,7 @@ snapshots:
       tinyexec: 1.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vite: 7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      vite: 7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.2)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
@@ -13500,11 +13534,11 @@ snapshots:
       '@webassemblyjs/ast': 1.14.1
       '@webassemblyjs/wasm-edit': 1.14.1
       '@webassemblyjs/wasm-parser': 1.14.1
-      acorn: 8.15.0
-      acorn-import-phases: 1.0.4(acorn@8.15.0)
+      acorn: 8.16.0
+      acorn-import-phases: 1.0.4(acorn@8.16.0)
       browserslist: 4.28.1
       chrome-trace-event: 1.0.4
-      enhanced-resolve: 5.19.0
+      enhanced-resolve: 5.20.1
       es-module-lexer: 2.0.0
       eslint-scope: 5.1.1
       events: 3.3.0
@@ -13515,8 +13549,8 @@ snapshots:
       mime-types: 2.1.35
       neo-async: 2.6.2
       schema-utils: 4.3.3
-      tapable: 2.3.0
-      terser-webpack-plugin: 5.3.16(esbuild@0.27.3)(webpack@5.104.1(esbuild@0.27.3))
+      tapable: 2.3.2
+      terser-webpack-plugin: 5.4.0(esbuild@0.27.3)(webpack@5.104.1(esbuild@0.27.3))
       watchpack: 2.5.1
       webpack-sources: 3.3.4
     transitivePeerDependencies:
