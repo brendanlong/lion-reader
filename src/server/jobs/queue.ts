@@ -309,11 +309,6 @@ export async function ensureFeedJob(feedId: string, nextRunAt?: Date): Promise<J
 }
 
 /**
- * @deprecated Use ensureFeedJob instead. This alias exists for backwards compatibility.
- */
-export const createOrEnableFeedJob = ensureFeedJob;
-
-/**
  * Updates a feed job's next_run_at.
  * Used by WebSub to schedule backup polls.
  *

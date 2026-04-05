@@ -19,7 +19,6 @@ import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import {
   feeds,
   subscriptions,
-  subscriptionFeeds,
   entries,
   userEntries,
   tags,
@@ -32,20 +31,14 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeedInWorker } from "@/server/worker-thread/pool";
 import { discoverFeeds } from "@/server/feed/discovery";
-import { deriveGuid } from "@/server/feed/entry-processor";
 import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
-import { ensureFeedJob, createJob } from "@/server/jobs/queue";
-import {
-  publishSubscriptionCreated,
-  publishSubscriptionDeleted,
-  publishSubscriptionUpdated,
-} from "@/server/redis/pubsub";
+import { createJob } from "@/server/jobs/queue";
+import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
-import { usageLimitsConfig } from "@/server/config/env";
 
 // ============================================================================
 // Validation Schemas
@@ -95,307 +88,48 @@ const subscriptionOutputSchema = z.object({
 // ============================================================================
 
 /**
- * Parameters for creating or reactivating a subscription.
+ * Format a CreateSubscriptionResult into the API response shape.
  */
-interface CreateSubscriptionParams {
-  /** User ID */
-  userId: string;
-  /** Feed ID to subscribe to */
-  feedId: string;
-  /**
-   * How to find entries to populate user_entries:
-   * - "lastSeenAt": Use feed's lastEntriesUpdatedAt to find current entries (for existing feeds)
-   * - "guids": Use provided GUIDs to find entries (for freshly parsed feeds)
-   * - "none": Don't populate entries (feed hasn't been fetched yet)
-   */
-  entrySource:
-    | { type: "lastSeenAt"; lastEntriesUpdatedAt: Date | null }
-    | { type: "guids"; guids: string[] }
-    | { type: "none" };
-}
-
-/**
- * Result of creating or reactivating a subscription.
- */
-interface CreateSubscriptionResult {
-  /** Subscription ID */
-  subscriptionId: string;
-  /** When the subscription was created/reactivated */
-  subscribedAt: Date;
-  /** Whether this was a reactivation of a soft-deleted subscription */
-  isReactivated: boolean;
-  /** Number of unread entries populated */
-  unreadCount: number;
-}
-
-/**
- * Creates a new subscription or reactivates a soft-deleted one.
- *
- * This centralizes subscription creation logic that was previously duplicated
- * in subscribeToExistingFeed, subscribeToNewOrUnfetchedFeed, and OPML import.
- *
- * Handles:
- * - Checking for existing subscription (throws if already active)
- * - Reactivating soft-deleted subscriptions
- * - Creating new subscriptions
- * - Populating user_entries for initial unread entries
- *
- * @param db - Database instance
- * @param params - Subscription parameters
- * @returns Subscription info including unread count
- * @throws alreadySubscribed if user already has an active subscription to this feed
- */
-export async function createOrReactivateSubscription(
-  db: typeof import("@/server/db").db,
-  params: CreateSubscriptionParams
-): Promise<CreateSubscriptionResult> {
-  const { userId, feedId, entrySource } = params;
-
-  // Check for existing subscription
-  const existingSubscription = await db
-    .select()
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-    .limit(1);
-
-  let subscriptionId: string;
-  let subscribedAt: Date;
-  let isReactivated = false;
-
-  if (existingSubscription.length > 0) {
-    const sub = existingSubscription[0];
-
-    if (sub.unsubscribedAt === null) {
-      throw errors.alreadySubscribed();
-    }
-
-    // Reactivate soft-deleted subscription (no count check needed - user already had this slot)
-    subscriptionId = sub.id;
-    subscribedAt = new Date();
-    isReactivated = true;
-
-    await db
-      .update(subscriptions)
-      .set({
-        unsubscribedAt: null,
-        subscribedAt,
-        updatedAt: subscribedAt,
-      })
-      .where(eq(subscriptions.id, subscriptionId));
-  } else {
-    // Enforce subscription count limit before creating a new subscription
-    const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
-    const [{ activeCount }] = await db
-      .select({ activeCount: sql<number>`count(*)::int` })
-      .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
-
-    if (activeCount >= maxSubs) {
-      throw errors.maxSubscriptionsReached(maxSubs);
-    }
-
-    // Create new subscription
-    subscriptionId = generateUuidv7();
-    subscribedAt = new Date();
-
-    await db.insert(subscriptions).values({
-      id: subscriptionId,
-      userId,
-      feedId,
-      subscribedAt,
-      createdAt: subscribedAt,
-      updatedAt: subscribedAt,
-    });
-
-    // Add the feed to the subscription_feeds junction table
-    await db
-      .insert(subscriptionFeeds)
-      .values({ subscriptionId, feedId, userId })
-      .onConflictDoNothing();
-  }
-
-  // Populate user_entries for initial unread entries
-  let unreadCount = 0;
-
-  if (entrySource.type === "lastSeenAt" && entrySource.lastEntriesUpdatedAt) {
-    // Find entries currently in the feed using lastSeenAt timestamp matching
-    const matchingEntries = await db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(
-        and(eq(entries.feedId, feedId), eq(entries.lastSeenAt, entrySource.lastEntriesUpdatedAt))
-      );
-
-    if (matchingEntries.length > 0) {
-      const pairs = matchingEntries.map((entry) => ({
-        userId,
-        entryId: entry.id,
-      }));
-
-      await db.insert(userEntries).values(pairs).onConflictDoNothing();
-      unreadCount = matchingEntries.length;
-
-      logger.debug("Populated initial user entries via lastSeenAt", {
-        userId,
-        feedId,
-        entryCount: matchingEntries.length,
-      });
-    }
-  } else if (entrySource.type === "guids" && entrySource.guids.length > 0) {
-    // Find entries by GUID matching (for freshly parsed feeds)
-    const matchingEntries = await db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(and(eq(entries.feedId, feedId), inArray(entries.guid, entrySource.guids)));
-
-    if (matchingEntries.length > 0) {
-      const pairs = matchingEntries.map((entry) => ({
-        userId,
-        entryId: entry.id,
-      }));
-
-      await db.insert(userEntries).values(pairs).onConflictDoNothing();
-      unreadCount = matchingEntries.length;
-
-      logger.debug("Populated initial user entries via GUIDs", {
-        userId,
-        feedId,
-        entryCount: matchingEntries.length,
-      });
-    }
-  }
-  // type === "none": Don't populate entries (feed hasn't been fetched yet)
-
-  return {
-    subscriptionId,
-    subscribedAt,
-    isReactivated,
-    unreadCount,
-  };
-}
-
-/**
- * Subscribe to an existing feed that has already been fetched.
- * Uses lastSeenAt to determine which entries are currently in the feed,
- * avoiding an unnecessary network request.
- */
-async function subscribeToExistingFeed(
-  db: typeof import("@/server/db").db,
-  userId: string,
-  feedRecord: typeof feeds.$inferSelect
-): Promise<z.infer<typeof subscriptionOutputSchema>> {
-  const feedId = feedRecord.id;
-
-  // Ensure job exists and sync next_fetch_at
-  const job = await ensureFeedJob(feedId);
-  if (job.nextRunAt) {
-    await db
-      .update(feeds)
-      .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
-      .where(eq(feeds.id, feedId));
-  }
-
-  // Create or reactivate subscription with entry population via lastSeenAt
-  const result = await createOrReactivateSubscription(db, {
-    userId,
-    feedId,
-    entrySource: {
-      type: "lastSeenAt",
-      lastEntriesUpdatedAt: feedRecord.lastEntriesUpdatedAt,
-    },
-  });
-
-  const feedData = {
-    id: feedRecord.id,
-    type: feedRecord.type,
-    url: feedRecord.url,
-    title: feedRecord.title,
-    description: feedRecord.description,
-    siteUrl: feedRecord.siteUrl,
-  };
-
-  // SSE event uses nested format for compatibility
-  const sseSubscriptionData = {
-    id: result.subscriptionId,
-    feedId,
-    customTitle: null,
-    subscribedAt: result.subscribedAt.toISOString(),
-    unreadCount: result.unreadCount,
-    tags: [] as Array<{ id: string; name: string; color: string | null }>,
-  };
-
-  publishSubscriptionCreated(
-    userId,
-    feedId,
-    result.subscriptionId,
-    result.subscribedAt, // subscribedAt is used for both subscribedAt and updatedAt
-    sseSubscriptionData,
-    feedData
-  ).catch((err) => {
-    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-  });
-
-  // Return flat format for API response
+function formatSubscriptionResponse(
+  result: subscriptionsService.CreateSubscriptionResult
+): z.infer<typeof subscriptionOutputSchema> {
   return {
     id: result.subscriptionId,
-    type: feedRecord.type,
-    url: feedRecord.url,
-    title: feedRecord.title, // no custom title for new subscriptions
-    originalTitle: feedRecord.title,
-    description: feedRecord.description,
-    siteUrl: feedRecord.siteUrl,
+    type: result.feed.type,
+    url: result.feed.url,
+    title: result.customTitle ?? result.feed.title,
+    originalTitle: result.feed.title,
+    description: result.feed.description,
+    siteUrl: result.feed.siteUrl,
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
-    tags: [] as Array<{ id: string; name: string; color: string | null }>,
-    fetchFullContent: false, // default for new subscriptions
+    tags: [],
+    fetchFullContent: result.fetchFullContent,
   };
 }
 
 /**
- * Subscribe to a new feed or one that hasn't been fetched yet.
- * Requires fetching the URL to discover/parse the feed.
+ * Fetch a URL, discover feeds if HTML, parse the feed content,
+ * and return metadata for subscription creation.
  */
-async function subscribeToNewOrUnfetchedFeed(
-  db: typeof import("@/server/db").db,
-  userId: string,
-  inputUrl: string
-): Promise<z.infer<typeof subscriptionOutputSchema>> {
-  let feedUrl = inputUrl;
+async function fetchAndResolveFeed(inputUrl: string): Promise<{
+  url: string;
+  title: string | null;
+  description: string | null;
+  siteUrl: string | null;
+}> {
+  const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(inputUrl);
 
-  // Fetch the URL
-  const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(feedUrl);
-
-  // If HTML, try to discover feeds
   let feedContent: string;
   let finalFeedUrl: string;
+
   if (isHtmlContent(contentType, content)) {
     const discoveredFeeds = discoverFeeds(content, initialFinalUrl);
-
     if (discoveredFeeds.length === 0) {
       throw errors.validation("No feeds found at this URL");
     }
 
-    // Use the first discovered feed
-    feedUrl = discoveredFeeds[0].url;
-
-    // Check if the discovered feed URL exists and has been fetched
-    const existingDiscoveredFeed = await db
-      .select()
-      .from(feeds)
-      .where(eq(feeds.url, feedUrl))
-      .limit(1);
-
-    if (existingDiscoveredFeed.length > 0 && existingDiscoveredFeed[0].lastFetchedAt !== null) {
-      // The discovered feed is already known - use fast path
-      return await subscribeToExistingFeed(
-        db,
-        userId,
-        existingDiscoveredFeed[0] as typeof feeds.$inferSelect
-      );
-    }
-
-    // Fetch the discovered feed URL
-    const discoveredFetch = await fetchUrl(feedUrl);
+    const discoveredFetch = await fetchUrl(discoveredFeeds[0].url);
     feedContent = discoveredFetch.text;
     finalFeedUrl = discoveredFetch.finalUrl;
   } else {
@@ -403,7 +137,6 @@ async function subscribeToNewOrUnfetchedFeed(
     finalFeedUrl = initialFinalUrl;
   }
 
-  // Parse the feed
   let parsedFeed;
   try {
     parsedFeed = await parseFeedInWorker(feedContent);
@@ -411,124 +144,20 @@ async function subscribeToNewOrUnfetchedFeed(
     throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
   }
 
-  // Use final URL after redirects
-  feedUrl = finalFeedUrl;
-
-  // Check if feed already exists (by final URL)
-  const existingFeed = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
-
-  let feedId: string;
-  let feedRecord: typeof feeds.$inferSelect;
-
-  if (existingFeed.length > 0) {
-    feedId = existingFeed[0].id;
-    feedRecord = existingFeed[0];
-
-    // Ensure job exists
-    const job = await ensureFeedJob(feedId);
-    if (job.nextRunAt) {
-      await db
-        .update(feeds)
-        .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
-        .where(eq(feeds.id, feedId));
-    }
-  } else {
-    // Create new feed
-    feedId = generateUuidv7();
-    const now = new Date();
-
-    // Use domain as title fallback, but also check for LessWrong user feeds
-    let feedTitle = parsedFeed.title || getDomainFromUrl(feedUrl);
-    const lessWrongUserId = extractUserIdFromFeedUrl(feedUrl);
-    if (lessWrongUserId && feedTitle) {
-      // Fetch LessWrong user info and append display name to title
-      const lwUser = await fetchLessWrongUserById(lessWrongUserId);
-      if (lwUser?.displayName) {
-        feedTitle = `${feedTitle} - ${lwUser.displayName}`;
-      }
-    }
-
-    const newFeed = {
-      id: feedId,
-      type: "web" as const, // All URL-based feeds use "web" type
-      url: feedUrl,
-      title: feedTitle,
-      description: parsedFeed.description || null,
-      siteUrl: parsedFeed.siteUrl || null,
-      nextFetchAt: now,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await db.insert(feeds).values(newFeed);
-    feedRecord = newFeed as typeof feeds.$inferSelect;
-
-    await ensureFeedJob(feedId);
-  }
-
-  // Extract GUIDs from parsed feed for entry matching
-  const feedGuids: string[] = [];
-  for (const item of parsedFeed.items) {
-    try {
-      feedGuids.push(deriveGuid(item));
-    } catch {
-      // Skip items without valid GUIDs
+  let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
+  const lessWrongUserId = extractUserIdFromFeedUrl(finalFeedUrl);
+  if (lessWrongUserId && feedTitle) {
+    const lwUser = await fetchLessWrongUserById(lessWrongUserId);
+    if (lwUser?.displayName) {
+      feedTitle = `${feedTitle} - ${lwUser.displayName}`;
     }
   }
 
-  // Create or reactivate subscription with entry population via GUIDs
-  const result = await createOrReactivateSubscription(db, {
-    userId,
-    feedId,
-    entrySource: {
-      type: "guids",
-      guids: feedGuids,
-    },
-  });
-
-  const feedData = {
-    id: feedRecord.id,
-    type: feedRecord.type,
-    url: feedRecord.url,
-    title: feedRecord.title,
-    description: feedRecord.description,
-    siteUrl: feedRecord.siteUrl,
-  };
-
-  // SSE event uses nested format for compatibility
-  const sseSubscriptionData = {
-    id: result.subscriptionId,
-    feedId,
-    customTitle: null,
-    subscribedAt: result.subscribedAt.toISOString(),
-    unreadCount: result.unreadCount,
-    tags: [] as Array<{ id: string; name: string; color: string | null }>,
-  };
-
-  publishSubscriptionCreated(
-    userId,
-    feedId,
-    result.subscriptionId,
-    result.subscribedAt, // subscribedAt is used for both subscribedAt and updatedAt
-    sseSubscriptionData,
-    feedData
-  ).catch((err) => {
-    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-  });
-
-  // Return flat format for API response
   return {
-    id: result.subscriptionId,
-    type: feedRecord.type,
-    url: feedRecord.url,
-    title: feedRecord.title, // no custom title for new subscriptions
-    originalTitle: feedRecord.title,
-    description: feedRecord.description,
-    siteUrl: feedRecord.siteUrl,
-    subscribedAt: result.subscribedAt,
-    unreadCount: result.unreadCount,
-    tags: [] as Array<{ id: string; name: string; color: string | null }>,
-    fetchFullContent: false, // default for new subscriptions
+    url: finalFeedUrl,
+    title: feedTitle ?? null,
+    description: parsedFeed.description || null,
+    siteUrl: parsedFeed.siteUrl || null,
   };
 }
 
@@ -572,28 +201,21 @@ export const subscriptionsRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const feedUrl = input.url;
 
-      // Check if this exact URL already exists as a feed that's been fetched
-      // If so, we can skip the network request and use lastSeenAt to determine visibility
-      const existingFeedByUrl = await ctx.db
-        .select()
+      // Check if this exact URL already exists as a feed that's been fetched.
+      // If so, we can skip the network request entirely.
+      const existingFeed = await ctx.db
+        .select({ lastFetchedAt: feeds.lastFetchedAt })
         .from(feeds)
         .where(eq(feeds.url, feedUrl))
         .limit(1);
 
-      const canSkipFetch =
-        existingFeedByUrl.length > 0 && existingFeedByUrl[0].lastFetchedAt !== null;
+      const canSkipFetch = existingFeed.length > 0 && existingFeed[0].lastFetchedAt !== null;
 
-      if (canSkipFetch) {
-        // Fast path: existing feed that's been fetched - no network request needed
-        return await subscribeToExistingFeed(
-          ctx.db,
-          userId,
-          existingFeedByUrl[0] as typeof feeds.$inferSelect
-        );
-      }
+      // Fetch and parse only if we don't already know this feed
+      const feedInput = canSkipFetch ? { url: feedUrl } : await fetchAndResolveFeed(feedUrl);
 
-      // Slow path: need to fetch and potentially discover the feed
-      return await subscribeToNewOrUnfetchedFeed(ctx.db, userId, feedUrl);
+      const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput);
+      return formatSubscriptionResponse(result);
     }),
 
   /**

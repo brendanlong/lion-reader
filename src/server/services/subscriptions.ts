@@ -4,9 +4,23 @@
  * Business logic for subscription operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { entries, userEntries, tags, subscriptionTags, userFeeds } from "@/server/db/schema";
+import {
+  feeds,
+  entries,
+  subscriptions,
+  subscriptionFeeds,
+  userEntries,
+  tags,
+  subscriptionTags,
+  userFeeds,
+} from "@/server/db/schema";
+import { generateUuidv7 } from "@/lib/uuidv7";
+import { logger } from "@/lib/logger";
+import { usageLimitsConfig } from "@/server/config/env";
+import { ensureFeedJob } from "@/server/jobs/queue";
+import { publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { errors } from "@/server/trpc/errors";
 
 // ============================================================================
@@ -269,4 +283,263 @@ export async function getSubscription(
   }
 
   return formatSubscriptionRow(results[0]);
+}
+
+// ============================================================================
+// Subscription Creation
+// ============================================================================
+
+/**
+ * Feed data for creating a subscription. For existing feeds, only `url` is required.
+ * Other fields are used when creating new feed records.
+ */
+export interface CreateSubscriptionFeedInput {
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  siteUrl?: string | null;
+}
+
+/**
+ * Result of creating a subscription.
+ */
+export interface CreateSubscriptionResult {
+  /** Subscription ID */
+  subscriptionId: string;
+  /** When the subscription was created */
+  subscribedAt: Date;
+  /** Number of unread entries populated */
+  unreadCount: number;
+  /** True if the subscription already existed and was active (idempotent return) */
+  alreadyActive: boolean;
+  /** User's custom title for this subscription (null = use feed title) */
+  customTitle: string | null;
+  /** Whether to fetch full article content from URL */
+  fetchFullContent: boolean;
+  /** Feed data (from existing or newly created feed) */
+  feed: {
+    id: string;
+    type: "web" | "email" | "saved";
+    url: string | null;
+    title: string | null;
+    description: string | null;
+    siteUrl: string | null;
+  };
+}
+
+/**
+ * Creates a new subscription to a feed. Handles the full flow:
+ * 1. Upserts the feed record (creates if new, uses existing otherwise)
+ * 2. Ensures a background fetch job exists for the feed
+ * 3. Checks subscription cap (with idempotent return if already subscribed)
+ * 4. Upserts the subscription (creates new or reactivates soft-deleted)
+ * 5. Populates initial user_entries so the user sees current feed content
+ *
+ * Idempotent: if the user already has an active subscription, returns it.
+ */
+export async function createSubscription(
+  db: typeof dbType,
+  userId: string,
+  feed: CreateSubscriptionFeedInput
+): Promise<CreateSubscriptionResult> {
+  // 1. Upsert feed — insert if new, otherwise use existing
+  const newFeedId = generateUuidv7();
+  const now = new Date();
+  await db
+    .insert(feeds)
+    .values({
+      id: newFeedId,
+      type: "web",
+      url: feed.url,
+      title: feed.title ?? null,
+      description: feed.description ?? null,
+      siteUrl: feed.siteUrl ?? null,
+      nextFetchAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: feeds.url });
+
+  const [feedRecord] = await db.select().from(feeds).where(eq(feeds.url, feed.url)).limit(1);
+  if (!feedRecord) {
+    throw new Error(`Feed disappeared after upsert: ${feed.url}`);
+  }
+
+  const feedId = feedRecord.id;
+  const feedData = {
+    id: feedId,
+    type: feedRecord.type,
+    url: feedRecord.url,
+    title: feedRecord.title,
+    description: feedRecord.description,
+    siteUrl: feedRecord.siteUrl,
+  };
+
+  // 2. Ensure background fetch job exists
+  await ensureFeedJob(feedId);
+
+  // 3. Check subscription cap; if at cap, return existing or throw
+  const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
+  const [{ activeCount }] = await db
+    .select({ activeCount: sql<number>`count(*)::int` })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+  if (activeCount >= maxSubs) {
+    // Over cap — check if we're already subscribed to this specific feed
+    const [existingSub] = await db
+      .select({
+        id: subscriptions.id,
+        subscribedAt: subscriptions.subscribedAt,
+        customTitle: subscriptions.customTitle,
+        fetchFullContent: subscriptions.fetchFullContent,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.feedId, feedId),
+          isNull(subscriptions.unsubscribedAt)
+        )
+      )
+      .limit(1);
+
+    if (existingSub) {
+      const viewResults = await buildSubscriptionBaseQuery(db, userId)
+        .where(eq(userFeeds.id, existingSub.id))
+        .limit(1);
+
+      return {
+        subscriptionId: existingSub.id,
+        subscribedAt: existingSub.subscribedAt,
+        unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
+        alreadyActive: true,
+        customTitle: existingSub.customTitle,
+        fetchFullContent: existingSub.fetchFullContent,
+        feed: feedData,
+      };
+    }
+
+    throw errors.maxSubscriptionsReached(maxSubs);
+  }
+
+  // 4. Upsert subscription — insert new or reactivate soft-deleted
+  //    RETURNING tells us if the row was actually inserted/updated.
+  //    If the subscription is already active, the WHERE clause doesn't match,
+  //    so neither insert nor update happens and RETURNING returns nothing.
+  const newSubscriptionId = generateUuidv7();
+  const subscribedAt = new Date();
+
+  const upsertResult = await db.execute<{
+    id: string;
+    subscribed_at: string;
+    custom_title: string | null;
+    fetch_full_content: boolean;
+  }>(sql`
+    INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at)
+    VALUES (${newSubscriptionId}, ${userId}, ${feedId}, ${subscribedAt}, ${subscribedAt}, ${subscribedAt})
+    ON CONFLICT (user_id, feed_id) DO UPDATE SET
+      unsubscribed_at = NULL,
+      subscribed_at = ${subscribedAt},
+      updated_at = ${subscribedAt}
+    WHERE subscriptions.unsubscribed_at IS NOT NULL
+    RETURNING id, subscribed_at, custom_title, fetch_full_content
+  `);
+
+  if (upsertResult.rows.length === 0) {
+    // Subscription was already active — idempotent return with real unread count
+    const [sub] = await db
+      .select({
+        id: subscriptions.id,
+        subscribedAt: subscriptions.subscribedAt,
+        customTitle: subscriptions.customTitle,
+        fetchFullContent: subscriptions.fetchFullContent,
+      })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+      .limit(1);
+
+    const viewResults = await buildSubscriptionBaseQuery(db, userId)
+      .where(eq(userFeeds.id, sub.id))
+      .limit(1);
+
+    return {
+      subscriptionId: sub.id,
+      subscribedAt: sub.subscribedAt,
+      unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
+      alreadyActive: true,
+      customTitle: sub.customTitle,
+      fetchFullContent: sub.fetchFullContent,
+      feed: feedData,
+    };
+  }
+
+  const upsertedRow = upsertResult.rows[0];
+  const subscriptionId = upsertedRow.id;
+  const customTitle = upsertedRow.custom_title;
+  const fetchFullContent = upsertedRow.fetch_full_content;
+
+  // 5. Upsert subscription_feeds
+  await db
+    .insert(subscriptionFeeds)
+    .values({ subscriptionId, feedId, userId })
+    .onConflictDoNothing();
+
+  // 6. Populate user_entries using INSERT...SELECT and count unread
+  let unreadCount = 0;
+  if (feedRecord.lastEntriesUpdatedAt) {
+    await db.execute(sql`
+      INSERT INTO user_entries (user_id, entry_id)
+      SELECT ${userId}, e.id
+      FROM entries e
+      WHERE e.feed_id = ${feedId}
+        AND e.last_seen_at = ${feedRecord.lastEntriesUpdatedAt}
+      ON CONFLICT DO NOTHING
+    `);
+
+    // Count unread entries (rowCount may be 0 for reactivations where entries already exist)
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(userEntries)
+      .innerJoin(entries, eq(entries.id, userEntries.entryId))
+      .where(
+        and(eq(userEntries.userId, userId), eq(entries.feedId, feedId), eq(userEntries.read, false))
+      );
+    unreadCount = count;
+
+    logger.debug("Populated initial user entries via lastSeenAt", {
+      userId,
+      feedId,
+      entryCount: unreadCount,
+    });
+  }
+
+  // 7. Publish SSE event for new/reactivated subscriptions
+  publishSubscriptionCreated(
+    userId,
+    feedId,
+    subscriptionId,
+    subscribedAt,
+    {
+      id: subscriptionId,
+      feedId,
+      customTitle,
+      subscribedAt: subscribedAt.toISOString(),
+      unreadCount,
+      tags: [],
+    },
+    feedData
+  ).catch((err) => {
+    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+  });
+
+  return {
+    subscriptionId,
+    subscribedAt,
+    unreadCount,
+    alreadyActive: false,
+    customTitle,
+    fetchFullContent,
+    feed: feedData,
+  };
 }

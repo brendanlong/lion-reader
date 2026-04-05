@@ -41,11 +41,11 @@ import { startFeedFetchTimer, trackWebsubRenewal, type FeedFetchStatus } from ".
 import {
   publishImportProgress,
   publishImportCompleted,
-  publishSubscriptionCreated,
+  publishSubscriptionUpdated,
 } from "../redis/pubsub";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isLessWrongUserFeedUrl } from "../feed/lesswrong";
-import { createOrReactivateSubscription } from "../trpc/routers/subscriptions";
+import { createSubscription } from "../services/subscriptions";
 import {
   findPermanentRedirectUrl,
   isHttpToHttpsUpgrade,
@@ -1531,57 +1531,16 @@ export async function handleProcessOpmlImport(
       }
 
       try {
-        // Check if feed already exists in database
-        const existingFeed = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
-
-        let feedId: string;
-
-        if (existingFeed.length > 0) {
-          // Feed exists - ensure job exists
-          feedId = existingFeed[0].id;
-          const job = await ensureFeedJob(feedId);
-          if (job.nextRunAt) {
-            await db
-              .update(feeds)
-              .set({ nextFetchAt: job.nextRunAt, updatedAt: new Date() })
-              .where(eq(feeds.id, feedId));
-          }
-        } else {
-          // Create new feed record
-          feedId = generateUuidv7();
-          const now = new Date();
-
-          await db.insert(feeds).values({
-            id: feedId,
-            type: "web" as const, // All URL-based feeds use "web" type
-            url: feedUrl,
-            title: feedTitle,
-            siteUrl: opmlFeed.htmlUrl ?? null,
-            nextFetchAt: now, // Schedule immediate fetch
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          // Create job for the new feed (will be claimed via data-driven eligibility)
-          await ensureFeedJob(feedId);
-        }
-
-        // Create or reactivate subscription with entry population
-        // Use lastSeenAt if feed has been fetched, otherwise no entries (feed will be fetched soon)
-        const subscriptionResult = await createOrReactivateSubscription(db, {
-          userId,
-          feedId,
-          entrySource:
-            existingFeed.length > 0 && existingFeed[0].lastEntriesUpdatedAt
-              ? { type: "lastSeenAt", lastEntriesUpdatedAt: existingFeed[0].lastEntriesUpdatedAt }
-              : { type: "none" },
+        const subscriptionResult = await createSubscription(db, userId, {
+          url: feedUrl,
+          title: feedTitle,
+          siteUrl: opmlFeed.htmlUrl ?? null,
         });
 
         const actualSubscriptionId = subscriptionResult.subscriptionId;
+        const feedId = subscriptionResult.feed.id;
 
         // Associate subscription with tags from categories
-        // Also collect tag info for the subscription_created event
-        const subscriptionTagsList: Array<{ id: string; name: string; color: string | null }> = [];
         if (opmlFeed.category && opmlFeed.category.length > 0) {
           const tagInfos = opmlFeed.category
             .map((categoryName) => tagNameToInfo.get(categoryName))
@@ -1606,8 +1565,20 @@ export async function handleProcessOpmlImport(
               }))
             );
 
-            // Track tags for event
-            subscriptionTagsList.push(...tagInfos);
+            // Publish update event so the UI picks up the tags
+            publishSubscriptionUpdated(
+              userId,
+              actualSubscriptionId,
+              tagNow,
+              tagInfos,
+              null // no custom title
+            ).catch((err) => {
+              logger.error("Failed to publish subscription_updated event", {
+                err,
+                userId,
+                feedId,
+              });
+            });
 
             logger.debug("OPML import: associated subscription with tags", {
               subscriptionId: actualSubscriptionId,
@@ -1616,36 +1587,6 @@ export async function handleProcessOpmlImport(
             });
           }
         }
-
-        // Get feed info for the event (either from existing feed or newly created)
-        const feedType = existingFeed.length > 0 ? existingFeed[0].type : ("web" as const);
-        const feedDescription = existingFeed.length > 0 ? existingFeed[0].description : null;
-
-        // Publish subscription_created event with full data (fire and forget)
-        publishSubscriptionCreated(
-          userId,
-          feedId,
-          actualSubscriptionId,
-          subscriptionResult.subscribedAt, // subscribedAt is used for both subscribedAt and updatedAt
-          {
-            id: actualSubscriptionId,
-            feedId,
-            customTitle: null,
-            subscribedAt: subscriptionResult.subscribedAt.toISOString(),
-            unreadCount: subscriptionResult.unreadCount,
-            tags: subscriptionTagsList,
-          },
-          {
-            id: feedId,
-            type: feedType,
-            url: feedUrl,
-            title: feedTitle,
-            description: feedDescription,
-            siteUrl: opmlFeed.htmlUrl ?? null,
-          }
-        ).catch((err) => {
-          logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-        });
 
         // Add to existing URLs set to prevent duplicates within this import
         existingUrls.add(feedUrl);
