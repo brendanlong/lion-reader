@@ -1,3 +1,6 @@
+# npm lockfile (project uses pnpm)
+package-lock.json
+
 # Logs
 logs
 *.log
