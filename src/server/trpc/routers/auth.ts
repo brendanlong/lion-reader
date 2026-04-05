@@ -17,6 +17,7 @@ import {
   expensiveProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
+import type { Database } from "@/server/db";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -38,7 +39,7 @@ import {
   validateDiscordCallback,
   isDiscordOAuthEnabled,
 } from "@/server/auth/oauth/discord";
-import { createUser } from "@/server/auth/signup";
+import { createUser, subscribeToAnnouncementFeed } from "@/server/auth/signup";
 import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import {
@@ -149,6 +150,11 @@ async function handleOAuthCallback(
     ipAddress,
   });
 
+  // Auto-subscribe new OAuth users to announcement feed (fire-and-forget)
+  if (oauthResult.isNewUser) {
+    void subscribeToAnnouncementFeed(db as Database, oauthResult.userId);
+  }
+
   return {
     user: {
       id: oauthResult.userId,
@@ -234,6 +240,9 @@ export const authRouter = createTRPCRouter({
 
         return { user, token };
       });
+
+      // Auto-subscribe to announcement feed (fire-and-forget, errors are caught internally)
+      void subscribeToAnnouncementFeed(ctx.db, result.user.userId);
 
       return {
         user: {

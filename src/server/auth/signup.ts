@@ -10,11 +10,13 @@
  */
 
 import { and, eq, gte, isNull } from "drizzle-orm";
+import * as Sentry from "@sentry/nextjs";
 
 import { users, invites } from "@/server/db/schema";
-import { signupConfig, type SignupProvider } from "@/server/config/env";
+import { signupConfig, announcementFeedConfig, type SignupProvider } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { errors } from "@/server/trpc/errors";
+import { logger } from "@/lib/logger";
 import type { Database } from "@/server/db";
 
 /**
@@ -137,4 +139,30 @@ export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<
     email,
     createdAt: now,
   };
+}
+
+/**
+ * Subscribe a newly created user to the announcement feed.
+ * Runs async and catches all errors — must never interfere with signup.
+ */
+export async function subscribeToAnnouncementFeed(db: Database, userId: string): Promise<void> {
+  const feedUrl = announcementFeedConfig.url;
+  if (!feedUrl) return;
+
+  try {
+    // Dynamic import to avoid circular dependency (subscriptions imports db schema)
+    const { createSubscription } = await import("@/server/services/subscriptions");
+    await createSubscription(db, userId, { url: feedUrl });
+    logger.info("Auto-subscribed user to announcement feed", { userId, feedUrl });
+  } catch (err) {
+    logger.error("Failed to auto-subscribe user to announcement feed", {
+      userId,
+      feedUrl,
+      err,
+    });
+    Sentry.captureException(err, {
+      tags: { source: "announcement-feed-subscription" },
+      extra: { userId, feedUrl },
+    });
+  }
 }

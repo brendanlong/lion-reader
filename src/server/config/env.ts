@@ -145,6 +145,16 @@ export const githubConfig = {
 };
 
 /**
+ * Announcement feed configuration.
+ * New users are auto-subscribed to this feed on signup.
+ * Set to empty string to disable auto-subscription.
+ */
+export const announcementFeedConfig = {
+  /** URL of the announcement feed. Set to empty string to disable. */
+  url: process.env.ANNOUNCEMENT_FEED_URL || "https://announcements.lionreader.com/feed.xml",
+};
+
+/**
  * Usage limits configuration.
  * These limits protect against abuse and prevent OOM from oversized content.
  * All limits are configurable via environment variables.
