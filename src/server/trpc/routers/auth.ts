@@ -40,6 +40,7 @@ import {
 } from "@/server/auth/oauth/discord";
 import { createUser } from "@/server/auth/signup";
 import { processOAuthCallback } from "@/server/auth/oauth/callback";
+import { subscribeToAnnouncementsFeed } from "@/server/services/announcements";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import {
   DISCORD_BOT_ENABLED,
@@ -149,6 +150,11 @@ async function handleOAuthCallback(
     ipAddress,
   });
 
+  // Auto-subscribe new OAuth users to announcements feed (fire-and-forget)
+  if (oauthResult.isNewUser) {
+    void subscribeToAnnouncementsFeed(oauthResult.userId);
+  }
+
   return {
     user: {
       id: oauthResult.userId,
@@ -234,6 +240,9 @@ export const authRouter = createTRPCRouter({
 
         return { user, token };
       });
+
+      // Auto-subscribe to announcements feed (fire-and-forget)
+      void subscribeToAnnouncementsFeed(result.user.userId);
 
       return {
         user: {
