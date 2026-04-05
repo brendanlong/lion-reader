@@ -7,6 +7,7 @@
 
 import { QueryClient } from "@tanstack/react-query";
 import { createMockTrpcUtils } from "./trpc-mock";
+import { addSubscriptionToCache } from "@/lib/cache/count-cache";
 import type { SyncEvent } from "@/lib/events/schemas";
 
 // ============================================================================
@@ -244,7 +245,12 @@ export function seedCacheState(
   const starredUnread = options.starredUnread ?? 2;
   const savedUnread = options.savedUnread ?? 1;
 
-  // Seed subscriptions.list (unparameterized)
+  // Seed subscriptions into the subscription lookup map
+  for (const sub of subs) {
+    addSubscriptionToCache(sub);
+  }
+
+  // Also seed the mock cache for tests that check subscriptions.list via mockUtils
   mockUtils.setCache("subscriptions", "list", undefined, { items: subs });
 
   // Seed tags.list

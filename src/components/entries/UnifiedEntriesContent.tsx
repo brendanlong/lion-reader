@@ -285,7 +285,7 @@ function TitleFallback({ routeInfo }: { routeInfo: RouteInfo }) {
 
   // Subscription title from cache
   if (routeInfo.subscriptionId) {
-    const subscription = findCachedSubscription(utils, queryClient, routeInfo.subscriptionId);
+    const subscription = findCachedSubscription(queryClient, routeInfo.subscriptionId);
     if (subscription) {
       return (
         <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>

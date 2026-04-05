@@ -25,6 +25,8 @@ import {
   addSubscriptionToCache,
   removeSubscriptionFromCache,
   findCachedSubscription,
+  getSubscriptionLookupMap,
+  setSubscriptionUnreadCountInMap,
 } from "./count-cache";
 
 /**
@@ -123,11 +125,8 @@ function invalidateSubscriptionListsForTags(
     const keyData = queryKey[1] as { input?: SubscriptionListInput; type?: string } | undefined;
     const input = keyData?.input;
 
-    // Always invalidate the unparameterized query (used by entry content pages)
-    if (!input) {
-      queryClient.invalidateQueries({ queryKey });
-      continue;
-    }
+    // Skip queries without input (no unparameterized query to invalidate)
+    if (!input) continue;
 
     // Invalidate if this query is for one of the affected tags
     if (input.tagId && tagIdSet.has(input.tagId)) {
@@ -364,14 +363,13 @@ export function handleSubscriptionCreated(
   queryClient?: QueryClient
 ): void {
   // Guard against duplicate subscription events (e.g. from sync polling).
-  // addSubscriptionToCache already checks for duplicates in the list cache,
-  // but the count updates below do not. Check if the subscription already
-  // exists before incrementing counts to prevent unbounded count inflation (#680).
+  // Check if the subscription already exists before incrementing counts
+  // to prevent unbounded count inflation (#680).
   const alreadyExists = queryClient
-    ? findCachedSubscription(utils, queryClient, subscription.id) !== undefined
-    : (utils.subscriptions.list.getData()?.items.some((s) => s.id === subscription.id) ?? false);
+    ? findCachedSubscription(queryClient, subscription.id) !== undefined
+    : getSubscriptionLookupMap().has(subscription.id);
 
-  addSubscriptionToCache(utils, subscription);
+  addSubscriptionToCache(subscription);
 
   // Skip count updates if the subscription was already in the cache
   if (alreadyExists) return;
@@ -449,11 +447,11 @@ export function handleSubscriptionDeleted(
   // Look up subscription data before removing from cache
   // This lets us do targeted updates instead of broad invalidations
   const subscription = queryClient
-    ? findCachedSubscription(utils, queryClient, subscriptionId)
+    ? findCachedSubscription(queryClient, subscriptionId)
     : undefined;
 
   // Remove from all subscription caches
-  removeSubscriptionFromCache(utils, subscriptionId);
+  removeSubscriptionFromCache(subscriptionId);
   if (queryClient) {
     removeSubscriptionFromInfiniteQueries(queryClient, subscriptionId);
   }
@@ -605,12 +603,7 @@ export function setCounts(
 
   // Set subscription unread count
   if (counts.subscription) {
-    setSubscriptionUnreadCount(
-      utils,
-      counts.subscription.id,
-      counts.subscription.unread,
-      queryClient
-    );
+    setSubscriptionUnreadCount(counts.subscription.id, counts.subscription.unread, queryClient);
   }
 
   // Set tag unread counts
@@ -652,7 +645,6 @@ export function setBulkCounts(
 
   // Batch update all subscription unread counts
   setBulkSubscriptionUnreadCounts(
-    utils,
     subscriptionUpdates,
     affectedTagIds,
     counts.uncategorized !== undefined,
@@ -683,7 +675,6 @@ export function setBulkCounts(
  * @param queryClient - React Query client for updating infinite query caches
  */
 function setBulkSubscriptionUnreadCounts(
-  utils: TRPCClientUtils,
   subscriptionUpdates: Map<string, number>,
   affectedTagIds: Set<string>,
   hasUncategorized: boolean,
@@ -691,17 +682,10 @@ function setBulkSubscriptionUnreadCounts(
 ): void {
   if (subscriptionUpdates.size === 0) return;
 
-  // Update in unparameterized subscriptions.list cache
-  utils.subscriptions.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      items: oldData.items.map((sub) => {
-        const newUnread = subscriptionUpdates.get(sub.id);
-        return newUnread !== undefined ? { ...sub, unreadCount: newUnread } : sub;
-      }),
-    };
-  });
+  // Update the subscription lookup map
+  for (const [subId, newUnread] of subscriptionUpdates) {
+    setSubscriptionUnreadCountInMap(subId, newUnread);
+  }
 
   // Update only the affected per-tag infinite query caches
   if (queryClient) {
@@ -748,21 +732,12 @@ function setBulkSubscriptionUnreadCounts(
  * Used by single-entry mutations (setCounts) where we don't know the affected tags.
  */
 function setSubscriptionUnreadCount(
-  utils: TRPCClientUtils,
   subscriptionId: string,
   unread: number,
   queryClient?: QueryClient
 ): void {
-  // Update in unparameterized subscriptions.list cache
-  utils.subscriptions.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      items: oldData.items.map((sub) =>
-        sub.id === subscriptionId ? { ...sub, unreadCount: unread } : sub
-      ),
-    };
-  });
+  // Update the subscription lookup map
+  setSubscriptionUnreadCountInMap(subscriptionId, unread);
 
   // Update in per-tag infinite query caches
   // Note: For single-entry mutations, we still need to scan all caches

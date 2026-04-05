@@ -17,39 +17,42 @@ export type CachedSubscription = NonNullable<
 >["items"][number];
 
 /**
- * Fallback map for subscriptions received via SSE events that may not be in
- * any React Query cache. This handles the case where a subscription_created
- * event arrives but the subscription's query cache hasn't been populated yet
- * (e.g., the Uncategorized section is collapsed in the sidebar, so the
- * per-tag infinite query hasn't been fetched). Without this, subsequent
- * new_entry events can't determine the subscription's tags, causing
- * tag/uncategorized unread counts to not update.
+ * Canonical subscription lookup map. This is the single source of truth for
+ * subscription data used by SSE event handlers and count calculations.
  *
- * Populated by addSubscriptionToCache, cleaned by removeSubscriptionFromCache.
+ * Replaces the previous two-layer approach (unparameterized React Query cache +
+ * separate SSE fallback map) with a plain Map. Populated by:
+ * - addSubscriptionToCache (subscription_created events, mutation side-effects)
+ * - updateSubscriptionInCache (subscription_updated events)
+ * - Cleaned by removeSubscriptionFromCache (subscription_deleted, unsubscribe)
+ *
+ * Read by getAllCachedSubscriptions(), findCachedSubscription(), and the
+ * alreadyRemoved check in event-handlers.ts.
  */
-const sseSubscriptionFallback = new Map<string, CachedSubscription>();
+const subscriptionLookupMap = new Map<string, CachedSubscription>();
 
 /**
- * Resets the SSE subscription fallback map.
+ * Resets the subscription lookup map.
  * Exported for test isolation only - this map is module-level state
  * that persists across tests and must be cleared between them.
  */
-export function _resetSseSubscriptionFallback(): void {
-  sseSubscriptionFallback.clear();
+export function _resetSubscriptionLookupMap(): void {
+  subscriptionLookupMap.clear();
+}
+
+/**
+ * Returns the subscription lookup map for direct access.
+ * Used by event handlers to check subscription existence without going
+ * through the full getAllCachedSubscriptions() machinery.
+ */
+export function getSubscriptionLookupMap(): ReadonlyMap<string, CachedSubscription> {
+  return subscriptionLookupMap;
 }
 
 /**
  * Page structure in subscription infinite query cache.
  */
 interface CachedSubscriptionPage {
-  items: CachedSubscription[];
-  nextCursor?: string;
-}
-
-/**
- * Regular query data structure for subscriptions.
- */
-interface SubscriptionListData {
   items: CachedSubscription[];
   nextCursor?: string;
 }
@@ -82,27 +85,18 @@ function applySubscriptionDeltas<T extends CachedSubscription>(
 }
 
 /**
- * Collects all cached subscriptions from both the unparameterized query
- * and all per-tag infinite queries into a single map.
+ * Collects all cached subscriptions from the subscription lookup map
+ * and per-tag infinite queries into a single map.
  *
- * Subscriptions may only exist in one cache or the other depending on
- * which views have been loaded (entry view vs sidebar tag views).
+ * The lookup map is the primary source; infinite queries provide
+ * additional subscriptions that may have been loaded by the sidebar
+ * but not yet seen via SSE events.
  */
-function getAllCachedSubscriptions(
-  utils: TRPCClientUtils,
-  queryClient?: QueryClient
-): Map<string, CachedSubscription> {
-  const subscriptionMap = new Map<string, CachedSubscription>();
+function getAllCachedSubscriptions(queryClient?: QueryClient): Map<string, CachedSubscription> {
+  // Start with a copy of the subscription lookup map
+  const subscriptionMap = new Map<string, CachedSubscription>(subscriptionLookupMap);
 
-  // Check the unparameterized query (used by UnifiedEntriesContent/EntryContent)
-  const subscriptionsData = utils.subscriptions.list.getData();
-  if (subscriptionsData) {
-    for (const s of subscriptionsData.items) {
-      subscriptionMap.set(s.id, s);
-    }
-  }
-
-  // Check per-tag infinite queries (used by TagSubscriptionList in sidebar)
+  // Also check per-tag infinite queries (used by TagSubscriptionList in sidebar)
   if (queryClient) {
     forEachCachedSubscription(queryClient, (s) => {
       if (!subscriptionMap.has(s.id)) {
@@ -111,46 +105,26 @@ function getAllCachedSubscriptions(
     });
   }
 
-  // Fallback: check SSE subscription map for subscriptions not in any query cache.
-  // This covers newly-created subscriptions whose query caches haven't been populated
-  // (e.g., Uncategorized section is collapsed so the infinite query was never fetched).
-  for (const [id, s] of sseSubscriptionFallback) {
-    if (!subscriptionMap.has(id)) {
-      subscriptionMap.set(id, s);
-    }
-  }
-
   return subscriptionMap;
 }
 
 /**
- * Iterates over all subscriptions in cached subscription list queries.
- * Handles both regular queries and infinite queries (used by sidebar).
+ * Iterates over all subscriptions in cached per-tag infinite queries (used by sidebar).
  */
 function forEachCachedSubscription(
   queryClient: QueryClient,
   callback: (subscription: CachedSubscription) => void
 ): void {
-  const queries = queryClient.getQueriesData<SubscriptionListData | SubscriptionInfiniteData>({
+  const queries = queryClient.getQueriesData<SubscriptionInfiniteData>({
     queryKey: [["subscriptions", "list"]],
   });
   for (const [, data] of queries) {
-    if (!data) continue;
-
-    // Check if it's infinite query format (has pages array)
-    if ("pages" in data && Array.isArray(data.pages)) {
-      for (const page of data.pages) {
-        if (page?.items) {
-          for (const s of page.items) {
-            callback(s);
-          }
+    if (!data?.pages) continue;
+    for (const page of data.pages) {
+      if (page?.items) {
+        for (const s of page.items) {
+          callback(s);
         }
-      }
-    }
-    // Regular query format (has items directly)
-    else if ("items" in data && Array.isArray(data.items)) {
-      for (const s of data.items) {
-        callback(s);
       }
     }
   }
@@ -159,23 +133,19 @@ function forEachCachedSubscription(
 /**
  * Finds a single subscription by ID across all subscription caches.
  *
- * Checks both the unparameterized subscriptions.list query (populated by entry pages)
- * and per-tag infinite queries (populated by sidebar tag sections).
+ * Checks the subscription lookup map first (O(1) lookup), then falls back
+ * to per-tag infinite queries (populated by sidebar tag sections).
  *
  * Useful for providing placeholder data when navigating to a subscription page,
- * since the subscription may be cached from the sidebar but not from the entry page query.
+ * since the subscription may be cached from the sidebar but not from the lookup map.
  */
 export function findCachedSubscription(
-  utils: TRPCClientUtils,
   queryClient: QueryClient,
   subscriptionId: string
 ): CachedSubscription | undefined {
-  // Check the unparameterized query first (cheaper lookup)
-  const listData = utils.subscriptions.list.getData();
-  if (listData) {
-    const found = listData.items.find((s) => s.id === subscriptionId);
-    if (found) return found;
-  }
+  // Check the lookup map first (O(1) lookup)
+  const fromMap = subscriptionLookupMap.get(subscriptionId);
+  if (fromMap) return fromMap;
 
   // Check per-tag infinite queries
   let found: CachedSubscription | undefined;
@@ -184,16 +154,13 @@ export function findCachedSubscription(
       found = s;
     }
   });
-  if (found) return found;
-
-  // Fallback: check SSE subscription map
-  return sseSubscriptionFallback.get(subscriptionId);
+  return found;
 }
 
 /**
  * Adjusts unread counts for subscriptions in the cache.
- * Updates both the unparameterized query (used by UnifiedEntriesContent/EntryContent)
- * and all per-tag infinite queries (used by TagSubscriptionList in sidebar).
+ * Updates the subscription lookup map and all per-tag infinite queries
+ * (used by TagSubscriptionList in sidebar).
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionDeltas - Map of subscriptionId -> count change (+1 for unread, -1 for read)
@@ -206,15 +173,16 @@ export function adjustSubscriptionUnreadCounts(
 ): void {
   if (subscriptionDeltas.size === 0) return;
 
-  // Update the unparameterized query (used by UnifiedEntriesContent/EntryContent)
-  utils.subscriptions.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-
-    return {
-      ...oldData,
-      items: applySubscriptionDeltas(oldData.items, subscriptionDeltas),
-    };
-  });
+  // Update the subscription lookup map
+  for (const [subId, delta] of subscriptionDeltas) {
+    const sub = subscriptionLookupMap.get(subId);
+    if (sub) {
+      subscriptionLookupMap.set(subId, {
+        ...sub,
+        unreadCount: Math.max(0, sub.unreadCount + delta),
+      });
+    }
+  }
 
   // Update all per-tag infinite queries (used by TagSubscriptionList in sidebar)
   // These have query keys like [["subscriptions", "list"], { input: {...}, type: "infinite" }]
@@ -297,14 +265,12 @@ export function adjustEntriesCount(
 }
 
 /**
- * Adds a new subscription to the subscriptions.list cache.
- * Used when subscription_created SSE event arrives.
+ * Adds a new subscription to the subscription lookup map.
+ * Used when subscription_created SSE event arrives or from mutation side-effects.
  *
- * @param utils - tRPC utils for cache access
  * @param subscription - The new subscription to add
  */
 export function addSubscriptionToCache(
-  utils: TRPCClientUtils,
   subscription: CachedSubscription & {
     type: "web" | "email" | "saved";
     url: string | null;
@@ -316,28 +282,12 @@ export function addSubscriptionToCache(
     fetchFullContent: boolean;
   }
 ): void {
-  // Store in SSE fallback map so tag delta calculations can find this
-  // subscription even if no query cache has been populated for it yet.
-  sseSubscriptionFallback.set(subscription.id, subscription);
-
-  utils.subscriptions.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-
-    // Check for duplicates (SSE race condition)
-    if (oldData.items.some((s) => s.id === subscription.id)) {
-      return oldData;
-    }
-
-    return {
-      ...oldData,
-      items: [...oldData.items, subscription],
-    };
-  });
+  subscriptionLookupMap.set(subscription.id, subscription);
 }
 
 /**
- * Updates a subscription's properties in the unparameterized subscriptions.list cache
- * and the SSE fallback map.
+ * Updates a subscription's properties in the subscription lookup map
+ * and subscriptions.get cache.
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionId - ID of the subscription to update
@@ -348,20 +298,11 @@ export function updateSubscriptionInCache(
   subscriptionId: string,
   updates: Partial<Pick<CachedSubscription, "tags" | "title">>
 ): void {
-  // Update in SSE fallback map
-  const fallback = sseSubscriptionFallback.get(subscriptionId);
-  if (fallback) {
-    sseSubscriptionFallback.set(subscriptionId, { ...fallback, ...updates });
+  // Update in subscription lookup map
+  const existing = subscriptionLookupMap.get(subscriptionId);
+  if (existing) {
+    subscriptionLookupMap.set(subscriptionId, { ...existing, ...updates });
   }
-
-  // Update in unparameterized subscriptions.list cache
-  utils.subscriptions.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      items: oldData.items.map((s) => (s.id === subscriptionId ? { ...s, ...updates } : s)),
-    };
-  });
 
   // Update in subscriptions.get cache (used by entry list title)
   utils.subscriptions.get.setData({ id: subscriptionId }, (oldData) => {
@@ -371,22 +312,27 @@ export function updateSubscriptionInCache(
 }
 
 /**
- * Removes a subscription from the subscriptions.list cache.
+ * Removes a subscription from the subscription lookup map.
  * Used for optimistic updates when unsubscribing.
  *
- * @param utils - tRPC utils for cache access
  * @param subscriptionId - ID of the subscription to remove
  */
-export function removeSubscriptionFromCache(utils: TRPCClientUtils, subscriptionId: string): void {
-  sseSubscriptionFallback.delete(subscriptionId);
+export function removeSubscriptionFromCache(subscriptionId: string): void {
+  subscriptionLookupMap.delete(subscriptionId);
+}
 
-  utils.subscriptions.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      items: oldData.items.filter((s) => s.id !== subscriptionId),
-    };
-  });
+/**
+ * Sets the absolute unread count for a subscription in the lookup map.
+ * Used by server-provided absolute count updates (markRead, star/unstar mutations).
+ *
+ * @param subscriptionId - ID of the subscription to update
+ * @param unreadCount - New absolute unread count
+ */
+export function setSubscriptionUnreadCountInMap(subscriptionId: string, unreadCount: number): void {
+  const sub = subscriptionLookupMap.get(subscriptionId);
+  if (sub) {
+    subscriptionLookupMap.set(subscriptionId, { ...sub, unreadCount });
+  }
 }
 
 /**
@@ -415,7 +361,7 @@ export function calculateTagDeltasFromSubscriptions(
   const tagDeltas = new Map<string, number>();
   let uncategorizedDelta = 0;
 
-  const subscriptionMap = getAllCachedSubscriptions(utils, queryClient);
+  const subscriptionMap = getAllCachedSubscriptions(queryClient);
   if (subscriptionMap.size === 0) return { tagDeltas, uncategorizedDelta };
 
   // Calculate tag deltas and uncategorized delta

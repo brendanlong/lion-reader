@@ -34,14 +34,15 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Count Cache (`count-cache.ts`)
 
-| Function                              | Purpose                                                |
-| ------------------------------------- | ------------------------------------------------------ |
-| `adjustSubscriptionUnreadCounts`      | Directly updates unread counts in `subscriptions.list` |
-| `adjustTagUnreadCounts`               | Directly updates unread counts in `tags.list`          |
-| `adjustEntriesCount`                  | Directly updates `entries.count` cache                 |
-| `addSubscriptionToCache`              | Adds new subscription to `subscriptions.list`          |
-| `removeSubscriptionFromCache`         | Removes subscription from `subscriptions.list`         |
-| `calculateTagDeltasFromSubscriptions` | Calculates tag deltas from subscription deltas         |
+| Function                              | Purpose                                                  |
+| ------------------------------------- | -------------------------------------------------------- |
+| `adjustSubscriptionUnreadCounts`      | Updates unread counts in lookup map and infinite queries |
+| `adjustTagUnreadCounts`               | Directly updates unread counts in `tags.list`            |
+| `adjustEntriesCount`                  | Directly updates `entries.count` cache                   |
+| `addSubscriptionToCache`              | Adds subscription to the subscription lookup map         |
+| `removeSubscriptionFromCache`         | Removes subscription from the subscription lookup map    |
+| `setSubscriptionUnreadCountInMap`     | Sets absolute unread count in the lookup map             |
+| `calculateTagDeltasFromSubscriptions` | Calculates tag deltas from subscription deltas           |
 
 ## Queries
 
@@ -122,7 +123,7 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 | Mutation                | Used In                                  | Cache Updates                                                                         |
 | ----------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `subscriptions.create`  | Subscribe page                           | Direct cache update via `setData`                                                     |
+| `subscriptions.create`  | Subscribe page                           | `addSubscriptionToCache` + targeted invalidation                                      |
 | `subscriptions.update`  | `EntryContent`, `EditSubscriptionDialog` | Invalidate: `subscriptions.list`                                                      |
 | `subscriptions.delete`  | `Sidebar`, Broken feeds                  | Optimistic: remove from `subscriptions.list`. Invalidate: `entries.list`, `tags.list` |
 | `subscriptions.setTags` | `EditSubscriptionDialog`                 | (handled by dialog close)                                                             |
@@ -209,40 +210,11 @@ This is simpler than the old two-phase approach and provides better latency.
 
 ### subscriptions.delete (Sidebar)
 
-Uses full optimistic update with rollback:
-
-```typescript
-onMutate: (variables) => {
-  // Cancel in-flight queries
-  await utils.subscriptions.list.cancel();
-  // Snapshot for rollback
-  const previousData = utils.subscriptions.list.getData();
-  // Optimistically remove
-  utils.subscriptions.list.setData(undefined, (old) => ({
-    ...old,
-    items: old.items.filter((item) => item.id !== variables.id),
-  }));
-  return { previousData };
-},
-onError: (_, __, context) => {
-  // Rollback on error
-  utils.subscriptions.list.setData(undefined, context.previousData);
-},
-```
+Uses `removeSubscriptionFromCache()` to remove the subscription from the lookup map, plus `removeSubscriptionFromInfiniteQueries()` to update sidebar lists. Targeted tag/count invalidations are done when the subscription data is available.
 
 ### subscriptions.create (Subscribe page)
 
-Uses manual cache update to avoid race conditions with SSE:
-
-```typescript
-onSuccess: (data) => {
-  utils.subscriptions.list.setData(undefined, (old) => {
-    // Check for duplicates from SSE
-    if (old.items.some((s) => s.id === data.subscription.id)) return old;
-    return { ...old, items: [...old.items, formattedSubscription] };
-  });
-};
-```
+Uses `addSubscriptionToCache()` to add the subscription to the lookup map. The SSE `subscription_created` event handler also calls this, with duplicate detection via the lookup map to prevent count inflation.
 
 ## Server Response Enhancements
 
