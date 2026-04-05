@@ -18,6 +18,13 @@ import {
   RATE_LIMIT_CONFIGS,
   type RateLimitType,
 } from "@/server/rate-limit";
+import { signupConfig } from "@/server/config/env";
+import { errors } from "./errors";
+import {
+  ADMIN_COOKIE_NAME,
+  validateAdminSessionToken,
+  validateAdminSecret,
+} from "@/server/auth/admin-session";
 import { logger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
 
@@ -354,43 +361,46 @@ export const expensiveConfirmedProtectedProcedure = t.procedure
 // Admin Procedures (protected by ALLOWLIST_SECRET)
 // ============================================================================
 
-import { signupConfig } from "@/server/config/env";
-import { errors } from "./errors";
-
 /**
- * Middleware that enforces admin authentication via Bearer token.
- * Checks Authorization header against ALLOWLIST_SECRET env var.
+ * Middleware that enforces admin authentication.
+ * Accepts either:
+ * 1. An httpOnly `admin_session` cookie (signed HMAC token from /api/admin/session)
+ * 2. A Bearer token matching ALLOWLIST_SECRET (for programmatic API access)
  */
 const adminMiddleware = t.middleware(({ ctx, next }) => {
-  // Check if admin secret is configured
   if (!signupConfig.allowlistSecret) {
     throw errors.adminSecretNotConfigured();
   }
 
-  // Get Authorization header
+  // Check for admin session cookie
+  const cookieHeader = ctx.headers.get("cookie");
+  if (cookieHeader) {
+    const cookies = Object.fromEntries(
+      cookieHeader.split(/;\s*/).map((c) => {
+        const [key, ...value] = c.split("=");
+        return [key, value.join("=")];
+      })
+    );
+    const sessionToken = cookies[ADMIN_COOKIE_NAME];
+    if (sessionToken && validateAdminSessionToken(sessionToken)) {
+      return next({ ctx });
+    }
+  }
+
+  // Fallback: check Bearer token (for programmatic access)
   const authHeader = ctx.headers.get("authorization");
-  if (!authHeader) {
-    throw errors.adminUnauthorized();
+  if (authHeader) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1] && validateAdminSecret(match[1])) {
+      return next({ ctx });
+    }
   }
 
-  // Parse Bearer token
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    throw errors.adminUnauthorized();
-  }
-
-  const token = match[1];
-
-  // Validate token against secret
-  if (token !== signupConfig.allowlistSecret) {
-    throw errors.adminUnauthorized();
-  }
-
-  return next({ ctx });
+  throw errors.adminUnauthorized();
 });
 
 /**
- * Admin procedure - requires ALLOWLIST_SECRET Bearer token.
+ * Admin procedure - requires admin_session cookie or ALLOWLIST_SECRET Bearer token.
  * Used for managing invites and other admin operations.
  */
 export const adminProcedure = t.procedure.use(timingMiddleware).use(adminMiddleware);

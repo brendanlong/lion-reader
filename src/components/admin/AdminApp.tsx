@@ -2,8 +2,8 @@
  * AdminApp Component
  *
  * Main admin application component that handles:
- * - Admin token authentication via localStorage
- * - Login form when no token is present
+ * - Admin authentication via httpOnly cookie session
+ * - Login form when no session is present
  * - Tab navigation between admin sections (Invites, Feed Health, Users)
  * - Wrapping authenticated content in AdminTRPCProvider
  *
@@ -25,8 +25,6 @@ import AdminInvitesContent from "@/components/admin/AdminInvitesContent";
 import AdminFeedsContent from "@/components/admin/AdminFeedsContent";
 import AdminUsersContent from "@/components/admin/AdminUsersContent";
 
-const ADMIN_TOKEN_KEY = "lion-reader-admin-token";
-
 const adminTabs = [
   { href: "/admin/overview", label: "Overview" },
   { href: "/admin/invites", label: "Invites" },
@@ -34,35 +32,11 @@ const adminTabs = [
   { href: "/admin/users", label: "Users" },
 ];
 
-function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(ADMIN_TOKEN_KEY);
-}
-
-/**
- * Validates an admin token by making a lightweight API call.
- * Returns true if the token is valid, false otherwise.
- */
-async function validateAdminToken(token: string): Promise<boolean> {
-  try {
-    const res = await fetch(
-      "/api/trpc/admin.listInvites?input=" +
-        encodeURIComponent(JSON.stringify({ json: { limit: 1 } })),
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Login form for admin authentication.
- * Validates the token against the server before accepting it.
+ * Exchanges the admin secret for an httpOnly session cookie via the server.
  */
-function AdminLoginForm({ onLogin }: { onLogin: (token: string) => void }) {
+function AdminLoginForm({ onLogin }: { onLogin: () => void }) {
   const [secret, setSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
@@ -78,16 +52,24 @@ function AdminLoginForm({ onLogin }: { onLogin: (token: string) => void }) {
       setError(null);
       setIsValidating(true);
 
-      const valid = await validateAdminToken(trimmed);
-      setIsValidating(false);
+      try {
+        const res = await fetch("/api/admin/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: trimmed }),
+        });
 
-      if (!valid) {
-        setError("Invalid admin secret");
-        return;
+        if (!res.ok) {
+          setError("Invalid admin secret");
+          return;
+        }
+
+        onLogin();
+      } catch {
+        setError("Failed to connect to server");
+      } finally {
+        setIsValidating(false);
       }
-
-      localStorage.setItem(ADMIN_TOKEN_KEY, trimmed);
-      onLogin(trimmed);
     },
     [secret, onLogin]
   );
@@ -205,34 +187,29 @@ interface AdminAppProps {
  * with header, tab navigation, and tRPC provider.
  */
 export function AdminApp({ children }: AdminAppProps) {
-  const [token, setToken] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check localStorage and validate stored token on mount.
-  // Start in loading state on both server and client to avoid hydration mismatch,
-  // since localStorage is only available on the client.
+  // Check if there's a valid admin session cookie on mount.
   useEffect(() => {
     void (async () => {
-      const storedToken = getStoredToken();
-      if (storedToken) {
-        const valid = await validateAdminToken(storedToken);
-        if (valid) {
-          setToken(storedToken);
-        } else {
-          localStorage.removeItem(ADMIN_TOKEN_KEY);
-        }
+      try {
+        const res = await fetch("/api/admin/session");
+        setIsAuthenticated(res.ok);
+      } catch {
+        setIsAuthenticated(false);
       }
       setIsLoading(false);
     })();
   }, []);
 
-  const handleLogin = useCallback((newToken: string) => {
-    setToken(newToken);
+  const handleLogin = useCallback(() => {
+    setIsAuthenticated(true);
   }, []);
 
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
-    setToken(null);
+  const handleLogout = useCallback(async () => {
+    await fetch("/api/admin/session", { method: "DELETE" });
+    setIsAuthenticated(false);
   }, []);
 
   if (isLoading) {
@@ -243,12 +220,12 @@ export function AdminApp({ children }: AdminAppProps) {
     );
   }
 
-  if (!token) {
+  if (!isAuthenticated) {
     return <AdminLoginForm onLogin={handleLogin} />;
   }
 
   return (
-    <AdminTRPCProvider token={token}>
+    <AdminTRPCProvider>
       <AdminShell onLogout={handleLogout}>{children}</AdminShell>
     </AdminTRPCProvider>
   );

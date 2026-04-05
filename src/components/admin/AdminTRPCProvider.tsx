@@ -14,15 +14,14 @@ function getBaseUrl() {
 }
 
 interface AdminTRPCProviderProps {
-  token: string;
   children: ReactNode;
 }
 
 /**
  * tRPC provider for admin pages.
- * Uses Bearer token auth instead of cookie-based session auth.
+ * Uses httpOnly cookie auth (set by /api/admin/session) — cookies are sent automatically.
  */
-export function AdminTRPCProvider({ token, children }: AdminTRPCProviderProps) {
+export function AdminTRPCProvider({ children }: AdminTRPCProviderProps) {
   const [queryClient] = useState(() => new QueryClient());
 
   const [trpcClient] = useState(() =>
@@ -31,11 +30,6 @@ export function AdminTRPCProvider({ token, children }: AdminTRPCProviderProps) {
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
           transformer: superjson,
-          headers() {
-            return {
-              Authorization: `Bearer ${token}`,
-            };
-          },
         }),
       ],
     })
