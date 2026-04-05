@@ -14,7 +14,7 @@ import {
   applySyncTagChanges,
   removeSyncTags,
   updateSubscriptionInCache,
-  getSubscriptionLookupMap,
+  findCachedSubscription,
   type CachedSubscription,
 } from "./count-cache";
 
@@ -126,9 +126,10 @@ export function handleSyncEvent(
 
     case "subscription_deleted":
       // Check if already removed (optimistic update from same tab).
-      // If the subscription is not in the lookup map, it was already removed.
+      // Check both the lookup map and infinite queries, since pre-existing
+      // subscriptions may only be in the infinite query caches.
       {
-        const alreadyRemoved = !getSubscriptionLookupMap().has(event.subscriptionId);
+        const alreadyRemoved = !findCachedSubscription(queryClient, event.subscriptionId);
 
         if (!alreadyRemoved) {
           handleSubscriptionDeleted(utils, event.subscriptionId, queryClient);
