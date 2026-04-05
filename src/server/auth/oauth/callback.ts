@@ -15,7 +15,7 @@ import { eq, and } from "drizzle-orm";
 import { db, type Database } from "@/server/db";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { createUser } from "@/server/auth/signup";
+import { createUser, subscribeToAnnouncementFeed } from "@/server/auth/signup";
 
 /**
  * OAuth provider type
@@ -212,6 +212,9 @@ export async function processOAuthCallback(
 
     return user;
   });
+
+  // Auto-subscribe new OAuth users to announcement feed (fire-and-forget)
+  void subscribeToAnnouncementFeed(db, newUser.userId);
 
   return {
     userId: newUser.userId,
