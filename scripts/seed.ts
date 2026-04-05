@@ -13,6 +13,7 @@
 
 import { createHash } from "crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
+import * as argon2 from "argon2";
 import { Pool } from "pg";
 
 import { generateUuidv7 } from "../src/lib/uuidv7";
@@ -27,11 +28,6 @@ if (!connectionString) {
 
 const pool = new Pool({ connectionString });
 const db = drizzle(pool, { schema });
-
-// Simple password hash for development (NOT for production - use argon2)
-function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
-}
 
 // Generate a content hash for entries
 function hashContent(content: string): string {
@@ -59,7 +55,7 @@ async function seed() {
     .values({
       id: userId,
       email: "test@example.com",
-      passwordHash: hashPassword("password123"), // Dev only!
+      passwordHash: await argon2.hash("password123"),
       emailVerifiedAt: new Date(),
     })
     .returning();
