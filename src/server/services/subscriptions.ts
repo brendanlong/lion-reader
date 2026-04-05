@@ -438,6 +438,21 @@ export async function createSubscription(
 
   const alreadyActive = sub.subscribedAt.getTime() !== subscribedAt.getTime();
 
+  if (alreadyActive) {
+    // Subscription was already active — idempotent return with real unread count
+    const viewResults = await buildSubscriptionBaseQuery(db, userId)
+      .where(eq(userFeeds.id, sub.id))
+      .limit(1);
+
+    return {
+      subscriptionId: sub.id,
+      subscribedAt: sub.subscribedAt,
+      unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
+      alreadyActive: true,
+      feed: feedData,
+    };
+  }
+
   // 5. Upsert subscription_feeds
   await db
     .insert(subscriptionFeeds)
@@ -446,7 +461,7 @@ export async function createSubscription(
 
   // 6. Populate user_entries using INSERT...SELECT and count unread
   let unreadCount = 0;
-  if (!alreadyActive && feedRecord.lastEntriesUpdatedAt) {
+  if (feedRecord.lastEntriesUpdatedAt) {
     await db.execute(sql`
       INSERT INTO user_entries (user_id, entry_id)
       SELECT ${userId}, e.id
