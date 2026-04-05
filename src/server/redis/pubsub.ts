@@ -31,7 +31,7 @@ const feedEventSchema = z.discriminatedUnion("type", [
     entryId: z.string(),
     timestamp: z.string(),
     updatedAt: z.string(),
-    feedType: z.enum(["web", "email", "saved"]).optional(),
+    feedType: z.enum(["web", "email", "saved"]),
   }),
   z.object({
     type: z.literal("entry_updated"),
@@ -262,7 +262,7 @@ export async function publishNewEntry(
   feedId: string,
   entryId: string,
   updatedAt: Date,
-  feedType?: "web" | "email" | "saved"
+  feedType: "web" | "email" | "saved"
 ): Promise<number> {
   const event: NewEntryEvent = {
     type: "new_entry",

@@ -108,6 +108,10 @@ export function createMockTrpcUtils() {
     tags: {
       list: createProcedureMock("tags", "list"),
     },
+    imports: {
+      get: createProcedureMock("imports", "get"),
+      list: createProcedureMock("imports", "list"),
+    },
   } as unknown as TRPCClientUtils;
 
   return {

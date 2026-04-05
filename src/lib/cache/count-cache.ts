@@ -30,6 +30,15 @@ export type CachedSubscription = NonNullable<
 const sseSubscriptionFallback = new Map<string, CachedSubscription>();
 
 /**
+ * Resets the SSE subscription fallback map.
+ * Exported for test isolation only - this map is module-level state
+ * that persists across tests and must be cleared between them.
+ */
+export function _resetSseSubscriptionFallback(): void {
+  sseSubscriptionFallback.clear();
+}
+
+/**
  * Page structure in subscription infinite query cache.
  */
 interface CachedSubscriptionPage {

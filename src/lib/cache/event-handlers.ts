@@ -43,9 +43,7 @@ export function handleSyncEvent(
   switch (event.type) {
     case "new_entry":
       // Update unread counts without invalidating entries.list
-      if (event.feedType) {
-        handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient);
-      }
+      handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient);
       break;
 
     case "entry_updated":
@@ -65,7 +63,15 @@ export function handleSyncEvent(
       break;
 
     case "entry_state_changed":
-      // Update read/starred state in cache
+      // Update entries.get cache directly
+      utils.entries.get.setData({ id: event.entryId }, (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          entry: { ...oldData.entry, read: event.read, starred: event.starred },
+        };
+      });
+      // Update entries.list in a single pass (both read and starred together)
       updateEntriesInListCache(queryClient, [event.entryId], {
         read: event.read,
         starred: event.starred,
