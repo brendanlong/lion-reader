@@ -151,7 +151,7 @@ export const githubConfig = {
  */
 export const announcementFeedConfig = {
   /** URL of the announcement feed. Set to empty string to disable. */
-  url: process.env.ANNOUNCEMENT_FEED_URL || "https://announcements.lionreader.com/feed.xml",
+  url: process.env.ANNOUNCEMENT_FEED_URL ?? "https://announcements.lionreader.com/feed.xml",
 };
 
 /**

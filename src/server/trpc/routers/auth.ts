@@ -17,7 +17,6 @@ import {
   expensiveProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
-import type { Database } from "@/server/db";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -149,11 +148,6 @@ async function handleOAuthCallback(
     userAgent,
     ipAddress,
   });
-
-  // Auto-subscribe new OAuth users to announcement feed (fire-and-forget)
-  if (oauthResult.isNewUser) {
-    void subscribeToAnnouncementFeed(db as Database, oauthResult.userId);
-  }
 
   return {
     user: {

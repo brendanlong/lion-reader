@@ -11,7 +11,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSession } from "@/server/auth/session";
 import { db } from "@/server/db";
-import { subscribeToAnnouncementFeed } from "@/server/auth/signup";
 
 // ============================================================================
 // Types
@@ -134,11 +133,6 @@ export async function createSessionResponse(
     userAgent,
     ipAddress,
   });
-
-  // Auto-subscribe new users to announcement feed (fire-and-forget)
-  if (options?.isNewUser) {
-    void subscribeToAnnouncementFeed(db, userId);
-  }
 
   // New users need to complete signup confirmation first
   const redirectTo = options?.isNewUser ? "/complete-signup" : "/all";
