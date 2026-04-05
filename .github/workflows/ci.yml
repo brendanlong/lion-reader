@@ -78,13 +78,13 @@ jobs:
         run: bash extension/build.sh --release
 
       - name: Upload Chrome extension
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lion-reader-chrome
           path: extension/lion-reader-chrome.zip
 
       - name: Upload Firefox extension
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lion-reader-firefox
           path: extension/lion-reader-firefox.zip
