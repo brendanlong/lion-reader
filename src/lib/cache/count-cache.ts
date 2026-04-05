@@ -331,7 +331,7 @@ export function removeSubscriptionFromCache(subscriptionId: string): void {
 export function setSubscriptionUnreadCountInMap(subscriptionId: string, unreadCount: number): void {
   const sub = subscriptionLookupMap.get(subscriptionId);
   if (sub) {
-    subscriptionLookupMap.set(subscriptionId, { ...sub, unreadCount });
+    subscriptionLookupMap.set(subscriptionId, { ...sub, unreadCount: Math.max(0, unreadCount) });
   }
 }
 
