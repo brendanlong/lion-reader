@@ -97,14 +97,14 @@ function formatSubscriptionResponse(
     id: result.subscriptionId,
     type: result.feed.type,
     url: result.feed.url,
-    title: result.feed.title,
+    title: result.customTitle ?? result.feed.title,
     originalTitle: result.feed.title,
     description: result.feed.description,
     siteUrl: result.feed.siteUrl,
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
     tags: [],
-    fetchFullContent: false,
+    fetchFullContent: result.fetchFullContent,
   };
 }
 

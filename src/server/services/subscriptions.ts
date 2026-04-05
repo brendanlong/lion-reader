@@ -312,6 +312,10 @@ export interface CreateSubscriptionResult {
   unreadCount: number;
   /** True if the subscription already existed and was active (idempotent return) */
   alreadyActive: boolean;
+  /** User's custom title for this subscription (null = use feed title) */
+  customTitle: string | null;
+  /** Whether to fetch full article content from URL */
+  fetchFullContent: boolean;
   /** Feed data (from existing or newly created feed) */
   feed: {
     id: string;
@@ -387,6 +391,8 @@ export async function createSubscription(
       .select({
         id: subscriptions.id,
         subscribedAt: subscriptions.subscribedAt,
+        customTitle: subscriptions.customTitle,
+        fetchFullContent: subscriptions.fetchFullContent,
       })
       .from(subscriptions)
       .where(
@@ -408,6 +414,8 @@ export async function createSubscription(
         subscribedAt: existingSub.subscribedAt,
         unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
         alreadyActive: true,
+        customTitle: existingSub.customTitle,
+        fetchFullContent: existingSub.fetchFullContent,
         feed: feedData,
       };
     }
@@ -416,10 +424,18 @@ export async function createSubscription(
   }
 
   // 4. Upsert subscription — insert new or reactivate soft-deleted
+  //    RETURNING tells us if the row was actually inserted/updated.
+  //    If the subscription is already active, the WHERE clause doesn't match,
+  //    so neither insert nor update happens and RETURNING returns nothing.
   const newSubscriptionId = generateUuidv7();
   const subscribedAt = new Date();
 
-  await db.execute(sql`
+  const upsertResult = await db.execute<{
+    id: string;
+    subscribed_at: string;
+    custom_title: string | null;
+    fetch_full_content: boolean;
+  }>(sql`
     INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at)
     VALUES (${newSubscriptionId}, ${userId}, ${feedId}, ${subscribedAt}, ${subscribedAt}, ${subscribedAt})
     ON CONFLICT (user_id, feed_id) DO UPDATE SET
@@ -427,19 +443,22 @@ export async function createSubscription(
       subscribed_at = ${subscribedAt},
       updated_at = ${subscribedAt}
     WHERE subscriptions.unsubscribed_at IS NOT NULL
+    RETURNING id, subscribed_at, custom_title, fetch_full_content
   `);
 
-  // Get the actual subscription (may be newly inserted, reactivated, or unchanged)
-  const [sub] = await db
-    .select()
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-    .limit(1);
-
-  const alreadyActive = sub.subscribedAt.getTime() !== subscribedAt.getTime();
-
-  if (alreadyActive) {
+  if (upsertResult.rows.length === 0) {
     // Subscription was already active — idempotent return with real unread count
+    const [sub] = await db
+      .select({
+        id: subscriptions.id,
+        subscribedAt: subscriptions.subscribedAt,
+        customTitle: subscriptions.customTitle,
+        fetchFullContent: subscriptions.fetchFullContent,
+      })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+      .limit(1);
+
     const viewResults = await buildSubscriptionBaseQuery(db, userId)
       .where(eq(userFeeds.id, sub.id))
       .limit(1);
@@ -449,14 +468,21 @@ export async function createSubscription(
       subscribedAt: sub.subscribedAt,
       unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
       alreadyActive: true,
+      customTitle: sub.customTitle,
+      fetchFullContent: sub.fetchFullContent,
       feed: feedData,
     };
   }
 
+  const upsertedRow = upsertResult.rows[0];
+  const subscriptionId = upsertedRow.id;
+  const customTitle = upsertedRow.custom_title;
+  const fetchFullContent = upsertedRow.fetch_full_content;
+
   // 5. Upsert subscription_feeds
   await db
     .insert(subscriptionFeeds)
-    .values({ subscriptionId: sub.id, feedId, userId })
+    .values({ subscriptionId, feedId, userId })
     .onConflictDoNothing();
 
   // 6. Populate user_entries using INSERT...SELECT and count unread
@@ -489,31 +515,31 @@ export async function createSubscription(
   }
 
   // 7. Publish SSE event for new/reactivated subscriptions
-  if (!alreadyActive) {
-    publishSubscriptionCreated(
-      userId,
+  publishSubscriptionCreated(
+    userId,
+    feedId,
+    subscriptionId,
+    subscribedAt,
+    {
+      id: subscriptionId,
       feedId,
-      sub.id,
-      sub.subscribedAt,
-      {
-        id: sub.id,
-        feedId,
-        customTitle: null,
-        subscribedAt: sub.subscribedAt.toISOString(),
-        unreadCount,
-        tags: [],
-      },
-      feedData
-    ).catch((err) => {
-      logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-    });
-  }
+      customTitle,
+      subscribedAt: subscribedAt.toISOString(),
+      unreadCount,
+      tags: [],
+    },
+    feedData
+  ).catch((err) => {
+    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+  });
 
   return {
-    subscriptionId: sub.id,
-    subscribedAt: sub.subscribedAt,
+    subscriptionId,
+    subscribedAt,
     unreadCount,
-    alreadyActive,
+    alreadyActive: false,
+    customTitle,
+    fetchFullContent,
     feed: feedData,
   };
 }

@@ -601,6 +601,97 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
     });
   });
 
+  describe("Idempotent subscribe", () => {
+    it("returns existing subscription when subscribing twice", async () => {
+      const userId = await createTestUser();
+
+      const feedUrl = "https://example.com/idempotent.xml";
+      const fetchTime = new Date("2024-01-01T10:00:00Z");
+
+      const feedId = await createTestFeed({
+        url: feedUrl,
+        lastFetchedAt: fetchTime,
+        lastEntriesUpdatedAt: fetchTime,
+      });
+
+      await createTestEntry(feedId, {
+        guid: "entry-1",
+        fetchedAt: fetchTime,
+        lastSeenAt: fetchTime,
+      });
+
+      await createTestEntry(feedId, {
+        guid: "entry-2",
+        fetchedAt: fetchTime,
+        lastSeenAt: fetchTime,
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // First subscribe
+      const result1 = await caller.subscriptions.create({ url: feedUrl });
+      expect(result1.unreadCount).toBe(2);
+
+      // Second subscribe — should return same subscription, not error
+      const result2 = await caller.subscriptions.create({ url: feedUrl });
+      expect(result2.id).toBe(result1.id);
+      expect(result2.unreadCount).toBe(2);
+      expect(result2.subscribedAt).toEqual(result1.subscribedAt);
+
+      // Should not duplicate user_entries
+      const entriesResult = await getUserEntries(userId);
+      expect(entriesResult).toHaveLength(2);
+    });
+  });
+
+  describe("Reactivation preserves settings", () => {
+    it("preserves custom title and fetchFullContent after resubscribe", async () => {
+      const userId = await createTestUser();
+
+      const feedUrl = "https://example.com/reactivate-settings.xml";
+      const fetchTime = new Date("2024-01-01T10:00:00Z");
+
+      const feedId = await createTestFeed({
+        url: feedUrl,
+        title: "Original Title",
+        lastFetchedAt: fetchTime,
+        lastEntriesUpdatedAt: fetchTime,
+      });
+
+      await createTestEntry(feedId, {
+        guid: "entry-1",
+        fetchedAt: fetchTime,
+        lastSeenAt: fetchTime,
+      });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Subscribe
+      const result1 = await caller.subscriptions.create({ url: feedUrl });
+      const subscriptionId = result1.id;
+
+      // Set custom title and fetchFullContent
+      await db
+        .update(subscriptions)
+        .set({ customTitle: "My Custom Title", fetchFullContent: true })
+        .where(eq(subscriptions.id, subscriptionId));
+
+      // Unsubscribe
+      await caller.subscriptions.delete({ id: subscriptionId });
+
+      // Resubscribe
+      const result2 = await caller.subscriptions.create({ url: feedUrl });
+
+      // Should reactivate same subscription with preserved settings
+      expect(result2.id).toBe(subscriptionId);
+      expect(result2.title).toBe("My Custom Title");
+      expect(result2.fetchFullContent).toBe(true);
+      expect(result2.originalTitle).toBe("Original Title");
+    });
+  });
+
   describe("Multiple users subscribing", () => {
     it("each user gets their own user_entries for current entries", async () => {
       const userAId = await createTestUser("userA");
