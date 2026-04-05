@@ -48,7 +48,7 @@
     ]
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
+    "@anthropic-ai/sdk": "^0.81.0",
     "@aws-sdk/client-s3": "^3.992.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
@@ -67,7 +67,7 @@
     "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.1",
-    "fast-xml-parser": "^5.5.7",
+    "fast-xml-parser": "^5.5.8",
     "google-auth-library": "^10.6.2",
     "groq-sdk": "^0.37.0",
     "html-entities": "^2.6.0",
@@ -107,7 +107,7 @@
     "@types/pg": "^8.16.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "esbuild": "^0.27.3",
+    "esbuild": "^0.27.4",
     "eslint": "^9.39.2",
     "eslint-config-next": "16.1.6",
     "fake-indexeddb": "^6.2.5",
