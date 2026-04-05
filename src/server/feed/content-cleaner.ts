@@ -163,8 +163,8 @@ export function extractBaseHref(html: string, fallbackUrl: string): string {
  */
 function resolveUrl(url: string, baseUrl: string): string | null {
   try {
-    // Skip data: URLs and javascript: URLs
-    if (url.startsWith("data:") || url.startsWith("javascript:")) {
+    // Skip data:, javascript:, and vbscript: URLs
+    if (url.startsWith("data:") || url.startsWith("javascript:") || url.startsWith("vbscript:")) {
       return url;
     }
 
