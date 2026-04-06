@@ -368,6 +368,12 @@ export function createEntryStateChangedEvent(
     entryId: "entry-1",
     read: true,
     starred: true,
+    counts: {
+      all: { unread: 0 },
+      starred: { unread: 0 },
+      subscriptions: [],
+      tags: [],
+    },
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
     ...overrides,
