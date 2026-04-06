@@ -860,9 +860,12 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
       const { timing: t4 } = await timeAsync("4. Redis publish (overhead)", async () => {
         // The actual publish is fire-and-forget, but let's measure import + call overhead
         const { publishEntryStateChanged } = await import("../../src/server/redis/pubsub");
-        await publishEntryStateChanged(testUserId, entryId, false, true, new Date()).catch(
-          () => {}
-        );
+        await publishEntryStateChanged(testUserId, entryId, false, true, new Date(), {
+          all: { unread: 0 },
+          starred: { unread: 0 },
+          subscriptions: [],
+          tags: [],
+        }).catch(() => {});
       });
       timings.push(t4);
 

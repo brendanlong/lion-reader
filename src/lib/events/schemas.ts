@@ -122,9 +122,9 @@ export const entryStateChangedEventSchema = z.object({
   entryId: z.string(),
   read: z.boolean(),
   starred: z.boolean(),
-  // Absolute unread counts from the server. When present, the client sets
-  // these directly instead of estimating deltas from cached state.
-  counts: unreadCountsSchema.optional(),
+  // Absolute unread counts from the server. The client sets these directly
+  // instead of estimating deltas from cached state.
+  counts: unreadCountsSchema,
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });

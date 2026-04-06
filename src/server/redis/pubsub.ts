@@ -106,7 +106,7 @@ const userEventSchema = z.discriminatedUnion("type", [
     entryId: z.string(),
     read: z.boolean(),
     starred: z.boolean(),
-    counts: unreadCountsSchema.optional(),
+    counts: unreadCountsSchema,
     timestamp: z.string(),
     updatedAt: z.string(),
   }),
@@ -527,7 +527,7 @@ export async function publishEntryStateChanged(
   read: boolean,
   starred: boolean,
   updatedAt: Date,
-  counts?: z.infer<typeof unreadCountsSchema>
+  counts: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -539,7 +539,7 @@ export async function publishEntryStateChanged(
     entryId,
     read,
     starred,
-    ...(counts ? { counts } : {}),
+    counts,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };

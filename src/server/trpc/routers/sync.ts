@@ -21,6 +21,7 @@ import {
 } from "@/server/db/schema";
 import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
 import type { Database } from "@/server/db";
+import { getBulkEntryRelatedCounts } from "@/server/services/counts";
 
 // ============================================================================
 // Helpers
@@ -268,6 +269,27 @@ export const syncRouter = createTRPCRouter({
         // Differentiate event types based on which timestamps changed.
         // Both metadata and state can change simultaneously, so emit separate
         // events for each — the frontend handles them with different cache updates.
+
+        // Collect entries with state changes for batch count computation
+        const stateChangedEntries = changedEntryResults.filter(
+          (row) => row.userEntryUpdatedAt > entriesCursorDate
+        );
+
+        // Compute absolute unread counts once for all state-changed entries.
+        // All entry_state_changed events share the same counts snapshot since
+        // they reflect the current server state at query time.
+        const stateChangedCounts =
+          stateChangedEntries.length > 0
+            ? await getBulkEntryRelatedCounts(
+                ctx.db,
+                userId,
+                stateChangedEntries.map((row) => ({
+                  subscriptionId: row.subscriptionId,
+                  type: row.feedType,
+                }))
+              )
+            : undefined;
+
         for (const row of changedEntryResults) {
           const entryMetadataChanged = row.entryUpdatedAt > entriesCursorDate;
           const entryStateChanged = row.userEntryUpdatedAt > entriesCursorDate;
@@ -304,17 +326,15 @@ export const syncRouter = createTRPCRouter({
             }
           }
 
-          if (entryStateChanged) {
+          if (entryStateChanged && stateChangedCounts) {
             // User state changed (read/starred) - emit separately from metadata
             // so the frontend updates both the entry content and read/starred state.
-            // Note: counts are not included in sync events (they come from SSE).
-            // The client uses cached state deltas for polling sync, and the
-            // counts will self-correct on the next full page load.
             allEvents.push({
               type: "entry_state_changed" as const,
               entryId: row.id,
               read: row.read,
               starred: row.starred,
+              counts: stateChangedCounts,
               timestamp: row.maxUpdatedAtRaw,
               updatedAt: row.maxUpdatedAtRaw,
               _sortTime: new Date(row.maxUpdatedAtRaw),
