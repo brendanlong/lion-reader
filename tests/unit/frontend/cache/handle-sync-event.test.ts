@@ -627,9 +627,71 @@ describe("handleSyncEvent - subscription_deleted", () => {
     expect(getEntriesCount({})?.unread).toBe(countAfterFirst);
   });
 
-  it("is a no-op when subscription not in lookup map (treated as already removed)", () => {
-    // When the subscription is not in the lookup map, the handler treats it as
-    // "already removed" (optimistic update from same tab) and skips processing.
+  it("processes delete for subscription only in infinite queries (not in lookup map)", () => {
+    // Simulate a pre-existing subscription that was loaded by the sidebar's
+    // infinite query but never seen via an SSE subscription_created event,
+    // so it's only in the QueryClient's infinite query cache, not the lookup map.
+    const preExistingSub = {
+      id: "sub-preexisting",
+      type: "web",
+      url: "https://example.com/preexisting.xml",
+      title: "Pre-existing Feed",
+      originalTitle: "Pre-existing Feed",
+      description: null,
+      siteUrl: null,
+      subscribedAt: new Date("2024-01-01"),
+      unreadCount: 4,
+      tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
+      fetchFullContent: false,
+    };
+
+    // Seed ONLY into the QueryClient's infinite query (not the lookup map)
+    queryClient.setQueryData(
+      [["subscriptions", "list"], { input: { tagId: "tag-1" }, type: "infinite" }],
+      {
+        pages: [{ items: [preExistingSub], nextCursor: undefined }],
+        pageParams: [undefined],
+      }
+    );
+
+    // Seed tags/counts so we can verify targeted cleanup
+    mockUtils.setCache("tags", "list", undefined, {
+      items: [
+        { id: "tag-1", name: "Tech", color: "#ff0000", feedCount: 3, unreadCount: 19 },
+        { id: "tag-2", name: "Science", color: "#00ff00", feedCount: 1, unreadCount: 10 },
+      ],
+      uncategorized: { feedCount: 1, unreadCount: 3 },
+    });
+    mockUtils.setCache("entries", "count", {}, { unread: 22 });
+
+    mockUtils.clearOperations();
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createSubscriptionDeletedEvent({
+        subscriptionId: "sub-preexisting",
+      })
+    );
+
+    // Should NOT be treated as "already removed" — it should be processed
+    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
+    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "list")).toBe(
+      true
+    );
+
+    // Tag counts should be updated (targeted cleanup)
+    const tagsList = getTagsList();
+    const tag1 = tagsList?.items.find((t) => t.id === "tag-1");
+    expect(tag1?.feedCount).toBe(2); // was 3, -1
+    expect(tag1?.unreadCount).toBe(15); // was 19, -4
+
+    // All Articles count should be updated
+    expect(getEntriesCount({})?.unread).toBe(18); // was 22, -4
+  });
+
+  it("is a no-op when subscription not in any cache (treated as already removed)", () => {
+    // When the subscription is not in the lookup map or any infinite query,
+    // the handler treats it as "already removed" and skips processing.
     mockUtils.clearOperations();
     handleSyncEvent(
       mockUtils.utils,
