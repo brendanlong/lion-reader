@@ -26,6 +26,7 @@ import {
   createTagDeletedEvent,
   createImportProgressEvent,
   DEFAULT_SUBSCRIPTIONS,
+  DEFAULT_ENTRIES,
 } from "../../../utils/cache-test-helpers";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -353,7 +354,114 @@ describe("handleSyncEvent - entry_state_changed", () => {
     expect(cached?.entry.starred).toBe(false);
   });
 
-  it("does not crash for non-cached entry", () => {
+  it("decrements unread counts when entry marked read (with server counts)", () => {
+    // entry-1 is unread, starred, in sub-1 (tag-1), type=web
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        read: true,
+        starred: true,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 1 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 4 }],
+          tags: [{ id: "tag-1", unread: 14 }],
+        },
+      })
+    );
+
+    // Subscription unread count should decrease
+    const subs = getSubscriptionsList();
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // was 5
+
+    // Tag unread count should decrease
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(14); // was 15
+
+    // All Articles unread count should decrease
+    expect(getEntriesCount({})?.unread).toBe(17); // was 18
+
+    // Starred unread count should decrease (entry-1 is starred)
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1); // was 2
+  });
+
+  it("increments unread counts when entry marked unread (with server counts)", () => {
+    // entry-3 is read, not starred, in sub-2 (uncategorized), type=web
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-3",
+        read: false,
+        starred: false,
+        counts: {
+          all: { unread: 19 },
+          starred: { unread: 2 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-2", unread: 4 }],
+          tags: [],
+          uncategorized: { unread: 4 },
+        },
+      })
+    );
+
+    // Subscription unread count should increase
+    const subs = getSubscriptionsList();
+    expect(subs?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(4); // was 3
+
+    // Uncategorized unread count should increase
+    const tagsList = getTagsList();
+    expect(tagsList?.uncategorized.unreadCount).toBe(4); // was 3
+
+    // All Articles unread count should increase
+    expect(getEntriesCount({})?.unread).toBe(19); // was 18
+  });
+
+  it("updates starred unread count when starred state changes on unread entry", () => {
+    // entry-2 is unread, not starred, in sub-1
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-2",
+        read: false,
+        starred: true,
+        counts: {
+          all: { unread: 18 },
+          starred: { unread: 3 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 5 }],
+          tags: [{ id: "tag-1", unread: 15 }],
+        },
+      })
+    );
+
+    // Starred unread should increase (entry became starred while unread)
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(3); // was 2
+  });
+
+  it("does not change counts when state matches cache (idempotent / same-tab event)", () => {
+    // entry-1 is already unread+starred in cache — sending same state should be no-op
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        read: false,
+        starred: true,
+      })
+    );
+
+    const subs = getSubscriptionsList();
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5); // unchanged
+    expect(getEntriesCount({})?.unread).toBe(18); // unchanged
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(2); // unchanged
+  });
+
+  it("does not crash for non-cached entry without counts (fallback path)", () => {
     expect(() => {
       handleSyncEvent(
         mockUtils.utils,
@@ -365,6 +473,9 @@ describe("handleSyncEvent - entry_state_changed", () => {
         })
       );
     }).not.toThrow();
+
+    // Without counts and without the entry in cache, no count changes happen
+    expect(getEntriesCount({})?.unread).toBe(18); // unchanged
   });
 });
 
@@ -853,11 +964,583 @@ describe("handleSyncEvent - import_completed", () => {
 });
 
 // ============================================================================
+// Cross-Tab Synchronization (entry_state_changed + unread counts)
+//
+// These tests simulate the cross-tab scenario described in #796:
+//   Tab A: marks entry read → mutation updates local cache + server
+//   Server: broadcasts entry_state_changed via SSE to all tabs
+//   Tab B: receives event → handleSyncEvent should update BOTH
+//          entry state AND unread counts
+//
+// The seeded cache state represents Tab B's view. The event represents
+// the SSE message Tab B receives after Tab A's action.
+// ============================================================================
+
+describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
+  it("Tab B decrements all unread counts when Tab A marks a tagged entry read", () => {
+    // Tab B's cache: entry-1 is unread, starred, in sub-1 (tag-1)
+    // Tab A marks entry-1 read → SSE delivers entry_state_changed with absolute counts
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        read: true,
+        starred: true, // starred state unchanged
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 1 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 4 }],
+          tags: [{ id: "tag-1", unread: 14 }],
+        },
+      })
+    );
+
+    // Subscription count: sub-1 was 5 unread → 4
+    const subs = getSubscriptionsList();
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4);
+
+    // Tag count: tag-1 was 15 unread → 14
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(14);
+
+    // All Articles: was 18 → 17
+    expect(getEntriesCount({})?.unread).toBe(17);
+
+    // Starred unread: entry-1 is starred, so starred count drops: was 2 → 1
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1);
+
+    // Saved unread: unaffected (entry-1 is type=web, not saved)
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1);
+  });
+
+  it("Tab B decrements uncategorized count when Tab A marks an untagged entry read", () => {
+    // Tab A marks an uncategorized entry read → SSE delivers absolute counts
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-uncat-unread",
+        read: true,
+        starred: false,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 2 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-2", unread: 2 }],
+          tags: [],
+          uncategorized: { unread: 2 },
+        },
+      })
+    );
+
+    // Sub-2 unread: was 3 → 2
+    const subs = getSubscriptionsList();
+    expect(subs?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(2);
+
+    // Uncategorized: was 3 → 2
+    const tagsList = getTagsList();
+    expect(tagsList?.uncategorized.unreadCount).toBe(2);
+
+    // All Articles: was 18 → 17
+    expect(getEntriesCount({})?.unread).toBe(17);
+  });
+
+  it("Tab B increments counts when Tab A marks an entry unread", () => {
+    // entry-3 is read, not starred, in sub-2 (uncategorized)
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-3",
+        read: false,
+        starred: false,
+        counts: {
+          all: { unread: 19 },
+          starred: { unread: 2 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-2", unread: 4 }],
+          tags: [],
+          uncategorized: { unread: 4 },
+        },
+      })
+    );
+
+    // Sub-2: was 3 → 4
+    const subs = getSubscriptionsList();
+    expect(subs?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(4);
+
+    // Uncategorized: was 3 → 4
+    const tagsList = getTagsList();
+    expect(tagsList?.uncategorized.unreadCount).toBe(4);
+
+    // All Articles: was 18 → 19
+    expect(getEntriesCount({})?.unread).toBe(19);
+  });
+
+  it("Tab B updates starred count when Tab A stars an unread entry", () => {
+    // entry-2 is unread, not starred, in sub-1
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-2",
+        read: false,
+        starred: true,
+        counts: {
+          all: { unread: 18 },
+          starred: { unread: 3 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 5 }],
+          tags: [{ id: "tag-1", unread: 15 }],
+        },
+      })
+    );
+
+    // Starred unread: was 2 → 3 (entry-2 became starred while unread)
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(3);
+
+    // Subscription/tag/all counts unchanged (read state didn't change)
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getEntriesCount({})?.unread).toBe(18);
+  });
+
+  it("starring a non-saved entry does not clobber saved count", () => {
+    // Star event for a web entry — server doesn't compute saved count,
+    // so the event omits it. Saved count should be preserved.
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-2",
+        read: false,
+        starred: true,
+        counts: {
+          all: { unread: 18 },
+          starred: { unread: 3 },
+          // saved intentionally omitted — server doesn't compute it for non-saved entries
+          subscriptions: [{ id: "sub-1", unread: 5 }],
+          tags: [{ id: "tag-1", unread: 15 }],
+        },
+      })
+    );
+
+    // Saved count should be unchanged (was 1)
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1);
+    // Starred should update
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(3);
+  });
+
+  it("Tab B updates starred count when Tab A unstars an unread entry", () => {
+    // entry-1 is unread, starred, in sub-1
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        read: false,
+        starred: false,
+        counts: {
+          all: { unread: 18 },
+          starred: { unread: 1 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 5 }],
+          tags: [{ id: "tag-1", unread: 15 }],
+        },
+      })
+    );
+
+    // Starred unread: was 2 → 1 (entry-1 lost its star while unread)
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1);
+
+    // Subscription/tag/all counts unchanged (read state didn't change)
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getEntriesCount({})?.unread).toBe(18);
+  });
+
+  it("Tab A's optimistic update prevents double-counting when SSE event arrives", () => {
+    // Simulate Tab A: entry-1 was already optimistically marked read in THIS tab.
+    // Update BOTH entries.list and entries.get (as the real optimistic update does).
+    queryClient.setQueriesData<{
+      pages: Array<{ items: Array<Record<string, unknown>> }>;
+      pageParams: unknown[];
+    }>({ queryKey: [["entries", "list"]] }, (oldData) => {
+      if (!oldData?.pages) return oldData;
+      return {
+        ...oldData,
+        pages: oldData.pages.map((page) => ({
+          ...page,
+          items: page.items.map((entry) =>
+            entry.id === "entry-1" ? { ...entry, read: true } : entry
+          ),
+        })),
+      };
+    });
+    mockUtils.setCache(
+      "entries",
+      "get",
+      { id: "entry-1" },
+      {
+        entry: { ...DEFAULT_ENTRIES[0], read: true },
+      }
+    );
+
+    // Now the SSE event arrives with read=true — cache already matches
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        read: true,
+        starred: true,
+      })
+    );
+
+    // No count changes — cache state already matched the event
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getEntriesCount({})?.unread).toBe(18);
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(2);
+  });
+
+  it("handles simultaneous read + star change in one event", () => {
+    // entry-2: unread, not starred, in sub-1 (tag-1)
+    // Tab A marks it read AND stars it at the same time
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-2",
+        read: true,
+        starred: true,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 2 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 4 }],
+          tags: [{ id: "tag-1", unread: 14 }],
+        },
+      })
+    );
+
+    // Read changed: unread counts decrement
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // -1
+    expect(getEntriesCount({})?.unread).toBe(17); // -1
+    expect(getTagsList()?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(14); // -1
+
+    // Starred changed on now-read entry: starred unread count unaffected
+    // (entry is read, so starring it doesn't add to starred *unread* count)
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(2); // unchanged
+  });
+
+  it("updates counts for uncached entry when counts are provided", () => {
+    // SSE event for an entry in neither entries.list NOR entries.get,
+    // but the server provides absolute counts.
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-completely-unknown",
+        read: true,
+        starred: false,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 2 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 4 }],
+          tags: [{ id: "tag-1", unread: 14 }],
+        },
+      })
+    );
+
+    // Counts should update from server-provided absolute values
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // -1
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(3); // unchanged
+    expect(getEntriesCount({})?.unread).toBe(17); // -1
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(2); // unchanged (not starred)
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1); // unchanged (type=web)
+  });
+
+  // --------------------------------------------------------------------------
+  // Saved articles (type="saved", subscriptionId=null)
+  // --------------------------------------------------------------------------
+
+  it("decrements saved unread count when Tab A marks a saved article read", () => {
+    // entry-saved: type=saved, subscriptionId=null, unread, not starred
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-saved",
+        read: true,
+        starred: false,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 2 },
+          saved: { unread: 0 },
+          subscriptions: [],
+          tags: [],
+        },
+      })
+    );
+
+    // Saved unread: was 1 → 0
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(0);
+
+    // All Articles: was 18 → 17
+    expect(getEntriesCount({})?.unread).toBe(17);
+
+    // Subscription counts unchanged (saved articles have no subscription)
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(3);
+
+    // Tag counts unchanged
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15);
+    expect(tagsList?.uncategorized.unreadCount).toBe(3);
+  });
+
+  it("increments saved unread count when Tab A marks a saved article unread", () => {
+    // First mark it read
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-saved",
+        read: true,
+        starred: false,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 2 },
+          saved: { unread: 0 },
+          subscriptions: [],
+          tags: [],
+        },
+      })
+    );
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(0);
+
+    // Now mark it unread again
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-saved",
+        read: false,
+        starred: false,
+        counts: {
+          all: { unread: 18 },
+          starred: { unread: 2 },
+          saved: { unread: 1 },
+          subscriptions: [],
+          tags: [],
+        },
+      })
+    );
+
+    // Saved unread: back to 1
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1);
+    expect(getEntriesCount({})?.unread).toBe(18);
+  });
+
+  // --------------------------------------------------------------------------
+  // Orphaned starred entries (subscriptionId=null, starred)
+  // --------------------------------------------------------------------------
+
+  it("decrements starred count when Tab A marks an orphaned starred entry read", () => {
+    // entry-starred-orphan: type=web, subscriptionId=null, unread, starred
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-starred-orphan",
+        read: true,
+        starred: true,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 1 },
+          saved: { unread: 1 },
+          subscriptions: [],
+          tags: [],
+        },
+      })
+    );
+
+    // Starred unread: was 2 → 1
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1);
+
+    // All Articles: was 18 → 17
+    expect(getEntriesCount({})?.unread).toBe(17);
+
+    // Subscription counts unchanged (orphaned entry has no subscription)
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+  });
+
+  it("decrements both starred and All count when orphaned starred entry marked read", () => {
+    // Verify the starred orphan entry affects starred unread but no subscription/tag counts
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-starred-orphan",
+        read: true,
+        starred: true,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 1 },
+          saved: { unread: 1 },
+          subscriptions: [],
+          tags: [],
+        },
+      })
+    );
+
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
+    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(10); // unchanged
+    expect(tagsList?.uncategorized.unreadCount).toBe(3); // unchanged
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1); // unchanged
+  });
+
+  // --------------------------------------------------------------------------
+  // entries.get fallback (entry not in list cache, only in single-entry cache)
+  // --------------------------------------------------------------------------
+
+  it("updates counts via server counts when entry is not in entries.list", () => {
+    // Remove all entries from the list cache (simulating Tab B hasn't loaded
+    // any list, but has opened entry-saved individually)
+    queryClient.setQueryData([["entries", "list"], { input: { limit: 25 }, type: "infinite" }], {
+      pages: [{ items: [], nextCursor: undefined }],
+      pageParams: [undefined],
+    });
+
+    // entry-saved: type=saved, subscriptionId=null, unread, not starred
+    // Server provides absolute counts
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-saved",
+        read: true,
+        starred: false,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 2 },
+          saved: { unread: 0 },
+          subscriptions: [],
+          tags: [],
+        },
+      })
+    );
+
+    // Saved unread should update via server counts
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(0); // was 1
+    expect(getEntriesCount({})?.unread).toBe(17); // was 18
+  });
+
+  it("updates starred count via server counts for orphan not in list cache", () => {
+    // Clear list cache
+    queryClient.setQueryData([["entries", "list"], { input: { limit: 25 }, type: "infinite" }], {
+      pages: [{ items: [], nextCursor: undefined }],
+      pageParams: [undefined],
+    });
+
+    // entry-starred-orphan: type=web, subscriptionId=null, unread, starred
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-starred-orphan",
+        read: true,
+        starred: true,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 1 },
+          saved: { unread: 1 },
+          subscriptions: [],
+          tags: [],
+        },
+      })
+    );
+
+    // Starred unread should update via server counts
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1); // was 2
+    expect(getEntriesCount({})?.unread).toBe(17); // was 18
+  });
+
+  it("updates subscription count via server counts for entry not in list cache", () => {
+    // Clear list cache
+    queryClient.setQueryData([["entries", "list"], { input: { limit: 25 }, type: "infinite" }], {
+      pages: [{ items: [], nextCursor: undefined }],
+      pageParams: [undefined],
+    });
+
+    // entry-1: sub-1, web, unread, starred — only in entries.get
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        read: true,
+        starred: true,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 1 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 4 }],
+          tags: [{ id: "tag-1", unread: 14 }],
+        },
+      })
+    );
+
+    // Subscription count should update
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // was 5
+    expect(getEntriesCount({})?.unread).toBe(17); // was 18
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1); // was 2
+    expect(getTagsList()?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(14); // was 15
+  });
+
+  it("handles multi-tag subscription correctly with server counts", () => {
+    // Tab A marks an entry in sub-3 (tag-1 and tag-2) as read
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-multi-tag",
+        read: true,
+        starred: false,
+        counts: {
+          all: { unread: 17 },
+          starred: { unread: 2 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-3", unread: 9 }],
+          tags: [
+            { id: "tag-1", unread: 14 },
+            { id: "tag-2", unread: 9 },
+          ],
+        },
+      })
+    );
+
+    // sub-3 unread: was 10 → 9
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-3")?.unreadCount).toBe(9);
+
+    // Both tags should decrement
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(14); // was 15
+    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(9); // was 10
+
+    // All Articles: was 18 → 17
+    expect(getEntriesCount({})?.unread).toBe(17);
+  });
+});
+
+// ============================================================================
 // Event Sequences
 // ============================================================================
 
 describe("handleSyncEvent - event sequences", () => {
-  it("new_entry then entry_state_changed(read): count stays incremented", () => {
+  it("new_entry then entry_state_changed(read): count decrements back", () => {
     // New entry arrives - sub-1 unread goes from 5 to 6
     handleSyncEvent(
       mockUtils.utils,
@@ -874,7 +1557,7 @@ describe("handleSyncEvent - event sequences", () => {
     expect(getEntriesCount({})?.unread).toBe(19);
 
     // Then the entry is marked read via state_changed from another tab.
-    // entry_state_changed does NOT update counts (by design for cross-tab sync).
+    // Server provides absolute counts that reflect the mark-read.
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
@@ -882,12 +1565,37 @@ describe("handleSyncEvent - event sequences", () => {
         entryId: "new-entry-seq",
         read: true,
         starred: false,
+        counts: {
+          all: { unread: 18 },
+          starred: { unread: 2 },
+          saved: { unread: 1 },
+          subscriptions: [{ id: "sub-1", unread: 5 }],
+          tags: [{ id: "tag-1", unread: 15 }],
+        },
       })
     );
 
-    // Counts remain at +1 since entry_state_changed doesn't adjust counts
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6);
-    expect(getEntriesCount({})?.unread).toBe(19);
+    // Counts decrement back to original
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getEntriesCount({})?.unread).toBe(18);
+  });
+
+  it("entry_state_changed(read) for cached entry: count decrements", () => {
+    // entry-1 is unread+starred in sub-1 (tag-1) and IS in the list cache
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        read: true,
+        starred: true,
+      })
+    );
+
+    // Counts should decrement because entry-1 is in the list cache
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // was 5
+    expect(getEntriesCount({})?.unread).toBe(17); // was 18
+    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1); // was 2 (entry is starred)
   });
 
   it("subscription_created then new_entry for it: counts correct from both", () => {

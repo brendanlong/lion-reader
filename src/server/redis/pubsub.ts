@@ -14,6 +14,7 @@ import {
   syncTagSchema,
   subscriptionCreatedDataSchema,
   feedCreatedDataSchema,
+  unreadCountsSchema,
 } from "@/lib/events/schemas";
 
 // ============================================================================
@@ -105,6 +106,7 @@ const userEventSchema = z.discriminatedUnion("type", [
     entryId: z.string(),
     read: z.boolean(),
     starred: z.boolean(),
+    counts: unreadCountsSchema.optional(),
     timestamp: z.string(),
     updatedAt: z.string(),
   }),
@@ -516,6 +518,7 @@ export async function publishImportCompleted(
  * @param read - Current read state
  * @param starred - Current starred state
  * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @param counts - Absolute unread counts for all affected lists
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishEntryStateChanged(
@@ -523,7 +526,8 @@ export async function publishEntryStateChanged(
   entryId: string,
   read: boolean,
   starred: boolean,
-  updatedAt: Date
+  updatedAt: Date,
+  counts?: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -535,6 +539,7 @@ export async function publishEntryStateChanged(
     entryId,
     read,
     starred,
+    ...(counts ? { counts } : {}),
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };

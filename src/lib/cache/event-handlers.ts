@@ -8,8 +8,20 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import { handleSubscriptionCreated, handleSubscriptionDeleted, handleNewEntry } from "./operations";
-import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
+import {
+  handleSubscriptionCreated,
+  handleSubscriptionDeleted,
+  handleNewEntry,
+  handleEntriesMarkedRead,
+  handleEntryStarred,
+  handleEntryUnstarred,
+  setBulkCounts,
+} from "./operations";
+import {
+  updateEntriesInListCache,
+  updateEntryMetadataInCache,
+  findEntryInListCache,
+} from "./entry-cache";
 import {
   applySyncTagChanges,
   removeSyncTags,
@@ -63,8 +75,14 @@ export function handleSyncEvent(
       );
       break;
 
-    case "entry_state_changed":
-      // Update entries.get cache directly
+    case "entry_state_changed": {
+      // Snapshot previous state from list cache BEFORE updating, needed for
+      // the delta-based fallback path (sync polling without counts).
+      const listEntry = !event.counts
+        ? findEntryInListCache(queryClient, event.entryId)
+        : undefined;
+
+      // Update entries.get and entries.list caches with new read/starred state
       utils.entries.get.setData({ id: event.entryId }, (oldData) => {
         if (!oldData) return oldData;
         return {
@@ -72,12 +90,55 @@ export function handleSyncEvent(
           entry: { ...oldData.entry, read: event.read, starred: event.starred },
         };
       });
-      // Update entries.list in a single pass (both read and starred together)
       updateEntriesInListCache(queryClient, [event.entryId], {
         read: event.read,
         starred: event.starred,
       });
+
+      // Update unread counts.
+      // When the server provides absolute counts, use them directly — no
+      // delta estimation, no dependency on cached state. This is the primary
+      // path for SSE events from markRead/setStarred mutations.
+      if (event.counts) {
+        // Set all counts. Use a placeholder for saved if not provided
+        // (non-saved entry mutations don't compute saved count) to avoid
+        // overwriting the client's current saved count with a wrong value.
+        const currentSaved = utils.entries.count.getData({ type: "saved" });
+        setBulkCounts(
+          utils,
+          { ...event.counts, saved: event.counts.saved ?? currentSaved ?? { unread: 0 } },
+          queryClient
+        );
+      } else if (listEntry) {
+        // Fallback for sync polling events (which don't include counts).
+        // Uses cached previous state from the list to compute deltas.
+        // Only works when the entry was in the list cache.
+        if (listEntry.read !== event.read) {
+          handleEntriesMarkedRead(
+            utils,
+            [
+              {
+                id: event.entryId,
+                subscriptionId: listEntry.subscriptionId,
+                starred: listEntry.starred,
+                type: listEntry.type,
+              },
+            ],
+            event.read,
+            queryClient
+          );
+        }
+
+        if (listEntry.starred !== event.starred) {
+          if (event.starred) {
+            handleEntryStarred(utils, event.entryId, event.read, queryClient);
+          } else {
+            handleEntryUnstarred(utils, event.entryId, event.read, queryClient);
+          }
+        }
+      }
       break;
+    }
 
     case "subscription_created": {
       const { subscription, feed } = event;

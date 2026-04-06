@@ -66,8 +66,15 @@ export interface SeededEntry {
 //   tag-2 (Science): feedCount=1 (sub-3),        unreadCount=10 (sub-3:10)
 //   uncategorized:   feedCount=1 (sub-2),         unreadCount=3  (sub-2:3)
 //   All Articles:    unread=18 (sub-1:5 + sub-2:3 + sub-3:10)
-//   Starred:         unread=2
-//   Saved:           unread=1
+//   Starred:         unread=2 (entry-1: web/starred/unread, entry-starred-orphan: web/starred/unread)
+//   Saved:           unread=1 (entry-saved: saved/unread)
+//
+// Entry details:
+//   entry-1:               sub-1, web, unread, starred
+//   entry-2:               sub-1, web, unread, not starred
+//   entry-3:               sub-2, web, read, not starred
+//   entry-saved:           null,  saved, unread, not starred (saved article, no subscription)
+//   entry-starred-orphan:  null,  web, unread, starred (orphaned starred entry, no subscription)
 // ============================================================================
 
 export const DEFAULT_SUBSCRIPTIONS: SeededSubscription[] = [
@@ -197,6 +204,46 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     siteName: null,
     predictedScore: null,
   },
+  {
+    id: "entry-saved",
+    feedId: "feed-saved",
+    subscriptionId: null,
+    type: "saved",
+    url: "https://example.com/saved-article",
+    title: "Saved Article",
+    author: "Saved Author",
+    summary: "A saved article",
+    publishedAt: new Date("2024-06-04"),
+    fetchedAt: new Date("2024-06-04"),
+    updatedAt: new Date("2024-06-04"),
+    read: false,
+    starred: false,
+    feedTitle: null,
+    score: null,
+    implicitScore: 0,
+    siteName: null,
+    predictedScore: null,
+  },
+  {
+    id: "entry-starred-orphan",
+    feedId: "feed-orphan",
+    subscriptionId: null,
+    type: "web",
+    url: "https://example.com/orphan",
+    title: "Orphaned Starred Entry",
+    author: "Orphan Author",
+    summary: "Starred entry from unsubscribed feed",
+    publishedAt: new Date("2024-06-05"),
+    fetchedAt: new Date("2024-06-05"),
+    updatedAt: new Date("2024-06-05"),
+    read: false,
+    starred: true,
+    feedTitle: "Old Feed",
+    score: null,
+    implicitScore: 0,
+    siteName: null,
+    predictedScore: null,
+  },
 ];
 
 // ============================================================================
@@ -264,8 +311,10 @@ export function seedCacheState(
   mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: starredUnread });
   mockUtils.setCache("entries", "count", { type: "saved" }, { unread: savedUnread });
 
-  // Seed individual entry caches
-  const entriesToSeed = options.entries ?? [{ id: "entry-1", entry: DEFAULT_ENTRIES[0] }];
+  // Seed individual entry caches (entries.get) — seed all entries by default
+  // so tests can verify entries.get fallback behavior
+  const entriesToSeed =
+    options.entries ?? DEFAULT_ENTRIES.map((entry) => ({ id: entry.id, entry }));
   for (const { id, entry } of entriesToSeed) {
     mockUtils.setCache("entries", "get", { id }, { entry });
   }

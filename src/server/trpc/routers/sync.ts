@@ -306,7 +306,10 @@ export const syncRouter = createTRPCRouter({
 
           if (entryStateChanged) {
             // User state changed (read/starred) - emit separately from metadata
-            // so the frontend updates both the entry content and read/starred state
+            // so the frontend updates both the entry content and read/starred state.
+            // Note: counts are not included in sync events (they come from SSE).
+            // The client uses cached state deltas for polling sync, and the
+            // counts will self-correct on the next full page load.
             allEvents.push({
               type: "entry_state_changed" as const,
               entryId: row.id,
