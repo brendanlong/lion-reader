@@ -104,11 +104,27 @@ export const entryUpdatedEventSchema = z.object({
   metadata: entryMetadataSchema,
 });
 
+/**
+ * Absolute unread counts included in entry_state_changed events.
+ * Lets the client set counts directly from the server without delta estimation.
+ */
+export const unreadCountsSchema = z.object({
+  all: z.object({ unread: z.number() }),
+  starred: z.object({ unread: z.number() }),
+  saved: z.object({ unread: z.number() }).optional(),
+  subscriptions: z.array(z.object({ id: z.string(), unread: z.number() })),
+  tags: z.array(z.object({ id: z.string(), unread: z.number() })),
+  uncategorized: z.object({ unread: z.number() }).optional(),
+});
+
 export const entryStateChangedEventSchema = z.object({
   type: z.literal("entry_state_changed"),
   entryId: z.string(),
   read: z.boolean(),
   starred: z.boolean(),
+  // Absolute unread counts from the server. When present, the client sets
+  // these directly instead of estimating deltas from cached state.
+  counts: unreadCountsSchema.optional(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });
