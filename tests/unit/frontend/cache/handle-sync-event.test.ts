@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
-import { _resetSseSubscriptionFallback } from "@/lib/cache/count-cache";
+import { _resetSubscriptionLookupMap, getSubscriptionLookupMap } from "@/lib/cache/count-cache";
 import { createMockTrpcUtils } from "../../../utils/trpc-mock";
 import {
   createSeededQueryClient,
@@ -37,7 +37,7 @@ let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 let queryClient: QueryClient;
 
 beforeEach(() => {
-  _resetSseSubscriptionFallback();
+  _resetSubscriptionLookupMap();
   mockUtils = createMockTrpcUtils();
   queryClient = createSeededQueryClient();
   seedCacheState(mockUtils);
@@ -48,19 +48,27 @@ beforeEach(() => {
 // Helper Functions
 // ============================================================================
 
-function getSubscriptionsList():
-  | {
-      items: Array<{
-        id: string;
-        unreadCount: number;
-        tags: Array<{ id: string }>;
-        [key: string]: unknown;
-      }>;
-    }
-  | undefined {
-  return mockUtils.getCache("subscriptions", "list", undefined) as ReturnType<
-    typeof getSubscriptionsList
-  >;
+/**
+ * Gets subscriptions from the subscription lookup map (primary source)
+ * and falls back to the mock cache for backwards compatibility.
+ */
+function getSubscriptionsList(): {
+  items: Array<{
+    id: string;
+    unreadCount: number;
+    tags: Array<{ id: string }>;
+    [key: string]: unknown;
+  }>;
+} {
+  const lookupMap = getSubscriptionLookupMap();
+  return {
+    items: Array.from(lookupMap.values()) as Array<{
+      id: string;
+      unreadCount: number;
+      tags: Array<{ id: string }>;
+      [key: string]: unknown;
+    }>,
+  };
 }
 
 function getTagsList():
@@ -619,10 +627,71 @@ describe("handleSyncEvent - subscription_deleted", () => {
     expect(getEntriesCount({})?.unread).toBe(countAfterFirst);
   });
 
-  it("is a no-op when subscription not in cache (treated as already removed)", () => {
-    // When subscriptions.list exists but doesn't contain the subscription,
-    // the handler treats it as "already removed" (optimistic update from same tab)
-    // and skips processing entirely.
+  it("processes delete for subscription only in infinite queries (not in lookup map)", () => {
+    // Simulate a pre-existing subscription that was loaded by the sidebar's
+    // infinite query but never seen via an SSE subscription_created event,
+    // so it's only in the QueryClient's infinite query cache, not the lookup map.
+    const preExistingSub = {
+      id: "sub-preexisting",
+      type: "web",
+      url: "https://example.com/preexisting.xml",
+      title: "Pre-existing Feed",
+      originalTitle: "Pre-existing Feed",
+      description: null,
+      siteUrl: null,
+      subscribedAt: new Date("2024-01-01"),
+      unreadCount: 4,
+      tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
+      fetchFullContent: false,
+    };
+
+    // Seed ONLY into the QueryClient's infinite query (not the lookup map)
+    queryClient.setQueryData(
+      [["subscriptions", "list"], { input: { tagId: "tag-1" }, type: "infinite" }],
+      {
+        pages: [{ items: [preExistingSub], nextCursor: undefined }],
+        pageParams: [undefined],
+      }
+    );
+
+    // Seed tags/counts so we can verify targeted cleanup
+    mockUtils.setCache("tags", "list", undefined, {
+      items: [
+        { id: "tag-1", name: "Tech", color: "#ff0000", feedCount: 3, unreadCount: 19 },
+        { id: "tag-2", name: "Science", color: "#00ff00", feedCount: 1, unreadCount: 10 },
+      ],
+      uncategorized: { feedCount: 1, unreadCount: 3 },
+    });
+    mockUtils.setCache("entries", "count", {}, { unread: 22 });
+
+    mockUtils.clearOperations();
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createSubscriptionDeletedEvent({
+        subscriptionId: "sub-preexisting",
+      })
+    );
+
+    // Should NOT be treated as "already removed" — it should be processed
+    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
+    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "list")).toBe(
+      true
+    );
+
+    // Tag counts should be updated (targeted cleanup)
+    const tagsList = getTagsList();
+    const tag1 = tagsList?.items.find((t) => t.id === "tag-1");
+    expect(tag1?.feedCount).toBe(2); // was 3, -1
+    expect(tag1?.unreadCount).toBe(15); // was 19, -4
+
+    // All Articles count should be updated
+    expect(getEntriesCount({})?.unread).toBe(18); // was 22, -4
+  });
+
+  it("is a no-op when subscription not in any cache (treated as already removed)", () => {
+    // When the subscription is not in the lookup map or any infinite query,
+    // the handler treats it as "already removed" and skips processing.
     mockUtils.clearOperations();
     handleSyncEvent(
       mockUtils.utils,
@@ -632,38 +701,9 @@ describe("handleSyncEvent - subscription_deleted", () => {
       })
     );
 
-    // Only a getData call should occur (the alreadyRemoved check), no invalidations
+    // No invalidations should occur (the alreadyRemoved check returns true)
     const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
     expect(invalidations).toHaveLength(0);
-  });
-
-  it("falls back to broad invalidation when subscriptions.list is not cached", () => {
-    // Clear the subscriptions.list cache so getData returns undefined
-    mockUtils.clearCache();
-    seedCacheState(mockUtils);
-    // Remove subscriptions.list specifically by setting it to undefined
-    mockUtils.setCache("subscriptions", "list", undefined, undefined);
-    mockUtils.clearOperations();
-
-    handleSyncEvent(
-      mockUtils.utils,
-      queryClient,
-      createSubscriptionDeletedEvent({
-        subscriptionId: "sub-1",
-      })
-    );
-
-    // When subscriptions.list getData returns undefined, alreadyRemoved is false,
-    // so handleSubscriptionDeleted runs. Without queryClient finding the sub,
-    // it falls back to broad invalidation.
-    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
-    expect(
-      invalidations.some((op) => op.router === "subscriptions" && op.procedure === "list")
-    ).toBe(true);
-    expect(invalidations.some((op) => op.router === "tags" && op.procedure === "list")).toBe(true);
-    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "count")).toBe(
-      true
-    );
   });
 });
 

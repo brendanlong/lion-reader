@@ -21,11 +21,63 @@ import {
   type EntryWithContext,
   type SubscriptionData,
 } from "@/lib/cache/operations";
+import {
+  _resetSubscriptionLookupMap,
+  addSubscriptionToCache,
+  getSubscriptionLookupMap,
+  type CachedSubscription,
+} from "@/lib/cache/count-cache";
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Seeds a subscription into the lookup map (the canonical source for
+ * subscription data used by count calculations and event handlers).
+ */
+function seedSubscription(sub: {
+  id: string;
+  unreadCount: number;
+  tags: Array<{ id: string; name: string; color: string | null }>;
+}): void {
+  addSubscriptionToCache({
+    id: sub.id,
+    type: "web",
+    url: null,
+    title: null,
+    originalTitle: null,
+    description: null,
+    siteUrl: null,
+    subscribedAt: new Date(),
+    fetchFullContent: false,
+    unreadCount: sub.unreadCount,
+    tags: sub.tags,
+  } as CachedSubscription & {
+    type: "web";
+    url: null;
+    title: null;
+    originalTitle: null;
+    description: null;
+    siteUrl: null;
+    subscribedAt: Date;
+    fetchFullContent: false;
+  });
+}
+
+function getSubscriptionFromMap(id: string): { unreadCount: number } | undefined {
+  return getSubscriptionLookupMap().get(id) as { unreadCount: number } | undefined;
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 describe("handleEntriesMarkedRead", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 
   beforeEach(() => {
+    _resetSubscriptionLookupMap();
     mockUtils = createMockTrpcUtils();
   });
 
@@ -47,7 +99,10 @@ describe("handleEntriesMarkedRead", () => {
     expect(setDataOps.length).toBeGreaterThan(0);
   });
 
-  it("updates subscription unread counts", () => {
+  it("updates subscription unread counts in lookup map", () => {
+    seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
+    seedSubscription({ id: "sub-2", unreadCount: 3, tags: [] });
+
     const entries: EntryWithContext[] = [
       { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
       { id: "entry-2", subscriptionId: "sub-1", starred: false, type: "web" },
@@ -56,11 +111,8 @@ describe("handleEntriesMarkedRead", () => {
 
     handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
-    // Should have called setData on subscriptions.list
-    const subOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(subOps.length).toBeGreaterThan(0);
+    expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(3);
+    expect(getSubscriptionFromMap("sub-2")?.unreadCount).toBe(2);
   });
 
   it("updates starred unread count for starred entries", () => {
@@ -110,6 +162,7 @@ describe("handleEntryStarred", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 
   beforeEach(() => {
+    _resetSubscriptionLookupMap();
     mockUtils = createMockTrpcUtils();
   });
 
@@ -147,6 +200,7 @@ describe("handleEntryUnstarred", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 
   beforeEach(() => {
+    _resetSubscriptionLookupMap();
     mockUtils = createMockTrpcUtils();
   });
 
@@ -184,16 +238,16 @@ describe("handleNewEntry", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 
   beforeEach(() => {
+    _resetSubscriptionLookupMap();
     mockUtils = createMockTrpcUtils();
   });
 
-  it("increments subscription unread count", () => {
+  it("increments subscription unread count in lookup map", () => {
+    seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
+
     handleNewEntry(mockUtils.utils, "sub-1", "web");
 
-    const subOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(subOps.length).toBeGreaterThan(0);
+    expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(6);
   });
 
   it("increments saved unread count for saved entries", () => {
@@ -232,6 +286,7 @@ describe("handleSubscriptionCreated", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 
   beforeEach(() => {
+    _resetSubscriptionLookupMap();
     mockUtils = createMockTrpcUtils();
   });
 
@@ -252,14 +307,11 @@ describe("handleSubscriptionCreated", () => {
     };
   }
 
-  it("adds subscription to subscriptions.list cache", () => {
+  it("adds subscription to lookup map", () => {
     const subscription = createSubscription();
     handleSubscriptionCreated(mockUtils.utils, subscription);
 
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
 
   it("directly updates tags.list cache", () => {
@@ -273,7 +325,7 @@ describe("handleSubscriptionCreated", () => {
     expect(setDataOps.length).toBe(1);
   });
 
-  it("adds subscription with tags to cache", () => {
+  it("adds subscription with tags to lookup map", () => {
     const subscription = createSubscription({
       tags: [
         { id: "tag-1", name: "News", color: "#ff0000" },
@@ -282,20 +334,16 @@ describe("handleSubscriptionCreated", () => {
     });
     handleSubscriptionCreated(mockUtils.utils, subscription);
 
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    const cached = getSubscriptionLookupMap().get("sub-1");
+    expect(cached).toBeDefined();
+    expect(cached?.tags).toHaveLength(2);
   });
 
   it("adds subscription with non-zero unread count", () => {
     const subscription = createSubscription({ unreadCount: 42 });
     handleSubscriptionCreated(mockUtils.utils, subscription);
 
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(42);
   });
 
   it("handles email subscription type", () => {
@@ -305,10 +353,7 @@ describe("handleSubscriptionCreated", () => {
     });
     handleSubscriptionCreated(mockUtils.utils, subscription);
 
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
 
   it("handles saved subscription type", () => {
@@ -318,10 +363,7 @@ describe("handleSubscriptionCreated", () => {
     });
     handleSubscriptionCreated(mockUtils.utils, subscription);
 
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
 
   it("handles subscription with null optional fields", () => {
@@ -333,27 +375,22 @@ describe("handleSubscriptionCreated", () => {
     handleSubscriptionCreated(mockUtils.utils, subscription);
 
     // Should not throw
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBeGreaterThan(0);
+    expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
 
-  it("does not duplicate subscription if already in cache", () => {
-    const subscription = createSubscription();
-
-    // Set up cache with existing subscription
-    mockUtils.setCache("subscriptions", "list", undefined, {
-      items: [subscription],
-    });
+  it("does not cause count inflation for duplicate events", () => {
+    mockUtils.setCache("entries", "count", {}, { unread: 10 });
+    const subscription = createSubscription({ unreadCount: 5 });
 
     handleSubscriptionCreated(mockUtils.utils, subscription);
+    const countAfterFirst = (mockUtils.getCache("entries", "count", {}) as { unread: number })
+      .unread;
 
-    // The setData is still called, but the updater function should not add a duplicate
-    const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-      items: SubscriptionData[];
-    };
-    expect(cachedData.items.length).toBe(1);
+    handleSubscriptionCreated(mockUtils.utils, subscription);
+    const countAfterSecond = (mockUtils.getCache("entries", "count", {}) as { unread: number })
+      .unread;
+
+    expect(countAfterSecond).toBe(countAfterFirst);
   });
 });
 
@@ -361,16 +398,16 @@ describe("handleSubscriptionDeleted", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 
   beforeEach(() => {
+    _resetSubscriptionLookupMap();
     mockUtils = createMockTrpcUtils();
   });
 
-  it("removes subscription from subscriptions.list cache", () => {
+  it("removes subscription from lookup map", () => {
+    seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
+
     handleSubscriptionDeleted(mockUtils.utils, "sub-1");
 
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "subscriptions" && op.procedure === "list"
-    );
-    expect(setDataOps.length).toBe(1);
+    expect(getSubscriptionLookupMap().has("sub-1")).toBe(false);
   });
 
   it("invalidates entries.list cache", () => {
@@ -382,7 +419,7 @@ describe("handleSubscriptionDeleted", () => {
     expect(invalidateOps.length).toBe(1);
   });
 
-  it("invalidates tags.list cache", () => {
+  it("invalidates tags.list cache when subscription not found", () => {
     handleSubscriptionDeleted(mockUtils.utils, "sub-1");
 
     const invalidateOps = mockUtils.operations.filter(
@@ -391,49 +428,30 @@ describe("handleSubscriptionDeleted", () => {
     expect(invalidateOps.length).toBe(1);
   });
 
-  it("removes subscription from cache when present", () => {
-    // Set up cache with subscriptions
-    mockUtils.setCache("subscriptions", "list", undefined, {
-      items: [
-        { id: "sub-1", unreadCount: 5, tags: [] },
-        { id: "sub-2", unreadCount: 10, tags: [] },
-      ],
-    });
+  it("removes subscription from lookup map when present", () => {
+    seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
+    seedSubscription({ id: "sub-2", unreadCount: 10, tags: [] });
 
     handleSubscriptionDeleted(mockUtils.utils, "sub-1");
 
-    const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-      items: Array<{ id: string }>;
-    };
-    expect(cachedData.items.length).toBe(1);
-    expect(cachedData.items[0].id).toBe("sub-2");
+    expect(getSubscriptionLookupMap().has("sub-1")).toBe(false);
+    expect(getSubscriptionLookupMap().has("sub-2")).toBe(true);
   });
 
   it("handles deletion of non-existent subscription gracefully", () => {
-    // Set up cache with different subscription
-    mockUtils.setCache("subscriptions", "list", undefined, {
-      items: [{ id: "sub-2", unreadCount: 10, tags: [] }],
-    });
+    seedSubscription({ id: "sub-2", unreadCount: 10, tags: [] });
 
     // Should not throw
     handleSubscriptionDeleted(mockUtils.utils, "sub-1");
 
-    const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-      items: Array<{ id: string }>;
-    };
-    expect(cachedData.items.length).toBe(1);
+    expect(getSubscriptionLookupMap().has("sub-2")).toBe(true);
   });
 
-  it("handles deletion when cache is empty", () => {
-    mockUtils.setCache("subscriptions", "list", undefined, { items: [] });
-
+  it("handles deletion when lookup map is empty", () => {
     // Should not throw
     handleSubscriptionDeleted(mockUtils.utils, "sub-1");
 
-    const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-      items: Array<{ id: string }>;
-    };
-    expect(cachedData.items.length).toBe(0);
+    expect(getSubscriptionLookupMap().size).toBe(0);
   });
 });
 
@@ -441,15 +459,13 @@ describe("cache update logic verification", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 
   beforeEach(() => {
+    _resetSubscriptionLookupMap();
     mockUtils = createMockTrpcUtils();
   });
 
   describe("handleEntriesMarkedRead cache state updates", () => {
     it("decrements unread count when marking entries as read", () => {
-      // Set up initial cache state
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 5, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
 
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
@@ -458,16 +474,11 @@ describe("cache update logic verification", () => {
 
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(3);
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(3);
     });
 
     it("increments unread count when marking entries as unread", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 3, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 3, tags: [] });
 
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
@@ -475,19 +486,12 @@ describe("cache update logic verification", () => {
 
       handleEntriesMarkedRead(mockUtils.utils, entries, false);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(4);
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(4);
     });
 
     it("updates multiple subscriptions independently", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [
-          { id: "sub-1", unreadCount: 10, tags: [] },
-          { id: "sub-2", unreadCount: 5, tags: [] },
-        ],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 10, tags: [] });
+      seedSubscription({ id: "sub-2", unreadCount: 5, tags: [] });
 
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
@@ -497,17 +501,12 @@ describe("cache update logic verification", () => {
 
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(8); // sub-1: 10 - 2
-      expect(cachedData.items[1].unreadCount).toBe(4); // sub-2: 5 - 1
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(8); // 10 - 2
+      expect(getSubscriptionFromMap("sub-2")?.unreadCount).toBe(4); // 5 - 1
     });
 
     it("does not decrement unread count below zero", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 1, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 1, tags: [] });
 
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
@@ -517,17 +516,14 @@ describe("cache update logic verification", () => {
 
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(0); // Clamped to 0
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(0); // Clamped to 0
     });
 
     it("updates tag unread counts based on subscription tags", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [
-          { id: "sub-1", unreadCount: 5, tags: [{ id: "tag-1", name: "News", color: null }] },
-        ],
+      seedSubscription({
+        id: "sub-1",
+        unreadCount: 5,
+        tags: [{ id: "tag-1", name: "News", color: null }],
       });
       mockUtils.setCache("tags", "list", undefined, {
         items: [{ id: "tag-1", name: "News", color: null, unreadCount: 10 }],
@@ -548,27 +544,18 @@ describe("cache update logic verification", () => {
 
   describe("handleNewEntry cache state updates", () => {
     it("increments subscription unread count", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 5, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
 
       handleNewEntry(mockUtils.utils, "sub-1", "web");
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(6);
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(6);
     });
 
     it("increments tag unread count for subscription with tags", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [
-          {
-            id: "sub-1",
-            unreadCount: 5,
-            tags: [{ id: "tag-1", name: "News", color: null }],
-          },
-        ],
+      seedSubscription({
+        id: "sub-1",
+        unreadCount: 5,
+        tags: [{ id: "tag-1", name: "News", color: null }],
       });
       mockUtils.setCache("tags", "list", undefined, {
         items: [{ id: "tag-1", name: "News", color: null, unreadCount: 10 }],
@@ -647,6 +634,7 @@ describe("edge cases", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
 
   beforeEach(() => {
+    _resetSubscriptionLookupMap();
     mockUtils = createMockTrpcUtils();
   });
 
@@ -668,9 +656,7 @@ describe("edge cases", () => {
     });
 
     it("handleEntriesMarkedRead handles mixed null and non-null subscriptionIds", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 5, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
 
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
@@ -679,15 +665,12 @@ describe("edge cases", () => {
 
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
       // Only sub-1 should be decremented
-      expect(cachedData.items[0].unreadCount).toBe(4);
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(4);
     });
 
-    it("handleEntriesMarkedRead handles when subscriptions cache is undefined", () => {
-      // Don't set up subscriptions cache - leave it undefined
+    it("handleEntriesMarkedRead handles when subscription not in lookup map", () => {
+      // Don't seed subscription - leave lookup map empty
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
       ];
@@ -696,8 +679,8 @@ describe("edge cases", () => {
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
     });
 
-    it("handleNewEntry handles when subscriptions cache is undefined", () => {
-      // Don't set up subscriptions cache - leave it undefined
+    it("handleNewEntry handles when subscription not in lookup map", () => {
+      // Don't seed subscription - leave lookup map empty
       // Should not throw
       handleNewEntry(mockUtils.utils, "sub-1", "web");
     });
@@ -710,24 +693,17 @@ describe("edge cases", () => {
     });
 
     it("handleEntriesMarkedRead with empty array does not update subscriptions", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 5, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
 
       handleEntriesMarkedRead(mockUtils.utils, [], true);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(5); // unchanged
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(5); // unchanged
     });
   });
 
   describe("boundary conditions", () => {
     it("handles very large unread count", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 999999, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 999999, tags: [] });
 
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
@@ -735,16 +711,11 @@ describe("edge cases", () => {
 
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(999998);
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(999998);
     });
 
     it("handles many entries being marked at once", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 100, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 100, tags: [] });
 
       const entries: EntryWithContext[] = Array.from({ length: 50 }, (_, i) => ({
         id: `entry-${i}`,
@@ -755,16 +726,11 @@ describe("edge cases", () => {
 
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(50);
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(50);
     });
 
     it("handles entry belonging to non-existent subscription", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [{ id: "sub-1", unreadCount: 5, tags: [] }],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
 
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "non-existent", starred: false, type: "web" },
@@ -774,10 +740,7 @@ describe("edge cases", () => {
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
       // sub-1 should be unchanged
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(5);
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(5);
     });
   });
 
@@ -833,13 +796,9 @@ describe("edge cases", () => {
     });
 
     it("handles mix of all entry types", () => {
-      mockUtils.setCache("subscriptions", "list", undefined, {
-        items: [
-          { id: "sub-1", unreadCount: 10, tags: [] },
-          { id: "sub-2", unreadCount: 5, tags: [] },
-          { id: "sub-3", unreadCount: 3, tags: [] },
-        ],
-      });
+      seedSubscription({ id: "sub-1", unreadCount: 10, tags: [] });
+      seedSubscription({ id: "sub-2", unreadCount: 5, tags: [] });
+      seedSubscription({ id: "sub-3", unreadCount: 3, tags: [] });
 
       const entries: EntryWithContext[] = [
         { id: "entry-1", subscriptionId: "sub-1", starred: false, type: "web" },
@@ -849,12 +808,9 @@ describe("edge cases", () => {
 
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
 
-      const cachedData = mockUtils.getCache("subscriptions", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(cachedData.items[0].unreadCount).toBe(9); // sub-1
-      expect(cachedData.items[1].unreadCount).toBe(4); // sub-2
-      expect(cachedData.items[2].unreadCount).toBe(2); // sub-3
+      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(9);
+      expect(getSubscriptionFromMap("sub-2")?.unreadCount).toBe(4);
+      expect(getSubscriptionFromMap("sub-3")?.unreadCount).toBe(2);
     });
   });
 });
