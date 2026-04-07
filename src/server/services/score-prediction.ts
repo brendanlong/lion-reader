@@ -7,8 +7,8 @@
  * See docs/features/score-prediction-design.md for design details.
  */
 
-import { eq, and, sql, desc, inArray, isNotNull, or, isNull } from "drizzle-orm";
-import type { db as dbType } from "@/server/db";
+import { eq, and, sql, desc, lt, inArray, isNotNull, or, isNull } from "drizzle-orm";
+import type { db as dbType, Database } from "@/server/db";
 import { entries, userEntries, userScoreModels, entryScorePredictions } from "@/server/db/schema";
 import { TfidfVectorizer, combineFeatures, type SparseVector } from "@/server/ml/tfidf";
 import { RidgeRegression, crossValidate } from "@/server/ml/ridge";
@@ -40,16 +40,14 @@ const RIDGE_ALPHA = 1.0;
 /** Batch size for prediction inserts */
 const PREDICTION_BATCH_SIZE = 100;
 
+/** Chunk size for iterating training data from the DB.
+ * Each chunk holds ~500 rows of text in memory (~2.5 MB), then text is discarded.
+ * This avoids materializing all 10K entry texts at once (~50-100 MB). */
+const TRAINING_CHUNK_SIZE = 500;
+
 // ============================================================================
 // Types
 // ============================================================================
-
-export interface TrainingData {
-  entryId: string;
-  feedId: string;
-  text: string;
-  score: number;
-}
 
 export interface TrainModelResult {
   success: boolean;
@@ -142,14 +140,33 @@ function extractEntryText(entry: {
 }
 
 /**
- * Fetches training data for a user.
- * Only includes entries the user has actually engaged with: read, starred,
- * or explicitly scored. Unread entries without a scoring signal are excluded
- * since the user hasn't made a decision about them yet.
+ * Fetches a chunk of training data for a user using cursor-based pagination.
+ * Returns raw DB rows so the caller can extract text on-demand and discard it
+ * before loading the next chunk, avoiding holding all entry text in memory.
  */
-async function getTrainingData(db: typeof dbType, userId: string): Promise<TrainingData[]> {
-  // Query entries with explicit decisions (read, starred, or scored)
-  const rows = await db
+type DbOrTx = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+async function queryTrainingChunk(
+  db: DbOrTx,
+  userId: string,
+  cursor: string | undefined,
+  limit: number
+) {
+  const conditions = [
+    eq(userEntries.userId, userId),
+    or(
+      isNotNull(userEntries.score),
+      eq(userEntries.hasStarred, true),
+      eq(userEntries.read, true),
+      eq(entries.type, "saved")
+    ),
+  ];
+
+  if (cursor) {
+    conditions.push(lt(entries.id, cursor));
+  }
+
+  return db
     .select({
       entryId: entries.id,
       feedId: entries.feedId,
@@ -164,27 +181,9 @@ async function getTrainingData(db: typeof dbType, userId: string): Promise<Train
     })
     .from(userEntries)
     .innerJoin(entries, eq(entries.id, userEntries.entryId))
-    .where(
-      and(
-        eq(userEntries.userId, userId),
-        // Only include entries the user has engaged with
-        or(
-          isNotNull(userEntries.score),
-          eq(userEntries.hasStarred, true),
-          eq(userEntries.read, true),
-          eq(entries.type, "saved")
-        )
-      )
-    )
-    .orderBy(desc(entries.id)) // Most recent first
-    .limit(MAX_TRAINING_ENTRIES);
-
-  return rows.map((row) => ({
-    entryId: row.entryId,
-    feedId: row.feedId,
-    text: extractEntryText(row),
-    score: computeEffectiveScore(row),
-  }));
+    .where(and(...conditions))
+    .orderBy(desc(entries.id))
+    .limit(limit);
 }
 
 // ============================================================================
@@ -193,73 +192,140 @@ async function getTrainingData(db: typeof dbType, userId: string): Promise<Train
 
 /**
  * Trains a score prediction model for a user.
+ *
+ * Uses chunked DB iteration to avoid holding all entry text in memory at once.
+ * Two passes over the DB:
+ *   Pass 1: Fit TF-IDF vocabulary (only frequency maps kept, text discarded per chunk)
+ *   Pass 2: Transform entries to sparse vectors (text discarded per chunk)
+ *
+ * Peak memory is dominated by the Gram matrix (~98 MB) + sparse vectors (~10-30 MB),
+ * not by entry text (~50-100 MB if materialized).
  */
 export async function trainModel(db: typeof dbType, userId: string): Promise<TrainModelResult> {
   logger.info("Starting model training", { userId });
 
-  // Fetch training data
-  const trainingData = await getTrainingData(db, userId);
+  // Both passes run inside a REPEATABLE READ transaction so they see a
+  // consistent snapshot of the data even though they re-query the same rows.
+  // This is read-only — no locks are held.
+  const result = await db.transaction(
+    async (tx) => {
+      // ── Pass 1: Fit vocabulary + collect lightweight metadata ──────────
+      // Only frequency maps + feed counts are accumulated. Entry text is
+      // discarded after each chunk so peak text memory is
+      // ~TRAINING_CHUNK_SIZE × 5 KB ≈ 2.5 MB.
 
-  if (trainingData.length < MIN_TRAINING_ENTRIES) {
+      const vectorizer = new TfidfVectorizer({
+        maxFeatures: MAX_TFIDF_FEATURES,
+        minDf: 2,
+        maxDf: 0.95,
+        useBigrams: true,
+      });
+      vectorizer.startFit();
+
+      const feedCounts = new Map<string, number>();
+      let trainingCount = 0;
+      let cursor: string | undefined;
+
+      while (trainingCount < MAX_TRAINING_ENTRIES) {
+        const chunkLimit = Math.min(TRAINING_CHUNK_SIZE, MAX_TRAINING_ENTRIES - trainingCount);
+        const chunk = await queryTrainingChunk(tx, userId, cursor, chunkLimit);
+        if (chunk.length === 0) break;
+
+        for (const row of chunk) {
+          vectorizer.fitDocument(extractEntryText(row));
+          feedCounts.set(row.feedId, (feedCounts.get(row.feedId) ?? 0) + 1);
+        }
+
+        trainingCount += chunk.length;
+        cursor = chunk[chunk.length - 1].entryId;
+      }
+
+      if (trainingCount < MIN_TRAINING_ENTRIES) {
+        return { ok: false as const, trainingCount };
+      }
+
+      vectorizer.finalizeFit();
+
+      const tfidfFeatureCount = vectorizer.getFeatureCount();
+
+      // Build feed ID one-hot encoding from frequency counts
+      const feedIds = Array.from(feedCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, MAX_FEED_FEATURES)
+        .map(([id]) => id);
+      const feedIdMap = new Map(feedIds.map((id, i) => [id, i]));
+      const totalFeatures = tfidfFeatureCount + feedIds.length;
+
+      logger.debug("TF-IDF vocabulary fitted", {
+        userId,
+        documentCount: trainingCount,
+        tfidfFeatures: tfidfFeatureCount,
+        feedFeatures: feedIds.length,
+        feedsCapped: feedCounts.size > MAX_FEED_FEATURES,
+        totalFeedsInData: feedCounts.size,
+        totalFeatures,
+      });
+
+      // ── Pass 2: Transform to sparse vectors + collect scores ──────────
+      // Re-queries the same rows (same snapshot via REPEATABLE READ).
+      // Text is discarded per chunk; only sparse vectors (~10-30 MB total)
+      // and scores (~80 KB) are kept.
+
+      cursor = undefined;
+      const combinedVectors: SparseVector[] = [];
+      const scores: number[] = [];
+
+      while (combinedVectors.length < trainingCount) {
+        const chunkLimit = Math.min(TRAINING_CHUNK_SIZE, trainingCount - combinedVectors.length);
+        const chunk = await queryTrainingChunk(tx, userId, cursor, chunkLimit);
+        if (chunk.length === 0) break;
+
+        for (const row of chunk) {
+          const tfidfVec = vectorizer.transformSingle(extractEntryText(row));
+          combinedVectors.push(combineFeatures(tfidfVec, row.feedId, feedIdMap, tfidfFeatureCount));
+          scores.push(computeEffectiveScore(row));
+        }
+
+        cursor = chunk[chunk.length - 1].entryId;
+      }
+
+      return {
+        ok: true as const,
+        vectorizer,
+        feedIds,
+        totalFeatures,
+        combinedVectors,
+        scores,
+        trainingCount,
+      };
+    },
+    // Both passes see a consistent snapshot so re-querying returns the same rows.
+    // Read-only — no locks are held.
+    { isolationLevel: "repeatable read", accessMode: "read only" }
+  );
+
+  if (!result.ok) {
     logger.info("Not enough training data", {
       userId,
-      count: trainingData.length,
+      count: result.trainingCount,
       required: MIN_TRAINING_ENTRIES,
     });
     return {
       success: false,
-      trainingCount: trainingData.length,
+      trainingCount: result.trainingCount,
       modelVersion: 0,
-      error: `Need at least ${MIN_TRAINING_ENTRIES} rated entries, have ${trainingData.length}`,
+      error: `Need at least ${MIN_TRAINING_ENTRIES} rated entries, have ${result.trainingCount}`,
     };
   }
 
-  // Extract feed IDs for one-hot encoding, capped to MAX_FEED_FEATURES.
-  // Keep the most frequent feeds since they contribute the most training signal.
-  const feedCounts = new Map<string, number>();
-  for (const d of trainingData) {
-    feedCounts.set(d.feedId, (feedCounts.get(d.feedId) ?? 0) + 1);
-  }
-  const feedIds = Array.from(feedCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_FEED_FEATURES)
-    .map(([id]) => id);
-  const feedIdMap = new Map(feedIds.map((id, i) => [id, i]));
+  const { vectorizer, feedIds, totalFeatures, combinedVectors, scores, trainingCount } = result;
 
-  // Prepare text documents
-  const documents = trainingData.map((d) => d.text);
-  const scores = trainingData.map((d) => d.score);
-
-  // Fit TF-IDF vectorizer
-  logger.debug("Fitting TF-IDF vectorizer", {
-    userId,
-    documentCount: documents.length,
-  });
-
-  const vectorizer = new TfidfVectorizer({
-    maxFeatures: MAX_TFIDF_FEATURES,
-    minDf: 2,
-    maxDf: 0.95,
-    useBigrams: true,
-  });
-
-  const tfidfVectors = vectorizer.fitTransform(documents);
-  const tfidfFeatureCount = vectorizer.getFeatureCount();
-
-  // Combine TF-IDF features with feed ID features
-  const combinedVectors: SparseVector[] = trainingData.map((d, i) =>
-    combineFeatures(tfidfVectors[i], d.feedId, feedIdMap, tfidfFeatureCount)
-  );
-
-  const totalFeatures = tfidfFeatureCount + feedIds.length;
+  // ── Train model ────────────────────────────────────────────────────────
+  // Peak memory here: combinedVectors (~10-30 MB) + Gram matrix (~98 MB)
 
   logger.debug("Training Ridge regression", {
     userId,
-    sampleCount: trainingData.length,
-    tfidfFeatures: tfidfFeatureCount,
-    feedFeatures: feedIds.length,
-    feedsCapped: feedCounts.size > MAX_FEED_FEATURES,
-    totalFeedsInData: feedCounts.size,
+    sampleCount: combinedVectors.length,
     totalFeatures,
   });
 
@@ -296,7 +362,7 @@ export async function trainModel(db: typeof dbType, userId: string): Promise<Tra
       vocabulary,
       idfValues,
       feedIds,
-      trainingCount: trainingData.length,
+      trainingCount,
       modelVersion: newVersion,
       trainedAt: now,
       cvMae: cvResults.mae,
@@ -311,7 +377,7 @@ export async function trainModel(db: typeof dbType, userId: string): Promise<Tra
         vocabulary,
         idfValues,
         feedIds,
-        trainingCount: trainingData.length,
+        trainingCount,
         modelVersion: newVersion,
         trainedAt: now,
         cvMae: cvResults.mae,
@@ -322,7 +388,7 @@ export async function trainModel(db: typeof dbType, userId: string): Promise<Tra
 
   logger.info("Model training completed", {
     userId,
-    trainingCount: trainingData.length,
+    trainingCount,
     modelVersion: newVersion,
     cvMae: cvResults.mae,
     cvCorrelation: cvResults.correlation,
@@ -330,7 +396,7 @@ export async function trainModel(db: typeof dbType, userId: string): Promise<Tra
 
   return {
     success: true,
-    trainingCount: trainingData.length,
+    trainingCount,
     modelVersion: newVersion,
     cvMae: cvResults.mae,
     cvCorrelation: cvResults.correlation,

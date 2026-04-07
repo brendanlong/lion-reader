@@ -23,7 +23,7 @@ primary_region = "lax"
 # Separate process groups for independent scaling and resource allocation
 [processes]
   app = "node dist/server.js"
-  worker = "node dist/worker.js"
+  worker = "node --max-old-space-size=320 dist/worker.js"
   discord = "node dist/discord-bot.js"
 
 [env]
