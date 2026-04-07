@@ -94,13 +94,77 @@ export class TfidfVectorizer {
   private idfValues: number[] = [];
   private fitted = false;
 
+  /** Accumulator state for incremental fitting via startFit/fitDocument/finalizeFit */
+  private fitState: {
+    termDocFreq: Map<string, number>;
+    termTotalFreq: Map<string, number>;
+    docCount: number;
+  } | null = null;
+
   constructor(config: Partial<TfidfConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
   /**
+   * Begins incremental fitting. Call fitDocument() for each document,
+   * then finalizeFit() to build the vocabulary.
+   *
+   * This avoids holding all document text in memory at once — only
+   * term frequency maps are accumulated.
+   */
+  startFit(): void {
+    this.fitState = {
+      termDocFreq: new Map(),
+      termTotalFreq: new Map(),
+      docCount: 0,
+    };
+    this.fitted = false;
+  }
+
+  /**
+   * Processes a single document during incremental fitting.
+   * Extracts terms and accumulates frequency counts.
+   * The document text can be discarded after this call.
+   */
+  fitDocument(document: string): void {
+    if (!this.fitState) {
+      throw new Error("Must call startFit() before fitDocument()");
+    }
+
+    const terms = extractTerms(document, this.config);
+    const uniqueTerms = new Set(terms);
+
+    for (const term of uniqueTerms) {
+      this.fitState.termDocFreq.set(term, (this.fitState.termDocFreq.get(term) || 0) + 1);
+    }
+
+    for (const term of terms) {
+      this.fitState.termTotalFreq.set(term, (this.fitState.termTotalFreq.get(term) || 0) + 1);
+    }
+
+    this.fitState.docCount++;
+  }
+
+  /**
+   * Finalizes incremental fitting by building the vocabulary from
+   * accumulated frequency counts. Releases the frequency maps.
+   */
+  finalizeFit(): void {
+    if (!this.fitState) {
+      throw new Error("Must call startFit() before finalizeFit()");
+    }
+
+    this.buildVocabulary(
+      this.fitState.docCount,
+      this.fitState.termDocFreq,
+      this.fitState.termTotalFreq
+    );
+    this.fitState = null;
+  }
+
+  /**
    * Builds vocabulary and IDF values from term frequency counts.
-   * Shared by fit() and fitTransform().
+   * Shared by fit(), fitTransform(), and finalizeFit().
    */
   private buildVocabulary(
     numDocs: number,
@@ -264,20 +328,23 @@ export class TfidfVectorizer {
 
   /**
    * Fits and transforms in one step.
-   * More efficient than calling fit() then transform() separately because
-   * it tokenizes each document only once instead of twice.
+   *
+   * Uses a two-pass approach to avoid caching all term arrays in memory:
+   * 1. First pass: extract terms, count frequencies, discard terms
+   * 2. Build vocabulary from frequency counts
+   * 3. Second pass: re-extract terms and convert to vectors
+   *
+   * This trades ~2x tokenization cost for significantly lower peak memory:
+   * caching 10K term arrays can use ~45 MB, while re-tokenizing is fast.
    */
   fitTransform(documents: string[]): SparseVector[] {
     const numDocs = documents.length;
     const termDocFreq = new Map<string, number>();
     const termTotalFreq = new Map<string, number>();
 
-    // Extract terms once and cache them
-    const allTerms: string[][] = new Array(numDocs);
-
+    // Pass 1: count term frequencies (terms are discarded each iteration)
     for (let i = 0; i < numDocs; i++) {
       const terms = extractTerms(documents[i], this.config);
-      allTerms[i] = terms;
       const uniqueTerms = new Set(terms);
 
       for (const term of uniqueTerms) {
@@ -291,8 +358,11 @@ export class TfidfVectorizer {
 
     this.buildVocabulary(numDocs, termDocFreq, termTotalFreq);
 
-    // Transform using cached terms (no re-tokenization)
-    return allTerms.map((terms) => this.termsToVector(terms));
+    // Pass 2: re-tokenize and transform to vectors
+    return documents.map((doc) => {
+      const terms = extractTerms(doc, this.config);
+      return this.termsToVector(terms);
+    });
   }
 
   /**
