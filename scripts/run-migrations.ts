@@ -1,10 +1,10 @@
 /**
- * Custom migration runner that replaces drizzle-kit migrate.
+ * Custom migration runner.
  *
- * Key differences from drizzle-kit:
- * - Each migration runs in its own transaction (drizzle-kit runs all in one)
- * - Better error messages and hash verification
- * - Compatible with drizzle-kit migration format
+ * Features:
+ * - Each migration runs in its own transaction
+ * - Hash verification to detect modified migration files
+ * - Uses the journal format in migrations/meta/_journal.json
  */
 
 import * as crypto from "crypto";
@@ -60,8 +60,7 @@ interface ResolvedOptions {
 // ============================================================================
 
 /**
- * Compute the hash of a migration file the same way drizzle-kit does.
- * Drizzle uses SHA-256 of the SQL content.
+ * Compute the SHA-256 hash of a migration file's SQL content.
  */
 export function computeHash(sql: string): string {
   return crypto.createHash("sha256").update(sql).digest("hex");
@@ -112,7 +111,6 @@ function loadMigrationSql(migrationsDir: string, tag: string): string {
 
 /**
  * Ensure the migrations schema and table exist.
- * Table structure matches drizzle-kit exactly for compatibility.
  */
 async function ensureMigrationsTable(
   client: PoolClient,
