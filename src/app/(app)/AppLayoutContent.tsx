@@ -15,6 +15,7 @@ import {
   CloseIcon,
   MenuIcon,
   PlusIcon,
+  SearchIcon,
   UserIcon,
   ChevronDownIcon,
 } from "@/components/ui/icon-button";
@@ -95,6 +96,15 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
               }
               headerRight={
                 <div className="flex items-center gap-2">
+                  {/* Search button */}
+                  <ClientLink
+                    href="/search"
+                    className="flex min-h-[40px] items-center justify-center rounded-md px-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300 dark:active:bg-zinc-700"
+                    aria-label="Search entries"
+                  >
+                    <SearchIcon className="h-5 w-5" />
+                  </ClientLink>
+
                   {/* Subscribe button */}
                   <ClientLink
                     href="/subscribe"

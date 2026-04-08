@@ -19,6 +19,7 @@ export type EntryType = "web" | "email" | "saved";
  * All optional fields should be explicitly undefined (not omitted) for cache key matching.
  */
 export interface EntriesListInput {
+  query: string | undefined;
   subscriptionId: string | undefined;
   tagId: string | undefined;
   uncategorized: boolean | undefined;
@@ -40,6 +41,7 @@ export interface EntriesListInput {
  * Filter options passed to buildEntriesListInput.
  */
 export interface EntriesListFilters {
+  query?: string;
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
@@ -79,7 +81,9 @@ export function buildEntriesListInput(
   // This ensures the object structure is identical regardless of where it's constructed.
   // NOTE: direction is required for tRPC infinite query cache key matching.
   // Direction depends on sort order: "newest" fetches forward, "oldest" fetches backward.
+  // When query is provided, backend sorts by relevance, but we still need forward direction.
   return {
+    query: filters.query,
     subscriptionId: filters.subscriptionId,
     tagId: filters.tagId,
     uncategorized: filters.uncategorized,
@@ -142,6 +146,11 @@ export function getFiltersFromPathname(pathname: string): EntriesListFilters {
     return { sortBy: "predictedScore" as const };
   }
 
+  // /search - Full-text search (query comes from URL params, not pathname)
+  if (pathname === "/search") {
+    return {};
+  }
+
   // /all or default
   return {};
 }
@@ -155,7 +164,7 @@ export function getFiltersFromPathname(pathname: string): EntriesListFilters {
  */
 export function getDefaultViewPreferences(pathname: string): EntriesListViewPreferences {
   return {
-    unreadOnly: pathname === "/recently-read" ? false : true,
+    unreadOnly: pathname === "/recently-read" || pathname === "/search" ? false : true,
     sortOrder: "newest",
   };
 }

@@ -66,6 +66,12 @@ export async function EntryListPage({ pathname, searchParams, children }: EntryL
   const filters = getFiltersFromPathname(pathname);
   const defaults = getDefaultViewPreferences(pathname);
 
+  // Read search query from URL params (used on /search page)
+  const q = typeof params.q === "string" ? params.q.trim() || undefined : undefined;
+  if (q) {
+    filters.query = q;
+  }
+
   // Parse view preferences from URL, using route-specific defaults
   const urlParams = new URLSearchParams();
   if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
@@ -78,7 +84,11 @@ export async function EntryListPage({ pathname, searchParams, children }: EntryL
   const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
 
   // Prefetch the entry list and related data
-  void trpc.entries.list.prefetchInfinite(input);
+  // Skip prefetch on /search without a query — client shows a prompt instead
+  const shouldPrefetch = !(pathname === "/search" && !q);
+  if (shouldPrefetch) {
+    void trpc.entries.list.prefetchInfinite(input);
+  }
   if (entryId != null) {
     void trpc.entries.get.prefetch({ id: entryId });
   }

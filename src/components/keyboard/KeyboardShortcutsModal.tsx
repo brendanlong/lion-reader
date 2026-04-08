@@ -38,6 +38,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { keys: ["o"], description: "Open selected entry" },
       { keys: ["Enter"], description: "Open selected entry" },
       { keys: ["Escape"], description: "Close entry / deselect" },
+      { keys: ["/"], description: "Search entries" },
       { keys: ["g", "a"], description: "Go to All items" },
       { keys: ["g", "s"], description: "Go to Starred items" },
       { keys: ["g", "l"], description: "Go to Saved items" },

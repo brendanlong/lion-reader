@@ -21,6 +21,7 @@ import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
 import { SuspendingEntryList } from "./SuspendingEntryList";
 import { EntryListFallback } from "./EntryListFallback";
+import { EntryListEmpty } from "./EntryListStates";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -30,6 +31,10 @@ import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache/count-cache";
 import { type EntryType } from "@/lib/hooks/useEntryMutations";
+import { SearchIcon } from "@/components/ui/icon-button";
+import { SearchInput } from "@/components/search/SearchInput";
+
+const SEARCH_EMPTY_PROMPT = "Type a search query above to find entries.";
 
 /**
  * Route info derived from the current pathname.
@@ -197,6 +202,21 @@ function useRouteInfo(): RouteInfo {
       };
     }
 
+    // /search - Full-text search
+    // Note: empty messages are overridden by the emptyMessages memo in
+    // UnifiedEntriesContentInner which checks queryInput.query dynamically
+    if (pathname === "/search") {
+      return {
+        viewId: "search" as const,
+        filters: {},
+        title: "Search", // Replaced by SearchInput in title slot
+        hideSortToggle: true,
+        emptyMessageUnread: "No matching entries found.",
+        emptyMessageAll: "No matching entries found.",
+        markAllReadDescription: "search results",
+      };
+    }
+
     // /recently-read - Recently read entries
     if (pathname === "/recently-read") {
       return {
@@ -319,11 +339,15 @@ function UnifiedEntriesContentInner() {
   // Get query input based on current URL - shared with SuspendingEntryList
   const queryInput = useEntriesListInput();
 
+  // Don't fetch when on search page without a query
+  const shouldFetchEntries = !(routeInfo.viewId === "search" && !queryInput.query);
+
   // Non-suspending query for navigation - shares cache with SuspendingEntryList
   const entriesQuery = trpc.entries.list.useInfiniteQuery(queryInput, {
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
+    enabled: shouldFetchEntries,
   });
 
   // Fetch subscription data for validation
@@ -337,8 +361,18 @@ function UnifiedEntriesContentInner() {
     enabled: !!routeInfo.tagId,
   });
 
-  // Update empty messages with actual tag name if available
+  // Update empty messages based on context
   const emptyMessages = useMemo(() => {
+    // Search page: customize message based on whether there's a query
+    if (routeInfo.viewId === "search") {
+      const hasQuery = !!queryInput.query;
+      return {
+        emptyMessageUnread: hasQuery ? "No matching entries found." : SEARCH_EMPTY_PROMPT,
+        emptyMessageAll: hasQuery ? "No matching entries found." : SEARCH_EMPTY_PROMPT,
+        markAllReadDescription: "search results",
+      };
+    }
+
     if (routeInfo.tagId && tagsQuery.data) {
       const tag = tagsQuery.data.items.find((t) => t.id === routeInfo.tagId);
       const tagName = tag?.name ?? "this tag";
@@ -353,7 +387,7 @@ function UnifiedEntriesContentInner() {
       emptyMessageAll: routeInfo.emptyMessageAll,
       markAllReadDescription: routeInfo.markAllReadDescription,
     };
-  }, [routeInfo, tagsQuery.data]);
+  }, [routeInfo, tagsQuery.data, queryInput.query]);
 
   // Build mark all read options
   const markAllReadOptions = useMemo(() => {
@@ -445,11 +479,15 @@ function UnifiedEntriesContentInner() {
   }
 
   // Title has its own Suspense boundary with smart fallback that uses cache
-  const titleSlot = (
-    <Suspense fallback={<TitleFallback routeInfo={routeInfo} />}>
-      <EntryListTitle routeInfo={routeInfo} />
-    </Suspense>
-  );
+  // Search page uses SearchInput instead of a text title
+  const titleSlot =
+    routeInfo.viewId === "search" ? (
+      <SearchInput />
+    ) : (
+      <Suspense fallback={<TitleFallback routeInfo={routeInfo} />}>
+        <EntryListTitle routeInfo={routeInfo} />
+      </Suspense>
+    );
 
   // Entry content - has its own internal Suspense boundary
   const entryContentSlot = openEntryId ? (
@@ -465,7 +503,14 @@ function UnifiedEntriesContentInner() {
   ) : null;
 
   // Entry list - has its own Suspense boundary
-  const entryListSlot = (
+  // For search without a query, show a prompt instead of fetching all entries
+  const isSearchWithoutQuery = routeInfo.viewId === "search" && !queryInput.query;
+  const entryListSlot = isSearchWithoutQuery ? (
+    <EntryListEmpty
+      message={SEARCH_EMPTY_PROMPT}
+      icon={<SearchIcon className="mb-4 h-12 w-12 text-zinc-400 dark:text-zinc-500" />}
+    />
+  ) : (
     <Suspense
       fallback={
         <EntryListFallback

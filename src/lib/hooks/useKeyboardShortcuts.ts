@@ -481,6 +481,20 @@ export function useKeyboardShortcuts(
     [onRefresh, isEntryOpen, enabled]
   );
 
+  // / - open search
+  useHotkeys(
+    "/",
+    (e) => {
+      e.preventDefault();
+      clientPush("/search");
+    },
+    {
+      enabled: enabled && !isEntryOpen,
+      enableOnFormTags: false,
+    },
+    [isEntryOpen, enabled]
+  );
+
   // u - toggle unread-only filter
   useHotkeys(
     "u",
