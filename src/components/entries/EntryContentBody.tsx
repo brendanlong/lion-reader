@@ -9,28 +9,32 @@
 
 import { useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import DOMPurify from "isomorphic-dompurify";
+import DOMPurify from "dompurify";
 
 // Configure DOMPurify to:
 // 1. Open all external links in new tabs
 // 2. Lazy load all images
 // This hook runs after each element is sanitized
-DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-  // Add target="_blank" for external links
-  if (node.tagName === "A" && node.hasAttribute("href")) {
-    const href = node.getAttribute("href") ?? "";
-    // Only add target="_blank" for http/https links (external links)
-    if (href.startsWith("http://") || href.startsWith("https://")) {
-      node.setAttribute("target", "_blank");
-      node.setAttribute("rel", "noopener noreferrer");
+// Guard: DOMPurify.addHook is only available when a DOM is present (browser).
+// During SSR, DOMPurify returns a stub with isSupported=false and no methods.
+if (DOMPurify.isSupported) {
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    // Add target="_blank" for external links
+    if (node.tagName === "A" && node.hasAttribute("href")) {
+      const href = node.getAttribute("href") ?? "";
+      // Only add target="_blank" for http/https links (external links)
+      if (href.startsWith("http://") || href.startsWith("https://")) {
+        node.setAttribute("target", "_blank");
+        node.setAttribute("rel", "noopener noreferrer");
+      }
     }
-  }
 
-  // Lazy load all images
-  if (node.tagName === "IMG") {
-    node.setAttribute("loading", "lazy");
-  }
-});
+    // Lazy load all images
+    if (node.tagName === "IMG") {
+      node.setAttribute("loading", "lazy");
+    }
+  });
+}
 import { Button } from "@/components/ui/button";
 import {
   StarIcon,

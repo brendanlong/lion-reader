@@ -11,6 +11,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useCallback, useState } from "react";
+import dynamic from "next/dynamic";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
@@ -18,8 +19,14 @@ import { useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { getDomain } from "@/lib/format";
-import { EntryContentBody } from "./EntryContentBody";
 import { EntryContentFallback } from "./EntryContentFallback";
+
+// Dynamic import with ssr: false ensures DOMPurify (which requires a browser DOM)
+// is never evaluated on the server during SSR.
+const EntryContentBody = dynamic(
+  () => import("./EntryContentBody").then((mod) => mod.EntryContentBody),
+  { ssr: false }
+);
 
 /**
  * Props for the EntryContent component.
