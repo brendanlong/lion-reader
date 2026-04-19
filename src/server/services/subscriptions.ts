@@ -204,10 +204,18 @@ export async function listSubscriptions(
     )`);
   }
 
-  // Unread filter (requires unread count > 0)
+  // Unread filter — push into SQL so LIMIT applies to already-filtered rows
+  // (filtering in-memory after LIMIT breaks pagination: hasMore ends up false
+  // even when more unread subs exist past the first page).
   if (unreadOnly) {
-    // This will be checked after we get unread counts in the query
-    // We'll filter in-memory since the unread count is computed
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${entries} e
+      INNER JOIN ${userEntries} ue
+        ON ue.entry_id = e.id
+        AND ue.user_id = ${userId}
+        AND ue.read = false
+      WHERE e.feed_id = ${userFeeds.feedId}
+    )`);
   }
 
   // Cursor pagination using (title, id) keyset for alphabetical ordering
@@ -239,11 +247,6 @@ export async function listSubscriptions(
 
   // Format results
   let subscriptions = results.map(formatSubscriptionRow);
-
-  // Apply unread filter in-memory (since it depends on computed unread count)
-  if (unreadOnly) {
-    subscriptions = subscriptions.filter((sub) => sub.unreadCount > 0);
-  }
 
   // Check if there are more results
   const hasMore = subscriptions.length > effectiveLimit;
