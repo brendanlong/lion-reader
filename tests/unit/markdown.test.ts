@@ -116,20 +116,58 @@ A serverless platform for building, deploying, and scaling apps.`;
     );
   });
 
-  it("ignores invalid YAML in frontmatter", () => {
+  it("handles unquoted colons in values via lenient fallback", () => {
     const markdown = `---
-title: [invalid yaml
-description: missing closing bracket
+description: A model that does X
+title: Parcae: Doing more with fewer parameters
+image: https://example.com/image.jpg
+---
+
+Content here.`;
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter?.title).toBe("Parcae: Doing more with fewer parameters");
+    expect(result.frontmatter?.description).toBe("A model that does X");
+    expect(result.content).toBe("\nContent here.");
+  });
+
+  it("handles unquoted colons with CRLF line endings via lenient fallback", () => {
+    const markdown =
+      "---\r\ntitle: Parcae: Doing more\r\ndescription: A summary\r\n---\r\n\r\nContent.";
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter?.title).toBe("Parcae: Doing more");
+    expect(result.frontmatter?.description).toBe("A summary");
+  });
+
+  it("strips YAML array frontmatter from content", () => {
+    const markdown = `---
+- item1
+- item2
 ---
 
 Content here.`;
 
     const result = extractFrontmatter(markdown);
     expect(result.frontmatter).toBeNull();
-    expect(result.content).toBe(markdown);
+    expect(result.content).toBe("\nContent here.");
   });
 
-  it("ignores non-object YAML frontmatter", () => {
+  it("strips frontmatter from content even when YAML is completely invalid", () => {
+    const markdown = `---
+not: valid: yaml: here
+also not valid
+---
+
+Content here.`;
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter).toBeNull();
+    // Frontmatter block is still stripped from content
+    expect(result.content).toBe("\nContent here.");
+  });
+
+  it("strips frontmatter from content for non-object YAML", () => {
     const markdown = `---
 just a string value
 ---
@@ -138,7 +176,8 @@ Content here.`;
 
     const result = extractFrontmatter(markdown);
     expect(result.frontmatter).toBeNull();
-    expect(result.content).toBe(markdown);
+    // Frontmatter block is still stripped
+    expect(result.content).toBe("\nContent here.");
   });
 
   it("requires frontmatter at document start", () => {
@@ -344,5 +383,22 @@ The full content of the article.`;
     expect(result.summary).toBe("A brief summary.");
     expect(result.author).toBe("Jane Smith");
     expect(result.html).toContain("full content");
+  });
+
+  it("handles frontmatter with unquoted colons in values (#818)", async () => {
+    const markdown = `---
+description: A model that matches quality
+title: Parcae: Doing more with fewer parameters
+image: https://example.com/image.jpg
+---
+
+This paper introduces Parcae.`;
+
+    const result = await processMarkdown(markdown);
+    expect(result.title).toBe("Parcae: Doing more with fewer parameters");
+    expect(result.summary).toBe("A model that matches quality");
+    expect(result.html).not.toContain("description:");
+    expect(result.html).not.toContain("image:");
+    expect(result.html).toContain("Parcae");
   });
 });

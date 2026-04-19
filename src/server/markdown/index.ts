@@ -53,38 +53,86 @@ export function extractFrontmatter(markdown: string): FrontmatterResult {
   const yamlContent = match[1];
   const contentWithoutFrontmatter = markdown.slice(match[0].length);
 
+  // Try strict YAML parsing first
   try {
     const parsed = parseYaml(yamlContent);
 
     // Ensure we got an object
-    if (typeof parsed !== "object" || parsed === null) {
-      return { frontmatter: null, content: markdown };
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return {
+        frontmatter: buildFrontmatter(parsed as Record<string, unknown>),
+        content: contentWithoutFrontmatter,
+      };
     }
-
-    const frontmatter: Frontmatter = {
-      raw: parsed as Record<string, unknown>,
-    };
-
-    // Extract title if present and is a string
-    if (typeof parsed.title === "string" && parsed.title.trim()) {
-      frontmatter.title = parsed.title.trim();
-    }
-
-    // Extract description if present and is a string
-    if (typeof parsed.description === "string" && parsed.description.trim()) {
-      frontmatter.description = parsed.description.trim();
-    }
-
-    // Extract author if present and is a string
-    if (typeof parsed.author === "string" && parsed.author.trim()) {
-      frontmatter.author = parsed.author.trim();
-    }
-
-    return { frontmatter, content: contentWithoutFrontmatter };
   } catch {
-    // YAML parsing failed, treat as no frontmatter
-    return { frontmatter: null, content: markdown };
+    // Strict YAML failed (e.g. unquoted colons in values), try lenient parsing
   }
+
+  // Lenient fallback: parse simple "key: value" lines.
+  // Handles common frontmatter that isn't strictly valid YAML,
+  // e.g. "title: Parcae: Doing more..." where the colon in the value
+  // causes a YAML nested mapping error.
+  const lenient = parseFrontmatterLenient(yamlContent);
+  if (lenient) {
+    return { frontmatter: buildFrontmatter(lenient), content: contentWithoutFrontmatter };
+  }
+
+  // Even if we can't parse the frontmatter, still strip it from content
+  return { frontmatter: null, content: contentWithoutFrontmatter };
+}
+
+/**
+ * Builds a Frontmatter object from a parsed key-value record.
+ */
+function buildFrontmatter(raw: Record<string, unknown>): Frontmatter {
+  const frontmatter: Frontmatter = { raw };
+
+  if (typeof raw.title === "string" && raw.title.trim()) {
+    frontmatter.title = raw.title.trim();
+  }
+
+  if (typeof raw.description === "string" && raw.description.trim()) {
+    frontmatter.description = raw.description.trim();
+  }
+
+  if (typeof raw.author === "string" && raw.author.trim()) {
+    frontmatter.author = raw.author.trim();
+  }
+
+  return frontmatter;
+}
+
+/**
+ * Lenient frontmatter parser for when strict YAML parsing fails.
+ *
+ * Parses simple single-line "key: value" pairs, taking everything after
+ * the first colon as the value. This handles common cases like unquoted
+ * colons in values (e.g. "title: Parcae: Doing more...").
+ *
+ * Does not handle multi-line values, nested objects, or arrays.
+ */
+function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
+  const result: Record<string, string> = {};
+
+  for (const line of yaml.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const colonIndex = trimmed.indexOf(":");
+    if (colonIndex <= 0) return null; // Not a key: value line
+
+    const key = trimmed.slice(0, colonIndex).trim();
+    const value = trimmed.slice(colonIndex + 1).trim();
+
+    // Keys must be simple identifiers
+    if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(key)) return null;
+
+    if (key && value) {
+      result[key] = value;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
 }
 
 /**
