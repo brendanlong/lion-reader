@@ -64,7 +64,7 @@ interface CachedSession {
   userCreatedAt: string;
   userUpdatedAt: string;
   userEmailVerifiedAt: string | null;
-  userPasswordHash: string | null;
+  userPasswordHash?: string | null; // deprecated: no longer cached but kept for compat with old cache entries
   userInviteId: string | null;
   userShowSpam: boolean;
   userAlgorithmicFeedEnabled: boolean;
@@ -209,7 +209,6 @@ function serializeForCache(data: SessionData): string {
     userCreatedAt: data.user.createdAt.toISOString(),
     userUpdatedAt: data.user.updatedAt.toISOString(),
     userEmailVerifiedAt: data.user.emailVerifiedAt?.toISOString() ?? null,
-    userPasswordHash: data.user.passwordHash,
     userInviteId: data.user.inviteId ?? null,
     userShowSpam: data.user.showSpam,
     userAlgorithmicFeedEnabled: data.user.algorithmicFeedEnabled,
@@ -250,7 +249,7 @@ function deserializeFromCache(data: string): SessionData {
       createdAt: new Date(cached.userCreatedAt),
       updatedAt: new Date(cached.userUpdatedAt),
       emailVerifiedAt: cached.userEmailVerifiedAt ? new Date(cached.userEmailVerifiedAt) : null,
-      passwordHash: cached.userPasswordHash,
+      passwordHash: null, // Not cached in Redis for security; query DB when needed
       inviteId: cached.userInviteId ?? null,
       showSpam: cached.userShowSpam ?? false,
       algorithmicFeedEnabled: cached.userAlgorithmicFeedEnabled ?? true,
