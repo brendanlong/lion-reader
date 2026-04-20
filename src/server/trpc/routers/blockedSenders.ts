@@ -58,19 +58,17 @@ export const blockedSendersRouter = createTRPCRouter({
 
       // Get all blocked senders for the user
       const senders = await ctx.db
-        .select()
+        .select({
+          id: blockedSenders.id,
+          senderEmail: blockedSenders.senderEmail,
+          blockedAt: blockedSenders.blockedAt,
+          unsubscribeSentAt: blockedSenders.unsubscribeSentAt,
+        })
         .from(blockedSenders)
         .where(eq(blockedSenders.userId, userId))
         .orderBy(sql`${blockedSenders.blockedAt} DESC`);
 
-      return {
-        items: senders.map((sender) => ({
-          id: sender.id,
-          senderEmail: sender.senderEmail,
-          blockedAt: sender.blockedAt,
-          unsubscribeSentAt: sender.unsubscribeSentAt,
-        })),
-      };
+      return { items: senders };
     }),
 
   /**

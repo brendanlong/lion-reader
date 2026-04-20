@@ -73,11 +73,13 @@ export function Dialog({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Focus trap: keep focus within the dialog
+  // Focus trap: keep focus within the dialog, restore focus on close
   useEffect(() => {
     if (!isOpen) return;
     const dialog = dialogRef.current;
     if (!dialog) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
 
     const focusableSelector =
       'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -104,7 +106,10 @@ export function Dialog({
     };
 
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
   }, [isOpen]);
 
   // Prevent body scroll when dialog is open
