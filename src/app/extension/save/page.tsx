@@ -135,7 +135,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   }
 
   // Create an API token for the extension
-  const token = await createApiToken(
+  const { token } = await createApiToken(
     session.user.id,
     [API_TOKEN_SCOPES.SAVED_WRITE],
     "Browser Extension"

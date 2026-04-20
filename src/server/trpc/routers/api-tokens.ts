@@ -100,7 +100,7 @@ export const apiTokensRouter = createTRPCRouter({
         : undefined;
 
       // Create the token
-      const token = await createApiToken(
+      const { token, id: tokenId } = await createApiToken(
         ctx.session.user.id,
         scopes as ApiTokenScope[],
         name,
@@ -111,8 +111,7 @@ export const apiTokensRouter = createTRPCRouter({
       const tokenInfo = await ctx.db
         .select(apiTokenSelectFields)
         .from(apiTokens)
-        .where(and(eq(apiTokens.userId, ctx.session.user.id), isNull(apiTokens.revokedAt)))
-        .orderBy(desc(apiTokens.createdAt))
+        .where(eq(apiTokens.id, tokenId))
         .limit(1);
 
       if (!tokenInfo[0]) {

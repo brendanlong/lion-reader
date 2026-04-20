@@ -19,13 +19,12 @@ import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import {
   feeds,
   subscriptions,
-  entries,
-  userEntries,
   tags,
   subscriptionTags,
   blockedSenders,
   opmlImports,
   userFeeds,
+  visibleEntries,
   type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -387,17 +386,18 @@ export const subscriptionsRouter = createTRPCRouter({
           .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
           .where(eq(subscriptionTags.subscriptionId, subscription.id)),
 
-        // Unread count
+        // Unread count (use visibleEntries view to include entries from redirected feeds)
         ctx.db
           .select({
-            count: sql<number>`COUNT(*) FILTER (WHERE ${userEntries.read} = false)::int`,
+            count: sql<number>`COUNT(*) FILTER (WHERE ${visibleEntries.read} = false)::int`,
           })
-          .from(entries)
-          .innerJoin(
-            userEntries,
-            and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-          )
-          .where(eq(entries.feedId, subscription.feedId)),
+          .from(visibleEntries)
+          .where(
+            and(
+              eq(visibleEntries.userId, userId),
+              eq(visibleEntries.subscriptionId, subscription.id)
+            )
+          ),
       ]);
 
       const result = feedResult[0];
