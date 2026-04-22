@@ -188,3 +188,38 @@ export function getClientIdentifier(userId: string | null, headers: Headers): st
   // Fallback for local development
   return "ip:unknown";
 }
+
+/**
+ * Checks rate limit for a route handler request and returns a 429 Response if exceeded.
+ * Returns null if the request is allowed.
+ *
+ * @param request - The incoming request
+ * @param type - Type of rate limit to apply
+ * @param options - Options for the response format
+ * @returns A 429 Response if rate limited, or null if allowed
+ */
+export async function checkRouteRateLimit(
+  request: Request,
+  type: RateLimitType = "default",
+  options: { json?: boolean } = {}
+): Promise<Response | null> {
+  const identifier = getClientIdentifier(null, request.headers);
+  const config = RATE_LIMIT_CONFIGS[type];
+  const result = await checkRateLimit(identifier, type);
+
+  if (!result.allowed) {
+    const rateLimitHeaders = getRateLimitHeaders(result, config);
+    const body = options.json
+      ? JSON.stringify({ error: "rate_limit_exceeded", error_description: "Rate limit exceeded" })
+      : "Rate limit exceeded";
+    return new Response(body, {
+      status: 429,
+      headers: {
+        ...rateLimitHeaders,
+        "Content-Type": options.json ? "application/json" : "text/plain",
+      },
+    });
+  }
+
+  return null;
+}

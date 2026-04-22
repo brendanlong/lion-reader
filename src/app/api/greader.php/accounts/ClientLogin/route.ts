@@ -17,10 +17,14 @@
 
 import { clientLogin } from "@/server/google-reader/auth";
 import { parseFormData, errorResponse } from "@/server/google-reader/parse";
+import { checkRouteRateLimit } from "@/server/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
+  const rateLimitResponse = await checkRouteRateLimit(request, "expensive");
+  if (rateLimitResponse) return rateLimitResponse;
+
   const params = await parseFormData(request);
   const email = params.get("Email");
   const password = params.get("Passwd");
