@@ -7,30 +7,19 @@ import {
   validateAdminSessionToken,
 } from "@/server/auth/admin-session";
 import { signupConfig } from "@/server/config/env";
-import {
-  checkRateLimit,
-  getClientIdentifier,
-  getRateLimitHeaders,
-  RATE_LIMIT_CONFIGS,
-} from "@/server/rate-limit";
+import { checkRouteRateLimit } from "@/server/rate-limit";
 
 /**
  * POST /api/admin/session - Exchange admin secret for an httpOnly session cookie.
  */
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest): Promise<Response> {
   if (!signupConfig.allowlistSecret) {
     return NextResponse.json({ error: "Admin not configured" }, { status: 404 });
   }
 
   // Rate limit by IP using the "expensive" tier (same as login/register)
-  const identifier = getClientIdentifier(null, request.headers);
-  const rateLimitResult = await checkRateLimit(identifier, "expensive");
-  if (!rateLimitResult.allowed) {
-    return NextResponse.json(
-      { error: "Too many attempts, please try again later" },
-      { status: 429, headers: getRateLimitHeaders(rateLimitResult, RATE_LIMIT_CONFIGS.expensive) }
-    );
-  }
+  const rateLimitResponse = await checkRouteRateLimit(request, "expensive", { json: true });
+  if (rateLimitResponse) return rateLimitResponse;
 
   let body: unknown;
   try {

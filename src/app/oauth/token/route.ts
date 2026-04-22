@@ -25,11 +25,15 @@ import {
   OAUTH_ERRORS,
   createOAuthError,
 } from "@/server/oauth/utils";
+import { checkRouteRateLimit } from "@/server/rate-limit";
 
 /**
  * Token request via form data (standard OAuth)
  */
 export async function POST(request: NextRequest) {
+  const rateLimitResponse = await checkRouteRateLimit(request, "expensive", { json: true });
+  if (rateLimitResponse) return rateLimitResponse;
+
   logger.info("OAuth token request");
   // Parse form data or JSON body
   let body: Record<string, string>;

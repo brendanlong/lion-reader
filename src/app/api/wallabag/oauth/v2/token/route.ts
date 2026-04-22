@@ -24,10 +24,14 @@
 import { passwordGrant, refreshTokenGrant } from "@/server/wallabag/auth";
 import { parseBody } from "@/server/wallabag/parse";
 import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
+import { checkRouteRateLimit } from "@/server/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
+  const rateLimitResponse = await checkRouteRateLimit(request, "expensive", { json: true });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const body = await parseBody(request);
 
   const grantType = body.grant_type;
