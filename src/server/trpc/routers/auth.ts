@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import * as argon2 from "argon2";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, or, gt, exists, isNotNull, sql } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -1222,40 +1222,43 @@ export const authRouter = createTRPCRouter({
       const { provider } = input;
       const userId = ctx.session.user.id;
 
-      // Check if user has a password
-      const user = await ctx.db
-        .select({ passwordHash: users.passwordHash })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+      // Atomic delete with safety check: only unlink if the user has a
+      // password OR has more than one linked OAuth account. A single
+      // statement avoids the TOCTOU race where concurrent requests could
+      // both pass a separate check-then-delete and lock the user out.
+      const deleted = await ctx.db
+        .delete(oauthAccounts)
+        .where(
+          and(
+            eq(oauthAccounts.userId, userId),
+            eq(oauthAccounts.provider, provider),
+            or(
+              exists(
+                ctx.db
+                  .select({ v: sql`1` })
+                  .from(users)
+                  .where(and(eq(users.id, userId), isNotNull(users.passwordHash)))
+              ),
+              gt(ctx.db.$count(oauthAccounts, eq(oauthAccounts.userId, userId)), 1)
+            )
+          )
+        )
+        .returning({ id: oauthAccounts.id });
 
-      const hasPassword = !!user[0]?.passwordHash;
+      // If nothing was deleted and the account exists, it means the
+      // safety check prevented it (last auth method).
+      // If the account doesn't exist, treat as success (idempotent).
+      if (deleted.length === 0) {
+        const accountExists = await ctx.db
+          .select({ id: oauthAccounts.id })
+          .from(oauthAccounts)
+          .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
+          .limit(1);
 
-      // Count linked OAuth accounts
-      const linkedAccountsResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(oauthAccounts)
-        .where(eq(oauthAccounts.userId, userId));
-
-      const linkedAccountsCount = linkedAccountsResult[0]?.count ?? 0;
-
-      // Prevent unlinking if it's the only auth method
-      if (!hasPassword && linkedAccountsCount <= 1) {
-        throw errors.cannotUnlinkOnlyAuth();
+        if (accountExists.length > 0) {
+          throw errors.cannotUnlinkOnlyAuth();
+        }
       }
-
-      // Find and delete the OAuth account
-      const oauthAccount = await ctx.db
-        .select({ id: oauthAccounts.id })
-        .from(oauthAccounts)
-        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
-        .limit(1);
-
-      if (oauthAccount.length === 0) {
-        throw errors.notFound(`${provider} account`);
-      }
-
-      await ctx.db.delete(oauthAccounts).where(eq(oauthAccounts.id, oauthAccount[0].id));
 
       return { success: true };
     }),
