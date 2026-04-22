@@ -67,7 +67,7 @@ export function StickyEntryControls({
         {/* Star button */}
         <button
           onClick={onToggleStar}
-          className={`flex min-h-[36px] min-w-[36px] items-center justify-center rounded-full transition-colors ${
+          className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors ${
             starred
               ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950"
               : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -83,7 +83,7 @@ export function StickyEntryControls({
         {/* Read/unread button */}
         <button
           onClick={onToggleRead}
-          className={`flex min-h-[36px] min-w-[36px] items-center justify-center rounded-full transition-colors ${
+          className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors ${
             !read
               ? "text-accent hover:bg-accent-subtle"
               : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"

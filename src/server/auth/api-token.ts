@@ -87,11 +87,12 @@ export async function createApiToken(
   scopes: ApiTokenScope[],
   name?: string,
   expiresAt?: Date
-): Promise<string> {
+): Promise<{ token: string; id: string }> {
   const { token, tokenHash } = generateApiToken();
+  const id = generateUuidv7();
 
   await db.insert(apiTokens).values({
-    id: generateUuidv7(),
+    id,
     userId,
     tokenHash,
     scopes,
@@ -99,7 +100,7 @@ export async function createApiToken(
     expiresAt,
   });
 
-  return token;
+  return { token, id };
 }
 
 // ============================================================================

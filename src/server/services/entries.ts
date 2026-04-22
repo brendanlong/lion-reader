@@ -10,7 +10,6 @@ import {
   desc,
   asc,
   inArray,
-  notInArray,
   sql,
   isNull,
   isNotNull,
@@ -953,21 +952,18 @@ export async function markAllEntriesRead(
     conditions.push(inArray(userEntries.entryId, taggedEntryIdsSubquery));
   }
 
-  // Filter by uncategorized (no tags)
+  // Filter by uncategorized (no tags) - use LEFT JOIN anti-join to avoid scanning all subscription_tags
   if (params.uncategorized) {
-    const taggedSubscriptionIdsSubquery = db
-      .select({ subscriptionId: subscriptionTags.subscriptionId })
-      .from(subscriptionTags);
-
     const uncategorizedFeedIdsSubquery = db
       .select({ feedId: subscriptionFeeds.feedId })
       .from(subscriptions)
       .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
+      .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
       .where(
         and(
           eq(subscriptions.userId, params.userId),
           isNull(subscriptions.unsubscribedAt),
-          notInArray(subscriptions.id, taggedSubscriptionIdsSubquery)
+          isNull(subscriptionTags.subscriptionId)
         )
       );
 

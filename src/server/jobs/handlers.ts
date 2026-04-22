@@ -134,11 +134,17 @@ async function fetchFullContentForNewEntries(
       const now = new Date();
 
       if (result.success) {
+        const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
+        const fullContentHash = fullContentForHash
+          ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
+          : null;
+
         await db
           .update(entries)
           .set({
             fullContentOriginal: result.contentOriginal ?? null,
             fullContentCleaned: result.contentCleaned ?? null,
+            fullContentHash,
             fullContentFetchedAt: now,
             fullContentError: null,
             updatedAt: now,
