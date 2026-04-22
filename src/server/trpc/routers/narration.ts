@@ -19,6 +19,7 @@ import {
   isGroqAvailable,
   type ParagraphMapEntry,
 } from "@/server/services/narration";
+import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
 import {
   trackNarrationGenerated,
@@ -109,7 +110,9 @@ export const narrationRouter = createTRPCRouter({
     .output(generateOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const userGroqApiKey = ctx.session.user.groqApiKey;
+
+      // Fetch API key from DB on demand (not cached in session for security)
+      const { groqApiKey: userGroqApiKey } = await getUserApiKeys(userId);
 
       // Fetch the entry with visibility check via user_entries join
       // Both regular entries and saved articles are in the entries table now
@@ -319,6 +322,6 @@ export const narrationRouter = createTRPCRouter({
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(({ ctx }) => {
-      return { available: isGroqAvailable(ctx.session.user.groqApiKey) };
+      return { available: ctx.session.hasGroqApiKey || !!process.env.GROQ_API_KEY };
     }),
 });

@@ -73,6 +73,8 @@ function createAuthContext(userId: string): Context {
         createdAt: now,
         updatedAt: now,
       },
+      hasGroqApiKey: false,
+      hasAnthropicApiKey: false,
     },
     apiToken: null,
     authType: "session",

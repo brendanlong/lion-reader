@@ -46,6 +46,10 @@ const SESSION_CACHE_PREFIX = "session:";
 export interface SessionData {
   session: Session;
   user: User;
+  /** Whether user has a Groq API key configured (actual key not cached for security) */
+  hasGroqApiKey: boolean;
+  /** Whether user has an Anthropic API key configured (actual key not cached for security) */
+  hasAnthropicApiKey: boolean;
 }
 
 /**
@@ -68,8 +72,8 @@ interface CachedSession {
   userInviteId: string | null;
   userShowSpam: boolean;
   userAlgorithmicFeedEnabled: boolean;
-  userGroqApiKey: string | null;
-  userAnthropicApiKey: string | null;
+  userHasGroqApiKey: boolean;
+  userHasAnthropicApiKey: boolean;
   userSummarizationModel: string | null;
   userSummarizationMaxWords: number | null;
   userSummarizationPrompt: string | null;
@@ -212,8 +216,8 @@ function serializeForCache(data: SessionData): string {
     userInviteId: data.user.inviteId ?? null,
     userShowSpam: data.user.showSpam,
     userAlgorithmicFeedEnabled: data.user.algorithmicFeedEnabled,
-    userGroqApiKey: data.user.groqApiKey ?? null,
-    userAnthropicApiKey: data.user.anthropicApiKey ?? null,
+    userHasGroqApiKey: data.hasGroqApiKey,
+    userHasAnthropicApiKey: data.hasAnthropicApiKey,
     userSummarizationModel: data.user.summarizationModel ?? null,
     userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
     userSummarizationPrompt: data.user.summarizationPrompt ?? null,
@@ -253,8 +257,8 @@ function deserializeFromCache(data: string): SessionData {
       inviteId: cached.userInviteId ?? null,
       showSpam: cached.userShowSpam ?? false,
       algorithmicFeedEnabled: cached.userAlgorithmicFeedEnabled ?? true,
-      groqApiKey: cached.userGroqApiKey ?? null,
-      anthropicApiKey: cached.userAnthropicApiKey ?? null,
+      groqApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
+      anthropicApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       summarizationModel: cached.userSummarizationModel ?? null,
       summarizationMaxWords: cached.userSummarizationMaxWords ?? null,
       summarizationPrompt: cached.userSummarizationPrompt ?? null,
@@ -266,6 +270,8 @@ function deserializeFromCache(data: string): SessionData {
         : null,
       notEuAgreedAt: cached.userNotEuAgreedAt ? new Date(cached.userNotEuAgreedAt) : null,
     },
+    hasGroqApiKey: cached.userHasGroqApiKey ?? false,
+    hasAnthropicApiKey: cached.userHasAnthropicApiKey ?? false,
   };
 }
 
@@ -323,15 +329,19 @@ export async function validateSession(token: string): Promise<SessionData | null
     return null;
   }
 
-  const sessionData = result[0];
+  const dbResult = result[0];
 
-  // Decrypt API keys loaded from the database
-  if (sessionData.user.groqApiKey) {
-    sessionData.user.groqApiKey = decryptApiKey(sessionData.user.groqApiKey);
-  }
-  if (sessionData.user.anthropicApiKey) {
-    sessionData.user.anthropicApiKey = decryptApiKey(sessionData.user.anthropicApiKey);
-  }
+  // Build SessionData with boolean flags; don't include decrypted API keys
+  const sessionData: SessionData = {
+    session: dbResult.session,
+    user: {
+      ...dbResult.user,
+      groqApiKey: null, // Not cached for security; use getUserApiKeys() when needed
+      anthropicApiKey: null, // Not cached for security; use getUserApiKeys() when needed
+    },
+    hasGroqApiKey: !!dbResult.user.groqApiKey,
+    hasAnthropicApiKey: !!dbResult.user.anthropicApiKey,
+  };
 
   // Cache the result in Redis (if available)
   if (redis) {
@@ -359,6 +369,47 @@ async function updateLastActiveAt(sessionId: string): Promise<void> {
   } catch (err) {
     console.error("Failed to update session last_active_at:", err);
   }
+}
+
+// ============================================================================
+// API Key Retrieval
+// ============================================================================
+
+/**
+ * API keys fetched from the database on demand.
+ */
+export interface UserApiKeys {
+  groqApiKey: string | null;
+  anthropicApiKey: string | null;
+}
+
+/**
+ * Fetches and decrypts a user's API keys from the database.
+ *
+ * API keys are intentionally not cached in the Redis session cache to prevent
+ * exposure if Redis is compromised. This function should be called only when
+ * the actual key values are needed (e.g., narration, summarization endpoints).
+ */
+export async function getUserApiKeys(userId: string): Promise<UserApiKeys> {
+  const result = await db
+    .select({
+      groqApiKey: users.groqApiKey,
+      anthropicApiKey: users.anthropicApiKey,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (result.length === 0) {
+    return { groqApiKey: null, anthropicApiKey: null };
+  }
+
+  const { groqApiKey, anthropicApiKey } = result[0];
+
+  return {
+    groqApiKey: groqApiKey ? decryptApiKey(groqApiKey) : null,
+    anthropicApiKey: anthropicApiKey ? decryptApiKey(anthropicApiKey) : null,
+  };
 }
 
 // ============================================================================
