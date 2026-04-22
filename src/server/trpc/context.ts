@@ -143,7 +143,13 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
         userAgent: null,
         ipAddress: null,
       },
-      user: apiTokenData.user,
+      user: {
+        ...apiTokenData.user,
+        groqApiKey: null, // Not cached for security; use getUserApiKeys() when needed
+        anthropicApiKey: null, // Not cached for security; use getUserApiKeys() when needed
+      },
+      hasGroqApiKey: !!apiTokenData.user.groqApiKey,
+      hasAnthropicApiKey: !!apiTokenData.user.anthropicApiKey,
     };
 
     return {

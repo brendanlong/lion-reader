@@ -22,6 +22,7 @@ import {
   listModels,
   DEFAULT_SUMMARIZATION_PROMPT,
 } from "@/server/services/summarization";
+import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -99,10 +100,12 @@ export const summarizationRouter = createTRPCRouter({
     .output(generateOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const userAnthropicApiKey = ctx.session.user.anthropicApiKey;
       const userSummarizationModel = ctx.session.user.summarizationModel;
       const userMaxWords = ctx.session.user.summarizationMaxWords;
       const userPrompt = ctx.session.user.summarizationPrompt;
+
+      // Fetch API key from DB on demand (not cached in session for security)
+      const { anthropicApiKey: userAnthropicApiKey } = await getUserApiKeys(userId);
 
       // Check if summarization is available (user key or server key)
       if (!isSummarizationAvailable(userAnthropicApiKey)) {
@@ -349,7 +352,7 @@ export const summarizationRouter = createTRPCRouter({
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(({ ctx }) => {
-      return { available: isSummarizationAvailable(ctx.session.user.anthropicApiKey) };
+      return { available: ctx.session.hasAnthropicApiKey || !!process.env.ANTHROPIC_API_KEY };
     }),
 
   /**
@@ -380,7 +383,9 @@ export const summarizationRouter = createTRPCRouter({
       })
     )
     .query(async ({ ctx }) => {
-      const models = await listModels(ctx.session.user.anthropicApiKey);
+      // Fetch API key from DB on demand (not cached in session for security)
+      const { anthropicApiKey } = await getUserApiKeys(ctx.session.user.id);
+      const models = await listModels(anthropicApiKey);
       return { models, defaultModelId: getSummarizationModelId() };
     }),
 
