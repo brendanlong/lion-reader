@@ -91,14 +91,14 @@ To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playgroun
 
 ### Component Responsibilities
 
-| Component         | Responsibilities                                         |
-| ----------------- | -------------------------------------------------------- |
-| **App Server**    | HTTP API, SSE connections                                |
-| **Worker**        | Background job execution (feed fetching, score training) |
-| **Discord Bot**   | Save articles via emoji reactions in Discord             |
-| **Postgres**      | Persistent storage, job queue (pg-boss style)            |
-| **Redis**         | Session cache, rate limiting, pub/sub for real-time      |
-| **Email Service** | Inbound email processing for newsletter subscriptions    |
+| Component         | Responsibilities                                      |
+| ----------------- | ----------------------------------------------------- |
+| **App Server**    | HTTP API, SSE connections                             |
+| **Worker**        | Background job execution (feed fetching)              |
+| **Discord Bot**   | Save articles via emoji reactions in Discord          |
+| **Postgres**      | Persistent storage, job queue (pg-boss style)         |
+| **Redis**         | Session cache, rate limiting, pub/sub for real-time   |
+| **Email Service** | Inbound email processing for newsletter subscriptions |
 
 ---
 
@@ -133,7 +133,6 @@ The schema is defined in `migrations/` directory. Key tables:
 - **invites** - Invite codes for invite-only registration mode
 - **blocked_senders** - Blocked email senders for newsletter ingestion
 - **opml_imports** - OPML import job tracking
-- **user_score_models** / **entry_score_predictions** - ML model storage and per-entry score predictions
 - **oauth_accounts** / **oauth_clients** / **oauth_authorization_codes** / **oauth_access_tokens** - OAuth provider links and OAuth server implementation
 
 ### Database Views
@@ -264,7 +263,7 @@ Routers are organized by resource:
 - `auth` - Registration, login, logout, OAuth
 - `users` - Profile, sessions, settings
 - `subscriptions` - CRUD for feed subscriptions (primary user-facing API)
-- `entries` - List, read, star, mark read, score
+- `entries` - List, read, star, mark read
 - `feeds` - Preview, discover feeds (pre-subscription only)
 - `tags` - Tag CRUD, subscription-tag assignments
 - `narration` - Text-to-speech generation
@@ -307,18 +306,17 @@ Token bucket via Redis, per-user. Different buckets for different operations (e.
 
 Business logic is extracted into reusable service functions in `src/server/services/`:
 
-| Service               | Functions                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------- |
-| `entries.ts`          | `listEntries`, `searchEntries`, `getEntry`, `markEntriesRead`, `countEntries`, `setEntryScore` |
-| `subscriptions.ts`    | `listSubscriptions`, `getSubscription`                                                         |
-| `saved.ts`            | Save/delete/upload articles                                                                    |
-| `tags.ts`             | `listTags`, `createTag`, `updateTag`, `deleteTag`                                              |
-| `counts.ts`           | `getEntryRelatedCounts`, `getBulkEntryRelatedCounts`, `getNewEntryRelatedCounts`               |
-| `entry-filters.ts`    | `buildEntryFeedFilter` - shared filter construction for entries queries                        |
-| `narration.ts`        | Text-to-speech operations                                                                      |
-| `full-content.ts`     | Fetch full article content from URLs                                                           |
-| `summarization.ts`    | AI-powered article summarization                                                               |
-| `score-prediction.ts` | TF-IDF + Ridge Regression model training and prediction                                        |
+| Service            | Functions                                                                        |
+| ------------------ | -------------------------------------------------------------------------------- |
+| `entries.ts`       | `listEntries`, `searchEntries`, `getEntry`, `markEntriesRead`, `countEntries`    |
+| `subscriptions.ts` | `listSubscriptions`, `getSubscription`                                           |
+| `saved.ts`         | Save/delete/upload articles                                                      |
+| `tags.ts`          | `listTags`, `createTag`, `updateTag`, `deleteTag`                                |
+| `counts.ts`        | `getEntryRelatedCounts`, `getBulkEntryRelatedCounts`, `getNewEntryRelatedCounts` |
+| `entry-filters.ts` | `buildEntryFeedFilter` - shared filter construction for entries queries          |
+| `narration.ts`     | Text-to-speech operations                                                        |
+| `full-content.ts`  | Fetch full article content from URLs                                             |
+| `summarization.ts` | AI-powered article summarization                                                 |
 
 **Pattern**: Pure functions accepting `db` and parameters, returning data objects. Shared across tRPC routers, MCP server, and background jobs.
 
@@ -421,7 +419,6 @@ Lion Reader exposes functionality to AI assistants via the [Model Context Protoc
 | `get_entry`            | Get single entry with full content                     |
 | `mark_entries_read`    | Mark entries as read/unread (bulk)                     |
 | `star_entries`         | Star/unstar entries                                    |
-| `set_entry_score`      | Rate entries on a -2 to +2 scale                       |
 | `count_entries`        | Get entry counts with filters                          |
 | `save_article`         | Save a URL for later reading                           |
 | `delete_saved_article` | Delete a saved article                                 |
@@ -472,7 +469,7 @@ Plugins are registered in `src/server/plugins/registry.ts` and declare capabilit
 - Single region (lax) with canary deployment strategy
 - Three process types:
   - `app` - Next.js web server (min 2 machines for zero-downtime deploys)
-  - `worker` - Background job processor (feed fetching, model training)
+  - `worker` - Background job processor (feed fetching)
   - `discord` - Discord bot (lightweight, single Gateway connection)
 - Postgres managed database
 - Redis for caching and pub/sub

@@ -61,7 +61,6 @@ export interface JobPayloads {
   fetch_feed: { feedId: string };
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
   process_opml_import: { importId: string }; // Process an OPML import in the background
-  train_score_model: { userId: string }; // Train ML model for score prediction
 }
 
 export type JobType = keyof JobPayloads;
@@ -486,104 +485,4 @@ export async function claimFeedJob(): Promise<Job | null> {
   }
 
   return rowToJob(result.rows[0]);
-}
-
-/**
- * Claims a score training job for processing using data-driven eligibility.
- *
- * A user needs score training if:
- * - They have at least 20 entries with scoring signals (explicit score, starred, etc.)
- * - Either they have no model, or the model is older than 24 hours
- *
- * This queries the actual user data to determine eligibility.
- *
- * @returns The claimed job, or null if no eligible training jobs
- */
-export async function claimScoreTrainingJob(): Promise<Job | null> {
-  const now = new Date();
-  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
-  const modelAgeThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours
-
-  // Find a user who needs training:
-  // - Has algorithmic feed enabled
-  // - Has 20+ scored entries
-  // - Model is missing OR model is stale (> 24h old)
-  // - Doesn't have a training job currently running
-  const result = await db.execute<RawJobRow>(sql`
-    WITH users_needing_training AS (
-      SELECT ue.user_id
-      FROM user_entries ue
-      INNER JOIN entries e ON e.id = ue.entry_id
-      INNER JOIN users u ON u.id = ue.user_id
-      WHERE u.algorithmic_feed_enabled = true
-        AND (ue.score IS NOT NULL
-         OR ue.has_starred = true
-         OR ue.has_marked_unread = true
-         OR ue.has_marked_read_on_list = true
-         OR e.type = 'saved')
-      GROUP BY ue.user_id
-      HAVING count(*) >= 20
-    ),
-    users_with_stale_model AS (
-      SELECT unt.user_id
-      FROM users_needing_training unt
-      LEFT JOIN user_score_models usm ON usm.user_id = unt.user_id
-      WHERE usm.user_id IS NULL
-         OR usm.trained_at < ${modelAgeThreshold}
-    )
-    UPDATE jobs
-    SET
-      running_since = ${now},
-      updated_at = ${now}
-    WHERE id = (
-      SELECT j.id FROM jobs j
-      INNER JOIN users_with_stale_model uwsm ON (j.payload->>'userId')::uuid = uwsm.user_id
-      WHERE j.type = 'train_score_model'
-        AND j.next_run_at <= ${now}
-        AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
-      ORDER BY j.next_run_at ASC
-      LIMIT 1
-      FOR UPDATE OF j SKIP LOCKED
-    )
-    RETURNING *
-  `);
-
-  if (result.rows.length > 0) {
-    return rowToJob(result.rows[0]);
-  }
-
-  // No claimable job row - ensure job rows exist for eligible users who don't have one.
-  // Like ensureFeedJob/claimSingletonJob, the row is created once and reused for scheduling.
-  const usersNeedingJobs = await db.execute<{ user_id: string }>(sql`
-    WITH users_needing_training AS (
-      SELECT ue.user_id
-      FROM user_entries ue
-      INNER JOIN entries e ON e.id = ue.entry_id
-      INNER JOIN users u ON u.id = ue.user_id
-      WHERE u.algorithmic_feed_enabled = true
-        AND (ue.score IS NOT NULL
-         OR ue.has_starred = true
-         OR ue.has_marked_unread = true
-         OR ue.has_marked_read_on_list = true
-         OR e.type = 'saved')
-      GROUP BY ue.user_id
-      HAVING count(*) >= 20
-    )
-    SELECT unt.user_id
-    FROM users_needing_training unt
-    WHERE NOT EXISTS (
-      SELECT 1 FROM jobs j
-      WHERE j.type = 'train_score_model'
-        AND (j.payload->>'userId')::uuid = unt.user_id
-    )
-  `);
-
-  for (const row of usersNeedingJobs.rows) {
-    await createJob({
-      type: "train_score_model",
-      payload: { userId: row.user_id },
-    });
-  }
-
-  return null;
 }

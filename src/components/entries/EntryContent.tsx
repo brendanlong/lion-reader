@@ -88,16 +88,12 @@ function EntryContentInner({
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
-  // Check if algorithmic feed is enabled to decide whether to show vote controls
-  const preferencesQuery = trpc.users["me.preferences"].useQuery();
-  const algorithmicFeedEnabled = preferencesQuery.data?.algorithmicFeedEnabled ?? false;
-
   // Get fetchFullContent setting directly from entry (included in entries.get response)
   // This avoids a separate subscriptions.get query
   const fetchFullContent = entry?.fetchFullContent ?? false;
 
-  // Entry mutations for marking read, starring, scoring, etc.
-  const { markRead, star, unstar, setScore } = useEntryMutations();
+  // Entry mutations for marking read, starring, etc.
+  const { markRead, star, unstar } = useEntryMutations();
 
   // Mutation to update subscription's fetchFullContent setting
   const updateSubscriptionMutation = trpc.subscriptions.update.useMutation({
@@ -304,14 +300,6 @@ function EntryContentInner({
     markRead([entryId], !entry.read);
   };
 
-  // Handle score change
-  const handleSetScore = useCallback(
-    (newScore: number | null) => {
-      setScore(entryId, newScore);
-    },
-    [entryId, setScore]
-  );
-
   // Entry is guaranteed to exist after suspense resolves
   // Wrap in scroll container - each entry gets its own container that starts at scroll 0
   // ScrollContainer provides context so useImagePrefetch can observe this container
@@ -357,10 +345,6 @@ function EntryContentInner({
         onSummarize={handleSummarize}
         onSummaryClose={handleSummaryClose}
         onSummaryRegenerate={handleSummaryRegenerate}
-        // Score props - only show vote controls when algorithmic feed is enabled
-        score={entry.score ?? null}
-        implicitScore={entry.implicitScore ?? 0}
-        onSetScore={algorithmicFeedEnabled ? handleSetScore : undefined}
       />
     </ScrollContainer>
   );

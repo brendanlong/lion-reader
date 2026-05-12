@@ -17,7 +17,6 @@ import keyboardShortcuts from "./keyboard-shortcuts";
 // Organization & Search
 import tags from "./tags";
 import search from "./search";
-import scoring from "./scoring";
 import opml from "./opml";
 
 // Integrations & Sync
@@ -52,7 +51,6 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   // Organization & Search
   tags,
   search,
-  scoring,
   opml,
   // Integrations & Sync
   googleReaderApi,

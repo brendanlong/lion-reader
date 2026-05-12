@@ -505,32 +505,6 @@ async function processSuccessfulFetch(
         }
       : {};
 
-  // Predict scores for new/updated entries (inline for immediate availability)
-  let scorePredictionMetadata: Record<string, unknown> = {};
-  const entriesNeedingPrediction = processResult.entries
-    .filter((e) => e.isNew || e.isUpdated)
-    .map((e) => e.id);
-
-  if (entriesNeedingPrediction.length > 0) {
-    try {
-      const { predictScoresForFeedEntries } = await import("../services/score-prediction");
-      const predictionResult = await predictScoresForFeedEntries(
-        db,
-        feed.id,
-        entriesNeedingPrediction
-      );
-      if (predictionResult.predictedCount > 0) {
-        scorePredictionMetadata = { scoresPredicted: predictionResult.predictedCount };
-      }
-    } catch (error) {
-      // Log but don't fail the feed fetch
-      logger.warn("Failed to predict scores for new entries", {
-        feedId: feed.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
   return {
     success: true,
     nextRunAt: nextFetch.nextFetchAt,
@@ -542,7 +516,6 @@ async function processSuccessfulFetch(
       nextFetchReason: nextFetch.reason,
       ...websubMetadata,
       ...fullContentMetadata,
-      ...scorePredictionMetadata,
     },
   };
 }
@@ -1708,89 +1681,6 @@ export async function handleProcessOpmlImport(
     return {
       success: false,
       nextRunAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // Far future - don't retry
-      error: errorMessage,
-    };
-  }
-}
-
-/**
- * Handler for train_score_model jobs.
- * Trains a score prediction model for a user, then immediately runs predictions
- * for all their visible entries.
- *
- * Job eligibility is determined by data state (users with 20+ rated entries
- * whose model is missing or stale). See claimScoreTrainingJob().
- *
- * @param payload - The job payload containing userId
- * @returns Job handler result with next run time (7 days for success, 1 day for retry)
- */
-export async function handleTrainScoreModel(
-  payload: JobPayloads["train_score_model"]
-): Promise<JobHandlerResult> {
-  const { userId } = payload;
-
-  logger.info("Starting score model training", { userId });
-
-  try {
-    // Lazy import to avoid circular dependencies
-    const { trainModel, predictScores } = await import("../services/score-prediction");
-
-    const result = await trainModel(db, userId);
-
-    if (!result.success) {
-      logger.info("Score model training skipped", {
-        userId,
-        reason: result.error,
-      });
-
-      // Not enough data - check again in 7 days
-      return {
-        success: true,
-        nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        metadata: {
-          skipped: true,
-          reason: result.error,
-        },
-      };
-    }
-
-    logger.info("Score model training completed", {
-      userId,
-      trainingCount: result.trainingCount,
-      modelVersion: result.modelVersion,
-      cvMae: result.cvMae,
-      cvCorrelation: result.cvCorrelation,
-    });
-
-    // Immediately run predictions for all unscored entries after training
-    const predictionResult = await predictScores(db, userId);
-
-    logger.info("Score predictions completed after training", {
-      userId,
-      predictedCount: predictionResult.predictedCount,
-    });
-
-    // Schedule next training in 7 days
-    return {
-      success: true,
-      nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      metadata: {
-        trainingCount: result.trainingCount,
-        modelVersion: result.modelVersion,
-        cvMae: result.cvMae,
-        cvCorrelation: result.cvCorrelation,
-        predictedCount: predictionResult.predictedCount,
-      },
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    logger.error("Score model training failed", { userId, error: errorMessage });
-
-    // Retry in 1 day
-    return {
-      success: false,
-      nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       error: errorMessage,
     };
   }

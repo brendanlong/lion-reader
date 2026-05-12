@@ -16,7 +16,6 @@ import {
   claimJob as defaultClaimJob,
   claimSingletonJob,
   claimFeedJob,
-  claimScoreTrainingJob,
   finishJob,
   getJobPayload,
   type JobType,
@@ -25,7 +24,6 @@ import {
   handleFetchFeed,
   handleRenewWebsub,
   handleProcessOpmlImport,
-  handleTrainScoreModel,
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
@@ -115,15 +113,12 @@ function createWorker(config: WorkerConfig = {}): Worker {
   // 1. Regular jobs (process_opml_import) - user-triggered, highest priority
   // 2. Feed jobs (fetch_feed) - data-driven, only for feeds with active subscribers
   // 3. Singleton jobs (renew_websub) - system maintenance
-  // 4. Score training jobs - data-driven, for users with enough training data
   const baseClaimJob = claimJobOverride ?? defaultClaimJob;
 
   async function claimJob(options?: { types?: JobType[] }): Promise<Job | null> {
     // First try to claim a regular job (e.g., OPML imports)
     // Exclude feed jobs here since they need special data-driven claiming
-    const regularTypes = options?.types?.filter(
-      (t) => t !== "fetch_feed" && t !== "train_score_model"
-    );
+    const regularTypes = options?.types?.filter((t) => t !== "fetch_feed");
     if (!options?.types || (regularTypes && regularTypes.length > 0)) {
       const regularJob = await baseClaimJob({
         types: regularTypes || ["process_opml_import"],
@@ -147,14 +142,6 @@ function createWorker(config: WorkerConfig = {}): Worker {
       const singletonJob = await claimSingletonJob("renew_websub");
       if (singletonJob) {
         return singletonJob;
-      }
-    }
-
-    // Try to claim a score training job (data-driven: only if user needs training)
-    if (!options?.types || options.types.includes("train_score_model")) {
-      const trainingJob = await claimScoreTrainingJob();
-      if (trainingJob) {
-        return trainingJob;
       }
     }
 
@@ -189,11 +176,6 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "process_opml_import": {
           const payload = getJobPayload<"process_opml_import">(job);
           result = await handleProcessOpmlImport(payload);
-          break;
-        }
-        case "train_score_model": {
-          const payload = getJobPayload<"train_score_model">(job);
-          result = await handleTrainScoreModel(payload);
           break;
         }
         default: {

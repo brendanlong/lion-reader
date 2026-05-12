@@ -47,16 +47,13 @@ export interface ListEntriesParams {
   starredOnly?: boolean;
   unstarredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
-  sortBy?: "published" | "readChanged" | "predictedScore"; // Which column to sort by (default: published)
+  sortBy?: "published" | "readChanged"; // Which column to sort by (default: published)
   cursor?: string;
   limit?: number;
   maxLimit?: number; // Override MAX_LIMIT (e.g., for Google Reader API which needs larger batches)
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
   publishedBefore?: Date; // Only entries published/fetched before this timestamp
   showSpam: boolean;
-  // Best feed sorting weights: sort by scoreWeight * predicted_score + uncertaintyWeight * (1 - confidence)
-  bestFeedScoreWeight?: number;
-  bestFeedUncertaintyWeight?: number;
 }
 
 export interface SearchEntriesParams {
@@ -96,9 +93,6 @@ export interface EntryListItem {
   starred: boolean;
   feedTitle: string | null;
   siteName: string | null;
-  score: number | null;
-  implicitScore: number;
-  predictedScore: number | null;
 }
 
 export interface EntryFull {
@@ -121,8 +115,6 @@ export interface EntryFull {
   feedUrl: string | null;
   siteName: string | null;
   unsubscribeUrl: string | null;
-  score: number | null;
-  implicitScore: number;
 }
 
 export interface EntryState {
@@ -151,42 +143,12 @@ export interface MarkReadResult {
 // Helpers
 // ============================================================================
 
-/**
- * Computes the implicit score from boolean signal flags and entry type.
- *
- * Priority: starred (+2) > saved (+1) > unread (0) > read-on-list (-1) > default (0)
- *
- * Saved articles default to +1 because the user explicitly saved them,
- * indicating interest. This takes priority over mark-unread (0) and
- * read-on-list (-1). Marking unread overrides read-on-list (returns 0
- * instead of -1) but doesn't give a positive bonus.
- */
-export function computeImplicitScore(
-  hasStarred: boolean,
-  hasMarkedUnread: boolean,
-  hasMarkedReadOnList: boolean,
-  type?: "web" | "email" | "saved"
-): number {
-  if (hasStarred) return 2;
-  // Saved articles default to +1 since user explicitly saved them
-  if (type === "saved") return 1;
-  if (hasMarkedUnread) return 0;
-  if (hasMarkedReadOnList) return -1;
-  return 0;
-}
-
 // ============================================================================
 // Constants
 // ============================================================================
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
-
-/**
- * Sentinel value used for null predicted scores in sorting.
- * Pushes entries without predictions to the end of score-sorted lists.
- */
-export const NULL_PREDICTED_SCORE_SENTINEL = -999;
 
 // ============================================================================
 // Row Mapping Helper
@@ -211,15 +173,10 @@ interface EntryListRow {
   starred: boolean;
   siteName: string | null;
   feedTitle: string | null;
-  score: number | null;
-  hasMarkedReadOnList: boolean;
-  hasMarkedUnread: boolean;
-  hasStarred: boolean;
-  predictedScore: number | null;
 }
 
 /**
- * Maps a database row to an EntryListItem, computing implicit score.
+ * Maps a database row to an EntryListItem.
  */
 function toEntryListItem(row: EntryListRow): EntryListItem {
   return {
@@ -238,14 +195,6 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     updatedAt: row.updatedAt,
     feedTitle: row.feedTitle,
     siteName: row.siteName,
-    score: row.score,
-    implicitScore: computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
-    predictedScore: row.predictedScore,
   };
 }
 
@@ -273,32 +222,6 @@ function decodeCursor(cursor: string): CursorData {
 
 function encodeCursor(ts: string, entryId: string): string {
   const data: CursorData = { ts, id: entryId };
-  return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
-}
-
-/**
- * Cursor for score-based sorting where the sort value is a number, not a date.
- */
-interface ScoreCursorData {
-  score: string; // Stringified number for consistent serialization
-  id: string;
-}
-
-function decodeScoreCursor(cursor: string): ScoreCursorData {
-  try {
-    const decoded = Buffer.from(cursor, "base64").toString("utf8");
-    const parsed = JSON.parse(decoded) as ScoreCursorData;
-    if (parsed.score === undefined || !parsed.id) {
-      throw new Error("Invalid cursor structure");
-    }
-    return parsed;
-  } catch {
-    throw errors.validation("Invalid cursor format");
-  }
-}
-
-function encodeScoreCursor(score: number, entryId: string): string {
-  const data: ScoreCursorData = { score: String(score), id: entryId };
   return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
 }
 
@@ -366,69 +289,6 @@ export async function listEntries(
     );
   }
 
-  // predictedScore sorting uses a different cursor and sort mechanism
-  if (params.sortBy === "predictedScore") {
-    // Sort by weighted formula: scoreWeight * predicted_score + uncertaintyWeight * (1 - confidence)
-    // For entries without predictions, use a sentinel to push them to the end.
-    const scoreWeight = params.bestFeedScoreWeight ?? 1;
-    const uncertaintyWeight = params.bestFeedUncertaintyWeight ?? 1;
-    const scoreColumn = sql`CASE WHEN ${visibleEntries.predictedScore} IS NOT NULL THEN ${scoreWeight} * ${visibleEntries.predictedScore} + ${uncertaintyWeight} * (1 - COALESCE(${visibleEntries.predictionConfidence}, 0)) ELSE ${NULL_PREDICTED_SCORE_SENTINEL}::real END`;
-
-    // Cursor condition for score-based pagination
-    if (params.cursor) {
-      const { score: scoreStr, id } = decodeScoreCursor(params.cursor);
-      const cursorScore = parseFloat(scoreStr);
-      // Always descending for predicted score (highest first)
-      conditions.push(
-        sql`(${scoreColumn} < ${cursorScore} OR (${scoreColumn} = ${cursorScore} AND ${visibleEntries.id} < ${id}))`
-      );
-    }
-
-    const queryResults = await db
-      .select({
-        id: visibleEntries.id,
-        feedId: visibleEntries.feedId,
-        type: visibleEntries.type,
-        url: visibleEntries.url,
-        title: visibleEntries.title,
-        author: visibleEntries.author,
-        summary: visibleEntries.summary,
-        publishedAt: visibleEntries.publishedAt,
-        fetchedAt: visibleEntries.fetchedAt,
-        read: visibleEntries.read,
-        starred: visibleEntries.starred,
-        updatedAt: visibleEntries.updatedAt,
-        subscriptionId: visibleEntries.subscriptionId,
-        siteName: visibleEntries.siteName,
-        feedTitle: feeds.title,
-        score: visibleEntries.score,
-        hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-        hasMarkedUnread: visibleEntries.hasMarkedUnread,
-        hasStarred: visibleEntries.hasStarred,
-        readChangedAt: visibleEntries.readChangedAt,
-        predictedScore: visibleEntries.predictedScore,
-        predictionConfidence: visibleEntries.predictionConfidence,
-        computedSortScore: sql<number>`${scoreColumn}`.as("computed_sort_score"),
-      })
-      .from(visibleEntries)
-      .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-      .where(and(...conditions))
-      .orderBy(desc(scoreColumn), desc(visibleEntries.id))
-      .limit(limit + 1);
-
-    const hasMore = queryResults.length > limit;
-    const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
-    const items = resultEntries.map(toEntryListItem);
-
-    let nextCursor: string | undefined;
-    if (hasMore && resultEntries.length > 0) {
-      const lastEntry = resultEntries[resultEntries.length - 1];
-      nextCursor = encodeScoreCursor(lastEntry.computedSortScore, lastEntry.id);
-    }
-
-    return { items, nextCursor };
-  }
-
   // Recently Read: exclude entries that were never explicitly read-state-changed
   if (params.sortBy === "readChanged") {
     conditions.push(isNotNull(visibleEntries.readChangedAt));
@@ -487,12 +347,7 @@ export async function listEntries(
       subscriptionId: visibleEntries.subscriptionId,
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
-      score: visibleEntries.score,
-      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-      hasMarkedUnread: visibleEntries.hasMarkedUnread,
-      hasStarred: visibleEntries.hasStarred,
       readChangedAt: visibleEntries.readChangedAt,
-      predictedScore: visibleEntries.predictedScore,
       sortTsRaw: sortTsRawExpr,
     })
     .from(visibleEntries)
@@ -604,11 +459,6 @@ async function searchEntries(
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
       rank: rankColumn,
-      score: visibleEntries.score,
-      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-      hasMarkedUnread: visibleEntries.hasMarkedUnread,
-      hasStarred: visibleEntries.hasStarred,
-      predictedScore: visibleEntries.predictedScore,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -658,10 +508,6 @@ export async function getEntry(
       feedTitle: feeds.title,
       feedUrl: feeds.url,
       unsubscribeUrl: visibleEntries.unsubscribeUrl,
-      score: visibleEntries.score,
-      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-      hasMarkedUnread: visibleEntries.hasMarkedUnread,
-      hasStarred: visibleEntries.hasStarred,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -672,17 +518,7 @@ export async function getEntry(
     throw errors.entryNotFound();
   }
 
-  const row = result[0];
-  return {
-    ...row,
-    score: row.score,
-    implicitScore: computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
-  };
+  return result[0];
 }
 
 /**
@@ -718,10 +554,6 @@ export async function getEntries(
       feedTitle: feeds.title,
       feedUrl: feeds.url,
       unsubscribeUrl: visibleEntries.unsubscribeUrl,
-      score: visibleEntries.score,
-      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-      hasMarkedUnread: visibleEntries.hasMarkedUnread,
-      hasStarred: visibleEntries.hasStarred,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -730,16 +562,7 @@ export async function getEntries(
   // Build a map for O(1) lookup, then return in original order
   const resultMap = new Map<string, EntryFull>();
   for (const row of results) {
-    resultMap.set(row.id, {
-      ...row,
-      score: row.score,
-      implicitScore: computeImplicitScore(
-        row.hasStarred,
-        row.hasMarkedUnread,
-        row.hasMarkedReadOnList,
-        row.type
-      ),
-    });
+    resultMap.set(row.id, row);
   }
 
   return entryIds.map((id) => resultMap.get(id)).filter((e): e is EntryFull => e != null);
@@ -1170,85 +993,4 @@ export async function countTotalEntries(
     .where(and(...conditions));
 
   return result[0]?.total ?? 0;
-}
-
-/**
- * Score state returned from score mutations.
- */
-export interface ScoreState {
-  id: string;
-  read: boolean;
-  starred: boolean;
-  updatedAt: Date;
-  score: number | null;
-  implicitScore: number;
-}
-
-/**
- * Sets the explicit score for an entry.
- *
- * Uses idempotent updates: only applies if changedAt is newer than the stored
- * score_changed_at timestamp (or if score has never been set).
- *
- * @param score - The score to set (-2 to +2), or null to clear explicit vote
- * @param changedAt - When the user initiated the action. Defaults to now.
- */
-export async function setEntryScore(
-  db: typeof dbType,
-  userId: string,
-  entryId: string,
-  score: number | null,
-  changedAt: Date = new Date()
-): Promise<ScoreState> {
-  // Conditional update: only apply if incoming timestamp is newer or score never set
-  await db
-    .update(userEntries)
-    .set({
-      score,
-      scoreChangedAt: changedAt,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(userEntries.userId, userId),
-        eq(userEntries.entryId, entryId),
-        sql`(${userEntries.scoreChangedAt} IS NULL OR ${userEntries.scoreChangedAt} <= ${changedAt})`
-      )
-    );
-
-  // Always return final state (join with entries to get type for implicit score)
-  const result = await db
-    .select({
-      id: userEntries.entryId,
-      read: userEntries.read,
-      starred: userEntries.starred,
-      updatedAt: userEntries.updatedAt,
-      score: userEntries.score,
-      hasMarkedReadOnList: userEntries.hasMarkedReadOnList,
-      hasMarkedUnread: userEntries.hasMarkedUnread,
-      hasStarred: userEntries.hasStarred,
-      type: entries.type,
-    })
-    .from(userEntries)
-    .innerJoin(entries, eq(userEntries.entryId, entries.id))
-    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
-
-  if (result.length === 0) {
-    throw errors.entryNotFound();
-  }
-
-  const row = result[0];
-  return {
-    id: row.id,
-    read: row.read,
-    starred: row.starred,
-    updatedAt: row.updatedAt,
-    score: row.score,
-    implicitScore: computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
-  };
 }

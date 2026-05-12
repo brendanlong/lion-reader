@@ -71,14 +71,11 @@ interface CachedSession {
   userPasswordHash?: string | null; // deprecated: no longer cached but kept for compat with old cache entries
   userInviteId: string | null;
   userShowSpam: boolean;
-  userAlgorithmicFeedEnabled: boolean;
   userHasGroqApiKey: boolean;
   userHasAnthropicApiKey: boolean;
   userSummarizationModel: string | null;
   userSummarizationMaxWords: number | null;
   userSummarizationPrompt: string | null;
-  userBestFeedScoreWeight: number;
-  userBestFeedUncertaintyWeight: number;
   userTosAgreedAt: string | null;
   userPrivacyPolicyAgreedAt: string | null;
   userNotEuAgreedAt: string | null;
@@ -215,14 +212,11 @@ function serializeForCache(data: SessionData): string {
     userEmailVerifiedAt: data.user.emailVerifiedAt?.toISOString() ?? null,
     userInviteId: data.user.inviteId ?? null,
     userShowSpam: data.user.showSpam,
-    userAlgorithmicFeedEnabled: data.user.algorithmicFeedEnabled,
     userHasGroqApiKey: data.hasGroqApiKey,
     userHasAnthropicApiKey: data.hasAnthropicApiKey,
     userSummarizationModel: data.user.summarizationModel ?? null,
     userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
     userSummarizationPrompt: data.user.summarizationPrompt ?? null,
-    userBestFeedScoreWeight: data.user.bestFeedScoreWeight,
-    userBestFeedUncertaintyWeight: data.user.bestFeedUncertaintyWeight,
     userTosAgreedAt: data.user.tosAgreedAt?.toISOString() ?? null,
     userPrivacyPolicyAgreedAt: data.user.privacyPolicyAgreedAt?.toISOString() ?? null,
     userNotEuAgreedAt: data.user.notEuAgreedAt?.toISOString() ?? null,
@@ -256,14 +250,11 @@ function deserializeFromCache(data: string): SessionData {
       passwordHash: null, // Not cached in Redis for security; query DB when needed
       inviteId: cached.userInviteId ?? null,
       showSpam: cached.userShowSpam ?? false,
-      algorithmicFeedEnabled: cached.userAlgorithmicFeedEnabled ?? true,
       groqApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       anthropicApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       summarizationModel: cached.userSummarizationModel ?? null,
       summarizationMaxWords: cached.userSummarizationMaxWords ?? null,
       summarizationPrompt: cached.userSummarizationPrompt ?? null,
-      bestFeedScoreWeight: cached.userBestFeedScoreWeight ?? 1,
-      bestFeedUncertaintyWeight: cached.userBestFeedUncertaintyWeight ?? 1,
       tosAgreedAt: cached.userTosAgreedAt ? new Date(cached.userTosAgreedAt) : null,
       privacyPolicyAgreedAt: cached.userPrivacyPolicyAgreedAt
         ? new Date(cached.userPrivacyPolicyAgreedAt)

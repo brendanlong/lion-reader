@@ -25,7 +25,7 @@ export interface EntriesListInput {
   unreadOnly: boolean;
   starredOnly: boolean | undefined;
   sortOrder: "newest" | "oldest";
-  sortBy: "published" | "readChanged" | "predictedScore" | undefined;
+  sortBy: "published" | "readChanged" | undefined;
   type: EntryType | undefined;
   limit: number;
   /**
@@ -45,7 +45,7 @@ export interface EntriesListFilters {
   uncategorized?: boolean;
   starredOnly?: boolean;
   type?: EntryType;
-  sortBy?: "published" | "readChanged" | "predictedScore";
+  sortBy?: "published" | "readChanged";
 }
 
 /**
@@ -135,11 +135,6 @@ export function getFiltersFromPathname(pathname: string): EntriesListFilters {
   // /recently-read
   if (pathname === "/recently-read") {
     return { sortBy: "readChanged" as const };
-  }
-
-  // /best - Algorithmic feed sorted by predicted score
-  if (pathname === "/best") {
-    return { sortBy: "predictedScore" as const };
   }
 
   // /all or default
