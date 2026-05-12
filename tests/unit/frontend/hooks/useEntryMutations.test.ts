@@ -58,7 +58,6 @@ describe("useEntryMutations", () => {
         star: vi.fn(),
         unstar: vi.fn(),
         toggleStar: vi.fn(),
-        setScore: vi.fn(),
         isPending: false,
         isMarkReadPending: false,
         isMarkAllReadPending: false,

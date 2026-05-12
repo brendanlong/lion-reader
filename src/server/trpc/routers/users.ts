@@ -327,15 +327,12 @@ export const usersRouter = createTRPCRouter({
     .output(
       z.object({
         showSpam: z.boolean(),
-        algorithmicFeedEnabled: z.boolean(),
         canConfigureApiKeys: z.boolean(),
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
         summarizationModel: z.string().nullable(),
         summarizationMaxWords: z.number().nullable(),
         summarizationPrompt: z.string().nullable(),
-        bestFeedScoreWeight: z.number(),
-        bestFeedUncertaintyWeight: z.number(),
       })
     )
     .query(async ({ ctx }) => {
@@ -343,15 +340,12 @@ export const usersRouter = createTRPCRouter({
       // Never expose raw API keys — only whether they are set
       return {
         showSpam: ctx.session.user.showSpam,
-        algorithmicFeedEnabled: ctx.session.user.algorithmicFeedEnabled,
         canConfigureApiKeys: isEncryptionConfigured(),
         hasGroqApiKey: ctx.session.hasGroqApiKey,
         hasAnthropicApiKey: ctx.session.hasAnthropicApiKey,
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
-        bestFeedScoreWeight: ctx.session.user.bestFeedScoreWeight,
-        bestFeedUncertaintyWeight: ctx.session.user.bestFeedUncertaintyWeight,
       };
     }),
 
@@ -372,7 +366,6 @@ export const usersRouter = createTRPCRouter({
     .input(
       z.object({
         showSpam: z.boolean().optional(),
-        algorithmicFeedEnabled: z.boolean().optional(),
         // API keys: empty string clears the key, non-empty sets it
         groqApiKey: z.string().optional(),
         anthropicApiKey: z.string().optional(),
@@ -380,23 +373,17 @@ export const usersRouter = createTRPCRouter({
         // Summarization settings: null clears (reverts to default)
         summarizationMaxWords: z.number().int().min(1).max(10000).nullable().optional(),
         summarizationPrompt: z.string().max(10000).nullable().optional(),
-        // Best feed sorting weights
-        bestFeedScoreWeight: z.number().min(0).max(10).optional(),
-        bestFeedUncertaintyWeight: z.number().min(0).max(10).optional(),
       })
     )
     .output(
       z.object({
         showSpam: z.boolean(),
-        algorithmicFeedEnabled: z.boolean(),
         canConfigureApiKeys: z.boolean(),
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
         summarizationModel: z.string().nullable(),
         summarizationMaxWords: z.number().nullable(),
         summarizationPrompt: z.string().nullable(),
-        bestFeedScoreWeight: z.number(),
-        bestFeedUncertaintyWeight: z.number(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -415,14 +402,11 @@ export const usersRouter = createTRPCRouter({
       // Build update object with only provided fields
       const updateData: {
         showSpam?: boolean;
-        algorithmicFeedEnabled?: boolean;
         groqApiKey?: string | null;
         anthropicApiKey?: string | null;
         summarizationModel?: string | null;
         summarizationMaxWords?: number | null;
         summarizationPrompt?: string | null;
-        bestFeedScoreWeight?: number;
-        bestFeedUncertaintyWeight?: number;
         updatedAt: Date;
       } = {
         updatedAt: new Date(),
@@ -430,10 +414,6 @@ export const usersRouter = createTRPCRouter({
 
       if (input.showSpam !== undefined) {
         updateData.showSpam = input.showSpam;
-      }
-
-      if (input.algorithmicFeedEnabled !== undefined) {
-        updateData.algorithmicFeedEnabled = input.algorithmicFeedEnabled;
       }
 
       if (input.groqApiKey !== undefined) {
@@ -459,14 +439,6 @@ export const usersRouter = createTRPCRouter({
         updateData.summarizationPrompt = input.summarizationPrompt;
       }
 
-      if (input.bestFeedScoreWeight !== undefined) {
-        updateData.bestFeedScoreWeight = input.bestFeedScoreWeight;
-      }
-
-      if (input.bestFeedUncertaintyWeight !== undefined) {
-        updateData.bestFeedUncertaintyWeight = input.bestFeedUncertaintyWeight;
-      }
-
       // Update user preferences in database
       await ctx.db.update(users).set(updateData).where(eq(users.id, userId));
 
@@ -477,14 +449,11 @@ export const usersRouter = createTRPCRouter({
       const updatedUser = await ctx.db
         .select({
           showSpam: users.showSpam,
-          algorithmicFeedEnabled: users.algorithmicFeedEnabled,
           groqApiKey: users.groqApiKey,
           anthropicApiKey: users.anthropicApiKey,
           summarizationModel: users.summarizationModel,
           summarizationMaxWords: users.summarizationMaxWords,
           summarizationPrompt: users.summarizationPrompt,
-          bestFeedScoreWeight: users.bestFeedScoreWeight,
-          bestFeedUncertaintyWeight: users.bestFeedUncertaintyWeight,
         })
         .from(users)
         .where(eq(users.id, userId))
@@ -492,15 +461,12 @@ export const usersRouter = createTRPCRouter({
 
       return {
         showSpam: updatedUser[0]?.showSpam ?? false,
-        algorithmicFeedEnabled: updatedUser[0]?.algorithmicFeedEnabled ?? true,
         canConfigureApiKeys: isEncryptionConfigured(),
         hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
         hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,
-        bestFeedScoreWeight: updatedUser[0]?.bestFeedScoreWeight ?? 1,
-        bestFeedUncertaintyWeight: updatedUser[0]?.bestFeedUncertaintyWeight ?? 1,
       };
     }),
 

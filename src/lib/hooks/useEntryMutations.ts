@@ -24,7 +24,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import {
-  handleEntryScoreChanged,
   setCounts,
   setBulkCounts,
   applyOptimisticReadUpdate,
@@ -90,11 +89,6 @@ export interface UseEntryMutationsResult {
   toggleStar: (entryId: string, currentlyStarred: boolean) => void;
 
   /**
-   * Set the explicit score for an entry (-2 to +2, or null to clear).
-   */
-  setScore: (entryId: string, score: number | null) => void;
-
-  /**
    * Whether any mutation is currently in progress.
    */
   isPending: boolean;
@@ -122,8 +116,6 @@ interface MutationResultState {
   read: boolean;
   starred: boolean;
   updatedAt: Date;
-  score: number | null;
-  implicitScore: number;
 }
 
 /**
@@ -264,13 +256,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
     // Update the cache with winning state
     updateEntriesReadStatus(utils, [entryId], winningState.read);
     updateEntryStarredStatus(utils, entryId, winningState.starred, queryClient);
-    handleEntryScoreChanged(
-      utils,
-      entryId,
-      winningState.score,
-      winningState.implicitScore,
-      queryClient
-    );
   };
 
   // markRead mutation - uses optimistic updates for instant UI feedback
@@ -306,8 +291,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
           read: entry.read,
           starred: entry.starred,
           updatedAt: entry.updatedAt,
-          score: entry.score,
-          implicitScore: entry.implicitScore,
         };
 
         const { allComplete, winningState } = recordMutationResult(entry.id, result);
@@ -407,8 +390,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
         read: data.entry.read,
         starred: data.entry.starred,
         updatedAt: data.entry.updatedAt,
-        score: data.entry.score,
-        implicitScore: data.entry.implicitScore,
       };
 
       const { allComplete, winningState } = recordMutationResult(data.entry.id, result);
@@ -437,22 +418,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
         }
       }
       toast.error(variables.starred ? "Failed to star entry" : "Failed to unstar entry");
-    },
-  });
-
-  // setScore mutation - updates score cache only (no count changes)
-  const setScoreMutation = trpc.entries.setScore.useMutation({
-    onSuccess: (data) => {
-      handleEntryScoreChanged(
-        utils,
-        data.entry.id,
-        data.entry.score,
-        data.entry.implicitScore,
-        queryClient
-      );
-    },
-    onError: () => {
-      toast.error("Failed to update score");
     },
   });
 
@@ -512,18 +477,8 @@ export function useEntryMutations(): UseEntryMutationsResult {
     [setStarredMutation]
   );
 
-  const setScore = useCallback(
-    (entryId: string, score: number | null) => {
-      setScoreMutation.mutate({ id: entryId, score, changedAt: new Date() });
-    },
-    [setScoreMutation]
-  );
-
   const isPending =
-    markReadMutation.isPending ||
-    markAllReadMutation.isPending ||
-    setStarredMutation.isPending ||
-    setScoreMutation.isPending;
+    markReadMutation.isPending || markAllReadMutation.isPending || setStarredMutation.isPending;
 
   return useMemo(
     () => ({
@@ -533,7 +488,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
       star,
       unstar,
       toggleStar,
-      setScore,
       isPending,
       isMarkReadPending: markReadMutation.isPending,
       isMarkAllReadPending: markAllReadMutation.isPending,
@@ -546,7 +500,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
       star,
       unstar,
       toggleStar,
-      setScore,
       isPending,
       markReadMutation.isPending,
       markAllReadMutation.isPending,

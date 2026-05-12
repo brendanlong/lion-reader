@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, lte, inArray, sql, or, isNull } from "drizzle-orm";
+import { eq, and, lte, inArray, or, isNull } from "drizzle-orm";
 import { createHash } from "crypto";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
@@ -64,7 +64,7 @@ const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
 /**
  * Sort by validation schema for choosing which timestamp to sort entries by.
  */
-const sortBySchema = z.enum(["published", "readChanged", "predictedScore"]).optional();
+const sortBySchema = z.enum(["published", "readChanged"]).optional();
 
 /**
  * Feed type validation schema for filtering entries by type.
@@ -108,9 +108,6 @@ const entryListItemSchema = z.object({
   updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
   feedTitle: z.string().nullable(),
   siteName: z.string().nullable(),
-  score: z.number().nullable(),
-  implicitScore: z.number(),
-  predictedScore: z.number().nullable(),
 });
 
 /**
@@ -142,9 +139,6 @@ const entryFullSchema = z.object({
   fullContentCleaned: z.string().nullable(),
   fullContentFetchedAt: z.date().nullable(),
   fullContentError: z.string().nullable(),
-  // Score fields
-  score: z.number().nullable(),
-  implicitScore: z.number(),
   // Subscription field - included to avoid separate subscriptions.get query
   fetchFullContent: z.boolean(), // subscription setting for auto-fetching full content
 });
@@ -166,8 +160,6 @@ const entryMutationResultSchema = z.object({
   read: z.boolean(),
   starred: z.boolean(),
   updatedAt: z.date(), // For comparing with cached data to determine winner
-  score: z.number().nullable(),
-  implicitScore: z.number(),
 });
 
 /**
@@ -294,7 +286,6 @@ const fullEntrySelectFields = {
   fullContentCleaned: visibleEntries.fullContentCleaned,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
-  score: visibleEntries.score,
   contentHash: visibleEntries.contentHash,
   hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
   hasMarkedUnread: visibleEntries.hasMarkedUnread,
@@ -325,19 +316,13 @@ async function selectFullEntry(
 
 /**
  * Transform a raw full entry row into the entryFullSchema shape.
- * Computes implicitScore from the boolean signal flags and defaults fetchFullContent.
+ * Strips internal fields and defaults fetchFullContent.
  */
 function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { hasStarred, hasMarkedUnread, hasMarkedReadOnList, contentHash, ...rest } = row;
   return {
     ...rest,
-    implicitScore: entriesService.computeImplicitScore(
-      hasStarred,
-      hasMarkedUnread,
-      hasMarkedReadOnList,
-      row.type
-    ),
     fetchFullContent: row.fetchFullContent ?? false,
   };
 }
@@ -369,8 +354,6 @@ async function updateEntryStarred(
   read: boolean;
   starred: boolean;
   updatedAt: Date;
-  score: number | null;
-  implicitScore: number;
 }> {
   // Build SET clause, including hasStarred flag when starring
   const setClause: Record<string, unknown> = {
@@ -403,11 +386,6 @@ async function updateEntryStarred(
       read: visibleEntries.read,
       starred: visibleEntries.starred,
       updatedAt: visibleEntries.updatedAt,
-      score: visibleEntries.score,
-      hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-      hasMarkedUnread: visibleEntries.hasMarkedUnread,
-      hasStarred: visibleEntries.hasStarred,
-      type: visibleEntries.type,
     })
     .from(visibleEntries)
     .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)));
@@ -422,13 +400,6 @@ async function updateEntryStarred(
     read: row.read,
     starred: row.starred,
     updatedAt: row.updatedAt,
-    score: row.score,
-    implicitScore: entriesService.computeImplicitScore(
-      row.hasStarred,
-      row.hasMarkedUnread,
-      row.hasMarkedReadOnList,
-      row.type
-    ),
   };
 }
 
@@ -502,8 +473,6 @@ export const entriesRouter = createTRPCRouter({
         cursor: input.cursor,
         limit: input.limit,
         showSpam,
-        bestFeedScoreWeight: ctx.session.user.bestFeedScoreWeight,
-        bestFeedUncertaintyWeight: ctx.session.user.bestFeedUncertaintyWeight,
       });
     }),
 
@@ -596,8 +565,6 @@ export const entriesRouter = createTRPCRouter({
             starred: z.boolean(), // For updating starred unread count
             type: feedTypeSchema, // For updating saved/email counts
             updatedAt: z.date(), // For cache freshness comparison
-            score: z.number().nullable(), // For updating score display
-            implicitScore: z.number(), // For updating score display
           })
         ),
         // Absolute counts for all affected lists
@@ -661,10 +628,6 @@ export const entriesRouter = createTRPCRouter({
           starred: visibleEntries.starred,
           type: visibleEntries.type,
           updatedAt: visibleEntries.updatedAt,
-          score: visibleEntries.score,
-          hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-          hasMarkedUnread: visibleEntries.hasMarkedUnread,
-          hasStarred: visibleEntries.hasStarred,
         })
         .from(visibleEntries)
         .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
@@ -676,13 +639,6 @@ export const entriesRouter = createTRPCRouter({
         starred: e.starred,
         type: e.type,
         updatedAt: e.updatedAt,
-        score: e.score,
-        implicitScore: entriesService.computeImplicitScore(
-          e.hasStarred,
-          e.hasMarkedUnread,
-          e.hasMarkedReadOnList,
-          e.type
-        ),
       }));
 
       // Get absolute counts for all affected lists
@@ -835,48 +791,6 @@ export const entriesRouter = createTRPCRouter({
     }),
 
   /**
-   * Set the explicit score for an entry.
-   *
-   * Score values: -2, -1, 0, 1, 2, or null to clear the explicit vote.
-   * Uses idempotent timestamp-based updates.
-   *
-   * @param id - The entry ID
-   * @param score - The score to set (-2 to +2), or null to clear
-   * @returns The updated entry with score state
-   */
-  setScore: protectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/entries/{id}/score",
-        tags: ["Entries"],
-        summary: "Set entry score",
-      },
-    })
-    .input(
-      z.object({
-        id: uuidSchema,
-        score: z.number().int().min(-2).max(2).nullable(),
-        changedAt: z.coerce.date().optional(),
-      })
-    )
-    .output(
-      z.object({
-        entry: entryMutationResultSchema,
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      const entry = await entriesService.setEntryScore(
-        ctx.db,
-        ctx.session.user.id,
-        input.id,
-        input.score,
-        input.changedAt ?? new Date()
-      );
-      return { entry };
-    }),
-
-  /**
    * Get count of entries with optional filters.
    *
    * Entries are visible to a user only if they have a corresponding
@@ -930,39 +844,6 @@ export const entriesRouter = createTRPCRouter({
         starredOnly: input?.starredOnly,
         showSpam: ctx.session.user.showSpam,
       });
-    }),
-
-  /**
-   * Check if the user has scored any entries and has the algorithmic feed enabled.
-   *
-   * Returns true if the user has the algorithmic feed enabled AND has explicitly
-   * scored at least one entry, which is the prerequisite for the algorithmic feed
-   * to be useful.
-   */
-  hasScoredEntries: protectedProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/entries/has-scored",
-        tags: ["Entries"],
-        summary: "Check if user has scored entries",
-      },
-    })
-    .output(z.object({ hasScoredEntries: z.boolean() }))
-    .query(async ({ ctx }) => {
-      // Short-circuit: if algorithmic feed is disabled, no need to query
-      if (!ctx.session.user.algorithmicFeedEnabled) {
-        return { hasScoredEntries: false };
-      }
-
-      const userId = ctx.session.user.id;
-      const result = await ctx.db
-        .select({ id: userEntries.entryId })
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), sql`${userEntries.score} IS NOT NULL`))
-        .limit(1);
-
-      return { hasScoredEntries: result.length > 0 };
     }),
 
   /**

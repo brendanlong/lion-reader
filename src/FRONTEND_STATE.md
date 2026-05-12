@@ -26,11 +26,10 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Entry Cache (`entry-cache.ts`)
 
-| Function                   | Purpose                                                       |
-| -------------------------- | ------------------------------------------------------------- |
-| `updateEntriesReadStatus`  | Updates `entries.get` cache + `entries.list` in-place         |
-| `updateEntryStarredStatus` | Updates `entries.get` cache + `entries.list` in-place         |
-| `updateEntryScoreInCache`  | Updates score/implicitScore in `entries.get` + `entries.list` |
+| Function                   | Purpose                                               |
+| -------------------------- | ----------------------------------------------------- |
+| `updateEntriesReadStatus`  | Updates `entries.get` cache + `entries.list` in-place |
+| `updateEntryStarredStatus` | Updates `entries.get` cache + `entries.list` in-place |
 
 ### Count Cache (`count-cache.ts`)
 

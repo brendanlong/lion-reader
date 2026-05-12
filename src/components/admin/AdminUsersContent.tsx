@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ClientLink } from "@/components/ui/client-link";
 import { SpinnerIcon, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icon-button";
-import { formatBytes } from "@/lib/format";
 
 // ============================================================================
 // Constants
@@ -83,9 +82,6 @@ interface User {
   providers: string[];
   subscriptionCount: number;
   entryCount: number;
-  scoringModelSize: number | null;
-  scoringModelMemoryEstimate: number | null;
-  scoringModelTrainedAt: Date | null;
 }
 
 function UserRow({ user }: { user: User }) {
@@ -123,19 +119,6 @@ function UserRow({ user }: { user: User }) {
         </span>
         <span>Entries: {user.entryCount.toLocaleString()}</span>
       </div>
-
-      {/* Scoring model info */}
-      {user.scoringModelSize != null && (
-        <div className="ui-text-xs text-zinc-500 dark:text-zinc-400">
-          Scoring model: {formatBytes(user.scoringModelSize)}
-          {user.scoringModelMemoryEstimate != null && (
-            <span> (est. memory: {formatBytes(user.scoringModelMemoryEstimate)})</span>
-          )}
-          {user.scoringModelTrainedAt != null && (
-            <span> · trained {formatDate(user.scoringModelTrainedAt)}</span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

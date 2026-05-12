@@ -20,7 +20,6 @@ import {
   oauthAccounts,
   sessions,
   userEntries,
-  userScoreModels,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 
@@ -531,9 +530,6 @@ const userEndpoints = {
             subscriptionCount: z.number(),
             entryCount: z.number(),
             lastActiveAt: z.date().nullable(),
-            scoringModelSize: z.number().nullable(),
-            scoringModelMemoryEstimate: z.number().nullable(),
-            scoringModelTrainedAt: z.date().nullable(),
           })
         ),
         nextCursor: z.string().optional(),
@@ -566,41 +562,12 @@ const userEndpoints = {
         .from(userEntries)
         .where(eq(userEntries.userId, users.id));
 
-      // Subquery: scoring model size (length of model_data text)
-      const scoringModelSizeSq = ctx.db
-        .select({
-          size: sql<number>`LENGTH(${userScoreModels.modelData})`.as("size"),
-        })
-        .from(userScoreModels)
-        .where(eq(userScoreModels.userId, users.id));
-
-      // Subquery: scoring model memory estimate based on vocabulary size
-      // Rough estimate: vocabulary entries * ~100 bytes each
-      const scoringModelMemoryEstimateSq = ctx.db
-        .select({
-          estimate: sql<number>`
-            jsonb_array_length(
-              CASE WHEN jsonb_typeof(${userScoreModels.vocabulary}) = 'object'
-                   THEN jsonb_path_query_array(${userScoreModels.vocabulary}, '$.*')
-                   ELSE '[]'::jsonb
-              END
-            ) * 100`.as("estimate"),
-        })
-        .from(userScoreModels)
-        .where(eq(userScoreModels.userId, users.id));
-
       // Subquery: most recent session activity (includes revoked sessions —
       // a revoked session still indicates the user was active at that time)
       const lastActiveAtSq = ctx.db
         .select({ max: max(sessions.lastActiveAt).as("max") })
         .from(sessions)
         .where(eq(sessions.userId, users.id));
-
-      // Subquery: scoring model trained_at timestamp
-      const scoringModelTrainedAtSq = ctx.db
-        .select({ trainedAt: userScoreModels.trainedAt })
-        .from(userScoreModels)
-        .where(eq(userScoreModels.userId, users.id));
 
       const conditions = [];
 
@@ -625,13 +592,6 @@ const userEndpoints = {
           subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
           entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
           lastActiveAt: sql<Date | null>`(${lastActiveAtSq})`.as("last_active_at"),
-          scoringModelSize: sql<number | null>`(${scoringModelSizeSq})`.as("scoring_model_size"),
-          scoringModelMemoryEstimate: sql<number | null>`(${scoringModelMemoryEstimateSq})`.as(
-            "scoring_model_memory_estimate"
-          ),
-          scoringModelTrainedAt: sql<Date | null>`(${scoringModelTrainedAtSq})`.as(
-            "scoring_model_trained_at"
-          ),
         })
         .from(users)
         .where(whereClause)
@@ -651,12 +611,6 @@ const userEndpoints = {
           subscriptionCount: Number(row.subscriptionCount),
           entryCount: Number(row.entryCount),
           lastActiveAt: row.lastActiveAt ? new Date(row.lastActiveAt) : null,
-          scoringModelSize: row.scoringModelSize != null ? Number(row.scoringModelSize) : null,
-          scoringModelMemoryEstimate:
-            row.scoringModelMemoryEstimate != null ? Number(row.scoringModelMemoryEstimate) : null,
-          scoringModelTrainedAt: row.scoringModelTrainedAt
-            ? new Date(row.scoringModelTrainedAt)
-            : null,
         })),
         nextCursor,
       };

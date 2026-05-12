@@ -54,7 +54,6 @@ import { useImagePrefetch } from "@/lib/hooks/useImagePrefetch";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
-import { VoteControls } from "./VoteControls";
 
 /**
  * Props for the EntryContentBody component.
@@ -143,13 +142,6 @@ export interface EntryContentBodyProps {
   isContentLoading?: boolean;
   /** Whether to hide narration controls (e.g., in demo mode) */
   hideNarration?: boolean;
-  // Score fields
-  /** The explicit score (null if not voted) */
-  score?: number | null;
-  /** The implicit score (computed from actions) */
-  implicitScore?: number;
-  /** Callback when vote score changes */
-  onSetScore?: (score: number | null) => void;
 }
 
 /**
@@ -199,10 +191,6 @@ export function EntryContentBody({
   isContentLoading,
   // Narration toggle
   hideNarration,
-  // Score props
-  score,
-  implicitScore,
-  onSetScore,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const actionButtonsRef = useRef<HTMLDivElement>(null);
@@ -385,17 +373,6 @@ export function EntryContentBody({
             <ArrowLeftIcon className="h-4 w-4" />
             <span>Back to list</span>
           </button>
-        ) : undefined
-      }
-      voteControls={
-        onSetScore ? (
-          <div className="-mt-[24px] shrink-0">
-            <VoteControls
-              score={score ?? null}
-              implicitScore={implicitScore ?? 0}
-              onSetScore={onSetScore}
-            />
-          </div>
         ) : undefined
       }
       actionButtons={
