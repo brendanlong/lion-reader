@@ -513,7 +513,17 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     narratorRef.current.stop();
   }, [isSupported, usePiper]);
 
-  // Clear audio cache and processed HTML when article or voice changes
+  // Reset narration state when article or voice changes (render-time pattern
+  // avoids cascading renders from calling setState inside an effect)
+  const narrationResetKey = `${id}:${settings.voiceId}`;
+  const [prevNarrationResetKey, setPrevNarrationResetKey] = useState(narrationResetKey);
+  if (narrationResetKey !== prevNarrationResetKey) {
+    setPrevNarrationResetKey(narrationResetKey);
+    setProcessedHtml(null);
+    setNarrationText(null);
+  }
+
+  // Clear audio cache and refs when article or voice changes
   useEffect(() => {
     // Stop and clear the streaming player when article or voice changes
     if (streamingPlayerRef.current) {
@@ -524,9 +534,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     hasTrackedPlaybackRef.current = false;
     // Clear paragraph map when article changes
     paragraphMapRef.current = [];
-    // Clear processed HTML when article changes
-    setProcessedHtml(null);
-    setNarrationText(null);
   }, [id, settings.voiceId]);
 
   // Clean up on unmount
