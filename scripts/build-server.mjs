@@ -45,7 +45,9 @@ const buildOptions = {
   // - next: loaded from node_modules at runtime (needs .next build output)
   // - Native modules (argon2 uses node-gyp bindings)
   // - html-rewriter-wasm has WASM files and internal requires that break when bundled
-  external: ["next", "argon2", "html-rewriter-wasm"],
+  // - jsdom uses __dirname-relative fs.readFileSync for browser/default-stylesheet.css;
+  //   bundling breaks the path resolution (required at runtime by isomorphic-dompurify)
+  external: ["next", "argon2", "html-rewriter-wasm", "jsdom"],
 
   // Source maps for debugging production issues
   sourcemap: true,
