@@ -158,6 +158,9 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   // Initialize with server-provided cursors (granular tracking per entity type)
   const cursorsRef = useRef<SyncCursors>(initialCursors);
 
+  // Ref for self-referencing in performSync callback (avoids access-before-declaration)
+  const performSyncRef = useRef<() => Promise<SyncCursors | null>>(async () => null);
+
   // State to trigger reconnection
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
 
@@ -280,7 +283,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       // If there are more events, schedule another sync soon
       if (result.hasMore) {
         // Use setTimeout to avoid blocking - the next poll or manual sync will pick up more
-        setTimeout(() => performSync(), 100);
+        setTimeout(() => performSyncRef.current(), 100);
       }
 
       return cursorsRef.current;
@@ -289,6 +292,9 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       return null;
     }
   }, [utils, queryClient, updateCursorForEvent]);
+  useEffect(() => {
+    performSyncRef.current = performSync;
+  }, [performSync]);
 
   /**
    * Starts polling mode when SSE is unavailable.
@@ -364,8 +370,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
     if (!isAuthenticated) {
       isManuallyClosedRef.current = true;
+      // cleanup() already clears the poll interval; avoid calling stopPolling()
+      // here because it calls setState which causes cascading renders in an effect.
+      // isPollingMode is ignored when not authenticated (derived in return value).
       cleanup();
-      stopPolling();
       return;
     }
 
@@ -531,10 +539,13 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   // Derive the effective status
   const effectiveStatus: ConnectionStatus = isAuthenticated ? connectionStatus : "disconnected";
 
+  // Derive effective polling state - can't be polling if not authenticated
+  const effectiveIsPolling = isPollingMode && !!isAuthenticated;
+
   return {
     status: effectiveStatus,
     isConnected: effectiveStatus === "connected" || effectiveStatus === "polling",
-    isPolling: isPollingMode,
+    isPolling: effectiveIsPolling,
     reconnect,
   };
 }

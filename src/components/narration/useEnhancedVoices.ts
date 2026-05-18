@@ -267,6 +267,11 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
   // Voice cache reference for storage operations
   const voiceCacheRef = useRef<VoiceCache | null>(null);
 
+  // Ref for self-referencing in downloadVoice callback (avoids access-before-declaration)
+  const downloadVoiceRef = useRef<(voiceId: string, isRetry?: boolean) => Promise<void>>(
+    async () => {}
+  );
+
   // Get or create the voice cache
   const getVoiceCache = useCallback(() => {
     if (!voiceCacheRef.current) {
@@ -417,8 +422,8 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
           try {
             const cache = getVoiceCache();
             await cache.delete(voiceId);
-            // Retry the download
-            await downloadVoice(voiceId, true);
+            // Retry the download via ref to avoid access-before-declaration
+            await downloadVoiceRef.current(voiceId, true);
             return;
           } catch {
             // If clearing cache fails, fall through to normal error handling
@@ -447,6 +452,9 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     },
     [updateStorageStats, getVoiceCache]
   );
+  useEffect(() => {
+    downloadVoiceRef.current = downloadVoice;
+  }, [downloadVoice]);
 
   // Remove a downloaded voice
   const removeVoice = useCallback(
