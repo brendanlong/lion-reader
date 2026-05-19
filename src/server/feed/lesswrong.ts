@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { HttpFetchError } from "@/server/http/fetch";
 
 // ============================================================================
 // Constants
@@ -329,6 +330,11 @@ async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent 
         status: response.status,
         statusText: response.statusText,
       });
+      // Throw on rate limiting so callers can handle it specifically
+      // (returning null would cause a pointless fallback fetch to the same site)
+      if (response.status === 429) {
+        throw new HttpFetchError(response.status, response.statusText, LESSWRONG_GRAPHQL_ENDPOINT);
+      }
       return null;
     }
 
@@ -390,6 +396,10 @@ async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent 
       url: post.pageUrl,
     };
   } catch (error) {
+    // Let HttpFetchError propagate (e.g., 429 rate limiting)
+    if (error instanceof HttpFetchError) {
+      throw error;
+    }
     if (error instanceof Error && error.name === "AbortError") {
       logger.warn("LessWrong GraphQL request timed out", { postId });
     } else {
@@ -462,6 +472,9 @@ async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommen
         status: response.status,
         statusText: response.statusText,
       });
+      if (response.status === 429) {
+        throw new HttpFetchError(response.status, response.statusText, LESSWRONG_GRAPHQL_ENDPOINT);
+      }
       return null;
     }
 
@@ -509,6 +522,10 @@ async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommen
       url: comment.pageUrl,
     };
   } catch (error) {
+    // Let HttpFetchError propagate (e.g., 429 rate limiting)
+    if (error instanceof HttpFetchError) {
+      throw error;
+    }
     if (error instanceof Error && error.name === "AbortError") {
       logger.warn("LessWrong GraphQL comment request timed out", { commentId });
     } else {

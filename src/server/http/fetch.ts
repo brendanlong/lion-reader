@@ -29,6 +29,13 @@ export class HttpFetchError extends Error {
   }
 
   /**
+   * Check if this error indicates the upstream server is rate limiting us.
+   */
+  isRateLimited(): boolean {
+    return this.status === 429;
+  }
+
+  /**
    * Check if this error indicates the site blocked the request.
    * This includes 403 Forbidden, 429 Too Many Requests, and 406 Not Acceptable.
    */
