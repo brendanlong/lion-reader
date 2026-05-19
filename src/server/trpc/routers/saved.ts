@@ -463,8 +463,13 @@ export const savedRouter = createTRPCRouter({
                 url: normalizedUrl,
                 error: error instanceof Error ? error.message : String(error),
               });
-              if (error instanceof HttpFetchError && error.isBlocked()) {
-                throw errors.siteBlocked(normalizedUrl, error.status);
+              if (error instanceof HttpFetchError) {
+                if (error.isRateLimited()) {
+                  throw errors.upstreamRateLimited(normalizedUrl);
+                }
+                if (error.isBlocked()) {
+                  throw errors.siteBlocked(normalizedUrl, error.status);
+                }
               }
               throw errors.savedArticleFetchError(
                 normalizedUrl,
@@ -514,6 +519,16 @@ export const savedRouter = createTRPCRouter({
               });
             }
           } catch (error) {
+            // Rate limit errors should not fall back to normal fetch
+            // (the same site would rate limit us again)
+            if (error instanceof HttpFetchError && error.isRateLimited()) {
+              logger.warn("Plugin fetch rate limited", {
+                url: input.url,
+                plugin: plugin.name,
+                status: error.status,
+              });
+              throw errors.upstreamRateLimited(input.url);
+            }
             logger.warn("Plugin fetch failed, falling back to normal fetch", {
               url: input.url,
               plugin: plugin.name,
@@ -533,9 +548,13 @@ export const savedRouter = createTRPCRouter({
               url: input.url,
               error: error instanceof Error ? error.message : String(error),
             });
-            // Check if this is a blocked site error (403, 429, etc.)
-            if (error instanceof HttpFetchError && error.isBlocked()) {
-              throw errors.siteBlocked(input.url, error.status);
+            if (error instanceof HttpFetchError) {
+              if (error.isRateLimited()) {
+                throw errors.upstreamRateLimited(input.url);
+              }
+              if (error.isBlocked()) {
+                throw errors.siteBlocked(input.url, error.status);
+              }
             }
             throw errors.savedArticleFetchError(
               input.url,
