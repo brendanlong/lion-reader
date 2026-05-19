@@ -70,6 +70,9 @@ const ErrorCodes = {
 
   // Bad gateway errors (502)
   SITE_BLOCKED: "SITE_BLOCKED",
+
+  // Upstream rate limiting (429 from the target site, not from us)
+  UPSTREAM_RATE_LIMITED: "UPSTREAM_RATE_LIMITED",
 } as const;
 
 type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -129,6 +132,7 @@ const errorCodeToTRPCCode: Record<
   CONTENT_TOO_LARGE: "BAD_REQUEST",
   MAX_SUBSCRIPTIONS_REACHED: "BAD_REQUEST",
   SITE_BLOCKED: "BAD_GATEWAY",
+  UPSTREAM_RATE_LIMITED: "TOO_MANY_REQUESTS",
 };
 
 /**
@@ -267,6 +271,13 @@ export const errors = {
         url,
         status,
       }
+    ),
+
+  upstreamRateLimited: (url: string) =>
+    createError(
+      ErrorCodes.UPSTREAM_RATE_LIMITED,
+      "This website is temporarily rate limiting requests. Please try again later.",
+      { url }
     ),
 
   // Signup provider restriction errors
