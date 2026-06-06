@@ -21,6 +21,20 @@ CREATE TYPE public.websub_state AS ENUM (
     'unsubscribed'
 );
 
+CREATE FUNCTION public.user_entries_fill_sort_key() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.published_or_fetched_at IS NULL THEN
+    SELECT COALESCE(e.published_at, e.fetched_at)
+      INTO NEW.published_or_fetched_at
+      FROM entries e
+      WHERE e.id = NEW.entry_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
 CREATE TABLE public.api_tokens (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -247,7 +261,8 @@ CREATE TABLE public.oauth_refresh_tokens (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
-    replaced_by_id uuid
+    replaced_by_id uuid,
+    resource text
 );
 
 CREATE TABLE public.opml_imports (
@@ -326,6 +341,7 @@ CREATE TABLE public.user_entries (
     has_marked_unread boolean DEFAULT false NOT NULL,
     has_starred boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_or_fetched_at timestamp with time zone NOT NULL,
     CONSTRAINT user_entries_score_range CHECK (((score >= '-2'::integer) AND (score <= 2)))
 );
 
@@ -425,7 +441,8 @@ CREATE VIEW public.visible_entries AS
     esp.confidence AS prediction_confidence,
     e.unsubscribe_url,
     ue.read_changed_at,
-    e.wallabag_id
+    e.wallabag_id,
+    ue.published_or_fetched_at
    FROM ((((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscription_feeds sf ON (((sf.user_id = ue.user_id) AND (sf.feed_id = e.feed_id))))
@@ -701,6 +718,8 @@ CREATE INDEX idx_tags_user ON public.tags USING btree (user_id);
 
 CREATE INDEX idx_user_entries_entry_id ON public.user_entries USING btree (entry_id);
 
+CREATE INDEX idx_user_entries_published_or_fetched ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC);
+
 CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
 
 CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_id) WHERE (starred = true);
@@ -716,6 +735,8 @@ CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (exp
 CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
 
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
+
+CREATE TRIGGER user_entries_fill_sort_key_trigger BEFORE INSERT ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_fill_sort_key();
 
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

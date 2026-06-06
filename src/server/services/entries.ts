@@ -284,16 +284,13 @@ export async function listEntries(
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
   conditions.push(...buildEntryFilterConditions(params));
 
-  // Timestamp filters (used by Google Reader API ot/nt parameters)
+  // Timestamp filters (used by Google Reader API ot/nt parameters).
+  // publishedOrFetchedAt is the denormalized COALESCE(publishedAt, fetchedAt).
   if (params.publishedAfter) {
-    conditions.push(
-      sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) >= ${params.publishedAfter}`
-    );
+    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
   }
   if (params.publishedBefore) {
-    conditions.push(
-      sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) <= ${params.publishedBefore}`
-    );
+    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`);
   }
 
   // Recently Read: exclude entries that were never explicitly read-state-changed
@@ -301,18 +298,20 @@ export async function listEntries(
     conditions.push(isNotNull(visibleEntries.readChangedAt));
   }
 
-  // Sort column - readChanged sorts by when read state was last changed
+  // Sort column - readChanged sorts by when read state was last changed.
+  // The default "published" sort uses the denormalized user_entries sort key so the
+  // planner can serve filter + sort from idx_user_entries_published_or_fetched.
   const sortColumn =
     params.sortBy === "readChanged"
       ? visibleEntries.readChangedAt
-      : sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt})`;
+      : visibleEntries.publishedOrFetchedAt;
 
   // Raw ISO string version of sortColumn with microsecond precision.
   // Used for cursor encoding to avoid JavaScript Date truncation.
   const sortTsRawExpr =
     params.sortBy === "readChanged"
       ? sql<string>`to_char(${visibleEntries.readChangedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
-      : sql<string>`to_char(COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+      : sql<string>`to_char(${visibleEntries.publishedOrFetchedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
   // Cursor condition
   // Pass timestamp string directly to Postgres (::timestamptz) to preserve
@@ -428,14 +427,10 @@ async function searchEntries(
 
   // Timestamp filters
   if (params.publishedAfter) {
-    conditions.push(
-      sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) >= ${params.publishedAfter}`
-    );
+    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
   }
   if (params.publishedBefore) {
-    conditions.push(
-      sql`COALESCE(${visibleEntries.publishedAt}, ${visibleEntries.fetchedAt}) <= ${params.publishedBefore}`
-    );
+    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`);
   }
 
   // Cursor for search results (based on rank)

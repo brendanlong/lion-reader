@@ -492,8 +492,8 @@ export async function createSubscription(
   let unreadCount = 0;
   if (feedRecord.lastEntriesUpdatedAt) {
     await db.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id)
-      SELECT ${userId}, e.id
+      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at)
+      SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at)
       FROM entries e
       WHERE e.feed_id = ${feedId}
         AND e.last_seen_at = ${feedRecord.lastEntriesUpdatedAt}

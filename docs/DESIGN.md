@@ -161,6 +161,8 @@ The older `entry.fetched_at >= subscription.subscribed_at` rule was a one-time b
 
 **UUIDv7 Ordering**: Since UUIDv7 is time-ordered, `ORDER BY id DESC` gives us reverse chronological order without needing a separate timestamp column for sorting.
 
+**Timeline Sort Key Denormalization**: The timeline list query filters on `user_entries.user_id` but sorts by `COALESCE(entries.published_at, entries.fetched_at)`. Because filter and sort columns lived on different tables, no single index could cover both. Since that COALESCE value is immutable per entry, it is denormalized onto `user_entries.published_or_fetched_at` and indexed as `(user_id, published_or_fetched_at DESC, entry_id DESC)`, letting the planner serve the filter + sort from one index with LIMIT pushdown. Hot insert paths populate it inline; a `BEFORE INSERT` trigger backfills it for any caller that omits it.
+
 ---
 
 ## Authentication

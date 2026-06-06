@@ -653,11 +653,24 @@ export const userEntries = pgTable(
     // Timestamp for tracking state changes (for sync endpoint)
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+
+    // Denormalized timeline sort key: COALESCE(entries.published_at, entries.fetched_at).
+    // Immutable per entry, so it's copied here at insert time (or filled by the
+    // user_entries_fill_sort_key trigger) to enable a single (user_id, sort_key, id)
+    // index that covers the timeline list query's filter + sort. The DB enforces
+    // NOT NULL; left optional here so callers may rely on the trigger to fill it.
+    publishedOrFetchedAt: timestamp("published_or_fetched_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId] }),
     // For joins from entries table
     index("idx_user_entries_entry_id").on(table.entryId),
+    // Composite filter+sort index for the timeline list query.
+    index("idx_user_entries_published_or_fetched").on(
+      table.userId,
+      table.publishedOrFetchedAt.desc(),
+      table.entryId.desc()
+    ),
     // Partial indexes defined in migration (can't express WHERE clause in drizzle)
   ]
 );
@@ -739,6 +752,7 @@ export const visibleEntries = pgView("visible_entries", {
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
   wallabagId: integer("wallabag_id"), // Wallabag API integer ID (generated column from entries table)
+  publishedOrFetchedAt: timestamp("published_or_fetched_at", { withTimezone: true }).notNull(), // denormalized timeline sort key
 }).existing();
 
 // ============================================================================
