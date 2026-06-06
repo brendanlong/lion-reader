@@ -448,8 +448,8 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   // to specify just those columns.
   // https://github.com/drizzle-team/drizzle-orm/issues/3608
   const result = await db.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id)
-      SELECT s.user_id, e.id
+      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at)
+      SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at)
       FROM subscriptions s
       INNER JOIN entries e ON e.feed_id = s.feed_id
       WHERE s.feed_id = ${feedId}::uuid

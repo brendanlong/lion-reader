@@ -350,7 +350,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
         const batchFeedIds = userFeedIds.slice(b, b + FEED_BATCH_UE);
 
         await db.execute(sql`
-          INSERT INTO user_entries (user_id, entry_id, read, starred, read_changed_at, starred_changed_at, updated_at)
+          INSERT INTO user_entries (user_id, entry_id, read, starred, read_changed_at, starred_changed_at, updated_at, published_or_fetched_at)
           SELECT
             ${userId}::uuid,
             e.id,
@@ -358,7 +358,8 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
             (row_number() OVER (PARTITION BY e.feed_id ORDER BY e.id)) % 10 = 0,
             e.published_at,
             e.published_at,
-            now()
+            now(),
+            COALESCE(e.published_at, e.fetched_at)
           FROM entries e
           WHERE e.feed_id = ANY(${pgUuidArray(batchFeedIds)}::uuid[])
         `);
