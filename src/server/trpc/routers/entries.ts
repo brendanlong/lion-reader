@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, lte, inArray, or, isNull } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { createHash } from "crypto";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
@@ -19,17 +19,15 @@ import { uuidSchema } from "../validation";
 import {
   entries,
   feeds,
-  subscriptionFeeds,
-  userEntries,
   subscriptions,
   tags,
   visibleEntries,
-  userFeeds,
   narrationContent,
 } from "@/server/db/schema";
 import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
+import { getSubscriptionFeedIds } from "@/server/services/entry-filters";
 import { publishEntryStateChanged } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 
@@ -210,51 +208,6 @@ const setStarredOutputSchema = z.object({
 });
 
 // ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Database context type for helper functions.
- */
-type DbContext = {
-  db: typeof import("@/server/db").db;
-};
-
-/**
- * Looks up the feed IDs for a subscription.
- * Returns all feed IDs from the subscription_feeds junction table (current feed + previous feeds from redirects).
- * Validates subscription ownership via user_feeds view.
- *
- * @param db - Database instance
- * @param subscriptionId - The subscription ID to look up
- * @param userId - The user ID (for access control)
- * @returns Array of feed IDs, or null if subscription not found
- */
-async function getSubscriptionFeedIds(
-  db: typeof import("@/server/db").db,
-  subscriptionId: string,
-  userId: string
-): Promise<string[] | null> {
-  // Verify subscription exists and belongs to user
-  const subExists = await db
-    .select({ id: userFeeds.id })
-    .from(userFeeds)
-    .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
-    .limit(1);
-
-  if (subExists.length === 0) {
-    return null;
-  }
-
-  const result = await db
-    .select({ feedId: subscriptionFeeds.feedId })
-    .from(subscriptionFeeds)
-    .where(eq(subscriptionFeeds.subscriptionId, subscriptionId));
-
-  return result.map((r) => r.feedId);
-}
-
-// ============================================================================
 // Shared Select Fields
 // ============================================================================
 
@@ -324,82 +277,6 @@ function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>
   return {
     ...rest,
     fetchFullContent: row.fetchFullContent ?? false,
-  };
-}
-
-// ============================================================================
-// Mutation Helpers
-// ============================================================================
-
-/**
- * Updates the starred status of an entry for a user.
- * Uses idempotent conditional updates: only applies if changedAt is newer than stored timestamp.
- *
- * @param ctx - Database context
- * @param userId - The user ID
- * @param entryId - The entry ID
- * @param starred - Whether to star (true) or unstar (false)
- * @param changedAt - When the user initiated the action. Defaults to now.
- * @returns The final entry state (may differ from requested if a newer change exists)
- * @throws entryNotFound if entry doesn't exist or user doesn't have access
- */
-async function updateEntryStarred(
-  ctx: DbContext,
-  userId: string,
-  entryId: string,
-  starred: boolean,
-  changedAt: Date = new Date()
-): Promise<{
-  id: string;
-  read: boolean;
-  starred: boolean;
-  updatedAt: Date;
-}> {
-  // Build SET clause, including hasStarred flag when starring
-  const setClause: Record<string, unknown> = {
-    starred,
-    starredChangedAt: changedAt,
-    updatedAt: new Date(),
-  };
-
-  // Set implicit signal flag when starring (not when unstarring)
-  if (starred) {
-    setClause.hasStarred = true;
-  }
-
-  // Conditional update: only apply if incoming timestamp is newer
-  await ctx.db
-    .update(userEntries)
-    .set(setClause)
-    .where(
-      and(
-        eq(userEntries.userId, userId),
-        eq(userEntries.entryId, entryId),
-        lte(userEntries.starredChangedAt, changedAt)
-      )
-    );
-
-  // Always return final state from visibleEntries (includes computed updatedAt)
-  const result = await ctx.db
-    .select({
-      id: visibleEntries.id,
-      read: visibleEntries.read,
-      starred: visibleEntries.starred,
-      updatedAt: visibleEntries.updatedAt,
-    })
-    .from(visibleEntries)
-    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)));
-
-  if (result.length === 0) {
-    throw errors.entryNotFound();
-  }
-
-  const row = result[0];
-  return {
-    id: row.id,
-    read: row.read,
-    starred: row.starred,
-    updatedAt: row.updatedAt,
   };
 }
 
@@ -573,73 +450,14 @@ export const entriesRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const now = new Date();
 
-      // Build the SET clause, optionally including implicit signal flags
-      const setClause: Record<string, unknown> = {
-        read: input.read,
-        updatedAt: now,
-      };
-
-      // Set implicit score signals based on the action and source
-      if (input.read && input.fromList) {
-        // Marking read from the entry list → implicit -1
-        setClause.hasMarkedReadOnList = true;
-      } else if (!input.read) {
-        // Marking unread from anywhere → implicit +1
-        setClause.hasMarkedUnread = true;
-      }
-
-      // Group entries by timestamp for efficient batch updates
-      // Most cases (interactive use) will have all entries with same/no timestamp
-      const entriesByTimestamp = new Map<string, string[]>();
-      for (const entry of input.entries) {
-        const ts = (entry.changedAt ?? now).toISOString();
-        const existing = entriesByTimestamp.get(ts) ?? [];
-        existing.push(entry.id);
-        entriesByTimestamp.set(ts, existing);
-      }
-
-      // Batch update for each timestamp group
-      for (const [tsIso, entryIds] of entriesByTimestamp) {
-        const changedAt = new Date(tsIso);
-        await ctx.db
-          .update(userEntries)
-          .set({
-            ...setClause,
-            readChangedAt: changedAt,
-          })
-          .where(
-            and(
-              eq(userEntries.userId, userId),
-              inArray(userEntries.entryId, entryIds),
-              or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))
-            )
-          );
-      }
-
-      // Always return final state for all requested entries
-      const allEntryIds = input.entries.map((e) => e.id);
-      const entrySubscriptions = await ctx.db
-        .select({
-          id: visibleEntries.id,
-          subscriptionId: visibleEntries.subscriptionId,
-          read: visibleEntries.read,
-          starred: visibleEntries.starred,
-          type: visibleEntries.type,
-          updatedAt: visibleEntries.updatedAt,
-        })
-        .from(visibleEntries)
-        .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
-
-      const entriesResult = entrySubscriptions.map((e) => ({
-        id: e.id,
-        subscriptionId: e.subscriptionId,
-        read: e.read,
-        starred: e.starred,
-        type: e.type,
-        updatedAt: e.updatedAt,
-      }));
+      const entriesResult = await entriesService.markEntriesRead(
+        ctx.db,
+        userId,
+        input.entries,
+        input.read,
+        { fromList: input.fromList }
+      );
 
       // Get absolute counts for all affected lists
       const counts = await countsService.getBulkEntryRelatedCounts(ctx.db, userId, entriesResult);
@@ -662,7 +480,7 @@ export const entriesRouter = createTRPCRouter({
 
       return {
         success: true,
-        count: entrySubscriptions.length,
+        count: entriesResult.length,
         entries: entriesResult,
         counts,
       };
@@ -764,8 +582,8 @@ export const entriesRouter = createTRPCRouter({
     .output(setStarredOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const entry = await updateEntryStarred(
-        ctx,
+      const entry = await entriesService.updateEntryStarred(
+        ctx.db,
         userId,
         input.id,
         input.starred,

@@ -144,7 +144,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // Handle archive/starred flags if provided
   if (body.archive === "1" && !article.read) {
-    await entriesService.markEntriesRead(db, auth.userId, [article.id], true);
+    await entriesService.markEntriesRead(db, auth.userId, [{ id: article.id }], true);
   }
   if (body.starred === "1" && !article.starred) {
     await entriesService.updateEntryStarred(db, auth.userId, article.id, true);

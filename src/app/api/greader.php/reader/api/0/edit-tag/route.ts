@@ -64,10 +64,11 @@ export async function POST(request: Request): Promise<Response> {
   const addRead = addTags.some((t) => isState(t, "read"));
   const removeRead = removeTags.some((t) => isState(t, "read"));
 
+  const entriesToMark = entryUuids.map((id) => ({ id }));
   if (addRead) {
-    await entriesService.markEntriesRead(db, session.user.id, entryUuids, true);
+    await entriesService.markEntriesRead(db, session.user.id, entriesToMark, true);
   } else if (removeRead) {
-    await entriesService.markEntriesRead(db, session.user.id, entryUuids, false);
+    await entriesService.markEntriesRead(db, session.user.id, entriesToMark, false);
   }
 
   // Process starred state changes

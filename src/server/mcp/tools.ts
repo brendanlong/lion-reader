@@ -7,6 +7,7 @@
 
 import type { db as dbType } from "@/server/db";
 import * as entriesService from "@/server/services/entries";
+import * as countsService from "@/server/services/counts";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
 import * as tagsService from "@/server/services/tags";
@@ -117,7 +118,14 @@ export function registerTools(): Tool[] {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (db, args: any) => {
-        return entriesService.markEntriesRead(db, args.userId, args.entryIds, args.read);
+        const entries = await entriesService.markEntriesRead(
+          db,
+          args.userId,
+          (args.entryIds as string[]).map((id) => ({ id })),
+          args.read
+        );
+        const counts = await countsService.getBulkEntryRelatedCounts(db, args.userId, entries);
+        return { entries, counts };
       },
     },
 
