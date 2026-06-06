@@ -31,12 +31,19 @@ export const lessWrongPlugin: UrlPlugin = {
   name: "lesswrong",
   hosts: ["lesswrong.com", "www.lesswrong.com", "lesserwrong.com", "www.lesserwrong.com"],
 
-  // The host index already restricts this plugin to LessWrong hosts, and it
-  // handles every LessWrong URL: feed.xml feeds (clean/title), pages (transform
-  // to feed), and posts/comments (saved-article fetch). Each capability validates
-  // the specific URL shape it cares about, so match all LessWrong URLs here.
-  matchUrl(): boolean {
-    return true;
+  // Only match LessWrong URLs this plugin knows how to handle: feed.xml feeds
+  // (content cleaning + title), and pages we can map to a feed (front page,
+  // quicktakes, user profiles, and posts/comments). Unknown LessWrong pages
+  // (e.g. /tag/..., /library) return false so they're fetched normally.
+  matchUrl(url: URL): boolean {
+    const href = url.href;
+    return (
+      url.pathname === "/feed.xml" ||
+      isLessWrongFrontpage(href) ||
+      isLessWrongShortformPage(href) ||
+      isLessWrongUserUrl(href) ||
+      isLessWrongUrl(href)
+    );
   },
 
   feedBuilderUrl: "https://brendanlong.github.io/lesswrong-rss-builder/",
@@ -99,7 +106,7 @@ export const lessWrongPlugin: UrlPlugin = {
         return cleanLessWrongContent(html);
       },
 
-      transformFeedTitle(title: string, feedUrl: URL, context: FeedTitleContext): string {
+      transformFeedTitle(title: string, feedUrl: URL, context: FeedTitleContext = {}): string {
         // Only user-profile feeds (feed.xml?userId=...) get the author appended.
         // Use the first author from the already-parsed feed entries to avoid an
         // extra GraphQL round-trip during feed processing.

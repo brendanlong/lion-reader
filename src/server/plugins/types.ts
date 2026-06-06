@@ -58,7 +58,7 @@ export interface FeedCapability {
    * Runs synchronously during feed processing, using already-parsed feed data
    * (passed via context) to avoid extra network calls.
    */
-  transformFeedTitle?(title: string, feedUrl: URL, context: FeedTitleContext): string;
+  transformFeedTitle?(title: string, feedUrl: URL, context?: FeedTitleContext): string;
 
   /**
    * Site name to use for entries from this feed.

@@ -34,7 +34,7 @@ export function getFeedPlugin(url: string | URL | null | undefined) {
 
   let parsed: URL;
   try {
-    parsed = typeof url === "string" ? new URL(url) : url;
+    parsed = url instanceof URL ? url : new URL(url);
   } catch {
     return null;
   }

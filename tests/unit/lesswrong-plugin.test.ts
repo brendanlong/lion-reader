@@ -15,14 +15,25 @@ import {
 const feed = lessWrongPlugin.capabilities.feed!;
 
 describe("lessWrongPlugin.matchUrl", () => {
-  it("matches any LessWrong URL (pages and feeds)", () => {
+  it("matches LessWrong URLs it knows how to handle (feeds and mappable pages)", () => {
     expect(lessWrongPlugin.matchUrl(new URL("https://www.lesswrong.com/"))).toBe(true);
+    expect(lessWrongPlugin.matchUrl(new URL("https://www.lesswrong.com/quicktakes"))).toBe(true);
     expect(lessWrongPlugin.matchUrl(new URL("https://www.lesswrong.com/feed.xml?userId=abc"))).toBe(
       true
     );
+    expect(lessWrongPlugin.matchUrl(new URL("https://www.lesswrong.com/users/brendan-long"))).toBe(
+      true
+    );
     expect(
-      lessWrongPlugin.matchUrl(new URL("https://www.lesswrong.com/posts/abc123/some-post"))
+      lessWrongPlugin.matchUrl(new URL("https://www.lesswrong.com/posts/mLzEWfeSTNFkHW7bX/slug"))
     ).toBe(true);
+  });
+
+  it("does not match unknown LessWrong pages (fetched normally instead)", () => {
+    expect(lessWrongPlugin.matchUrl(new URL("https://www.lesswrong.com/tag/rationality"))).toBe(
+      false
+    );
+    expect(lessWrongPlugin.matchUrl(new URL("https://www.lesswrong.com/library"))).toBe(false);
   });
 });
 
