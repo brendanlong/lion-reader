@@ -6,8 +6,9 @@
 # =============================================================================
 FROM node:26-alpine AS base
 
-# Enable corepack and prepare the exact pnpm version from package.json
-RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
+# Install the exact pnpm version from package.json
+# (Node 26 no longer bundles corepack, so install pnpm directly via npm)
+RUN npm install -g pnpm@10.26.2
 
 # Set working directory
 WORKDIR /app
