@@ -398,25 +398,25 @@ Both transports register the same tools and call the same services layer.
 ### Architecture
 
 ```
-┌─────────────────┐  HTTP (OAuth/API token)  ┌─────────────────┐
+┌─────────────────┐  HTTP (OAuth/API token)   ┌─────────────────┐
 │  Remote client  │ ───────POST /api/mcp────→ │                 │
 │  (claude.ai)    │                           │  MCP Server     │
 └─────────────────┘                           │  lion-reader    │
 ┌─────────────────┐         stdio             │  (shared tools) │
 │  Local client   │ ←───────────────────────→ │                 │
-│  (Claude Desktop)│                          └────────┬────────┘
+│ (Claude Desktop)│                           └────────┬────────┘
 └─────────────────┘                                    │
-                                                        │ uses
-                                                        ▼
-                                               ┌─────────────────┐
-                                               │ Services Layer  │
-                                               │ (same as tRPC)  │
-                                               └────────┬────────┘
-                                                        │
-                                                        ▼
-                                               ┌─────────────────┐
-                                               │   PostgreSQL    │
-                                               └─────────────────┘
+                                                       │ uses
+                                                       ▼
+                                              ┌─────────────────┐
+                                              │ Services Layer  │
+                                              │ (same as tRPC)  │
+                                              └────────┬────────┘
+                                                       │
+                                                       ▼
+                                              ┌─────────────────┐
+                                              │   PostgreSQL    │
+                                              └─────────────────┘
 ```
 
 ### Available Tools

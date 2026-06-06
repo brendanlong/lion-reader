@@ -13,7 +13,7 @@ overrides:
   knip>smol-toml: ^1.6.1
   qs: ^6.15.2
   postcss: ^8.5.10
-  fast-xml-parser: ^5.7.0
+  fast-xml-parser: ^5.8.0
 
 importers:
 
@@ -74,7 +74,7 @@ importers:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.16.0)(pg@8.18.0)
       fast-xml-parser:
-        specifier: ^5.7.0
+        specifier: ^5.8.0
         version: 5.8.0
       google-auth-library:
         specifier: ^10.6.2
