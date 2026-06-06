@@ -1,9 +1,20 @@
-import type { UrlPlugin, SavedArticleContent } from "./types";
+import type { UrlPlugin, SavedArticleContent, FeedTitleContext } from "./types";
 import {
   fetchLessWrongContentFromUrl,
   fetchLessWrongUserBySlug,
-  fetchLessWrongUserById,
+  fetchLessWrongPostMetadata,
   buildLessWrongUserFeedUrl,
+  buildLessWrongPostCommentFeedUrl,
+  buildLessWrongUserShortformFeedUrl,
+  isLessWrongFrontpage,
+  isLessWrongShortformPage,
+  isLessWrongUserUrl,
+  isLessWrongUrl,
+  isLessWrongUserFeedUrl,
+  extractUserSlug,
+  extractPostId,
+  LESSWRONG_FRONTPAGE_FEED_URL,
+  LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
 } from "@/server/feed/lesswrong";
 import { cleanLessWrongContent } from "@/server/feed/content-cleaner";
 import { wrapHtmlFragment } from "@/server/http/html";
@@ -20,9 +31,12 @@ export const lessWrongPlugin: UrlPlugin = {
   name: "lesswrong",
   hosts: ["lesswrong.com", "www.lesswrong.com", "lesserwrong.com", "www.lesserwrong.com"],
 
-  matchUrl(url: URL): boolean {
-    // Match posts (/posts/[id]), comments (?commentId=), and users (/users/[slug])
-    return /^\/(posts|users)\//.test(url.pathname) || url.searchParams.has("commentId");
+  // The host index already restricts this plugin to LessWrong hosts, and it
+  // handles every LessWrong URL: feed.xml feeds (clean/title), pages (transform
+  // to feed), and posts/comments (saved-article fetch). Each capability validates
+  // the specific URL shape it cares about, so match all LessWrong URLs here.
+  matchUrl(): boolean {
+    return true;
   },
 
   feedBuilderUrl: "https://brendanlong.github.io/lesswrong-rss-builder/",
@@ -30,22 +44,54 @@ export const lessWrongPlugin: UrlPlugin = {
   capabilities: {
     feed: {
       async transformToFeedUrl(url: URL): Promise<URL | null> {
-        // Transform user profile URL to feed URL
-        const userMatch = url.pathname.match(/^\/users\/([a-zA-Z0-9_-]+)/);
-        if (!userMatch) return null;
+        const href = url.href;
 
-        try {
-          const user = await fetchLessWrongUserBySlug(userMatch[1]);
-          if (!user) return null;
+        // Front page → frontpage feed
+        if (isLessWrongFrontpage(href)) {
+          logger.info("Detected LessWrong front page", { url: href });
+          return new URL(LESSWRONG_FRONTPAGE_FEED_URL);
+        }
 
-          return new URL(buildLessWrongUserFeedUrl(user.userId));
-        } catch (error) {
-          logger.warn("Failed to transform LessWrong user URL to feed URL", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
+        // Shortform/quicktakes page → shortform frontpage feed
+        if (isLessWrongShortformPage(href)) {
+          logger.info("Detected LessWrong shortform page", { url: href });
+          return new URL(LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL);
+        }
+
+        // User profile → user posts feed
+        if (isLessWrongUserUrl(href)) {
+          const slug = extractUserSlug(href);
+          if (slug) {
+            logger.info("Detected LessWrong user URL", { url: href, slug });
+            const user = await fetchLessWrongUserBySlug(slug);
+            if (user) {
+              logger.info("Using LessWrong user feed", { url: href, user });
+              return new URL(buildLessWrongUserFeedUrl(user.userId));
+            }
+          }
           return null;
         }
+
+        // Post URLs → user shortform feed (if shortform) or post comment feed
+        if (isLessWrongUrl(href)) {
+          const postId = extractPostId(href);
+          if (postId) {
+            logger.info("Detected LessWrong post URL", { url: href, postId });
+            const metadata = await fetchLessWrongPostMetadata(postId);
+            if (metadata?.shortform && metadata.userId) {
+              logger.info("LessWrong post is a shortform, using user shortform feed", {
+                url: href,
+                postId,
+                userId: metadata.userId,
+              });
+              return new URL(buildLessWrongUserShortformFeedUrl(metadata.userId));
+            }
+            logger.info("Using LessWrong post comment feed", { url: href, postId });
+            return new URL(buildLessWrongPostCommentFeedUrl(postId));
+          }
+        }
+
+        return null;
       },
 
       cleanEntryContent(html: string): string {
@@ -53,22 +99,17 @@ export const lessWrongPlugin: UrlPlugin = {
         return cleanLessWrongContent(html);
       },
 
-      async transformFeedTitle(title: string, feedUrl: URL): Promise<string> {
-        const userId = feedUrl.searchParams.get("userId");
-        if (!userId) return title;
+      transformFeedTitle(title: string, feedUrl: URL, context: FeedTitleContext): string {
+        // Only user-profile feeds (feed.xml?userId=...) get the author appended.
+        // Use the first author from the already-parsed feed entries to avoid an
+        // extra GraphQL round-trip during feed processing.
+        if (!isLessWrongUserFeedUrl(feedUrl.href)) return title;
 
-        try {
-          const user = await fetchLessWrongUserById(userId);
-          if (!user?.displayName) return title;
-
-          return `${title} - ${user.displayName}`;
-        } catch (error) {
-          logger.warn("Failed to transform LessWrong feed title", {
-            feedUrl: feedUrl.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return title;
+        const { firstAuthor } = context;
+        if (firstAuthor && !title.includes(firstAuthor)) {
+          return `${title} - ${firstAuthor}`;
         }
+        return title;
       },
 
       siteName: "LessWrong",

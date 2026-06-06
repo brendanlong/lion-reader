@@ -55,14 +55,21 @@ export interface FeedCapability {
   /**
    * Transform feed title after parsing.
    * E.g., append author name to LessWrong user feeds.
+   * Runs synchronously during feed processing, using already-parsed feed data
+   * (passed via context) to avoid extra network calls.
    */
-  transformFeedTitle?(title: string, feedUrl: URL): Promise<string>;
+  transformFeedTitle?(title: string, feedUrl: URL, context: FeedTitleContext): string;
 
   /**
    * Site name to use for entries from this feed.
    * Falls back to feed's own site name if not provided.
    */
   siteName?: string;
+}
+
+export interface FeedTitleContext {
+  /** First author found among the feed's parsed entries (used to append to user-profile feed titles). */
+  firstAuthor?: string | null;
 }
 
 // ============ Saved Article Capability ============

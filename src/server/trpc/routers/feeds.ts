@@ -23,24 +23,7 @@ import { detectFeedType } from "@/server/feed/parser";
 import { parseFeedInWorker } from "@/server/worker-thread/pool";
 import { discoverFeeds, getCommonFeedUrls, type DiscoveredFeed } from "@/server/feed/discovery";
 import { getDomainFromUrl, type ParsedEntry, type ParsedFeed } from "@/server/feed/types";
-import { isLessWrongFeed, cleanLessWrongContent } from "@/server/feed/content-cleaner";
-import {
-  isLessWrongUserUrl,
-  isLessWrongUserFeedUrl,
-  isLessWrongFrontpage,
-  isLessWrongShortformPage,
-  isLessWrongUrl,
-  extractPostId,
-  extractUserSlug,
-  fetchLessWrongUserBySlug,
-  fetchLessWrongPostMetadata,
-  buildLessWrongUserFeedUrl,
-  buildLessWrongPostCommentFeedUrl,
-  buildLessWrongUserShortformFeedUrl,
-  LESSWRONG_FRONTPAGE_FEED_URL,
-  LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
-} from "@/server/feed/lesswrong";
-import { pluginRegistry } from "@/server/plugins";
+import { pluginRegistry, getFeedPlugin } from "@/server/plugins";
 
 // ============================================================================
 // Constants
@@ -129,9 +112,12 @@ function toSampleEntry(entry: ParsedEntry, feedUrl: string): z.infer<typeof samp
   // Get the content to use for summary
   let content = entry.summary ?? entry.content;
 
-  // Apply feed-specific cleaning
-  if (content && isLessWrongFeed(feedUrl)) {
-    content = cleanLessWrongContent(content);
+  // Apply feed-specific cleaning via the matching plugin (if any)
+  if (content) {
+    const cleaner = getFeedPlugin(feedUrl)?.capabilities.feed.cleanEntryContent;
+    if (cleaner) {
+      content = cleaner(content);
+    }
   }
 
   return {
@@ -237,64 +223,30 @@ async function checkCommonPaths(baseUrl: string): Promise<DiscoveredFeed[]> {
 }
 
 /**
- * Transforms a LessWrong page URL into the corresponding RSS feed URL.
+ * Transforms a page URL into the corresponding RSS feed URL using the matching
+ * plugin's `feed.transformToFeedUrl` capability.
  *
- * Handles:
- * - Front page → frontpage feed
- * - User profiles → user posts feed
- * - Post URLs → post comment feed (or user shortform feed if post is a shortform)
- * - Shortform/quicktakes page → shortform frontpage feed
+ * E.g. a LessWrong front page, user profile, post, or shortform page is mapped
+ * to its appropriate feed URL. Returns null when no plugin handles the URL or it
+ * can't be transformed.
  *
- * @param url - The LessWrong URL to transform
- * @returns The feed URL, or null if the URL doesn't match any known pattern
+ * @param url - The page URL to transform
+ * @returns The feed URL string, or null if there's no known mapping
  */
-async function transformLessWrongUrlToFeed(url: string): Promise<string | null> {
-  // Front page → frontpage feed
-  if (isLessWrongFrontpage(url)) {
-    logger.info("Detected LessWrong front page", { url });
-    return LESSWRONG_FRONTPAGE_FEED_URL;
-  }
+async function transformPageUrlToFeed(url: string): Promise<string | null> {
+  const transform = getFeedPlugin(url)?.capabilities.feed.transformToFeedUrl;
+  if (!transform) return null;
 
-  // Shortform/quicktakes page → shortform frontpage feed
-  if (isLessWrongShortformPage(url)) {
-    logger.info("Detected LessWrong shortform page", { url });
-    return LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL;
-  }
-
-  // User profile → user posts feed
-  if (isLessWrongUserUrl(url)) {
-    const slug = extractUserSlug(url);
-    if (slug) {
-      logger.info("Detected LessWrong user URL", { url, slug });
-      const user = await fetchLessWrongUserBySlug(slug);
-      if (user) {
-        logger.info("Using LessWrong user feed", { url, user });
-        return buildLessWrongUserFeedUrl(user.userId);
-      }
-    }
+  try {
+    const feedUrl = await transform(new URL(url));
+    return feedUrl?.href ?? null;
+  } catch (error) {
+    logger.warn("Failed to transform page URL to feed URL", {
+      url,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
-
-  // Post URLs → check if shortform, then either user shortform feed or post comment feed
-  if (isLessWrongUrl(url)) {
-    const postId = extractPostId(url);
-    if (postId) {
-      logger.info("Detected LessWrong post URL", { url, postId });
-      const metadata = await fetchLessWrongPostMetadata(postId);
-      if (metadata?.shortform && metadata.userId) {
-        logger.info("LessWrong post is a shortform, using user shortform feed", {
-          url,
-          postId,
-          userId: metadata.userId,
-        });
-        return buildLessWrongUserShortformFeedUrl(metadata.userId);
-      }
-      logger.info("Using LessWrong post comment feed", { url, postId });
-      return buildLessWrongPostCommentFeedUrl(postId);
-    }
-  }
-
-  return null;
 }
 
 /**
@@ -348,11 +300,11 @@ export const feedsRouter = createTRPCRouter({
     .query(async ({ input }) => {
       let feedUrl = input.url;
 
-      // Special case: LessWrong URLs
-      // Transform various LessWrong page URLs to their corresponding feed URLs
-      const lwFeedUrl = await transformLessWrongUrlToFeed(feedUrl);
-      if (lwFeedUrl) {
-        feedUrl = lwFeedUrl;
+      // Let a matching plugin transform a page URL to its feed URL
+      // (e.g. a LessWrong front page / user profile / post → its RSS feed)
+      const pluginFeedUrl = await transformPageUrlToFeed(feedUrl);
+      if (pluginFeedUrl) {
+        feedUrl = pluginFeedUrl;
       }
 
       // Step 1: Fetch the URL
@@ -406,12 +358,12 @@ export const feedsRouter = createTRPCRouter({
       const fallbackTitle = getDomainFromUrl(finalFeedUrl) ?? "Untitled Feed";
       let feedTitle = parsedFeed.title ?? fallbackTitle;
 
-      // For LessWrong user feeds, append the author name if not already in the title
-      if (isLessWrongUserFeedUrl(finalFeedUrl)) {
-        const firstAuthor = parsedFeed.items.find((item) => item.author)?.author;
-        if (firstAuthor && !feedTitle.includes(firstAuthor)) {
-          feedTitle = `${feedTitle} - ${firstAuthor}`;
-        }
+      // Let a matching plugin transform the title (e.g. LessWrong user feeds get
+      // the author appended)
+      const transformTitle = getFeedPlugin(finalFeedUrl)?.capabilities.feed.transformFeedTitle;
+      if (transformTitle) {
+        const firstAuthor = parsedFeed.items.find((item) => item.author)?.author ?? null;
+        feedTitle = transformTitle(feedTitle, new URL(finalFeedUrl), { firstAuthor });
       }
 
       return {
@@ -481,12 +433,12 @@ export const feedsRouter = createTRPCRouter({
         }
       }
 
-      // Step 1: Check if this is a LessWrong URL with a known feed mapping
-      const lwFeedUrl = await transformLessWrongUrlToFeed(inputUrl);
-      if (lwFeedUrl) {
-        const lwFeed = await tryFetchAsFeed(lwFeedUrl, FEED_FETCH_TIMEOUT_MS);
-        if (lwFeed) {
-          addFeed(lwFeed);
+      // Step 1: Check if a plugin maps this page URL to a known feed
+      const pluginFeedUrl = await transformPageUrlToFeed(inputUrl);
+      if (pluginFeedUrl) {
+        const pluginFeed = await tryFetchAsFeed(pluginFeedUrl, FEED_FETCH_TIMEOUT_MS);
+        if (pluginFeed) {
+          addFeed(pluginFeed);
           return { feeds: allFeeds, feedBuilderUrl };
         }
       }

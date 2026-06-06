@@ -60,14 +60,21 @@ export interface FeedCapability {
   /**
    * Transform feed title after parsing.
    * E.g., append author name to LessWrong user feeds.
+   * Synchronous: uses already-parsed feed data (context.firstAuthor) to avoid
+   * extra network calls during feed processing.
    */
-  transformFeedTitle?(title: string, feedUrl: URL): Promise<string>;
+  transformFeedTitle?(title: string, feedUrl: URL, context: FeedTitleContext): string;
 
   /**
    * Site name to use for entries from this feed.
    * Falls back to feed's own site name if not provided.
    */
   siteName?: string;
+}
+
+export interface FeedTitleContext {
+  /** First author found among the feed's parsed entries. */
+  firstAuthor?: string | null;
 }
 
 // ============ Entry Capability ============
@@ -174,7 +181,7 @@ export class PluginRegistry {
 
     if (!plugins) return null;
 
-    return plugins.find(p => p.matchUrl(url)) ?? null;
+    return plugins.find((p) => p.matchUrl(url)) ?? null;
   }
 }
 
@@ -190,47 +197,45 @@ export const pluginRegistry = new PluginRegistry();
 // src/server/plugins/lesswrong.ts
 
 export const lessWrongPlugin: UrlPlugin = {
-  name: 'lesswrong',
-  hosts: ['lesswrong.com', 'www.lesswrong.com', 'lesserwrong.com', 'www.lesserwrong.com'],
+  name: "lesswrong",
+  hosts: ["lesswrong.com", "www.lesswrong.com", "lesserwrong.com", "www.lesserwrong.com"],
 
-  matchUrl(url: URL): boolean {
-    // Match posts, comments, and user profiles
-    return /^\/(posts|users)\//.test(url.pathname) ||
-           url.searchParams.has('userId');  // Feed URLs
+  // The host index already restricts this plugin to LessWrong hosts, and it
+  // handles every LessWrong URL (feeds, pages, posts/comments). Each capability
+  // validates the specific URL shape it cares about.
+  matchUrl(): boolean {
+    return true;
   },
 
   capabilities: {
     feed: {
       async transformToFeedUrl(url: URL): Promise<URL | null> {
-        // Transform user profile URL to feed URL
-        const userMatch = url.pathname.match(/^\/users\/([a-zA-Z0-9_-]+)/);
-        if (!userMatch) return null;
-
-        const user = await fetchLessWrongUserBySlug(userMatch[1]);
-        if (!user) return null;
-
-        return new URL(`https://www.lesswrong.com/feed.xml?userId=${user._id}`);
+        // Map LessWrong pages to feeds: front page, shortform/quicktakes page,
+        // user profiles (→ user posts feed), and posts (→ comment or shortform feed).
+        // See the implementation for the full branch set.
+        if (isLessWrongFrontpage(url.href)) return new URL(LESSWRONG_FRONTPAGE_FEED_URL);
+        // ...user/post/shortform handling...
+        return null;
       },
 
       cleanEntryContent(html: string): string {
         // Strip "Published on January 7, 2026 2:39 AM GMT<br/><br/>" prefix
         return html.replace(
           /^Published on [A-Za-z]+ \d{1,2}, \d{4} \d{1,2}:\d{2} [AP]M \w+<br\s*\/?>(<br\s*\/?>|\s)*/i,
-          ''
+          ""
         );
       },
 
-      async transformFeedTitle(title: string, feedUrl: URL): Promise<string> {
-        const userId = feedUrl.searchParams.get('userId');
-        if (!userId) return title;
-
-        const user = await fetchLessWrongUserById(userId);
-        if (!user) return title;
-
-        return `${title} - ${user.displayName}`;
+      transformFeedTitle(title: string, feedUrl: URL, { firstAuthor }: FeedTitleContext): string {
+        // Only user-profile feeds (feed.xml?userId=...) get the author appended.
+        if (!isLessWrongUserFeedUrl(feedUrl.href)) return title;
+        if (firstAuthor && !title.includes(firstAuthor)) {
+          return `${title} - ${firstAuthor}`;
+        }
+        return title;
       },
 
-      siteName: 'LessWrong',
+      siteName: "LessWrong",
     },
 
     savedArticle: {
@@ -247,8 +252,8 @@ export const lessWrongPlugin: UrlPlugin = {
         };
       },
 
-      skipReadability: true,  // GraphQL content is already clean
-      siteName: 'LessWrong',
+      skipReadability: true, // GraphQL content is already clean
+      siteName: "LessWrong",
     },
   },
 };
@@ -260,8 +265,8 @@ export const lessWrongPlugin: UrlPlugin = {
 // src/server/plugins/google-docs.ts
 
 export const googleDocsPlugin: UrlPlugin = {
-  name: 'google-docs',
-  hosts: ['docs.google.com'],
+  name: "google-docs",
+  hosts: ["docs.google.com"],
 
   matchUrl(url: URL): boolean {
     return /^\/document\/d\/[a-zA-Z0-9_-]+/.test(url.pathname);
@@ -269,7 +274,10 @@ export const googleDocsPlugin: UrlPlugin = {
 
   capabilities: {
     savedArticle: {
-      async fetchContent(url: URL, options: SavedArticleFetchOptions): Promise<SavedArticleContent | null> {
+      async fetchContent(
+        url: URL,
+        options: SavedArticleFetchOptions
+      ): Promise<SavedArticleContent | null> {
         const normalized = normalizeGoogleDocsUrl(url.href);
         if (!normalized) return null;
 
@@ -289,8 +297,8 @@ export const googleDocsPlugin: UrlPlugin = {
         };
       },
 
-      skipReadability: true,  // API content is already clean
-      siteName: 'Google Docs',
+      skipReadability: true, // API content is already clean
+      siteName: "Google Docs",
     },
   },
 };
@@ -302,8 +310,8 @@ export const googleDocsPlugin: UrlPlugin = {
 // src/server/plugins/arxiv.ts
 
 export const arxivPlugin: UrlPlugin = {
-  name: 'arxiv',
-  hosts: ['arxiv.org', 'www.arxiv.org'],
+  name: "arxiv",
+  hosts: ["arxiv.org", "www.arxiv.org"],
 
   matchUrl(url: URL): boolean {
     // Match /abs/2401.12345 or /pdf/2401.12345
@@ -315,25 +323,25 @@ export const arxivPlugin: UrlPlugin = {
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
         // Transform to HTML version: /abs/2401.12345 → /html/2401.12345
         const htmlUrl = url.href
-          .replace('/abs/', '/html/')
-          .replace('/pdf/', '/html/')
-          .replace('.pdf', '');
+          .replace("/abs/", "/html/")
+          .replace("/pdf/", "/html/")
+          .replace(".pdf", "");
 
         // Fetch HTML version
         const response = await fetch(htmlUrl, {
-          headers: { 'User-Agent': USER_AGENT },
+          headers: { "User-Agent": USER_AGENT },
         });
 
         if (!response.ok) return null;
 
         return {
           html: await response.text(),
-          title: null,  // Let Readability extract it
+          title: null, // Let Readability extract it
         };
       },
 
-      skipReadability: false,  // Still want cleanup
-      siteName: 'arXiv',
+      skipReadability: false, // Still want cleanup
+      siteName: "arXiv",
     },
   },
 };
@@ -346,16 +354,16 @@ export const arxivPlugin: UrlPlugin = {
 ```typescript
 // src/server/plugins/index.ts
 
-import { pluginRegistry } from './registry';
-import { lessWrongPlugin } from './lesswrong';
-import { googleDocsPlugin } from './google-docs';
+import { pluginRegistry } from "./registry";
+import { lessWrongPlugin } from "./lesswrong";
+import { googleDocsPlugin } from "./google-docs";
 
 // Register all plugins at startup
 pluginRegistry.register(lessWrongPlugin);
 pluginRegistry.register(googleDocsPlugin);
 
-export { pluginRegistry } from './registry';
-export type * from './types';
+export { pluginRegistry } from "./registry";
+export type * from "./types";
 ```
 
 ### 2. Saved Articles (saved.ts)
@@ -371,17 +379,17 @@ if (isGoogleDocsUrl(url)) {
 }
 
 // After (unified):
-const plugin = pluginRegistry.findWithCapability(new URL(url), 'savedArticle');
+const plugin = pluginRegistry.findWithCapability(new URL(url), "savedArticle");
 let content: SavedArticleContent | null = null;
 
 if (plugin) {
   try {
-    content = await plugin.capabilities.savedArticle.fetchContent(
-      new URL(url),
-      { uploadImages: true, storage }
-    );
+    content = await plugin.capabilities.savedArticle.fetchContent(new URL(url), {
+      uploadImages: true,
+      storage,
+    });
   } catch (error) {
-    logger.warn({ error, url, plugin: plugin.name }, 'Plugin fetch failed, falling back');
+    logger.warn({ error, url, plugin: plugin.name }, "Plugin fetch failed, falling back");
   }
 }
 
@@ -396,34 +404,34 @@ if (!plugin?.capabilities.savedArticle.skipReadability) {
 }
 ```
 
-### 3. Feed Processing (entry-processor.ts)
+### 3. Feed Content Cleaning (content-utils.ts, feeds.ts)
+
+`getFeedPlugin(feedUrl)` (exported from `@/server/plugins`) resolves the matching
+plugin from a feed-URL string, returning null for invalid URLs or unhandled hosts.
 
 ```typescript
-// Before:
-if (isLessWrongFeed(feedUrl)) {
-  html = cleanLessWrongContent(html);
-}
-
-// After:
-const plugin = pluginRegistry.findWithCapability(new URL(feedUrl), 'feed');
-if (plugin?.capabilities.feed.cleanEntryContent) {
-  html = plugin.capabilities.feed.cleanEntryContent(html);
+const cleaner = getFeedPlugin(feedUrl)?.capabilities.feed.cleanEntryContent;
+if (cleaner) {
+  html = cleaner(html);
 }
 ```
 
-### 4. Feed Preview/Discovery (feeds.ts)
+### 4. Feed Title (handlers.ts feed processing, feeds.ts preview)
 
 ```typescript
-// Before:
-if (isLessWrongUserUrl(url)) {
-  const user = await fetchLessWrongUserBySlug(slug);
-  url = buildLessWrongUserFeedUrl(user._id);
+const transformTitle = getFeedPlugin(feedUrl)?.capabilities.feed.transformFeedTitle;
+if (transformTitle) {
+  const firstAuthor = parsedFeed.items.find((item) => item.author)?.author ?? null;
+  feedTitle = transformTitle(feedTitle, new URL(feedUrl), { firstAuthor });
 }
+```
 
-// After:
-const plugin = pluginRegistry.findWithCapability(new URL(url), 'feed');
-if (plugin?.capabilities.feed.transformToFeedUrl) {
-  const feedUrl = await plugin.capabilities.feed.transformToFeedUrl(new URL(url));
+### 5. Feed Preview/Discovery URL Transform (feeds.ts)
+
+```typescript
+const transform = getFeedPlugin(url)?.capabilities.feed.transformToFeedUrl;
+if (transform) {
+  const feedUrl = await transform(new URL(url));
   if (feedUrl) url = feedUrl.href;
 }
 ```
@@ -442,24 +450,28 @@ src/server/plugins/
 
 ## Migration Plan
 
-1. **Create plugin infrastructure** - types.ts, registry.ts, index.ts
-2. **Create LessWrong plugin** - Wrap existing functions
-3. **Create Google Docs plugin** - Wrap existing functions
-4. **Update saved.ts** - Use plugin registry
-5. **Update entry-processor.ts** - Use plugin registry
-6. **Update feeds.ts** - Use plugin registry
-7. **Update handlers.ts** - Use plugin registry
-8. **Clean up** - Remove scattered `isXxxUrl()` exports if no longer needed
-9. **Add ArXiv plugin** - New plugin using the system
+All steps below are complete:
+
+1. **Create plugin infrastructure** - types.ts, registry.ts, index.ts ✅
+2. **Create LessWrong plugin** - Wrap existing functions ✅
+3. **Create Google Docs plugin** - Wrap existing functions ✅
+4. **Update saved.ts** - Use plugin registry (`savedArticle` capability) ✅
+5. **Update content-utils.ts / feeds.ts cleaning** - Use plugin registry (`feed.cleanEntryContent`) ✅
+6. **Update feeds.ts URL transform & title** - Use plugin registry (`feed.transformToFeedUrl` / `feed.transformFeedTitle`) ✅
+7. **Update handlers.ts title** - Use plugin registry (`feed.transformFeedTitle`) ✅
+8. **Clean up** - Removed dead `isLessWrongFeed`; LessWrong feed logic now lives only in the plugin ✅
+9. **Add ArXiv & GitHub plugins** - New plugins using the system ✅
 
 ## Testing Strategy
 
 **Unit tests** (pure logic):
+
 - `matchUrl()` function for each plugin
 - `cleanEntryContent()` for feed plugins
 - Registry lookup with various URLs and capabilities
 
 **Integration tests** (with external services):
+
 - Plugin fetch functions (mocked HTTP/GraphQL responses)
 - Full saved article flow with plugin
 - Full feed processing flow with plugin
