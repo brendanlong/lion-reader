@@ -146,7 +146,14 @@ See `docs/features/subscription-centric-api.md` for design details.
 
 ### Key Design Decisions
 
-**Entry Visibility**: Users only see entries where `entry.fetched_at >= subscription.subscribed_at`. This prevents information leakage when users subscribe to feeds that may have been private before.
+**Entry Visibility**: Visibility is enforced at query time by the `visible_entries` view, which requires a `user_entries` row to exist for the `(user, entry)` pair AND that the entry is either from an active subscription (`subscription.unsubscribed_at IS NULL`) or is starred. The existence of the `user_entries` row is the durable record of visibility.
+
+The `user_entries` rows are created outside the view at:
+
+- **Subscribe time**: rows are inserted for entries present in the feed's most recent fetch (`entries.last_seen_at = feeds.last_entries_updated_at`), so a new subscriber sees current feed contents but not arbitrarily old entries. See `createSubscription` in `src/server/services/subscriptions.ts`.
+- **Fetch time**: when a feed fetch produces new entries, rows are created for that feed's active subscribers. See `createUserEntriesForFeed` in `src/server/feed/entry-processor.ts`.
+
+The older `entry.fetched_at >= subscription.subscribed_at` rule was a one-time backfill applied in migration `0007_user_entries_visibility.sql`; it is **not** enforced by the view. This insert-time gating is what prevents information leakage when users subscribe to feeds that may have contained private content before they subscribed.
 
 **Soft Deletes**: Subscriptions use `unsubscribed_at` for soft delete, allowing users to resubscribe and maintain their read state.
 
