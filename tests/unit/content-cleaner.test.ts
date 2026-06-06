@@ -8,7 +8,6 @@ import {
   generateCleanedSummary,
   absolutizeUrls,
   extractBaseHref,
-  isLessWrongFeed,
   cleanLessWrongContent,
 } from "@/server/feed/content-cleaner";
 
@@ -733,65 +732,6 @@ describe("extractBaseHref", () => {
   it("should return fallback when no href attribute in base tag", () => {
     const html = '<html><head><base target="_blank"></head></html>';
     expect(extractBaseHref(html, "https://example.com/page")).toBe("https://example.com/page");
-  });
-});
-
-describe("isLessWrongFeed", () => {
-  describe("valid LessWrong URLs", () => {
-    it("should return true for www.lesswrong.com feed", () => {
-      expect(isLessWrongFeed("https://www.lesswrong.com/feed.xml")).toBe(true);
-    });
-
-    it("should return true for lesswrong.com feed without www", () => {
-      expect(isLessWrongFeed("https://lesswrong.com/feed.xml")).toBe(true);
-    });
-
-    it("should return true for www.lesserwrong.com feed", () => {
-      expect(isLessWrongFeed("https://www.lesserwrong.com/feed.xml")).toBe(true);
-    });
-
-    it("should return true for lesserwrong.com feed without www", () => {
-      expect(isLessWrongFeed("http://lesserwrong.com/feed.xml")).toBe(true);
-    });
-
-    it("should return true for feeds with query parameters", () => {
-      expect(isLessWrongFeed("https://www.lesswrong.com/feed.xml?view=rss&karmaThreshold=2")).toBe(
-        true
-      );
-    });
-  });
-
-  describe("non-LessWrong URLs", () => {
-    it("should return false for other domains", () => {
-      expect(isLessWrongFeed("https://example.com/feed.xml")).toBe(false);
-    });
-
-    it("should return false for domains containing lesswrong", () => {
-      expect(isLessWrongFeed("https://notlesswrong.com/feed.xml")).toBe(false);
-      expect(isLessWrongFeed("https://lesswrongfake.com/feed.xml")).toBe(false);
-    });
-
-    it("should return false for subdomains other than www", () => {
-      expect(isLessWrongFeed("https://blog.lesswrong.com/feed.xml")).toBe(false);
-    });
-  });
-
-  describe("edge cases", () => {
-    it("should return false for null", () => {
-      expect(isLessWrongFeed(null)).toBe(false);
-    });
-
-    it("should return false for undefined", () => {
-      expect(isLessWrongFeed(undefined)).toBe(false);
-    });
-
-    it("should return false for empty string", () => {
-      expect(isLessWrongFeed("")).toBe(false);
-    });
-
-    it("should return false for invalid URL", () => {
-      expect(isLessWrongFeed("not-a-url")).toBe(false);
-    });
   });
 });
 

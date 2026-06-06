@@ -6,7 +6,8 @@
  */
 
 import type { ParsedEntry } from "./types";
-import { absolutizeUrls, isLessWrongFeed, cleanLessWrongContent } from "./content-cleaner";
+import { absolutizeUrls } from "./content-cleaner";
+import { getFeedPlugin } from "@/server/plugins";
 import { generateSummary } from "../html/strip-html";
 
 /**
@@ -38,8 +39,8 @@ export interface CleanEntryContentOptions {
  * already provide clean content. Readability is only used for saved articles
  * where we're extracting content from full web pages.
  *
- * Feed-specific cleaners:
- * - LessWrong/LesserWrong: Strips "Published on [date]<br/><br/>" prefix
+ * Feed-specific cleaning is delegated to the matching plugin's `feed.cleanEntryContent`
+ * capability (e.g. LessWrong strips its "Published on [date]<br/><br/>" prefix).
  *
  * @param parsedEntry - The parsed entry from the feed
  * @param options - Cleaning options
@@ -66,11 +67,12 @@ export function cleanEntryContent(
     ? absolutizeUrls(originalContent, entryUrl)
     : originalContent;
 
-  // Apply feed-specific content cleaning
+  // Apply feed-specific content cleaning via the matching plugin (if any)
   let contentCleaned: string | null = null;
 
-  if (isLessWrongFeed(feedUrl)) {
-    const cleaned = cleanLessWrongContent(absolutizedOriginal);
+  const cleaner = getFeedPlugin(feedUrl)?.capabilities.feed.cleanEntryContent;
+  if (cleaner) {
+    const cleaned = cleaner(absolutizedOriginal);
     // Only set contentCleaned if cleaning actually changed something
     if (cleaned !== absolutizedOriginal) {
       contentCleaned = cleaned;

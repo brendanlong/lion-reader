@@ -22,6 +22,26 @@ logger.info("Plugins registered", {
   plugins: [lessWrongPlugin.name, googleDocsPlugin.name, arxivPlugin.name, githubPlugin.name],
 });
 
+/**
+ * Resolve the feed-capable plugin for a feed or page URL string.
+ *
+ * Returns the matching plugin (with its `feed` capability) or null if the URL is
+ * invalid or no plugin handles it. Use this at feed-processing call sites so
+ * feed-source customization lives in plugins rather than hardcoded branches.
+ */
+export function getFeedPlugin(url: string | URL | null | undefined) {
+  if (!url) return null;
+
+  let parsed: URL;
+  try {
+    parsed = url instanceof URL ? url : new URL(url);
+  } catch {
+    return null;
+  }
+
+  return pluginRegistry.findWithCapability(parsed, "feed");
+}
+
 // Export registry and types
 export { pluginRegistry } from "./registry";
 export type * from "./types";

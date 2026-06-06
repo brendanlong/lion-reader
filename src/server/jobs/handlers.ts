@@ -44,7 +44,7 @@ import {
   publishSubscriptionUpdated,
 } from "../redis/pubsub";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { isLessWrongUserFeedUrl } from "../feed/lesswrong";
+import { getFeedPlugin } from "@/server/plugins";
 import { createSubscription } from "../services/subscriptions";
 import {
   findPermanentRedirectUrl,
@@ -371,13 +371,14 @@ async function processSuccessfulFetch(
   // This allows parsedFeed.items (the large part) to be GC'd after processEntries
   let feedTitle = parsedFeed.title;
 
-  // For LessWrong user feeds, append the author name to the feed title if not already present.
-  // This gives us "LessWrong - Brendan Long" instead of just "LessWrong",
-  // and automatically updates if the user changes their display name.
-  if (feed.url && isLessWrongUserFeedUrl(feed.url)) {
-    const firstAuthor = parsedFeed.items.find((item) => item.author)?.author;
-    if (firstAuthor && feedTitle && !feedTitle.includes(firstAuthor)) {
-      feedTitle = `${feedTitle} - ${firstAuthor}`;
+  // Let a matching plugin transform the feed title. For LessWrong user feeds this
+  // appends the author name (e.g. "LessWrong - Brendan Long" instead of just
+  // "LessWrong"), and automatically updates if the user changes their display name.
+  if (feed.url && feedTitle) {
+    const transformTitle = getFeedPlugin(feed.url)?.capabilities.feed.transformFeedTitle;
+    if (transformTitle) {
+      const firstAuthor = parsedFeed.items.find((item) => item.author)?.author ?? null;
+      feedTitle = transformTitle(feedTitle, new URL(feed.url), { firstAuthor });
     }
   }
 

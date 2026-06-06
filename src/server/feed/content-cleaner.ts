@@ -462,28 +462,6 @@ const LESSWRONG_PUBLISHED_ON_PATTERN =
   /^Published on [A-Za-z]+ \d{1,2}, \d{4} \d{1,2}:\d{2} [AP]M \w+<br\s*\/?>(<br\s*\/?>|\s)*/i;
 
 /**
- * Checks if a feed URL is from LessWrong or LesserWrong.
- *
- * @param feedUrl - The feed URL to check
- * @returns True if this is a LessWrong or LesserWrong feed
- */
-export function isLessWrongFeed(feedUrl: string | null | undefined): boolean {
-  if (!feedUrl) return false;
-  try {
-    const url = new URL(feedUrl);
-    const hostname = url.hostname.toLowerCase();
-    return (
-      hostname === "www.lesswrong.com" ||
-      hostname === "lesswrong.com" ||
-      hostname === "www.lesserwrong.com" ||
-      hostname === "lesserwrong.com"
-    );
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Strips the "Published on [date]<br/><br/>" prefix from LessWrong RSS content.
  *
  * LessWrong's RSS feed prepends publication date info to each article's content,
