@@ -115,8 +115,12 @@ const nextConfig: NextConfig = {
     ];
   },
   // Packages that should be loaded from node_modules at runtime, not bundled
-  // html-rewriter-wasm contains a WASM file that can't be bundled by Next.js
-  serverExternalPackages: ["html-rewriter-wasm", "piscina"],
+  // - html-rewriter-wasm contains a WASM file that can't be bundled by Next.js
+  // - trpc-to-openapi must not be bundled: webpack tree-shakes zod's `coerce`
+  //   export (only referenced via `'coerce' in z`), which flips the library's
+  //   `zodSupportsCoerce` check to false and makes it reject numeric query
+  //   params (e.g. `limit`) when generating the OpenAPI document.
+  serverExternalPackages: ["html-rewriter-wasm", "piscina", "trpc-to-openapi"],
   // Handle piper-tts-web which has conditional Node.js code (require('fs'))
   // that the bundler tries to resolve even though it only runs in Node.js
   webpack: (config, { isServer }) => {
