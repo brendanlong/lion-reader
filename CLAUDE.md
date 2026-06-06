@@ -81,7 +81,7 @@ See docs/diagrams/ for more detail. These diagrams are very helpful for quickly 
 Use the database views for frontend queries instead of manual joins:
 
 - **`user_feeds`**: Active subscriptions with feed data merged. Use for `subscriptions.list/get/export`. Already filters out unsubscribed entries and resolves title (custom or original).
-- **`visible_entries`**: Entries with visibility rules applied. Use for `entries.list/get/count`. Includes read/starred state and subscription_id. An entry is visible if it's from an active subscription OR is starred.
+- **`visible_entries`**: Entries with visibility rules applied. Use for `entries.list/get/count`. Includes read/starred state and subscription_id. An entry is visible if a `user_entries` row exists for the `(user, entry)` pair AND (the entry is from an active subscription OR is starred). Privacy gating happens when `user_entries` rows are inserted (subscribe-time / fetch-time), not in the view; the old `fetched_at >= subscribed_at` rule was only a one-time backfill (migration 0007). See "Entry Visibility" in docs/DESIGN.md.
 
 These views are defined in `migrations/0035_subscription_views.sql` and have Drizzle schemas in `src/server/db/schema.ts`.
 
