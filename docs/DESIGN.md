@@ -76,7 +76,7 @@ To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playgroun
 
 ┌─────────────────────────────────────────────────────────────┐
 │                      MCP Server (Optional)                   │
-│  Exposes Lion Reader to AI assistants via stdio transport    │
+│  Exposes Lion Reader to AI assistants via HTTP + stdio       │
 │  Uses same services layer as tRPC routers                    │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -388,27 +388,35 @@ app/
 
 ## MCP Server
 
-Lion Reader exposes functionality to AI assistants via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
+Lion Reader exposes functionality to AI assistants via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Two transports are supported:
+
+- **Streamable HTTP** at `POST /api/mcp` — for remote clients such as claude.ai. Authenticated with OAuth 2.1 access tokens (with the `mcp` scope) or legacy API tokens. Runs statelessly inside the Next.js route handler via `WebStandardStreamableHTTPServerTransport`, creating a fresh server+transport pair per request.
+- **stdio** (`pnpm mcp:serve`) — for local clients such as Claude Desktop.
+
+Both transports register the same tools and call the same services layer.
 
 ### Architecture
 
 ```
-┌─────────────────┐    stdio     ┌─────────────────┐
-│  AI Assistant   │ ←──────────→ │  MCP Server     │
-│  (Claude, etc.) │              │  lion-reader    │
-└─────────────────┘              └────────┬────────┘
-                                          │
-                                          │ uses
-                                          ▼
-                                 ┌─────────────────┐
-                                 │ Services Layer  │
-                                 │ (same as tRPC)  │
-                                 └────────┬────────┘
-                                          │
-                                          ▼
-                                 ┌─────────────────┐
-                                 │   PostgreSQL    │
-                                 └─────────────────┘
+┌─────────────────┐  HTTP (OAuth/API token)   ┌─────────────────┐
+│  Remote client  │ ───────POST /api/mcp────→ │                 │
+│  (claude.ai)    │                           │  MCP Server     │
+└─────────────────┘                           │  lion-reader    │
+┌─────────────────┐         stdio             │  (shared tools) │
+│  Local client   │ ←───────────────────────→ │                 │
+│ (Claude Desktop)│                           └────────┬────────┘
+└─────────────────┘                                    │
+                                                       │ uses
+                                                       ▼
+                                              ┌─────────────────┐
+                                              │ Services Layer  │
+                                              │ (same as tRPC)  │
+                                              └────────┬────────┘
+                                                       │
+                                                       ▼
+                                              ┌─────────────────┐
+                                              │   PostgreSQL    │
+                                              └─────────────────┘
 ```
 
 ### Available Tools
@@ -432,11 +440,13 @@ Lion Reader exposes functionality to AI assistants via the [Model Context Protoc
 
 ### Running the MCP Server
 
+For local stdio clients (e.g. Claude Desktop):
+
 ```bash
 pnpm mcp:serve
 ```
 
-The server uses stdio transport and can be configured in AI assistant tools that support MCP (like Claude Desktop).
+Remote clients connect to the deployed app's `POST /api/mcp` endpoint over Streamable HTTP, authenticating with an OAuth 2.1 access token (`mcp` scope) or a scoped API token.
 
 ---
 
