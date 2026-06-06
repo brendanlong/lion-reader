@@ -103,7 +103,7 @@
     "@types/pg": "^8.16.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "esbuild": "^0.27.7",
+    "esbuild": "^0.28.0",
     "eslint": "^9.39.2",
     "eslint-config-next": "16.2.6",
     "fake-indexeddb": "^6.2.5",
