@@ -121,22 +121,29 @@ export interface EntryState {
   id: string;
   read: boolean;
   starred: boolean;
+  updatedAt: Date;
 }
 
-export interface SubscriptionUnreadCount {
-  subscriptionId: string;
-  unreadCount: number;
+/**
+ * A single entry to mark read/unread, with an optional per-entry timestamp for
+ * offline sync scenarios where entries were marked at different times.
+ */
+export interface MarkReadEntry {
+  id: string;
+  changedAt?: Date;
 }
 
-export interface TagUnreadCount {
-  tagId: string;
-  unreadCount: number;
-}
-
-export interface MarkReadResult {
-  entries: EntryState[];
-  subscriptionUnreadCounts: SubscriptionUnreadCount[];
-  tagUnreadCounts: TagUnreadCount[];
+/**
+ * Final entry state returned after marking read, including the context fields
+ * needed for cache updates, count queries, and SSE publishing.
+ */
+export interface MarkReadEntryState {
+  id: string;
+  subscriptionId: string | null;
+  read: boolean;
+  starred: boolean;
+  type: "web" | "email" | "saved";
+  updatedAt: Date;
 }
 
 // ============================================================================
@@ -572,119 +579,92 @@ export async function getEntries(
  * Marks entries as read or unread.
  *
  * Uses idempotent updates: only applies if changedAt is newer than the stored
- * read_changed_at timestamp. This prevents stale updates from overwriting newer state.
+ * read_changed_at timestamp. This prevents stale updates from overwriting newer
+ * state. Supports per-entry timestamps for offline sync.
  *
- * @param changedAt - When the user initiated the action. Defaults to now.
+ * Sets the implicit score signal flags (see docs/features/entry-scoring.md):
+ * - `has_marked_unread` whenever marking unread
+ * - `has_marked_read_on_list` when marking read with `fromList`
+ *
+ * Returns the final state for all requested entries with the context fields
+ * needed for cache updates, count queries, and SSE publishing.
+ *
+ * @param options.fromList - Whether the mark-read originated from the entry list
+ *   (weak negative signal). Only meaningful when marking read.
  */
 export async function markEntriesRead(
   db: typeof dbType,
   userId: string,
-  entryIds: string[],
+  entriesToMark: MarkReadEntry[],
   read: boolean,
-  changedAt: Date = new Date()
-): Promise<MarkReadResult> {
-  if (entryIds.length === 0) {
-    return { entries: [], subscriptionUnreadCounts: [], tagUnreadCounts: [] };
+  options: { fromList?: boolean } = {}
+): Promise<MarkReadEntryState[]> {
+  if (entriesToMark.length === 0) {
+    return [];
   }
 
-  if (entryIds.length > 1000) {
+  if (entriesToMark.length > 1000) {
     throw errors.validation("Maximum 1000 entries per request");
   }
 
-  // Conditional update: only apply if incoming timestamp is newer or equal
-  await db
-    .update(userEntries)
-    .set({
-      read,
-      readChangedAt: changedAt,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(userEntries.userId, userId),
-        inArray(userEntries.entryId, entryIds),
-        or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))
-      )
-    );
+  const now = new Date();
 
-  // Always return final state for all requested entries
-  const finalEntries = await db
+  // Build the SET clause, including implicit score signal flags
+  const setClause: Record<string, unknown> = {
+    read,
+    updatedAt: now,
+  };
+  if (read && options.fromList) {
+    // Marking read from the entry list → implicit -1
+    setClause.hasMarkedReadOnList = true;
+  } else if (!read) {
+    // Marking unread from anywhere → implicit 0 (overrides read-on-list penalty)
+    setClause.hasMarkedUnread = true;
+  }
+
+  // Group entries by timestamp for efficient batch updates. Most interactive
+  // cases share a single timestamp; per-entry timestamps come from offline sync.
+  const entriesByTimestamp = new Map<string, string[]>();
+  for (const entry of entriesToMark) {
+    const ts = (entry.changedAt ?? now).toISOString();
+    const existing = entriesByTimestamp.get(ts) ?? [];
+    existing.push(entry.id);
+    entriesByTimestamp.set(ts, existing);
+  }
+
+  // Conditional update per timestamp group: only apply if incoming timestamp is
+  // newer or equal than the stored read_changed_at (or it is NULL).
+  for (const [tsIso, entryIds] of entriesByTimestamp) {
+    const changedAt = new Date(tsIso);
+    await db
+      .update(userEntries)
+      .set({
+        ...setClause,
+        readChangedAt: changedAt,
+      })
+      .where(
+        and(
+          eq(userEntries.userId, userId),
+          inArray(userEntries.entryId, entryIds),
+          or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))
+        )
+      );
+  }
+
+  // Always return final state for all requested entries, including the context
+  // fields callers need for cache updates and count queries.
+  const allEntryIds = entriesToMark.map((e) => e.id);
+  return db
     .select({
-      id: userEntries.entryId,
-      read: userEntries.read,
-      starred: userEntries.starred,
+      id: visibleEntries.id,
+      subscriptionId: visibleEntries.subscriptionId,
+      read: visibleEntries.read,
+      starred: visibleEntries.starred,
+      type: visibleEntries.type,
+      updatedAt: visibleEntries.updatedAt,
     })
-    .from(userEntries)
-    .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
-
-  // Get affected feed IDs
-  const affectedFeedsSubquery = db
-    .selectDistinct({ feedId: entries.feedId })
-    .from(entries)
-    .where(inArray(entries.id, entryIds))
-    .as("affected_feeds");
-
-  // Find subscriptions containing the affected feeds via subscription_feeds junction table
-  const affectedSubscriptionsSubquery = db
-    .selectDistinct({ subscriptionId: subscriptions.id })
-    .from(subscriptions)
-    .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt),
-        inArray(subscriptionFeeds.feedId, sql`(SELECT feed_id FROM ${affectedFeedsSubquery})`)
-      )
-    )
-    .as("affected_subscriptions");
-
-  const subscriptionUnreadCounts = await db
-    .select({
-      subscriptionId: affectedSubscriptionsSubquery.subscriptionId,
-      unreadCount: sql<number>`COALESCE(COUNT(*) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
-    })
-    .from(affectedSubscriptionsSubquery)
-    .leftJoin(
-      subscriptionFeeds,
-      eq(subscriptionFeeds.subscriptionId, affectedSubscriptionsSubquery.subscriptionId)
-    )
-    .leftJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
-    .leftJoin(userEntries, and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId)))
-    .groupBy(affectedSubscriptionsSubquery.subscriptionId);
-
-  // Get tag unread counts for tags associated with affected subscriptions
-  const affectedTagsSubquery = db
-    .selectDistinct({ tagId: subscriptionTags.tagId })
-    .from(subscriptionTags)
-    .where(
-      inArray(
-        subscriptionTags.subscriptionId,
-        sql`(SELECT subscription_id FROM ${affectedSubscriptionsSubquery})`
-      )
-    )
-    .as("affected_tags");
-
-  const tagUnreadCounts = await db
-    .select({
-      tagId: affectedTagsSubquery.tagId,
-      unreadCount: sql<number>`COALESCE(COUNT(*) FILTER (WHERE ${userEntries.read} = false), 0)::int`,
-    })
-    .from(affectedTagsSubquery)
-    .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, affectedTagsSubquery.tagId))
-    .leftJoin(
-      subscriptions,
-      and(
-        eq(subscriptionTags.subscriptionId, subscriptions.id),
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt)
-      )
-    )
-    .leftJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
-    .leftJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
-    .leftJoin(userEntries, and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId)))
-    .groupBy(affectedTagsSubquery.tagId);
-
-  return { entries: finalEntries, subscriptionUnreadCounts, tagUnreadCounts };
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
 }
 
 /**
@@ -843,6 +823,9 @@ export async function markAllEntriesRead(
  * Uses idempotent updates: only applies if changedAt is newer than the stored
  * starred_changed_at timestamp. This prevents stale updates from overwriting newer state.
  *
+ * Sets the `has_starred` implicit score signal flag when starring (see
+ * docs/features/entry-scoring.md).
+ *
  * @param changedAt - When the user initiated the action. Defaults to now.
  */
 export async function updateEntryStarred(
@@ -852,14 +835,20 @@ export async function updateEntryStarred(
   starred: boolean,
   changedAt: Date = new Date()
 ): Promise<EntryState> {
+  // Build the SET clause, setting the implicit signal flag when starring
+  const setClause: Record<string, unknown> = {
+    starred,
+    starredChangedAt: changedAt,
+    updatedAt: new Date(),
+  };
+  if (starred) {
+    setClause.hasStarred = true;
+  }
+
   // Conditional update: only apply if incoming timestamp is newer or equal
   await db
     .update(userEntries)
-    .set({
-      starred,
-      starredChangedAt: changedAt,
-      updatedAt: new Date(),
-    })
+    .set(setClause)
     .where(
       and(
         eq(userEntries.userId, userId),
@@ -868,15 +857,16 @@ export async function updateEntryStarred(
       )
     );
 
-  // Always return final state
+  // Always return final state from visibleEntries (includes computed updatedAt)
   const result = await db
     .select({
-      id: userEntries.entryId,
-      read: userEntries.read,
-      starred: userEntries.starred,
+      id: visibleEntries.id,
+      read: visibleEntries.read,
+      starred: visibleEntries.starred,
+      updatedAt: visibleEntries.updatedAt,
     })
-    .from(userEntries)
-    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)));
 
   if (result.length === 0) {
     throw errors.entryNotFound();

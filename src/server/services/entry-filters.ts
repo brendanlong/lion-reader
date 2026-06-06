@@ -62,8 +62,10 @@ export interface EntryFilterResult {
 
 /**
  * Gets feed IDs for a subscription from the subscription_feeds junction table.
+ * Validates subscription ownership via the user_feeds view. Returns null if the
+ * subscription doesn't exist or doesn't belong to the user.
  */
-async function getSubscriptionFeedIds(
+export async function getSubscriptionFeedIds(
   db: typeof dbType,
   subscriptionId: string,
   userId: string

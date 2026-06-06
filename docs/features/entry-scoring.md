@@ -83,13 +83,14 @@ export function computeImplicitScore(
 
 ### Setting Implicit Flags
 
-Flags are set in the relevant mutations:
+Flags are set in the shared service functions (`src/server/services/entries.ts`),
+so every API surface (tRPC, MCP, Google Reader, Wallabag) records the same signals:
 
-- **`has_starred`**: Set in `entries.star` mutation when starring
-- **`has_marked_unread`**: Set in `entries.markRead` when `read = false`
-- **`has_marked_read_on_list`**: Set in `entries.markRead` when `read = true` AND `fromList = true`
+- **`has_starred`**: Set in `updateEntryStarred` when starring
+- **`has_marked_unread`**: Set in `markEntriesRead` when `read = false`
+- **`has_marked_read_on_list`**: Set in `markEntriesRead` when `read = true` AND `fromList = true`
 
-The `fromList` parameter is passed by the frontend when the mark-read action originates from the entry list (not from within the entry view).
+The `fromList` parameter is passed by the frontend when the mark-read action originates from the entry list (not from within the entry view). Other API surfaces don't have a list view, so they never set `has_marked_read_on_list`.
 
 ## UI Components
 

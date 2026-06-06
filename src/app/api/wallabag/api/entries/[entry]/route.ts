@@ -69,7 +69,7 @@ export async function PATCH(
   // Handle archive (read) state
   if (body.archive !== undefined) {
     const read = body.archive === "1";
-    await entriesService.markEntriesRead(db, auth.userId, [entryId], read);
+    await entriesService.markEntriesRead(db, auth.userId, [{ id: entryId }], read);
   }
 
   // Handle starred state
