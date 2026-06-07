@@ -12,7 +12,9 @@ import {
   createTRPCRouter,
   confirmedProtectedProcedure as protectedProcedure,
   expensiveConfirmedProtectedProcedure as expensiveProtectedProcedure,
+  scopedProtectedProcedure,
 } from "../trpc";
+import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
@@ -38,6 +40,9 @@ import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
+
+// Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
+const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
 
 // ============================================================================
 // Validation Schemas
@@ -229,7 +234,7 @@ export const subscriptionsRouter = createTRPCRouter({
    *
    * Returns subscriptions with their associated feed information and unread counts.
    */
-  list: protectedProcedure
+  list: mcpProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -270,7 +275,7 @@ export const subscriptionsRouter = createTRPCRouter({
    *
    * Returns the subscription with its associated feed information and unread count.
    */
-  get: protectedProcedure
+  get: mcpProcedure
     .meta({
       openapi: {
         method: "GET",

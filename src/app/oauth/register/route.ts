@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { registerClient, type ClientRegistrationRequest } from "@/server/oauth/service";
+import { checkRouteRateLimit } from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
 
 /**
@@ -16,6 +17,14 @@ import { logger } from "@/lib/logger";
  */
 export async function POST(request: NextRequest) {
   logger.info("OAuth client registration requested");
+
+  // Dynamic Client Registration is open (no auth) per RFC 7591, so rate-limit by
+  // IP to prevent anonymous client-spam. Uses the strict "expensive" bucket.
+  const rateLimited = await checkRouteRateLimit(request, "expensive", { json: true });
+  if (rateLimited) {
+    return rateLimited;
+  }
+
   // Parse JSON body
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {

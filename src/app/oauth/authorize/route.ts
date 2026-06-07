@@ -19,12 +19,13 @@ import {
   isValidCodeChallenge,
   validateRedirectUri,
   isValidRedirectUriFormat,
+  isResourceForThisServer,
   parseScopes,
   validateScopes,
   OAUTH_ERRORS,
   createOAuthError,
 } from "@/server/oauth/utils";
-import { getIssuer } from "@/server/oauth/config";
+import { getIssuer, getProtectedResourceMetadata } from "@/server/oauth/config";
 import { logger } from "@/lib/logger";
 
 /**
@@ -177,6 +178,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Validate the RFC 8707 resource indicator (server-side audience binding).
+  // A token issued here is only ever valid for this server's MCP endpoint, so a
+  // client requesting a different resource is rejected. When omitted, we bind to
+  // our canonical resource so every token is audience-restricted.
+  const canonicalResource = getProtectedResourceMetadata().resource;
+  if (resource !== undefined && !isResourceForThisServer(resource, canonicalResource)) {
+    return buildErrorRedirect(
+      redirectUri,
+      OAUTH_ERRORS.INVALID_TARGET,
+      "The requested resource is not served by this authorization server",
+      state
+    );
+  }
+  const effectiveResource = resource ?? canonicalResource;
+
   // Check if user is authenticated
   const sessionToken = getSessionToken(request);
   if (!sessionToken) {
@@ -210,9 +226,7 @@ export async function GET(request: NextRequest) {
     if (state) {
       consentUrl.searchParams.set("state", state);
     }
-    if (resource) {
-      consentUrl.searchParams.set("resource", resource);
-    }
+    consentUrl.searchParams.set("resource", effectiveResource);
     return NextResponse.redirect(consentUrl.toString());
   }
 
@@ -223,7 +237,7 @@ export async function GET(request: NextRequest) {
     redirectUri,
     scopes: validScopes,
     codeChallenge,
-    resource,
+    resource: effectiveResource,
     state,
   });
 
@@ -286,6 +300,18 @@ export async function POST(request: NextRequest) {
   const userId = session.user.id;
   const scopes = scope ? scope.split(" ") : ["mcp"];
 
+  // Validate / bind the RFC 8707 resource indicator (see GET handler).
+  const canonicalResource = getProtectedResourceMetadata().resource;
+  if (resource !== undefined && !isResourceForThisServer(resource, canonicalResource)) {
+    return buildErrorRedirect(
+      redirectUri,
+      OAUTH_ERRORS.INVALID_TARGET,
+      "The requested resource is not served by this authorization server",
+      state
+    );
+  }
+  const effectiveResource = resource ?? canonicalResource;
+
   // Handle user decision
   if (action === "deny") {
     return buildErrorRedirect(
@@ -307,7 +333,7 @@ export async function POST(request: NextRequest) {
       redirectUri,
       scopes,
       codeChallenge,
-      resource,
+      resource: effectiveResource,
       state,
     });
 

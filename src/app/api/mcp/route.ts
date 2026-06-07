@@ -24,7 +24,7 @@ import { db } from "@/server/db";
 import { registerTools } from "@/server/mcp/tools";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { validateAccessToken } from "@/server/oauth/service";
-import { OAUTH_SCOPES } from "@/server/oauth/utils";
+import { OAUTH_SCOPES, isResourceForThisServer } from "@/server/oauth/utils";
 import { getProtectedResourceMetadata } from "@/server/oauth/config";
 import { logger } from "@/lib/logger";
 
@@ -62,6 +62,19 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
         scopes: oauthToken.scopes,
       });
       return { success: false, reason: "oauth_token_missing_mcp_scope" };
+    }
+    // Enforce RFC 8707 audience binding: a token minted for a different resource
+    // must not be accepted here. Newly issued tokens always carry a resource
+    // (bound at authorization time); only legacy tokens issued before audience
+    // binding may have a null resource, which we still accept.
+    const expectedResource = getProtectedResourceMetadata().resource;
+    if (oauthToken.resource && !isResourceForThisServer(oauthToken.resource, expectedResource)) {
+      logger.warn("MCP auth: OAuth token resource/audience mismatch", {
+        userId: oauthToken.userId,
+        tokenResource: oauthToken.resource,
+        expectedResource,
+      });
+      return { success: false, reason: "oauth_token_audience_mismatch" };
     }
     return { success: true, userId: oauthToken.userId };
   }
