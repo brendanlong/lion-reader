@@ -670,8 +670,12 @@ export async function registerClient(
   let scopes: string[] | null = null;
   if (request.scope) {
     const requestedScopes = request.scope.split(" ");
-    const validScopes = requestedScopes.filter((s) =>
-      supportedScopes.includes(s as (typeof supportedScopes)[number])
+    const validScopes = Array.from(
+      new Set(
+        requestedScopes.filter((s) =>
+          supportedScopes.includes(s as (typeof supportedScopes)[number])
+        )
+      )
     );
     if (validScopes.length === 0) {
       return {

@@ -24,9 +24,6 @@ import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
-
-// Saved-article reads/management are part of the MCP tool surface (`mcp` scope).
-const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
@@ -61,6 +58,9 @@ import {
 } from "@/server/file/process-upload";
 import { pluginRegistry } from "@/server/plugins";
 import { generateContentHash, createUploadedArticle } from "@/server/services/saved";
+
+// Saved-article reads/management are part of the MCP tool surface (`mcp` scope).
+const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
 
 // ============================================================================
 // Validation Schemas

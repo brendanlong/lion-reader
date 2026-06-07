@@ -20,9 +20,6 @@ import {
 } from "../trpc";
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
-
-// Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
-const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
 import { uuidSchema } from "../validation";
 import {
   entries,
@@ -38,6 +35,9 @@ import * as countsService from "@/server/services/counts";
 import { getSubscriptionFeedIds } from "@/server/services/entry-filters";
 import { publishEntryStateChanged } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
+
+// Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
+const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
 
 // ============================================================================
 // Constants
