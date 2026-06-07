@@ -123,7 +123,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["html-rewriter-wasm", "piscina", "trpc-to-openapi"],
   // Handle piper-tts-web which has conditional Node.js code (require('fs'))
   // that the bundler tries to resolve even though it only runs in Node.js
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, nextRuntime }) => {
     if (!isServer) {
       // Stub out Node.js modules for client bundles
       config.resolve.fallback = {
@@ -131,6 +131,17 @@ const nextConfig: NextConfig = {
         fs: false,
         path: false,
       };
+    }
+    // isomorphic-dompurify pulls in jsdom during SSR of `"use client"` components
+    // (e.g. EntryContentBody). jsdom reads browser/default-stylesheet.css via
+    // `path.resolve(__dirname, ...)` at runtime; bundling breaks __dirname so the
+    // read resolves to a bogus path (e.g. /app/browser/default-stylesheet.css) and
+    // throws ENOENT mid-stream, producing a 500 status even though the shell already
+    // rendered. `serverExternalPackages` doesn't cover deps reached through the
+    // client-component SSR graph, so force-externalize jsdom on the Node server build
+    // to load it from node_modules where the __dirname-relative read resolves.
+    if (isServer && nextRuntime === "nodejs") {
+      config.externals.push({ jsdom: "commonjs jsdom" });
     }
     config.devtool = "source-map";
     return config;
