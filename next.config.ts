@@ -141,7 +141,10 @@ const nextConfig: NextConfig = {
     // client-component SSR graph, so force-externalize jsdom on the Node server build
     // to load it from node_modules where the __dirname-relative read resolves.
     if (isServer && nextRuntime === "nodejs") {
-      config.externals.push({ jsdom: "commonjs jsdom" });
+      // Bare string (not { jsdom: "commonjs jsdom" }) so webpack emits the external
+      // in whatever module format the server build uses, staying correct if Next
+      // ever switches the Node server output to ESM.
+      config.externals.push("jsdom");
     }
     config.devtool = "source-map";
     return config;
