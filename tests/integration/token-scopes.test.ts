@@ -107,6 +107,16 @@ async function expectForbidden(promise: Promise<unknown>): Promise<void> {
   });
 }
 
+/**
+ * Asserts the promise rejects with a non-FORBIDDEN TRPCError code, which proves
+ * the scope gate let the request through (it failed later, e.g. on input
+ * validation or a missing record, not on authorization).
+ */
+async function expectPassedScopeGate(promise: Promise<unknown>, code: string): Promise<void> {
+  await expect(promise).rejects.toMatchObject({ code });
+  expect(code).not.toBe("FORBIDDEN");
+}
+
 afterAll(async () => {
   for (const userId of createdUserIds) {
     await db.delete(users).where(eq(users.id, userId));
@@ -148,6 +158,40 @@ describe("API token scope enforcement", () => {
       const caller = createCaller(createTokenContext(userId, []));
 
       await expectForbidden(caller.entries.list({}));
+    });
+  });
+
+  describe("saved-article endpoints (any-of scope behavior)", () => {
+    // saved.save accepts saved:write OR mcp. We use an invalid URL so the call
+    // fails input validation (BAD_REQUEST) *after* the scope gate, proving the
+    // gate allowed the request without performing a real network fetch.
+    it("saved.save accepts both saved:write and mcp tokens", async () => {
+      const writeUser = await createTestUser();
+      const mcpUser = await createTestUser();
+      const writeCaller = createCaller(createTokenContext(writeUser, ["saved:write"]));
+      const mcpCaller = createCaller(createTokenContext(mcpUser, ["mcp"]));
+
+      await expectPassedScopeGate(writeCaller.saved.save({ url: "not-a-url" }), "BAD_REQUEST");
+      await expectPassedScopeGate(mcpCaller.saved.save({ url: "not-a-url" }), "BAD_REQUEST");
+    });
+
+    it("saved.save rejects a token with no scopes", async () => {
+      const userId = await createTestUser();
+      const caller = createCaller(createTokenContext(userId, []));
+
+      await expectForbidden(caller.saved.save({ url: "not-a-url" }));
+    });
+
+    // saved.delete requires the mcp scope. A non-existent id yields NOT_FOUND for
+    // an mcp token (gate passed) but FORBIDDEN for a saved:write-only token.
+    it("saved.delete requires mcp; saved:write is rejected", async () => {
+      const mcpUser = await createTestUser();
+      const writeUser = await createTestUser();
+      const mcpCaller = createCaller(createTokenContext(mcpUser, ["mcp"]));
+      const writeCaller = createCaller(createTokenContext(writeUser, ["saved:write"]));
+
+      await expectPassedScopeGate(mcpCaller.saved.delete({ id: generateUuidv7() }), "NOT_FOUND");
+      await expectForbidden(writeCaller.saved.delete({ id: generateUuidv7() }));
     });
   });
 
