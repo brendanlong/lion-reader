@@ -22,12 +22,11 @@ import { eq, and } from "drizzle-orm";
 import { Parser } from "htmlparser2";
 import { TRPCError } from "@trpc/server";
 
-import {
-  createTRPCRouter,
-  confirmedProtectedProcedure as protectedProcedure,
-  scopedProtectedProcedure,
-} from "../trpc";
+import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
+
+// Saved-article reads/management are part of the MCP tool surface (`mcp` scope).
+const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
@@ -220,7 +219,7 @@ export const savedRouter = createTRPCRouter({
    * @param title - Optional title hint (from bookmarklet's document.title)
    * @returns The saved article
    */
-  save: scopedProtectedProcedure(API_TOKEN_SCOPES.SAVED_WRITE)
+  save: scopedProtectedProcedure([API_TOKEN_SCOPES.SAVED_WRITE, API_TOKEN_SCOPES.MCP])
     .meta({
       openapi: {
         method: "POST",
@@ -794,7 +793,7 @@ export const savedRouter = createTRPCRouter({
    * @param id - The saved article ID to delete
    * @returns Empty object on success
    */
-  delete: protectedProcedure
+  delete: mcpProcedure
     .meta({
       openapi: {
         method: "DELETE",
@@ -853,7 +852,7 @@ export const savedRouter = createTRPCRouter({
    * @param title - Optional title override
    * @returns The saved article
    */
-  uploadFile: protectedProcedure
+  uploadFile: mcpProcedure
     .meta({
       openapi: {
         method: "POST",

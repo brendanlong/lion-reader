@@ -148,12 +148,42 @@ const authMiddleware = t.middleware(({ ctx, next }) => {
 });
 
 /**
- * Protected procedure - requires authentication.
+ * Middleware that rejects API token / OAuth token auth, allowing only browser
+ * sessions. This makes scope enforcement fail-closed: any endpoint that does not
+ * explicitly opt into a token scope (via `scopedProtectedProcedure`) is
+ * session-only, so tokens cannot reach account-management or other sensitive
+ * operations even though they produce a synthetic session in the context.
+ *
+ * Must be chained after authMiddleware.
+ */
+const sessionOnlyMiddleware = t.middleware(({ ctx, next }) => {
+  if (ctx.authType !== "session") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "API tokens cannot access this endpoint; it requires a logged-in session",
+    });
+  }
+  // session/sessionToken are guaranteed non-null for session auth (authMiddleware
+  // ran first); re-pass them so downstream procedures keep the narrowed types.
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session!,
+      sessionToken: ctx.sessionToken!,
+    },
+  });
+});
+
+/**
+ * Protected procedure - requires a browser session (not an API token).
  * The session is guaranteed to be non-null in the handler.
  * Does NOT require signup confirmation — use for auth management endpoints
  * (auth.me, auth.confirmSignup, auth.logout, etc.)
  */
-export const protectedProcedure = t.procedure.use(timingMiddleware).use(authMiddleware);
+export const protectedProcedure = t.procedure
+  .use(timingMiddleware)
+  .use(authMiddleware)
+  .use(sessionOnlyMiddleware);
 
 /**
  * Middleware that enforces signup confirmation.
@@ -187,6 +217,7 @@ const confirmedMiddleware = t.middleware(({ ctx, next }) => {
 export const confirmedProtectedProcedure = t.procedure
   .use(timingMiddleware)
   .use(authMiddleware)
+  .use(sessionOnlyMiddleware)
   .use(confirmedMiddleware);
 
 // ============================================================================
@@ -194,24 +225,27 @@ export const confirmedProtectedProcedure = t.procedure
 // ============================================================================
 
 /**
- * Creates a middleware that enforces a specific API token scope.
- * Session-based auth (browser) has full access; API tokens must have the scope.
+ * Creates a middleware that enforces API token scopes.
+ * Session-based auth (browser) has full access; tokens must hold at least one
+ * of the required scopes (any-of).
  *
  * Must be chained after authMiddleware to receive narrowed types.
  */
-function createScopeMiddleware(requiredScope: ApiTokenScope) {
+function createScopeMiddleware(requiredScopes: ApiTokenScope[]) {
   return t.middleware(({ ctx, next }) => {
     // Session and sessionToken are guaranteed non-null after authMiddleware
     const session = ctx.session!;
     const sessionToken = ctx.sessionToken!;
 
-    // API token auth - must have the required scope
-    // Session auth (browser) has full access - no scope restrictions
-    if (ctx.authType === "api_token") {
-      if (!ctx.scopes.includes(requiredScope)) {
+    // Token auth (API token / OAuth) must hold one of the required scopes.
+    // Session auth (browser) has full access - no scope restrictions.
+    if (ctx.authType !== "session") {
+      const hasScope = requiredScopes.some((scope) => ctx.scopes.includes(scope));
+      if (!hasScope) {
+        const list = requiredScopes.map((s) => `'${s}'`).join(" or ");
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: `This operation requires the '${requiredScope}' scope`,
+          message: `This operation requires the ${list} scope`,
         });
       }
     }
@@ -228,18 +262,19 @@ function createScopeMiddleware(requiredScope: ApiTokenScope) {
 }
 
 /**
- * Creates a protected procedure that requires a specific API token scope.
- * Session-based auth has full access; API tokens must have the specified scope.
- * Also requires signup confirmation.
+ * Creates a protected procedure that requires an API token scope.
+ * Session-based auth has full access; tokens must hold at least one of the
+ * specified scopes. Also requires signup confirmation.
  *
- * @param scope - The required scope for API token access
+ * @param scopes - The required scope(s) for token access (any-of)
  */
-export function scopedProtectedProcedure(scope: ApiTokenScope) {
+export function scopedProtectedProcedure(scopes: ApiTokenScope | ApiTokenScope[]) {
+  const requiredScopes = Array.isArray(scopes) ? scopes : [scopes];
   return t.procedure
     .use(timingMiddleware)
     .use(authMiddleware)
     .use(confirmedMiddleware)
-    .use(createScopeMiddleware(scope));
+    .use(createScopeMiddleware(requiredScopes));
 }
 
 // ============================================================================
@@ -344,6 +379,7 @@ export const expensivePublicProcedure = t.procedure
 export const expensiveProtectedProcedure = t.procedure
   .use(timingMiddleware)
   .use(authMiddleware)
+  .use(sessionOnlyMiddleware)
   .use(createAuthenticatedRateLimitMiddleware("expensive"));
 
 /**
@@ -354,6 +390,7 @@ export const expensiveProtectedProcedure = t.procedure
 export const expensiveConfirmedProtectedProcedure = t.procedure
   .use(timingMiddleware)
   .use(authMiddleware)
+  .use(sessionOnlyMiddleware)
   .use(confirmedMiddleware)
   .use(createAuthenticatedRateLimitMiddleware("expensive"));
 

@@ -63,6 +63,17 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
       });
       return { success: false, reason: "oauth_token_missing_mcp_scope" };
     }
+    // Enforce RFC 8707 audience binding: a token minted for a different resource
+    // must not be accepted here. We only validate when a resource was recorded
+    // (tokens issued without a resource indicator are not audience-restricted).
+    if (oauthToken.resource && oauthToken.resource !== getProtectedResourceMetadata().resource) {
+      logger.warn("MCP auth: OAuth token resource/audience mismatch", {
+        userId: oauthToken.userId,
+        tokenResource: oauthToken.resource,
+        expectedResource: getProtectedResourceMetadata().resource,
+      });
+      return { success: false, reason: "oauth_token_audience_mismatch" };
+    }
     return { success: true, userId: oauthToken.userId };
   }
 

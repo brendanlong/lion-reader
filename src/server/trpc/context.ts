@@ -127,10 +127,18 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
     };
   }
 
-  // Try API token validation
+  // Try API token validation.
+  //
+  // Note: OAuth 2.1 access tokens are intentionally NOT accepted here. They are
+  // audience-bound to the MCP endpoint (`/api/mcp`, see validateAccessToken +
+  // the RFC 8707 resource check there). The main tRPC/REST API is reachable only
+  // via browser sessions and legacy API tokens.
   const apiTokenData = await validateApiToken(token);
   if (apiTokenData) {
-    // Create a synthetic session for compatibility with existing code
+    // Build a synthetic session so downstream code can read user data uniformly.
+    // This does NOT grant full access: token requests carry the token's scopes
+    // (below) and every protected procedure is either session-only or enforces a
+    // scope via `scopedProtectedProcedure`. See src/server/trpc/trpc.ts.
     const syntheticSession: SessionData = {
       session: {
         id: apiTokenData.token.id,

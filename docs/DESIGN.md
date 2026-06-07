@@ -199,6 +199,30 @@ Each provider is enabled by setting its environment variables (client ID and sec
 
 Session tokens are 32 random bytes, base64url encoded. We store SHA-256 hash in database (never the raw token).
 
+### Token Scopes & Authorization
+
+Authorization is **fail-closed** for tokens. There are three credential types:
+
+- **Browser sessions**: full access. Scopes do not apply (`scopes` is a token-only concept).
+- **API tokens** (`api_tokens`, used by extensions/integrations and the legacy MCP path): restricted to their granted scopes.
+- **OAuth 2.1 access tokens**: audience-bound to the MCP endpoint only (see below).
+
+Available scopes (`API_TOKEN_SCOPES` / `OAUTH_SCOPES`):
+
+| Scope         | Grants                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `mcp`         | The MCP tool surface: entries list/get/mark-read/star/count, subscriptions list/get, tag CRUD, saved delete/upload |
+| `saved:write` | Saving articles (`saved.save`) only                                                                                |
+
+Enforcement (`src/server/trpc/trpc.ts`):
+
+- `protectedProcedure` / `confirmedProtectedProcedure` (and their `expensive*` variants) are **session-only** — token auth is rejected with `FORBIDDEN`. This protects account-management and other non-MCP endpoints (sessions, password, preferences, ingest addresses, blocked senders, OPML import, narration, summarization, feed stats, broken feeds, subscription create/update/delete/import/export, `entries.markAllRead`, `entries.fetchFullContent`) by default.
+- `scopedProtectedProcedure(scope | scope[])` opts an endpoint into token access; a token must hold at least one of the listed scopes (sessions bypass). The `mcp`-scoped endpoints mirror the MCP tools exactly; `saved.save` accepts `saved:write` or `mcp`.
+
+Because the default is session-only, **new endpoints are token-inaccessible until they explicitly opt in**.
+
+OAuth access tokens are validated only at `POST /api/mcp` (not in the main tRPC/REST context), where the `mcp` scope and the RFC 8707 `resource`/audience binding are both enforced — a token minted for a different resource is rejected. Dynamic Client Registration (`/oauth/register`) is open per RFC 7591 but rate-limited; it stores only the supported subset of requested scopes and rejects registration if none are recognized (it never falls back to "all scopes").
+
 ---
 
 ## Feed Processing

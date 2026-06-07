@@ -660,17 +660,29 @@ export async function registerClient(
     responseTypes.push("code");
   }
 
-  // Validate scope
+  // Validate scope. A client that requests scopes gets exactly the supported
+  // subset of those scopes. If none of the requested scopes are recognized we
+  // reject the registration rather than silently broadening to "all scopes"
+  // (defaulting unknown scopes to null/all is a privilege-escalation footgun).
+  // When no scope is requested, scopes stays null (client may later request any
+  // supported scope at authorization time, subject to user consent).
   const supportedScopes = Object.values(OAUTH_SCOPES);
   let scopes: string[] | null = null;
   if (request.scope) {
     const requestedScopes = request.scope.split(" ");
-    scopes = requestedScopes.filter((s) =>
+    const validScopes = requestedScopes.filter((s) =>
       supportedScopes.includes(s as (typeof supportedScopes)[number])
     );
-    if (scopes.length === 0) {
-      scopes = null; // Allow all scopes if none of the requested scopes are valid
+    if (validScopes.length === 0) {
+      return {
+        success: false,
+        error: {
+          error: "invalid_client_metadata",
+          error_description: `None of the requested scopes are supported. Supported scopes: ${supportedScopes.join(", ")}`,
+        },
+      };
     }
+    scopes = validScopes;
   }
 
   // Generate client ID

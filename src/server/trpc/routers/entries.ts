@@ -13,8 +13,16 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { createHash } from "crypto";
 
-import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  confirmedProtectedProcedure as protectedProcedure,
+  scopedProtectedProcedure,
+} from "../trpc";
+import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
+
+// Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
+const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
 import { uuidSchema } from "../validation";
 import {
   entries,
@@ -305,7 +313,7 @@ export const entriesRouter = createTRPCRouter({
    * @param limit - Optional number of entries per page (default: 50, max: 100)
    * @returns Paginated list of entries
    */
-  list: protectedProcedure
+  list: mcpProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -365,7 +373,7 @@ export const entriesRouter = createTRPCRouter({
    * @param id - The entry ID
    * @returns The full entry with content and subscription data
    */
-  get: protectedProcedure
+  get: mcpProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -404,7 +412,7 @@ export const entriesRouter = createTRPCRouter({
    * @param read - Whether to mark as read (true) or unread (false)
    * @returns The updated entries with subscription context for cache updates
    */
-  markRead: protectedProcedure
+  markRead: mcpProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -563,7 +571,7 @@ export const entriesRouter = createTRPCRouter({
    * @param starred - Whether to star (true) or unstar (false)
    * @returns The updated entry with current state
    */
-  setStarred: protectedProcedure
+  setStarred: mcpProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -623,7 +631,7 @@ export const entriesRouter = createTRPCRouter({
    * @param starredOnly - Optional filter to count only starred entries
    * @returns Count of total and unread entries
    */
-  count: protectedProcedure
+  count: mcpProcedure
     .meta({
       openapi: {
         method: "GET",
