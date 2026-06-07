@@ -221,7 +221,14 @@ Enforcement (`src/server/trpc/trpc.ts`):
 
 Because the default is session-only, **new endpoints are token-inaccessible until they explicitly opt in**.
 
-OAuth access tokens are validated only at `POST /api/mcp` (not in the main tRPC/REST context), where the `mcp` scope and the RFC 8707 `resource`/audience binding are both enforced — a token minted for a different resource is rejected. Dynamic Client Registration (`/oauth/register`) is open per RFC 7591 but rate-limited; it stores only the supported subset of requested scopes and rejects registration if none are recognized (it never falls back to "all scopes").
+OAuth access tokens are validated only at `POST /api/mcp` (not in the main tRPC/REST context), where the `mcp` scope and the RFC 8707 `resource`/audience binding are both enforced — a token minted for a different resource is rejected.
+
+The audience binding is enforced on both sides:
+
+- **Mint time** (`/oauth/authorize`): the requested `resource` is validated against this server's canonical resource identifier (`getProtectedResourceMetadata().resource`); a mismatch is rejected with `invalid_target`. When `resource` is omitted, it defaults to the canonical identifier so every issued token is audience-bound. Comparison (`isResourceForThisServer`) ignores trailing slashes and is case-insensitive for scheme/host.
+- **Use time** (`/api/mcp`): the token's stored `resource` must match the canonical identifier. Only legacy tokens issued before audience binding may have a null `resource`, which is still accepted (they expire within an hour).
+
+Dynamic Client Registration (`/oauth/register`) is open per RFC 7591 but rate-limited; it stores only the supported subset of requested scopes and rejects registration if none are recognized (it never falls back to "all scopes").
 
 ---
 

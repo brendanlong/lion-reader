@@ -188,6 +188,41 @@ export function validateScopes(
 }
 
 // ============================================================================
+// Resource Indicator Validation (RFC 8707)
+// ============================================================================
+
+/**
+ * Normalizes a resource indicator for comparison: absolute URI, no fragment,
+ * trailing slashes on the path removed. Scheme and host are already
+ * lowercased by the URL parser. Returns null if the value is not a valid
+ * absolute URI or contains a fragment (RFC 8707 §2 forbids fragments).
+ */
+function normalizeResource(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.hash) {
+    return null;
+  }
+  const path = url.pathname.replace(/\/+$/, "");
+  return `${url.protocol}//${url.host}${path}${url.search}`;
+}
+
+/**
+ * Checks whether an RFC 8707 resource indicator refers to this server's
+ * canonical resource identifier. Comparison ignores trailing slashes and is
+ * case-insensitive for scheme/host. Returns false for malformed resources.
+ */
+export function isResourceForThisServer(resource: string, canonical: string): boolean {
+  const a = normalizeResource(resource);
+  const b = normalizeResource(canonical);
+  return a !== null && b !== null && a === b;
+}
+
+// ============================================================================
 // Expiry Calculation
 // ============================================================================
 
@@ -241,6 +276,8 @@ export const OAUTH_ERRORS = {
   INVALID_CLIENT_METADATA: "invalid_client_metadata",
   INVALID_SOFTWARE_STATEMENT: "invalid_software_statement",
   UNAPPROVED_SOFTWARE_STATEMENT: "unapproved_software_statement",
+  // RFC 8707 Resource Indicators
+  INVALID_TARGET: "invalid_target",
 } as const;
 
 export type OAuthError = (typeof OAUTH_ERRORS)[keyof typeof OAUTH_ERRORS];
