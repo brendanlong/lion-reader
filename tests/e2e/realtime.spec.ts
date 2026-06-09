@@ -1,0 +1,268 @@
+/**
+ * E2E tests for the realtime SSE → cache update flow.
+ *
+ * These tests verify the core "minimal-request" invariant: SSE events patch
+ * the React Query cache directly, they do NOT trigger refetches of entries,
+ * tags, or subscriptions queries. Events are published through the same Redis
+ * pub/sub functions the worker uses, so the full pipeline is exercised:
+ * Redis → SSE endpoint → EventSource → handleSyncEvent → cache → UI.
+ *
+ * Each test seeds a tagged feed and an untagged feed so it can assert that
+ * counts update correctly across every sidebar list (All Items, Starred,
+ * tag, subscription row, Uncategorized) — including that unaffected lists
+ * keep their counts.
+ */
+
+import { test, expect, type Page } from "@playwright/test";
+import {
+  publishNewEntry,
+  publishEntryStateChanged,
+  getFeedEventsChannel,
+  getUserEventsChannel,
+} from "../../src/server/redis/pubsub";
+import {
+  getDb,
+  createConfirmedUser,
+  createSubscribedFeed,
+  createTagOnSubscription,
+  createUnreadEntry,
+  starEntry,
+  markEntryRead,
+  loginAs,
+  waitForChannelSubscriber,
+  recordTrpcProcedures,
+  closeTestConnections,
+  type TestUser,
+  type TestFeed,
+  type TestEntry,
+} from "./helpers";
+
+test.afterAll(async () => {
+  await closeTestConnections();
+});
+
+interface RealtimeSetup {
+  user: TestUser;
+  taggedFeed: TestFeed;
+  tagId: string;
+  taggedEntries: TestEntry[];
+  trpcCalls: string[];
+}
+
+/**
+ * Seeds a user with:
+ * - a feed tagged "News" with two unread entries (optionally starring "Second post")
+ * - an untagged feed with one unread entry (exercises the Uncategorized list)
+ *
+ * Then logs in, opens /all, waits for the SSE connection plus its Redis
+ * channel subscriptions, and expands the News tag so the per-subscription
+ * unread count is visible (and the subscription is in cache, which the
+ * delta-based tag count updates rely on).
+ */
+async function seedAndOpenAll(
+  page: Page,
+  baseURL: string,
+  channelFor: (setup: { user: TestUser; taggedFeed: TestFeed }) => string,
+  options: { starSecondPost?: boolean; expandTag?: boolean } = {}
+): Promise<RealtimeSetup> {
+  const db = getDb();
+  const user = await createConfirmedUser(db);
+
+  const taggedFeed = await createSubscribedFeed(db, user.id);
+  const tagId = await createTagOnSubscription(db, user.id, taggedFeed.subscriptionId, "News");
+  const taggedEntries = [
+    await createUnreadEntry(db, {
+      feedId: taggedFeed.feedId,
+      userId: user.id,
+      title: "First post",
+    }),
+    await createUnreadEntry(db, {
+      feedId: taggedFeed.feedId,
+      userId: user.id,
+      title: "Second post",
+    }),
+  ];
+  if (options.starSecondPost) {
+    await starEntry(db, user.id, taggedEntries[1].id);
+  }
+
+  const untaggedFeed = await createSubscribedFeed(db, user.id);
+  await createUnreadEntry(db, {
+    feedId: untaggedFeed.feedId,
+    userId: user.id,
+    title: "Untagged post",
+  });
+
+  await loginAs(page.context(), user, baseURL);
+  const trpcCalls = recordTrpcProcedures(page);
+
+  // Resolves when the SSE response headers arrive (connection established)
+  const sseResponse = page.waitForResponse(
+    (response) => response.url().includes("/api/v1/events"),
+    { timeout: 90_000 }
+  );
+
+  await page.goto("/all");
+  await expect(page.locator('[aria-label*="article: First post"]')).toBeVisible();
+
+  // Expand the News tag so the subscription row (and its unread count) renders.
+  // This also puts the subscription in the subscriptions.list cache, which the
+  // delta-based tag count updates rely on (see #892 for the collapsed case).
+  if (options.expandTag !== false) {
+    await page
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("link", { name: /News/ }) })
+      .getByRole("button", { name: "Expand" })
+      .click();
+    await expect(page.getByRole("link", { name: new RegExp(taggedFeed.title) })).toBeVisible();
+  }
+
+  await sseResponse;
+  // The SSE handler subscribes to Redis channels asynchronously after the
+  // response starts; wait until it's actually listening before publishing.
+  await waitForChannelSubscriber(channelFor({ user, taggedFeed }));
+
+  return { user, taggedFeed, tagId, taggedEntries, trpcCalls };
+}
+
+function sidebarLinks(page: Page, taggedFeed: TestFeed) {
+  return {
+    allItems: page.getByRole("link", { name: /All Items/ }),
+    starred: page.getByRole("link", { name: /^Starred/ }),
+    newsTag: page.getByRole("link", { name: /News/ }),
+    subscriptionRow: page.getByRole("link", { name: new RegExp(taggedFeed.title) }),
+    uncategorized: page.getByRole("link", { name: /Uncategorized/ }),
+  };
+}
+
+/**
+ * Procedures that must never fire in response to a sync event — counts and
+ * entry state are patched directly into the cache (the delta-update invariant
+ * from src/FRONTEND_STATE.md).
+ */
+function refetchProcedures(trpcCalls: string[]): string[] {
+  return trpcCalls.filter(
+    (procedure) =>
+      procedure.startsWith("entries.") ||
+      procedure.startsWith("tags.") ||
+      procedure.startsWith("subscriptions.")
+  );
+}
+
+test("new_entry event updates unread counts in all affected lists without refetching", async ({
+  page,
+  baseURL,
+}) => {
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(page, baseURL!, ({ taggedFeed }) =>
+    getFeedEventsChannel(taggedFeed.feedId)
+  );
+  const links = sidebarLinks(page, taggedFeed);
+
+  await expect(links.allItems).toContainText("(3)");
+  await expect(links.newsTag).toContainText("(2)");
+  await expect(links.subscriptionRow).toContainText("(2)");
+  await expect(links.uncategorized).toContainText("(1)");
+
+  // Everything from here on must happen via the SSE event, not refetches
+  trpcCalls.length = 0;
+
+  const db = getDb();
+  const entry = await createUnreadEntry(db, {
+    feedId: taggedFeed.feedId,
+    userId: user.id,
+    title: "Realtime post",
+  });
+  await publishNewEntry(taggedFeed.feedId, entry.id, entry.updatedAt, "web");
+
+  // Affected lists increment (delta applied client-side)...
+  await expect(links.allItems).toContainText("(4)");
+  await expect(links.newsTag).toContainText("(3)");
+  await expect(links.subscriptionRow).toContainText("(3)");
+  // ...while unaffected lists keep their counts
+  await expect(links.uncategorized).toContainText("(1)");
+
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+// Skipped: known bug (#892). Tag deltas for new_entry are derived from cached
+// subscriptions.list data, which only exists once the tag has been expanded.
+// While the tag is collapsed (the default), the delta is silently skipped and
+// nothing invalidates tags.list, so the badge stays stale until an unrelated
+// refetch. This test encodes the intended behavior; unskip when #892 is fixed.
+test.skip("new_entry event updates a collapsed tag's unread count", async ({ page, baseURL }) => {
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(
+    page,
+    baseURL!,
+    ({ taggedFeed }) => getFeedEventsChannel(taggedFeed.feedId),
+    { expandTag: false }
+  );
+  const links = sidebarLinks(page, taggedFeed);
+
+  await expect(links.allItems).toContainText("(3)");
+  await expect(links.newsTag).toContainText("(2)");
+
+  trpcCalls.length = 0;
+
+  const db = getDb();
+  const entry = await createUnreadEntry(db, {
+    feedId: taggedFeed.feedId,
+    userId: user.id,
+    title: "Realtime post",
+  });
+  await publishNewEntry(taggedFeed.feedId, entry.id, entry.updatedAt, "web");
+
+  await expect(links.allItems).toContainText("(4)");
+  // Intended behavior: the collapsed tag's badge should update too
+  await expect(links.newsTag).toContainText("(3)");
+
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+test("entry_state_changed event syncs read state and counts across lists without refetching", async ({
+  page,
+  baseURL,
+}) => {
+  // "Second post" is starred (still unread) so the Starred count is visible
+  // and we can verify it's unaffected by marking a different entry read.
+  const { user, taggedFeed, tagId, taggedEntries, trpcCalls } = await seedAndOpenAll(
+    page,
+    baseURL!,
+    ({ user }) => getUserEventsChannel(user.id),
+    { starSecondPost: true }
+  );
+  const links = sidebarLinks(page, taggedFeed);
+  const [firstPost] = taggedEntries;
+
+  const db = getDb();
+  const firstPostItem = page.locator('[aria-label*="article: First post"]');
+  await expect(firstPostItem).toHaveAttribute("aria-label", /^Unread/);
+  await expect(links.allItems).toContainText("(3)");
+  await expect(links.starred).toContainText("(1)");
+  await expect(links.newsTag).toContainText("(2)");
+  await expect(links.subscriptionRow).toContainText("(2)");
+  await expect(links.uncategorized).toContainText("(1)");
+
+  trpcCalls.length = 0;
+
+  // Simulate another device marking "First post" read (as entries.markRead
+  // does): update the database, then publish the change with absolute counts.
+  const updatedAt = await markEntryRead(db, user.id, firstPost.id);
+  await publishEntryStateChanged(user.id, firstPost.id, true, false, updatedAt, {
+    all: { unread: 2 },
+    starred: { unread: 1 },
+    subscriptions: [{ id: taggedFeed.subscriptionId, unread: 1 }],
+    tags: [{ id: tagId, unread: 1 }],
+    uncategorized: { unread: 1 },
+  });
+
+  // Read state and affected counts update from the event's absolute values...
+  await expect(firstPostItem).toHaveAttribute("aria-label", /^Read/);
+  await expect(links.allItems).toContainText("(2)");
+  await expect(links.newsTag).toContainText("(1)");
+  await expect(links.subscriptionRow).toContainText("(1)");
+  // ...while unaffected lists keep their counts
+  await expect(links.starred).toContainText("(1)");
+  await expect(links.uncategorized).toContainText("(1)");
+
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});

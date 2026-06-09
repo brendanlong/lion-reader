@@ -31,6 +31,7 @@
     "test": "pnpm db:migrate:test && pnpm db:schema:test && dotenv -o -e .env.test -- vitest",
     "test:unit": "dotenv -o -e .env.test -- vitest run tests/unit",
     "test:integration": "pnpm db:migrate:test && pnpm db:schema:test && dotenv -o -e .env.test -- vitest run tests/integration",
+    "test:e2e": "pnpm db:migrate:test && dotenv -o -e .env.test -- playwright test",
     "worker": "tsx scripts/worker.ts",
     "mcp:serve": "dotenv -- tsx src/server/mcp/bin.ts",
     "discord-bot": "dotenv -- tsx scripts/discord-bot.ts"
@@ -94,6 +95,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",
     "@testing-library/dom": "^10.4.1",

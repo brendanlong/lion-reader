@@ -19,6 +19,9 @@ Read these if you need context on features or specific references.
 ## Commands
 
 - `pnpm typecheck` - Run before committing (no `any`, no `@ts-ignore`)
+- `pnpm test:unit` - Pure logic tests (fast, no DB)
+- `pnpm test:integration` - Backend tests against real Postgres/Redis (docker-compose)
+- `pnpm test:e2e` - Playwright browser tests against a real app server (docker-compose)
 
 ## Code Quality
 
@@ -26,8 +29,18 @@ Read these if you need context on features or specific references.
 - **Queries**: Avoid N+1 queries; use joins or batch fetching
 - **UI**: Use optimistic updates for responsive UX
 - **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes
-- Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/clawed-burrow
+- Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/lion-reader (labels: `bug`, `reported-by-claude`)
 - Don't create barrel files, prefer direct imports within our code
+
+## Frontend Testing
+
+The realtime SSE/cache-update code is the hardest part of the app to verify by review — always test it instead:
+
+- **Cache logic** (`src/lib/cache/`): pure functions, unit-tested in `tests/unit/frontend/cache/` against real `QueryClient` instances using the factories in `tests/utils/cache-test-helpers.ts`. Add cases there when changing cache operations or event handling.
+- **SSE → cache → UI pipeline**: covered by `tests/e2e/` Playwright tests, which seed the test DB directly, publish real Redis pub/sub events, and assert the UI updates **without** refetching (`recordTrpcProcedures` in `tests/e2e/helpers.ts`). When changing the realtime flow, run `pnpm test:e2e` and add scenarios using those helpers.
+- **The minimal-request invariant**: SSE events must patch the React Query cache directly, never trigger `entries.*` refetches. `src/FRONTEND_STATE.md` is the contract for which queries get direct updates vs invalidation — read and update it when changing queries, mutations, or SSE handling.
+
+For manual verification, `pnpm test:e2e` starts the app server on port 4983 against the test database; you can also seed data with the helpers and inspect pages with Playwright directly.
 
 ## UI Components
 
@@ -63,6 +76,7 @@ src/components/  # React components
 src/app/         # Next.js routes
 tests/unit/      # Pure logic tests (no mocks, no DB)
 tests/integration/ # Real DB via docker-compose (no mocks)
+tests/e2e/       # Playwright browser tests (real server + DB + Redis)
 ```
 
 See docs/diagrams/ for more detail. These diagrams are very helpful for quickly understanding the codebase.

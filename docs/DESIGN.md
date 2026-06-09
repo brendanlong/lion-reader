@@ -582,13 +582,26 @@ Structure code so business logic is pure and can be unit tested without mocks. I
 
 ```
 tests/
-  unit/           # Fast, no I/O - pure logic tests
+  unit/           # Fast, no I/O - pure logic tests (frontend cache logic under unit/frontend/)
   integration/    # Requires Docker services - full flow tests
+  e2e/            # Playwright browser tests - real app server + Postgres + Redis
 ```
 
 ### Guidelines
 
-- **Unit tests**: Feed parsing, cache header interpretation, scheduling logic
+- **Unit tests**: Feed parsing, cache header interpretation, scheduling logic, React Query cache operations (against real `QueryClient` instances)
 - **Integration tests**: Auth flows, CRUD operations, full fetch cycles
+- **E2E tests**: Realtime SSE → cache → UI flows in a real browser
 - **No mocks of internal code**: Refactor if mocking is needed
 - **Real databases in integration tests**: Docker Compose provides Postgres and Redis
+
+### End-to-End Tests (Playwright)
+
+`pnpm test:e2e` runs Playwright tests (`tests/e2e/`) against a real app server started automatically on port 4983 (override with `E2E_PORT`) using the test database from `.env.test`. Requires the docker-compose Postgres and Redis services, like the integration tests.
+
+Key design points:
+
+- **No UI login flow**: tests seed users/feeds/entries directly in the database (`tests/e2e/helpers.ts`) and authenticate by inserting a session row and setting the `session` cookie.
+- **Real event pipeline**: tests publish events through the same `src/server/redis/pubsub.ts` functions the worker uses, exercising Redis → SSE endpoint → EventSource → `handleSyncEvent` → cache → UI. `waitForChannelSubscriber` polls `PUBSUB NUMSUB` to avoid publishing before the SSE handler is listening.
+- **Minimal-request assertions**: `recordTrpcProcedures(page)` records every tRPC procedure the page calls. Tests assert that SSE events update the UI with _zero_ `entries.*` refetches — this encodes the delta-update invariant documented in `src/FRONTEND_STATE.md` as a regression test instead of a code-review concern.
+- **Isolation**: each test creates its own user and feeds (unique IDs), so tests don't interfere with each other or with leftover data; the suite runs serially against one shared server.
