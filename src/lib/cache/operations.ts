@@ -497,21 +497,31 @@ export function handleSubscriptionDeleted(
  * @param subscriptionId - Subscription the entry belongs to
  * @param feedType - Type of feed (web, email, saved)
  * @param queryClient - React Query client for updating infinite query caches
+ * @param tagIds - The subscription's tag IDs, resolved server-side. Empty array
+ *   means uncategorized. Undefined only for events from servers predating
+ *   tagIds (deploy window) — tag counts are skipped, briefly stale until the
+ *   next tags.list refetch.
  */
 export function handleNewEntry(
   utils: TRPCClientUtils,
   subscriptionId: string | null,
   feedType: "web" | "email" | "saved",
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  tagIds?: string[]
 ): void {
   // Update subscription and tag unread counts (only for non-saved entries)
   if (subscriptionId) {
     // New entries are always unread (read: false, starred: false)
     const subscriptionDeltas = new Map<string, number>();
     subscriptionDeltas.set(subscriptionId, 1); // +1 unread
+    adjustSubscriptionUnreadCounts(utils, subscriptionDeltas, queryClient);
 
-    // Update subscription and tag unread counts (including per-tag infinite queries)
-    updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
+    // Tag deltas come from the server-resolved tagIds, so they apply even when
+    // the subscription isn't cached (collapsed sidebar tag, see #892)
+    if (tagIds !== undefined) {
+      const tagDeltas = new Map<string, number>(tagIds.map((tagId) => [tagId, 1]));
+      adjustTagUnreadCounts(utils, tagDeltas, tagIds.length === 0 ? 1 : 0);
+    }
   }
 
   // Update All Articles unread count (+1 unread)

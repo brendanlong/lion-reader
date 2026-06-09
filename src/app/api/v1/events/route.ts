@@ -21,7 +21,7 @@
  */
 
 import { db } from "@/server/db";
-import { subscriptions } from "@/server/db/schema";
+import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import { validateSession } from "@/server/auth/session";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
 import {
@@ -82,17 +82,46 @@ function getSessionToken(headers: Headers): string | null {
 }
 
 /**
- * Gets a mapping of feedId -> subscriptionId for a user's active subscriptions.
- * This allows the SSE endpoint to transform feed events (which use feedId)
- * into subscription-centric events (which use subscriptionId) for the client.
+ * Per-user subscription context for a feed: the subscription ID and the
+ * subscription's tag IDs. Tag IDs are included in new_entry events so the
+ * client can update tag unread counts without cached subscription data (#892).
  */
-async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, string>> {
-  const userSubscriptions = await db
-    .select({ feedId: subscriptions.feedId, subscriptionId: subscriptions.id })
+interface FeedSubscriptionInfo {
+  subscriptionId: string;
+  tagIds: string[];
+}
+
+/**
+ * Gets a mapping of feedId -> { subscriptionId, tagIds } for a user's active
+ * subscriptions. This allows the SSE endpoint to transform feed events (which
+ * use feedId) into subscription-centric events (which use subscriptionId and
+ * the subscription's tags) for the client.
+ */
+async function getUserFeedSubscriptionMap(
+  userId: string
+): Promise<Map<string, FeedSubscriptionInfo>> {
+  const rows = await db
+    .select({
+      feedId: subscriptions.feedId,
+      subscriptionId: subscriptions.id,
+      tagId: subscriptionTags.tagId,
+    })
     .from(subscriptions)
+    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
     .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
-  return new Map(userSubscriptions.map((s) => [s.feedId, s.subscriptionId]));
+  const map = new Map<string, FeedSubscriptionInfo>();
+  for (const row of rows) {
+    let info = map.get(row.feedId);
+    if (!info) {
+      info = { subscriptionId: row.subscriptionId, tagIds: [] };
+      map.set(row.feedId, info);
+    }
+    if (row.tagId) {
+      info.tagIds.push(row.tagId);
+    }
+  }
+  return map;
 }
 
 /**
@@ -243,14 +272,14 @@ export async function GET(req: Request): Promise<Response> {
       /**
        * Subscribes to a feed's event channel and tracks the subscription mapping
        */
-      function subscribeToFeed(feedId: string, subscriptionId: string): void {
+      function subscribeToFeed(feedId: string, info: FeedSubscriptionInfo): void {
         if (isCleanedUp || !subscriber) return;
 
         const channel = getFeedEventsChannel(feedId);
         if (subscribedFeedChannels.has(channel)) return;
 
         subscribedFeedChannels.add(channel);
-        feedSubscriptionMap.set(feedId, subscriptionId);
+        feedSubscriptionMap.set(feedId, info);
         subscriber.subscribe(channel).catch((err) => {
           console.error(`Failed to subscribe to feed channel ${feedId}:`, err);
           subscribedFeedChannels.delete(channel);
@@ -335,11 +364,25 @@ export async function GET(req: Request): Promise<Response> {
             const event = parseUserEvent(message);
             if (!event) return;
 
-            // Handle side effects for subscription lifecycle events
+            // Handle side effects for subscription/tag lifecycle events,
+            // keeping the per-connection feed -> subscription/tags mapping current
             if (event.type === "subscription_created") {
-              subscribeToFeed(event.feedId, event.subscriptionId);
+              subscribeToFeed(event.feedId, {
+                subscriptionId: event.subscriptionId,
+                tagIds: event.subscription.tags.map((tag) => tag.id),
+              });
             } else if (event.type === "subscription_deleted") {
               unsubscribeFromFeed(event.feedId);
+            } else if (event.type === "subscription_updated") {
+              for (const info of feedSubscriptionMap.values()) {
+                if (info.subscriptionId === event.subscriptionId) {
+                  info.tagIds = event.tags.map((tag) => tag.id);
+                }
+              }
+            } else if (event.type === "tag_deleted") {
+              for (const info of feedSubscriptionMap.values()) {
+                info.tagIds = info.tagIds.filter((tagId) => tagId !== event.tagId);
+              }
             }
 
             // All user events are forwarded to the client
@@ -354,20 +397,26 @@ export async function GET(req: Request): Promise<Response> {
             const event = parseFeedEvent(message);
             if (!event) return;
 
-            // Look up the subscriptionId for this feed
+            // Look up the subscription info for this feed
             // For saved feeds, subscriptionId will be null (no subscription exists)
-            const subscriptionId = feedSubscriptionMap.get(event.feedId) ?? null;
+            const subscriptionInfo = feedSubscriptionMap.get(event.feedId) ?? null;
 
             // Transform event to use subscriptionId instead of feedId
             // Include metadata for entry_updated events to enable direct cache updates
             const clientEvent: Record<string, unknown> = {
               type: event.type,
-              subscriptionId,
+              subscriptionId: subscriptionInfo?.subscriptionId ?? null,
               entryId: event.entryId,
               timestamp: event.timestamp,
               updatedAt: event.updatedAt, // Database updated_at for cursor tracking
               feedType: event.feedType,
             };
+
+            // Include the subscription's tag IDs so the client can update tag
+            // unread counts without cached subscription data (#892)
+            if (event.type === "new_entry" && subscriptionInfo) {
+              clientEvent.tagIds = subscriptionInfo.tagIds;
+            }
 
             // Include metadata for entry_updated events
             if (event.type === "entry_updated") {
