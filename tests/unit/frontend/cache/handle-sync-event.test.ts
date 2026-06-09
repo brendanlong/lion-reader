@@ -158,7 +158,7 @@ describe("handleSyncEvent - new_entry", () => {
     expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(10); // unchanged
   });
 
-  it("prefers event tagIds over cached subscription tags", () => {
+  it("uses event tagIds, not cached subscription tags", () => {
     // sub-1 is cached with tag-1, but the event says tag-2 — the
     // server-provided tags are authoritative (cache may be stale).
     handleSyncEvent(
@@ -187,6 +187,7 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         subscriptionId: "sub-1",
         feedType: "web",
+        tagIds: ["tag-1"],
       })
     );
 
@@ -200,6 +201,27 @@ describe("handleSyncEvent - new_entry", () => {
 
     expect(getEntriesCount({})?.unread).toBe(19); // was 18
     expect(getEntriesCount({ type: "saved" })?.unread).toBe(1); // unchanged
+  });
+
+  it("skips tag count updates when tagIds is absent (old-server event)", () => {
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createNewEntryEvent({
+        subscriptionId: "sub-1",
+        feedType: "web",
+      })
+    );
+
+    // Subscription and All Articles counts still update...
+    const subs = getSubscriptionsList();
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // was 5
+    expect(getEntriesCount({})?.unread).toBe(19); // was 18
+
+    // ...but tag counts are left alone (briefly stale until next refetch)
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
+    expect(tagsList?.uncategorized.unreadCount).toBe(3); // unchanged
   });
 
   it("increments saved count for saved entry (null subscriptionId)", () => {
@@ -227,6 +249,7 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         subscriptionId: "sub-2", // sub-2 has no tags
         feedType: "web",
+        tagIds: [],
       })
     );
 
@@ -244,6 +267,7 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         subscriptionId: "sub-3", // sub-3 has tag-1 and tag-2
         feedType: "web",
+        tagIds: ["tag-1", "tag-2"],
       })
     );
 
@@ -1715,6 +1739,7 @@ describe("handleSyncEvent - event sequences", () => {
       createNewEntryEvent({
         subscriptionId: "sub-seq",
         feedType: "web",
+        tagIds: ["tag-2"],
       })
     );
 

@@ -95,8 +95,10 @@ export const newEntryEventSchema = z.object({
   feedType: z.enum(["web", "email", "saved"]),
   // Tag IDs of the subscription, resolved server-side. Lets the client apply
   // tag unread deltas even when the subscription isn't in any cache (e.g. a
-  // collapsed sidebar tag, see #892). Empty array = uncategorized; undefined =
-  // unknown (client falls back to cached subscription data).
+  // collapsed sidebar tag, see #892). Empty array = uncategorized. Optional
+  // only so events from servers predating this field (deploy window) and
+  // saved-feed events (no subscription) still parse; when absent, tag counts
+  // are simply not updated.
   tagIds: z.array(z.string()).optional(),
 });
 

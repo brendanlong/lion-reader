@@ -551,7 +551,7 @@ describe("cache update logic verification", () => {
       expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(6);
     });
 
-    it("increments tag unread count for subscription with tags", () => {
+    it("increments tag unread count from event-provided tagIds", () => {
       seedSubscription({
         id: "sub-1",
         unreadCount: 5,
@@ -561,7 +561,7 @@ describe("cache update logic verification", () => {
         items: [{ id: "tag-1", name: "News", color: null, unreadCount: 10 }],
       });
 
-      handleNewEntry(mockUtils.utils, "sub-1", "web");
+      handleNewEntry(mockUtils.utils, "sub-1", "web", undefined, ["tag-1"]);
 
       const tagData = mockUtils.getCache("tags", "list", undefined) as {
         items: Array<{ id: string; unreadCount: number }>;
