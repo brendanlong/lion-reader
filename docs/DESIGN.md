@@ -382,6 +382,25 @@ const entries = await entriesService.listEntries(db, { userId, ...filters });
 
 ## Frontend Architecture
 
+### Client-Side Routing
+
+Next.js App Router handles **initial page loads only**. After hydration, all in-app
+navigation is shallow routing: `ClientLink` calls `window.history.pushState` (via
+`src/lib/navigation.ts`), and `AppRouter` (`src/components/app/AppRouter.tsx`) re-derives
+what to render from `usePathname()`. The `page.tsx` files exist to prefetch route-specific
+data on initial load; their rendered output is hidden by the app layout. Navigation costs
+zero server requests — data is served from the React Query cache, kept fresh by SSE.
+
+Consequences:
+
+- Never use Next's `<Link>` or `router.push()` for internal navigation — they trigger
+  per-navigation RSC fetches. Use `ClientLink`.
+- `useParams()` doesn't update on `pushState`; dynamic params are parsed from the pathname
+  by regex.
+
+See `docs/features/client-side-routing.md` for the full design rationale and the
+evaluation against native App Router navigation (issue #872).
+
 ### Route Structure
 
 ```
