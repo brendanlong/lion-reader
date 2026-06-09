@@ -26,6 +26,7 @@ import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
+import { extractParamsFromPathname } from "@/lib/navigation";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache/count-cache";
@@ -60,26 +61,6 @@ interface RouteInfo {
   markAllReadDescription: string;
   /** Whether to hide the sort toggle (e.g., for algorithmic feed) */
   hideSortToggle?: boolean;
-}
-
-/**
- * Extract params from pathname.
- * We can't use useParams() because it doesn't update on pushState navigation.
- */
-function extractParamsFromPathname(pathname: string): { id?: string; tagId?: string } {
-  // /subscription/:id
-  const subscriptionMatch = pathname.match(/^\/subscription\/([^/]+)/);
-  if (subscriptionMatch) {
-    return { id: subscriptionMatch[1] };
-  }
-
-  // /tag/:tagId
-  const tagMatch = pathname.match(/^\/tag\/([^/]+)/);
-  if (tagMatch) {
-    return { tagId: tagMatch[1] };
-  }
-
-  return {};
 }
 
 /**
@@ -129,8 +110,8 @@ function useRouteInfo(): RouteInfo {
     }
 
     // /subscription/:id - Single subscription entries
-    if (pathname.startsWith("/subscription/") && params.id) {
-      const subscriptionId = params.id;
+    if (params.subscriptionId) {
+      const subscriptionId = params.subscriptionId;
       return {
         viewId: "subscription" as const,
         filters: { subscriptionId },
@@ -156,7 +137,7 @@ function useRouteInfo(): RouteInfo {
     }
 
     // /tag/:tagId - Tag entries (including uncategorized pseudo-tag)
-    if (pathname.startsWith("/tag/") && params.tagId) {
+    if (params.tagId) {
       const tagId = params.tagId;
 
       // Handle "uncategorized" pseudo-tag

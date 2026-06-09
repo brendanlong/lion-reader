@@ -9,6 +9,8 @@
  * not be found by the client query, leading to hydration mismatches.
  */
 
+import { extractParamsFromPathname } from "@/lib/navigation";
+
 /**
  * Entry type filter options.
  */
@@ -100,16 +102,15 @@ export function buildEntriesListInput(
  * Used by: client hooks, sidebar prefetch, server-side prefetch.
  */
 export function getFiltersFromPathname(pathname: string): EntriesListFilters {
+  const { subscriptionId, tagId } = extractParamsFromPathname(pathname);
+
   // /subscription/:id
-  const subscriptionMatch = pathname.match(/^\/subscription\/([^/]+)/);
-  if (subscriptionMatch) {
-    return { subscriptionId: subscriptionMatch[1] };
+  if (subscriptionId) {
+    return { subscriptionId };
   }
 
   // /tag/:tagId
-  const tagMatch = pathname.match(/^\/tag\/([^/]+)/);
-  if (tagMatch) {
-    const tagId = tagMatch[1];
+  if (tagId) {
     // Handle "uncategorized" pseudo-tag
     if (tagId === "uncategorized") {
       return { uncategorized: true };
