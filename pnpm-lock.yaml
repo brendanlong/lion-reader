@@ -44,14 +44,14 @@ importers:
         specifier: ^10.48.0
         version: 10.48.0(@opentelemetry/context-async-hooks@2.7.0(@opentelemetry/api@1.9.1))(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.0(@opentelemetry/api@1.9.1))(next@16.2.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(webpack@5.104.1(esbuild@0.28.0)(lightningcss@1.32.0))
       '@tanstack/react-query':
-        specifier: ^5.90.21
-        version: 5.90.21(react@19.2.4)
+        specifier: ^5.101.0
+        version: 5.101.0(react@19.2.4)
       '@trpc/client':
         specifier: ^11.10.0
         version: 11.10.0(@trpc/server@11.10.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/react-query':
         specifier: ^11.10.0
-        version: 11.10.0(@tanstack/react-query@5.90.21(react@19.2.4))(@trpc/client@11.10.0(@trpc/server@11.10.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.10.0(typescript@6.0.3))(react@19.2.4)(typescript@6.0.3)
+        version: 11.10.0(@tanstack/react-query@5.101.0(react@19.2.4))(@trpc/client@11.10.0(@trpc/server@11.10.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.10.0(typescript@6.0.3))(react@19.2.4)(typescript@6.0.3)
       '@trpc/server':
         specifier: ^11.10.0
         version: 11.10.0(typescript@6.0.3)
@@ -2972,11 +2972,11 @@ packages:
     peerDependencies:
       tailwindcss: '>=3.0.0 || insiders || >=4.0.0-alpha.20 || >=4.0.0-beta.1'
 
-  '@tanstack/query-core@5.90.20':
-    resolution: {integrity: sha512-OMD2HLpNouXEfZJWcKeVKUgQ5n+n3A2JFmBaScpNDUqSrQSjiveC7dKMe53uJUg1nDG16ttFPz2xfilz6i2uVg==}
+  '@tanstack/query-core@5.101.0':
+    resolution: {integrity: sha512-cQetA74EB+seWySv1TTKr828TnP0u39m6LykwDXIo84SNortpDkp30TMEjkqtYCNP9c40uT/iwl6MLiufEt0Ow==}
 
-  '@tanstack/react-query@5.90.21':
-    resolution: {integrity: sha512-0Lu6y5t+tvlTJMTO7oh5NSpJfpg/5D41LlThfepTixPYkJ0sE2Jj0m0f6yYqujBwIXlId87e234+MxG3D3g7kg==}
+  '@tanstack/react-query@5.101.0':
+    resolution: {integrity: sha512-rLlJXSpkqfizLWgkR5+eLeIk0MvTx/meEIR7LRjxic+qxiQP8zVjq7BqQkiCMNLQBlLfuOLqqr6KO5GtrDlmSg==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -9735,11 +9735,11 @@ snapshots:
       postcss-selector-parser: 6.0.10
       tailwindcss: 4.3.0
 
-  '@tanstack/query-core@5.90.20': {}
+  '@tanstack/query-core@5.101.0': {}
 
-  '@tanstack/react-query@5.90.21(react@19.2.4)':
+  '@tanstack/react-query@5.101.0(react@19.2.4)':
     dependencies:
-      '@tanstack/query-core': 5.90.20
+      '@tanstack/query-core': 5.101.0
       react: 19.2.4
 
   '@testing-library/dom@10.4.1':
@@ -9779,9 +9779,9 @@ snapshots:
       '@trpc/server': 11.10.0(typescript@6.0.3)
       typescript: 6.0.3
 
-  '@trpc/react-query@11.10.0(@tanstack/react-query@5.90.21(react@19.2.4))(@trpc/client@11.10.0(@trpc/server@11.10.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.10.0(typescript@6.0.3))(react@19.2.4)(typescript@6.0.3)':
+  '@trpc/react-query@11.10.0(@tanstack/react-query@5.101.0(react@19.2.4))(@trpc/client@11.10.0(@trpc/server@11.10.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.10.0(typescript@6.0.3))(react@19.2.4)(typescript@6.0.3)':
     dependencies:
-      '@tanstack/react-query': 5.90.21(react@19.2.4)
+      '@tanstack/react-query': 5.101.0(react@19.2.4)
       '@trpc/client': 11.10.0(@trpc/server@11.10.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/server': 11.10.0(typescript@6.0.3)
       react: 19.2.4
