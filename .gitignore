@@ -162,3 +162,7 @@ extension/*.zip
 # source maps
 *.js.map
 
+
+# Playwright
+test-results/
+playwright-report/

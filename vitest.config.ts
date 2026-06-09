@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import path from "path";
 
 export default defineConfig({
@@ -8,6 +8,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Playwright e2e tests are run separately via `pnpm test:e2e`
+    exclude: [...configDefaults.exclude, "tests/e2e/**"],
     // Use threads for faster parallel test execution
     pool: "threads",
     // Disable file parallelism for integration tests that share database state.
