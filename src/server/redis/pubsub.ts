@@ -1,10 +1,12 @@
 /**
- * Redis Pub/Sub module for real-time event publishing.
+ * Redis Pub/Sub module for real-time event publishing and subscribing.
  *
- * This module provides event publishing capabilities for the feed system.
- * Events are published when new entries are created or existing entries are updated.
+ * Publishing: events are published when entries are created/updated and when
+ * user-scoped state changes (subscriptions, tags, read/starred state, imports).
  *
- * The subscriber side (SSE endpoint) will be implemented in phase 6.2.
+ * Subscribing: the SSE endpoint consumes events via createPubSubSubscription,
+ * which multiplexes all subscriptions in this process over a single shared
+ * Redis connection with reference-counted channels and in-process fan-out.
  */
 
 import Redis from "ioredis";
@@ -631,14 +633,36 @@ export async function publishTagDeleted(
   return client.publish(channel, JSON.stringify(event));
 }
 
+// ============================================================================
+// Shared Subscriber (one Redis connection per process, in-process fan-out)
+// ============================================================================
+
+/** Callback invoked with every message received on a subscribed channel. */
+type ChannelMessageListener = (channel: string, message: string) => void;
+
+interface ChannelState {
+  listeners: Set<ChannelMessageListener>;
+  /** Resolves when the Redis-level SUBSCRIBE for this channel completes. */
+  ready: Promise<void>;
+}
+
+let sharedSubscriberClient: Redis | null = null;
+let sharedSubscriberInitialized = false;
+const channelStates = new Map<string, ChannelState>();
+
 /**
- * Creates a new Redis client for subscribing to feed events.
- * Each subscriber should use its own connection as Redis requires
- * dedicated connections for subscriptions.
- *
- * @returns A new Redis client configured for subscribing, or null if Redis is not configured
+ * Gets or creates the shared Redis subscriber connection for this process.
+ * Redis requires a dedicated connection for SUBSCRIBE mode, but one connection
+ * can hold any number of channel subscriptions, so all consumers in the
+ * process (e.g. every SSE connection) share this single client instead of
+ * opening one connection each.
  */
-export function createSubscriberClient(): Redis | null {
+function getSharedSubscriberClient(): Redis | null {
+  if (sharedSubscriberInitialized) {
+    return sharedSubscriberClient;
+  }
+
+  sharedSubscriberInitialized = true;
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
     return null;
@@ -651,17 +675,153 @@ export function createSubscriberClient(): Redis | null {
     },
   });
 
-  if (process.env.NODE_ENV === "development") {
-    client.on("connect", () => {
-      console.log("Redis subscriber connected");
-    });
+  client.on("message", (channel: string, message: string) => {
+    const state = channelStates.get(channel);
+    if (!state) return;
+    for (const listener of state.listeners) {
+      try {
+        listener(channel, message);
+      } catch (err) {
+        console.error(`Pub/sub listener error on channel ${channel}:`, err);
+      }
+    }
+  });
 
-    client.on("error", (err) => {
-      console.error("Redis subscriber error:", err);
-    });
+  client.on("error", (err) => {
+    // ioredis reconnects automatically and re-subscribes to all channels
+    console.error("Redis shared subscriber error:", err);
+  });
+
+  sharedSubscriberClient = client;
+  return client;
+}
+
+/**
+ * Adds a listener for a channel, issuing the Redis-level SUBSCRIBE only for
+ * the first listener. Resolves once the channel subscription is active.
+ */
+async function addChannelListener(
+  client: Redis,
+  channel: string,
+  listener: ChannelMessageListener
+): Promise<void> {
+  const existing = channelStates.get(channel);
+  if (existing) {
+    existing.listeners.add(listener);
+    try {
+      await existing.ready;
+    } catch (err) {
+      existing.listeners.delete(listener);
+      throw err;
+    }
+    return;
   }
 
-  return client;
+  const state: ChannelState = {
+    listeners: new Set([listener]),
+    ready: client.subscribe(channel).then(() => undefined),
+  };
+  channelStates.set(channel, state);
+  try {
+    await state.ready;
+  } catch (err) {
+    // Drop the failed state so a later subscribe attempt retries the SUBSCRIBE
+    if (channelStates.get(channel) === state) {
+      channelStates.delete(channel);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Removes a listener for a channel, issuing the Redis-level UNSUBSCRIBE when
+ * the last listener is removed.
+ */
+function removeChannelListener(channel: string, listener: ChannelMessageListener): void {
+  const state = channelStates.get(channel);
+  if (!state) return;
+
+  state.listeners.delete(listener);
+  if (state.listeners.size === 0) {
+    channelStates.delete(channel);
+    sharedSubscriberClient?.unsubscribe(channel).catch((err) => {
+      console.error(`Failed to unsubscribe from channel ${channel}:`, err);
+    });
+  }
+}
+
+/**
+ * A per-consumer handle onto the shared subscriber. Tracks which channels the
+ * consumer is subscribed to so they can be released individually or all at
+ * once via close().
+ */
+export interface PubSubSubscription {
+  /** Subscribes this handle's listener to the given channels. */
+  subscribe(...channels: string[]): Promise<void>;
+  /** Unsubscribes this handle's listener from the given channels. */
+  unsubscribe(...channels: string[]): void;
+  /** Releases all channels held by this handle. The handle cannot be reused. */
+  close(): void;
+}
+
+/**
+ * Creates a pub/sub subscription backed by the single shared Redis subscriber
+ * connection for this process. Channel subscriptions are reference-counted
+ * across handles and messages are fanned out in-process, so N concurrent
+ * consumers (e.g. SSE connections) cost one Redis connection instead of N.
+ *
+ * @param onMessage - Called for every message on a channel this handle subscribed to
+ * @returns A subscription handle, or null if Redis is not configured
+ */
+export function createPubSubSubscription(
+  onMessage: ChannelMessageListener
+): PubSubSubscription | null {
+  const client = getSharedSubscriberClient();
+  if (!client) {
+    return null;
+  }
+
+  const ownChannels = new Set<string>();
+  let closed = false;
+
+  const unsubscribe = (...channels: string[]): void => {
+    for (const channel of channels) {
+      if (!ownChannels.delete(channel)) continue;
+      removeChannelListener(channel, onMessage);
+    }
+  };
+
+  return {
+    async subscribe(...channels: string[]): Promise<void> {
+      if (closed) return;
+
+      const added = channels.filter((channel) => !ownChannels.has(channel));
+      for (const channel of added) {
+        ownChannels.add(channel);
+      }
+
+      const results = await Promise.allSettled(
+        added.map((channel) => addChannelListener(client, channel, onMessage))
+      );
+
+      let firstError: unknown = null;
+      results.forEach((result, i) => {
+        if (result.status === "rejected") {
+          ownChannels.delete(added[i]);
+          firstError ??= result.reason;
+        }
+      });
+      if (firstError !== null) {
+        throw firstError;
+      }
+    },
+    unsubscribe,
+    close(): void {
+      if (closed) return;
+      closed = true;
+      unsubscribe(...ownChannels);
+    },
+  };
 }
 
 /**

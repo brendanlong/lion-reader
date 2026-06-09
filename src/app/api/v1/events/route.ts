@@ -25,12 +25,13 @@ import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import { validateSession } from "@/server/auth/session";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
 import {
-  createSubscriberClient,
+  createPubSubSubscription,
   getFeedEventsChannel,
   getUserEventsChannel,
   parseFeedEvent,
   parseUserEvent,
   checkRedisHealth,
+  type PubSubSubscription,
   type UserEvent,
 } from "@/server/redis/pubsub";
 import { eq, and, isNull } from "drizzle-orm";
@@ -220,7 +221,7 @@ export async function GET(req: Request): Promise<Response> {
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
-      let subscriber: ReturnType<typeof createSubscriberClient> = null;
+      let subscription: PubSubSubscription | null = null;
       let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
       let isCleanedUp = false;
 
@@ -231,7 +232,7 @@ export async function GET(req: Request): Promise<Response> {
       const feedSubscriptionMap = new Map(feedToSubscriptionMap);
 
       /**
-       * Cleanup function to close Redis subscription and clear heartbeat
+       * Cleanup function to release Redis channel subscriptions and clear heartbeat
        */
       function cleanup(): void {
         if (isCleanedUp) return;
@@ -245,14 +246,9 @@ export async function GET(req: Request): Promise<Response> {
           heartbeatInterval = null;
         }
 
-        if (subscriber) {
-          subscriber.unsubscribe().catch(() => {
-            // Ignore unsubscribe errors during cleanup
-          });
-          subscriber.quit().catch(() => {
-            // Ignore quit errors during cleanup
-          });
-          subscriber = null;
+        if (subscription) {
+          subscription.close();
+          subscription = null;
         }
       }
 
@@ -273,14 +269,14 @@ export async function GET(req: Request): Promise<Response> {
        * Subscribes to a feed's event channel and tracks the subscription mapping
        */
       function subscribeToFeed(feedId: string, info: FeedSubscriptionInfo): void {
-        if (isCleanedUp || !subscriber) return;
+        if (isCleanedUp || !subscription) return;
 
         const channel = getFeedEventsChannel(feedId);
         if (subscribedFeedChannels.has(channel)) return;
 
         subscribedFeedChannels.add(channel);
         feedSubscriptionMap.set(feedId, info);
-        subscriber.subscribe(channel).catch((err) => {
+        subscription.subscribe(channel).catch((err) => {
           console.error(`Failed to subscribe to feed channel ${feedId}:`, err);
           subscribedFeedChannels.delete(channel);
           feedSubscriptionMap.delete(feedId);
@@ -291,16 +287,14 @@ export async function GET(req: Request): Promise<Response> {
        * Unsubscribes from a feed's event channel and removes the subscription mapping
        */
       function unsubscribeFromFeed(feedId: string): void {
-        if (isCleanedUp || !subscriber) return;
+        if (isCleanedUp || !subscription) return;
 
         const channel = getFeedEventsChannel(feedId);
         if (!subscribedFeedChannels.has(channel)) return;
 
         subscribedFeedChannels.delete(channel);
         feedSubscriptionMap.delete(feedId);
-        subscriber.unsubscribe(channel).catch((err) => {
-          console.error(`Failed to unsubscribe from feed channel ${feedId}:`, err);
-        });
+        subscription.unsubscribe(channel);
       }
 
       // Set up abort handler for client disconnection
@@ -313,13 +307,90 @@ export async function GET(req: Request): Promise<Response> {
         }
       });
 
-      // Create Redis subscriber
+      /**
+       * Handles messages from subscribed Redis channels (via the process-wide
+       * shared subscriber connection).
+       */
+      function handleMessage(channel: string, message: string): void {
+        // Handle user events (subscriptions, tags, imports, entry state)
+        if (channel === userEventsChannel) {
+          const event = parseUserEvent(message);
+          if (!event) return;
+
+          // Handle side effects for subscription/tag lifecycle events,
+          // keeping the per-connection feed -> subscription/tags mapping current
+          if (event.type === "subscription_created") {
+            subscribeToFeed(event.feedId, {
+              subscriptionId: event.subscriptionId,
+              tagIds: event.subscription.tags.map((tag) => tag.id),
+            });
+          } else if (event.type === "subscription_deleted") {
+            unsubscribeFromFeed(event.feedId);
+          } else if (event.type === "subscription_updated") {
+            for (const info of feedSubscriptionMap.values()) {
+              if (info.subscriptionId === event.subscriptionId) {
+                info.tagIds = event.tags.map((tag) => tag.id);
+              }
+            }
+          } else if (event.type === "tag_deleted") {
+            for (const info of feedSubscriptionMap.values()) {
+              info.tagIds = info.tagIds.filter((tagId) => tagId !== event.tagId);
+            }
+          }
+
+          // All user events are forwarded to the client
+          send(formatSSEUserEvent(event));
+          trackSSEEventSent(event.type);
+          return;
+        }
+
+        // Handle feed events (new_entry, entry_updated)
+        // Transform events to use subscriptionId instead of feedId for client
+        if (subscribedFeedChannels.has(channel)) {
+          const event = parseFeedEvent(message);
+          if (!event) return;
+
+          // Look up the subscription info for this feed
+          // For saved feeds, subscriptionId will be null (no subscription exists)
+          const subscriptionInfo = feedSubscriptionMap.get(event.feedId) ?? null;
+
+          // Transform event to use subscriptionId instead of feedId
+          // Include metadata for entry_updated events to enable direct cache updates
+          const clientEvent: Record<string, unknown> = {
+            type: event.type,
+            subscriptionId: subscriptionInfo?.subscriptionId ?? null,
+            entryId: event.entryId,
+            timestamp: event.timestamp,
+            updatedAt: event.updatedAt, // Database updated_at for cursor tracking
+            feedType: event.feedType,
+          };
+
+          // Include the subscription's tag IDs so the client can update tag
+          // unread counts without cached subscription data (#892)
+          if (event.type === "new_entry" && subscriptionInfo) {
+            clientEvent.tagIds = subscriptionInfo.tagIds;
+          }
+
+          // Include metadata for entry_updated events
+          if (event.type === "entry_updated") {
+            clientEvent.metadata = event.metadata;
+          }
+
+          const cursor = new Date().toISOString();
+          send(
+            `event: ${clientEvent.type}\nid: ${cursor}\ndata: ${JSON.stringify(clientEvent)}\n\n`
+          );
+          trackSSEEventSent(event.type);
+        }
+      }
+
+      // Set up the subscription on the shared Redis subscriber
       try {
-        subscriber = createSubscriberClient();
+        subscription = createPubSubSubscription(handleMessage);
 
         // This should never happen since we checked Redis health above,
         // but handle it gracefully just in case
-        if (!subscriber) {
+        if (!subscription) {
           controller.error(new Error("Redis subscriber unavailable"));
           return;
         }
@@ -345,96 +416,14 @@ export async function GET(req: Request): Promise<Response> {
         }
 
         // Subscribe to all channels
-        if (allChannels.length > 0) {
-          subscriber.subscribe(...allChannels).catch((err) => {
-            console.error("Failed to subscribe to channels:", err);
-            cleanup();
-            try {
-              controller.error(err);
-            } catch {
-              // Controller may already be closed
-            }
-          });
-        }
-
-        // Handle incoming messages
-        subscriber.on("message", (channel: string, message: string) => {
-          // Handle user events (subscriptions, tags, imports, entry state)
-          if (channel === userEventsChannel) {
-            const event = parseUserEvent(message);
-            if (!event) return;
-
-            // Handle side effects for subscription/tag lifecycle events,
-            // keeping the per-connection feed -> subscription/tags mapping current
-            if (event.type === "subscription_created") {
-              subscribeToFeed(event.feedId, {
-                subscriptionId: event.subscriptionId,
-                tagIds: event.subscription.tags.map((tag) => tag.id),
-              });
-            } else if (event.type === "subscription_deleted") {
-              unsubscribeFromFeed(event.feedId);
-            } else if (event.type === "subscription_updated") {
-              for (const info of feedSubscriptionMap.values()) {
-                if (info.subscriptionId === event.subscriptionId) {
-                  info.tagIds = event.tags.map((tag) => tag.id);
-                }
-              }
-            } else if (event.type === "tag_deleted") {
-              for (const info of feedSubscriptionMap.values()) {
-                info.tagIds = info.tagIds.filter((tagId) => tagId !== event.tagId);
-              }
-            }
-
-            // All user events are forwarded to the client
-            send(formatSSEUserEvent(event));
-            trackSSEEventSent(event.type);
-            return;
+        subscription.subscribe(...allChannels).catch((err) => {
+          console.error("Failed to subscribe to channels:", err);
+          cleanup();
+          try {
+            controller.error(err);
+          } catch {
+            // Controller may already be closed
           }
-
-          // Handle feed events (new_entry, entry_updated)
-          // Transform events to use subscriptionId instead of feedId for client
-          if (subscribedFeedChannels.has(channel)) {
-            const event = parseFeedEvent(message);
-            if (!event) return;
-
-            // Look up the subscription info for this feed
-            // For saved feeds, subscriptionId will be null (no subscription exists)
-            const subscriptionInfo = feedSubscriptionMap.get(event.feedId) ?? null;
-
-            // Transform event to use subscriptionId instead of feedId
-            // Include metadata for entry_updated events to enable direct cache updates
-            const clientEvent: Record<string, unknown> = {
-              type: event.type,
-              subscriptionId: subscriptionInfo?.subscriptionId ?? null,
-              entryId: event.entryId,
-              timestamp: event.timestamp,
-              updatedAt: event.updatedAt, // Database updated_at for cursor tracking
-              feedType: event.feedType,
-            };
-
-            // Include the subscription's tag IDs so the client can update tag
-            // unread counts without cached subscription data (#892)
-            if (event.type === "new_entry" && subscriptionInfo) {
-              clientEvent.tagIds = subscriptionInfo.tagIds;
-            }
-
-            // Include metadata for entry_updated events
-            if (event.type === "entry_updated") {
-              clientEvent.metadata = event.metadata;
-            }
-
-            const cursor = new Date().toISOString();
-            send(
-              `event: ${clientEvent.type}\nid: ${cursor}\ndata: ${JSON.stringify(clientEvent)}\n\n`
-            );
-            trackSSEEventSent(event.type);
-          }
-        });
-
-        // Handle Redis errors
-        subscriber.on("error", (err) => {
-          console.error("Redis subscriber error:", err);
-          // Don't cleanup on transient errors - ioredis handles reconnection
         });
 
         // Start heartbeat
@@ -477,4 +466,27 @@ export async function GET(req: Request): Promise<Response> {
       "X-Accel-Buffering": "no", // Disable nginx buffering
     },
   });
+}
+
+/**
+ * HEAD /api/v1/events
+ *
+ * Lightweight SSE availability check: reports whether real-time updates are
+ * available (Redis healthy) without the per-connection auth and subscription
+ * queries that GET performs. The client calls this only after an EventSource
+ * failure to decide between reconnecting (non-503) and falling back to
+ * polling (503), so the happy path uses a single connection.
+ */
+export async function HEAD(): Promise<Response> {
+  const redisHealthy = await checkRedisHealth();
+  if (!redisHealthy) {
+    return new Response(null, {
+      status: 503,
+      headers: {
+        "Retry-After": "30",
+        "X-Fallback-Sync": "true",
+      },
+    });
+  }
+  return new Response(null, { status: 200 });
 }
