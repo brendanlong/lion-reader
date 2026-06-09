@@ -275,6 +275,24 @@ export const syncRouter = createTRPCRouter({
           (row) => row.userEntryUpdatedAt > entriesCursorDate
         );
 
+        // Batch-fetch tags for subscriptions that will emit new_entry events,
+        // so the client can update tag unread counts without cached
+        // subscription data (#892)
+        const newEntrySubscriptionIds = [
+          ...new Set(
+            changedEntryResults
+              .filter(
+                (row) => row.entryUpdatedAt > entriesCursorDate && row.createdAt > entriesCursorDate
+              )
+              .map((row) => row.subscriptionId)
+              .filter((id): id is string => id !== null)
+          ),
+        ];
+        const newEntryTagsBySubscription = await fetchTagsBySubscriptionIds(
+          ctx.db,
+          newEntrySubscriptionIds
+        );
+
         // Compute absolute unread counts once for all state-changed entries.
         // All entry_state_changed events share the same counts snapshot since
         // they reflect the current server state at query time.
@@ -304,6 +322,11 @@ export const syncRouter = createTRPCRouter({
                 timestamp: row.maxUpdatedAtRaw,
                 updatedAt: row.maxUpdatedAtRaw,
                 feedType: row.feedType,
+                ...(row.subscriptionId !== null && {
+                  tagIds: (newEntryTagsBySubscription.get(row.subscriptionId) ?? []).map(
+                    (tag) => tag.id
+                  ),
+                }),
                 _sortTime: new Date(row.maxUpdatedAtRaw),
               });
             } else {

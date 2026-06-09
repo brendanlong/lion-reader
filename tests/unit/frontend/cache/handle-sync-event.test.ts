@@ -120,6 +120,66 @@ function findEntryInQueryClient(entryId: string): Record<string, unknown> | unde
 // ============================================================================
 
 describe("handleSyncEvent - new_entry", () => {
+  it("updates tag unread count from event tagIds when subscription is not cached (#892)", () => {
+    // Simulates a collapsed sidebar tag: the subscription has never been
+    // loaded into any cache, so tag deltas can't be derived from cached
+    // subscription data. The server-provided tagIds must be used instead.
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createNewEntryEvent({
+        subscriptionId: "sub-uncached",
+        feedType: "web",
+        tagIds: ["tag-2"],
+      })
+    );
+
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(11); // was 10
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
+    expect(tagsList?.uncategorized.unreadCount).toBe(3); // unchanged
+    expect(getEntriesCount({})?.unread).toBe(19); // was 18
+  });
+
+  it("increments uncategorized count from empty event tagIds when subscription is not cached", () => {
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createNewEntryEvent({
+        subscriptionId: "sub-uncached",
+        feedType: "web",
+        tagIds: [],
+      })
+    );
+
+    const tagsList = getTagsList();
+    expect(tagsList?.uncategorized.unreadCount).toBe(4); // was 3
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
+    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(10); // unchanged
+  });
+
+  it("prefers event tagIds over cached subscription tags", () => {
+    // sub-1 is cached with tag-1, but the event says tag-2 — the
+    // server-provided tags are authoritative (cache may be stale).
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createNewEntryEvent({
+        subscriptionId: "sub-1",
+        feedType: "web",
+        tagIds: ["tag-2"],
+      })
+    );
+
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(11); // was 10
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
+
+    // Subscription count still increments
+    const subs = getSubscriptionsList();
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // was 5
+  });
+
   it("increments subscription unread count for tagged subscription", () => {
     handleSyncEvent(
       mockUtils.utils,

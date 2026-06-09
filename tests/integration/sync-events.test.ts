@@ -262,6 +262,35 @@ describe("sync.events", () => {
         entryId,
         subscriptionId: subId,
         feedType: "web",
+        // Untagged subscription: empty tagIds means uncategorized
+        tagIds: [],
+      });
+    });
+
+    it("includes the subscription's tagIds on new_entry events", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/tagged-sync-feed.xml");
+      const subId = await createTestSubscription(userId, feedId);
+      const tagId = await createTestTag(userId, "News");
+      await linkTagToSubscription(tagId, subId);
+
+      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const baseCursor = cursorResult.entries ?? new Date("2020-01-01").toISOString();
+
+      const entryId = await createTestEntry(feedId, { title: "Tagged Post" });
+      await createUserEntry(userId, entryId);
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: baseCursor },
+      });
+
+      const newEntryEvents = result.events.filter((e) => e.type === "new_entry");
+      expect(newEntryEvents).toHaveLength(1);
+      expect(newEntryEvents[0]).toMatchObject({
+        type: "new_entry",
+        entryId,
+        subscriptionId: subId,
+        tagIds: [tagId],
       });
     });
 

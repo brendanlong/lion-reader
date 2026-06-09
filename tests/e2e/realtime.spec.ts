@@ -55,9 +55,8 @@ interface RealtimeSetup {
  * - an untagged feed with one unread entry (exercises the Uncategorized list)
  *
  * Then logs in, opens /all, waits for the SSE connection plus its Redis
- * channel subscriptions, and expands the News tag so the per-subscription
- * unread count is visible (and the subscription is in cache, which the
- * delta-based tag count updates rely on).
+ * channel subscriptions, and (unless expandTag is false) expands the News
+ * tag so the per-subscription unread count is visible.
  */
 async function seedAndOpenAll(
   page: Page,
@@ -106,8 +105,6 @@ async function seedAndOpenAll(
   await expect(page.locator('[aria-label*="article: First post"]')).toBeVisible();
 
   // Expand the News tag so the subscription row (and its unread count) renders.
-  // This also puts the subscription in the subscriptions.list cache, which the
-  // delta-based tag count updates rely on (see #892 for the collapsed case).
   if (options.expandTag !== false) {
     await page
       .getByRole("listitem")
@@ -184,12 +181,11 @@ test("new_entry event updates unread counts in all affected lists without refetc
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
 
-// Skipped: known bug (#892). Tag deltas for new_entry are derived from cached
-// subscriptions.list data, which only exists once the tag has been expanded.
-// While the tag is collapsed (the default), the delta is silently skipped and
-// nothing invalidates tags.list, so the badge stays stale until an unrelated
-// refetch. This test encodes the intended behavior; unskip when #892 is fixed.
-test.skip("new_entry event updates a collapsed tag's unread count", async ({ page, baseURL }) => {
+// Regression test for #892: while a sidebar tag is collapsed (the default),
+// the subscription isn't in any cache, so tag deltas can't be derived
+// client-side. The new_entry event carries the subscription's tagIds
+// (resolved by the SSE endpoint) so the badge still updates.
+test("new_entry event updates a collapsed tag's unread count", async ({ page, baseURL }) => {
   const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(
     page,
     baseURL!,

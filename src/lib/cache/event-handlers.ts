@@ -49,7 +49,7 @@ export function handleSyncEvent(
   switch (event.type) {
     case "new_entry":
       // Update unread counts without invalidating entries.list
-      handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient);
+      handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient, event.tagIds);
       break;
 
     case "entry_updated":

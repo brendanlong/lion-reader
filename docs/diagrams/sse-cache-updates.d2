@@ -102,7 +102,7 @@ sse-endpoint: SSE Endpoint {
 
     description: |
       On connection:
-      1. Build feedId → subscriptionId map
+      1. Build feedId → {subscriptionId, tagIds} map
       2. Subscribe to user:{userId}:events
       3. Subscribe to feed:{feedId}:events for each subscription
       4. Subscribe to saved feed channel (if exists)
@@ -115,12 +115,14 @@ sse-endpoint: SSE Endpoint {
     transform: |
       Feed Events:
       - Transform feedId → subscriptionId (null for saved)
+      - new_entry: include subscription's tagIds (#892)
       - Include feedType for cache decisions
 
       User Events:
       - Forward directly
       - On subscription_created: subscribe to new feed channel
       - On subscription_deleted: unsubscribe from feed channel
+      - On subscription_updated / tag_deleted: refresh tagIds map
     |
   }
 
@@ -184,7 +186,8 @@ cache-ops: Cache Operations {
     updates: |
       Updates (surgical, no refetch):
       - subscriptions.list: unreadCount += 1
-      - tags.list: unreadCount += 1
+      - tags.list: unreadCount += 1 (from event tagIds;
+        works even when subscription isn't cached, #892)
       - entries.count({}): unread += 1, total += 1
       - entries.count({ type: "saved" }): if feedType === "saved"
 
