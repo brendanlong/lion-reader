@@ -23,6 +23,40 @@ export function clientReplace(href: string): void {
 }
 
 /**
+ * Extract dynamic route params from a pathname.
+ *
+ * Shallow routing skips Next's route-tree reconciliation, so useParams()
+ * doesn't update on pushState; params must be parsed from the pathname instead.
+ *
+ * @param basePath - Route prefix to strip before matching (e.g. "/demo").
+ *                   If the pathname doesn't start with it, no params match.
+ */
+export function extractParamsFromPathname(
+  pathname: string,
+  basePath = ""
+): { subscriptionId?: string; tagId?: string } {
+  let path = pathname;
+  if (basePath) {
+    if (!pathname.startsWith(basePath)) return {};
+    path = pathname.slice(basePath.length);
+  }
+
+  // /subscription/:id
+  const subscriptionMatch = path.match(/^\/subscription\/([^/]+)/);
+  if (subscriptionMatch) {
+    return { subscriptionId: subscriptionMatch[1] };
+  }
+
+  // /tag/:tagId
+  const tagMatch = path.match(/^\/tag\/([^/]+)/);
+  if (tagMatch) {
+    return { tagId: tagMatch[1] };
+  }
+
+  return {};
+}
+
+/**
  * Click handler for client-side navigation without SSR.
  * Allows cmd/ctrl+click to open in new tab.
  *

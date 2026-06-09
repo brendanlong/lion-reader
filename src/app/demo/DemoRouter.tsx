@@ -32,7 +32,7 @@ import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
 import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
-import { clientPush } from "@/lib/navigation";
+import { clientPush, extractParamsFromPathname } from "@/lib/navigation";
 import { DemoEntryList } from "./DemoEntryList";
 import { DemoListSkeleton } from "./DemoListSkeleton";
 import { useDemoState } from "./DemoStateContext";
@@ -54,10 +54,7 @@ function DemoRouterContent() {
   const [showSummaryForEntry, setShowSummaryForEntry] = useState<string | null>(null);
 
   // Parse the pathname to determine the current view
-  const subscriptionMatch = pathname.match(/^\/demo\/subscription\/([^/]+)/);
-  const tagMatch = pathname.match(/^\/demo\/tag\/([^/]+)/);
-  const subId = subscriptionMatch?.[1] ?? null;
-  const tagId = tagMatch?.[1] ?? null;
+  const { subscriptionId: subId, tagId } = extractParamsFromPathname(pathname, "/demo");
   const isHighlights = pathname.startsWith("/demo/highlights");
 
   // Compute the base entries (before state overrides) based on current navigation

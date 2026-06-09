@@ -48,8 +48,9 @@ zero-roundtrip-navigation constraint that motivated it.
 
 - `useParams()` does **not** update on `pushState` (it is tied to Next's route-tree
   reconciliation, which shallow routing intentionally skips). Dynamic params are therefore
-  parsed by regex: `extractParamsFromPathname` in `UnifiedEntriesContent.tsx`, with a
-  parallel copy in `src/app/demo/DemoRouter.tsx`.
+  parsed by regex via the shared `extractParamsFromPathname` helper in
+  `src/lib/navigation.ts` (used by `UnifiedEntriesContent`, `getFiltersFromPathname`, and
+  `DemoRouter` with a `/demo` base path).
 - Using Next's `<Link>` or `router.push()` anywhere in the app shell would silently
   reintroduce per-navigation RSC fetches. This is why `src/CLAUDE.md` mandates
   `ClientLink` for internal navigation.
@@ -114,7 +115,8 @@ unmanageable second cache layer, and broken offline navigation.
 
 ### Possible incremental improvements (optional, no urgency)
 
-- Share `extractParamsFromPathname` between `UnifiedEntriesContent` and `DemoRouter`.
+- ~~Share `extractParamsFromPathname` between `UnifiedEntriesContent` and `DemoRouter`.~~
+  Done: the shared helper lives in `src/lib/navigation.ts`.
 - Lazy-load `UnifiedSettingsContent` and `SubscribeContent` via `next/dynamic` to recover
   code splitting for the rarely-used sections.
 
