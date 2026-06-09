@@ -40,7 +40,7 @@ The realtime SSE/cache-update code is the hardest part of the app to verify by r
 - **SSE → cache → UI pipeline**: covered by `tests/e2e/` Playwright tests, which seed the test DB directly, publish real Redis pub/sub events, and assert the UI updates **without** refetching (`recordTrpcProcedures` in `tests/e2e/helpers.ts`). When changing the realtime flow, run `pnpm test:e2e` and add scenarios using those helpers.
 - **The minimal-request invariant**: SSE events must patch the React Query cache directly, never trigger `entries.*` refetches. `src/FRONTEND_STATE.md` is the contract for which queries get direct updates vs invalidation — read and update it when changing queries, mutations, or SSE handling.
 
-For manual verification, `pnpm test:e2e` starts the app server on port 4983 against the test database; you can also seed data with the helpers and inspect pages with Playwright directly.
+For manual verification, use the Playwright MCP browser tools (`mcp__Playwright__browser_*`) if available — navigate, take accessibility snapshots, click, and screenshot interactively against a dev server (or https://lionreader.com/demo for auth-free checks). `pnpm test:e2e` starts the app server on port 4983 against the test database; you can also seed data with the helpers and inspect pages with Playwright directly.
 
 ## UI Components
 

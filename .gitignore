@@ -166,3 +166,4 @@ extension/*.zip
 # Playwright
 test-results/
 playwright-report/
+.playwright-mcp/
