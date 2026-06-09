@@ -82,7 +82,10 @@ redis: Redis Pub/Sub {
 
       Events:
       - subscription_created (full subscription + feed data)
+      - subscription_updated (tags, customTitle)
       - subscription_deleted (subscriptionId)
+      - entry_state_changed (read/starred + unread counts)
+      - tag_created / tag_updated / tag_deleted
       - import_progress (per-feed progress)
       - import_completed (final counts)
     |
@@ -97,10 +100,14 @@ sse-endpoint: SSE Endpoint {
   style.fill: "#f0fdf4"
   tooltip: "src/app/api/v1/events/route.ts"
 
-  subscriber: Redis Subscriber {
+  subscriber: Shared Redis Subscriber {
     style.fill: "#bbf7d0"
 
     description: |
+      One Redis connection per process; channel
+      subscriptions are reference-counted and messages
+      fan out in-process to all SSE connections.
+
       On connection:
       1. Build feedId → {subscriptionId, tagIds} map
       2. Subscribe to user:{userId}:events

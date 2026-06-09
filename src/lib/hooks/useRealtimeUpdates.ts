@@ -386,25 +386,23 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
     cleanup();
     isManuallyClosedRef.current = false;
 
-    const createConnection = async () => {
+    /**
+     * Decides how to recover after the EventSource fails. A lightweight HEAD
+     * request (no auth/DB work server-side) distinguishes "SSE unavailable"
+     * (503, e.g. Redis down) — fall back to polling — from other failures,
+     * which get the normal reconnect backoff.
+     */
+    async function handleConnectionFailure(): Promise<void> {
       if (!shouldConnectRef.current || isManuallyClosedRef.current) {
         return;
       }
 
-      setConnectionStatus("connecting");
-
       try {
-        // First, try a fetch to check if SSE is available
-        // This handles the 503 case where Redis is down
         const response = await fetch("/api/v1/events", {
-          method: "GET",
+          method: "HEAD",
           credentials: "include",
-          headers: {
-            Accept: "text/event-stream",
-          },
         });
 
-        // If we get a 503, switch to polling mode
         if (response.status === 503) {
           console.log("SSE unavailable (503), switching to polling mode");
           startPolling();
@@ -419,80 +417,71 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
           return;
         }
+      } catch {
+        // Network error - fall through to the normal reconnect backoff
+      }
 
-        // If not OK, treat as error
-        if (!response.ok) {
-          throw new Error(`SSE request failed with status ${response.status}`);
+      scheduleReconnect(createConnection);
+    }
+
+    function createConnection(): void {
+      if (!shouldConnectRef.current || isManuallyClosedRef.current) {
+        return;
+      }
+
+      setConnectionStatus("connecting");
+
+      // Open the EventSource directly: a single connection per session.
+      // SSE availability (the 503 case) is only checked on the error path,
+      // so the happy path doesn't double the per-connect auth and DB work.
+      const eventSource = new EventSource("/api/v1/events", {
+        withCredentials: true,
+      });
+
+      eventSourceRef.current = eventSource;
+
+      eventSource.onopen = () => {
+        setConnectionStatus("connected");
+        reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
+
+        // Stop polling if we were in polling mode
+        stopPolling();
+
+        // Clear SSE retry timeout
+        if (sseRetryTimeoutRef.current) {
+          clearTimeout(sseRetryTimeoutRef.current);
+          sseRetryTimeoutRef.current = null;
         }
 
-        // Close the fetch response since we'll use EventSource
-        // The fetch was just to check availability
-        response.body?.cancel();
+        // Perform a catch-up sync to get any changes we might have missed
+        // The cursorsRef is already initialized, so performSync will work correctly
+        performSync();
+      };
 
-        // Create EventSource connection
-        const eventSource = new EventSource("/api/v1/events", {
-          withCredentials: true,
-        });
+      // Handle named events
+      eventSource.addEventListener("connected", handleEvent); // Initial cursor from server
+      eventSource.addEventListener("new_entry", handleEvent);
+      eventSource.addEventListener("entry_updated", handleEvent);
+      eventSource.addEventListener("entry_state_changed", handleEvent);
+      eventSource.addEventListener("subscription_created", handleEvent);
+      eventSource.addEventListener("subscription_updated", handleEvent);
+      eventSource.addEventListener("subscription_deleted", handleEvent);
+      eventSource.addEventListener("tag_created", handleEvent);
+      eventSource.addEventListener("tag_updated", handleEvent);
+      eventSource.addEventListener("tag_deleted", handleEvent);
+      eventSource.addEventListener("import_progress", handleEvent);
+      eventSource.addEventListener("import_completed", handleEvent);
 
-        eventSourceRef.current = eventSource;
-
-        eventSource.onopen = () => {
-          setConnectionStatus("connected");
-          reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
-
-          // Stop polling if we were in polling mode
-          stopPolling();
-
-          // Clear SSE retry timeout
-          if (sseRetryTimeoutRef.current) {
-            clearTimeout(sseRetryTimeoutRef.current);
-            sseRetryTimeoutRef.current = null;
-          }
-
-          // Perform a catch-up sync to get any changes we might have missed
-          // The cursorsRef is already initialized, so performSync will work correctly
-          performSync();
-        };
-
-        // Handle named events
-        eventSource.addEventListener("connected", handleEvent); // Initial cursor from server
-        eventSource.addEventListener("new_entry", handleEvent);
-        eventSource.addEventListener("entry_updated", handleEvent);
-        eventSource.addEventListener("entry_state_changed", handleEvent);
-        eventSource.addEventListener("subscription_created", handleEvent);
-        eventSource.addEventListener("subscription_updated", handleEvent);
-        eventSource.addEventListener("subscription_deleted", handleEvent);
-        eventSource.addEventListener("tag_created", handleEvent);
-        eventSource.addEventListener("tag_updated", handleEvent);
-        eventSource.addEventListener("tag_deleted", handleEvent);
-        eventSource.addEventListener("import_progress", handleEvent);
-        eventSource.addEventListener("import_completed", handleEvent);
-
-        eventSource.onerror = () => {
-          if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
-            setConnectionStatus("error");
-            cleanup();
-            scheduleReconnect(createConnection);
-          } else {
-            setConnectionStatus("connecting");
-          }
-        };
-      } catch (error) {
-        console.error("Failed to create SSE connection:", error);
-        setConnectionStatus("error");
-
-        // On connection failure, try polling as fallback
-        startPolling();
-
-        // Schedule SSE retry
-        sseRetryTimeoutRef.current = setTimeout(() => {
-          if (shouldConnectRef.current && !isManuallyClosedRef.current) {
-            stopPolling();
-            createConnection();
-          }
-        }, SSE_RETRY_INTERVAL_MS);
-      }
-    };
+      eventSource.onerror = () => {
+        if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
+          setConnectionStatus("error");
+          cleanup();
+          handleConnectionFailure();
+        } else {
+          setConnectionStatus("connecting");
+        }
+      };
+    }
 
     createConnection();
 

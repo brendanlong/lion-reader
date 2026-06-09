@@ -268,19 +268,24 @@ Lion Reader respects server Cache-Control headers, Retry-After directives, and H
 2. Worker publishes to per-feed Redis channel: `PUBLISH feed:{feedId}:events {type, entryId, ...}`
 3. SSE connections subscribe only to channels for feeds their user cares about
 4. App server receives message, forwards to client
-5. Client receives event, invalidates React Query cache
+5. Client receives event, patches the React Query cache (see `src/FRONTEND_STATE.md`)
 6. UI updates automatically
 
 ### Channel Design
 
 Per-feed channels for scalability - servers only receive events they care about:
 
-| Channel Pattern        | Purpose                                |
-| ---------------------- | -------------------------------------- |
-| `feed:{feedId}:events` | Feed events (new_entry, entry_updated) |
-| `user:{userId}:events` | User events (subscription_created)     |
+| Channel Pattern        | Events                                                                                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `feed:{feedId}:events` | `new_entry`, `entry_updated`                                                                                                                                                      |
+| `user:{userId}:events` | `subscription_created`, `subscription_updated`, `subscription_deleted`, `entry_state_changed`, `tag_created`, `tag_updated`, `tag_deleted`, `import_progress`, `import_completed` |
 
 When a user subscribes to a new feed, the SSE connection dynamically subscribes to that feed's channel.
+
+### Connection Efficiency
+
+- **Single client connection**: the browser opens the `/api/v1/events` EventSource directly (one connection per tab). SSE availability (e.g. Redis down) is detected via a lightweight `HEAD /api/v1/events` check only on the error path; a 503 switches the client to polling the sync endpoint.
+- **Shared Redis subscriber**: each app process holds a single Redis subscriber connection (`createPubSubSubscription` in `src/server/redis/pubsub.ts`). Channel subscriptions are reference-counted across SSE connections and messages are fanned out in-process, so Redis connections don't grow with the number of connected users.
 
 ---
 
