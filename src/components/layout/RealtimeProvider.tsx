@@ -11,7 +11,8 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { useRealtimeUpdates, type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
+import { useRealtimeUpdates } from "@/lib/hooks/useRealtimeUpdates";
+import { type SyncCursors } from "@/lib/events/cursors";
 import { ConnectionStatusIndicator } from "./ConnectionStatusIndicator";
 
 interface RealtimeProviderProps {

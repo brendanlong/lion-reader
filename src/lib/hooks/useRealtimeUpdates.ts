@@ -10,30 +10,31 @@
  * - Exponential backoff for reconnection attempts
  * - React Query cache invalidation
  * - Granular cursor tracking for each entity type (entries, subscriptions, tags, etc.)
+ *
+ * All connection-management decisions (when to reconnect, when to fall back to
+ * polling, backoff progression) live in the pure state machine in
+ * `src/lib/events/connection-state.ts`. This hook is the glue that feeds
+ * browser events into the machine and executes the actions it returns against
+ * the browser APIs (EventSource, fetch, timers).
  */
 
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
-import { syncEventSchema, type SyncEvent } from "@/lib/events/schemas";
-
-/**
- * Sync cursors for each entity type.
- * Each cursor is an ISO8601 timestamp based on max(updated_at) for the entity type.
- */
-export interface SyncCursors {
-  entries: string | null;
-  subscriptions: string | null;
-  tags: string | null;
-}
-
-/**
- * Connection status for real-time updates.
- */
-export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "polling";
+import {
+  connectionStatusForPhase,
+  INITIAL_CONNECTION_STATE,
+  transition,
+  type ConnectionAction,
+  type ConnectionEvent,
+  type ConnectionState,
+  type ConnectionStatus,
+} from "@/lib/events/connection-state";
+import { advanceCursors, type SyncCursors } from "@/lib/events/cursors";
+import { parseSyncEvent } from "@/lib/events/parse";
 
 /**
  * Return type for the useRealtimeUpdates hook.
@@ -65,57 +66,24 @@ export interface UseRealtimeUpdatesResult {
   reconnect: () => void;
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 /**
- * Maximum reconnection delay in milliseconds (30 seconds).
+ * Named SSE events forwarded to the shared sync-event handler.
+ * "connected" is the initial cursor event from the server.
  */
-const MAX_RECONNECT_DELAY_MS = 30_000;
-
-/**
- * Initial reconnection delay in milliseconds (1 second).
- */
-const INITIAL_RECONNECT_DELAY_MS = 1_000;
-
-/**
- * Backoff multiplier for exponential backoff.
- */
-const BACKOFF_MULTIPLIER = 2;
-
-/**
- * Polling interval when in fallback mode (30 seconds).
- */
-const POLL_INTERVAL_MS = 30_000;
-
-/**
- * How often to retry SSE while in polling mode (60 seconds).
- */
-const SSE_RETRY_INTERVAL_MS = 60_000;
-
-// ============================================================================
-// SSE Event Parsing
-// ============================================================================
-
-/**
- * Parses SSE event data from a JSON string into a SyncEvent.
- * Uses the shared Zod schema for validation, which strips extra server fields
- * (userId, feedId) and applies defaults for optional fields like timestamp.
- * Returns null if the data is invalid or doesn't match a known event type.
- */
-function parseEventData(data: string): SyncEvent | null {
-  try {
-    const result = syncEventSchema.safeParse(JSON.parse(data));
-    return result.success ? result.data : null;
-  } catch {
-    return null;
-  }
-}
-
-// ============================================================================
-// Hook
-// ============================================================================
+const SSE_EVENT_NAMES = [
+  "connected",
+  "new_entry",
+  "entry_updated",
+  "entry_state_changed",
+  "subscription_created",
+  "subscription_updated",
+  "subscription_deleted",
+  "tag_created",
+  "tag_updated",
+  "tag_deleted",
+  "import_progress",
+  "import_completed",
+] as const;
 
 /**
  * Hook to manage real-time updates with SSE primary and polling fallback.
@@ -143,26 +111,20 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
 
-  // Connection status state
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
-  const [isPollingMode, setIsPollingMode] = useState(false);
+  const [state, setState] = useState<ConnectionState>(INITIAL_CONNECTION_STATE);
 
   // Refs to persist across renders
+  const stateRef = useRef<ConnectionState>(state);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sseRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
-  const isManuallyClosedRef = useRef(false);
-  const shouldConnectRef = useRef(false);
   // Initialize with server-provided cursors (granular tracking per entity type)
   const cursorsRef = useRef<SyncCursors>(initialCursors);
 
-  // Ref for self-referencing in performSync callback (avoids access-before-declaration)
-  const performSyncRef = useRef<() => Promise<SyncCursors | null>>(async () => null);
-
-  // State to trigger reconnection
-  const [reconnectTrigger, setReconnectTrigger] = useState(0);
+  // Latest callbacks, readable from the stable dispatch closure below
+  const handleEventRef = useRef<(event: MessageEvent) => void>(() => {});
+  const performSyncRef = useRef<() => Promise<void>>(async () => {});
 
   // Check if user is authenticated
   const userQuery = trpc.auth.me.useQuery(undefined, {
@@ -170,91 +132,30 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
     refetchOnWindowFocus: false,
   });
 
-  const isAuthenticated = userQuery.isSuccess && userQuery.data?.user;
-
-  /**
-   * Cleans up all connections and intervals.
-   */
-  const cleanup = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-
-    if (sseRetryTimeoutRef.current) {
-      clearTimeout(sseRetryTimeoutRef.current);
-      sseRetryTimeoutRef.current = null;
-    }
-
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-  }, []);
-
-  /**
-   * Updates the appropriate cursor based on the event type.
-   * Only updates if the new timestamp is greater than the current cursor.
-   */
-  const updateCursorForEvent = useCallback((event: SyncEvent) => {
-    let cursorType: "entries" | "subscriptions" | "tags" | null = null;
-
-    if (
-      event.type === "new_entry" ||
-      event.type === "entry_updated" ||
-      event.type === "entry_state_changed"
-    ) {
-      cursorType = "entries";
-    } else if (
-      event.type === "subscription_created" ||
-      event.type === "subscription_updated" ||
-      event.type === "subscription_deleted"
-    ) {
-      cursorType = "subscriptions";
-    } else if (
-      event.type === "tag_created" ||
-      event.type === "tag_updated" ||
-      event.type === "tag_deleted"
-    ) {
-      cursorType = "tags";
-    }
-
-    if (cursorType) {
-      const currentCursor = cursorsRef.current[cursorType];
-      if (!currentCursor || new Date(event.updatedAt) > new Date(currentCursor)) {
-        cursorsRef.current = {
-          ...cursorsRef.current,
-          [cursorType]: event.updatedAt,
-        };
-      }
-    }
-  }, []);
+  const isAuthenticated = userQuery.isSuccess && !!userQuery.data?.user;
 
   /**
    * Handles incoming SSE events by updating or invalidating relevant caches.
    * Uses the shared handleSyncEvent function for unified event handling.
    *
-   * Also updates the appropriate cursor based on the event's updatedAt field
+   * Also advances the appropriate cursor based on the event's updatedAt field
    * to keep cursors in sync as events arrive.
    */
   const handleEvent = useCallback(
     (event: MessageEvent) => {
-      const data = parseEventData(event.data);
+      const data = parseSyncEvent(event.data);
       if (!data) return;
 
-      // Update the appropriate cursor based on event type
-      updateCursorForEvent(data);
+      cursorsRef.current = advanceCursors(cursorsRef.current, data);
 
       // Delegate to shared handler for cache updates
       handleSyncEvent(utils, queryClient, data);
     },
-    [utils, queryClient, updateCursorForEvent]
+    [utils, queryClient]
   );
+  useEffect(() => {
+    handleEventRef.current = handleEvent;
+  }, [handleEvent]);
 
   /**
    * Performs a sync to catch up on missed changes.
@@ -276,7 +177,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
       // Process each event through the shared handler (same as SSE path)
       for (const event of result.events) {
-        updateCursorForEvent(event);
+        cursorsRef.current = advanceCursors(cursorsRef.current, event);
         handleSyncEvent(utils, queryClient, event);
       }
 
@@ -285,152 +186,94 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         // Use setTimeout to avoid blocking - the next poll or manual sync will pick up more
         setTimeout(() => performSyncRef.current(), 100);
       }
-
-      return cursorsRef.current;
     } catch (error) {
       console.error("Sync failed:", error);
-      return null;
     }
-  }, [utils, queryClient, updateCursorForEvent]);
+  }, [utils, queryClient]);
   useEffect(() => {
     performSyncRef.current = performSync;
   }, [performSync]);
 
   /**
-   * Starts polling mode when SSE is unavailable.
+   * Stable dispatcher: runs the pure transition function and executes the
+   * resulting actions against browser APIs.
    */
-  const startPolling = useCallback(() => {
-    if (pollIntervalRef.current) {
-      return; // Already polling
-    }
-
-    setIsPollingMode(true);
-    setConnectionStatus("polling");
-
-    // cursorsRef already initialized with server-provided cursors
-
-    // Start polling interval
-    pollIntervalRef.current = setInterval(() => {
-      performSync();
-    }, POLL_INTERVAL_MS);
-
-    // Do an immediate sync
-    performSync();
-  }, [performSync]);
-
-  /**
-   * Stops polling mode.
-   */
-  const stopPolling = useCallback(() => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-    setIsPollingMode(false);
-  }, []);
-
-  /**
-   * Schedules a reconnection attempt with exponential backoff.
-   */
-  const scheduleReconnect = useCallback((connectFn: () => void) => {
-    if (isManuallyClosedRef.current || !shouldConnectRef.current) return;
-
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-
-    const delay = reconnectDelayRef.current;
-
-    reconnectTimeoutRef.current = setTimeout(() => {
-      reconnectDelayRef.current = Math.min(
-        reconnectDelayRef.current * BACKOFF_MULTIPLIER,
-        MAX_RECONNECT_DELAY_MS
-      );
-      connectFn();
-    }, delay);
-  }, []);
-
-  /**
-   * Manual reconnection function exposed to consumers.
-   */
-  const reconnect = useCallback(() => {
-    reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
-    isManuallyClosedRef.current = false;
-    shouldConnectRef.current = true;
-
-    cleanup();
-    stopPolling();
-
-    setReconnectTrigger((prev) => prev + 1);
-  }, [cleanup, stopPolling]);
-
-  // Effect to manage SSE connection based on authentication
-  useEffect(() => {
-    shouldConnectRef.current = !!isAuthenticated;
-
-    if (!isAuthenticated) {
-      isManuallyClosedRef.current = true;
-      // cleanup() already clears the poll interval; avoid calling stopPolling()
-      // here because it calls setState which causes cascading renders in an effect.
-      // isPollingMode is ignored when not authenticated (derived in return value).
-      cleanup();
-      return;
-    }
-
-    // Already connected, nothing to do
-    if (eventSourceRef.current?.readyState === EventSource.OPEN) {
-      return;
-    }
-
-    // Clean up any existing connection
-    cleanup();
-    isManuallyClosedRef.current = false;
-
-    /**
-     * Decides how to recover after the EventSource fails. A lightweight HEAD
-     * request (no auth/DB work server-side) distinguishes "SSE unavailable"
-     * (503, e.g. Redis down) — fall back to polling — from other failures,
-     * which get the normal reconnect backoff.
-     */
-    async function handleConnectionFailure(): Promise<void> {
-      if (!shouldConnectRef.current || isManuallyClosedRef.current) {
-        return;
+  const dispatch = useMemo(() => {
+    function dispatchEvent(event: ConnectionEvent): void {
+      const { state: nextState, actions } = transition(stateRef.current, event);
+      if (nextState !== stateRef.current) {
+        stateRef.current = nextState;
+        setState(nextState);
       }
+      for (const action of actions) {
+        runAction(action);
+      }
+    }
 
-      try {
-        const response = await fetch("/api/v1/events", {
-          method: "HEAD",
-          credentials: "include",
-        });
-
-        if (response.status === 503) {
-          console.log("SSE unavailable (503), switching to polling mode");
-          startPolling();
-
-          // Schedule periodic SSE retry
+    function runAction(action: ConnectionAction): void {
+      switch (action.type) {
+        case "open-event-source":
+          openEventSource();
+          break;
+        case "close-event-source":
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+          break;
+        case "probe-availability":
+          void probeAvailability();
+          break;
+        case "schedule-reconnect":
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+          }
+          reconnectTimeoutRef.current = setTimeout(() => {
+            reconnectTimeoutRef.current = null;
+            dispatchEvent({ type: "reconnect-timer-fired" });
+          }, action.delayMs);
+          break;
+        case "cancel-reconnect":
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+          break;
+        case "start-poll-interval":
+          if (!pollIntervalRef.current) {
+            pollIntervalRef.current = setInterval(() => {
+              void performSyncRef.current();
+            }, action.intervalMs);
+          }
+          break;
+        case "stop-poll-interval":
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+          break;
+        case "schedule-sse-retry":
+          if (sseRetryTimeoutRef.current) {
+            clearTimeout(sseRetryTimeoutRef.current);
+          }
           sseRetryTimeoutRef.current = setTimeout(() => {
-            if (shouldConnectRef.current && !isManuallyClosedRef.current) {
-              stopPolling();
-              createConnection();
-            }
-          }, SSE_RETRY_INTERVAL_MS);
-
-          return;
-        }
-      } catch {
-        // Network error - fall through to the normal reconnect backoff
+            sseRetryTimeoutRef.current = null;
+            dispatchEvent({ type: "sse-retry-timer-fired" });
+          }, action.delayMs);
+          break;
+        case "cancel-sse-retry":
+          if (sseRetryTimeoutRef.current) {
+            clearTimeout(sseRetryTimeoutRef.current);
+            sseRetryTimeoutRef.current = null;
+          }
+          break;
+        case "sync":
+          void performSyncRef.current();
+          break;
       }
-
-      scheduleReconnect(createConnection);
     }
 
-    function createConnection(): void {
-      if (!shouldConnectRef.current || isManuallyClosedRef.current) {
-        return;
-      }
-
-      setConnectionStatus("connecting");
-
+    function openEventSource(): void {
       // Open the EventSource directly: a single connection per session.
       // SSE availability (the 503 case) is only checked on the error path,
       // so the happy path doesn't double the per-connect auth and DB work.
@@ -441,80 +284,77 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       eventSourceRef.current = eventSource;
 
       eventSource.onopen = () => {
-        setConnectionStatus("connected");
-        reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
-
-        // Stop polling if we were in polling mode
-        stopPolling();
-
-        // Clear SSE retry timeout
-        if (sseRetryTimeoutRef.current) {
-          clearTimeout(sseRetryTimeoutRef.current);
-          sseRetryTimeoutRef.current = null;
-        }
-
-        // Perform a catch-up sync to get any changes we might have missed
-        // The cursorsRef is already initialized, so performSync will work correctly
-        performSync();
+        if (eventSourceRef.current !== eventSource) return;
+        dispatchEvent({ type: "open" });
       };
 
-      // Handle named events
-      eventSource.addEventListener("connected", handleEvent); // Initial cursor from server
-      eventSource.addEventListener("new_entry", handleEvent);
-      eventSource.addEventListener("entry_updated", handleEvent);
-      eventSource.addEventListener("entry_state_changed", handleEvent);
-      eventSource.addEventListener("subscription_created", handleEvent);
-      eventSource.addEventListener("subscription_updated", handleEvent);
-      eventSource.addEventListener("subscription_deleted", handleEvent);
-      eventSource.addEventListener("tag_created", handleEvent);
-      eventSource.addEventListener("tag_updated", handleEvent);
-      eventSource.addEventListener("tag_deleted", handleEvent);
-      eventSource.addEventListener("import_progress", handleEvent);
-      eventSource.addEventListener("import_completed", handleEvent);
+      for (const eventName of SSE_EVENT_NAMES) {
+        eventSource.addEventListener(eventName, (event) => handleEventRef.current(event));
+      }
 
       eventSource.onerror = () => {
-        if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
-          setConnectionStatus("error");
-          cleanup();
-          handleConnectionFailure();
-        } else {
-          setConnectionStatus("connecting");
-        }
+        if (eventSourceRef.current !== eventSource) return;
+        dispatchEvent({
+          type: "stream-error",
+          closed: eventSource.readyState === EventSource.CLOSED,
+        });
       };
     }
 
-    createConnection();
+    /**
+     * Decides how to recover after the EventSource fails. A lightweight HEAD
+     * request (no auth/DB work server-side) distinguishes "SSE unavailable"
+     * (503, e.g. Redis down) — fall back to polling — from other failures,
+     * which get the normal reconnect backoff.
+     */
+    async function probeAvailability(): Promise<void> {
+      let sseUnavailable = false;
+      try {
+        const response = await fetch("/api/v1/events", {
+          method: "HEAD",
+          credentials: "include",
+        });
+        sseUnavailable = response.status === 503;
+      } catch {
+        // Network error - treat like any other failure (reconnect backoff)
+      }
+
+      if (sseUnavailable) {
+        console.log("SSE unavailable (503), switching to polling mode");
+      }
+      dispatchEvent({ type: "probe-result", sseUnavailable });
+    }
+
+    return dispatchEvent;
+  }, []);
+
+  /**
+   * Manual reconnection function exposed to consumers.
+   */
+  const reconnect = useCallback(() => {
+    dispatch({ type: "manual-reconnect" });
+  }, [dispatch]);
+
+  // Effect to manage the connection based on authentication
+  useEffect(() => {
+    if (!isAuthenticated) {
+      dispatch({ type: "disconnect" });
+      return;
+    }
+
+    dispatch({ type: "connect" });
 
     return () => {
-      isManuallyClosedRef.current = true;
-      cleanup();
-      stopPolling();
+      dispatch({ type: "disconnect" });
     };
-  }, [
-    isAuthenticated,
-    reconnectTrigger,
-    cleanup,
-    handleEvent,
-    scheduleReconnect,
-    startPolling,
-    stopPolling,
-    performSync,
-  ]);
+  }, [isAuthenticated, dispatch]);
 
-  // Handle visibility change - reconnect when tab becomes visible
+  // Handle visibility change - reconnect (or sync, in polling mode) when the
+  // tab becomes visible
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (
-        document.visibilityState === "visible" &&
-        isAuthenticated &&
-        eventSourceRef.current?.readyState !== EventSource.OPEN
-      ) {
-        // If in polling mode, do an immediate sync
-        if (isPollingMode) {
-          performSync();
-        } else {
-          reconnect();
-        }
+      if (document.visibilityState === "visible") {
+        dispatch({ type: "visibility-visible" });
       }
     };
 
@@ -523,18 +363,14 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isAuthenticated, isPollingMode, performSync, reconnect]);
+  }, [dispatch]);
 
-  // Derive the effective status
-  const effectiveStatus: ConnectionStatus = isAuthenticated ? connectionStatus : "disconnected";
-
-  // Derive effective polling state - can't be polling if not authenticated
-  const effectiveIsPolling = isPollingMode && !!isAuthenticated;
+  const status = connectionStatusForPhase(state.phase);
 
   return {
-    status: effectiveStatus,
-    isConnected: effectiveStatus === "connected" || effectiveStatus === "polling",
-    isPolling: effectiveIsPolling,
+    status,
+    isConnected: status === "connected" || status === "polling",
+    isPolling: state.phase === "polling",
     reconnect,
   };
 }

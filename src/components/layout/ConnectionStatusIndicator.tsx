@@ -7,7 +7,7 @@
 
 "use client";
 
-import { type ConnectionStatus } from "@/lib/hooks/useRealtimeUpdates";
+import { type ConnectionStatus } from "@/lib/events/connection-state";
 
 interface ConnectionStatusIndicatorProps {
   /**
