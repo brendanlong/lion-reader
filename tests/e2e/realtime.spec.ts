@@ -63,7 +63,7 @@ async function seedAndOpenAll(
   page: Page,
   baseURL: string,
   channelFor: (setup: { user: TestUser; taggedFeed: TestFeed }) => string,
-  options: { starSecondPost?: boolean } = {}
+  options: { starSecondPost?: boolean; expandTag?: boolean } = {}
 ): Promise<RealtimeSetup> {
   const db = getDb();
   const user = await createConfirmedUser(db);
@@ -105,13 +105,17 @@ async function seedAndOpenAll(
   await page.goto("/all");
   await expect(page.locator('[aria-label*="article: First post"]')).toBeVisible();
 
-  // Expand the News tag so the subscription row (and its unread count) renders
-  await page
-    .getByRole("listitem")
-    .filter({ has: page.getByRole("link", { name: /News/ }) })
-    .getByRole("button", { name: "Expand" })
-    .click();
-  await expect(page.getByRole("link", { name: new RegExp(taggedFeed.title) })).toBeVisible();
+  // Expand the News tag so the subscription row (and its unread count) renders.
+  // This also puts the subscription in the subscriptions.list cache, which the
+  // delta-based tag count updates rely on (see #892 for the collapsed case).
+  if (options.expandTag !== false) {
+    await page
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("link", { name: /News/ }) })
+      .getByRole("button", { name: "Expand" })
+      .click();
+    await expect(page.getByRole("link", { name: new RegExp(taggedFeed.title) })).toBeVisible();
+  }
 
   await sseResponse;
   // The SSE handler subscribes to Redis channels asynchronously after the
@@ -176,6 +180,40 @@ test("new_entry event updates unread counts in all affected lists without refetc
   await expect(links.subscriptionRow).toContainText("(3)");
   // ...while unaffected lists keep their counts
   await expect(links.uncategorized).toContainText("(1)");
+
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+// Skipped: known bug (#892). Tag deltas for new_entry are derived from cached
+// subscriptions.list data, which only exists once the tag has been expanded.
+// While the tag is collapsed (the default), the delta is silently skipped and
+// nothing invalidates tags.list, so the badge stays stale until an unrelated
+// refetch. This test encodes the intended behavior; unskip when #892 is fixed.
+test.skip("new_entry event updates a collapsed tag's unread count", async ({ page, baseURL }) => {
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(
+    page,
+    baseURL!,
+    ({ taggedFeed }) => getFeedEventsChannel(taggedFeed.feedId),
+    { expandTag: false }
+  );
+  const links = sidebarLinks(page, taggedFeed);
+
+  await expect(links.allItems).toContainText("(3)");
+  await expect(links.newsTag).toContainText("(2)");
+
+  trpcCalls.length = 0;
+
+  const db = getDb();
+  const entry = await createUnreadEntry(db, {
+    feedId: taggedFeed.feedId,
+    userId: user.id,
+    title: "Realtime post",
+  });
+  await publishNewEntry(taggedFeed.feedId, entry.id, entry.updatedAt, "web");
+
+  await expect(links.allItems).toContainText("(4)");
+  // Intended behavior: the collapsed tag's badge should update too
+  await expect(links.newsTag).toContainText("(3)");
 
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
