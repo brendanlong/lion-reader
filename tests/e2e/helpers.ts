@@ -103,25 +103,49 @@ export async function loginAs(
 export interface TestFeed {
   feedId: string;
   subscriptionId: string;
+  title: string;
 }
 
 /** Creates a web feed and an active subscription (with subscription_feeds row). */
 export async function createSubscribedFeed(db: TestDb, userId: string): Promise<TestFeed> {
   const feedId = generateUuidv7();
   const subscriptionId = generateUuidv7();
+  const title = `E2E Feed ${feedId.slice(-6)}`;
 
   await db.insert(schema.feeds).values({
     id: feedId,
     type: "web",
     url: `https://example.com/e2e/${feedId}/feed.xml`,
-    title: `E2E Feed ${feedId.slice(-6)}`,
+    title,
     siteUrl: `https://example.com/e2e/${feedId}`,
   });
   await db.insert(schema.subscriptions).values({ id: subscriptionId, userId, feedId });
   // visible_entries maps entries to subscriptions through subscription_feeds
   await db.insert(schema.subscriptionFeeds).values({ subscriptionId, feedId, userId });
 
-  return { feedId, subscriptionId };
+  return { feedId, subscriptionId, title };
+}
+
+/** Creates a tag and assigns it to a subscription. Returns the tag ID. */
+export async function createTagOnSubscription(
+  db: TestDb,
+  userId: string,
+  subscriptionId: string,
+  name: string
+): Promise<string> {
+  const tagId = generateUuidv7();
+  await db.insert(schema.tags).values({ id: tagId, userId, name });
+  await db.insert(schema.subscriptionTags).values({ subscriptionId, tagId });
+  return tagId;
+}
+
+/** Stars an entry directly in the database (keeps it unread). */
+export async function starEntry(db: TestDb, userId: string, entryId: string): Promise<void> {
+  const now = new Date();
+  await db
+    .update(schema.userEntries)
+    .set({ starred: true, hasStarred: true, starredChangedAt: now, updatedAt: now })
+    .where(and(eq(schema.userEntries.userId, userId), eq(schema.userEntries.entryId, entryId)));
 }
 
 export interface TestEntry {
