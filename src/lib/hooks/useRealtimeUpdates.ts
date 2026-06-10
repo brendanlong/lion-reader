@@ -210,6 +210,16 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
    */
   const requestSync = useCallback(() => {
     function dispatchSchedulerEvent(event: SyncSchedulerEvent): void {
+      // Don't start or continue syncs once disconnected (unmount/logout sets
+      // this synchronously). Otherwise an in-flight sync's `hasMore` drain would
+      // keep firing background sync.events requests after the hook is gone. This
+      // guards both the initial `request` and the `completed` re-entry below.
+      // Reset to idle so a later reconnect's catch-up sync starts cleanly
+      // instead of being stuck behind an abandoned `running` flag.
+      if (stateRef.current.phase === "disconnected") {
+        syncSchedulerStateRef.current = INITIAL_SYNC_SCHEDULER_STATE;
+        return;
+      }
       const { state, startSync } = reduceSyncScheduler(syncSchedulerStateRef.current, event);
       syncSchedulerStateRef.current = state;
       if (startSync) {
