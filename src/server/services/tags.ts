@@ -73,6 +73,7 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
       subscriptions,
       and(
         eq(subscriptionTags.subscriptionId, subscriptions.id),
+        eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt)
       )
     )
