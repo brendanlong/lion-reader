@@ -287,6 +287,43 @@ describe("Tags API", () => {
       expect(result.items[0].feedCount).toBe(2);
     });
 
+    it("returns tags with correct unread counts", async () => {
+      const userId = await createTestUser();
+
+      const techTagId = generateUuidv7();
+      const emptyTagId = generateUuidv7();
+      await db.insert(tags).values([
+        { id: techTagId, userId, name: "Tech", createdAt: new Date() },
+        { id: emptyTagId, userId, name: "Empty", createdAt: new Date() },
+      ]);
+
+      const feedId1 = await createTestFeed("https://feed1.com/rss");
+      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const subId1 = await createTestSubscription(userId, feedId1);
+      const subId2 = await createTestSubscription(userId, feedId2);
+      await linkTagToSubscription(techTagId, subId1);
+      await linkTagToSubscription(techTagId, subId2);
+
+      // feed1: 2 unread entries; feed2: 1 unread + 1 read entry
+      await createTestEntry(feedId1, { userIds: [userId] });
+      await createTestEntry(feedId1, { userIds: [userId] });
+      await createTestEntry(feedId2, { userIds: [userId] });
+      const readEntryId = await createTestEntry(feedId2, { userIds: [userId] });
+      await db
+        .update(userEntries)
+        .set({ read: true })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, readEntryId)));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.tags.list();
+
+      const tech = result.items.find((t) => t.name === "Tech");
+      const empty = result.items.find((t) => t.name === "Empty");
+      expect(tech?.unreadCount).toBe(3);
+      expect(empty?.unreadCount).toBe(0);
+    });
+
     it("returns tags ordered by name", async () => {
       const userId = await createTestUser();
 
