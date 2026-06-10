@@ -71,9 +71,14 @@ describe("isPrivateAddress", () => {
       "ff02::1", // multicast
       "2001:db8::1", // documentation
       "64:ff9b::7f00:1", // NAT64 of 127.0.0.1
-      "::ffff:127.0.0.1", // IPv4-mapped loopback
-      "::ffff:169.254.169.254", // IPv4-mapped metadata
-      "::ffff:10.0.0.1", // IPv4-mapped private
+      "::ffff:127.0.0.1", // IPv4-mapped loopback (dotted)
+      "::ffff:169.254.169.254", // IPv4-mapped metadata (dotted)
+      "::ffff:10.0.0.1", // IPv4-mapped private (dotted)
+      "::ffff:7f00:1", // IPv4-mapped loopback (hex)
+      "::ffff:a9fe:a9fe", // IPv4-mapped 169.254.169.254 (hex)
+      "::ffff:a00:1", // IPv4-mapped 10.0.0.1 (hex)
+      "::127.0.0.1", // IPv4-compatible loopback (deprecated)
+      "::7f00:1", // IPv4-compatible loopback (hex)
     ];
 
     for (const ip of blocked) {
@@ -87,7 +92,8 @@ describe("isPrivateAddress", () => {
     const allowed = [
       "2606:4700:4700::1111", // Cloudflare DNS
       "2001:4860:4860::8888", // Google DNS
-      "::ffff:8.8.8.8", // IPv4-mapped public
+      "::ffff:8.8.8.8", // IPv4-mapped public (dotted)
+      "::ffff:808:808", // IPv4-mapped 8.8.8.8 (hex)
     ];
 
     for (const ip of allowed) {

@@ -20,33 +20,47 @@ import { Agent, type Dispatcher } from "undici";
 import { securityConfig } from "../config/env";
 
 /**
+ * Private/reserved IPv4 ranges as [network, prefix] tuples. Each is also blocked in
+ * its IPv4-mapped IPv6 form (::ffff:net/(96+prefix)) so attackers can't bypass the
+ * block by encoding a private IPv4 as an IPv6 literal.
+ */
+const PRIVATE_IPV4_RANGES: ReadonlyArray<readonly [string, number]> = [
+  ["0.0.0.0", 8], // "this" network
+  ["10.0.0.0", 8], // RFC 1918 private
+  ["100.64.0.0", 10], // RFC 6598 carrier-grade NAT
+  ["127.0.0.0", 8], // loopback
+  ["169.254.0.0", 16], // link-local (cloud metadata)
+  ["172.16.0.0", 12], // RFC 1918 private
+  ["192.0.0.0", 24], // IETF protocol assignments
+  ["192.0.2.0", 24], // TEST-NET-1
+  ["192.168.0.0", 16], // RFC 1918 private
+  ["198.18.0.0", 15], // benchmarking
+  ["198.51.100.0", 24], // TEST-NET-2
+  ["203.0.113.0", 24], // TEST-NET-3
+  ["224.0.0.0", 4], // multicast
+  ["240.0.0.0", 4], // reserved (incl. 255.255.255.255 broadcast)
+];
+
+/**
  * Reserved/private IP ranges that must never be reachable from server-side fetches.
  * Covers loopback, RFC 1918 private, carrier-grade NAT, link-local (incl. the
  * 169.254.169.254 cloud metadata endpoint), documentation/test, multicast, and
- * reserved space for both IPv4 and IPv6.
+ * reserved space for both IPv4 and IPv6 — including IPv4-mapped and IPv4-compatible
+ * IPv6 forms. BlockList matches numerically, so it catches alternative textual
+ * encodings (hex, compressed) of the same address.
  */
 function buildBlockList(): BlockList {
   const list = new BlockList();
 
-  // IPv4
-  list.addSubnet("0.0.0.0", 8, "ipv4"); // "this" network
-  list.addSubnet("10.0.0.0", 8, "ipv4"); // RFC 1918 private
-  list.addSubnet("100.64.0.0", 10, "ipv4"); // RFC 6598 carrier-grade NAT
-  list.addSubnet("127.0.0.0", 8, "ipv4"); // loopback
-  list.addSubnet("169.254.0.0", 16, "ipv4"); // link-local (cloud metadata)
-  list.addSubnet("172.16.0.0", 12, "ipv4"); // RFC 1918 private
-  list.addSubnet("192.0.0.0", 24, "ipv4"); // IETF protocol assignments
-  list.addSubnet("192.0.2.0", 24, "ipv4"); // TEST-NET-1
-  list.addSubnet("192.168.0.0", 16, "ipv4"); // RFC 1918 private
-  list.addSubnet("198.18.0.0", 15, "ipv4"); // benchmarking
-  list.addSubnet("198.51.100.0", 24, "ipv4"); // TEST-NET-2
-  list.addSubnet("203.0.113.0", 24, "ipv4"); // TEST-NET-3
-  list.addSubnet("224.0.0.0", 4, "ipv4"); // multicast
-  list.addSubnet("240.0.0.0", 4, "ipv4"); // reserved (incl. 255.255.255.255 broadcast)
+  for (const [network, prefix] of PRIVATE_IPV4_RANGES) {
+    list.addSubnet(network, prefix, "ipv4");
+    // IPv4-mapped IPv6 (::ffff:a.b.c.d): the IPv4 /N maps to an IPv6 /(96+N).
+    list.addSubnet(`::ffff:${network}`, 96 + prefix, "ipv6");
+  }
 
-  // IPv6
-  list.addAddress("::", "ipv6"); // unspecified
-  list.addAddress("::1", "ipv6"); // loopback
+  // ::/96 covers the unspecified address (::), IPv6 loopback (::1), and the
+  // deprecated IPv4-compatible IPv6 range (::a.b.c.d) — none are valid public hosts.
+  list.addSubnet("::", 96, "ipv6");
   list.addSubnet("64:ff9b::", 96, "ipv6"); // NAT64 (can translate to private IPv4)
   list.addSubnet("100::", 64, "ipv6"); // discard-only
   list.addSubnet("2001:db8::", 32, "ipv6"); // documentation
@@ -59,14 +73,13 @@ function buildBlockList(): BlockList {
 
 const blockList = buildBlockList();
 
-/** Matches an IPv4-mapped IPv6 address (e.g. ::ffff:127.0.0.1). */
-const IPV4_MAPPED_RE = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i;
-
 /**
  * Returns true if the given IP address is in a private/reserved range.
  *
  * Only valid IP literals are expected (post-DNS-resolution). Anything that isn't
- * a parseable IP is treated as private (blocked) to fail closed.
+ * a parseable IP is treated as private (blocked) to fail closed. IPv4-mapped and
+ * IPv4-compatible IPv6 forms are covered by the block list itself, so no special
+ * unwrapping is needed.
  */
 export function isPrivateAddress(address: string): boolean {
   const type = isIP(address);
@@ -74,17 +87,7 @@ export function isPrivateAddress(address: string): boolean {
     // Not a valid IP literal — block to fail closed.
     return true;
   }
-
-  if (type === 6) {
-    // Unwrap IPv4-mapped IPv6 so it's checked against the IPv4 ranges.
-    const mapped = IPV4_MAPPED_RE.exec(address);
-    if (mapped) {
-      return isPrivateAddress(mapped[1]);
-    }
-    return blockList.check(address, "ipv6");
-  }
-
-  return blockList.check(address, "ipv4");
+  return blockList.check(address, type === 6 ? "ipv6" : "ipv4");
 }
 
 /**
