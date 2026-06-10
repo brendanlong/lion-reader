@@ -35,6 +35,12 @@ import {
 } from "@/lib/events/connection-state";
 import { advanceCursors, type SyncCursors } from "@/lib/events/cursors";
 import { parseSyncEvent } from "@/lib/events/parse";
+import {
+  INITIAL_SYNC_SCHEDULER_STATE,
+  reduceSyncScheduler,
+  type SyncSchedulerEvent,
+  type SyncSchedulerState,
+} from "@/lib/events/sync-scheduler";
 
 /**
  * Return type for the useRealtimeUpdates hook.
@@ -124,7 +130,11 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
   // Latest callbacks, readable from the stable dispatch closure below
   const handleEventRef = useRef<(event: MessageEvent) => void>(() => {});
-  const performSyncRef = useRef<() => Promise<void>>(async () => {});
+  const requestSyncRef = useRef<() => void>(() => {});
+
+  // Serializes catch-up syncs so two never run at once and double-apply
+  // delta-based cache updates (#897). State is pure; the glue below executes it.
+  const syncSchedulerStateRef = useRef<SyncSchedulerState>(INITIAL_SYNC_SCHEDULER_STATE);
 
   // Check if user is authenticated
   const userQuery = trpc.auth.me.useQuery(undefined, {
@@ -158,12 +168,16 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   }, [handleEvent]);
 
   /**
-   * Performs a sync to catch up on missed changes.
-   * Uses the sync.events endpoint which returns events in the same format as SSE,
-   * allowing us to reuse the same handleSyncEvent logic for both paths.
-   * Used during polling mode and for catch-up sync after SSE reconnection.
+   * Runs a single catch-up sync against the sync.events endpoint, which returns
+   * events in the same format as SSE so we reuse the same handleSyncEvent logic
+   * for both paths. Returns whether the server has more events to drain.
+   *
+   * This must never run concurrently with itself: two runs would read the same
+   * cursors and double-apply delta-based cache updates (#897). Serialization is
+   * handled by the scheduler glue below — always go through `requestSync`, never
+   * call this directly.
    */
-  const performSync = useCallback(async () => {
+  const runSyncOnce = useCallback(async (): Promise<boolean> => {
     try {
       const currentCursors = cursorsRef.current;
 
@@ -181,18 +195,35 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         handleSyncEvent(utils, queryClient, event);
       }
 
-      // If there are more events, schedule another sync soon
-      if (result.hasMore) {
-        // Use setTimeout to avoid blocking - the next poll or manual sync will pick up more
-        setTimeout(() => performSyncRef.current(), 100);
-      }
+      return result.hasMore;
     } catch (error) {
       console.error("Sync failed:", error);
+      return false;
     }
   }, [utils, queryClient]);
+
+  /**
+   * Serializes sync execution. Every sync trigger (poll tick, visibility,
+   * catch-up on connect, hasMore continuation) goes through here so at most one
+   * sync runs at a time; overlapping requests coalesce into a single follow-up
+   * once the in-flight sync settles. See `sync-scheduler.ts` for the rationale.
+   */
+  const requestSync = useCallback(() => {
+    function dispatchSchedulerEvent(event: SyncSchedulerEvent): void {
+      const { state, startSync } = reduceSyncScheduler(syncSchedulerStateRef.current, event);
+      syncSchedulerStateRef.current = state;
+      if (startSync) {
+        void runSyncOnce().then((hasMore) => {
+          dispatchSchedulerEvent({ type: "completed", hasMore });
+        });
+      }
+    }
+
+    dispatchSchedulerEvent({ type: "request" });
+  }, [runSyncOnce]);
   useEffect(() => {
-    performSyncRef.current = performSync;
-  }, [performSync]);
+    requestSyncRef.current = requestSync;
+  }, [requestSync]);
 
   /**
    * Stable dispatcher: runs the pure transition function and executes the
@@ -242,7 +273,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         case "start-poll-interval":
           if (!pollIntervalRef.current) {
             pollIntervalRef.current = setInterval(() => {
-              void performSyncRef.current();
+              requestSyncRef.current();
             }, action.intervalMs);
           }
           break;
@@ -268,7 +299,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           }
           break;
         case "sync":
-          void performSyncRef.current();
+          requestSyncRef.current();
           break;
       }
     }
