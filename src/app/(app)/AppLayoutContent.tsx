@@ -32,7 +32,7 @@ import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcu
 import { AppRouter } from "@/components/app/AppRouter";
 import { trpc } from "@/lib/trpc/client";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
-import { type SyncCursors } from "@/lib/hooks/useRealtimeUpdates";
+import { type SyncCursors } from "@/lib/events/cursors";
 
 interface AppLayoutContentProps {
   initialCursors: SyncCursors;

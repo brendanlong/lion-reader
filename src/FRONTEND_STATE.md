@@ -279,20 +279,22 @@ Returns the updated entry with score fields:
 
 ## Key Files
 
-| File                                               | Purpose                                           |
-| -------------------------------------------------- | ------------------------------------------------- |
-| `src/lib/cache/index.ts`                           | Cache helper exports                              |
-| `src/lib/cache/operations.ts`                      | High-level cache operations (primary API)         |
-| `src/lib/cache/entry-cache.ts`                     | Low-level entry cache update helpers              |
-| `src/lib/cache/count-cache.ts`                     | Low-level subscription/tag count update helpers   |
-| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with cache updates                |
-| `src/lib/hooks/useRealtimeUpdates.ts`              | SSE connection and cache updates                  |
-| `src/lib/hooks/useKeyboardShortcuts.ts`            | Keyboard navigation and entry selection           |
-| `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination |
-| `src/components/entries/SuspendingEntryList.tsx`   | Entry list wrapper with Suspense and pagination   |
-| `src/components/layout/Sidebar.tsx`                | Subscription delete with optimistic update        |
-| `src/components/entries/EntryContent.tsx`          | Entry display with mutations                      |
-| `src/components/entries/EntryList.tsx`             | Entry list with infinite scroll                   |
+| File                                               | Purpose                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/lib/cache/index.ts`                           | Cache helper exports                                               |
+| `src/lib/cache/operations.ts`                      | High-level cache operations (primary API)                          |
+| `src/lib/cache/entry-cache.ts`                     | Low-level entry cache update helpers                               |
+| `src/lib/cache/count-cache.ts`                     | Low-level subscription/tag count update helpers                    |
+| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with cache updates                                 |
+| `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine                    |
+| `src/lib/events/connection-state.ts`               | Pure connection state machine (reconnect/backoff/polling fallback) |
+| `src/lib/events/cursors.ts`                        | Pure sync-cursor bookkeeping                                       |
+| `src/lib/hooks/useKeyboardShortcuts.ts`            | Keyboard navigation and entry selection                            |
+| `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination                  |
+| `src/components/entries/SuspendingEntryList.tsx`   | Entry list wrapper with Suspense and pagination                    |
+| `src/components/layout/Sidebar.tsx`                | Subscription delete with optimistic update                         |
+| `src/components/entries/EntryContent.tsx`          | Entry display with mutations                                       |
+| `src/components/entries/EntryList.tsx`             | Entry list with infinite scroll                                    |
 
 ## Adding New Cache Updates
 
