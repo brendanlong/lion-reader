@@ -11,6 +11,7 @@ import {
   ContentTooLargeError,
   ACCEPT_ENCODING,
 } from "../http/fetch";
+import { withSsrfProtection } from "../http/ssrf";
 import { usageLimitsConfig } from "../config/env";
 
 /**
@@ -371,12 +372,15 @@ export async function fetchFeed(
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(currentUrl, {
-        method: "GET",
-        headers,
-        signal: controller.signal,
-        redirect: "manual", // Handle redirects manually to track permanent ones
-      });
+      const response = await fetch(
+        currentUrl,
+        withSsrfProtection(currentUrl, {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+          redirect: "manual", // Handle redirects manually to track permanent ones
+        })
+      );
 
       clearTimeout(timeoutId);
 

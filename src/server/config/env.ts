@@ -57,6 +57,21 @@ export const signupConfig = {
 export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://lionreader.com";
 
 /**
+ * Security configuration.
+ */
+export const securityConfig = {
+  /**
+   * If true, server-side fetches (feed preview/discover, feed fetching, full-content,
+   * WebSub) are allowed to reach private/internal IP ranges. Defaults to false, which
+   * blocks SSRF to private networks. Intended only for dev/test environments that fetch
+   * from localhost. Read lazily so tests can set it after import.
+   */
+  get allowPrivateNetworkFetch() {
+    return process.env.ALLOW_PRIVATE_NETWORK_FETCH === "true";
+  },
+};
+
+/**
  * Feed fetcher configuration.
  * These values are included in the User-Agent header for feed requests.
  */
