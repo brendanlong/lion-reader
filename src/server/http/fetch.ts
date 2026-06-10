@@ -6,6 +6,7 @@
  */
 
 import { USER_AGENT } from "./user-agent";
+import { withSsrfProtection } from "./ssrf";
 import { errors } from "../trpc/errors";
 import { usageLimitsConfig } from "../config/env";
 
@@ -213,15 +214,18 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": userAgent,
-        Accept: accept,
-        "Accept-Encoding": ACCEPT_ENCODING,
-      },
-      signal: controller.signal,
-      redirect: "follow",
-    });
+    const response = await fetch(
+      url,
+      withSsrfProtection(url, {
+        headers: {
+          "User-Agent": userAgent,
+          Accept: accept,
+          "Accept-Encoding": ACCEPT_ENCODING,
+        },
+        signal: controller.signal,
+        redirect: "follow",
+      })
+    );
 
     if (!response.ok) {
       throw errors.feedFetchError(url, `HTTP ${response.status}`);
@@ -280,15 +284,18 @@ export async function fetchHtmlPage(
   const timeout = setTimeout(() => controller.abort(), PAGE_FETCH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: HTML_ACCEPT_HEADER,
-        "Accept-Encoding": ACCEPT_ENCODING,
-      },
-      redirect: "follow",
-    });
+    const response = await fetch(
+      url,
+      withSsrfProtection(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": USER_AGENT,
+          Accept: HTML_ACCEPT_HEADER,
+          "Accept-Encoding": ACCEPT_ENCODING,
+        },
+        redirect: "follow",
+      })
+    );
 
     if (!response.ok) {
       throw new HttpFetchError(response.status, response.statusText, url);
