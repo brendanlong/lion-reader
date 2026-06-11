@@ -110,6 +110,16 @@ describe("isValidRedirectUriFormat", () => {
     expect(isValidRedirectUriFormat("https://app.example.com/cb#frag")).toBe(false);
   });
 
+  it("rejects URIs with user-info", () => {
+    expect(isValidRedirectUriFormat("https://user:pass@app.example.com/cb")).toBe(false);
+    expect(isValidRedirectUriFormat("http://user@localhost:62336/callback")).toBe(false);
+  });
+
+  it("rejects non-HTTP(S) protocols for loopback hosts", () => {
+    expect(isValidRedirectUriFormat("ftp://localhost:62336/callback")).toBe(false);
+    expect(isValidRedirectUriFormat("file://localhost/callback")).toBe(false);
+  });
+
   it("rejects malformed URIs", () => {
     expect(isValidRedirectUriFormat("not-a-url")).toBe(false);
   });

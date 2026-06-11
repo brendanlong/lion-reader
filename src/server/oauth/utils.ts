@@ -181,8 +181,14 @@ export function isValidRedirectUriFormat(redirectUri: string): boolean {
       return false;
     }
 
-    // Must be HTTPS, except loopback hosts can be HTTP
-    if (!LOOPBACK_HOSTS.has(url.hostname) && url.protocol !== "https:") {
+    // Must not have a user-info component (RFC 6749 §3.1.2 / OAuth 2.1)
+    if (url.username || url.password) {
+      return false;
+    }
+
+    // Must be HTTPS, except loopback hosts may use HTTP
+    const allowedProtocols = LOOPBACK_HOSTS.has(url.hostname) ? ["http:", "https:"] : ["https:"];
+    if (!allowedProtocols.includes(url.protocol)) {
       return false;
     }
 
