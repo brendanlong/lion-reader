@@ -324,6 +324,113 @@ describe("Tags API", () => {
       expect(empty?.unreadCount).toBe(0);
     });
 
+    it("deduplicates unread entries reachable through multiple subscriptions of the same tag", async () => {
+      const userId = await createTestUser();
+
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+
+      // sub1 subscribed to feedA but previously covered feedB (redirect/merge
+      // history), so subscription_feeds maps it to both. sub2 is subscribed to
+      // feedB directly. An unread entry in feedB is reachable through both
+      // subscriptions and must be counted once.
+      const feedIdA = await createTestFeed("https://feed-a.com/rss");
+      const feedIdB = await createTestFeed("https://feed-b.com/rss");
+      const subId1 = await createTestSubscription(userId, feedIdA);
+      const subId2 = await createTestSubscription(userId, feedIdB);
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: subId1, feedId: feedIdB, userId });
+      await linkTagToSubscription(tagId, subId1);
+      await linkTagToSubscription(tagId, subId2);
+
+      await createTestEntry(feedIdA, { userIds: [userId] });
+      await createTestEntry(feedIdB, { userIds: [userId] });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.tags.list();
+
+      expect(result.items[0].unreadCount).toBe(2);
+    });
+
+    it("does not count other users' unread entries on shared feeds", async () => {
+      const userId = await createTestUser("user-a");
+      const otherUserId = await createTestUser("user-b");
+
+      // Both users subscribe to the same feed and tag their subscriptions
+      const feedId = await createTestFeed("https://shared.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      const otherSubId = await createTestSubscription(otherUserId, feedId);
+
+      const tagId = generateUuidv7();
+      const otherTagId = generateUuidv7();
+      await db.insert(tags).values([
+        { id: tagId, userId, name: "Mine", createdAt: new Date() },
+        { id: otherTagId, userId: otherUserId, name: "Theirs", createdAt: new Date() },
+      ]);
+      await linkTagToSubscription(tagId, subId);
+      await linkTagToSubscription(otherTagId, otherSubId);
+
+      // One entry visible to both users, one visible only to the other user
+      await createTestEntry(feedId, { userIds: [userId, otherUserId] });
+      await createTestEntry(feedId, { userIds: [otherUserId] });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.tags.list();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].name).toBe("Mine");
+      expect(result.items[0].unreadCount).toBe(1);
+    });
+
+    it("excludes unread entries from unsubscribed subscriptions", async () => {
+      const userId = await createTestUser();
+
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      await linkTagToSubscription(tagId, subId);
+      await createTestEntry(feedId, { userIds: [userId] });
+
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, subId));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.tags.list();
+
+      expect(result.items[0].unreadCount).toBe(0);
+    });
+
+    it("returns zero unread for a tag whose entries are all read", async () => {
+      const userId = await createTestUser();
+
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      await linkTagToSubscription(tagId, subId);
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
+      await db
+        .update(userEntries)
+        .set({ read: true })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.tags.list();
+
+      expect(result.items[0].feedCount).toBe(1);
+      expect(result.items[0].unreadCount).toBe(0);
+    });
+
     it("returns tags ordered by name", async () => {
       const userId = await createTestUser();
 
@@ -541,6 +648,40 @@ describe("Tags API", () => {
       const result = await caller.tags.update({ id: tagId, name: "Technology" });
 
       expect(result.tag.feedCount).toBe(1);
+    });
+
+    it("returns unread count consistent with tags.list", async () => {
+      const userId = await createTestUser("user-a");
+      const otherUserId = await createTestUser("user-b");
+
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+
+      // Overlapping subscription_feeds within the tag (dedup case) plus a
+      // second user on the shared feed (scoping case) — update must count the
+      // same way list does.
+      const feedIdA = await createTestFeed("https://feed-a.com/rss");
+      const feedIdB = await createTestFeed("https://feed-b.com/rss");
+      const subId1 = await createTestSubscription(userId, feedIdA);
+      const subId2 = await createTestSubscription(userId, feedIdB);
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: subId1, feedId: feedIdB, userId });
+      await linkTagToSubscription(tagId, subId1);
+      await linkTagToSubscription(tagId, subId2);
+      await createTestSubscription(otherUserId, feedIdB);
+
+      await createTestEntry(feedIdA, { userIds: [userId] });
+      await createTestEntry(feedIdB, { userIds: [userId, otherUserId] });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const updateResult = await caller.tags.update({ id: tagId, name: "Technology" });
+      const listResult = await caller.tags.list();
+
+      expect(updateResult.tag.unreadCount).toBe(2);
+      expect(listResult.items[0].unreadCount).toBe(2);
     });
 
     it("throws error when tag not found", async () => {

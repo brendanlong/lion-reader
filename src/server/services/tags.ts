@@ -52,18 +52,21 @@ export interface UpdateTagParams {
 }
 
 // ============================================================================
-// Service Functions
+// Helper: Per-Tag Unread Counts
 // ============================================================================
 
 /**
- * Lists all tags for a user with feed counts and unread counts.
- * Also returns uncategorized subscription counts.
+ * Builds a grouped subquery of per-tag unread counts for a user.
+ *
+ * COUNT(DISTINCT entry_id) dedupes entries reachable through multiple
+ * subscriptions of the same tag, which is possible when subscription_feeds
+ * rows overlap via feed redirect/merge history. Computing all tags in one
+ * grouped aggregation (instead of a correlated subquery per tag row) keeps
+ * listTags to a single scan (#831); Postgres pushes a tag_id equality
+ * predicate into the GROUP BY, so updateTag can reuse it for one tag.
  */
-export async function listTags(db: typeof dbType, userId: string): Promise<ListTagsResult> {
-  // Pre-compute per-tag unread counts in a single grouped aggregation, then
-  // LEFT JOIN it to the tags query. This replaces a correlated subquery that
-  // re-ran the 5-table join once per tag row (#831).
-  const tagUnreadCounts = db
+function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
+  return db
     .select({
       tagId: subscriptionTags.tagId,
       unreadCount: sql<number>`COUNT(DISTINCT ${userEntries.entryId})::int`.as("unread_count"),
@@ -89,6 +92,18 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
     )
     .groupBy(subscriptionTags.tagId)
     .as("tag_unread_counts");
+}
+
+// ============================================================================
+// Service Functions
+// ============================================================================
+
+/**
+ * Lists all tags for a user with feed counts and unread counts.
+ * Also returns uncategorized subscription counts.
+ */
+export async function listTags(db: typeof dbType, userId: string): Promise<ListTagsResult> {
+  const tagUnreadCounts = tagUnreadCountsQuery(db, userId);
 
   const [userTags, uncategorizedResult] = await Promise.all([
     db
@@ -265,6 +280,7 @@ export async function updateTag(
   await db.update(tags).set(updateData).where(eq(tags.id, tagId));
 
   // Get updated tag with feed count and unread count
+  const tagUnreadCounts = tagUnreadCountsQuery(db, userId);
   const [updatedTag, unreadResult] = await Promise.all([
     db
       .select({
@@ -281,28 +297,9 @@ export async function updateTag(
       .groupBy(tags.id)
       .limit(1),
     db
-      .select({
-        unreadCount: sql<number>`count(*)::int`,
-      })
-      .from(subscriptionTags)
-      .innerJoin(
-        subscriptions,
-        and(
-          eq(subscriptionTags.subscriptionId, subscriptions.id),
-          isNull(subscriptions.unsubscribedAt)
-        )
-      )
-      .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
-      .innerJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
-      .innerJoin(
-        userEntries,
-        and(
-          eq(userEntries.entryId, entries.id),
-          eq(userEntries.userId, userId),
-          eq(userEntries.read, false)
-        )
-      )
-      .where(eq(subscriptionTags.tagId, tagId)),
+      .select({ unreadCount: tagUnreadCounts.unreadCount })
+      .from(tagUnreadCounts)
+      .where(eq(tagUnreadCounts.tagId, tagId)),
   ]);
 
   if (updatedTag.length === 0) {
