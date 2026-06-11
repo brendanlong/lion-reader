@@ -121,11 +121,49 @@ export function isValidCodeChallenge(codeChallenge: string): boolean {
 // ============================================================================
 
 /**
+ * Loopback hosts for RFC 8252 §7.3 port-flexible redirect URI matching.
+ */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
  * Validates a redirect URI against allowed URIs for a client.
- * Uses exact string matching as required by OAuth 2.1.
+ * Uses exact string matching as required by OAuth 2.1, except for loopback
+ * URIs: RFC 8252 §7.3 requires the authorization server to allow any port for
+ * loopback redirects, since native clients (e.g. Claude Code) bind an
+ * ephemeral port at authorization time. Scheme, host, path, and query must
+ * still match exactly — only the port may differ, and only when the
+ * registered URI is itself a loopback URI.
  */
 export function validateRedirectUri(redirectUri: string, allowedUris: string[]): boolean {
-  return allowedUris.includes(redirectUri);
+  if (allowedUris.includes(redirectUri)) {
+    return true;
+  }
+
+  let requested: URL;
+  try {
+    requested = new URL(redirectUri);
+  } catch {
+    return false;
+  }
+  if (!LOOPBACK_HOSTS.has(requested.hostname)) {
+    return false;
+  }
+
+  return allowedUris.some((allowed) => {
+    let registered: URL;
+    try {
+      registered = new URL(allowed);
+    } catch {
+      return false;
+    }
+    return (
+      LOOPBACK_HOSTS.has(registered.hostname) &&
+      registered.protocol === requested.protocol &&
+      registered.hostname === requested.hostname &&
+      registered.pathname === requested.pathname &&
+      registered.search === requested.search
+    );
+  });
 }
 
 /**
@@ -143,9 +181,14 @@ export function isValidRedirectUriFormat(redirectUri: string): boolean {
       return false;
     }
 
-    // Must be HTTPS, except localhost can be HTTP
-    const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-    if (!isLocalhost && url.protocol !== "https:") {
+    // Must not have a user-info component (RFC 6749 §3.1.2 / OAuth 2.1)
+    if (url.username || url.password) {
+      return false;
+    }
+
+    // Must be HTTPS, except loopback hosts may use HTTP
+    const allowedProtocols = LOOPBACK_HOSTS.has(url.hostname) ? ["http:", "https:"] : ["https:"];
+    if (!allowedProtocols.includes(url.protocol)) {
       return false;
     }
 
