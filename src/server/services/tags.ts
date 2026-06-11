@@ -52,30 +52,46 @@ export interface UpdateTagParams {
 }
 
 // ============================================================================
-// Helper: Tag Unread Count Query
+// Helper: Per-Tag Unread Counts
 // ============================================================================
 
 /**
- * Builds a subquery for counting unread entries associated with a tag.
- * Shared between list and update to avoid duplication.
+ * Builds a grouped subquery of per-tag unread counts for a user.
+ *
+ * COUNT(DISTINCT entry_id) dedupes entries reachable through multiple
+ * subscriptions of the same tag, which is possible when subscription_feeds
+ * rows overlap via feed redirect/merge history. Computing all tags in one
+ * grouped aggregation (instead of a correlated subquery per tag row) keeps
+ * listTags to a single scan (#831); Postgres pushes a tag_id equality
+ * predicate into the GROUP BY, so updateTag can reuse it for one tag.
  */
-function tagUnreadCountSql(userId: string) {
-  return sql<number>`(
-    SELECT COUNT(*)::int
-    FROM ${subscriptionTags} st
-    INNER JOIN ${subscriptions} s
-      ON st.subscription_id = s.id
-      AND s.unsubscribed_at IS NULL
-    INNER JOIN ${subscriptionFeeds} sf
-      ON sf.subscription_id = s.id
-    INNER JOIN ${entries} e
-      ON e.feed_id = sf.feed_id
-    INNER JOIN ${userEntries} ue
-      ON ue.entry_id = e.id
-      AND ue.user_id = ${userId}
-      AND ue.read = false
-    WHERE st.tag_id = "tags"."id"
-  )`;
+function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
+  return db
+    .select({
+      tagId: subscriptionTags.tagId,
+      unreadCount: sql<number>`COUNT(DISTINCT ${userEntries.entryId})::int`.as("unread_count"),
+    })
+    .from(subscriptionTags)
+    .innerJoin(
+      subscriptions,
+      and(
+        eq(subscriptionTags.subscriptionId, subscriptions.id),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    )
+    .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
+    .innerJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
+    .innerJoin(
+      userEntries,
+      and(
+        eq(userEntries.entryId, entries.id),
+        eq(userEntries.userId, userId),
+        eq(userEntries.read, false)
+      )
+    )
+    .groupBy(subscriptionTags.tagId)
+    .as("tag_unread_counts");
 }
 
 // ============================================================================
@@ -87,6 +103,8 @@ function tagUnreadCountSql(userId: string) {
  * Also returns uncategorized subscription counts.
  */
 export async function listTags(db: typeof dbType, userId: string): Promise<ListTagsResult> {
+  const tagUnreadCounts = tagUnreadCountsQuery(db, userId);
+
   const [userTags, uncategorizedResult] = await Promise.all([
     db
       .select({
@@ -99,9 +117,10 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
           FROM ${subscriptionTags}
           WHERE ${subscriptionTags.tagId} = "tags"."id"
         )`,
-        unreadCount: tagUnreadCountSql(userId),
+        unreadCount: sql<number>`COALESCE(${tagUnreadCounts.unreadCount}, 0)`,
       })
       .from(tags)
+      .leftJoin(tagUnreadCounts, eq(tagUnreadCounts.tagId, tags.id))
       .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)))
       .orderBy(tags.name),
     // Count uncategorized subscriptions (those with no tags)
@@ -261,6 +280,7 @@ export async function updateTag(
   await db.update(tags).set(updateData).where(eq(tags.id, tagId));
 
   // Get updated tag with feed count and unread count
+  const tagUnreadCounts = tagUnreadCountsQuery(db, userId);
   const [updatedTag, unreadResult] = await Promise.all([
     db
       .select({
@@ -277,28 +297,9 @@ export async function updateTag(
       .groupBy(tags.id)
       .limit(1),
     db
-      .select({
-        unreadCount: sql<number>`count(*)::int`,
-      })
-      .from(subscriptionTags)
-      .innerJoin(
-        subscriptions,
-        and(
-          eq(subscriptionTags.subscriptionId, subscriptions.id),
-          isNull(subscriptions.unsubscribedAt)
-        )
-      )
-      .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
-      .innerJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
-      .innerJoin(
-        userEntries,
-        and(
-          eq(userEntries.entryId, entries.id),
-          eq(userEntries.userId, userId),
-          eq(userEntries.read, false)
-        )
-      )
-      .where(eq(subscriptionTags.tagId, tagId)),
+      .select({ unreadCount: tagUnreadCounts.unreadCount })
+      .from(tagUnreadCounts)
+      .where(eq(tagUnreadCounts.tagId, tagId)),
   ]);
 
   if (updatedTag.length === 0) {

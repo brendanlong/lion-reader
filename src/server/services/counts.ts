@@ -190,10 +190,13 @@ async function getSubscriptionTagCounts(
 ): Promise<{ tags: TagCount[]; uncategorized: { unread: number } | null }> {
   // Single query: get tag IDs for this subscription and their unread counts.
   // If the subscription has no tags, the result will be empty.
+  // COUNT(DISTINCT) dedupes entries reachable through multiple subscriptions
+  // of the same tag (overlapping subscription_feeds from redirect/merge
+  // history), matching listTags semantics.
   const tagCounts = await db
     .select({
       tagId: subscriptionTags.tagId,
-      unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
     })
     .from(subscriptionTags)
     .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))
@@ -223,7 +226,7 @@ async function getSubscriptionTagCounts(
   // Subscription has no tags - get uncategorized count
   const uncategorizedResult = await db
     .select({
-      unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
     })
     .from(visibleEntries)
     .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
@@ -350,7 +353,8 @@ export async function getBulkEntryRelatedCounts(
       ? db
           .select({
             tagId: subscriptionTags.tagId,
-            unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+            // COUNT(DISTINCT) for parity with listTags (see getSubscriptionTagCounts)
+            unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
           })
           .from(subscriptionTags)
           .innerJoin(
@@ -363,7 +367,7 @@ export async function getBulkEntryRelatedCounts(
     hasUncategorized
       ? db
           .select({
-            unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+            unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
           })
           .from(visibleEntries)
           .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
