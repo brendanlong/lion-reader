@@ -61,6 +61,10 @@ export interface JobPayloads {
   fetch_feed: { feedId: string };
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
   process_opml_import: { importId: string }; // Process an OPML import in the background
+  // Periodic feed fetch health check. Empty payload — alert cadence and
+  // de-duplication are owned by the external healthchecks.io monitor, so no
+  // state is carried across runs.
+  monitor_feed_health: Record<string, never>;
 }
 
 export type JobType = keyof JobPayloads;
@@ -359,7 +363,7 @@ export async function listJobs(
 /**
  * Singleton job types that have exactly one instance and self-create on first run.
  */
-const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub"];
+export const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub", "monitor_feed_health"];
 
 /**
  * Tries to claim a singleton job for processing.

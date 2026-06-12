@@ -18,12 +18,14 @@ import {
   claimFeedJob,
   finishJob,
   getJobPayload,
+  SINGLETON_JOB_TYPES,
   type JobType,
 } from "./queue";
 import {
   handleFetchFeed,
   handleRenewWebsub,
   handleProcessOpmlImport,
+  handleMonitorFeedHealth,
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
@@ -138,10 +140,12 @@ function createWorker(config: WorkerConfig = {}): Worker {
 
     // Try singleton jobs (only if not filtered by type)
     // Singleton jobs self-create if they don't exist
-    if (!options?.types || options.types.includes("renew_websub")) {
-      const singletonJob = await claimSingletonJob("renew_websub");
-      if (singletonJob) {
-        return singletonJob;
+    for (const singletonType of SINGLETON_JOB_TYPES) {
+      if (!options?.types || options.types.includes(singletonType)) {
+        const singletonJob = await claimSingletonJob(singletonType);
+        if (singletonJob) {
+          return singletonJob;
+        }
       }
     }
 
@@ -171,6 +175,11 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "renew_websub": {
           const payload = getJobPayload<"renew_websub">(job);
           result = await handleRenewWebsub(payload);
+          break;
+        }
+        case "monitor_feed_health": {
+          const payload = getJobPayload<"monitor_feed_health">(job);
+          result = await handleMonitorFeedHealth(payload);
           break;
         }
         case "process_opml_import": {

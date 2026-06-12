@@ -11,12 +11,20 @@
  *   DISCORD_BOT_TOKEN - Bot token from Discord Developer Portal
  *   DISCORD_CLIENT_ID - Application client ID (same as OAuth)
  *   DISCORD_SAVE_EMOJI - Emoji to trigger saving (default: 🦁)
+ *   DISCORD_BOT_HEARTBEAT_URL - Optional healthchecks.io check pinged while the
+ *     bot is running; the monitor alerts if pings stop (dead/crash-looping bot)
  */
 
 import { startDiscordBot } from "../src/server/discord/bot";
 import { startMetricsServer } from "../src/server/metrics/server";
-import { notifyWorkerStarted } from "../src/server/notifications/discord-webhook";
+import { startHeartbeat } from "../src/server/notifications/healthchecks";
 import { logger } from "../src/lib/logger";
+
+/** How often to ping the liveness heartbeat while the bot is running. */
+const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+
+const heartbeatUrl = process.env.DISCORD_BOT_HEARTBEAT_URL;
+let stopHeartbeat: (() => void) | undefined;
 
 logger.info("Starting Discord bot", {
   pid: process.pid,
@@ -26,26 +34,29 @@ logger.info("Starting Discord bot", {
 // Start internal metrics server on port 9093 (separate from Next.js/worker)
 startMetricsServer(9093);
 
-// Notify about discord bot start (helps detect crash loops)
-notifyWorkerStarted({ processType: "discord" }).catch((error) => {
-  // Don't let notification failures prevent bot from starting
-  logger.warn("Failed to send discord bot start notification", { error });
-});
-
 // Handle graceful shutdown
-process.on("SIGINT", () => {
-  logger.info("Received SIGINT, shutting down Discord bot...");
+function shutdown(signal: string): void {
+  logger.info(`Received ${signal}, shutting down Discord bot...`);
+  stopHeartbeat?.();
   process.exit(0);
-});
+}
 
-process.on("SIGTERM", () => {
-  logger.info("Received SIGTERM, shutting down Discord bot...");
-  process.exit(0);
-});
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 startDiscordBot()
   .then(() => {
     logger.info("Discord bot started successfully");
+
+    // Start the liveness heartbeat only after the bot connects, so a bot that
+    // fails to start doesn't report itself alive. healthchecks.io alerts if
+    // these pings stop, which catches a dead or crash-looping bot process.
+    if (heartbeatUrl) {
+      const region = process.env.FLY_REGION || "unknown";
+      const machine = process.env.FLY_MACHINE_ID || process.env.HOSTNAME || "unknown";
+      const body = `discord-bot alive (machine=${machine} region=${region} pid=${process.pid})`;
+      stopHeartbeat = startHeartbeat(heartbeatUrl, HEARTBEAT_INTERVAL_MS, () => ({ body }));
+    }
   })
   .catch((error) => {
     logger.error("Failed to start Discord bot", { error });

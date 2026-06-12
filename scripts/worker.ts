@@ -16,7 +16,7 @@
 
 import { startWorkerWithSignalHandling } from "../src/server/jobs/worker";
 import { startMetricsServer, setHealthChecker } from "../src/server/metrics/server";
-import { notifyWorkerStarted } from "../src/server/notifications/discord-webhook";
+import { startHeartbeat } from "../src/server/notifications/healthchecks";
 import { logger } from "../src/lib/logger";
 
 const pollIntervalMs = parseInt(process.env.WORKER_POLL_INTERVAL_MS ?? "5000", 10);
@@ -29,6 +29,12 @@ const concurrency = parseInt(process.env.WORKER_CONCURRENCY ?? "3", 10);
  */
 const LIVENESS_THRESHOLD_MS = 10 * 60 * 1000;
 
+/** How often to ping the worker liveness healthchecks.io check. */
+const WORKER_HEARTBEAT_INTERVAL_MS = 60 * 1000;
+
+/** Optional healthchecks.io check for the worker process's loop liveness. */
+const workerHeartbeatUrl = process.env.WORKER_HEARTBEAT_URL;
+
 logger.info("Starting standalone worker", {
   pollIntervalMs,
   concurrency,
@@ -37,12 +43,6 @@ logger.info("Starting standalone worker", {
 
 // Start internal metrics server on port 9092 (separate from Next.js on 9091)
 startMetricsServer(9092);
-
-// Notify about worker start (helps detect crash loops)
-notifyWorkerStarted({ processType: "worker" }).catch((error) => {
-  // Don't let notification failures prevent worker from starting
-  logger.warn("Failed to send worker start notification", { error });
-});
 
 startWorkerWithSignalHandling({
   pollIntervalMs,
@@ -79,6 +79,27 @@ startWorkerWithSignalHandling({
         },
       };
     });
+
+    // External worker-liveness heartbeat. Separate from the feed-health check so
+    // "worker process is alive and its loop is running" is a distinct signal
+    // from "feeds are fetching successfully": a stuck/dead worker shows here even
+    // when there's no feed-fetch regression. Reports /fail if the loop wedges
+    // (same staleness threshold as the Fly health check) instead of going silent.
+    if (workerHeartbeatUrl) {
+      startHeartbeat(workerHeartbeatUrl, WORKER_HEARTBEAT_INTERVAL_MS, () => {
+        const stats = worker.getStats();
+        const staleDurationMs = Date.now() - stats.lastActivityAt.getTime();
+        if (staleDurationMs > LIVENESS_THRESHOLD_MS) {
+          return {
+            signal: "fail",
+            body: `Worker loop stale for ${Math.round(staleDurationMs / 1000)}s (threshold ${LIVENESS_THRESHOLD_MS / 1000}s); activeJobs=${stats.activeJobs}`,
+          };
+        }
+        return {
+          body: `Worker alive: activeJobs=${stats.activeJobs} processed=${stats.totalProcessed} lastActivity=${stats.lastActivityAt.toISOString()}`,
+        };
+      });
+    }
   })
   .catch((error) => {
     logger.error("Failed to start worker", { error });
