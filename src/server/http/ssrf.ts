@@ -15,7 +15,7 @@
 
 import { BlockList, isIP } from "node:net";
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
-import { Agent, type Dispatcher } from "undici";
+import { Agent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from "undici";
 
 import { securityConfig } from "../config/env";
 
@@ -179,27 +179,32 @@ function getHostname(url: string): string | null {
 }
 
 /**
- * Wraps fetch init options with SSRF protection. Pass the result straight to `fetch`.
+ * Performs a fetch with SSRF protection. Use this instead of `fetch` for any
+ * request whose URL is user-influenced.
  *
  * Two layers of protection:
- * 1. Literal IP hosts (e.g. http://169.254.169.254/) are checked synchronously and
+ * 1. Literal IP hosts (e.g. http://169.254.169.254/) are checked up front and
  *    rejected here — undici bypasses the custom DNS lookup for IP literals.
  * 2. Hostnames are validated at connection time by the attached undici dispatcher,
  *    which resolves DNS and connects only to a vetted address (rebinding-safe).
+ *    Redirects are covered too, since fetch reuses the dispatcher.
+ *
+ * The request goes through the npm `undici` package's fetch, not Node's global
+ * fetch. The dispatcher is constructed from the npm package, and Node's global
+ * fetch is a different (bundled) undici copy: on Node 26 it accepts the foreign
+ * dispatcher but skips response body decompression, returning raw gzip/brotli
+ * bytes. The dispatcher and the fetch that uses it must come from the same copy.
  *
  * @throws SsrfBlockedError if the URL targets a literal private/internal IP
  * @example
- * const res = await fetch(url, withSsrfProtection(url, { headers, signal }));
+ * const res = await fetchWithSsrfProtection(url, { headers, signal });
  */
-export function withSsrfProtection<T extends RequestInit>(
-  url: string,
-  init: T
-): T & { dispatcher?: Dispatcher } {
+export async function fetchWithSsrfProtection(url: string, init: RequestInit): Promise<Response> {
   const dispatcher = getSsrfDispatcher();
 
   // Private-network fetching explicitly allowed (dev/test): no protection.
   if (!dispatcher) {
-    return init;
+    return fetch(url, init);
   }
 
   // Literal IP hosts skip the dispatcher's DNS lookup, so check them here.
@@ -208,5 +213,11 @@ export function withSsrfProtection<T extends RequestInit>(
     throw new SsrfBlockedError(hostname, hostname);
   }
 
-  return { ...init, dispatcher };
+  const response = await undiciFetch(url, {
+    ...(init as UndiciRequestInit),
+    dispatcher,
+  });
+  // undici's Response is the same spec-compliant implementation as the global
+  // one; cast so callers keep using standard Response types.
+  return response as unknown as Response;
 }

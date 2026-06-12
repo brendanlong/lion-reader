@@ -9,7 +9,7 @@
 
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
 import { eq, and, lt } from "drizzle-orm";
-import { withSsrfProtection } from "../http/ssrf";
+import { fetchWithSsrfProtection } from "../http/ssrf";
 import { db } from "../db";
 import { feeds, websubSubscriptions, type Feed, type WebsubSubscription } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
@@ -262,22 +262,19 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
 
   // POST subscription request to hub
   try {
-    const response = await fetch(
-      feed.hubUrl,
-      withSsrfProtection(feed.hubUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          "hub.mode": "subscribe",
-          "hub.topic": topicUrl,
-          "hub.callback": callbackUrl,
-          "hub.secret": secret,
-          "hub.verify": "async",
-        }).toString(),
-      })
-    );
+    const response = await fetchWithSsrfProtection(feed.hubUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        "hub.mode": "subscribe",
+        "hub.topic": topicUrl,
+        "hub.callback": callbackUrl,
+        "hub.secret": secret,
+        "hub.verify": "async",
+      }).toString(),
+    });
 
     // Hub should return 202 Accepted for async verification
     // or 204 No Content for sync verification (already verified)

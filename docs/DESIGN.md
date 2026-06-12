@@ -260,10 +260,12 @@ Lion Reader respects server Cache-Control headers, Retry-After directives, and H
 
 ### SSRF Protection
 
-All server-side fetches that target user-influenced URLs (feed preview/discover, feed fetching, full-content fetching, WebSub hub callbacks) are guarded against Server-Side Request Forgery to private/internal networks. The shared helper `withSsrfProtection(url, init)` in `src/server/http/ssrf.ts` wraps `fetch` options and:
+All server-side fetches that target user-influenced URLs (feed preview/discover, feed fetching, full-content fetching, WebSub hub callbacks) are guarded against Server-Side Request Forgery to private/internal networks. The shared helper `fetchWithSsrfProtection(url, init)` in `src/server/http/ssrf.ts` performs the fetch and:
 
-1. Rejects literal private/reserved IP hosts synchronously (e.g. `http://169.254.169.254/`, `http://127.0.0.1/`, decimal-encoded IPs). undici skips the custom DNS lookup for IP literals, so they must be checked here.
+1. Rejects literal private/reserved IP hosts up front (e.g. `http://169.254.169.254/`, `http://127.0.0.1/`, decimal-encoded IPs). undici skips the custom DNS lookup for IP literals, so they must be checked here.
 2. Attaches a custom undici dispatcher whose DNS `lookup` resolves the hostname, blocks if **any** resolved address is private, and connects only to the vetted address — closing the DNS-rebinding TOCTOU gap. Because `fetch` reuses the dispatcher, redirect targets are validated too.
+
+The helper must perform the fetch itself rather than hand the dispatcher to global `fetch`: the dispatcher is built from the npm `undici` package, while Node's global fetch is a different bundled undici copy that accepts a foreign dispatcher but skips response body decompression with it (observed on Node 26), corrupting every compressed response. `fetchWithSsrfProtection` uses the npm package's own `fetch` so the dispatcher and fetch always come from the same copy.
 
 Blocked ranges cover loopback, RFC 1918 private, carrier-grade NAT, link-local (incl. cloud metadata), documentation/test, multicast, and reserved space for both IPv4 and IPv6 (and IPv4-mapped IPv6). Set `ALLOW_PRIVATE_NETWORK_FETCH=true` to disable the block for dev/test environments that fetch from localhost (this is the default in `.env.test`).
 

@@ -470,6 +470,13 @@
       "when": 1770678800000,
       "tag": "0067_user_entries_sort_key",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1770688800000,
+      "tag": "0068_reset_feed_fetch_backoffs",
+      "breakpoints": true
     }
   ]
 }
