@@ -17,7 +17,7 @@ import {
   FEED_FETCH_TIMEOUT_MS,
   ACCEPT_ENCODING,
 } from "@/server/http/fetch";
-import { withSsrfProtection } from "@/server/http/ssrf";
+import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { detectFeedType } from "@/server/feed/parser";
@@ -147,19 +147,16 @@ async function tryFetchAsFeed(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(
-      url,
-      withSsrfProtection(url, {
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept:
-            "application/rss+xml, application/atom+xml, application/feed+json, application/json, application/xml, text/xml, */*",
-          "Accept-Encoding": ACCEPT_ENCODING,
-        },
-        signal: controller.signal,
-        redirect: "follow",
-      })
-    );
+    const response = await fetchWithSsrfProtection(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept:
+          "application/rss+xml, application/atom+xml, application/feed+json, application/json, application/xml, text/xml, */*",
+        "Accept-Encoding": ACCEPT_ENCODING,
+      },
+      signal: controller.signal,
+      redirect: "follow",
+    });
 
     if (!response.ok) {
       return null;
