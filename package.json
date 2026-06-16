@@ -47,7 +47,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",
-    "@aws-sdk/client-s3": "^3.1064.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -59,6 +58,7 @@
     "@trpc/server": "^11.10.0",
     "arctic": "^3.7.0",
     "argon2": "^0.44.0",
+    "aws4fetch": "^1.0.20",
     "concurrently": "^10.0.3",
     "discord.js": "^14.26.2",
     "drizzle-orm": "^0.45.2",
