@@ -60,7 +60,7 @@
     "@trpc/server": "^11.10.0",
     "arctic": "^3.7.0",
     "argon2": "^0.44.0",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "discord.js": "^14.26.2",
     "dotenv-cli": "^11.0.0",
     "drizzle-orm": "^0.45.2",
