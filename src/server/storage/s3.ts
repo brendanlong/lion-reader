@@ -5,7 +5,7 @@
  * Works with AWS S3, Fly.io Tigris, and other S3-compatible services.
  */
 
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { AwsClient } from "aws4fetch";
 import { logger } from "@/lib/logger";
 import { storageConfig } from "@/server/config/env";
 import { randomUUID } from "crypto";
@@ -23,14 +23,14 @@ export function isStorageAvailable(): boolean {
 }
 
 /**
- * Lazily initialized S3 client.
+ * Lazily initialized AWS SigV4 signer (aws4fetch).
  */
-let s3Client: S3Client | null = null;
+let s3Client: AwsClient | null = null;
 
 /**
  * Gets or creates the S3 client.
  */
-function getS3Client(): S3Client | null {
+function getS3Client(): AwsClient | null {
   if (!isStorageAvailable()) {
     return null;
   }
@@ -39,18 +39,32 @@ function getS3Client(): S3Client | null {
     return s3Client;
   }
 
-  s3Client = new S3Client({
-    endpoint: storageConfig.endpoint,
+  s3Client = new AwsClient({
+    accessKeyId: storageConfig.accessKeyId!,
+    secretAccessKey: storageConfig.secretAccessKey!,
+    service: "s3",
     region: storageConfig.region,
-    credentials: {
-      accessKeyId: storageConfig.accessKeyId!,
-      secretAccessKey: storageConfig.secretAccessKey!,
-    },
-    // Tigris requires path-style addressing
-    forcePathStyle: !!storageConfig.endpoint,
+    // aws4fetch defaults to 10 retries; cap it lower since image uploads are
+    // best-effort and the caller already handles a null result.
+    retries: 2,
   });
 
   return s3Client;
+}
+
+/**
+ * Builds the request URL for an object key.
+ *
+ * Mirrors the previous AWS SDK addressing: path-style when a custom endpoint
+ * is configured (Tigris requires it), virtual-hosted style for plain AWS S3.
+ */
+function getObjectRequestUrl(key: string): string {
+  if (storageConfig.endpoint) {
+    const base = storageConfig.endpoint.replace(/\/$/, "");
+    return `${base}/${storageConfig.bucket}/${key}`;
+  }
+
+  return `https://${storageConfig.bucket}.s3.${storageConfig.region}.amazonaws.com/${key}`;
 }
 
 // ============================================================================
@@ -199,16 +213,24 @@ async function uploadImage(
     : `${prefix}/${uuid}.${extension}`;
 
   try {
-    await client.send(
-      new PutObjectCommand({
-        Bucket: storageConfig.bucket,
-        Key: key,
-        Body: data,
-        ContentType: contentType,
+    const response = await client.fetch(getObjectRequestUrl(key), {
+      method: "PUT",
+      headers: {
+        "Content-Type": contentType,
         // Set cache control for public caching
-        CacheControl: "public, max-age=31536000, immutable",
-      })
-    );
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
+      // aws4fetch hashes the body for the SigV4 signature. Node's Buffer is a
+      // Uint8Array subclass, so pass it directly without copying; the cast
+      // narrows the generic's ArrayBufferLike to the ArrayBuffer that BodyInit
+      // requires.
+      body: data as Uint8Array<ArrayBuffer>,
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`S3 PUT failed with status ${response.status}: ${detail.slice(0, 200)}`);
+    }
 
     const url = getPublicUrl(key);
 
