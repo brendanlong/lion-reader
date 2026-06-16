@@ -44,6 +44,9 @@ function getS3Client(): AwsClient | null {
     secretAccessKey: storageConfig.secretAccessKey!,
     service: "s3",
     region: storageConfig.region,
+    // aws4fetch defaults to 10 retries; cap it lower since image uploads are
+    // best-effort and the caller already handles a null result.
+    retries: 2,
   });
 
   return s3Client;
@@ -217,10 +220,11 @@ async function uploadImage(
         // Set cache control for public caching
         "Cache-Control": "public, max-age=31536000, immutable",
       },
-      // aws4fetch hashes the body for the SigV4 signature; copy into a fresh
-      // ArrayBuffer-backed Uint8Array since Node's Buffer isn't assignable to
-      // BodyInit (images are small, so the copy is cheap).
-      body: new Uint8Array(data),
+      // aws4fetch hashes the body for the SigV4 signature. Node's Buffer is a
+      // Uint8Array subclass, so pass it directly without copying; the cast
+      // narrows the generic's ArrayBufferLike to the ArrayBuffer that BodyInit
+      // requires.
+      body: data as Uint8Array<ArrayBuffer>,
     });
 
     if (!response.ok) {
