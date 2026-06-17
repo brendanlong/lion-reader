@@ -2,6 +2,7 @@
   "name": "lion-reader",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "postinstall": "node scripts/copy-onnx-wasm.mjs",
     "dev": "concurrently --kill-others --names worker,next,discord \"pnpm dev:worker\" \"pnpm dev:next\" \"pnpm dev:discord-bot\"",
