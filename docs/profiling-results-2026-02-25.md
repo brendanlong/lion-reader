@@ -105,6 +105,39 @@ during SSR skip HTTP entirely, so the actual SSR prefetch cost is lower.
 Module loading is a one-time cost (cold start). After warmup, the CPU profile
 shows the server spending most time in I/O wait (waiting for Postgres responses).
 
+## Update 2026-06-19: unread-count scaling measured + fixed
+
+The "500ms+ at 50K" projection below was **not borne out**. Benchmarking on a
+synthetic single heavy user (50 subs, 30 tagged / 20 uncategorized, 5 tags, 10%
+then 1% unread) at 50K / 200K / 500K entries showed the uncategorized count at
+~18 / ~110 / ~306ms — never 500ms at 50K. The `subscription_feeds` junction
+(#1873) and the partial `idx_user_entries_unread` index had already turned the
+old GIN-array `NOT EXISTS` plan into a healthy `Hash Anti Join`.
+
+The remaining growth was **O(total entries)** rather than O(unread), because
+several count queries applied `read = false` only inside a `FILTER` aggregate
+(so the scan read every visible row) or hand-rolled joins by `entries.feed_id`
+(which also bypassed `subscription_feeds` — a latent correctness bug for merged
+feeds). Both were addressed by routing all unread counts through
+`visible_entries` with `read = false` in the `WHERE` (lets the partial unread
+index drive) and scoping tag/uncategorized counts to active subscriptions via
+`user_feeds`:
+
+| Query (500K entries, 1% unread)            | Before   | After |
+| ------------------------------------------ | -------- | ----- |
+| Global all/starred/saved (`counts.ts`)     | ~171ms   | ~40ms |
+| Per-subscription list (`subscriptions.ts`) | ~67ms    | ~42ms |
+| Per-tag (`tags.ts`)                        | ~75ms    | ~44ms |
+| Uncategorized (`tags.ts`)                  | 61–306ms | ~45ms |
+
+All rewrites were verified to return identical counts to the originals on
+non-merge data, and the per-feed rewrite additionally **fixes** a merged-feed
+undercount (a subscription that absorbed a redirected feed previously missed
+entries living under the old feed_id). At realistic scale (≤50K entries) every
+count is single-digit to low-tens of ms. The next ceiling, if ever needed, is
+the join to `entries`; denormalizing `feed_id`/`type` onto `user_entries` (the
+`published_or_fetched_at` precedent) would remove it.
+
 ## Scaling Concerns
 
 At the current scale (1,101 entries), everything is fast. Based on the query
@@ -114,7 +147,8 @@ patterns and existing perf test documentation, the likely scaling bottlenecks at
 1. **Uncategorized unread count** (`tags.list`): The `NOT EXISTS` + 3 LEFT JOINs
    pattern scans all entries for all uncategorized subscriptions. Already the
    most expensive query at 1.1K entries. At 50K entries, this could be
-   500ms+ without optimization.
+   500ms+ without optimization. _(Update 2026-06-19: measured at ~18ms at 50K
+   and since rewritten — see the update section above.)_
 
 2. **`visible_entries` view** joins: The 4-way join in the view is materialized
    for every query. At scale, the `entry_score_predictions` LEFT JOIN and

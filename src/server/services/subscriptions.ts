@@ -15,6 +15,7 @@ import {
   tags,
   subscriptionTags,
   userFeeds,
+  visibleEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
@@ -56,19 +57,22 @@ export interface Subscription {
  * Includes unread counts and tags.
  */
 export function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
-  // Subquery to get unread counts per feed
+  // Subquery to get unread counts per subscription.
+  // Counts through visible_entries (grouped by subscription_id) rather than by
+  // entries.feed_id: a subscription can own entries under multiple feed_ids via
+  // the subscription_feeds junction (feed redirect/merge history), and matching
+  // only on the current feed_id would undercount those. The view encapsulates
+  // that mapping plus the visibility rule, so this stays correct by construction.
+  // Filtering read=false in WHERE (not a FILTER aggregate) lets the partial
+  // idx_user_entries_unread index drive the scan.
   const unreadCountsSubquery = db
     .select({
-      feedId: entries.feedId,
+      subscriptionId: visibleEntries.subscriptionId,
       unreadCount: sql<number>`count(*)::int`.as("unread_count"),
     })
-    .from(entries)
-    .innerJoin(
-      userEntries,
-      and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-    )
-    .where(eq(userEntries.read, false))
-    .groupBy(entries.feedId)
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)))
+    .groupBy(visibleEntries.subscriptionId)
     .as("unread_counts");
 
   return db
@@ -98,7 +102,7 @@ export function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       `,
     })
     .from(userFeeds)
-    .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.feedId, userFeeds.feedId))
+    .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.subscriptionId, userFeeds.id))
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
     .groupBy(
@@ -208,13 +212,14 @@ export async function listSubscriptions(
   // (filtering in-memory after LIMIT breaks pagination: hasMore ends up false
   // even when more unread subs exist past the first page).
   if (unreadOnly) {
+    // Match the per-subscription count: an entry counts as unread for this
+    // subscription if visible_entries maps it here (via subscription_feeds),
+    // not merely if its feed_id equals the subscription's current feed_id.
     conditions.push(sql`EXISTS (
-      SELECT 1 FROM ${entries} e
-      INNER JOIN ${userEntries} ue
-        ON ue.entry_id = e.id
-        AND ue.user_id = ${userId}
-        AND ue.read = false
-      WHERE e.feed_id = ${userFeeds.feedId}
+      SELECT 1 FROM ${visibleEntries} ve
+      WHERE ve.subscription_id = ${userFeeds.id}
+        AND ve.user_id = ${userId}
+        AND ve.read = false
     )`);
   }
 
