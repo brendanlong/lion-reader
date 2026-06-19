@@ -21,9 +21,14 @@
  */
 
 import { db } from "@/server/db";
-import { subscriptions, subscriptionTags } from "@/server/db/schema";
+import { subscriptions } from "@/server/db/schema";
 import { validateSession } from "@/server/auth/session";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
+import {
+  getNewEntryRelatedCounts,
+  toBulkUnreadCounts,
+  type NewEntryUnreadCounts,
+} from "@/server/services/counts";
 import {
   createPubSubSubscription,
   getFeedEventsChannel,
@@ -83,44 +88,22 @@ function getSessionToken(headers: Headers): string | null {
 }
 
 /**
- * Per-user subscription context for a feed: the subscription ID and the
- * subscription's tag IDs. Tag IDs are included in new_entry events so the
- * client can update tag unread counts without cached subscription data (#892).
+ * Gets a mapping of feedId -> subscriptionId for a user's active subscriptions.
+ * This lets the SSE endpoint transform feed events (which use feedId) into
+ * subscription-centric events (which use subscriptionId) for the client.
  */
-interface FeedSubscriptionInfo {
-  subscriptionId: string;
-  tagIds: string[];
-}
-
-/**
- * Gets a mapping of feedId -> { subscriptionId, tagIds } for a user's active
- * subscriptions. This allows the SSE endpoint to transform feed events (which
- * use feedId) into subscription-centric events (which use subscriptionId and
- * the subscription's tags) for the client.
- */
-async function getUserFeedSubscriptionMap(
-  userId: string
-): Promise<Map<string, FeedSubscriptionInfo>> {
+async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, string>> {
   const rows = await db
     .select({
       feedId: subscriptions.feedId,
       subscriptionId: subscriptions.id,
-      tagId: subscriptionTags.tagId,
     })
     .from(subscriptions)
-    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
     .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
-  const map = new Map<string, FeedSubscriptionInfo>();
+  const map = new Map<string, string>();
   for (const row of rows) {
-    let info = map.get(row.feedId);
-    if (!info) {
-      info = { subscriptionId: row.subscriptionId, tagIds: [] };
-      map.set(row.feedId, info);
-    }
-    if (row.tagId) {
-      info.tagIds.push(row.tagId);
-    }
+    map.set(row.feedId, row.subscriptionId);
   }
   return map;
 }
@@ -268,14 +251,14 @@ export async function GET(req: Request): Promise<Response> {
       /**
        * Subscribes to a feed's event channel and tracks the subscription mapping
        */
-      function subscribeToFeed(feedId: string, info: FeedSubscriptionInfo): void {
+      function subscribeToFeed(feedId: string, subscriptionId: string): void {
         if (isCleanedUp || !subscription) return;
 
         const channel = getFeedEventsChannel(feedId);
         if (subscribedFeedChannels.has(channel)) return;
 
         subscribedFeedChannels.add(channel);
-        feedSubscriptionMap.set(feedId, info);
+        feedSubscriptionMap.set(feedId, subscriptionId);
         subscription.subscribe(channel).catch((err) => {
           console.error(`Failed to subscribe to feed channel ${feedId}:`, err);
           subscribedFeedChannels.delete(channel);
@@ -317,25 +300,13 @@ export async function GET(req: Request): Promise<Response> {
           const event = parseUserEvent(message);
           if (!event) return;
 
-          // Handle side effects for subscription/tag lifecycle events,
-          // keeping the per-connection feed -> subscription/tags mapping current
+          // Keep the per-connection feed -> subscription mapping current so
+          // feed events can be subscribed to / resolved. Per-user counts on
+          // new_entry are computed from the DB, so no tag bookkeeping is needed.
           if (event.type === "subscription_created") {
-            subscribeToFeed(event.feedId, {
-              subscriptionId: event.subscriptionId,
-              tagIds: event.subscription.tags.map((tag) => tag.id),
-            });
+            subscribeToFeed(event.feedId, event.subscriptionId);
           } else if (event.type === "subscription_deleted") {
             unsubscribeFromFeed(event.feedId);
-          } else if (event.type === "subscription_updated") {
-            for (const info of feedSubscriptionMap.values()) {
-              if (info.subscriptionId === event.subscriptionId) {
-                info.tagIds = event.tags.map((tag) => tag.id);
-              }
-            }
-          } else if (event.type === "tag_deleted") {
-            for (const info of feedSubscriptionMap.values()) {
-              info.tagIds = info.tagIds.filter((tagId) => tagId !== event.tagId);
-            }
           }
 
           // All user events are forwarded to the client
@@ -350,35 +321,59 @@ export async function GET(req: Request): Promise<Response> {
           const event = parseFeedEvent(message);
           if (!event) return;
 
-          // Look up the subscription info for this feed
+          // Look up the subscription for this feed.
           // For saved feeds, subscriptionId will be null (no subscription exists)
-          const subscriptionInfo = feedSubscriptionMap.get(event.feedId) ?? null;
+          const subscriptionId = feedSubscriptionMap.get(event.feedId) ?? null;
 
-          // Transform event to use subscriptionId instead of feedId
-          // Include metadata for entry_updated events to enable direct cache updates
-          const clientEvent: Record<string, unknown> = {
-            type: event.type,
-            subscriptionId: subscriptionInfo?.subscriptionId ?? null,
-            entryId: event.entryId,
-            timestamp: event.timestamp,
-            updatedAt: event.updatedAt, // Database updated_at for cursor tracking
-            feedType: event.feedType,
-          };
-
-          // Include the subscription's tag IDs so the client can update tag
-          // unread counts without cached subscription data (#892)
-          if (event.type === "new_entry" && subscriptionInfo) {
-            clientEvent.tagIds = subscriptionInfo.tagIds;
+          if (event.type === "new_entry") {
+            // Compute this user's absolute unread counts and send them with the
+            // event so the client sets counts directly instead of applying a +1
+            // delta. That makes new_entry idempotent: a reconnect catch-up sync
+            // can re-deliver the same entry without double-counting (the entry
+            // already exists in visible_entries by the time this event fires).
+            // This is a per-subscriber query on the feed fan-out path, the same
+            // order as the per-subscriber user_entries inserts the worker
+            // already does for each new entry.
+            void (async () => {
+              let counts: NewEntryUnreadCounts | undefined;
+              try {
+                counts = toBulkUnreadCounts(
+                  await getNewEntryRelatedCounts(db, userId, event.feedType, subscriptionId)
+                );
+              } catch (err) {
+                // Leave counts off; the client skips the count update and it
+                // self-heals on the next count-bearing event or refetch.
+                console.error("Failed to compute new_entry counts:", err);
+              }
+              const cursor = new Date().toISOString();
+              send(
+                `event: new_entry\nid: ${cursor}\ndata: ${JSON.stringify({
+                  type: "new_entry",
+                  subscriptionId,
+                  entryId: event.entryId,
+                  timestamp: event.timestamp,
+                  updatedAt: event.updatedAt,
+                  feedType: event.feedType,
+                  ...(counts ? { counts } : {}),
+                })}\n\n`
+              );
+              trackSSEEventSent("new_entry");
+            })();
+            return;
           }
 
-          // Include metadata for entry_updated events
-          if (event.type === "entry_updated") {
-            clientEvent.metadata = event.metadata;
-          }
-
+          // entry_updated: include metadata so the client can update caches directly
           const cursor = new Date().toISOString();
           send(
-            `event: ${clientEvent.type}\nid: ${cursor}\ndata: ${JSON.stringify(clientEvent)}\n\n`
+            `event: entry_updated\nid: ${cursor}\ndata: ${JSON.stringify({
+              type: "entry_updated",
+              subscriptionId,
+              entryId: event.entryId,
+              timestamp: event.timestamp,
+              updatedAt: event.updatedAt, // Database updated_at for cursor tracking
+              feedType: event.feedType,
+              metadata: event.metadata,
+            })}\n\n`
           );
           trackSSEEventSent(event.type);
         }

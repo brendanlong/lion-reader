@@ -171,7 +171,7 @@ test("new_entry event updates unread counts in all affected lists without refetc
   });
   await publishNewEntry(taggedFeed.feedId, entry.id, entry.updatedAt, "web");
 
-  // Affected lists increment (delta applied client-side)...
+  // Affected lists update from the event's server-computed absolute counts...
   await expect(links.allItems).toContainText("(4)");
   await expect(links.newsTag).toContainText("(3)");
   await expect(links.subscriptionRow).toContainText("(3)");
@@ -182,9 +182,10 @@ test("new_entry event updates unread counts in all affected lists without refetc
 });
 
 // Regression test for #892: while a sidebar tag is collapsed (the default),
-// the subscription isn't in any cache, so tag deltas can't be derived
-// client-side. The new_entry event carries the subscription's tagIds
-// (resolved by the SSE endpoint) so the badge still updates.
+// the subscription isn't in any cache, so a tag count can't be derived from
+// cached subscription data. The new_entry event carries the tag's absolute
+// unread count (computed per-user by the SSE endpoint) so the badge still
+// updates.
 test("new_entry event updates a collapsed tag's unread count", async ({ page, baseURL }) => {
   const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(
     page,

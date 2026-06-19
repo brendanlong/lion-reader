@@ -262,12 +262,19 @@ describe("sync.events", () => {
         entryId,
         subscriptionId: subId,
         feedType: "web",
-        // Untagged subscription: empty tagIds means uncategorized
-        tagIds: [],
+        // Absolute unread counts the client sets directly. Untagged
+        // subscription, so uncategorized is affected rather than any tag.
+        counts: {
+          all: { unread: 1 },
+          starred: { unread: 0 },
+          subscriptions: [{ id: subId, unread: 1 }],
+          tags: [],
+          uncategorized: { unread: 1 },
+        },
       });
     });
 
-    it("includes the subscription's tagIds on new_entry events", async () => {
+    it("includes the subscription's tag in new_entry absolute counts", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/tagged-sync-feed.xml");
       const subId = await createTestSubscription(userId, feedId);
@@ -290,7 +297,10 @@ describe("sync.events", () => {
         type: "new_entry",
         entryId,
         subscriptionId: subId,
-        tagIds: [tagId],
+        counts: {
+          subscriptions: [{ id: subId, unread: 1 }],
+          tags: [{ id: tagId, unread: 1 }],
+        },
       });
     });
 
