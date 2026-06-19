@@ -37,6 +37,28 @@ type RawJobRow = {
 } & Record<string, unknown>;
 
 /**
+ * Postgres SQLSTATE for a unique-constraint violation.
+ */
+const PG_UNIQUE_VIOLATION = "23505";
+
+/**
+ * Returns true if the error is a Postgres unique-constraint violation.
+ * The `pg` driver surfaces the SQLSTATE on the error's `code` property, but
+ * Drizzle wraps query errors and puts the original on `cause`, so we walk the
+ * cause chain.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && typeof current === "object" && current !== null; depth++) {
+    if ((current as { code?: unknown }).code === PG_UNIQUE_VIOLATION) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
  * Converts a raw SQL row to a Job with proper Date objects.
  */
 function rowToJob(row: RawJobRow): Job {
@@ -425,8 +447,15 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
       .returning();
 
     return newJob;
-  } catch {
-    // Another worker likely created the job - try to claim it
+  } catch (error) {
+    // Only the jobs_singleton_type_unique conflict (Postgres unique_violation,
+    // SQLSTATE 23505) means another worker won the race. Any other error is a
+    // genuine failure and must propagate rather than be masked as "lost race".
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+
+    // Another worker created the job first - try to claim it
     const retryResult = await db.execute<RawJobRow>(sql`
       UPDATE ${jobs}
       SET
