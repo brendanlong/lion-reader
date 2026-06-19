@@ -22,6 +22,7 @@ import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob } from "@/server/jobs/queue";
 import { publishSubscriptionCreated } from "@/server/redis/pubsub";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import { errors } from "@/server/trpc/errors";
 
 // ============================================================================
@@ -333,6 +334,13 @@ export interface CreateSubscriptionResult {
     description: string | null;
     siteUrl: string | null;
   };
+  /**
+   * Absolute unread counts for the lists affected by this subscription (All
+   * Articles, Uncategorized, and the subscription itself). Present only when a
+   * subscription was actually created or reactivated; omitted for the
+   * idempotent already-active return (nothing changed).
+   */
+  counts?: BulkUnreadCounts;
 }
 
 /**
@@ -522,7 +530,14 @@ export async function createSubscription(
     });
   }
 
-  // 7. Publish SSE event for new/reactivated subscriptions
+  // 7. Compute absolute unread counts for the affected lists. A newly created
+  // or reactivated subscription is untagged, so it only moves All Articles and
+  // Uncategorized (plus its own count). The client sets these directly.
+  const counts = await getBulkEntryRelatedCounts(db, userId, [
+    { subscriptionId, type: feedData.type },
+  ]);
+
+  // 8. Publish SSE event for new/reactivated subscriptions
   publishSubscriptionCreated(
     userId,
     feedId,
@@ -536,7 +551,8 @@ export async function createSubscription(
       unreadCount,
       tags: [],
     },
-    feedData
+    feedData,
+    counts
   ).catch((err) => {
     logger.error("Failed to publish subscription_created event", { err, userId, feedId });
   });
@@ -549,5 +565,6 @@ export async function createSubscription(
     customTitle,
     fetchFullContent,
     feed: feedData,
+    counts,
   };
 }

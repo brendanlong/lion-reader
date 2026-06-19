@@ -691,6 +691,68 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
     });
   });
 
+  describe("Absolute counts on create/delete", () => {
+    async function seedFeedWithUnread(url: string, count: number): Promise<string> {
+      const fetchTime = new Date("2024-01-01T10:00:00Z");
+      const feedId = await createTestFeed({
+        url,
+        lastFetchedAt: fetchTime,
+        lastEntriesUpdatedAt: fetchTime,
+      });
+      for (let i = 0; i < count; i++) {
+        await createTestEntry(feedId, { guid: `${url}-${i}`, fetchedAt: fetchTime, lastSeenAt: fetchTime });
+      }
+      return feedId;
+    }
+
+    it("create returns absolute counts for the new untagged subscription", async () => {
+      const userId = await createTestUser();
+      await seedFeedWithUnread("https://example.com/counts-a.xml", 3);
+      const caller = createCaller(createAuthContext(userId));
+
+      const result = await caller.subscriptions.create({ url: "https://example.com/counts-a.xml" });
+
+      expect(result.counts?.all.unread).toBe(3);
+      expect(result.counts?.uncategorized?.unread).toBe(3);
+      expect(result.counts?.subscriptions).toContainEqual({ id: result.id, unread: 3 });
+      expect(result.counts?.tags).toEqual([]);
+    });
+
+    it("delete returns absolute counts reflecting the removal (uncategorized)", async () => {
+      const userId = await createTestUser();
+      await seedFeedWithUnread("https://example.com/counts-b.xml", 3);
+      const caller = createCaller(createAuthContext(userId));
+      const sub = await caller.subscriptions.create({ url: "https://example.com/counts-b.xml" });
+
+      const result = await caller.subscriptions.delete({ id: sub.id });
+
+      expect(result.success).toBe(true);
+      expect(result.counts?.all.unread).toBe(0);
+      expect(result.counts?.uncategorized?.unread).toBe(0);
+    });
+
+    it("delete returns the former tag's post-removal absolute count", async () => {
+      const userId = await createTestUser();
+      await seedFeedWithUnread("https://example.com/counts-c.xml", 2);
+      await seedFeedWithUnread("https://example.com/counts-d.xml", 3);
+      const caller = createCaller(createAuthContext(userId));
+      const subC = await caller.subscriptions.create({ url: "https://example.com/counts-c.xml" });
+      const subD = await caller.subscriptions.create({ url: "https://example.com/counts-d.xml" });
+
+      // Tag both subscriptions so the tag's unread is 2 + 3 = 5.
+      const { tag } = await caller.tags.create({ name: "News" });
+      await caller.subscriptions.setTags({ id: subC.id, tagIds: [tag.id] });
+      await caller.subscriptions.setTags({ id: subD.id, tagIds: [tag.id] });
+
+      // Deleting subC (2 unread) leaves the tag with subD's 3 unread.
+      const result = await caller.subscriptions.delete({ id: subC.id });
+
+      expect(result.counts?.tags).toContainEqual({ id: tag.id, unread: 3 });
+      expect(result.counts?.uncategorized).toBeUndefined();
+      expect(result.counts?.all.unread).toBe(3);
+    });
+  });
+
   describe("Multiple users subscribing", () => {
     it("each user gets their own user_entries for current entries", async () => {
       const userAId = await createTestUser("userA");

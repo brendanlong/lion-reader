@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionDeleted } from "@/lib/cache/operations";
+import { removeSubscriptionFromCaches, setEntryRelatedCounts } from "@/lib/cache/operations";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
@@ -49,10 +49,14 @@ export default function BrokenFeedsSettingsContent() {
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
     onMutate: (variables) => {
-      // Use centralized cache operation for optimistic removal
-      handleSubscriptionDeleted(utils, variables.id, queryClient);
+      // Optimistically remove the subscription; counts come from onSuccess.
+      removeSubscriptionFromCaches(variables.id, queryClient);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.counts) {
+        setEntryRelatedCounts(utils, data.counts, queryClient);
+      }
+      utils.entries.list.invalidate();
       utils.brokenFeeds.list.invalidate();
       setUnsubscribeTarget(null);
       toast.success("Unsubscribed from feed");

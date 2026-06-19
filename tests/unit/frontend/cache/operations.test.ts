@@ -100,15 +100,49 @@ describe("handleSubscriptionCreated", () => {
     expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
 
-  it("directly updates tags.list cache", () => {
+  it("sets absolute counts directly when the event provides them", () => {
+    const subscription = createSubscription({ unreadCount: 3 });
+    handleSubscriptionCreated(mockUtils.utils, subscription, undefined, {
+      all: { unread: 21 },
+      starred: { unread: 1 },
+      saved: { unread: 1 },
+      subscriptions: [{ id: "sub-1", unread: 3 }],
+      tags: [],
+      uncategorized: { unread: 6 },
+    });
+
+    // Counts are set directly (entries.count + tags.list uncategorized), not invalidated
+    expect(
+      mockUtils.operations.some(
+        (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
+      )
+    ).toBe(true);
+    expect(
+      mockUtils.operations.some(
+        (op) => op.type === "setData" && op.router === "tags" && op.procedure === "list"
+      )
+    ).toBe(true);
+    // The count caches are set, not invalidated (the subscriptions.list refresh
+    // is a separate structural concern).
+    expect(
+      mockUtils.operations.some(
+        (op) =>
+          op.type === "invalidate" &&
+          ((op.router === "tags" && op.procedure === "list") ||
+            (op.router === "entries" && op.procedure === "count"))
+      )
+    ).toBe(false);
+  });
+
+  it("invalidates the count caches when no counts are provided (sync catch-up)", () => {
     const subscription = createSubscription();
     handleSubscriptionCreated(mockUtils.utils, subscription);
 
-    // Should use setData instead of invalidate for direct cache update
-    const setDataOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "tags" && op.procedure === "list"
+    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
+    expect(invalidations.some((op) => op.router === "tags" && op.procedure === "list")).toBe(true);
+    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "count")).toBe(
+      true
     );
-    expect(setDataOps.length).toBe(1);
   });
 
   it("adds subscription with tags to lookup map", () => {

@@ -81,9 +81,9 @@ redis: Redis Pub/Sub {
       Pattern: user:{userId}:events
 
       Events:
-      - subscription_created (full subscription + feed data)
+      - subscription_created (full subscription + feed data + counts)
       - subscription_updated (tags, customTitle)
-      - subscription_deleted (subscriptionId)
+      - subscription_deleted (subscriptionId + counts, live path only)
       - entry_state_changed (read/starred + unread counts)
       - tag_created / tag_updated / tag_deleted
       - import_progress (per-feed progress)
@@ -224,13 +224,13 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Direct updates (no refetch):
-      - subscriptions.list: add subscription
-      - tags.list: feedCount += 1, unreadCount += N
-      - entries.count({}): unread += N, total += N
+      Structural: add subscription to subscriptions.list
+      (targeted per-tag query invalidation)
 
-      Targeted invalidations:
-      - subscriptions.list per-tag queries (affected tags only)
+      Counts (live path): set absolute counts from
+      event.counts via setEntryRelatedCounts.
+      Sync catch-up path (no counts): invalidate
+      tags.list + entries.count instead.
     |
   }
 
@@ -238,13 +238,14 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Direct updates (no refetch):
-      - subscriptions.list: remove subscription
-      - tags.list: feedCount -= 1, unreadCount -= N
-      - entries.count({}): unread -= N, total -= N
+      Structural: remove subscription from subscriptions.list
 
-      Invalidations:
-      - entries.list (entries should be filtered out)
+      Counts (live path): set absolute counts from
+      event.counts. Sync catch-up path can't recompute
+      the former tags → omits counts → invalidate
+      tags.list + entries.count.
+
+      Always invalidates entries.list.
     |
   }
 

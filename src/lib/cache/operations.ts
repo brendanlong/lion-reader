@@ -14,7 +14,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import { updateEntriesReadStatus, updateEntryStarredStatus } from "./entry-cache";
 import {
-  adjustEntriesCount,
   addSubscriptionToCache,
   removeSubscriptionFromCache,
   findCachedSubscription,
@@ -149,39 +148,78 @@ function removeSubscriptionFromInfiniteQueries(
 }
 
 /**
+ * Structurally removes a subscription from all caches (the lookup map and any
+ * cached infinite-query pages) without touching unread counts. Used for the
+ * optimistic unsubscribe in onMutate, where the server-absolute counts are
+ * applied later in onSuccess.
+ */
+export function removeSubscriptionFromCaches(
+  subscriptionId: string,
+  queryClient?: QueryClient
+): void {
+  removeSubscriptionFromCache(subscriptionId);
+  if (queryClient) {
+    removeSubscriptionFromInfiniteQueries(queryClient, subscriptionId);
+  }
+}
+
+/**
+ * Applies the unread-count side of a subscription_created/deleted event.
+ *
+ * On the live mutation/SSE path the server provides absolute `counts`, which we
+ * set directly (idempotent). The sync.events catch-up path can't always compute
+ * them (a deleted subscription's tag associations are already gone server-side),
+ * so it omits `counts` and we invalidate the two count caches instead — a single
+ * refetch, only on reconnect catch-up, never on the live path.
+ */
+function applySubscriptionCounts(
+  utils: TRPCClientUtils,
+  counts: EntryRelatedCounts | undefined,
+  queryClient?: QueryClient
+): void {
+  if (counts) {
+    setEntryRelatedCounts(utils, counts, queryClient);
+  } else {
+    utils.tags.list.invalidate();
+    utils.entries.count.invalidate();
+  }
+}
+
+/**
  * Handles a new subscription being created.
  *
  * Updates:
  * - subscriptions.list (add subscription to unparameterized cache)
  * - subscriptions.list per-tag infinite queries (only affected tags, or uncategorized if no tags)
- * - tags.list (direct update of feedCount and unreadCount)
- * - entries.count (direct update)
+ * - unread counts (set absolutely from server-provided `counts`)
  *
  * @param utils - tRPC utils for cache access
  * @param subscription - The new subscription data
  * @param queryClient - React Query client for targeted invalidations
+ * @param counts - Absolute unread counts for the affected lists. Present on the
+ *   live mutation/SSE path; absent on the sync.events catch-up path (the client
+ *   then invalidates the count caches instead).
  */
 export function handleSubscriptionCreated(
   utils: TRPCClientUtils,
   subscription: SubscriptionData,
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  counts?: EntryRelatedCounts
 ): void {
-  // Guard against duplicate subscription events (e.g. from sync polling).
-  // Check if the subscription already exists before incrementing counts
-  // to prevent unbounded count inflation (#680).
+  // Guard against duplicate subscription events (e.g. the subscribing tab gets
+  // both the mutation response and the SSE event). Absolute counts are
+  // idempotent, but the structural list refresh should only run once (#680).
   const alreadyExists = queryClient
     ? findCachedSubscription(queryClient, subscription.id) !== undefined
     : getSubscriptionLookupMap().has(subscription.id);
 
   addSubscriptionToCache(subscription);
 
-  // Skip count updates if the subscription was already in the cache
+  // Skip the structural list refresh if the subscription was already cached.
   if (alreadyExists) return;
 
-  // Invalidate only the affected subscription list queries
-  // - The unparameterized query (no input) for entry content pages
-  // - Per-tag queries for tags the subscription belongs to
-  // - Uncategorized query if subscription has no tags
+  // Refresh only the affected subscription list queries so the new subscription
+  // appears: the unparameterized query plus the per-tag / uncategorized query.
   if (queryClient) {
     invalidateSubscriptionListsForTags(
       queryClient,
@@ -189,44 +227,10 @@ export function handleSubscriptionCreated(
       subscription.tags.length === 0
     );
   } else {
-    // Fallback: invalidate all subscription lists
     utils.subscriptions.list.invalidate();
   }
 
-  // Directly update tags.list with feedCount and unreadCount changes
-  utils.tags.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-
-    if (subscription.tags.length === 0) {
-      // Uncategorized subscription
-      return {
-        ...oldData,
-        uncategorized: {
-          feedCount: oldData.uncategorized.feedCount + 1,
-          unreadCount: oldData.uncategorized.unreadCount + subscription.unreadCount,
-        },
-      };
-    }
-
-    // Update feedCount and unreadCount for each tag the subscription belongs to
-    const tagIds = new Set(subscription.tags.map((t) => t.id));
-    return {
-      ...oldData,
-      items: oldData.items.map((tag) => {
-        if (tagIds.has(tag.id)) {
-          return {
-            ...tag,
-            feedCount: tag.feedCount + 1,
-            unreadCount: tag.unreadCount + subscription.unreadCount,
-          };
-        }
-        return tag;
-      }),
-    };
-  });
-
-  // Directly update entries.count for All Articles
-  adjustEntriesCount(utils, {}, subscription.unreadCount);
+  applySubscriptionCounts(utils, counts, queryClient);
 }
 
 /**
@@ -236,78 +240,46 @@ export function handleSubscriptionCreated(
  * - subscriptions.list (remove subscription from caches)
  * - subscriptions.list per-tag infinite queries (only affected tags, or uncategorized)
  * - entries.list (invalidated - entries may be filtered out)
- * - tags.list (direct update of feedCount and unreadCount if subscription found in cache)
- * - entries.count (direct update if subscription found in cache)
+ * - unread counts (set absolutely from server-provided `counts`)
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionId - ID of the deleted subscription
  * @param queryClient - React Query client for targeted invalidations
+ * @param counts - Absolute unread counts for the affected lists. Present on the
+ *   live mutation/SSE path; absent on the sync.events catch-up path (the server
+ *   can't recompute the former tags there), in which case the client
+ *   invalidates the count caches instead.
  */
 export function handleSubscriptionDeleted(
   utils: TRPCClientUtils,
   subscriptionId: string,
-  queryClient?: QueryClient
+  queryClient?: QueryClient,
+  counts?: EntryRelatedCounts
 ): void {
-  // Look up subscription data before removing from cache
-  // This lets us do targeted updates instead of broad invalidations
+  // Look up the cached subscription before removing it, so we can target the
+  // affected subscription-list queries.
   const subscription = queryClient
     ? findCachedSubscription(queryClient, subscriptionId)
     : undefined;
 
-  // Remove from all subscription caches
+  // Remove from all subscription caches (structural).
   removeSubscriptionFromCache(subscriptionId);
   if (queryClient) {
     removeSubscriptionFromInfiniteQueries(queryClient, subscriptionId);
   }
 
+  // Refresh the affected subscription list queries.
   if (subscription && queryClient) {
-    // Targeted invalidations using subscription data
     invalidateSubscriptionListsForTags(
       queryClient,
       subscription.tags.map((t) => t.id),
       subscription.tags.length === 0
     );
-
-    // Directly update tags.list feedCount and unreadCount
-    utils.tags.list.setData(undefined, (oldData) => {
-      if (!oldData) return oldData;
-
-      if (subscription.tags.length === 0) {
-        // Uncategorized subscription
-        return {
-          ...oldData,
-          uncategorized: {
-            feedCount: Math.max(0, oldData.uncategorized.feedCount - 1),
-            unreadCount: Math.max(0, oldData.uncategorized.unreadCount - subscription.unreadCount),
-          },
-        };
-      }
-
-      // Update feedCount and unreadCount for each tag
-      const tagIds = new Set(subscription.tags.map((t) => t.id));
-      return {
-        ...oldData,
-        items: oldData.items.map((tag) => {
-          if (tagIds.has(tag.id)) {
-            return {
-              ...tag,
-              feedCount: Math.max(0, tag.feedCount - 1),
-              unreadCount: Math.max(0, tag.unreadCount - subscription.unreadCount),
-            };
-          }
-          return tag;
-        }),
-      };
-    });
-
-    // Directly update entries.count for All Articles
-    adjustEntriesCount(utils, {}, -subscription.unreadCount);
   } else {
-    // Fallback: invalidate broadly when we don't have subscription data
     utils.subscriptions.list.invalidate();
-    utils.tags.list.invalidate();
-    utils.entries.count.invalidate();
   }
+
+  applySubscriptionCounts(utils, counts, queryClient);
 
   // Always invalidate entries.list - entries from this subscription should be filtered out
   utils.entries.list.invalidate();

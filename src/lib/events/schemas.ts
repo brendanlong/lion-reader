@@ -147,6 +147,11 @@ export const subscriptionCreatedEventSchema = z.object({
   updatedAt: z.string(),
   subscription: subscriptionCreatedDataSchema,
   feed: feedCreatedDataSchema,
+  // Absolute unread counts for the lists the new (untagged) subscription
+  // affects — All Articles, Uncategorized, and the subscription itself. The
+  // client sets these directly instead of adding deltas. Optional so events
+  // from servers predating this field still parse.
+  counts: unreadCountsSchema.optional(),
 });
 
 export const subscriptionDeletedEventSchema = z.object({
@@ -154,6 +159,12 @@ export const subscriptionDeletedEventSchema = z.object({
   subscriptionId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
+  // Absolute unread counts for the affected lists (All Articles + the
+  // subscription's former tags / Uncategorized), computed at delete time. The
+  // live mutation/SSE path includes these; the sync.events catch-up path can't
+  // (the tag associations are already gone server-side), so it omits them and
+  // the client falls back to invalidating tags.list + entries.count.
+  counts: unreadCountsSchema.optional(),
 });
 
 export const subscriptionUpdatedEventSchema = z.object({
