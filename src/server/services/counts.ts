@@ -214,7 +214,10 @@ async function getSubscriptionTagCounts(
     // Scope to active subscriptions (user_feeds is active-only): visible_entries
     // also surfaces starred entries from unsubscribed feeds, which must not
     // inflate a tag's unread badge.
-    .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+    .innerJoin(
+      userFeeds,
+      and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+    )
     .where(
       and(
         eq(visibleEntries.userId, userId),
@@ -245,7 +248,10 @@ async function getSubscriptionTagCounts(
       unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
     })
     .from(visibleEntries)
-    .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+    .innerJoin(
+      userFeeds,
+      and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+    )
     .where(
       and(
         eq(visibleEntries.userId, userId),
@@ -366,7 +372,10 @@ export async function getBulkEntryRelatedCounts(
             eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId)
           )
           // Active subscriptions only (see getSubscriptionTagCounts).
-          .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+          .innerJoin(
+            userFeeds,
+            and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+          )
           .where(
             and(
               eq(visibleEntries.userId, userId),
@@ -382,7 +391,10 @@ export async function getBulkEntryRelatedCounts(
             unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
           })
           .from(visibleEntries)
-          .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+          .innerJoin(
+            userFeeds,
+            and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+          )
           .where(
             and(
               eq(visibleEntries.userId, userId),

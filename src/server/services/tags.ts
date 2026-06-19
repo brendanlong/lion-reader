@@ -79,7 +79,10 @@ function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
       unreadCount: sql<number>`COUNT(DISTINCT ${visibleEntries.id})::int`.as("unread_count"),
     })
     .from(visibleEntries)
-    .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+    .innerJoin(
+      userFeeds,
+      and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+    )
     .innerJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, visibleEntries.subscriptionId))
     .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)))
     .groupBy(subscriptionTags.tagId)
@@ -141,7 +144,10 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
     db
       .select({ unreadCount: sql<number>`COUNT(DISTINCT ${visibleEntries.id})::int` })
       .from(visibleEntries)
-      .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+      .innerJoin(
+        userFeeds,
+        and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+      )
       .where(
         and(
           eq(visibleEntries.userId, userId),
