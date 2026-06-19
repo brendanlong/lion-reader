@@ -15,7 +15,6 @@ import {
   handleEntriesMarkedRead,
   handleEntryStarred,
   handleEntryUnstarred,
-  handleNewEntry,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   type EntryWithContext,
@@ -234,53 +233,8 @@ describe("handleEntryUnstarred", () => {
   });
 });
 
-describe("handleNewEntry", () => {
-  let mockUtils: ReturnType<typeof createMockTrpcUtils>;
-
-  beforeEach(() => {
-    _resetSubscriptionLookupMap();
-    mockUtils = createMockTrpcUtils();
-  });
-
-  it("increments subscription unread count in lookup map", () => {
-    seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
-
-    handleNewEntry(mockUtils.utils, "sub-1", "web");
-
-    expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(6);
-  });
-
-  it("increments saved unread count for saved entries", () => {
-    handleNewEntry(mockUtils.utils, "sub-1", "saved");
-
-    const countOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
-    );
-    expect(countOps.length).toBeGreaterThan(0);
-  });
-
-  it("increments All Articles count but not saved count for web entries", () => {
-    handleNewEntry(mockUtils.utils, "sub-1", "web");
-
-    // For web entries, we update All Articles count but not saved count
-    const countOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
-    );
-    // Only 1 operation: All Articles count (no saved count for web entries)
-    expect(countOps.length).toBe(1);
-  });
-
-  it("increments All Articles count but not saved count for email entries", () => {
-    handleNewEntry(mockUtils.utils, "sub-1", "email");
-
-    // Email entries update All Articles count but don't affect saved count
-    const countOps = mockUtils.operations.filter(
-      (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
-    );
-    // Only 1 operation: All Articles count (no saved count for email entries)
-    expect(countOps.length).toBe(1);
-  });
-});
+// new_entry is now driven by absolute server counts via handleSyncEvent →
+// setEntryRelatedCounts; see tests/unit/frontend/cache/handle-sync-event.test.ts.
 
 describe("handleSubscriptionCreated", () => {
   let mockUtils: ReturnType<typeof createMockTrpcUtils>;
@@ -542,34 +496,6 @@ describe("cache update logic verification", () => {
     });
   });
 
-  describe("handleNewEntry cache state updates", () => {
-    it("increments subscription unread count", () => {
-      seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
-
-      handleNewEntry(mockUtils.utils, "sub-1", "web");
-
-      expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(6);
-    });
-
-    it("increments tag unread count from event-provided tagIds", () => {
-      seedSubscription({
-        id: "sub-1",
-        unreadCount: 5,
-        tags: [{ id: "tag-1", name: "News", color: null }],
-      });
-      mockUtils.setCache("tags", "list", undefined, {
-        items: [{ id: "tag-1", name: "News", color: null, unreadCount: 10 }],
-      });
-
-      handleNewEntry(mockUtils.utils, "sub-1", "web", undefined, ["tag-1"]);
-
-      const tagData = mockUtils.getCache("tags", "list", undefined) as {
-        items: Array<{ id: string; unreadCount: number }>;
-      };
-      expect(tagData.items[0].unreadCount).toBe(11);
-    });
-  });
-
   describe("handleEntryStarred cache state updates", () => {
     it("increments starred unread count for unread entry", () => {
       mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: 2 });
@@ -677,12 +603,6 @@ describe("edge cases", () => {
 
       // Should not throw
       handleEntriesMarkedRead(mockUtils.utils, entries, true);
-    });
-
-    it("handleNewEntry handles when subscription not in lookup map", () => {
-      // Don't seed subscription - leave lookup map empty
-      // Should not throw
-      handleNewEntry(mockUtils.utils, "sub-1", "web");
     });
   });
 

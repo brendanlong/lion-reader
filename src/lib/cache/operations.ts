@@ -480,59 +480,6 @@ export function handleSubscriptionDeleted(
   utils.entries.list.invalidate();
 }
 
-/**
- * Handles a new entry being created in a subscription.
- *
- * Updates:
- * - subscriptions.list unread counts (+1)
- * - tags.list unread counts (+1)
- * - entries.count({ type: "saved" }) if entry is saved
- *
- * Does NOT invalidate entries.list - new entries appear on next navigation.
- * Note: We don't have full entry data from SSE events, so we can't update
- * entries.get or entries.list caches. That's OK - entries will be fetched
- * when user navigates to that view (EntryListContainer refetches on pathname change).
- *
- * @param utils - tRPC utils for cache access
- * @param subscriptionId - Subscription the entry belongs to
- * @param feedType - Type of feed (web, email, saved)
- * @param queryClient - React Query client for updating infinite query caches
- * @param tagIds - The subscription's tag IDs, resolved server-side. Empty array
- *   means uncategorized. Undefined only for events from servers predating
- *   tagIds (deploy window) — tag counts are skipped, briefly stale until the
- *   next tags.list refetch.
- */
-export function handleNewEntry(
-  utils: TRPCClientUtils,
-  subscriptionId: string | null,
-  feedType: "web" | "email" | "saved",
-  queryClient?: QueryClient,
-  tagIds?: string[]
-): void {
-  // Update subscription and tag unread counts (only for non-saved entries)
-  if (subscriptionId) {
-    // New entries are always unread (read: false, starred: false)
-    const subscriptionDeltas = new Map<string, number>();
-    subscriptionDeltas.set(subscriptionId, 1); // +1 unread
-    adjustSubscriptionUnreadCounts(utils, subscriptionDeltas, queryClient);
-
-    // Tag deltas come from the server-resolved tagIds, so they apply even when
-    // the subscription isn't cached (collapsed sidebar tag, see #892)
-    if (tagIds !== undefined) {
-      const tagDeltas = new Map<string, number>(tagIds.map((tagId) => [tagId, 1]));
-      adjustTagUnreadCounts(utils, tagDeltas, tagIds.length === 0 ? 1 : 0);
-    }
-  }
-
-  // Update All Articles unread count (+1 unread)
-  adjustEntriesCount(utils, {}, 1);
-
-  // Update saved unread count if it's a saved entry
-  if (feedType === "saved") {
-    adjustEntriesCount(utils, { type: "saved" }, 1);
-  }
-}
-
 // ============================================================================
 // Absolute Count Updates (Server-Provided Counts)
 // ============================================================================
@@ -641,6 +588,41 @@ export function setBulkCounts(
   if (counts.uncategorized) {
     setUncategorizedUnreadCount(utils, counts.uncategorized.unread);
   }
+}
+
+/**
+ * Counts carried by count-bearing realtime events (new_entry,
+ * entry_state_changed). Same shape as BulkUnreadCounts but `saved` is optional,
+ * since web/email events don't compute the saved count.
+ */
+export type EntryRelatedCounts = Omit<BulkUnreadCounts, "saved"> & {
+  saved?: { unread: number };
+};
+
+/**
+ * Applies absolute unread counts from a count-bearing realtime event.
+ *
+ * Fills in `saved` from the current cache when the event omits it (web/email
+ * events don't compute the saved count) so setBulkCounts doesn't clobber the
+ * client's existing saved count with a wrong value. Because every value is set
+ * absolutely, applying the same event twice — e.g. once from the live SSE
+ * stream and once from a reconnect catch-up sync — leaves counts correct.
+ *
+ * @param utils - tRPC utils for cache access
+ * @param counts - Absolute counts from the server (saved optional)
+ * @param queryClient - React Query client for updating infinite query caches
+ */
+export function setEntryRelatedCounts(
+  utils: TRPCClientUtils,
+  counts: EntryRelatedCounts,
+  queryClient?: QueryClient
+): void {
+  const currentSaved = utils.entries.count.getData({ type: "saved" });
+  setBulkCounts(
+    utils,
+    { ...counts, saved: counts.saved ?? currentSaved ?? { unread: 0 } },
+    queryClient
+  );
 }
 
 /**

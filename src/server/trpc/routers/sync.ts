@@ -275,23 +275,25 @@ export const syncRouter = createTRPCRouter({
           (row) => row.userEntryUpdatedAt > entriesCursorDate
         );
 
-        // Batch-fetch tags for subscriptions that will emit new_entry events,
-        // so the client can update tag unread counts without cached
-        // subscription data (#892)
-        const newEntrySubscriptionIds = [
-          ...new Set(
-            changedEntryResults
-              .filter(
-                (row) => row.entryUpdatedAt > entriesCursorDate && row.createdAt > entriesCursorDate
-              )
-              .map((row) => row.subscriptionId)
-              .filter((id): id is string => id !== null)
-          ),
-        ];
-        const newEntryTagsBySubscription = await fetchTagsBySubscriptionIds(
-          ctx.db,
-          newEntrySubscriptionIds
+        // Entries created after the cursor emit new_entry events. Compute one
+        // absolute-count snapshot covering all of them so each new_entry event
+        // carries server-authoritative counts (the client sets them directly
+        // rather than applying a +1 delta, making the events idempotent across
+        // the live-SSE / catch-up-sync overlap).
+        const newEntries = changedEntryResults.filter(
+          (row) => row.entryUpdatedAt > entriesCursorDate && row.createdAt > entriesCursorDate
         );
+        const newEntryCounts =
+          newEntries.length > 0
+            ? await getBulkEntryRelatedCounts(
+                ctx.db,
+                userId,
+                newEntries.map((row) => ({
+                  subscriptionId: row.subscriptionId,
+                  type: row.feedType,
+                }))
+              )
+            : undefined;
 
         // Compute absolute unread counts once for all state-changed entries.
         // All entry_state_changed events share the same counts snapshot since
@@ -322,11 +324,7 @@ export const syncRouter = createTRPCRouter({
                 timestamp: row.maxUpdatedAtRaw,
                 updatedAt: row.maxUpdatedAtRaw,
                 feedType: row.feedType,
-                ...(row.subscriptionId !== null && {
-                  tagIds: (newEntryTagsBySubscription.get(row.subscriptionId) ?? []).map(
-                    (tag) => tag.id
-                  ),
-                }),
+                ...(newEntryCounts && { counts: newEntryCounts }),
                 _sortTime: new Date(row.maxUpdatedAtRaw),
               });
             } else {

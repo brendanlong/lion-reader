@@ -67,6 +67,37 @@ export interface UnreadCounts {
   uncategorized?: { unread: number };
 }
 
+/**
+ * Absolute counts shape sent with new_entry events. Mirrors the bulk
+ * `unreadCountsSchema` the client applies via setBulkCounts (subscriptions as
+ * an array), but with `saved` optional since web/email entries don't compute
+ * it. The single-entry `UnreadCounts` returned by getNewEntryRelatedCounts is
+ * mapped into this shape by `toBulkUnreadCounts`.
+ */
+export interface NewEntryUnreadCounts {
+  all: { unread: number };
+  starred: { unread: number };
+  saved?: { unread: number };
+  subscriptions: Array<{ id: string; unread: number }>;
+  tags: TagCount[];
+  uncategorized?: { unread: number };
+}
+
+/**
+ * Maps single-entry `UnreadCounts` into the array-shaped `NewEntryUnreadCounts`
+ * carried by new_entry events (and consumed by the client's setBulkCounts).
+ */
+export function toBulkUnreadCounts(counts: UnreadCounts): NewEntryUnreadCounts {
+  return {
+    all: counts.all,
+    starred: counts.starred,
+    ...(counts.saved ? { saved: counts.saved } : {}),
+    subscriptions: counts.subscription ? [counts.subscription] : [],
+    tags: counts.tags ?? [],
+    ...(counts.uncategorized ? { uncategorized: counts.uncategorized } : {}),
+  };
+}
+
 // ============================================================================
 // Service Functions
 // ============================================================================

@@ -109,7 +109,7 @@ sse-endpoint: SSE Endpoint {
       fan out in-process to all SSE connections.
 
       On connection:
-      1. Build feedId → {subscriptionId, tagIds} map
+      1. Build feedId → subscriptionId map
       2. Subscribe to user:{userId}:events
       3. Subscribe to feed:{feedId}:events for each subscription
       4. Subscribe to saved feed channel (if exists)
@@ -122,14 +122,15 @@ sse-endpoint: SSE Endpoint {
     transform: |
       Feed Events:
       - Transform feedId → subscriptionId (null for saved)
-      - new_entry: include subscription's tagIds (#892)
+      - new_entry: compute this user's absolute unread
+        counts (getNewEntryRelatedCounts) and attach them,
+        so the client sets counts directly (idempotent, #892)
       - Include feedType for cache decisions
 
       User Events:
       - Forward directly
       - On subscription_created: subscribe to new feed channel
       - On subscription_deleted: unsubscribe from feed channel
-      - On subscription_updated / tag_deleted: refresh tagIds map
     |
   }
 
@@ -187,16 +188,19 @@ cache-ops: Cache Operations {
   style.fill: "#fff7ed"
   tooltip: "src/lib/cache/operations.ts"
 
-  new-entry-handler: handleNewEntry {
+  new-entry-handler: setEntryRelatedCounts {
     style.fill: "#fed7aa"
 
     updates: |
-      Updates (surgical, no refetch):
-      - subscriptions.list: unreadCount += 1
-      - tags.list: unreadCount += 1 (from event tagIds;
-        works even when subscription isn't cached, #892)
-      - entries.count({}): unread += 1, total += 1
-      - entries.count({ type: "saved" }): if feedType === "saved"
+      Sets absolute counts from event.counts (no refetch):
+      - subscriptions.list: unreadCount
+      - tags.list: unreadCount (works even when the
+        subscription isn't cached, #892)
+      - entries.count({}) / ({ type: "saved" })
+
+      Absolute (not delta) → idempotent: a reconnect
+      catch-up sync re-delivering the same new_entry
+      can't double-count.
 
       Does NOT invalidate entries.list
       (entries appear on navigation)
