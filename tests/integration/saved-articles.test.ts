@@ -382,7 +382,10 @@ describe("Saved Articles API", () => {
 
       expect(result.entry.id).toBe(articleId);
       expect(result.entry.title).toBe("Test Article");
-      expect(result.entry.contentOriginal).toBe("<html><body>Original content</body></html>");
+      // entries.get sanitizes content on the read path (toFullEntry), which
+      // strips the <html>/<body> wrapper (invalid inside a content fragment).
+      // Allowed tags like <article> pass through unchanged.
+      expect(result.entry.contentOriginal).toBe("Original content");
       expect(result.entry.contentCleaned).toBe("<article>Cleaned content</article>");
       expect(result.entry.summary).toBe("This is a test excerpt for the article.");
     });
