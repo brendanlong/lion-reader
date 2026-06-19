@@ -14,32 +14,13 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import { updateEntriesReadStatus, updateEntryStarredStatus } from "./entry-cache";
 import {
-  adjustSubscriptionUnreadCounts,
-  adjustTagUnreadCounts,
   adjustEntriesCount,
-  calculateTagDeltasFromSubscriptions,
   addSubscriptionToCache,
   removeSubscriptionFromCache,
   findCachedSubscription,
   getSubscriptionLookupMap,
   setSubscriptionUnreadCountInMap,
 } from "./count-cache";
-
-/**
- * Entry type (matches feed type schema).
- */
-export type EntryType = "web" | "email" | "saved";
-
-/**
- * Entry with context, as returned by markRead mutation.
- * Includes all state needed for cache updates.
- */
-export interface EntryWithContext {
-  id: string;
-  subscriptionId: string | null;
-  starred: boolean;
-  type: EntryType;
-}
 
 /**
  * Subscription data for adding to cache.
@@ -59,30 +40,8 @@ export interface SubscriptionData {
 }
 
 // ============================================================================
-// Private Helpers (shared logic to avoid duplication)
+// Private Helpers
 // ============================================================================
-
-/**
- * Updates subscription and tag unread counts based on deltas.
- * Shared logic used by multiple operations to ensure consistent behavior.
- *
- * @param utils - tRPC utils for cache access
- * @param subscriptionDeltas - Map of subscriptionId -> unread count delta
- * @param queryClient - React Query client for updating infinite query caches
- */
-function updateSubscriptionAndTagCounts(
-  utils: TRPCClientUtils,
-  subscriptionDeltas: Map<string, number>,
-  queryClient?: QueryClient
-): void {
-  adjustSubscriptionUnreadCounts(utils, subscriptionDeltas, queryClient);
-  const { tagDeltas, uncategorizedDelta } = calculateTagDeltasFromSubscriptions(
-    utils,
-    subscriptionDeltas,
-    queryClient
-  );
-  adjustTagUnreadCounts(utils, tagDeltas, uncategorizedDelta);
-}
 
 /**
  * Query key input type for subscriptions.list.
@@ -186,132 +145,6 @@ function removeSubscriptionFromInfiniteQueries(
         })),
       });
     }
-  }
-}
-
-/**
- * Handles entries being marked as read or unread.
- *
- * Updates:
- * - entries.get cache for each entry
- * - entries.list cache (updates in place, no refetch)
- * - subscriptions.list unread counts
- * - tags.list unread counts
- * - entries.count({ starredOnly: true }) for starred entries
- * - entries.count({ type: "saved" }) for saved entries
- *
- * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
- * EntryListContainer refetches on pathname change, so lists update on next navigation.
- *
- * @param utils - tRPC utils for cache access
- * @param entries - Entries with their context (subscriptionId, starred, type)
- * @param read - New read status
- * @param queryClient - React Query client (optional, for list cache updates)
- */
-export function handleEntriesMarkedRead(
-  utils: TRPCClientUtils,
-  entries: EntryWithContext[],
-  read: boolean,
-  queryClient?: QueryClient
-): void {
-  if (entries.length === 0) return;
-
-  // 1. Update entry read status in entries.get cache and entries.list cache
-  updateEntriesReadStatus(
-    utils,
-    entries.map((e) => e.id),
-    read,
-    queryClient
-  );
-
-  // 2. Calculate subscription deltas
-  // Marking read: -1, marking unread: +1
-  const delta = read ? -1 : 1;
-  const subscriptionDeltas = new Map<string, number>();
-
-  for (const entry of entries) {
-    if (entry.subscriptionId) {
-      const current = subscriptionDeltas.get(entry.subscriptionId) ?? 0;
-      subscriptionDeltas.set(entry.subscriptionId, current + delta);
-    }
-  }
-
-  // 3. Update subscription and tag unread counts (including per-tag infinite queries)
-  updateSubscriptionAndTagCounts(utils, subscriptionDeltas, queryClient);
-
-  // 4. Update All Articles unread count
-  adjustEntriesCount(utils, {}, delta * entries.length);
-
-  // 5. Update starred unread count - only for entries that are starred
-  const starredCount = entries.filter((e) => e.starred).length;
-  if (starredCount > 0) {
-    adjustEntriesCount(utils, { starredOnly: true }, delta * starredCount);
-  }
-
-  // 6. Update saved unread count - only for saved entries
-  const savedCount = entries.filter((e) => e.type === "saved").length;
-  if (savedCount > 0) {
-    adjustEntriesCount(utils, { type: "saved" }, delta * savedCount);
-  }
-}
-
-/**
- * Handles an entry being starred.
- *
- * Updates:
- * - entries.get cache
- * - entries.list cache (updates in place, no refetch)
- * - entries.count({ starredOnly: true }) - unread +1 if entry is unread
- *
- * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
- *
- * @param utils - tRPC utils for cache access
- * @param entryId - Entry ID being starred
- * @param read - Whether the entry is read (from server response)
- * @param queryClient - React Query client (optional, for list cache updates)
- */
-export function handleEntryStarred(
-  utils: TRPCClientUtils,
-  entryId: string,
-  read: boolean,
-  queryClient?: QueryClient
-): void {
-  // 1. Update entry starred status
-  updateEntryStarredStatus(utils, entryId, true, queryClient);
-
-  // 2. Update starred unread count (+1 only if entry is unread)
-  if (!read) {
-    adjustEntriesCount(utils, { starredOnly: true }, 1);
-  }
-}
-
-/**
- * Handles an entry being unstarred.
- *
- * Updates:
- * - entries.get cache
- * - entries.list cache (updates in place, no refetch)
- * - entries.count({ starredOnly: true }) - unread -1 if entry is unread
- *
- * Note: Does NOT invalidate entries.list - entries stay visible until navigation.
- *
- * @param utils - tRPC utils for cache access
- * @param entryId - Entry ID being unstarred
- * @param read - Whether the entry is read (from server response)
- * @param queryClient - React Query client (optional, for list cache updates)
- */
-export function handleEntryUnstarred(
-  utils: TRPCClientUtils,
-  entryId: string,
-  read: boolean,
-  queryClient?: QueryClient
-): void {
-  // 1. Update entry starred status
-  updateEntryStarredStatus(utils, entryId, false, queryClient);
-
-  // 2. Update starred unread count (-1 only if entry was unread)
-  if (!read) {
-    adjustEntriesCount(utils, { starredOnly: true }, -1);
   }
 }
 

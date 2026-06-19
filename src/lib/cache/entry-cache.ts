@@ -204,8 +204,8 @@ function shouldUpdateEntryListCache(
  * Updates both entries.get (single entry) and entries.list (all lists) caches.
  * Does NOT invalidate/refetch - entries stay visible until navigation.
  *
- * Note: Call adjustSubscriptionUnreadCounts and adjustTagUnreadCounts separately
- * for count updates - those update directly without invalidation.
+ * Note: Count updates are applied separately from absolute server-provided
+ * counts (setEntryRelatedCounts / setBulkCounts) without invalidation.
  *
  * @param utils - tRPC utils for cache access
  * @param entryIds - Entry IDs to update

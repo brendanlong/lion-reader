@@ -33,15 +33,12 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Count Cache (`count-cache.ts`)
 
-| Function                              | Purpose                                                  |
-| ------------------------------------- | -------------------------------------------------------- |
-| `adjustSubscriptionUnreadCounts`      | Updates unread counts in lookup map and infinite queries |
-| `adjustTagUnreadCounts`               | Directly updates unread counts in `tags.list`            |
-| `adjustEntriesCount`                  | Directly updates `entries.count` cache                   |
-| `addSubscriptionToCache`              | Adds subscription to the subscription lookup map         |
-| `removeSubscriptionFromCache`         | Removes subscription from the subscription lookup map    |
-| `setSubscriptionUnreadCountInMap`     | Sets absolute unread count in the lookup map             |
-| `calculateTagDeltasFromSubscriptions` | Calculates tag deltas from subscription deltas           |
+| Function                          | Purpose                                               |
+| --------------------------------- | ----------------------------------------------------- |
+| `adjustEntriesCount`              | Directly updates `entries.count` cache                |
+| `addSubscriptionToCache`          | Adds subscription to the subscription lookup map      |
+| `removeSubscriptionFromCache`     | Removes subscription from the subscription lookup map |
+| `setSubscriptionUnreadCountInMap` | Sets absolute unread count in the lookup map          |
 
 ## Queries
 
@@ -306,9 +303,9 @@ When adding cache updates, follow this decision tree:
 
 2. **What caches are affected?**
    - Entry lists: Invalidate (too many filter combinations)
-   - Entry counts: Direct update via `adjustEntriesCount`
-   - Subscription counts: Direct update via `adjustSubscriptionUnreadCounts`
-   - Tag counts: Direct update via `adjustTagUnreadCounts` + `calculateTagDeltasFromSubscriptions`
+   - Unread counts (subscriptions, tags, entries.count): Set absolute server-provided
+     counts via `setBulkCounts` / `setEntryRelatedCounts` (idempotent — preferred over
+     deltas so duplicate SSE/sync delivery can't drift counts)
    - Single entry: Direct update via `setData`
 
 3. **Handle race conditions:**
