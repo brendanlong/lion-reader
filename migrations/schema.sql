@@ -734,6 +734,8 @@ CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (exp
 
 CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
 
+CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text]));
+
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
 
 CREATE TRIGGER user_entries_fill_sort_key_trigger BEFORE INSERT ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_fill_sort_key();

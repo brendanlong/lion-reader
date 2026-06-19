@@ -406,8 +406,10 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
     return null;
   }
 
-  // No job exists - create one and claim it immediately
-  // Use a transaction to handle race conditions (two workers both see no row)
+  // No job exists - create one and claim it immediately.
+  // The jobs_singleton_type_unique partial index makes this INSERT conflict if
+  // another worker creates the row first (two workers both see no row), so the
+  // catch below handles that race by claiming the row the winner created.
   try {
     const [newJob] = await db
       .insert(jobs)
