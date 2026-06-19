@@ -73,8 +73,9 @@ export function SubscribeContent() {
   // Subscribe mutation
   const subscribeMutation = trpc.subscriptions.create.useMutation({
     onSuccess: (data) => {
-      // Use centralized cache operation for consistent behavior with SSE events
-      handleSubscriptionCreated(utils, data, queryClient);
+      // Use centralized cache operation for consistent behavior with SSE events.
+      // data.counts carries the server-absolute counts for the affected lists.
+      handleSubscriptionCreated(utils, data, queryClient, data.counts);
       clientPush("/all");
     },
     onError: () => {

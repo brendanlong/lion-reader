@@ -62,6 +62,7 @@ const userEventSchema = z.discriminatedUnion("type", [
     updatedAt: z.string(),
     subscription: subscriptionCreatedDataSchema,
     feed: feedCreatedDataSchema,
+    counts: unreadCountsSchema.optional(),
   }),
   z.object({
     type: z.literal("subscription_updated"),
@@ -79,6 +80,7 @@ const userEventSchema = z.discriminatedUnion("type", [
     subscriptionId: z.string(),
     timestamp: z.string(),
     updatedAt: z.string(),
+    counts: unreadCountsSchema.optional(),
   }),
   z.object({
     type: z.literal("import_progress"),
@@ -360,7 +362,8 @@ export async function publishSubscriptionCreated(
   subscriptionId: string,
   updatedAt: Date,
   subscription: SubscriptionCreatedEventSubscription,
-  feed: SubscriptionCreatedEventFeed
+  feed: SubscriptionCreatedEventFeed,
+  counts?: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -375,6 +378,7 @@ export async function publishSubscriptionCreated(
     updatedAt: updatedAt.toISOString(),
     subscription,
     feed,
+    counts,
   };
   const channel = getUserEventsChannel(userId);
   return client.publish(channel, JSON.stringify(event));
@@ -396,7 +400,8 @@ export async function publishSubscriptionDeleted(
   userId: string,
   feedId: string,
   subscriptionId: string,
-  updatedAt: Date
+  updatedAt: Date,
+  counts?: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -409,6 +414,7 @@ export async function publishSubscriptionDeleted(
     subscriptionId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
+    counts,
   };
   const channel = getUserEventsChannel(userId);
   return client.publish(channel, JSON.stringify(event));

@@ -108,7 +108,8 @@ export function handleSyncEvent(
           tags: subscription.tags,
           fetchFullContent: false,
         },
-        queryClient
+        queryClient,
+        event.counts
       );
       break;
     }
@@ -144,7 +145,7 @@ export function handleSyncEvent(
         const alreadyRemoved = !findCachedSubscription(queryClient, event.subscriptionId);
 
         if (!alreadyRemoved) {
-          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient);
+          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, event.counts);
         }
       }
       break;

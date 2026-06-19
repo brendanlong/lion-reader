@@ -522,3 +522,79 @@ export async function getNewEntryRelatedCounts(
     uncategorized: tagResult.uncategorized ?? undefined,
   };
 }
+
+/**
+ * Computes absolute counts for the lists affected when a subscription is
+ * removed: All Articles (+ starred/saved globals) plus either the
+ * subscription's former tags or Uncategorized.
+ *
+ * Driven by explicit `formerTagIds` rather than a subscription ID because the
+ * subscription's tag associations are deleted before this runs. Must be called
+ * AFTER the subscription is soft-deleted so the counts reflect its removal.
+ * `subscriptions` is always empty (the subscription is gone).
+ *
+ * @param db - Database instance
+ * @param userId - User ID
+ * @param formerTagIds - Tag IDs the subscription belonged to (empty = it was uncategorized)
+ */
+export async function getSubscriptionDeletionCounts(
+  db: typeof dbType,
+  userId: string,
+  formerTagIds: string[]
+): Promise<BulkUnreadCounts> {
+  const globalResult = await db
+    .select({
+      allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
+      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
+    })
+    .from(visibleEntries)
+    .where(eq(visibleEntries.userId, userId));
+
+  const globalCounts = globalResult[0] ?? { allUnread: 0, starredUnread: 0, savedUnread: 0 };
+  const baseCounts: BulkUnreadCounts = {
+    all: { unread: globalCounts.allUnread },
+    starred: { unread: globalCounts.starredUnread },
+    saved: { unread: globalCounts.savedUnread },
+    subscriptions: [],
+    tags: [],
+  };
+
+  if (formerTagIds.length === 0) {
+    // Subscription was uncategorized — only Uncategorized's unread changed.
+    const uncategorizedResult = await db
+      .select({
+        unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      })
+      .from(visibleEntries)
+      .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+      .where(
+        and(
+          eq(visibleEntries.userId, userId),
+          sql`NOT EXISTS (
+            SELECT 1 FROM subscription_tags st
+            WHERE st.subscription_id = ${userFeeds.id}
+          )`
+        )
+      );
+    baseCounts.uncategorized = { unread: uncategorizedResult[0]?.unread ?? 0 };
+    return baseCounts;
+  }
+
+  // Subscription had tags — recompute unread for each former tag. Tags that
+  // dropped to zero won't appear in the grouped result, so default them to 0
+  // (the client must set them, not skip them).
+  const tagCounts = await db
+    .select({
+      tagId: subscriptionTags.tagId,
+      unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+    })
+    .from(subscriptionTags)
+    .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))
+    .where(and(eq(visibleEntries.userId, userId), inArray(subscriptionTags.tagId, formerTagIds)))
+    .groupBy(subscriptionTags.tagId);
+
+  const unreadByTag = new Map(tagCounts.map((t) => [t.tagId, t.unread]));
+  baseCounts.tags = formerTagIds.map((id) => ({ id, unread: unreadByTag.get(id) ?? 0 }));
+  return baseCounts;
+}

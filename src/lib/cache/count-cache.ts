@@ -114,26 +114,6 @@ export function findCachedSubscription(
 }
 
 /**
- * Adjusts the entries.count cache values.
- *
- * @param utils - tRPC utils for cache access
- * @param filters - The filter params to target (e.g., { starredOnly: true })
- * @param unreadDelta - Change to unread count
- */
-export function adjustEntriesCount(
-  utils: TRPCClientUtils,
-  filters: Parameters<typeof utils.entries.count.setData>[0],
-  unreadDelta: number
-): void {
-  utils.entries.count.setData(filters, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      unread: Math.max(0, oldData.unread + unreadDelta),
-    };
-  });
-}
-
-/**
  * Adds a new subscription to the subscription lookup map.
  * Used when subscription_created SSE event arrives or from mutation side-effects.
  *
