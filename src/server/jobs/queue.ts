@@ -15,7 +15,7 @@
  * See docs/job-queue-design.md for detailed documentation.
  */
 
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { jobs, type Job } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
@@ -137,6 +137,14 @@ export interface FinishJobOptions {
   success: boolean;
   nextRunAt: Date;
   error?: string;
+  /**
+   * The `running_since` value this worker last held (its lease token). When
+   * provided, the finish is fenced on it: if another worker has since reclaimed
+   * the job (different `running_since`), the update applies to no rows and
+   * {@link finishJob} returns null instead of clobbering the new owner's state.
+   * Omit only for callers that aren't holding a lease (e.g. tests).
+   */
+  expectedRunningSince?: Date;
 }
 
 /**
@@ -239,54 +247,63 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
  * - last_error = provided error
  * - consecutive_failures++
  *
+ * When `expectedRunningSince` is supplied (the worker's lease token), the write
+ * is fenced on it so a worker that lost its lease — it stalled past the stale
+ * threshold and another worker reclaimed the job — can't clobber the new owner's
+ * row or clear `running_since` out from under a job that's actively running
+ * elsewhere. In that case no row matches and this returns null.
+ *
  * @param jobId The ID of the job to finish
  * @param options Finish options
- * @returns The updated job
+ * @returns The updated job, or null if the lease was lost (only possible when
+ *   `expectedRunningSince` is supplied)
  */
-export async function finishJob(jobId: string, options: FinishJobOptions): Promise<Job> {
-  const { success, nextRunAt, error } = options;
+export async function finishJob(jobId: string, options: FinishJobOptions): Promise<Job | null> {
+  const { success, nextRunAt, error, expectedRunningSince } = options;
   const now = new Date();
 
-  if (success) {
-    const [job] = await db
-      .update(jobs)
-      .set({
-        runningSince: null,
-        lastRunAt: now,
-        nextRunAt,
-        lastError: null,
-        consecutiveFailures: 0,
-        updatedAt: now,
-      })
-      .where(eq(jobs.id, jobId))
-      .returning();
+  // Fence on the lease token when the caller holds one (see FinishJobOptions).
+  const whereClause = expectedRunningSince
+    ? and(eq(jobs.id, jobId), eq(jobs.runningSince, expectedRunningSince))
+    : eq(jobs.id, jobId);
 
-    if (!job) {
-      throw new Error(`Job not found: ${jobId}`);
+  const [job] = success
+    ? await db
+        .update(jobs)
+        .set({
+          runningSince: null,
+          lastRunAt: now,
+          nextRunAt,
+          lastError: null,
+          consecutiveFailures: 0,
+          updatedAt: now,
+        })
+        .where(whereClause)
+        .returning()
+    : await db
+        .update(jobs)
+        .set({
+          runningSince: null,
+          lastRunAt: now,
+          nextRunAt,
+          lastError: error ?? "Unknown error",
+          // For failure, increment consecutive_failures
+          consecutiveFailures: sql`${jobs.consecutiveFailures} + 1`,
+          updatedAt: now,
+        })
+        .where(whereClause)
+        .returning();
+
+  if (!job) {
+    // A fenced write that matches no row means the lease was lost to another
+    // worker — expected, not an error. An unfenced miss means the job is gone.
+    if (expectedRunningSince) {
+      return null;
     }
-
-    return job;
-  } else {
-    // For failure, increment consecutive_failures
-    const [job] = await db
-      .update(jobs)
-      .set({
-        runningSince: null,
-        lastRunAt: now,
-        nextRunAt,
-        lastError: error ?? "Unknown error",
-        consecutiveFailures: sql`${jobs.consecutiveFailures} + 1`,
-        updatedAt: now,
-      })
-      .where(eq(jobs.id, jobId))
-      .returning();
-
-    if (!job) {
-      throw new Error(`Job not found: ${jobId}`);
-    }
-
-    return job;
+    throw new Error(`Job not found: ${jobId}`);
   }
+
+  return job;
 }
 
 /**
@@ -296,27 +313,36 @@ export async function finishJob(jobId: string, options: FinishJobOptions): Promi
  * handler is in flight. Because the lease keeps moving forward, stale-job
  * recovery (which reclaims jobs whose `running_since` is older than
  * {@link STALE_JOB_THRESHOLD_MS}) only fires once the worker stops heartbeating —
- * i.e. the worker process has died — never while the handler is still running.
- * This is what prevents a slow or timed-out-but-still-running handler from being
- * reclaimed and executed concurrently in a second worker (issue #871).
+ * i.e. the worker process has died or frozen — never while the handler is still
+ * actively heartbeating. This is what prevents a slow or
+ * timed-out-but-still-running handler from being reclaimed and executed
+ * concurrently in a second worker (issue #871).
  *
- * The update is guarded on `running_since IS NOT NULL`, so a heartbeat that
- * races with {@link finishJob} (which clears `running_since`) is a harmless
- * no-op and won't resurrect a finished job's lease.
+ * The `running_since` value the worker last wrote acts as a **fencing token**:
+ * the update only applies if the row still holds `expectedRunningSince`. If a
+ * worker stalls past the stale threshold and a second worker reclaims the job
+ * (overwriting `running_since` with its own value), the first worker's delayed
+ * heartbeat finds the token no longer matches and returns null — so it can't
+ * steal the lease back from the new owner (no split-brain). A heartbeat racing
+ * with {@link finishJob} (which clears `running_since`) likewise no-ops.
  *
  * @param jobId The ID of the running job
- * @returns true if the lease was renewed, false if the job was no longer running
+ * @param expectedRunningSince The `running_since` value this worker last wrote
+ * @returns The new `running_since` on success, or null if the lease was lost
  */
-export async function renewJobLease(jobId: string): Promise<boolean> {
+export async function renewJobLease(
+  jobId: string,
+  expectedRunningSince: Date
+): Promise<Date | null> {
   const now = new Date();
 
   const renewed = await db
     .update(jobs)
     .set({ runningSince: now, updatedAt: now })
-    .where(and(eq(jobs.id, jobId), isNotNull(jobs.runningSince)))
-    .returning({ id: jobs.id });
+    .where(and(eq(jobs.id, jobId), eq(jobs.runningSince, expectedRunningSince)))
+    .returning({ runningSince: jobs.runningSince });
 
-  return renewed.length > 0;
+  return renewed.length > 0 ? renewed[0].runningSince : null;
 }
 
 /**

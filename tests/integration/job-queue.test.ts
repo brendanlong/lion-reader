@@ -323,18 +323,55 @@ describe("Job Queue", () => {
         .set({ runningSince: staleTime })
         .where(sql`id = ${job.id}`);
 
-      // Heartbeat renews the lease before another worker can reclaim it.
-      const renewed = await renewJobLease(job.id);
-      expect(renewed).toBe(true);
+      // Heartbeat renews the lease before another worker can reclaim it. The
+      // worker's token is the running_since it last wrote (now back-dated).
+      const renewed = await renewJobLease(job.id, staleTime);
+      expect(renewed).not.toBeNull();
+      // The returned token is the fresh running_since to fence the next renewal.
+      expect(Date.now() - renewed!.getTime()).toBeLessThan(5000);
 
       // The job is no longer stale, so a second worker cannot claim it.
       const reclaimed = await claimJob();
       expect(reclaimed).toBeNull();
 
-      // running_since should be fresh (within the last few seconds).
+      // running_since should match the renewed token.
       const after = await getJob(job.id);
-      expect(after!.runningSince).not.toBeNull();
-      expect(Date.now() - after!.runningSince!.getTime()).toBeLessThan(5000);
+      expect(after!.runningSince!.getTime()).toBe(renewed!.getTime());
+    });
+
+    it("does not steal a job that another worker has reclaimed (fencing)", async () => {
+      const job = await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+      });
+
+      // Worker A claimed the job long ago and then stalled, so its lease token
+      // (the running_since it holds in memory) is now stale.
+      await claimJob();
+      const aToken = new Date(Date.now() - 10 * 60 * 1000);
+      await db
+        .update(jobs)
+        .set({ runningSince: aToken })
+        .where(sql`id = ${job.id}`);
+
+      // Worker B reclaims the now-stale job, taking ownership with a new token.
+      const workerB = await claimJob();
+      expect(workerB!.id).toBe(job.id);
+      const bToken = workerB!.runningSince!;
+      expect(bToken.getTime()).not.toBe(aToken.getTime());
+
+      // Worker A wakes up and tries to renew with its stale token — it must fail
+      // rather than overwrite Worker B's lease (no split-brain).
+      const aRenew = await renewJobLease(job.id, aToken);
+      expect(aRenew).toBeNull();
+
+      // The lease still belongs to Worker B, untouched.
+      const after = await getJob(job.id);
+      expect(after!.runningSince!.getTime()).toBe(bToken.getTime());
+
+      // Worker B can still renew its own lease.
+      const bRenew = await renewJobLease(job.id, bToken);
+      expect(bRenew).not.toBeNull();
     });
 
     it("does not resurrect the lease of a finished job", async () => {
@@ -343,23 +380,23 @@ describe("Job Queue", () => {
         payload: { feedId: "test-feed-id" },
       });
 
-      await claimJob();
+      const claimed = await claimJob();
       await finishJob(job.id, {
         success: true,
         nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
       });
 
       // A heartbeat that races with finishJob must be a no-op.
-      const renewed = await renewJobLease(job.id);
-      expect(renewed).toBe(false);
+      const renewed = await renewJobLease(job.id, claimed!.runningSince!);
+      expect(renewed).toBeNull();
 
       const after = await getJob(job.id);
       expect(after!.runningSince).toBeNull();
     });
 
-    it("returns false for a non-existent job", async () => {
-      const renewed = await renewJobLease(NON_EXISTENT_JOB_ID);
-      expect(renewed).toBe(false);
+    it("returns null for a non-existent job", async () => {
+      const renewed = await renewJobLease(NON_EXISTENT_JOB_ID, new Date());
+      expect(renewed).toBeNull();
     });
   });
 
@@ -378,11 +415,11 @@ describe("Job Queue", () => {
         nextRunAt,
       });
 
-      expect(finished.runningSince).toBeNull();
-      expect(finished.lastRunAt).toBeInstanceOf(Date);
-      expect(finished.nextRunAt!.getTime()).toBe(nextRunAt.getTime());
-      expect(finished.lastError).toBeNull();
-      expect(finished.consecutiveFailures).toBe(0);
+      expect(finished!.runningSince).toBeNull();
+      expect(finished!.lastRunAt).toBeInstanceOf(Date);
+      expect(finished!.nextRunAt!.getTime()).toBe(nextRunAt.getTime());
+      expect(finished!.lastError).toBeNull();
+      expect(finished!.consecutiveFailures).toBe(0);
     });
 
     it("finishes a job with failure", async () => {
@@ -400,11 +437,11 @@ describe("Job Queue", () => {
         error: "Connection timeout",
       });
 
-      expect(finished.runningSince).toBeNull();
-      expect(finished.lastRunAt).toBeInstanceOf(Date);
-      expect(finished.nextRunAt!.getTime()).toBe(nextRunAt.getTime());
-      expect(finished.lastError).toBe("Connection timeout");
-      expect(finished.consecutiveFailures).toBe(1);
+      expect(finished!.runningSince).toBeNull();
+      expect(finished!.lastRunAt).toBeInstanceOf(Date);
+      expect(finished!.nextRunAt!.getTime()).toBe(nextRunAt.getTime());
+      expect(finished!.lastError).toBe("Connection timeout");
+      expect(finished!.consecutiveFailures).toBe(1);
     });
 
     it("increments consecutiveFailures on repeated failures", async () => {
@@ -429,8 +466,8 @@ describe("Job Queue", () => {
         error: "Error 2",
       });
 
-      expect(finished.consecutiveFailures).toBe(2);
-      expect(finished.lastError).toBe("Error 2");
+      expect(finished!.consecutiveFailures).toBe(2);
+      expect(finished!.lastError).toBe("Error 2");
     });
 
     it("resets consecutiveFailures on success", async () => {
@@ -460,14 +497,48 @@ describe("Job Queue", () => {
         nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
       });
 
-      expect(finished.consecutiveFailures).toBe(0);
-      expect(finished.lastError).toBeNull();
+      expect(finished!.consecutiveFailures).toBe(0);
+      expect(finished!.lastError).toBeNull();
     });
 
     it("throws error for non-existent job", async () => {
       await expect(
         finishJob(NON_EXISTENT_JOB_ID, { success: true, nextRunAt: new Date() })
       ).rejects.toThrow(`Job not found: ${NON_EXISTENT_JOB_ID}`);
+    });
+
+    it("returns null without clobbering when the lease token no longer matches", async () => {
+      const job = await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+      });
+
+      // Worker A claims, stalls, and Worker B reclaims the job.
+      const workerA = await claimJob();
+      const aToken = workerA!.runningSince!;
+      await db
+        .update(jobs)
+        .set({ runningSince: new Date(Date.now() - 10 * 60 * 1000) })
+        .where(sql`id = ${job.id}`);
+      const workerB = await claimJob();
+      const bNextRunAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      await finishJob(workerB!.id, { success: true, nextRunAt: bNextRunAt });
+
+      // Worker A's late finish, fenced on its stale token, must not overwrite
+      // Worker B's result.
+      const stale = await finishJob(job.id, {
+        success: false,
+        nextRunAt: new Date(Date.now() + 60 * 1000),
+        error: "stale worker",
+        expectedRunningSince: aToken,
+      });
+      expect(stale).toBeNull();
+
+      // Worker B's scheduling/state is intact.
+      const after = await getJob(job.id);
+      expect(after!.nextRunAt!.getTime()).toBe(bNextRunAt.getTime());
+      expect(after!.lastError).toBeNull();
+      expect(after!.consecutiveFailures).toBe(0);
     });
   });
 

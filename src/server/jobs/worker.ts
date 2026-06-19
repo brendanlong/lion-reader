@@ -74,8 +74,23 @@ export interface WorkerConfig {
 }
 
 /**
- * Starts a heartbeat that periodically renews a running job's lease and returns
- * a function that stops it.
+ * Tracks a job lease that a background heartbeat keeps renewing.
+ */
+interface JobLeaseController {
+  /**
+   * Stops the heartbeat and waits for any in-flight renewal to settle, so that
+   * {@link JobLeaseController.currentToken} reflects the final committed lease.
+   */
+  stop: () => Promise<void>;
+  /**
+   * The lease token (the `running_since` value this worker last wrote), or null
+   * once the lease has been lost to another worker.
+   */
+  currentToken: () => Date | null;
+}
+
+/**
+ * Starts a heartbeat that periodically renews a running job's lease.
  *
  * The heartbeat is tied to the handler's actual lifetime, deliberately *not* to
  * the worker-core timeout wrapper. If a handler exceeds `jobTimeoutMs` the worker
@@ -83,27 +98,75 @@ export interface WorkerConfig {
  * running (we don't forcibly abort fetches/DB writes). Without a lease that work
  * would become reclaimable at the stale threshold and run a second time in
  * another worker (issue #871). By renewing `running_since` until the handler
- * truly settles, the job stays leased for as long as it is actually executing,
- * and is only reclaimed once this worker process dies.
+ * truly settles, the job stays leased for as long as it is actively heartbeating,
+ * and is only reclaimed once this worker process dies or freezes.
  *
- * Failures to renew are logged but never throw — a transient DB hiccup should not
- * take down the handler; at worst it costs one missed heartbeat of margin.
+ * The lease is fenced: each renewal expects the `running_since` it last wrote.
+ * If the worker stalls past the stale threshold and another worker reclaims the
+ * job, the next renewal finds the token changed, gives up the lease (so it can't
+ * steal the job back — no split-brain), and stops the heartbeat.
+ *
+ * Renewal failures (transient DB hiccups) are logged but never throw and don't
+ * drop the lease — at worst they cost one heartbeat of margin.
  */
-function startJobLeaseHeartbeat(job: Job, logger: WorkerLogger): () => void {
+function startJobLeaseHeartbeat(job: Job, logger: WorkerLogger): JobLeaseController {
+  let token: Date | null = job.runningSince;
+  // The single in-flight renewal, awaited by stop() so the token is final.
+  let pending: Promise<void> = Promise.resolve();
+  let renewing = false;
+
+  // A claimed job always has running_since set; guard defensively so we never
+  // renew with a null token.
+  if (token === null) {
+    return { stop: async () => {}, currentToken: () => null };
+  }
+
   const interval = setInterval(() => {
-    void renewJobLease(job.id).catch((error) => {
-      logger.warn("Failed to renew job lease", {
-        jobId: job.id,
-        type: job.type,
-        error: error instanceof Error ? error.message : "Unknown error",
+    // Skip if the previous renewal hasn't finished (pathologically slow DB) so
+    // `pending` always refers to exactly one renewal.
+    if (renewing || token === null) {
+      return;
+    }
+    renewing = true;
+    const expected = token;
+    pending = renewJobLease(job.id, expected)
+      .then((renewed) => {
+        if (token === null) {
+          return;
+        }
+        if (renewed) {
+          token = renewed;
+        } else {
+          token = null;
+          clearInterval(interval);
+          logger.warn("Job lease lost; another worker reclaimed it, stopping heartbeat", {
+            jobId: job.id,
+            type: job.type,
+          });
+        }
+      })
+      .catch((error) => {
+        logger.warn("Failed to renew job lease", {
+          jobId: job.id,
+          type: job.type,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      })
+      .finally(() => {
+        renewing = false;
       });
-    });
   }, JOB_LEASE_HEARTBEAT_MS);
 
   // Don't let the heartbeat timer keep the process alive during shutdown.
   interval.unref();
 
-  return () => clearInterval(interval);
+  return {
+    async stop() {
+      clearInterval(interval);
+      await pending;
+    },
+    currentToken: () => token,
+  };
 }
 
 /**
@@ -196,7 +259,36 @@ function createWorker(config: WorkerConfig = {}): Worker {
     // Keep the job's lease alive for as long as this handler actually runs so a
     // slow (or timed-out-but-still-running) job can't be reclaimed and executed
     // concurrently by another worker (issue #871).
-    const stopHeartbeat = startJobLeaseHeartbeat(job, logger);
+    const lease = startJobLeaseHeartbeat(job, logger);
+
+    // Finishes the job fenced on our lease token. Stops the heartbeat first so
+    // the token is final, then writes only if we still hold the lease — if a
+    // stalled worker was reclaimed, the write no-ops instead of clobbering the
+    // new owner. Returns whether we still owned the job.
+    const finishWithLease = async (opts: {
+      success: boolean;
+      nextRunAt: Date;
+      error?: string;
+    }): Promise<boolean> => {
+      await lease.stop();
+      const expectedRunningSince = lease.currentToken();
+      if (expectedRunningSince === null) {
+        logger.warn("Skipping job finish: lease lost to another worker", {
+          jobId: job.id,
+          type: job.type,
+        });
+        return false;
+      }
+      const finished = await finishJob(job.id, { ...opts, expectedRunningSince });
+      if (finished === null) {
+        logger.warn("Skipping job finish: lease lost to another worker", {
+          jobId: job.id,
+          type: job.type,
+        });
+        return false;
+      }
+      return true;
+    };
 
     try {
       logger.info(`Processing job ${job.id}`, {
@@ -240,7 +332,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
       const duration = Date.now() - startTime;
 
       // Finish the job (update its state for next run)
-      await finishJob(job.id, {
+      await finishWithLease({
         success: result.success,
         nextRunAt: result.nextRunAt,
         error: result.error,
@@ -274,7 +366,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
       const nextRunAt = new Date(Date.now() + 60 * 1000); // 1 minute
 
       try {
-        await finishJob(job.id, {
+        await finishWithLease({
           success: false,
           nextRunAt,
           error: errorMessage,
@@ -310,7 +402,9 @@ function createWorker(config: WorkerConfig = {}): Worker {
       // Re-throw to let the core worker count it as a failure
       throw error;
     } finally {
-      stopHeartbeat();
+      // Safety net: ensure the heartbeat is stopped even if finishWithLease was
+      // never reached (idempotent with the stop() inside it).
+      await lease.stop();
     }
   }
 
