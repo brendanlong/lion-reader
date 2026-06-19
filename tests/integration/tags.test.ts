@@ -408,6 +408,35 @@ describe("Tags API", () => {
       expect(result.items[0].unreadCount).toBe(0);
     });
 
+    it("excludes starred entries from unsubscribed subscriptions", async () => {
+      // A starred entry stays visible after unsubscribe (visible_entries surfaces
+      // it with the unsubscribed sub's id). It must not count toward the tag's
+      // unread badge — the count is scoped to active subscriptions.
+      const userId = await createTestUser();
+
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+
+      const feedId = await createTestFeed("https://feed1.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      await linkTagToSubscription(tagId, subId);
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
+      await db
+        .update(userEntries)
+        .set({ starred: true })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, subId));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.tags.list();
+
+      expect(result.items[0].unreadCount).toBe(0);
+    });
+
     it("returns zero unread for a tag whose entries are all read", async () => {
       const userId = await createTestUser();
 
@@ -1084,6 +1113,137 @@ describe("Tags API", () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].tags).toEqual([]);
+    });
+  });
+
+  describe("subscriptions.list unread counts", () => {
+    it("counts unread entries reachable through a merged/redirected feed", async () => {
+      // Regression: the per-subscription unread count must follow the
+      // subscription_feeds mapping (via visible_entries), not just the
+      // subscription's current feed_id. A subscription that absorbed a
+      // redirected/merged feed owns entries under the old feed_id too; counting
+      // only the current feed_id silently undercounts them.
+      const userId = await createTestUser();
+
+      const feedIdA = await createTestFeed("https://feed-a.com/rss"); // current feed
+      const feedIdB = await createTestFeed("https://feed-b.com/rss"); // merged-in old feed
+      const subId = await createTestSubscription(userId, feedIdA);
+      // subscription_feeds links the subscription to BOTH feeds (merge history).
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: subId, feedId: feedIdB, userId })
+        .onConflictDoNothing();
+
+      // 2 unread under the current feed, 1 unread under the merged-in feed.
+      await createTestEntry(feedIdA, { userIds: [userId] });
+      await createTestEntry(feedIdA, { userIds: [userId] });
+      await createTestEntry(feedIdB, { userIds: [userId] });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.subscriptions.list();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].unreadCount).toBe(3);
+    });
+
+    it("does not count another user's unread entries on a shared feed", async () => {
+      // The per-subscription count must stay user-scoped: subscription_feeds is
+      // per-user and feeds are shared, so a missing user filter would leak other
+      // users' unread counts.
+      const userId = await createTestUser("user-a");
+      const otherUserId = await createTestUser("user-b");
+
+      const feedId = await createTestFeed("https://shared.com/rss");
+      await createTestSubscription(userId, feedId);
+      await createTestSubscription(otherUserId, feedId);
+
+      // One entry visible only to the other user.
+      await createTestEntry(feedId, { userIds: [userId] });
+      await createTestEntry(feedId, { userIds: [otherUserId] });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const result = await caller.subscriptions.list();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].unreadCount).toBe(1);
+    });
+  });
+
+  describe("tags.list uncategorized counts", () => {
+    it("counts active untagged subscriptions and their unread entries", async () => {
+      const userId = await createTestUser();
+
+      // One tagged subscription, one untagged (uncategorized) subscription.
+      const taggedFeed = await createTestFeed("https://tagged.com/rss");
+      const untaggedFeed = await createTestFeed("https://untagged.com/rss");
+      const taggedSub = await createTestSubscription(userId, taggedFeed);
+      await createTestSubscription(userId, untaggedFeed);
+
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
+      await linkTagToSubscription(tagId, taggedSub);
+
+      await createTestEntry(taggedFeed, { userIds: [userId] }); // counts toward the tag
+      await createTestEntry(untaggedFeed, { userIds: [userId] }); // uncategorized
+      await createTestEntry(untaggedFeed, { userIds: [userId] }); // uncategorized
+
+      const ctx = createAuthContext(userId);
+      const result = await createCaller(ctx).tags.list();
+
+      expect(result.uncategorized.feedCount).toBe(1);
+      expect(result.uncategorized.unreadCount).toBe(2);
+    });
+
+    it("counts uncategorized unread entries reachable through a merged feed", async () => {
+      const userId = await createTestUser();
+
+      const feedIdA = await createTestFeed("https://feed-a.com/rss");
+      const feedIdB = await createTestFeed("https://feed-b.com/rss");
+      const subId = await createTestSubscription(userId, feedIdA); // untagged
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: subId, feedId: feedIdB, userId })
+        .onConflictDoNothing();
+
+      await createTestEntry(feedIdA, { userIds: [userId] });
+      await createTestEntry(feedIdB, { userIds: [userId] });
+
+      const ctx = createAuthContext(userId);
+      const result = await createCaller(ctx).tags.list();
+
+      expect(result.uncategorized.unreadCount).toBe(2);
+    });
+
+    it("excludes starred entries from unsubscribed untagged subscriptions", async () => {
+      // visible_entries surfaces starred entries from unsubscribed feeds (with a
+      // non-null subscription_id pointing at the unsubscribed sub). Those belong
+      // to Starred, not Uncategorized — the count must stay scoped to active subs.
+      const userId = await createTestUser();
+
+      const activeFeed = await createTestFeed("https://active.com/rss");
+      await createTestSubscription(userId, activeFeed);
+      await createTestEntry(activeFeed, { userIds: [userId] }); // 1 active uncategorized unread
+
+      const goneFeed = await createTestFeed("https://gone.com/rss");
+      const goneSub = await createTestSubscription(userId, goneFeed);
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, goneSub));
+      const starredEntry = await createTestEntry(goneFeed, { userIds: [userId] });
+      await db
+        .update(userEntries)
+        .set({ starred: true })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, starredEntry)));
+
+      const ctx = createAuthContext(userId);
+      const result = await createCaller(ctx).tags.list();
+
+      // Only the active subscription's unread entry — not the starred orphan.
+      expect(result.uncategorized.feedCount).toBe(1);
+      expect(result.uncategorized.unreadCount).toBe(1);
     });
   });
 

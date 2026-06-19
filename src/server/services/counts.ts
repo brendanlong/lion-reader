@@ -72,6 +72,29 @@ export interface UnreadCounts {
 // ============================================================================
 
 /**
+ * Global unread counts (all + starred + saved) for a user.
+ *
+ * read=false is in WHERE (not a FILTER aggregate) so the partial
+ * idx_user_entries_unread index drives the scan instead of reading every
+ * visible row. Every aggregate is a subset of unread, so this is exactly
+ * equivalent to FILTER (WHERE NOT read) over all visible rows.
+ */
+async function getGlobalUnreadCounts(
+  db: typeof dbType,
+  userId: string
+): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
+  const result = await db
+    .select({
+      allUnread: sql<number>`count(*)::int`,
+      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
+      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
+    })
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)));
+  return result[0] ?? { allUnread: 0, starredUnread: 0, savedUnread: 0 };
+}
+
+/**
  * Fetches unread counts for all lists an entry belongs to.
  *
  * Optimized based on entry type:
@@ -88,53 +111,37 @@ export async function getEntryRelatedCounts(
   userId: string,
   entryId: string
 ): Promise<UnreadCounts> {
-  // Single query: unread counts + entry info
-  // The entry info (subscriptionId, type) is extracted during the same scan
-  // using MAX with a CASE filter, eliminating a separate round trip.
-  // Only counts unread entries (no total), allowing Postgres to use partial indexes.
-  const result = await db
-    .select({
-      // Global unread counts
-      allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      // Starred unread counts
-      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
-      // Saved unread counts
-      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
-      // Entry info extracted from the same scan
-      entrySubscriptionId: sql<
-        string | null
-      >`MAX(CASE WHEN ${visibleEntries.id} = ${entryId} THEN ${visibleEntries.subscriptionId}::text END)`,
-      entryType: sql<
-        string | null
-      >`MAX(CASE WHEN ${visibleEntries.id} = ${entryId} THEN ${visibleEntries.type}::text END)`,
-    })
-    .from(visibleEntries)
-    .where(eq(visibleEntries.userId, userId));
+  // The entry's context (subscription, type) is looked up separately from the
+  // unread counts. The counts query pushes read=false into WHERE so the partial
+  // idx_user_entries_unread index drives the scan; the target entry is usually
+  // already read by the time we recompute counts, so it must not be required to
+  // appear in the unread scan (which would happen if we co-located the lookup).
+  const [entryInfoRows, counts] = await Promise.all([
+    db
+      .select({ subscriptionId: visibleEntries.subscriptionId, type: visibleEntries.type })
+      .from(visibleEntries)
+      .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)))
+      .limit(1),
+    getGlobalUnreadCounts(db, userId),
+  ]);
 
-  if (result.length === 0) {
-    return {
-      all: { unread: 0 },
-      starred: { unread: 0 },
-    };
-  }
-
-  const counts = result[0];
-
-  // Entry not found in this user's visible entries
-  if (!counts.entryType) {
-    return {
-      all: { unread: 0 },
-      starred: { unread: 0 },
-    };
-  }
-
-  const subscriptionId = counts.entrySubscriptionId;
-  const type = counts.entryType as "web" | "email" | "saved";
+  const entryInfo = entryInfoRows[0];
 
   const baseCounts: UnreadCounts = {
     all: { unread: counts.allUnread },
     starred: { unread: counts.starredUnread },
   };
+
+  // Entry not found in this user's visible entries
+  if (!entryInfo) {
+    return {
+      all: { unread: 0 },
+      starred: { unread: 0 },
+    };
+  }
+
+  const subscriptionId = entryInfo.subscriptionId;
+  const type = entryInfo.type;
 
   // For saved articles, include saved counts and return (no subscription/tag queries needed)
   if (type === "saved") {
@@ -153,11 +160,15 @@ export async function getEntryRelatedCounts(
   const [subscriptionUnreadResult, tagResult] = await Promise.all([
     db
       .select({
-        unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+        unread: sql<number>`count(*)::int`,
       })
       .from(visibleEntries)
       .where(
-        and(eq(visibleEntries.userId, userId), eq(visibleEntries.subscriptionId, subscriptionId))
+        and(
+          eq(visibleEntries.userId, userId),
+          eq(visibleEntries.read, false),
+          eq(visibleEntries.subscriptionId, subscriptionId)
+        )
       ),
     getSubscriptionTagCounts(db, userId, subscriptionId),
   ]);
@@ -196,13 +207,21 @@ async function getSubscriptionTagCounts(
   const tagCounts = await db
     .select({
       tagId: subscriptionTags.tagId,
-      unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
     })
     .from(subscriptionTags)
     .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))
+    // Scope to active subscriptions (user_feeds is active-only): visible_entries
+    // also surfaces starred entries from unsubscribed feeds, which must not
+    // inflate a tag's unread badge.
+    .innerJoin(
+      userFeeds,
+      and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+    )
     .where(
       and(
         eq(visibleEntries.userId, userId),
+        eq(visibleEntries.read, false),
         // Use a subquery to find all tags for this subscription, then count
         // entries for all subscriptions with those tags
         inArray(
@@ -226,13 +245,17 @@ async function getSubscriptionTagCounts(
   // Subscription has no tags - get uncategorized count
   const uncategorizedResult = await db
     .select({
-      unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
     })
     .from(visibleEntries)
-    .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+    .innerJoin(
+      userFeeds,
+      and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+    )
     .where(
       and(
         eq(visibleEntries.userId, userId),
+        eq(visibleEntries.read, false),
         sql`NOT EXISTS (
           SELECT 1 FROM subscription_tags st
           WHERE st.subscription_id = ${userFeeds.id}
@@ -286,21 +309,7 @@ export async function getBulkEntryRelatedCounts(
   ] as string[];
 
   // Query 1: Get unread counts for global + starred + saved in one query.
-  // Only counts unread entries (no total), allowing Postgres to use partial indexes.
-  const globalResult = await db
-    .select({
-      allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
-      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
-    })
-    .from(visibleEntries)
-    .where(eq(visibleEntries.userId, userId));
-
-  const globalCounts = globalResult[0] ?? {
-    allUnread: 0,
-    starredUnread: 0,
-    savedUnread: 0,
-  };
+  const globalCounts = await getGlobalUnreadCounts(db, userId);
 
   const baseCounts: BulkUnreadCounts = {
     all: { unread: globalCounts.allUnread },
@@ -320,12 +329,13 @@ export async function getBulkEntryRelatedCounts(
     db
       .select({
         subscriptionId: visibleEntries.subscriptionId,
-        unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+        unread: sql<number>`count(*)::int`,
       })
       .from(visibleEntries)
       .where(
         and(
           eq(visibleEntries.userId, userId),
+          eq(visibleEntries.read, false),
           inArray(visibleEntries.subscriptionId, subscriptionIds)
         )
       )
@@ -354,26 +364,41 @@ export async function getBulkEntryRelatedCounts(
           .select({
             tagId: subscriptionTags.tagId,
             // COUNT(DISTINCT) for parity with listTags (see getSubscriptionTagCounts)
-            unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+            unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
           })
           .from(subscriptionTags)
           .innerJoin(
             visibleEntries,
             eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId)
           )
-          .where(and(eq(visibleEntries.userId, userId), inArray(subscriptionTags.tagId, tagIds)))
+          // Active subscriptions only (see getSubscriptionTagCounts).
+          .innerJoin(
+            userFeeds,
+            and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+          )
+          .where(
+            and(
+              eq(visibleEntries.userId, userId),
+              eq(visibleEntries.read, false),
+              inArray(subscriptionTags.tagId, tagIds)
+            )
+          )
           .groupBy(subscriptionTags.tagId)
       : Promise.resolve([]),
     hasUncategorized
       ? db
           .select({
-            unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+            unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
           })
           .from(visibleEntries)
-          .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
+          .innerJoin(
+            userFeeds,
+            and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+          )
           .where(
             and(
               eq(visibleEntries.userId, userId),
+              eq(visibleEntries.read, false),
               sql`NOT EXISTS (
               SELECT 1 FROM subscription_tags st
               WHERE st.subscription_id = ${userFeeds.id}
@@ -411,23 +436,25 @@ export async function getNewEntryRelatedCounts(
   subscriptionId: string | null
 ): Promise<UnreadCounts> {
   // Query unread counts for global + starred + saved + subscription in one query.
-  // Only counts unread entries (no total), allowing Postgres to use partial indexes.
+  // read=false in WHERE lets the partial idx_user_entries_unread index drive;
+  // every aggregate is a subset of unread, so the remaining FILTERs (starred,
+  // saved, this subscription) are equivalent to the previous AND NOT read form.
   const result = await db
     .select({
       // Global unread counts
-      allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      allUnread: sql<number>`count(*)::int`,
       // Starred unread counts
-      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
+      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
       // Saved unread counts
-      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
+      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
       // Subscription count (only computed if subscriptionId provided)
       subscriptionUnread:
         subscriptionId !== null
-          ? sql<number>`count(*) FILTER (WHERE ${visibleEntries.subscriptionId} = ${subscriptionId} AND NOT ${visibleEntries.read})::int`
+          ? sql<number>`count(*) FILTER (WHERE ${visibleEntries.subscriptionId} = ${subscriptionId})::int`
           : sql<number>`0`,
     })
     .from(visibleEntries)
-    .where(eq(visibleEntries.userId, userId));
+    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)));
 
   const counts = result[0] ?? {
     allUnread: 0,

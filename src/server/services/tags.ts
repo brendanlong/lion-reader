@@ -8,11 +8,10 @@ import { eq, and, sql, isNull } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   tags,
-  subscriptionFeeds,
   subscriptionTags,
   subscriptions,
-  entries,
-  userEntries,
+  visibleEntries,
+  userFeeds,
 } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -58,38 +57,34 @@ export interface UpdateTagParams {
 /**
  * Builds a grouped subquery of per-tag unread counts for a user.
  *
- * COUNT(DISTINCT entry_id) dedupes entries reachable through multiple
- * subscriptions of the same tag, which is possible when subscription_feeds
- * rows overlap via feed redirect/merge history. Computing all tags in one
- * grouped aggregation (instead of a correlated subquery per tag row) keeps
- * listTags to a single scan (#831); Postgres pushes a tag_id equality
- * predicate into the GROUP BY, so updateTag can reuse it for one tag.
+ * Counts through visible_entries so the visibility rule (and the
+ * subscription_feeds mapping that lets a subscription own entries under
+ * multiple feed_ids after a redirect/merge) lives in one place. Filtering
+ * read=false in WHERE lets the partial idx_user_entries_unread index drive.
+ *
+ * The inner join to user_feeds (active subscriptions only) scopes the count to
+ * active subscriptions: visible_entries also surfaces starred entries from
+ * unsubscribed feeds, which belong to Starred, not to a tag's unread badge.
+ *
+ * COUNT(DISTINCT id) dedupes entries reachable through multiple subscriptions
+ * of the same tag (possible when subscription_feeds rows overlap). Computing
+ * all tags in one grouped aggregation (instead of a correlated subquery per
+ * tag row) keeps listTags to a single scan (#831); updateTag reuses this for
+ * a single tag by filtering on tag_id.
  */
 function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
   return db
     .select({
       tagId: subscriptionTags.tagId,
-      unreadCount: sql<number>`COUNT(DISTINCT ${userEntries.entryId})::int`.as("unread_count"),
+      unreadCount: sql<number>`COUNT(DISTINCT ${visibleEntries.id})::int`.as("unread_count"),
     })
-    .from(subscriptionTags)
+    .from(visibleEntries)
     .innerJoin(
-      subscriptions,
-      and(
-        eq(subscriptionTags.subscriptionId, subscriptions.id),
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt)
-      )
+      userFeeds,
+      and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
     )
-    .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
-    .innerJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
-    .innerJoin(
-      userEntries,
-      and(
-        eq(userEntries.entryId, entries.id),
-        eq(userEntries.userId, userId),
-        eq(userEntries.read, false)
-      )
-    )
+    .innerJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, visibleEntries.subscriptionId))
+    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)))
     .groupBy(subscriptionTags.tagId)
     .as("tag_unread_counts");
 }
@@ -105,7 +100,7 @@ function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
 export async function listTags(db: typeof dbType, userId: string): Promise<ListTagsResult> {
   const tagUnreadCounts = tagUnreadCountsQuery(db, userId);
 
-  const [userTags, uncategorizedResult] = await Promise.all([
+  const [userTags, uncategorizedFeedCount, uncategorizedUnread] = await Promise.all([
     db
       .select({
         id: tags.id,
@@ -123,12 +118,10 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
       .leftJoin(tagUnreadCounts, eq(tagUnreadCounts.tagId, tags.id))
       .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)))
       .orderBy(tags.name),
-    // Count uncategorized subscriptions (those with no tags)
+    // Uncategorized feed count: active subscriptions with no tags. This needs no
+    // entry data, so it's a cheap standalone count rather than a join fan-out.
     db
-      .select({
-        feedCount: sql<number>`COUNT(DISTINCT ${subscriptions.id})::int`,
-        unreadCount: sql<number>`COUNT(DISTINCT ${userEntries.entryId})::int`,
-      })
+      .select({ feedCount: sql<number>`COUNT(*)::int` })
       .from(subscriptions)
       .where(
         and(
@@ -139,15 +132,30 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
             WHERE ${subscriptionTags.subscriptionId} = ${subscriptions.id}
           )`
         )
+      ),
+    // Uncategorized unread count: unread visible entries whose (active)
+    // subscription has no tags. Driving from visible_entries (read=false in
+    // WHERE) lets the partial unread index scan ~unread rows instead of every
+    // entry in every uncategorized feed. The inner join to user_feeds scopes to
+    // active subscriptions, excluding starred orphans (entries kept visible
+    // after unsubscribe), which aren't "uncategorized". COUNT(DISTINCT id)
+    // guards against an entry mapping to multiple subscriptions via
+    // subscription_feeds overlap.
+    db
+      .select({ unreadCount: sql<number>`COUNT(DISTINCT ${visibleEntries.id})::int` })
+      .from(visibleEntries)
+      .innerJoin(
+        userFeeds,
+        and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
       )
-      .leftJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
-      .leftJoin(entries, eq(entries.feedId, subscriptionFeeds.feedId))
-      .leftJoin(
-        userEntries,
+      .where(
         and(
-          eq(userEntries.entryId, entries.id),
-          eq(userEntries.userId, userId),
-          eq(userEntries.read, false)
+          eq(visibleEntries.userId, userId),
+          eq(visibleEntries.read, false),
+          sql`NOT EXISTS (
+            SELECT 1 FROM ${subscriptionTags}
+            WHERE ${subscriptionTags.subscriptionId} = ${visibleEntries.subscriptionId}
+          )`
         )
       ),
   ]);
@@ -162,8 +170,8 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
       createdAt: tag.createdAt,
     })),
     uncategorized: {
-      feedCount: uncategorizedResult[0]?.feedCount ?? 0,
-      unreadCount: uncategorizedResult[0]?.unreadCount ?? 0,
+      feedCount: uncategorizedFeedCount[0]?.feedCount ?? 0,
+      unreadCount: uncategorizedUnread[0]?.unreadCount ?? 0,
     },
   };
 }
