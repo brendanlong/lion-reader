@@ -170,6 +170,34 @@ export const announcementFeedConfig = {
 };
 
 /**
+ * Feed fetch health monitoring configuration.
+ * The monitor_feed_health job alerts when no feed has fetched successfully
+ * within the threshold. See src/server/feed/health.ts.
+ */
+export const feedHealthConfig = {
+  /**
+   * Maximum age (minutes) of the most recent successful feed fetch before the
+   * instance is considered unhealthy (default: 120). In steady state feeds are
+   * polled at least hourly, so going this long with zero successes anywhere
+   * means fetching is broken globally.
+   */
+  // Trailing `|| 120` guards against a non-numeric env value: parseInt would
+  // return NaN, and `ageMs > NaN` is always false, silently reporting the
+  // monitor as healthy forever — the exact failure this check exists to catch.
+  maxSuccessAgeMinutes:
+    parseInt(process.env.FEED_HEALTH_MAX_SUCCESS_AGE_MINUTES || "120", 10) || 120,
+
+  /**
+   * Optional dead-man's-switch heartbeat URL (e.g. a healthchecks.io check).
+   * Pinged on every health-check run: GET when healthy, GET {url}/fail when
+   * unhealthy. The external service alerts on /fail pings and on missing
+   * pings, which covers failure modes the worker can't self-report (process
+   * dead, machine gone, database unreachable).
+   */
+  heartbeatUrl: process.env.FEED_HEALTH_HEARTBEAT_URL,
+};
+
+/**
  * Usage limits configuration.
  * These limits protect against abuse and prevent OOM from oversized content.
  * All limits are configurable via environment variables.

@@ -519,6 +519,57 @@ export function trackWebsubRenewal(success: boolean): void {
 }
 
 // ============================================================================
+// Feed Fetch Health Metrics
+// ============================================================================
+
+/**
+ * Gauge for the age of the most recent successful feed fetch.
+ * Updated by the monitor_feed_health job. Alert if this grows beyond the
+ * expected fetch cadence (feeds are polled at least hourly in steady state).
+ */
+const feedLastSuccessfulFetchAgeSeconds = metricsEnabled
+  ? new Gauge({
+      name: "feed_last_successful_fetch_age_seconds",
+      help: "Seconds since the most recent successful feed fetch across all pollable feeds",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Gauge for the number of pollable feeds currently failing (consecutive_failures > 0).
+ * Updated by the monitor_feed_health job.
+ */
+const feedsFailing = metricsEnabled
+  ? new Gauge({
+      name: "feeds_failing",
+      help: "Number of pollable feeds with consecutive fetch failures",
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Updates feed fetch health gauges from a monitor_feed_health run.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param lastSuccessAgeSeconds - Age of the newest successful fetch, or null if none exists
+ * @param failingFeedCount - Number of pollable feeds currently failing
+ */
+export function updateFeedHealthMetrics(
+  lastSuccessAgeSeconds: number | null,
+  failingFeedCount: number
+): void {
+  if (!metricsEnabled) return;
+  // null = no feed has ever fetched successfully, so there is no age to report.
+  // The gauge is left untouched (rather than set to 0, which would look healthy);
+  // Prometheus alerts for that state should key on `feeds_failing`, which is
+  // always set, while the healthchecks.io `/fail` ping is the primary signal.
+  if (lastSuccessAgeSeconds !== null) {
+    feedLastSuccessfulFetchAgeSeconds?.set(lastSuccessAgeSeconds);
+  }
+  feedsFailing?.set(failingFeedCount);
+}
+
+// ============================================================================
 // Narration Metrics
 // ============================================================================
 

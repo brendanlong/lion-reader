@@ -72,6 +72,20 @@ Renews expiring WebSub subscriptions.
 
 **Failure handling**: Failures tracked on `jobs.consecutive_failures` since there's no associated feed.
 
+### `monitor_feed_health`
+
+Singleton health check enforcing "at least one feed must fetch successfully every N minutes" (see `src/server/feed/health.ts` and the Observability section of `docs/DESIGN.md`). Pings a healthchecks.io check (`FEED_HEALTH_HEARTBEAT_URL`) — success when healthy, `/fail` with an explanatory body when not — and updates feed health metrics. The external monitor owns alert delivery and cadence.
+
+**Payload**: `{}` (empty) — no alerting state is kept; healthchecks.io de-duplicates notifications and sends its own recovery email.
+
+**Lifecycle**:
+
+1. Self-creates on first claim (singleton, like `renew_websub`)
+2. Runs every 15 minutes
+3. Always enabled
+
+**Failure handling**: Failures tracked on `jobs.consecutive_failures` since there's no associated feed.
+
 ## Worker Behavior
 
 ### Claiming Jobs
