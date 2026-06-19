@@ -48,6 +48,23 @@ describe("sanitizeEntryHtml", () => {
       expect(out).toContain('rel="noopener noreferrer"');
     });
 
+    it("treats protocol-relative links as external (anti reverse-tabnabbing)", () => {
+      const out = sanitizeEntryHtml('<a href="//example.com">x</a>') ?? "";
+      expect(out).toContain('target="_blank"');
+      expect(out).toContain('rel="noopener noreferrer"');
+    });
+
+    it("detects external links case-insensitively", () => {
+      const out = sanitizeEntryHtml('<a href="HTTPS://EXAMPLE.COM">x</a>') ?? "";
+      expect(out).toContain('target="_blank"');
+      expect(out).toContain('rel="noopener noreferrer"');
+    });
+
+    it("detects external links despite leading whitespace", () => {
+      const out = sanitizeEntryHtml('<a href=" https://example.com">x</a>') ?? "";
+      expect(out).toContain('rel="noopener noreferrer"');
+    });
+
     it("leaves relative links untouched", () => {
       const out = sanitizeEntryHtml('<a href="/foo">x</a>') ?? "";
       expect(out).not.toContain("target");
@@ -57,6 +74,25 @@ describe("sanitizeEntryHtml", () => {
     it("adds loading=lazy to images", () => {
       const out = sanitizeEntryHtml('<img src="https://example.com/a.png">') ?? "";
       expect(out).toContain('loading="lazy"');
+    });
+  });
+
+  describe("additional XSS hardening (sanitize-html internals)", () => {
+    it("drops inline style attributes (CSS-based vectors)", () => {
+      const out = sanitizeEntryHtml('<p style="position:fixed;inset:0">x</p>') ?? "";
+      expect(out).not.toContain("style");
+      expect(out).toBe("<p>x</p>");
+    });
+
+    it("strips javascript: regardless of case/whitespace", () => {
+      expect(sanitizeEntryHtml('<a href="\\tJAVASCRIPT:alert(1)">x</a>')).not.toContain(
+        "javascript"
+      );
+    });
+
+    it("strips dangerous srcset entries on images", () => {
+      const out = sanitizeEntryHtml('<img srcset="javascript:alert(1) 1x">') ?? "";
+      expect(out).not.toContain("javascript");
     });
   });
 

@@ -24,6 +24,7 @@ import {
 } from "@/server/services/summarization";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
+import { sanitizeEntryHtml } from "@/server/html/sanitize";
 
 // ============================================================================
 // Constants
@@ -179,7 +180,9 @@ export const summarizationRouter = createTRPCRouter({
             const modelChanged =
               fullRecord.modelId !== null && fullRecord.modelId !== currentModelId;
             return {
-              summary: fullRecord.summaryText,
+              // Sanitize on read: summaries cached before server-side
+              // sanitization existed may contain unsanitized HTML.
+              summary: sanitizeEntryHtml(fullRecord.summaryText) ?? "",
               cached: true,
               modelId: fullRecord.modelId || "unknown",
               generatedAt: fullRecord.generatedAt,
@@ -206,7 +209,7 @@ export const summarizationRouter = createTRPCRouter({
           const promptVersionChanged = feedRecord.promptVersion !== CURRENT_PROMPT_VERSION;
           const modelChanged = feedRecord.modelId !== null && feedRecord.modelId !== currentModelId;
           return {
-            summary: feedRecord.summaryText,
+            summary: sanitizeEntryHtml(feedRecord.summaryText) ?? "",
             cached: true,
             modelId: feedRecord.modelId || "unknown",
             generatedAt: feedRecord.generatedAt,
@@ -262,7 +265,7 @@ export const summarizationRouter = createTRPCRouter({
       // unless the user explicitly requested regeneration
       if (summaryRecord.summaryText && !promptVersionChanged && !input.regenerate) {
         return {
-          summary: summaryRecord.summaryText,
+          summary: sanitizeEntryHtml(summaryRecord.summaryText) ?? "",
           cached: true,
           modelId: summaryRecord.modelId || "unknown",
           generatedAt: summaryRecord.generatedAt,

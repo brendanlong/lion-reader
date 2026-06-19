@@ -168,9 +168,15 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   transformTags: {
     // External links open in a new tab with a safe rel (was the old
     // afterSanitizeAttributes hook). Relative/in-page links are left alone.
+    // Normalize case/whitespace and treat protocol-relative `//host` as
+    // external so those links still get rel=noopener (anti reverse-tabnabbing).
+    // Note: `javascript:` etc. are stripped by sanitize-html's scheme filter
+    // regardless of this check, which only gates the target/rel addition.
     a: (tagName, attribs) => {
-      const href = attribs.href ?? "";
-      if (href.startsWith("http://") || href.startsWith("https://")) {
+      const href = (attribs.href ?? "").trim().toLowerCase();
+      const isExternal =
+        href.startsWith("http://") || href.startsWith("https://") || href.startsWith("//");
+      if (isExternal) {
         return {
           tagName,
           attribs: { ...attribs, target: "_blank", rel: "noopener noreferrer" },
