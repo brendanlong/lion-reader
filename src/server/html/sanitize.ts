@@ -104,14 +104,90 @@ const ALLOWED_TAGS = [
   "iframe",
 ];
 
+// Presentation MathML, allowed so equations render natively (modern browsers
+// render MathML Core without any JS/MathJax). Tags/attrs are lowercase, so
+// sanitize-html's name-folding doesn't break them. Deliberately excluded:
+// `semantics`/`annotation`/`annotation-xml` (the latter with encoding=text/html
+// is a known mutation-XSS vector), and `href` on MathML elements.
+const MATHML_TAGS = [
+  "math",
+  "mrow",
+  "mi",
+  "mo",
+  "mn",
+  "ms",
+  "mtext",
+  "mspace",
+  "msup",
+  "msub",
+  "msubsup",
+  "mfrac",
+  "msqrt",
+  "mroot",
+  "mover",
+  "munder",
+  "munderover",
+  "mmultiscripts",
+  "mprescripts",
+  "mtable",
+  "mtr",
+  "mtd",
+  "mlabeledtr",
+  "mpadded",
+  "mphantom",
+  "menclose",
+  "mstyle",
+  "merror",
+  "maction",
+];
+
+// MathML presentation attributes (no `href`, no event handlers).
+const MATHML_ATTRS = [
+  "displaystyle",
+  "scriptlevel",
+  "mathvariant",
+  "mathcolor",
+  "mathbackground",
+  "dir",
+  "display",
+  "linethickness",
+  "fence",
+  "separator",
+  "stretchy",
+  "symmetric",
+  "largeop",
+  "movablelimits",
+  "accent",
+  "accentunder",
+  "lspace",
+  "rspace",
+  "width",
+  "height",
+  "depth",
+  "voffset",
+  "open",
+  "close",
+  "separators",
+  "notation",
+  "columnalign",
+  "rowalign",
+  "columnspan",
+  "rowspan",
+  "columnlines",
+  "rowlines",
+  "subscriptshift",
+  "superscriptshift",
+];
+
 // Global attributes allowed on any element. `data-*` mirrors DOMPurify's
 // default (data attributes are inert) and covers the narration `data-para-id`.
 const GLOBAL_ATTRS = ["class", "id", "title", "dir", "lang", "data-*"];
 
 const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
-  allowedTags: ALLOWED_TAGS,
+  allowedTags: [...ALLOWED_TAGS, ...MATHML_TAGS],
   allowedAttributes: {
-    "*": GLOBAL_ATTRS,
+    "*": [...GLOBAL_ATTRS, ...MATHML_ATTRS],
+    math: [...GLOBAL_ATTRS, ...MATHML_ATTRS, "xmlns"],
     a: [...GLOBAL_ATTRS, "href", "name", "target", "rel"],
     img: [
       ...GLOBAL_ATTRS,

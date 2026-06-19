@@ -77,6 +77,43 @@ describe("sanitizeEntryHtml", () => {
     });
   });
 
+  describe("MathML (browser-native equations)", () => {
+    it("preserves presentation MathML", () => {
+      const html =
+        '<math display="block"><mrow><mfrac><mi>a</mi><mn>2</mn></mfrac>' +
+        "<mo>+</mo><msup><mi>x</mi><mn>2</mn></msup></mrow></math>";
+      const out = sanitizeEntryHtml(html) ?? "";
+      expect(out).toContain("<math");
+      expect(out).toContain("<mfrac>");
+      expect(out).toContain("<msup>");
+      expect(out).toContain('display="block"');
+    });
+
+    it("strips href/javascript: and event handlers on MathML elements", () => {
+      const out =
+        sanitizeEntryHtml('<math><mi href="javascript:alert(1)" onclick="x()">y</mi></math>') ?? "";
+      expect(out).not.toContain("javascript");
+      expect(out).not.toContain("onclick");
+      expect(out).toContain("<mi>y</mi>");
+    });
+
+    it("blocks the annotation-xml mutation-XSS vector", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<math><annotation-xml encoding="text/html"><img src=x onerror=alert(1)></annotation-xml></math>'
+        ) ?? "";
+      expect(out).not.toContain("annotation-xml");
+      expect(out).not.toContain("onerror");
+    });
+  });
+
+  describe("SVG is dropped (not safely supportable via sanitize-html)", () => {
+    it("removes svg and its contents", () => {
+      const out = sanitizeEntryHtml('<p>x</p><svg><circle r="5"/></svg>') ?? "";
+      expect(out).toBe("<p>x</p>");
+    });
+  });
+
   describe("additional XSS hardening (sanitize-html internals)", () => {
     it("drops inline style attributes (CSS-based vectors)", () => {
       const out = sanitizeEntryHtml('<p style="position:fixed;inset:0">x</p>') ?? "";
