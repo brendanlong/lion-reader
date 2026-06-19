@@ -13,6 +13,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -793,6 +794,11 @@ export const jobs = pgTable(
     index("idx_jobs_polling").on(table.nextRunAt),
     // Index for looking up feed jobs by feedId
     index("idx_jobs_feed_id").on(sql`(${table.payload}->>'feedId')`),
+    // Enforce one row per singleton job type so claimSingletonJob's
+    // INSERT...catch actually races correctly (see SINGLETON_JOB_TYPES).
+    uniqueIndex("jobs_singleton_type_unique")
+      .on(table.type)
+      .where(sql`type IN ('renew_websub', 'monitor_feed_health')`),
   ]
 );
 

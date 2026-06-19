@@ -477,6 +477,13 @@
       "when": 1770688800000,
       "tag": "0068_reset_feed_fetch_backoffs",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1770698800000,
+      "tag": "0069_jobs_singleton_type_unique",
+      "breakpoints": true
     }
   ]
 }

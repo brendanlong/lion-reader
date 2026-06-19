@@ -19,6 +19,7 @@ import {
   ensureFeedJob,
   updateFeedJobNextRun,
   claimFeedJob,
+  claimSingletonJob,
 } from "../../src/server/jobs/queue";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
@@ -255,6 +256,53 @@ describe("Job Queue", () => {
       const claimedIds = successfulClaims.map((r) => r!.id);
       const uniqueIds = new Set(claimedIds);
       expect(uniqueIds.size).toBe(3);
+    });
+  });
+
+  describe("claimSingletonJob", () => {
+    it("self-creates and claims a singleton job when none exists", async () => {
+      const job = await claimSingletonJob("monitor_feed_health");
+
+      expect(job).not.toBeNull();
+      expect(job!.type).toBe("monitor_feed_health");
+      expect(job!.runningSince).not.toBeNull();
+
+      // Exactly one row should exist for the type
+      const rows = await listJobs({ type: "monitor_feed_health" });
+      expect(rows).toHaveLength(1);
+    });
+
+    it("rejects non-singleton job types", async () => {
+      await expect(claimSingletonJob("fetch_feed")).rejects.toThrow(
+        "fetch_feed is not a singleton job type"
+      );
+    });
+
+    it("creates only one row when workers race to self-create", async () => {
+      // Simulate many workers all observing "no row exists" at once. The partial
+      // unique index on jobs.type means only one INSERT can win; the losers fall
+      // into the catch and either claim the row or get null (it's running).
+      const claimPromises = Array.from({ length: 5 }, () => claimSingletonJob("renew_websub"));
+      const results = await Promise.all(claimPromises);
+
+      // Exactly one worker should have claimed the (newly created) job.
+      const successfulClaims = results.filter((r) => r !== null);
+      expect(successfulClaims).toHaveLength(1);
+
+      // And crucially, only one row exists — no duplicate singleton rows.
+      const rows = await listJobs({ type: "renew_websub" });
+      expect(rows).toHaveLength(1);
+    });
+
+    it("returns null when an existing job is not yet due", async () => {
+      await createJob({
+        type: "renew_websub",
+        payload: {},
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour out
+      });
+
+      const job = await claimSingletonJob("renew_websub");
+      expect(job).toBeNull();
     });
   });
 
