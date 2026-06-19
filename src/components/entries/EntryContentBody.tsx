@@ -9,28 +9,6 @@
 
 import { useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import DOMPurify from "isomorphic-dompurify";
-
-// Configure DOMPurify to:
-// 1. Open all external links in new tabs
-// 2. Lazy load all images
-// This hook runs after each element is sanitized
-DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-  // Add target="_blank" for external links
-  if (node.tagName === "A" && node.hasAttribute("href")) {
-    const href = node.getAttribute("href") ?? "";
-    // Only add target="_blank" for http/https links (external links)
-    if (href.startsWith("http://") || href.startsWith("https://")) {
-      node.setAttribute("target", "_blank");
-      node.setAttribute("rel", "noopener noreferrer");
-    }
-  }
-
-  // Lazy load all images
-  if (node.tagName === "IMG") {
-    node.setAttribute("loading", "lazy");
-  }
-});
 import { Button } from "@/components/ui/button";
 import {
   StarIcon,
@@ -253,38 +231,24 @@ export function EntryContentBody({
     narration.isSupported &&
     (narration.processedHtml !== null || narration.state.status !== "idle");
 
-  // Sanitize and optionally process HTML content for highlighting
+  // Content is sanitized on the server (src/server/html/sanitize.ts), so here we
+  // only apply narration highlighting markup.
   const sanitizedContent = useMemo(() => {
     if (!contentToDisplay) return null;
 
-    // If we have processed HTML from client-side narration, use it directly
-    // This ensures the data-para-id attributes exactly match the paragraph mapping
+    // Client-side narration produces processedHtml (with data-para-id) from the
+    // already-sanitized content; use it directly so the highlight paragraph IDs
+    // exactly match the mapping.
     if (shouldProcessForHighlighting && narration.processedHtml) {
-      // The processed HTML already has data-para-id attributes added during
-      // htmlToClientNarration, so we just need to sanitize it
-      return DOMPurify.sanitize(narration.processedHtml, {
-        ADD_TAGS: ["iframe"],
-        ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id", "loading"],
-        FORBID_TAGS: ["style", "script"],
-        FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
-      });
+      return narration.processedHtml;
     }
 
-    const sanitized = DOMPurify.sanitize(contentToDisplay, {
-      // Allow safe tags and attributes, plus data-para-id for highlighting
-      ADD_TAGS: ["iframe"],
-      ADD_ATTR: ["target", "allowfullscreen", "frameborder", "data-para-id", "loading"],
-      FORBID_TAGS: ["style", "script"],
-      FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
-    });
-
-    // Process for highlighting if narration is active (server-side narration path)
-    // For client-side narration, we use processedHtml above
+    // Server-side narration path: add highlighting wrappers to sanitized content.
     if (shouldProcessForHighlighting) {
-      return processHtmlForHighlighting(sanitized);
+      return processHtmlForHighlighting(contentToDisplay);
     }
 
-    return sanitized;
+    return contentToDisplay;
   }, [contentToDisplay, shouldProcessForHighlighting, narration.processedHtml]);
 
   // Prefetch images before they scroll into view

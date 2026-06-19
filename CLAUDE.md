@@ -133,3 +133,7 @@ Prefer SAX-style parsing unless the algorithm requires a DOM.
 - HTML extraction: `htmlparser2` (streaming)
 - DOM required (Readability): `linkedom`
 - Parse once, pass parsed structure through code
+
+### Sanitizing untrusted HTML
+
+Entry bodies (and AI summaries) are rendered via `dangerouslySetInnerHTML`, so untrusted HTML is sanitized **on the server, on the read path** with `sanitizeEntryHtml` from `@/server/html/sanitize` (a `sanitize-html` wrapper — pure Node, no DOM/jsdom). The client renders trusted HTML and ships no sanitizer. The chokepoints are `toFullEntry` in the entries router (covers `entries.get` + `entries.fetchFullContent`) and summary generation in `summarization.ts`. Do **not** reintroduce a client-side sanitizer — the old `isomorphic-dompurify` pulled `jsdom` into the production server bundle. Feed `summary`/`title`/`author` are rendered as escaped text, not HTML; keep them that way.
