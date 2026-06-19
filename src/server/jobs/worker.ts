@@ -18,6 +18,8 @@ import {
   claimFeedJob,
   finishJob,
   getJobPayload,
+  renewJobLease,
+  JOB_LEASE_HEARTBEAT_MS,
   SINGLETON_JOB_TYPES,
   type JobType,
 } from "./queue";
@@ -69,6 +71,39 @@ export interface WorkerConfig {
    * @internal
    */
   _processJob?: (job: Job) => Promise<void>;
+}
+
+/**
+ * Starts a heartbeat that periodically renews a running job's lease and returns
+ * a function that stops it.
+ *
+ * The heartbeat is tied to the handler's actual lifetime, deliberately *not* to
+ * the worker-core timeout wrapper. If a handler exceeds `jobTimeoutMs` the worker
+ * loop abandons the promise and frees the slot, but the underlying work keeps
+ * running (we don't forcibly abort fetches/DB writes). Without a lease that work
+ * would become reclaimable at the stale threshold and run a second time in
+ * another worker (issue #871). By renewing `running_since` until the handler
+ * truly settles, the job stays leased for as long as it is actually executing,
+ * and is only reclaimed once this worker process dies.
+ *
+ * Failures to renew are logged but never throw — a transient DB hiccup should not
+ * take down the handler; at worst it costs one missed heartbeat of margin.
+ */
+function startJobLeaseHeartbeat(job: Job, logger: WorkerLogger): () => void {
+  const interval = setInterval(() => {
+    void renewJobLease(job.id).catch((error) => {
+      logger.warn("Failed to renew job lease", {
+        jobId: job.id,
+        type: job.type,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    });
+  }, JOB_LEASE_HEARTBEAT_MS);
+
+  // Don't let the heartbeat timer keep the process alive during shutdown.
+  interval.unref();
+
+  return () => clearInterval(interval);
 }
 
 /**
@@ -157,6 +192,11 @@ function createWorker(config: WorkerConfig = {}): Worker {
    */
   async function processJob(job: Job): Promise<void> {
     const startTime = Date.now();
+
+    // Keep the job's lease alive for as long as this handler actually runs so a
+    // slow (or timed-out-but-still-running) job can't be reclaimed and executed
+    // concurrently by another worker (issue #871).
+    const stopHeartbeat = startJobLeaseHeartbeat(job, logger);
 
     try {
       logger.info(`Processing job ${job.id}`, {
@@ -269,6 +309,8 @@ function createWorker(config: WorkerConfig = {}): Worker {
 
       // Re-throw to let the core worker count it as a failure
       throw error;
+    } finally {
+      stopHeartbeat();
     }
   }
 

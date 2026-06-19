@@ -15,7 +15,7 @@
  * See docs/job-queue-design.md for detailed documentation.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { jobs, type Job } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
@@ -94,8 +94,25 @@ export type JobType = keyof JobPayloads;
 /**
  * Stale job threshold in milliseconds.
  * Jobs running longer than this are assumed to have crashed and can be reclaimed.
+ *
+ * A running job is not reclaimed merely because it is slow: its worker renews
+ * the lease (`running_since`) via {@link renewJobLease} every
+ * {@link JOB_LEASE_HEARTBEAT_MS}, so this threshold is only crossed when the
+ * worker process has actually stopped heartbeating (crashed/killed). That keeps
+ * stale-job recovery from running a still-executing, non-idempotent handler in a
+ * second worker concurrently (issue #871).
  */
 const STALE_JOB_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * How often a worker renews the lease on a job it is actively running.
+ *
+ * Must be comfortably smaller than {@link STALE_JOB_THRESHOLD_MS} so that a few
+ * missed heartbeats (GC pause, slow DB write) don't cause a live job to be
+ * reclaimed. At 1 minute vs. the 5-minute threshold, ~5 consecutive renewals
+ * must fail before a job becomes reclaimable.
+ */
+export const JOB_LEASE_HEARTBEAT_MS = 60 * 1000; // 1 minute
 
 /**
  * Options for creating a new job.
@@ -270,6 +287,36 @@ export async function finishJob(jobId: string, options: FinishJobOptions): Promi
 
     return job;
   }
+}
+
+/**
+ * Renews the lease on a running job by bumping `running_since` to now.
+ *
+ * Workers call this on a heartbeat (every {@link JOB_LEASE_HEARTBEAT_MS}) while a
+ * handler is in flight. Because the lease keeps moving forward, stale-job
+ * recovery (which reclaims jobs whose `running_since` is older than
+ * {@link STALE_JOB_THRESHOLD_MS}) only fires once the worker stops heartbeating —
+ * i.e. the worker process has died — never while the handler is still running.
+ * This is what prevents a slow or timed-out-but-still-running handler from being
+ * reclaimed and executed concurrently in a second worker (issue #871).
+ *
+ * The update is guarded on `running_since IS NOT NULL`, so a heartbeat that
+ * races with {@link finishJob} (which clears `running_since`) is a harmless
+ * no-op and won't resurrect a finished job's lease.
+ *
+ * @param jobId The ID of the running job
+ * @returns true if the lease was renewed, false if the job was no longer running
+ */
+export async function renewJobLease(jobId: string): Promise<boolean> {
+  const now = new Date();
+
+  const renewed = await db
+    .update(jobs)
+    .set({ runningSince: now, updatedAt: now })
+    .where(and(eq(jobs.id, jobId), isNotNull(jobs.runningSince)))
+    .returning({ id: jobs.id });
+
+  return renewed.length > 0;
 }
 
 /**

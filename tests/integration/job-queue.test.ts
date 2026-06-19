@@ -20,6 +20,7 @@ import {
   updateFeedJobNextRun,
   claimFeedJob,
   claimSingletonJob,
+  renewJobLease,
 } from "../../src/server/jobs/queue";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
@@ -303,6 +304,62 @@ describe("Job Queue", () => {
 
       const job = await claimSingletonJob("renew_websub");
       expect(job).toBeNull();
+    });
+  });
+
+  describe("renewJobLease", () => {
+    it("keeps a long-running job from being reclaimed as stale", async () => {
+      const job = await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+      });
+
+      // Worker claims the job, then it runs long enough that running_since would
+      // otherwise be considered stale.
+      await claimJob();
+      const staleTime = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes ago
+      await db
+        .update(jobs)
+        .set({ runningSince: staleTime })
+        .where(sql`id = ${job.id}`);
+
+      // Heartbeat renews the lease before another worker can reclaim it.
+      const renewed = await renewJobLease(job.id);
+      expect(renewed).toBe(true);
+
+      // The job is no longer stale, so a second worker cannot claim it.
+      const reclaimed = await claimJob();
+      expect(reclaimed).toBeNull();
+
+      // running_since should be fresh (within the last few seconds).
+      const after = await getJob(job.id);
+      expect(after!.runningSince).not.toBeNull();
+      expect(Date.now() - after!.runningSince!.getTime()).toBeLessThan(5000);
+    });
+
+    it("does not resurrect the lease of a finished job", async () => {
+      const job = await createJob({
+        type: "fetch_feed",
+        payload: { feedId: "test-feed-id" },
+      });
+
+      await claimJob();
+      await finishJob(job.id, {
+        success: true,
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+
+      // A heartbeat that races with finishJob must be a no-op.
+      const renewed = await renewJobLease(job.id);
+      expect(renewed).toBe(false);
+
+      const after = await getJob(job.id);
+      expect(after!.runningSince).toBeNull();
+    });
+
+    it("returns false for a non-existent job", async () => {
+      const renewed = await renewJobLease(NON_EXISTENT_JOB_ID);
+      expect(renewed).toBe(false);
     });
   });
 
