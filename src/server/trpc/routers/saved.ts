@@ -77,7 +77,13 @@ const urlSchema = z.string().url("Invalid URL");
 // ============================================================================
 
 /**
- * Full saved article output schema for single article view (includes content).
+ * Saved article metadata returned from save/upload mutations.
+ *
+ * Deliberately omits the article body (`contentOriginal`/`contentCleaned`):
+ * callers only use the metadata here (title etc.), and every body render goes
+ * through `entries.get`, which sanitizes on the read path. Echoing raw bodies
+ * back here would be a stored-XSS footgun for any future caller that rendered
+ * them directly, with no upside since nothing reads them. See issue #927.
  * URL is nullable for uploaded files which don't have a source URL.
  */
 const savedArticleFullSchema = z.object({
@@ -87,8 +93,6 @@ const savedArticleFullSchema = z.object({
   siteName: z.string().nullable(),
   author: z.string().nullable(),
   imageUrl: z.string().nullable(),
-  contentOriginal: z.string().nullable(),
-  contentCleaned: z.string().nullable(),
   excerpt: z.string().nullable(),
   read: z.boolean(),
   starred: z.boolean(),
@@ -289,8 +293,6 @@ export const savedRouter = createTRPCRouter({
               siteName: entry.siteName,
               author: entry.author,
               imageUrl: entry.imageUrl,
-              contentOriginal: entry.contentOriginal,
-              contentCleaned: entry.contentCleaned,
               excerpt: entry.summary,
               read: userState.read,
               starred: userState.starred,
@@ -707,8 +709,6 @@ export const savedRouter = createTRPCRouter({
             siteName: finalSiteName,
             author: finalAuthor,
             imageUrl: metadata.imageUrl,
-            contentOriginal: html,
-            contentCleaned: finalContentCleaned,
             excerpt,
             read: false, // Marked unread since content was updated
             starred: userState.starred,
@@ -774,8 +774,6 @@ export const savedRouter = createTRPCRouter({
           siteName: finalSiteName,
           author: finalAuthor,
           imageUrl: metadata.imageUrl,
-          contentOriginal: html,
-          contentCleaned: finalContentCleaned,
           excerpt,
           read: false,
           starred: false,
@@ -951,8 +949,6 @@ export const savedRouter = createTRPCRouter({
           siteName: article.siteName,
           author: article.author,
           imageUrl: article.imageUrl,
-          contentOriginal: article.contentCleaned, // Same as cleaned for uploads
-          contentCleaned: article.contentCleaned,
           excerpt: article.excerpt,
           read: article.read,
           starred: article.starred,

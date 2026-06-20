@@ -814,9 +814,11 @@ describe("Saved Articles API", () => {
         refetch: true,
       });
 
-      // Should return updated content
+      // Mutation response carries metadata only (no body); the updated content
+      // is served through the sanitizing read path.
       expect(result.article.title).toBe("Updated OG Title");
-      expect(result.article.contentCleaned).toContain("updated content");
+      const fetched = await caller.entries.get({ id: result.article.id });
+      expect(fetched.entry.contentCleaned).toContain("updated content");
     });
 
     it("marks as unread but preserves starred state when refetching", async () => {
@@ -1021,9 +1023,10 @@ describe("Saved Articles API", () => {
       expect(result.article.siteName).toBe("Test Site");
       expect(result.article.author).toBe("Test Author");
       expect(result.article.imageUrl).toBe("https://example.com/image.jpg");
-      expect(result.article.contentOriginal).toBe(testHtml);
-      // Content should be cleaned by Readability
-      expect(result.article.contentCleaned).toContain("article content");
+      // The mutation response carries metadata only; the body (cleaned by
+      // Readability and sanitized) is served through the read path.
+      const fetched = await caller.entries.get({ id: result.article.id });
+      expect(fetched.entry.contentCleaned).toContain("article content");
     });
 
     it("uses provided title parameter over extracted metadata", async () => {
@@ -1106,6 +1109,49 @@ describe("Saved Articles API", () => {
       expect(result.article.siteName).toBeNull();
       expect(result.article.author).toBeNull();
       expect(result.article.imageUrl).toBeNull();
+    });
+
+    it("omits article body from the response; body is sanitized on read (#927)", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      // Body carries XSS vectors. The mutation response must not echo content
+      // back at all (callers only use metadata, and rendering it directly would
+      // bypass the read-path sanitizer); the stored body must be sanitized when
+      // read through entries.get.
+      const maliciousHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>Malicious Page</title></head>
+          <body>
+            <article>
+              <p>Legitimate article body with enough text to pass quality checks.</p>
+              <script>alert('xss')</script>
+              <img src="x" onerror="alert('xss')" />
+              <a href="javascript:alert('xss')">click</a>
+            </article>
+          </body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: "https://example.com/xss-test",
+        html: maliciousHtml,
+      });
+
+      // Response carries no body fields.
+      expect(result.article).not.toHaveProperty("contentOriginal");
+      expect(result.article).not.toHaveProperty("contentCleaned");
+
+      // The read path serves sanitized content.
+      const fetched = await caller.entries.get({ id: result.article.id });
+      for (const body of [fetched.entry.contentOriginal, fetched.entry.contentCleaned]) {
+        expect(body).not.toContain("<script");
+        expect(body).not.toContain("onerror");
+        expect(body).not.toContain("javascript:");
+      }
+      expect(fetched.entry.contentOriginal).toContain("Legitimate article body");
     });
   });
 });
