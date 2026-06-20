@@ -22,7 +22,7 @@ import {
   type OpmlImportFeedResult,
 } from "../db/schema";
 import { fetchFullContent } from "../services/full-content";
-import { warmSanitizedEntryHtml } from "../html/sanitize-cache";
+import { withSanitizedEntryContent } from "../html/sanitize-entry";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../feed/fetcher";
 import type { WebSubLinkHeaders } from "../feed/link-header";
 import { parseFeed } from "../feed/parser";
@@ -154,20 +154,19 @@ async function fetchFullContentForNewEntries(
 
         await db
           .update(entries)
-          .set({
-            fullContentOriginal: result.contentOriginal ?? null,
-            fullContentCleaned: result.contentCleaned ?? null,
-            fullContentHash,
-            fullContentFetchedAt: now,
-            fullContentError: null,
-            updatedAt: now,
-          })
+          // Sanitize at write time so the user's first read is fast.
+          .set(
+            withSanitizedEntryContent({
+              fullContentOriginal: result.contentOriginal ?? null,
+              fullContentCleaned: result.contentCleaned ?? null,
+              fullContentHash,
+              fullContentFetchedAt: now,
+              fullContentError: null,
+              updatedAt: now,
+            })
+          )
           .where(eq(entries.id, entry.id));
         fetched++;
-
-        // Warm the sanitize cache so the user's first read of the full content
-        // skips the sanitize cost. Fire-and-forget.
-        void warmSanitizedEntryHtml([result.contentOriginal, result.contentCleaned]);
 
         logger.debug("Fetched full content for entry", {
           entryId: entry.id,

@@ -9,6 +9,7 @@ import { createHash } from "crypto";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import { generateSummary } from "../html/strip-html";
+import { withSanitizedEntryContent } from "../html/sanitize-entry";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
 import {
@@ -469,7 +470,9 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     unsubscribeUrl,
   };
 
-  await db.insert(entries).values(newEntry);
+  // Sanitize at write time so entries.get serves the email body without
+  // re-running sanitize-html on every read.
+  await db.insert(entries).values(withSanitizedEntryContent(newEntry));
 
   // Create user_entry to make it visible to the user
   await db.insert(userEntries).values({

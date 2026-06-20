@@ -87,6 +87,12 @@ CREATE TABLE public.entries (
     full_content_hash text,
     unsubscribe_url text,
     wallabag_id integer GENERATED ALWAYS AS ((((('x'::text || "left"(encode(sha256(((id)::text)::bytea), 'hex'::text), 8)))::bit(32))::integer & ('01111111111111111111111111111111'::"bit")::integer)) STORED,
+    content_original_sanitized text,
+    content_cleaned_sanitized text,
+    content_sanitized_version smallint,
+    full_content_original_sanitized text,
+    full_content_cleaned_sanitized text,
+    full_content_sanitized_version smallint,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
@@ -442,7 +448,13 @@ CREATE VIEW public.visible_entries AS
     e.unsubscribe_url,
     ue.read_changed_at,
     e.wallabag_id,
-    ue.published_or_fetched_at
+    ue.published_or_fetched_at,
+    e.content_original_sanitized,
+    e.content_cleaned_sanitized,
+    e.content_sanitized_version,
+    e.full_content_original_sanitized,
+    e.full_content_cleaned_sanitized,
+    e.full_content_sanitized_version
    FROM ((((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscription_feeds sf ON (((sf.user_id = ue.user_id) AND (sf.feed_id = e.feed_id))))
