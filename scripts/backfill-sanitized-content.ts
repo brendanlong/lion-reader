@@ -18,14 +18,18 @@
  * Usage:
  *   DATABASE_URL=postgres://... pnpm exec tsx scripts/backfill-sanitized-content.ts [--dry-run]
  *
+ * Each batch is written with one bulk `UPDATE ... FROM (VALUES ...)` per content
+ * family rather than one statement per row, so a batch costs ~2 round trips
+ * instead of ~BATCH_SIZE — the dominant saving when pointed at a remote DB.
+ *
  * Optional env:
  *   BATCH_SIZE   rows fetched/updated per batch (default 50). Raw content can be
- *                ~700KB/field × 4 fields, so keep this modest to bound memory.
- *   UPDATE_CONCURRENCY  parallel UPDATEs per batch (default 10).
+ *                ~700KB/field × 4 fields, so keep this modest to bound memory and
+ *                per-statement payload size.
  */
 
 import { drizzle } from "drizzle-orm/node-postgres";
-import { and, asc, gt, isNotNull, ne, or, sql, eq, type SQL } from "drizzle-orm";
+import { and, asc, gt, isNotNull, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { Pool } from "pg";
 
 import * as schema from "../src/server/db/schema";
@@ -35,7 +39,6 @@ import { withSanitizedEntryContent } from "../src/server/html/sanitize-entry";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 50);
-const UPDATE_CONCURRENCY = Number(process.env.UPDATE_CONCURRENCY ?? 10);
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -66,18 +69,49 @@ const fullContentStale = and(
 
 const needsBackfill = or(contentStale, fullContentStale);
 
-const SANITIZED_KEYS = [
-  "contentOriginalSanitized",
-  "contentCleanedSanitized",
-  "contentSanitizedVersion",
-  "fullContentOriginalSanitized",
-  "fullContentCleanedSanitized",
-  "fullContentSanitizedVersion",
-] as const;
+/** A row's freshly-sanitized values for one content family. */
+interface FamilyUpdate {
+  id: string;
+  originalSanitized: string | null;
+  cleanedSanitized: string | null;
+}
+
+/**
+ * Apply one content family's sanitized columns to many rows in a single
+ * statement: `UPDATE entries ... FROM (VALUES ...)`. This collapses what would
+ * be one round trip per row into one per batch — the dominant saving when the
+ * DB is remote. Only this family's three columns are touched, so a row that is
+ * stale in only the other family is left alone. The id/text casts pin the VALUES
+ * column types (otherwise a leading NULL would leave them `unknown`).
+ */
+async function bulkUpdateFamily(
+  rows: FamilyUpdate[],
+  originalCol: AnyColumn,
+  cleanedCol: AnyColumn,
+  versionCol: AnyColumn
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  const values = sql.join(
+    rows.map(
+      (r) => sql`(${r.id}::uuid, ${r.originalSanitized}::text, ${r.cleanedSanitized}::text)`
+    ),
+    sql`, `
+  );
+
+  await db.execute(sql`
+    UPDATE ${entries} AS t
+    SET ${sql.identifier(originalCol.name)} = v.original,
+        ${sql.identifier(cleanedCol.name)} = v.cleaned,
+        ${sql.identifier(versionCol.name)} = ${SANITIZER_VERSION}
+    FROM (VALUES ${values}) AS v(id, original, cleaned)
+    WHERE t.id = v.id
+  `);
+}
 
 async function main() {
   console.log(
-    `Backfilling sanitized entry content (SANITIZER_VERSION=${SANITIZER_VERSION}, batch=${BATCH_SIZE}, concurrency=${UPDATE_CONCURRENCY})${
+    `Backfilling sanitized entry content (SANITIZER_VERSION=${SANITIZER_VERSION}, batch=${BATCH_SIZE})${
       DRY_RUN ? " [dry run]" : ""
     }`
   );
@@ -114,52 +148,66 @@ async function main() {
     cursor = batch[batch.length - 1].id;
     scanned += batch.length;
 
-    // Build the update set per row, refreshing only the stale families present.
-    const updates = batch.map((row) => {
-      const input: {
-        contentOriginal?: string | null;
-        contentCleaned?: string | null;
-        fullContentOriginal?: string | null;
-        fullContentCleaned?: string | null;
-      } = {};
+    // Sanitize each stale family, collecting rows per family for a single bulk
+    // UPDATE each. We still derive the sanitized values via the shared
+    // `withSanitizedEntryContent` helper so the output is byte-identical to every
+    // other write path (and the read-path heal).
+    const contentRows: FamilyUpdate[] = [];
+    const fullContentRows: FamilyUpdate[] = [];
 
+    for (const row of batch) {
       const contentNeedsWork =
         row.contentSanitizedVersion !== SANITIZER_VERSION &&
         (row.contentOriginal !== null || row.contentCleaned !== null);
       if (contentNeedsWork) {
-        input.contentOriginal = row.contentOriginal;
-        input.contentCleaned = row.contentCleaned;
+        const s = withSanitizedEntryContent({
+          contentOriginal: row.contentOriginal,
+          contentCleaned: row.contentCleaned,
+        });
+        contentRows.push({
+          id: row.id,
+          originalSanitized: s.contentOriginalSanitized ?? null,
+          cleanedSanitized: s.contentCleanedSanitized ?? null,
+        });
       }
 
       const fullContentNeedsWork =
         row.fullContentSanitizedVersion !== SANITIZER_VERSION &&
         (row.fullContentOriginal !== null || row.fullContentCleaned !== null);
       if (fullContentNeedsWork) {
-        input.fullContentOriginal = row.fullContentOriginal;
-        input.fullContentCleaned = row.fullContentCleaned;
-      }
-
-      const sanitized = withSanitizedEntryContent(input);
-      const set: Record<string, string | number | null> = {};
-      for (const key of SANITIZED_KEYS) {
-        if (key in sanitized) {
-          set[key] = sanitized[key] as string | number | null;
-        }
-      }
-      return { id: row.id, set };
-    });
-
-    if (!DRY_RUN) {
-      for (let i = 0; i < updates.length; i += UPDATE_CONCURRENCY) {
-        const slice = updates.slice(i, i + UPDATE_CONCURRENCY);
-        await Promise.all(
-          slice.map(({ id, set }) => db.update(entries).set(set).where(eq(entries.id, id)))
-        );
+        const s = withSanitizedEntryContent({
+          fullContentOriginal: row.fullContentOriginal,
+          fullContentCleaned: row.fullContentCleaned,
+        });
+        fullContentRows.push({
+          id: row.id,
+          originalSanitized: s.fullContentOriginalSanitized ?? null,
+          cleanedSanitized: s.fullContentCleanedSanitized ?? null,
+        });
       }
     }
 
-    updated += updates.length;
-    console.log(`  scanned=${scanned} updated=${updated} (cursor=${cursor})`);
+    if (!DRY_RUN) {
+      // Sequential (not parallel): a row stale in both families appears in both
+      // lists, so concurrent UPDATEs could contend on the same row.
+      await bulkUpdateFamily(
+        contentRows,
+        entries.contentOriginalSanitized,
+        entries.contentCleanedSanitized,
+        entries.contentSanitizedVersion
+      );
+      await bulkUpdateFamily(
+        fullContentRows,
+        entries.fullContentOriginalSanitized,
+        entries.fullContentCleanedSanitized,
+        entries.fullContentSanitizedVersion
+      );
+    }
+
+    updated += batch.length;
+    console.log(
+      `  scanned=${scanned} updated=${updated} (content=${contentRows.length} full=${fullContentRows.length}, cursor=${cursor})`
+    );
   }
 
   console.log(
