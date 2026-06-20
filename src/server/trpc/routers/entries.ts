@@ -33,7 +33,7 @@ import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/f
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
 import { getSubscriptionFeedIds } from "@/server/services/entry-filters";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import { sanitizeEntryHtmlCached } from "@/server/html/sanitize-cache";
 import { publishEntryStateChanged } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 
@@ -280,18 +280,27 @@ async function selectFullEntry(
  * Transform a raw full entry row into the entryFullSchema shape.
  * Strips internal fields and defaults fetchFullContent.
  */
-function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>) {
+async function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { hasStarred, hasMarkedUnread, hasMarkedReadOnList, contentHash, ...rest } = row;
+  // Entry bodies come from untrusted feeds and are rendered via
+  // dangerouslySetInnerHTML, so sanitize here (the read chokepoint shared by
+  // `get` and `fetchFullContent`) rather than in the browser. Sanitization is
+  // cached (content-addressed in Redis) so repeat reads skip the ~50ms/700KB
+  // parse; the four fields run concurrently to overlap any cache misses.
+  const [contentOriginal, contentCleaned, fullContentOriginal, fullContentCleaned] =
+    await Promise.all([
+      sanitizeEntryHtmlCached(rest.contentOriginal),
+      sanitizeEntryHtmlCached(rest.contentCleaned),
+      sanitizeEntryHtmlCached(rest.fullContentOriginal),
+      sanitizeEntryHtmlCached(rest.fullContentCleaned),
+    ]);
   return {
     ...rest,
-    // Entry bodies come from untrusted feeds and are rendered via
-    // dangerouslySetInnerHTML, so sanitize here (the read chokepoint shared by
-    // `get` and `fetchFullContent`) rather than in the browser.
-    contentOriginal: sanitizeEntryHtml(rest.contentOriginal),
-    contentCleaned: sanitizeEntryHtml(rest.contentCleaned),
-    fullContentOriginal: sanitizeEntryHtml(rest.fullContentOriginal),
-    fullContentCleaned: sanitizeEntryHtml(rest.fullContentCleaned),
+    contentOriginal,
+    contentCleaned,
+    fullContentOriginal,
+    fullContentCleaned,
     fetchFullContent: row.fetchFullContent ?? false,
   };
 }
@@ -404,7 +413,7 @@ export const entriesRouter = createTRPCRouter({
         throw errors.entryNotFound();
       }
 
-      return { entry: toFullEntry(row) };
+      return { entry: await toFullEntry(row) };
     }),
 
   /**
@@ -725,7 +734,7 @@ export const entriesRouter = createTRPCRouter({
       }
 
       const entry = {
-        ...toFullEntry(rawEntry),
+        ...(await toFullEntry(rawEntry)),
         contentHash: rawEntry.contentHash,
       };
 
@@ -818,12 +827,23 @@ export const entriesRouter = createTRPCRouter({
         contentLength: result.contentCleaned?.length,
       });
 
+      // The fetched full content is untrusted (raw page HTML / Readability
+      // output) and the client renders it via dangerouslySetInnerHTML, so it
+      // must be sanitized before being returned here — `toFullEntry` above only
+      // sanitized the *previously stored* full content (null on first fetch).
+      // Routing through the cached sanitizer also warms the cache for the
+      // subsequent `entries.get` re-read.
+      const [fullContentOriginal, fullContentCleaned] = await Promise.all([
+        sanitizeEntryHtmlCached(result.contentOriginal ?? null),
+        sanitizeEntryHtmlCached(result.contentCleaned ?? null),
+      ]);
+
       return {
         success: true,
         entry: {
           ...entry,
-          fullContentOriginal: result.contentOriginal ?? null,
-          fullContentCleaned: result.contentCleaned ?? null,
+          fullContentOriginal,
+          fullContentCleaned,
           fullContentFetchedAt: now,
           fullContentError: null,
         },

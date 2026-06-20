@@ -15,6 +15,7 @@ import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { generateSummary } from "../html/strip-html";
+import { warmSanitizedEntryHtml } from "../html/sanitize-cache";
 import { logger } from "@/lib/logger";
 
 /**
@@ -191,6 +192,11 @@ export async function createEntry(
 
   const [entry] = await db.insert(entries).values(newEntry).returning();
 
+  // Proactively sanitize+cache so the user-facing read path (entries.get) skips
+  // the sanitize cost. Fire-and-forget: never let warming delay or fail the
+  // worker.
+  void warmSanitizedEntryHtml([entry.contentOriginal, entry.contentCleaned]);
+
   return entry;
 }
 
@@ -231,6 +237,9 @@ export async function updateEntryContent(
     })
     .where(eq(entries.id, entryId))
     .returning();
+
+  // Content changed, so warm the cache for the new sanitized output.
+  void warmSanitizedEntryHtml([entry.contentOriginal, entry.contentCleaned]);
 
   return entry;
 }

@@ -22,6 +22,7 @@ import {
   type OpmlImportFeedResult,
 } from "../db/schema";
 import { fetchFullContent } from "../services/full-content";
+import { warmSanitizedEntryHtml } from "../html/sanitize-cache";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../feed/fetcher";
 import type { WebSubLinkHeaders } from "../feed/link-header";
 import { parseFeed } from "../feed/parser";
@@ -163,6 +164,10 @@ async function fetchFullContentForNewEntries(
           })
           .where(eq(entries.id, entry.id));
         fetched++;
+
+        // Warm the sanitize cache so the user's first read of the full content
+        // skips the sanitize cost. Fire-and-forget.
+        void warmSanitizedEntryHtml([result.contentOriginal, result.contentCleaned]);
 
         logger.debug("Fetched full content for entry", {
           entryId: entry.id,

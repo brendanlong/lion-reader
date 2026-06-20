@@ -16,6 +16,15 @@
 
 import sanitizeHtml from "sanitize-html";
 
+/**
+ * Version of the sanitization config. Bump this whenever `SANITIZE_OPTIONS`
+ * (allowed tags/attributes/schemes or `transformTags`) changes. It is embedded
+ * in the sanitize cache key (`src/server/html/sanitize-cache.ts`) so that
+ * changing the allow-list invalidates previously-cached output instead of
+ * serving stale sanitization.
+ */
+export const SANITIZER_VERSION = 1;
+
 // Tags allowed in entry content. Superset of sanitize-html's defaults covering
 // the formatting, table, and media elements real articles use. `script` and
 // `style` are deliberately excluded (no executable content, no style-tag CSS).
