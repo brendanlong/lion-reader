@@ -314,8 +314,8 @@ function EntryContentInner({
         author={entry.author}
         url={entry.url}
         date={entry.publishedAt ?? entry.fetchedAt}
-        contentOriginal={entry.contentOriginal}
-        contentCleaned={entry.contentCleaned}
+        content={entry.content}
+        contentOriginalDiff={entry.contentOriginalDiff}
         fallbackContent={entry.summary}
         read={entry.read}
         starred={entry.starred}

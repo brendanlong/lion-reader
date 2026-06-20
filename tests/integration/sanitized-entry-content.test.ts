@@ -167,7 +167,7 @@ describe("entries.get sanitized content", () => {
     const caller = createCaller(createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
 
-    expect(entry.contentCleaned).toBe("<p>STORED_SENTINEL</p>");
+    expect(entry.content).toBe("<p>STORED_SENTINEL</p>");
   });
 
   it("re-sanitizes from raw and self-heals when the stored version is missing", async () => {
@@ -196,9 +196,9 @@ describe("entries.get sanitized content", () => {
     const { entry } = await caller.entries.get({ id: entryId });
 
     // Returned content is sanitized.
-    expect(entry.contentCleaned).toContain("hello");
-    expect(entry.contentCleaned).not.toContain("<script>");
-    expect(entry.contentCleaned).not.toContain("onclick");
+    expect(entry.content).toContain("hello");
+    expect(entry.content).not.toContain("<script>");
+    expect(entry.content).not.toContain("onclick");
 
     // The heal is persisted (fire-and-forget), so a later read is a stored hit.
     await eventually(async () => {
