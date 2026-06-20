@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { createHash } from "crypto";
 
 import {
@@ -33,7 +33,8 @@ import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/f
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
 import { getSubscriptionFeedIds } from "@/server/services/entry-filters";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
+import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { publishEntryStateChanged } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 
@@ -231,8 +232,11 @@ const fullEntrySelectFields = {
   url: visibleEntries.url,
   title: visibleEntries.title,
   author: visibleEntries.author,
-  contentOriginal: visibleEntries.contentOriginal,
-  contentCleaned: visibleEntries.contentCleaned,
+  // Sanitized content is served to the client; the matching version columns let
+  // the read path detect when the allow-list changed and re-sanitize from raw.
+  contentOriginalSanitized: visibleEntries.contentOriginalSanitized,
+  contentCleanedSanitized: visibleEntries.contentCleanedSanitized,
+  contentSanitizedVersion: visibleEntries.contentSanitizedVersion,
   summary: visibleEntries.summary,
   publishedAt: visibleEntries.publishedAt,
   fetchedAt: visibleEntries.fetchedAt,
@@ -244,8 +248,9 @@ const fullEntrySelectFields = {
   feedTitle: feeds.title,
   feedUrl: feeds.url,
   unsubscribeUrl: visibleEntries.unsubscribeUrl,
-  fullContentOriginal: visibleEntries.fullContentOriginal,
-  fullContentCleaned: visibleEntries.fullContentCleaned,
+  fullContentOriginalSanitized: visibleEntries.fullContentOriginalSanitized,
+  fullContentCleanedSanitized: visibleEntries.fullContentCleanedSanitized,
+  fullContentSanitizedVersion: visibleEntries.fullContentSanitizedVersion,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
   contentHash: visibleEntries.contentHash,
@@ -277,21 +282,169 @@ async function selectFullEntry(
 }
 
 /**
- * Transform a raw full entry row into the entryFullSchema shape.
- * Strips internal fields and defaults fetchFullContent.
+ * Resolve an entry's sanitized content for display.
+ *
+ * Entry bodies come from untrusted feeds and are rendered via
+ * `dangerouslySetInnerHTML`, so they must be sanitized. Sanitization is
+ * persisted in the `*_sanitized` columns at write time (see
+ * `@/server/html/sanitize-entry`), so the common case is a pure read of the
+ * stored values. When the stored version doesn't match the current
+ * `SANITIZER_VERSION` — pre-migration rows, or after the allow-list was
+ * tightened — we re-sanitize from the raw columns and persist the result
+ * (fire-and-forget) so subsequent reads are fast again.
+ *
+ * The content (`content_*`) and full-content (`full_content_*`) families are
+ * versioned independently because they are written at different times.
  */
-function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { hasStarred, hasMarkedUnread, hasMarkedReadOnList, contentHash, ...rest } = row;
+async function resolveSanitizedContent(
+  db: typeof import("@/server/db").db,
+  entryId: string,
+  stored: {
+    contentOriginalSanitized: string | null;
+    contentCleanedSanitized: string | null;
+    contentSanitizedVersion: number | null;
+    fullContentOriginalSanitized: string | null;
+    fullContentCleanedSanitized: string | null;
+    fullContentSanitizedVersion: number | null;
+  }
+) {
+  const contentCurrent = stored.contentSanitizedVersion === SANITIZER_VERSION;
+  const fullContentCurrent = stored.fullContentSanitizedVersion === SANITIZER_VERSION;
+
+  // Fast path: both families already sanitized at the current version.
+  if (contentCurrent && fullContentCurrent) {
+    return {
+      contentOriginal: stored.contentOriginalSanitized,
+      contentCleaned: stored.contentCleanedSanitized,
+      fullContentOriginal: stored.fullContentOriginalSanitized,
+      fullContentCleaned: stored.fullContentCleanedSanitized,
+    };
+  }
+
+  // Heal path: fetch the raw columns for whichever family is stale, sanitize,
+  // and persist so we don't pay this again.
+  const [raw] = await db
+    .select({
+      contentOriginal: entries.contentOriginal,
+      contentCleaned: entries.contentCleaned,
+      fullContentOriginal: entries.fullContentOriginal,
+      fullContentCleaned: entries.fullContentCleaned,
+    })
+    .from(entries)
+    .where(eq(entries.id, entryId))
+    .limit(1);
+
+  const resolved = {
+    contentOriginal: contentCurrent
+      ? stored.contentOriginalSanitized
+      : sanitizeEntryHtml(raw?.contentOriginal ?? null),
+    contentCleaned: contentCurrent
+      ? stored.contentCleanedSanitized
+      : sanitizeEntryHtml(raw?.contentCleaned ?? null),
+    fullContentOriginal: fullContentCurrent
+      ? stored.fullContentOriginalSanitized
+      : sanitizeEntryHtml(raw?.fullContentOriginal ?? null),
+    fullContentCleaned: fullContentCurrent
+      ? stored.fullContentCleanedSanitized
+      : sanitizeEntryHtml(raw?.fullContentCleaned ?? null),
+  };
+
+  // Persist the healed columns (fire-and-forget) so we don't pay this again.
+  // Each family is written in its own UPDATE gated on its version still being
+  // stale (`IS DISTINCT FROM`, which also matches NULL). This is a
+  // compare-and-swap: if a concurrent writer (e.g. a feed refresh via
+  // updateEntryContent, or a full-content fetch) has already stored fresh raw +
+  // sanitized + current version, our predicate is false and we skip — so a
+  // backfill computed from now-stale raw can never clobber newer content. The
+  // families are split because they version and change independently.
+  const heals: Promise<unknown>[] = [];
+  if (!contentCurrent) {
+    heals.push(
+      db
+        .update(entries)
+        .set({
+          contentOriginalSanitized: resolved.contentOriginal,
+          contentCleanedSanitized: resolved.contentCleaned,
+          contentSanitizedVersion: SANITIZER_VERSION,
+        })
+        .where(
+          and(
+            eq(entries.id, entryId),
+            sql`${entries.contentSanitizedVersion} IS DISTINCT FROM ${SANITIZER_VERSION}`
+          )
+        )
+    );
+  }
+  if (!fullContentCurrent) {
+    heals.push(
+      db
+        .update(entries)
+        .set({
+          fullContentOriginalSanitized: resolved.fullContentOriginal,
+          fullContentCleanedSanitized: resolved.fullContentCleaned,
+          fullContentSanitizedVersion: SANITIZER_VERSION,
+        })
+        .where(
+          and(
+            eq(entries.id, entryId),
+            sql`${entries.fullContentSanitizedVersion} IS DISTINCT FROM ${SANITIZER_VERSION}`
+          )
+        )
+    );
+  }
+  // A failed backfill write must not fail the read.
+  void (async () => {
+    try {
+      await Promise.all(heals);
+    } catch (err) {
+      logger.warn("Failed to persist re-sanitized entry content", { entryId, err });
+    }
+  })();
+
+  return resolved;
+}
+
+/**
+ * Transform a raw full entry row into the entryFullSchema shape.
+ * Strips internal fields, resolves sanitized content, and defaults fetchFullContent.
+ */
+async function toFullEntry(
+  db: typeof import("@/server/db").db,
+  row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>
+) {
+  const {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    hasStarred,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    hasMarkedUnread,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    hasMarkedReadOnList,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    contentHash,
+    contentOriginalSanitized,
+    contentCleanedSanitized,
+    contentSanitizedVersion,
+    fullContentOriginalSanitized,
+    fullContentCleanedSanitized,
+    fullContentSanitizedVersion,
+    ...rest
+  } = row;
+
+  const content = await resolveSanitizedContent(db, row.id, {
+    contentOriginalSanitized,
+    contentCleanedSanitized,
+    contentSanitizedVersion,
+    fullContentOriginalSanitized,
+    fullContentCleanedSanitized,
+    fullContentSanitizedVersion,
+  });
+
   return {
     ...rest,
-    // Entry bodies come from untrusted feeds and are rendered via
-    // dangerouslySetInnerHTML, so sanitize here (the read chokepoint shared by
-    // `get` and `fetchFullContent`) rather than in the browser.
-    contentOriginal: sanitizeEntryHtml(rest.contentOriginal),
-    contentCleaned: sanitizeEntryHtml(rest.contentCleaned),
-    fullContentOriginal: sanitizeEntryHtml(rest.fullContentOriginal),
-    fullContentCleaned: sanitizeEntryHtml(rest.fullContentCleaned),
+    contentOriginal: content.contentOriginal,
+    contentCleaned: content.contentCleaned,
+    fullContentOriginal: content.fullContentOriginal,
+    fullContentCleaned: content.fullContentCleaned,
     fetchFullContent: row.fetchFullContent ?? false,
   };
 }
@@ -404,7 +557,7 @@ export const entriesRouter = createTRPCRouter({
         throw errors.entryNotFound();
       }
 
-      return { entry: toFullEntry(row) };
+      return { entry: await toFullEntry(ctx.db, row) };
     }),
 
   /**
@@ -725,7 +878,7 @@ export const entriesRouter = createTRPCRouter({
       }
 
       const entry = {
-        ...toFullEntry(rawEntry),
+        ...(await toFullEntry(ctx.db, rawEntry)),
         contentHash: rawEntry.contentHash,
       };
 
@@ -779,19 +932,22 @@ export const entriesRouter = createTRPCRouter({
         ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
         : null;
 
-      // Update entry with full content
+      // Sanitize the fetched full content once: stored in the *_sanitized
+      // columns so reads are fast, and reused below so the client renders
+      // sanitized HTML. The raw page HTML / Readability output is untrusted and
+      // is rendered via dangerouslySetInnerHTML, so it must not be returned raw.
       const now = new Date();
-      await ctx.db
-        .update(entries)
-        .set({
-          fullContentOriginal: result.contentOriginal ?? null,
-          fullContentCleaned: result.contentCleaned ?? null,
-          fullContentHash,
-          fullContentFetchedAt: now,
-          fullContentError: null,
-          updatedAt: now,
-        })
-        .where(eq(entries.id, input.id));
+      const fullContentUpdate = withSanitizedEntryContent({
+        fullContentOriginal: result.contentOriginal ?? null,
+        fullContentCleaned: result.contentCleaned ?? null,
+        fullContentHash,
+        fullContentFetchedAt: now,
+        fullContentError: null,
+        updatedAt: now,
+      });
+
+      // Update entry with full content
+      await ctx.db.update(entries).set(fullContentUpdate).where(eq(entries.id, input.id));
 
       // Invalidate any existing narration content so it will be regenerated
       // using the full content next time narration is requested
@@ -822,8 +978,8 @@ export const entriesRouter = createTRPCRouter({
         success: true,
         entry: {
           ...entry,
-          fullContentOriginal: result.contentOriginal ?? null,
-          fullContentCleaned: result.contentCleaned ?? null,
+          fullContentOriginal: fullContentUpdate.fullContentOriginalSanitized ?? null,
+          fullContentCleaned: fullContentUpdate.fullContentCleanedSanitized ?? null,
           fullContentFetchedAt: now,
           fullContentError: null,
         },

@@ -418,6 +418,13 @@ export const entries = pgTable(
     author: text("author"),
     contentOriginal: text("content_original"),
     contentCleaned: text("content_cleaned"), // Readability-cleaned HTML
+    // XSS-sanitized cache of the content fields, served directly by the read
+    // path so sanitization isn't re-run on every entries.get. Stamped with the
+    // SANITIZER_VERSION they were produced with; the read path re-sanitizes from
+    // the raw columns above when the version is stale. See sanitize-entry.ts.
+    contentOriginalSanitized: text("content_original_sanitized"),
+    contentCleanedSanitized: text("content_cleaned_sanitized"),
+    contentSanitizedVersion: smallint("content_sanitized_version"),
     summary: text("summary"), // truncated for previews
 
     // Saved article metadata (only for type='saved')
@@ -438,6 +445,10 @@ export const entries = pgTable(
     fullContentHash: text("full_content_hash"), // SHA256 of full content (for separate summary caching)
     fullContentOriginal: text("full_content_original"), // Raw HTML from URL
     fullContentCleaned: text("full_content_cleaned"), // Readability-cleaned HTML
+    // XSS-sanitized cache of the full content fields (see contentOriginalSanitized).
+    fullContentOriginalSanitized: text("full_content_original_sanitized"),
+    fullContentCleanedSanitized: text("full_content_cleaned_sanitized"),
+    fullContentSanitizedVersion: smallint("full_content_sanitized_version"),
     fullContentFetchedAt: timestamp("full_content_fetched_at", { withTimezone: true }),
     fullContentError: text("full_content_error"), // Error message if fetch failed
 
@@ -754,6 +765,12 @@ export const visibleEntries = pgView("visible_entries", {
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
   wallabagId: integer("wallabag_id"), // Wallabag API integer ID (generated column from entries table)
   publishedOrFetchedAt: timestamp("published_or_fetched_at", { withTimezone: true }).notNull(), // denormalized timeline sort key
+  contentOriginalSanitized: text("content_original_sanitized"),
+  contentCleanedSanitized: text("content_cleaned_sanitized"),
+  contentSanitizedVersion: smallint("content_sanitized_version"),
+  fullContentOriginalSanitized: text("full_content_original_sanitized"),
+  fullContentCleanedSanitized: text("full_content_cleaned_sanitized"),
+  fullContentSanitizedVersion: smallint("full_content_sanitized_version"),
 }).existing();
 
 // ============================================================================

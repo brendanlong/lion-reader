@@ -36,6 +36,7 @@ import { absolutizeUrls } from "@/server/feed/content-cleaner";
 import { cleanContentInWorker } from "@/server/worker-thread/pool";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
+import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import {
   isGoogleDocsUrl,
   fetchGoogleDocsFromUrl,
@@ -657,17 +658,19 @@ export const savedRouter = createTRPCRouter({
         // Update the existing entry with new content
         await ctx.db
           .update(entries)
-          .set({
-            title: finalTitle,
-            author: finalAuthor,
-            contentOriginal: html,
-            contentCleaned: finalContentCleaned,
-            summary: excerpt,
-            siteName: finalSiteName,
-            imageUrl: metadata.imageUrl,
-            contentHash,
-            updatedAt: now,
-          })
+          .set(
+            withSanitizedEntryContent({
+              title: finalTitle,
+              author: finalAuthor,
+              contentOriginal: html,
+              contentCleaned: finalContentCleaned,
+              summary: excerpt,
+              siteName: finalSiteName,
+              imageUrl: metadata.imageUrl,
+              contentHash,
+              updatedAt: now,
+            })
+          )
           .where(eq(entries.id, oldEntry.id));
 
         // Mark as unread since content was updated
@@ -721,31 +724,33 @@ export const savedRouter = createTRPCRouter({
 
       // Create new saved article entry
       const entryId = generateUuidv7();
-      await ctx.db.insert(entries).values({
-        id: entryId,
-        feedId: savedFeedId,
-        type: "saved",
-        guid: normalizedUrl, // For saved articles, guid = normalized URL
-        url: normalizedUrl,
-        title: finalTitle,
-        author: finalAuthor,
-        contentOriginal: html,
-        contentCleaned: finalContentCleaned,
-        summary: excerpt,
-        siteName: finalSiteName,
-        imageUrl: metadata.imageUrl,
-        publishedAt: null,
-        fetchedAt: now, // When saved
-        contentHash,
-        // Email-specific fields are NULL for saved entries
-        spamScore: null,
-        isSpam: false,
-        listUnsubscribeMailto: null,
-        listUnsubscribeHttps: null,
-        listUnsubscribePost: null,
-        createdAt: now,
-        updatedAt: now,
-      });
+      await ctx.db.insert(entries).values(
+        withSanitizedEntryContent({
+          id: entryId,
+          feedId: savedFeedId,
+          type: "saved",
+          guid: normalizedUrl, // For saved articles, guid = normalized URL
+          url: normalizedUrl,
+          title: finalTitle,
+          author: finalAuthor,
+          contentOriginal: html,
+          contentCleaned: finalContentCleaned,
+          summary: excerpt,
+          siteName: finalSiteName,
+          imageUrl: metadata.imageUrl,
+          publishedAt: null,
+          fetchedAt: now, // When saved
+          contentHash,
+          // Email-specific fields are NULL for saved entries
+          spamScore: null,
+          isSpam: false,
+          listUnsubscribeMailto: null,
+          listUnsubscribeHttps: null,
+          listUnsubscribePost: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+      );
 
       // Create user_entries row
       await ctx.db.insert(userEntries).values({

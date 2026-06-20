@@ -484,6 +484,13 @@
       "when": 1770698800000,
       "tag": "0069_jobs_singleton_type_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1770708800000,
+      "tag": "0070_sanitized_entry_html",
+      "breakpoints": true
     }
   ]
 }

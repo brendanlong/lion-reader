@@ -15,6 +15,7 @@ import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { generateSummary } from "../html/strip-html";
+import { withSanitizedEntryContent } from "../html/sanitize-entry";
 import { logger } from "@/lib/logger";
 
 /**
@@ -189,7 +190,9 @@ export async function createEntry(
     contentHash,
   };
 
-  const [entry] = await db.insert(entries).values(newEntry).returning();
+  // Sanitize once at write time so entries.get serves it without re-running
+  // sanitize-html on every read.
+  const [entry] = await db.insert(entries).values(withSanitizedEntryContent(newEntry)).returning();
 
   return entry;
 }
@@ -219,16 +222,19 @@ export async function updateEntryContent(
 
   const [entry] = await db
     .update(entries)
-    .set({
-      url: entryUrl ?? null,
-      title: parsedEntry.title ?? null,
-      author: parsedEntry.author ?? null,
-      contentOriginal: cleaningResult.contentOriginal,
-      contentCleaned: cleaningResult.contentCleaned,
-      summary: cleaningResult.summary,
-      contentHash,
-      updatedAt: new Date(),
-    })
+    // Content changed, so withSanitizedEntryContent re-sanitizes for the new output.
+    .set(
+      withSanitizedEntryContent({
+        url: entryUrl ?? null,
+        title: parsedEntry.title ?? null,
+        author: parsedEntry.author ?? null,
+        contentOriginal: cleaningResult.contentOriginal,
+        contentCleaned: cleaningResult.contentCleaned,
+        summary: cleaningResult.summary,
+        contentHash,
+        updatedAt: new Date(),
+      })
+    )
     .where(eq(entries.id, entryId))
     .returning();
 

@@ -19,6 +19,7 @@ import { wrapHtmlFragment } from "@/server/http/html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
+import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishNewEntry } from "@/server/redis/pubsub";
 import { errors } from "@/server/trpc/errors";
@@ -203,30 +204,34 @@ async function insertSavedEntry(
   const now = new Date();
   const entryId = generateUuidv7();
 
-  await db.insert(entries).values({
-    id: entryId,
-    feedId: savedFeedId,
-    type: "saved",
-    guid: params.guid,
-    url: params.url,
-    title: params.title,
-    author: params.author,
-    contentOriginal: params.contentOriginal,
-    contentCleaned: params.contentCleaned,
-    summary: params.summary,
-    siteName: params.siteName,
-    imageUrl: params.imageUrl,
-    publishedAt: null,
-    fetchedAt: now,
-    contentHash: params.contentHash,
-    spamScore: null,
-    isSpam: false,
-    listUnsubscribeMailto: null,
-    listUnsubscribeHttps: null,
-    listUnsubscribePost: null,
-    createdAt: now,
-    updatedAt: now,
-  });
+  // Sanitize at write time so entries.get serves saved articles without
+  // re-running sanitize-html on every read.
+  await db.insert(entries).values(
+    withSanitizedEntryContent({
+      id: entryId,
+      feedId: savedFeedId,
+      type: "saved",
+      guid: params.guid,
+      url: params.url,
+      title: params.title,
+      author: params.author,
+      contentOriginal: params.contentOriginal,
+      contentCleaned: params.contentCleaned,
+      summary: params.summary,
+      siteName: params.siteName,
+      imageUrl: params.imageUrl,
+      publishedAt: null,
+      fetchedAt: now,
+      contentHash: params.contentHash,
+      spamScore: null,
+      isSpam: false,
+      listUnsubscribeMailto: null,
+      listUnsubscribeHttps: null,
+      listUnsubscribePost: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
 
   await db.insert(userEntries).values({
     userId,

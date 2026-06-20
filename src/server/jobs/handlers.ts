@@ -22,6 +22,7 @@ import {
   type OpmlImportFeedResult,
 } from "../db/schema";
 import { fetchFullContent } from "../services/full-content";
+import { withSanitizedEntryContent } from "../html/sanitize-entry";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../feed/fetcher";
 import type { WebSubLinkHeaders } from "../feed/link-header";
 import { parseFeed } from "../feed/parser";
@@ -153,14 +154,17 @@ async function fetchFullContentForNewEntries(
 
         await db
           .update(entries)
-          .set({
-            fullContentOriginal: result.contentOriginal ?? null,
-            fullContentCleaned: result.contentCleaned ?? null,
-            fullContentHash,
-            fullContentFetchedAt: now,
-            fullContentError: null,
-            updatedAt: now,
-          })
+          // Sanitize at write time so the user's first read is fast.
+          .set(
+            withSanitizedEntryContent({
+              fullContentOriginal: result.contentOriginal ?? null,
+              fullContentCleaned: result.contentCleaned ?? null,
+              fullContentHash,
+              fullContentFetchedAt: now,
+              fullContentError: null,
+              updatedAt: now,
+            })
+          )
           .where(eq(entries.id, entry.id));
         fetched++;
 
