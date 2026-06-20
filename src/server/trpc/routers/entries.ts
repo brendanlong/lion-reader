@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { createHash } from "crypto";
 
 import {
@@ -349,22 +349,53 @@ async function resolveSanitizedContent(
       : sanitizeEntryHtml(raw?.fullContentCleaned ?? null),
   };
 
-  const updates: Record<string, string | number | null> = {};
+  // Persist the healed columns (fire-and-forget) so we don't pay this again.
+  // Each family is written in its own UPDATE gated on its version still being
+  // stale (`IS DISTINCT FROM`, which also matches NULL). This is a
+  // compare-and-swap: if a concurrent writer (e.g. a feed refresh via
+  // updateEntryContent, or a full-content fetch) has already stored fresh raw +
+  // sanitized + current version, our predicate is false and we skip — so a
+  // backfill computed from now-stale raw can never clobber newer content. The
+  // families are split because they version and change independently.
+  const heals: Promise<unknown>[] = [];
   if (!contentCurrent) {
-    updates.contentOriginalSanitized = resolved.contentOriginal;
-    updates.contentCleanedSanitized = resolved.contentCleaned;
-    updates.contentSanitizedVersion = SANITIZER_VERSION;
+    heals.push(
+      db
+        .update(entries)
+        .set({
+          contentOriginalSanitized: resolved.contentOriginal,
+          contentCleanedSanitized: resolved.contentCleaned,
+          contentSanitizedVersion: SANITIZER_VERSION,
+        })
+        .where(
+          and(
+            eq(entries.id, entryId),
+            sql`${entries.contentSanitizedVersion} IS DISTINCT FROM ${SANITIZER_VERSION}`
+          )
+        )
+    );
   }
   if (!fullContentCurrent) {
-    updates.fullContentOriginalSanitized = resolved.fullContentOriginal;
-    updates.fullContentCleanedSanitized = resolved.fullContentCleaned;
-    updates.fullContentSanitizedVersion = SANITIZER_VERSION;
+    heals.push(
+      db
+        .update(entries)
+        .set({
+          fullContentOriginalSanitized: resolved.fullContentOriginal,
+          fullContentCleanedSanitized: resolved.fullContentCleaned,
+          fullContentSanitizedVersion: SANITIZER_VERSION,
+        })
+        .where(
+          and(
+            eq(entries.id, entryId),
+            sql`${entries.fullContentSanitizedVersion} IS DISTINCT FROM ${SANITIZER_VERSION}`
+          )
+        )
+    );
   }
-  // Fire-and-forget: a failed backfill write must not fail the read, and
-  // concurrent readers healing the same row are idempotent.
+  // A failed backfill write must not fail the read.
   void (async () => {
     try {
-      await db.update(entries).set(updates).where(eq(entries.id, entryId));
+      await Promise.all(heals);
     } catch (err) {
       logger.warn("Failed to persist re-sanitized entry content", { entryId, err });
     }

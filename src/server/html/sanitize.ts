@@ -18,10 +18,15 @@ import sanitizeHtml from "sanitize-html";
 
 /**
  * Version of the sanitization config. Bump this whenever `SANITIZE_OPTIONS`
- * (allowed tags/attributes/schemes or `transformTags`) changes. It is embedded
- * in the sanitize cache key (`src/server/html/sanitize-cache.ts`) so that
- * changing the allow-list invalidates previously-cached output instead of
- * serving stale sanitization.
+ * (allowed tags/attributes/schemes or `transformTags`) changes.
+ *
+ * Sanitized entry HTML is persisted in the database (`entries.*_sanitized`,
+ * stamped with `*_sanitized_version`; see `withSanitizedEntryContent` in
+ * `sanitize-entry.ts`). The read path (`resolveSanitizedContent` in the entries
+ * router) compares the stored version against this constant and re-sanitizes
+ * from the raw columns when they differ — so bumping this value marks every row
+ * stale and transparently re-sanitizes it on next read instead of serving stale
+ * output.
  */
 export const SANITIZER_VERSION = 1;
 
