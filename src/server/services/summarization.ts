@@ -8,6 +8,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { marked } from "marked";
 import { logger } from "@/lib/logger";
+import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
 import {
   DEFAULT_SUMMARIZATION_MODEL,
@@ -231,9 +232,11 @@ export async function generateSummary(
       throw new Error("Empty response from Anthropic API");
     }
 
-    // Extract summary from <summary> tags and convert Markdown to HTML
+    // Extract summary from <summary> tags and convert Markdown to HTML.
+    // marked passes raw HTML through, and the summary is rendered via
+    // dangerouslySetInnerHTML, so sanitize before storing/returning it.
     const markdownSummary = extractSummaryFromResponse(responseText);
-    const summary = await marked.parse(markdownSummary);
+    const summary = sanitizeEntryHtml(await marked.parse(markdownSummary)) ?? "";
 
     return {
       summary,

@@ -33,6 +33,7 @@ import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/f
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
 import { getSubscriptionFeedIds } from "@/server/services/entry-filters";
+import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { publishEntryStateChanged } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 
@@ -284,6 +285,13 @@ function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>
   const { hasStarred, hasMarkedUnread, hasMarkedReadOnList, contentHash, ...rest } = row;
   return {
     ...rest,
+    // Entry bodies come from untrusted feeds and are rendered via
+    // dangerouslySetInnerHTML, so sanitize here (the read chokepoint shared by
+    // `get` and `fetchFullContent`) rather than in the browser.
+    contentOriginal: sanitizeEntryHtml(rest.contentOriginal),
+    contentCleaned: sanitizeEntryHtml(rest.contentCleaned),
+    fullContentOriginal: sanitizeEntryHtml(rest.fullContentOriginal),
+    fullContentCleaned: sanitizeEntryHtml(rest.fullContentCleaned),
     fetchFullContent: row.fetchFullContent ?? false,
   };
 }
