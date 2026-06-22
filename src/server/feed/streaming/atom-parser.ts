@@ -4,7 +4,6 @@
  */
 
 import { Parser } from "htmlparser2";
-import { decode } from "html-entities";
 import type { ParsedEntry, SyndicationHints } from "../types";
 import type { FeedParseResult } from "./types";
 import { VALID_UPDATE_PERIODS, type UpdatePeriod } from "./syndication";
@@ -123,7 +122,10 @@ export function parseAtom(content: string): FeedParseResult {
       onclosetag(name) {
         const tagName = name.toLowerCase();
         const trimmedText = textBuffer.trim();
-        const decodedText = trimmedText ? decode(trimmedText) : undefined;
+        // Entities are decoded natively by htmlparser2 (decodeEntities: true),
+        // while CDATA stays literal. Decoding again would corrupt escaped HTML
+        // in content bodies (e.g. `&lt;tag&gt;` code samples turning into tags).
+        const decodedText = trimmedText || undefined;
 
         if (state === "in_feed_title") {
           title = decodedText;
@@ -211,7 +213,9 @@ export function parseAtom(content: string): FeedParseResult {
     },
     {
       xmlMode: true,
-      decodeEntities: false,
+      // Decode entities natively; CDATA stays literal. This avoids the
+      // double-decode that corrupted escaped HTML in content bodies.
+      decodeEntities: true,
       lowerCaseTags: true,
       lowerCaseAttributeNames: true,
     }
