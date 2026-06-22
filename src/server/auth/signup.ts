@@ -14,6 +14,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { users, invites } from "@/server/db/schema";
 import { signupConfig, announcementFeedConfig, type SignupProvider } from "@/server/config/env";
+import { resolveSignupProviderAccess } from "@/server/auth/signup-providers";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { errors } from "@/server/trpc/errors";
 import { logger } from "@/lib/logger";
@@ -73,13 +74,15 @@ export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<
 
   let claimedInviteId: string | undefined;
 
-  // Check if the signup provider is allowed
-  if (!signupConfig.allowedSignupProviders.includes(provider)) {
+  // Determine how this provider may sign up: publicly, only with an invite, or
+  // not at all. Public providers skip the invite requirement entirely.
+  const access = resolveSignupProviderAccess(provider, signupConfig);
+  if (access === "denied") {
     throw errors.signupProviderNotAllowed(provider);
   }
 
-  // If invite required, try to claim it atomically
-  if (!signupConfig.allowAllSignups) {
+  // Invite-only providers must present and claim a valid invite atomically.
+  if (access === "invite-only") {
     if (!inviteToken) {
       throw errors.inviteRequired();
     }

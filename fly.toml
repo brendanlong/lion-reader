@@ -27,8 +27,9 @@ primary_region = "lax"
   discord = "node dist/discord-bot.js"
 
 [env]
-  ALLOW_ALL_SIGNUPS = "true"
-  ALLOWED_SIGNUP_PROVIDERS = "apple,google"
+  # apple/google are open to the public; email is allowed only with a valid invite.
+  ALLOWED_SIGNUP_PROVIDERS = "apple,google,email"
+  ALLOWED_PUBLIC_SIGNUP_PROVIDERS = "apple,google"
   NEXT_PUBLIC_APP_URL = "https://lionreader.com"
   NODE_ENV = "production"
   PORT = "3000"

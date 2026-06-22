@@ -112,9 +112,12 @@ function RegisterForm() {
     });
   };
 
-  // Determine allowed signup providers
-  const allowedProviders = signupConfigData?.allowedSignupProviders;
-  const isEmailAllowed = !allowedProviders || allowedProviders.includes("email");
+  // Which providers may sign up depends on whether an invite is present:
+  // with a token, the full allowlist applies; without one, only public providers.
+  const effectiveProviders = inviteToken
+    ? (signupConfigData?.allowedSignupProviders ?? [])
+    : (signupConfigData?.publicSignupProviders ?? []);
+  const isEmailAllowed = effectiveProviders.includes("email");
 
   // Show loading state while fetching config
   if (isLoadingConfig) {
@@ -128,9 +131,10 @@ function RegisterForm() {
     );
   }
 
-  // If invite-only mode and no invite token, show error message
-  const requiresInvite = signupConfigData?.requiresInvite ?? false;
-  if (requiresInvite && !inviteToken) {
+  // No provider can sign up in this context (no invite present and nothing is
+  // public). With a token the allowlist is never empty, so this only triggers
+  // for invite-required instances reached without an invite link.
+  if (effectiveProviders.length === 0) {
     return (
       <div>
         <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
@@ -172,7 +176,7 @@ function RegisterForm() {
         mode="signup"
         onError={(error) => setErrors({ form: error })}
         inviteToken={inviteToken ?? undefined}
-        allowedProviders={allowedProviders}
+        allowedProviders={effectiveProviders}
       />
 
       {isEmailAllowed && (
