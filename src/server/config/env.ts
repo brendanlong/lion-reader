@@ -13,44 +13,76 @@ export const ALL_SIGNUP_PROVIDERS = ["email", "google", "apple", "discord"] as c
 export type SignupProvider = (typeof ALL_SIGNUP_PROVIDERS)[number];
 
 /**
- * Parse ALLOWED_SIGNUP_PROVIDERS env var into a list of allowed providers.
- * Format: comma-separated list, e.g. "apple,google,email"
- * Default: all providers allowed (when env var is not set)
+ * Parse a comma-separated provider list (e.g. "apple,google,email") into known
+ * providers. Unknown values are silently dropped and duplicates collapsed (so a
+ * value like "google,google" can't produce duplicate React keys downstream).
+ * Returns an empty array when the env var is unset or has no recognized providers.
  */
-function parseAllowedSignupProviders(): readonly SignupProvider[] {
-  const raw = process.env.ALLOWED_SIGNUP_PROVIDERS;
-  if (!raw) return ALL_SIGNUP_PROVIDERS;
-
-  const providers = raw
+function parseProviderList(raw: string | undefined): SignupProvider[] {
+  if (!raw) return [];
+  const parsed = raw
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter((s): s is SignupProvider => ALL_SIGNUP_PROVIDERS.includes(s as SignupProvider));
+  return Array.from(new Set(parsed));
+}
 
-  return providers.length > 0 ? providers : ALL_SIGNUP_PROVIDERS;
+/**
+ * Providers permitted to sign up when a valid invite is presented (the master
+ * allowlist). Parsed from ALLOWED_SIGNUP_PROVIDERS. Defaults to all providers;
+ * a set-but-unrecognized value also falls back to all to avoid accidentally
+ * locking everyone out from a typo.
+ */
+function resolveAllowedSignupProviders(): readonly SignupProvider[] {
+  const raw = process.env.ALLOWED_SIGNUP_PROVIDERS;
+  if (!raw) return ALL_SIGNUP_PROVIDERS;
+  const parsed = parseProviderList(raw);
+  return parsed.length > 0 ? parsed : ALL_SIGNUP_PROVIDERS;
+}
+
+/**
+ * Providers permitted to sign up WITHOUT an invite. Parsed from
+ * ALLOWED_PUBLIC_SIGNUP_PROVIDERS. Defaults to empty (fully invite-only) and is
+ * always intersected with the master allowlist so it can never widen access
+ * beyond ALLOWED_SIGNUP_PROVIDERS.
+ */
+function resolvePublicSignupProviders(): readonly SignupProvider[] {
+  const allowed = resolveAllowedSignupProviders();
+  return parseProviderList(process.env.ALLOWED_PUBLIC_SIGNUP_PROVIDERS).filter((p) =>
+    allowed.includes(p)
+  );
 }
 
 /**
  * Signup configuration.
- * ALLOW_ALL_SIGNUPS=true bypasses invite requirement.
- * ALLOWLIST_SECRET protects admin endpoints for managing invites.
- * ALLOWED_SIGNUP_PROVIDERS limits which providers can be used for new signups.
+ *
+ * Two provider lists govern who may create an account:
+ * - ALLOWED_SIGNUP_PROVIDERS: providers allowed with a valid invite (default: all).
+ * - ALLOWED_PUBLIC_SIGNUP_PROVIDERS: subset allowed without an invite (default: none).
+ *
+ * An empty public list means fully invite-only (the previous ALLOW_ALL_SIGNUPS=false
+ * behavior); listing every provider publicly is equivalent to the old
+ * ALLOW_ALL_SIGNUPS=true. A provider can therefore be public, invite-only, or denied.
+ *
+ * ALLOWLIST_SECRET protects the admin endpoints used to mint invites.
+ *
+ * Read lazily via getters so tests can set the env after import.
  */
 export const signupConfig = {
-  /** If true, anyone can sign up without an invite. Defaults to false. */
-  allowAllSignups: process.env.ALLOW_ALL_SIGNUPS === "true",
-
-  /** Secret for admin API endpoints. If not set, admin endpoints are disabled. Read lazily so tests can set it after import. */
+  /** Secret for admin API endpoints. If not set, admin endpoints are disabled. */
   get allowlistSecret() {
     return process.env.ADMIN_SECRET ?? process.env.ALLOWLIST_SECRET;
   },
 
-  /**
-   * List of providers allowed for new signups.
-   * Parsed from ALLOWED_SIGNUP_PROVIDERS env var (comma-separated).
-   * Default: all providers allowed.
-   * Stacks with invite requirement (both must be satisfied).
-   */
-  allowedSignupProviders: parseAllowedSignupProviders(),
+  /** Providers allowed for new signups when a valid invite is presented. */
+  get allowedSignupProviders(): readonly SignupProvider[] {
+    return resolveAllowedSignupProviders();
+  },
+
+  /** Providers allowed for new signups without an invite (subset of allowedSignupProviders). */
+  get publicSignupProviders(): readonly SignupProvider[] {
+    return resolvePublicSignupProviders();
+  },
 };
 
 /** Public-facing app URL. Used for sitemap, robots.txt, metadata, and User-Agent header. */

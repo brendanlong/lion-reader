@@ -175,10 +175,11 @@ By default, Lion Reader runs in invite-only mode. New users need an invite link 
 
 ### Environment Variables
 
-| Variable            | Default | Description                                          |
-| ------------------- | ------- | ---------------------------------------------------- |
-| `ALLOW_ALL_SIGNUPS` | `false` | Set to `true` to allow anyone to register            |
-| `ALLOWLIST_SECRET`  | -       | Secret for admin API (required for invite-only mode) |
+| Variable                          | Default | Description                                                                                  |
+| --------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `ALLOWED_SIGNUP_PROVIDERS`        | all     | Comma-separated providers (`email,google,apple,discord`) allowed to sign up _with_ an invite |
+| `ALLOWED_PUBLIC_SIGNUP_PROVIDERS` | none    | Subset allowed to sign up _without_ an invite. Empty = fully invite-only                     |
+| `ALLOWLIST_SECRET`                | -       | Secret for admin API (required whenever any provider is invite-only)                         |
 
 ### Creating Invites
 

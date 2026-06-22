@@ -780,14 +780,20 @@ export const authRouter = createTRPCRouter({
     .input(z.object({}).optional())
     .output(
       z.object({
+        /** True when no provider can sign up publicly (an invite is required for any signup). */
         requiresInvite: z.boolean(),
+        /** Providers allowed with a valid invite. */
         allowedSignupProviders: z.array(z.enum(ALL_SIGNUP_PROVIDERS)),
+        /** Providers allowed without an invite (subset of allowedSignupProviders). */
+        publicSignupProviders: z.array(z.enum(ALL_SIGNUP_PROVIDERS)),
       })
     )
     .query(() => {
+      const publicSignupProviders = [...signupConfig.publicSignupProviders];
       return {
-        requiresInvite: !signupConfig.allowAllSignups,
+        requiresInvite: publicSignupProviders.length === 0,
         allowedSignupProviders: [...signupConfig.allowedSignupProviders],
+        publicSignupProviders,
       };
     }),
 
