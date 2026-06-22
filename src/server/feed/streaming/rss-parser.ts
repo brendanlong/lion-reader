@@ -4,7 +4,6 @@
  */
 
 import { Parser } from "htmlparser2";
-import { decode } from "html-entities";
 import type { ParsedEntry, SyndicationHints } from "../types";
 import type { FeedParseResult } from "./types";
 import { VALID_UPDATE_PERIODS, type UpdatePeriod } from "./syndication";
@@ -78,7 +77,12 @@ export function parseRss(content: string): FeedParseResult {
         // aren't properly closed (e.g., <link>http://example.com<pubdate>...)
         const trimmedText = textBuffer.trim();
         if (trimmedText) {
-          const decodedText = decode(trimmedText);
+          // htmlparser2 already decodes entities (decodeEntities: true) in text
+          // nodes, while leaving CDATA content literal — so escaped HTML in a
+          // <description> body and literal CDATA both arrive correctly without a
+          // second decode pass. Decoding again here would corrupt code samples
+          // by turning escaped `&lt;tag&gt;` text into real tags.
+          const decodedText = trimmedText;
 
           // Channel-level text capture for unclosed elements
           if (state === "in_channel_link") {
@@ -198,7 +202,8 @@ export function parseRss(content: string): FeedParseResult {
       onclosetag(name) {
         const tagName = name.toLowerCase();
         const trimmedText = textBuffer.trim();
-        const decodedText = trimmedText ? decode(trimmedText) : undefined;
+        // See the note in onopentag: entities are already decoded by htmlparser2.
+        const decodedText = trimmedText || undefined;
 
         // Channel-level elements
         if (state === "in_channel_title") {
@@ -309,7 +314,10 @@ export function parseRss(content: string): FeedParseResult {
     },
     {
       xmlMode: true,
-      decodeEntities: false,
+      // Decode entities in text/attributes natively. CDATA stays literal, so
+      // both entity-escaped HTML bodies and CDATA-wrapped HTML decode to the
+      // correct single-escaped form (no manual double-decode). See decodedText.
+      decodeEntities: true,
       lowerCaseTags: true,
       lowerCaseAttributeNames: true,
     }

@@ -197,6 +197,48 @@ describe("parseRss", () => {
     });
   });
 
+  describe("escaped angle brackets in content", () => {
+    it("preserves escaped HTML/code samples in CDATA content", () => {
+      // Regression: feeds (e.g. LessWrong) deliver bodies via CDATA where literal
+      // angle brackets are escaped once (`&lt;system&gt;`). The parser must not
+      // decode these into real `<system>` tags, or the read-path sanitizer strips
+      // them, leaving empty <code> elements.
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Code Feed</title>
+            <item>
+              <title>Roles post</title>
+              <description><![CDATA[<p>The <code>&lt;system&gt;</code> and <code>&lt;user&gt;</code> tags.</p>]]></description>
+            </item>
+          </channel>
+        </rss>`;
+
+      const result = parseRss(xml);
+
+      expect(result.entries[0].content).toBe(
+        "<p>The <code>&lt;system&gt;</code> and <code>&lt;user&gt;</code> tags.</p>"
+      );
+    });
+
+    it("preserves escaped HTML when the body is entity-escaped (not CDATA)", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Code Feed</title>
+            <item>
+              <title>Roles post</title>
+              <description>&lt;p&gt;The &lt;code&gt;&amp;lt;system&amp;gt;&lt;/code&gt; tag.&lt;/p&gt;</description>
+            </item>
+          </channel>
+        </rss>`;
+
+      const result = parseRss(xml);
+
+      expect(result.entries[0].content).toBe("<p>The <code>&lt;system&gt;</code> tag.</p>");
+    });
+  });
+
   describe("GUID without link", () => {
     it("parses items that have guid but no link element", () => {
       const xml = `<?xml version="1.0" encoding="ISO-8859-1" ?>
