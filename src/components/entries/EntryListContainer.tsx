@@ -1,9 +1,17 @@
 /**
- * SuspendingEntryList Component
+ * EntryListContainer Component
  *
- * A wrapper around EntryList that uses useSuspenseInfiniteQuery.
- * Suspends until entry data is ready, allowing independent loading
- * from other parts of the page (like entry content).
+ * Stateful container around the presentational EntryList. Owns the
+ * `entries.list` query plus all list behavior: keyboard navigation (next/prev,
+ * j/k), pagination triggering near the end, scroll restoration on close, entry
+ * open/prefetch, and URL state.
+ *
+ * Loads entries with a non-suspending useInfiniteQuery and renders a smart
+ * inline loading fallback (cached entries from parent lists) while the query
+ * loads. It deliberately does NOT suspend: a committed Suspense fallback is
+ * pinned on screen for React's FALLBACK_THROTTLE_MS (300ms) even on a
+ * warm-cache navigation, which made switching list views feel laggy. See
+ * "Suspense vs. inline loading" in src/CLAUDE.md.
  *
  * Uses useEntriesListInput to get query input, ensuring cache is shared
  * with the parent's non-suspending query (used for navigation).
@@ -19,30 +27,42 @@ import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShort
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
+import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
+import { EntryListFallback } from "./EntryListFallback";
+import { EntryListSkeleton } from "./EntryListSkeleton";
 
-interface SuspendingEntryListProps {
+interface EntryListContainerProps {
   emptyMessage: string;
 }
 
-export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) {
+export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   const { openEntryId, setOpenEntryId } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
   const scrollContainerRef = useScrollContainer();
 
+  // False during SSR + first client render. The smart (cache-reading) fallback
+  // below would mismatch hydration (empty server cache vs. hydrated client
+  // cache), so until hydration we render a deterministic skeleton.
+  const isHydrated = useIsHydrated();
+
   // Get query input from URL - shared with parent's non-suspending query
   const queryInput = useEntriesListInput();
 
-  // Suspending query - component suspends until data is ready
-  // Shares cache with parent's useInfiniteQuery via same queryInput
-  const [data, { fetchNextPage, hasNextPage, isFetchingNextPage, refetch }] =
-    trpc.entries.list.useSuspenseInfiniteQuery(queryInput, {
+  // Non-suspending query so the loading state renders inline (see the
+  // `isLoading` branch below) instead of via a Suspense fallback that React
+  // would pin for 300ms on warm-cache navigations. `throwOnError` preserves the
+  // surrounding ErrorBoundary behavior. Shares cache with the parent's
+  // useInfiniteQuery via the same queryInput.
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
+    trpc.entries.list.useInfiniteQuery(queryInput, {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       staleTime: Infinity,
       refetchOnWindowFocus: false,
+      throwOnError: true,
     });
 
   // Flatten entries from all pages
@@ -189,31 +209,52 @@ export function SuspendingEntryList({ emptyMessage }: SuspendingEntryListProps) 
     onNavigatePrevious: goToPreviousEntry,
   });
 
-  // External query state for EntryList
+  // Query state for the presentational EntryList
   const externalQueryState: ExternalQueryState = useMemo(
     () => ({
-      isLoading: false, // Suspense handles loading
-      isError: false, // ErrorBoundary handles errors
+      isLoading,
+      isError: false, // throwOnError sends errors to the ErrorBoundary
       errorMessage: undefined,
       isFetchingNextPage,
       hasNextPage: hasNextPage ?? false,
       fetchNextPage,
       refetch,
     }),
-    [isFetchingNextPage, hasNextPage, fetchNextPage, refetch]
+    [isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch]
   );
+
+  // Deterministic skeleton on the server + first client render so hydration
+  // matches (EntryListFallback reads the cache, which differs between server
+  // and client at that point).
+  if (!isHydrated) {
+    return <EntryListSkeleton count={5} />;
+  }
+
+  // Loading state (post-hydration, client-only): show the smart fallback
+  // (cached entries from parent lists) inline instead of suspending. Resolved/
+  // cached data skips this and renders the real list on first paint. Placeholder
+  // rows are clickable since the fallback lives here with the list's handlers.
+  if (isLoading && entries.length === 0) {
+    return (
+      <EntryListFallback
+        filters={{
+          subscriptionId: queryInput.subscriptionId,
+          tagId: queryInput.tagId,
+          uncategorized: queryInput.uncategorized,
+          starredOnly: queryInput.starredOnly,
+          type: queryInput.type,
+          unreadOnly: showUnreadOnly,
+          sortOrder,
+        }}
+        skeletonCount={5}
+        selectedEntryId={selectedEntryId}
+        onEntryClick={handleEntryClick}
+      />
+    );
+  }
 
   return (
     <EntryList
-      filters={{
-        subscriptionId: queryInput.subscriptionId,
-        tagId: queryInput.tagId,
-        uncategorized: queryInput.uncategorized,
-        starredOnly: queryInput.starredOnly,
-        type: queryInput.type,
-        unreadOnly: showUnreadOnly,
-        sortOrder,
-      }}
       onEntryClick={handleEntryClick}
       onEntryMouseDown={handleEntryMouseDown}
       selectedEntryId={selectedEntryId}

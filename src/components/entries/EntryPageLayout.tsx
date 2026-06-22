@@ -44,7 +44,7 @@ interface EntryPageLayoutProps {
   /** Entry content slot - full screen view when an entry is open */
   entryContentSlot: ReactNode;
 
-  /** Entry list slot - wrapped in Suspense by caller */
+  /** Entry list slot - renders its own inline loading fallback (no Suspense) */
   entryListSlot: ReactNode;
 
   /** Context description for the mark all read dialog (e.g., "all feeds", "this subscription") */

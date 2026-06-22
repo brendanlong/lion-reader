@@ -4,22 +4,26 @@
  * Displays the full content of a single entry.
  * Fetches entry data and delegates rendering to the shared EntryContentBody.
  *
- * Uses Suspense for data fetching with a smart fallback that shows cached
- * entry metadata from the list while full content loads.
+ * Uses a non-suspending useQuery with an inline fallback (cached entry metadata
+ * from the list while full content loads) rather than Suspense, to avoid React's
+ * 300ms FALLBACK_THROTTLE_MS on warm-cache opens. See "Suspense vs. inline
+ * loading" in src/CLAUDE.md.
  */
 
 "use client";
 
-import { Suspense, useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
+import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { getDomain } from "@/lib/format";
 import { EntryContentBody } from "./EntryContentBody";
 import { EntryContentFallback } from "./EntryContentFallback";
+import { EntryContentSkeleton } from "./EntryContentStates";
 
 /**
  * Props for the EntryContent component.
@@ -58,7 +62,8 @@ interface EntryContentProps {
 
 /**
  * Inner component that fetches and displays entry content.
- * Uses useSuspenseQuery so the parent Suspense boundary handles loading state.
+ * Uses a non-suspending useQuery and renders its own inline loading fallback;
+ * there is no parent Suspense boundary (only an ErrorBoundary).
  */
 function EntryContentInner({
   entryId,
@@ -70,15 +75,26 @@ function EntryContentInner({
 }: EntryContentProps) {
   const utils = trpc.useUtils();
 
+  // False during SSR + first client render. The cache-reading fallback below
+  // would mismatch (empty server cache vs. hydrated client cache), so until
+  // hydration we render a deterministic skeleton. See useIsHydrated.
+  const isHydrated = useIsHydrated();
+
   // Track whether we've sent the auto-mark-read mutation
   const hasSentMarkReadMutation = useRef(false);
 
-  // Fetch the entry - useSuspenseQuery throws promise until data ready
-  // Fallback component shows cached header while this suspends
-  const [data] = trpc.entries.get.useSuspenseQuery({ id: entryId });
+  // Fetch the entry with a non-suspending query so the loading state is
+  // rendered inline (see the `!entry` branch below) instead of via a Suspense
+  // fallback. A committed Suspense fallback is pinned on screen for React's
+  // FALLBACK_THROTTLE_MS (300ms) even when the data is already cached, which
+  // made opening an entry feel laggy on a warm cache. `throwOnError` preserves
+  // the surrounding ErrorBoundary behavior that useSuspenseQuery gave us.
+  // See "Suspense vs. inline loading" in src/CLAUDE.md.
+  const { data } = trpc.entries.get.useQuery({ id: entryId }, { throwOnError: true });
 
-  // Entry is guaranteed to exist after suspense resolves
-  const entry = data.entry;
+  // Undefined while the query is loading; the `!entry` branch renders the
+  // fallback. Every hook below already tolerates an absent entry.
+  const entry = data?.entry;
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
@@ -300,7 +316,25 @@ function EntryContentInner({
     markRead([entryId], !entry.read);
   };
 
-  // Entry is guaranteed to exist after suspense resolves
+  // Deterministic skeleton on the server + first client render so hydration
+  // matches (the smart fallback below reads the cache, which differs between
+  // server and client at that point).
+  if (!isHydrated) {
+    return (
+      <ScrollContainer className="h-full overflow-y-auto">
+        <EntryContentSkeleton />
+      </ScrollContainer>
+    );
+  }
+
+  // Loading state (post-hydration, client-only): render the smart fallback
+  // inline (cached header + skeleton) instead of suspending. `entry` is
+  // undefined only while the query is loading; once it resolves (or hits the
+  // warm cache) we render content immediately, with no Suspense throttle.
+  if (!entry) {
+    return <EntryContentFallback entryId={entryId} onBack={onBack} />;
+  }
+
   // Wrap in scroll container - each entry gets its own container that starts at scroll 0
   // ScrollContainer provides context so useImagePrefetch can observe this container
   return (
@@ -353,15 +387,16 @@ function EntryContentInner({
 /**
  * EntryContent component.
  *
- * Wrapper that provides Suspense boundary with smart fallback and error handling.
- * The fallback shows cached entry metadata from the list while full content loads.
+ * Wrapper that provides error handling. EntryContentInner uses a non-suspending
+ * query and renders its own inline loading fallback (cached entry metadata from
+ * the list while full content loads), deliberately avoiding a Suspense boundary
+ * so React's 300ms fallback throttle doesn't lag warm-cache opens. See
+ * "Suspense vs. inline loading" in src/CLAUDE.md.
  */
 export function EntryContent(props: EntryContentProps) {
   return (
     <ErrorBoundary message="Failed to load entry">
-      <Suspense fallback={<EntryContentFallback entryId={props.entryId} onBack={props.onBack} />}>
-        <EntryContentInner {...props} />
-      </Suspense>
+      <EntryContentInner {...props} />
     </ErrorBoundary>
   );
 }

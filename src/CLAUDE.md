@@ -1,7 +1,14 @@
 # Source Code Guidelines
 
-- Use Suspense and useSuspenseQuery with appropriate fallbacks and well-factored components with small suspense boundaries unless you have a good reason not to
+- Choose between Suspense and inline loading by the criterion below, not by default. Keep components well-factored with small boundaries either way.
 - Always use client-only navigation. Don't use Next.js's `<Link>` or `useRouter` - they trigger SSR fetches and prefetching we don't want. Use `<ClientLink>` from `@/components/ui` for internal navigation instead.
+
+## Suspense vs. inline loading
+
+Suspense's 300ms `FALLBACK_THROTTLE_MS` makes interaction-triggered swaps on a warm cache feel laggy (the committed fallback is held even when data is ready).
+
+- **Page-load / persistent-shell data** (route first render, sidebar counts, `fallback={null}`): `useSuspenseQuery` + `<Suspense>`.
+- **Interaction-triggered swaps usually served from cache** (open entry, switch list view, route titles): `useQuery` + an inline `if (isLoading) return <Fallback/>`, with `throwOnError: true` to keep the `ErrorBoundary`, and keep the server prefetch. A hand-written cache-reading "smart fallback" means use this, not Suspense. See `EntryContent` / `EntryListContainer`.
 
 ## Frontend State Management
 
