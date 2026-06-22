@@ -47,11 +47,11 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Entry Queries
 
-| Query                     | Used In                                                     | Filters                                                                                               | Description                    |
-| ------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `entries.list` (infinite) | `EntryList`, `SuspendingEntryList`, `UnifiedEntriesContent` | `subscriptionId`, `tagId`, `uncategorized`, `unreadOnly`, `starredOnly`, `sortOrder`, `type`, `limit` | Paginated entry list           |
-| `entries.get`             | `EntryContent`                                              | `{ id }`                                                                                              | Single entry with full content |
-| `entries.count`           | `Sidebar`                                                   | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }`                                                 | Unread count for badges        |
+| Query                     | Used In                                                    | Filters                                                                                               | Description                    |
+| ------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `entries.list` (infinite) | `EntryList`, `EntryListContainer`, `UnifiedEntriesContent` | `subscriptionId`, `tagId`, `uncategorized`, `unreadOnly`, `starredOnly`, `sortOrder`, `type`, `limit` | Paginated entry list           |
+| `entries.get`             | `EntryContent`                                             | `{ id }`                                                                                              | Single entry with full content |
+| `entries.count`           | `Sidebar`                                                  | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }`                                                 | Unread count for badges        |
 
 ### Subscription Queries
 
@@ -291,7 +291,7 @@ Returns the updated entry with score fields:
 | `src/lib/events/cursors.ts`                        | Pure sync-cursor bookkeeping                                       |
 | `src/lib/hooks/useKeyboardShortcuts.ts`            | Keyboard navigation and entry selection                            |
 | `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination                  |
-| `src/components/entries/SuspendingEntryList.tsx`   | Entry list wrapper with Suspense and pagination                    |
+| `src/components/entries/EntryListContainer.tsx`    | Stateful entry list container (query, pagination, keyboard nav)    |
 | `src/components/layout/Sidebar.tsx`                | Subscription delete with optimistic update                         |
 | `src/components/entries/EntryContent.tsx`          | Entry display with mutations                                       |
 | `src/components/entries/EntryList.tsx`             | Entry list with infinite scroll                                    |
