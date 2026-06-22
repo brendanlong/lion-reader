@@ -14,15 +14,17 @@ export type SignupProvider = (typeof ALL_SIGNUP_PROVIDERS)[number];
 
 /**
  * Parse a comma-separated provider list (e.g. "apple,google,email") into known
- * providers. Unknown values are silently dropped. Returns an empty array when
- * the env var is unset or contains no recognized providers.
+ * providers. Unknown values are silently dropped and duplicates collapsed (so a
+ * value like "google,google" can't produce duplicate React keys downstream).
+ * Returns an empty array when the env var is unset or has no recognized providers.
  */
 function parseProviderList(raw: string | undefined): SignupProvider[] {
   if (!raw) return [];
-  return raw
+  const parsed = raw
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter((s): s is SignupProvider => ALL_SIGNUP_PROVIDERS.includes(s as SignupProvider));
+  return Array.from(new Set(parsed));
 }
 
 /**
