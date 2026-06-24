@@ -289,7 +289,7 @@ describe("Entries", () => {
 
       expect(result.entry.id).toBe(entryId);
       expect(result.entry.title).toBe("Test Entry");
-      expect(result.entry.contentCleaned).toBe("<p>This is test content</p>");
+      expect(result.entry.content).toBe("<p>This is test content</p>");
     });
 
     it("throws error for entry that doesn't exist", async () => {

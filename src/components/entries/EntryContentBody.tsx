@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { applyContentDiff, type ContentDiff } from "@/lib/content-diff";
 import { Button } from "@/components/ui/button";
 import {
   StarIcon,
@@ -51,10 +52,14 @@ export interface EntryContentBodyProps {
   date: Date;
   /** Optional prefix for the date (e.g., "Saved") */
   datePrefix?: string;
-  /** The original HTML content */
-  contentOriginal: string | null;
-  /** The cleaned HTML content */
-  contentCleaned: string | null;
+  /** The HTML content to display by default (cleaned when available, else original) */
+  content: string | null;
+  /**
+   * Diff to reconstruct the original (pre-cleaning) HTML from `content`, present
+   * only when a distinct original exists. Reconstructed lazily for the
+   * "Show Original" toggle so we don't ship a near-duplicate second copy.
+   */
+  contentOriginalDiff: ContentDiff | null;
   /** Fallback text content (summary or excerpt) */
   fallbackContent: string | null;
   /** Whether the article has been read */
@@ -134,8 +139,8 @@ export function EntryContentBody({
   url,
   date,
   datePrefix,
-  contentOriginal,
-  contentCleaned,
+  content,
+  contentOriginalDiff,
   fallbackContent,
   read,
   starred,
@@ -182,19 +187,30 @@ export function EntryContentBody({
   );
   const showFullContent = fetchFullContent && hasFullContent;
 
+  // Reconstruct the original (pre-cleaning) body from the displayed content plus
+  // the diff. Present only when a feed plugin actually cleaned the content, so
+  // its presence is what enables the "Show Original" toggle.
+  const contentOriginal = useMemo(
+    () =>
+      contentOriginalDiff && content !== null
+        ? applyContentDiff(content, contentOriginalDiff)
+        : null,
+    [content, contentOriginalDiff]
+  );
+
   // Check if both feed content versions are available for toggle
   // Only show this toggle when NOT showing full content
-  const hasBothVersions = Boolean(contentCleaned && contentOriginal) && !showFullContent;
+  const hasBothVersions = Boolean(contentOriginal) && !showFullContent;
 
   // Select content based on state
-  // Priority: full content (if enabled and available) > cleaned feed content > original feed content
+  // Priority: full content (if enabled and available) > original feed content (toggle) > default feed content
   let contentToDisplay: string | null;
   if (showFullContent) {
     contentToDisplay = fullContentCleaned ?? fullContentOriginal ?? null;
-  } else if (showOriginal) {
+  } else if (showOriginal && contentOriginal) {
     contentToDisplay = contentOriginal;
   } else {
-    contentToDisplay = contentCleaned ?? contentOriginal;
+    contentToDisplay = content;
   }
 
   // Set up narration with highlighting support

@@ -17,6 +17,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { applyContentDiff } from "../../src/lib/content-diff";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 
@@ -385,8 +386,11 @@ describe("Saved Articles API", () => {
       // entries.get sanitizes content on the read path (toFullEntry), which
       // strips the <html>/<body> wrapper (invalid inside a content fragment).
       // Allowed tags like <article> pass through unchanged.
-      expect(result.entry.contentOriginal).toBe("Original content");
-      expect(result.entry.contentCleaned).toBe("<article>Cleaned content</article>");
+      // The cleaned body is displayed; the original is shipped as a diff.
+      expect(result.entry.content).toBe("<article>Cleaned content</article>");
+      expect(applyContentDiff(result.entry.content!, result.entry.contentOriginalDiff!)).toBe(
+        "Original content"
+      );
       expect(result.entry.summary).toBe("This is a test excerpt for the article.");
     });
 
@@ -818,7 +822,7 @@ describe("Saved Articles API", () => {
       // is served through the sanitizing read path.
       expect(result.article.title).toBe("Updated OG Title");
       const fetched = await caller.entries.get({ id: result.article.id });
-      expect(fetched.entry.contentCleaned).toContain("updated content");
+      expect(fetched.entry.content).toContain("updated content");
     });
 
     it("marks as unread but preserves starred state when refetching", async () => {
@@ -1026,7 +1030,7 @@ describe("Saved Articles API", () => {
       // The mutation response carries metadata only; the body (cleaned by
       // Readability and sanitized) is served through the read path.
       const fetched = await caller.entries.get({ id: result.article.id });
-      expect(fetched.entry.contentCleaned).toContain("article content");
+      expect(fetched.entry.content).toContain("article content");
     });
 
     it("uses provided title parameter over extracted metadata", async () => {
@@ -1146,12 +1150,15 @@ describe("Saved Articles API", () => {
 
       // The read path serves sanitized content.
       const fetched = await caller.entries.get({ id: result.article.id });
-      for (const body of [fetched.entry.contentOriginal, fetched.entry.contentCleaned]) {
+      const original = fetched.entry.contentOriginalDiff
+        ? applyContentDiff(fetched.entry.content ?? "", fetched.entry.contentOriginalDiff)
+        : fetched.entry.content;
+      for (const body of [original, fetched.entry.content]) {
         expect(body).not.toContain("<script");
         expect(body).not.toContain("onerror");
         expect(body).not.toContain("javascript:");
       }
-      expect(fetched.entry.contentOriginal).toContain("Legitimate article body");
+      expect(original).toContain("Legitimate article body");
     });
   });
 });

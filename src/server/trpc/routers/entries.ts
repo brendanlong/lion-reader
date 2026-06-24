@@ -37,6 +37,7 @@ import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
 import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { publishEntryStateChanged } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
+import { computeContentDiff, contentDiffSchema, type ContentDiff } from "@/lib/content-diff";
 
 // Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
 const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
@@ -129,8 +130,12 @@ const entryFullSchema = z.object({
   url: z.string().nullable(),
   title: z.string().nullable(),
   author: z.string().nullable(),
-  contentOriginal: z.string().nullable(),
-  contentCleaned: z.string().nullable(),
+  // The body to display by default (cleaned content when a feed plugin cleaned
+  // it, otherwise the original). When a distinct original exists, it is shipped
+  // as a compact diff (`contentOriginalDiff`) instead of a second full copy —
+  // see src/lib/content-diff.ts and issue #926.
+  content: z.string().nullable(),
+  contentOriginalDiff: contentDiffSchema.nullable(),
   summary: z.string().nullable(),
   publishedAt: z.date().nullable(),
   fetchedAt: z.date(),
@@ -405,6 +410,38 @@ async function resolveSanitizedContent(
 }
 
 /**
+ * Choose the body to display and, when a distinct original exists, encode it as
+ * a compact diff instead of a second full copy (issue #926).
+ *
+ * The default-displayed body is the cleaned content when a feed plugin cleaned
+ * it, otherwise the original. `contentCleaned` is only populated when cleaning
+ * actually changed something, so a non-null cleaned body always implies a
+ * distinct original worth offering via the "Show Original" toggle.
+ */
+function deriveDisplayContent(
+  contentOriginal: string | null,
+  contentCleaned: string | null
+): { content: string | null; contentOriginalDiff: ContentDiff | null } {
+  // No cleaning happened: the original is the only body, shown directly.
+  if (contentCleaned === null) {
+    return { content: contentOriginal, contentOriginalDiff: null };
+  }
+
+  // Cleaning happened but there's nothing to fall back to (or both are
+  // identical after sanitizing): just show the cleaned body, no toggle.
+  if (contentOriginal === null || contentOriginal === contentCleaned) {
+    return { content: contentCleaned, contentOriginalDiff: null };
+  }
+
+  // Distinct original: ship the cleaned body plus a diff to rebuild the original
+  // on demand, instead of two near-duplicate full copies.
+  return {
+    content: contentCleaned,
+    contentOriginalDiff: computeContentDiff(contentCleaned, contentOriginal),
+  };
+}
+
+/**
  * Transform a raw full entry row into the entryFullSchema shape.
  * Strips internal fields, resolves sanitized content, and defaults fetchFullContent.
  */
@@ -439,10 +476,15 @@ async function toFullEntry(
     fullContentSanitizedVersion,
   });
 
+  const { content: displayContent, contentOriginalDiff } = deriveDisplayContent(
+    content.contentOriginal,
+    content.contentCleaned
+  );
+
   return {
     ...rest,
-    contentOriginal: content.contentOriginal,
-    contentCleaned: content.contentCleaned,
+    content: displayContent,
+    contentOriginalDiff,
     fullContentOriginal: content.fullContentOriginal,
     fullContentCleaned: content.fullContentCleaned,
     fetchFullContent: row.fetchFullContent ?? false,
