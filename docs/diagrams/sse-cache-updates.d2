@@ -81,9 +81,9 @@ redis: Redis Pub/Sub {
       Pattern: user:{userId}:events
 
       Events:
-      - subscription_created (full subscription + feed data)
+      - subscription_created (full subscription + feed data + counts)
       - subscription_updated (tags, customTitle)
-      - subscription_deleted (subscriptionId)
+      - subscription_deleted (subscriptionId + counts, live path only)
       - entry_state_changed (read/starred + unread counts)
       - tag_created / tag_updated / tag_deleted
       - import_progress (per-feed progress)
@@ -109,7 +109,7 @@ sse-endpoint: SSE Endpoint {
       fan out in-process to all SSE connections.
 
       On connection:
-      1. Build feedId → {subscriptionId, tagIds} map
+      1. Build feedId → subscriptionId map
       2. Subscribe to user:{userId}:events
       3. Subscribe to feed:{feedId}:events for each subscription
       4. Subscribe to saved feed channel (if exists)
@@ -122,14 +122,15 @@ sse-endpoint: SSE Endpoint {
     transform: |
       Feed Events:
       - Transform feedId → subscriptionId (null for saved)
-      - new_entry: include subscription's tagIds (#892)
+      - new_entry: compute this user's absolute unread
+        counts (getNewEntryRelatedCounts) and attach them,
+        so the client sets counts directly (idempotent, #892)
       - Include feedType for cache decisions
 
       User Events:
       - Forward directly
       - On subscription_created: subscribe to new feed channel
       - On subscription_deleted: unsubscribe from feed channel
-      - On subscription_updated / tag_deleted: refresh tagIds map
     |
   }
 
@@ -187,16 +188,19 @@ cache-ops: Cache Operations {
   style.fill: "#fff7ed"
   tooltip: "src/lib/cache/operations.ts"
 
-  new-entry-handler: handleNewEntry {
+  new-entry-handler: setEntryRelatedCounts {
     style.fill: "#fed7aa"
 
     updates: |
-      Updates (surgical, no refetch):
-      - subscriptions.list: unreadCount += 1
-      - tags.list: unreadCount += 1 (from event tagIds;
-        works even when subscription isn't cached, #892)
-      - entries.count({}): unread += 1, total += 1
-      - entries.count({ type: "saved" }): if feedType === "saved"
+      Sets absolute counts from event.counts (no refetch):
+      - subscriptions.list: unreadCount
+      - tags.list: unreadCount (works even when the
+        subscription isn't cached, #892)
+      - entries.count({}) / ({ type: "saved" })
+
+      Absolute (not delta) → idempotent: a reconnect
+      catch-up sync re-delivering the same new_entry
+      can't double-count.
 
       Does NOT invalidate entries.list
       (entries appear on navigation)
@@ -220,13 +224,13 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Direct updates (no refetch):
-      - subscriptions.list: add subscription
-      - tags.list: feedCount += 1, unreadCount += N
-      - entries.count({}): unread += N, total += N
+      Structural: add subscription to subscriptions.list
+      (targeted per-tag query invalidation)
 
-      Targeted invalidations:
-      - subscriptions.list per-tag queries (affected tags only)
+      Counts (live path): set absolute counts from
+      event.counts via setEntryRelatedCounts.
+      Sync catch-up path (no counts): invalidate
+      tags.list + entries.count instead.
     |
   }
 
@@ -234,13 +238,14 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Direct updates (no refetch):
-      - subscriptions.list: remove subscription
-      - tags.list: feedCount -= 1, unreadCount -= N
-      - entries.count({}): unread -= N, total -= N
+      Structural: remove subscription from subscriptions.list
 
-      Invalidations:
-      - entries.list (entries should be filtered out)
+      Counts (live path): set absolute counts from
+      event.counts. Sync catch-up path can't recompute
+      the former tags → omits counts → invalidate
+      tags.list + entries.count.
+
+      Always invalidates entries.list.
     |
   }
 

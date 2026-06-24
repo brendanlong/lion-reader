@@ -39,6 +39,22 @@ export const syncTagSchema = z.object({
 });
 
 /**
+ * Absolute unread counts included in count-affecting events (new_entry,
+ * entry_state_changed). The client sets these directly from the server
+ * instead of estimating deltas from cached state, which makes the events
+ * idempotent — applying the same event twice (e.g. once from the live SSE
+ * stream and once from a reconnect catch-up sync) leaves counts correct.
+ */
+export const unreadCountsSchema = z.object({
+  all: z.object({ unread: z.number() }),
+  starred: z.object({ unread: z.number() }),
+  saved: z.object({ unread: z.number() }).optional(),
+  subscriptions: z.array(z.object({ id: z.string(), unread: z.number() })),
+  tags: z.array(z.object({ id: z.string(), unread: z.number() })),
+  uncategorized: z.object({ unread: z.number() }).optional(),
+});
+
+/**
  * Subscription data for subscription_created events.
  */
 export const subscriptionCreatedDataSchema = z.object({
@@ -93,13 +109,13 @@ export const newEntryEventSchema = z.object({
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
   feedType: z.enum(["web", "email", "saved"]),
-  // Tag IDs of the subscription, resolved server-side. Lets the client apply
-  // tag unread deltas even when the subscription isn't in any cache (e.g. a
-  // collapsed sidebar tag, see #892). Empty array = uncategorized. Optional
-  // only so events from servers predating this field (deploy window) and
-  // saved-feed events (no subscription) still parse; when absent, tag counts
-  // are simply not updated.
-  tagIds: z.array(z.string()).optional(),
+  // Absolute unread counts from the server, computed per-user at emit time.
+  // The client sets these directly rather than applying a +1 delta, so a
+  // new_entry delivered by both the live SSE stream and a reconnect catch-up
+  // sync can't double-count. Optional only so events from servers predating
+  // this field (deploy window) still parse; when absent, counts are left
+  // untouched and self-heal on the next count-bearing event or refetch.
+  counts: unreadCountsSchema.optional(),
 });
 
 export const entryUpdatedEventSchema = z.object({
@@ -109,19 +125,6 @@ export const entryUpdatedEventSchema = z.object({
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
   metadata: entryMetadataSchema,
-});
-
-/**
- * Absolute unread counts included in entry_state_changed events.
- * Lets the client set counts directly from the server without delta estimation.
- */
-export const unreadCountsSchema = z.object({
-  all: z.object({ unread: z.number() }),
-  starred: z.object({ unread: z.number() }),
-  saved: z.object({ unread: z.number() }).optional(),
-  subscriptions: z.array(z.object({ id: z.string(), unread: z.number() })),
-  tags: z.array(z.object({ id: z.string(), unread: z.number() })),
-  uncategorized: z.object({ unread: z.number() }).optional(),
 });
 
 export const entryStateChangedEventSchema = z.object({
@@ -144,6 +147,11 @@ export const subscriptionCreatedEventSchema = z.object({
   updatedAt: z.string(),
   subscription: subscriptionCreatedDataSchema,
   feed: feedCreatedDataSchema,
+  // Absolute unread counts for the lists the new (untagged) subscription
+  // affects — All Articles, Uncategorized, and the subscription itself. The
+  // client sets these directly instead of adding deltas. Optional so events
+  // from servers predating this field still parse.
+  counts: unreadCountsSchema.optional(),
 });
 
 export const subscriptionDeletedEventSchema = z.object({
@@ -151,6 +159,12 @@ export const subscriptionDeletedEventSchema = z.object({
   subscriptionId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
+  // Absolute unread counts for the affected lists (All Articles + the
+  // subscription's former tags / Uncategorized), computed at delete time. The
+  // live mutation/SSE path includes these; the sync.events catch-up path can't
+  // (the tag associations are already gone server-side), so it omits them and
+  // the client falls back to invalidating tags.list + entries.count.
+  counts: unreadCountsSchema.optional(),
 });
 
 export const subscriptionUpdatedEventSchema = z.object({

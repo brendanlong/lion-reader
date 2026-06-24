@@ -15,7 +15,7 @@ import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionDeleted } from "@/lib/cache/operations";
+import { removeSubscriptionFromCaches, setEntryRelatedCounts } from "@/lib/cache/operations";
 import { buildEntriesListInputForRoute } from "@/lib/queries/entries-list-input";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
@@ -46,10 +46,18 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
     onMutate: async (variables) => {
-      // Close dialog immediately for responsive feel
+      // Close dialog immediately and optimistically remove the subscription from
+      // the sidebar. Counts are applied from the server response in onSuccess.
       setUnsubscribeTarget(null);
-      // Use centralized cache operation for optimistic removal
-      handleSubscriptionDeleted(utils, variables.id, queryClient);
+      removeSubscriptionFromCaches(variables.id, queryClient);
+    },
+    onSuccess: (data) => {
+      // Apply the server-absolute counts for the affected lists, and drop the
+      // subscription's entries from any cached lists.
+      if (data.counts) {
+        setEntryRelatedCounts(utils, data.counts, queryClient);
+      }
+      utils.entries.list.invalidate();
     },
     onError: () => {
       toast.error("Failed to unsubscribe from feed");

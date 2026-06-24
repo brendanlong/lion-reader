@@ -40,6 +40,8 @@ import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import { getSubscriptionDeletionCounts } from "@/server/services/counts";
+import { unreadCountsSchema } from "@/lib/events/schemas";
 
 // Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
 const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
@@ -87,6 +89,14 @@ const subscriptionOutputSchema = z.object({
   fetchFullContent: z.boolean(), // whether to fetch full article content from URL
 });
 
+/**
+ * Create response: a subscription plus the absolute unread counts for the
+ * lists it affected, so the client sets counts directly instead of estimating.
+ */
+const createSubscriptionOutputSchema = subscriptionOutputSchema.extend({
+  counts: unreadCountsSchema.optional(),
+});
+
 // ============================================================================
 // Subscription Helpers
 // ============================================================================
@@ -96,7 +106,7 @@ const subscriptionOutputSchema = z.object({
  */
 function formatSubscriptionResponse(
   result: subscriptionsService.CreateSubscriptionResult
-): z.infer<typeof subscriptionOutputSchema> {
+): z.infer<typeof createSubscriptionOutputSchema> {
   return {
     id: result.subscriptionId,
     type: result.feed.type,
@@ -109,6 +119,7 @@ function formatSubscriptionResponse(
     unreadCount: result.unreadCount,
     tags: [],
     fetchFullContent: result.fetchFullContent,
+    counts: result.counts,
   };
 }
 
@@ -200,7 +211,7 @@ export const subscriptionsRouter = createTRPCRouter({
         url: feedUrlSchema,
       })
     )
-    .output(subscriptionOutputSchema)
+    .output(createSubscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const feedUrl = input.url;
@@ -472,7 +483,7 @@ export const subscriptionsRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(z.object({ success: z.boolean() }))
+    .output(z.object({ success: z.boolean(), counts: unreadCountsSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
@@ -536,6 +547,15 @@ export const subscriptionsRouter = createTRPCRouter({
         });
       }
 
+      // Capture the subscription's tags BEFORE removing the associations, so we
+      // can compute the affected tags' post-delete absolute counts (an empty
+      // list means the subscription was uncategorized).
+      const formerTagRows = await ctx.db
+        .select({ tagId: subscriptionTags.tagId })
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, input.id));
+      const formerTagIds = formerTagRows.map((r) => r.tagId);
+
       // Remove all tag associations so resubscribing starts fresh
       await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
 
@@ -548,8 +568,14 @@ export const subscriptionsRouter = createTRPCRouter({
         })
         .where(eq(subscriptions.id, input.id));
 
+      // Compute absolute counts for the affected lists AFTER the soft-delete so
+      // they reflect the subscription's removal. The client sets these directly
+      // (the sync.events catch-up path can't recompute the former tags, so it
+      // omits counts and the client invalidates instead).
+      const counts = await getSubscriptionDeletionCounts(ctx.db, userId, formerTagIds);
+
       // Publish subscription_deleted event so other tabs/windows can update
-      publishSubscriptionDeleted(userId, feed.id, input.id, now).catch((err) => {
+      publishSubscriptionDeleted(userId, feed.id, input.id, now, counts).catch((err) => {
         logger.error("Failed to publish subscription_deleted event", {
           err,
           userId,
@@ -560,7 +586,7 @@ export const subscriptionsRouter = createTRPCRouter({
       // Note: In the data-driven model, we don't need to disable the job.
       // The job will simply not be claimed if there are no active subscribers.
 
-      return { success: true };
+      return { success: true, counts };
     }),
 
   /**

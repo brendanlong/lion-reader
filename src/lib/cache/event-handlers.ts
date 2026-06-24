@@ -11,8 +11,7 @@ import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
-  handleNewEntry,
-  setBulkCounts,
+  setEntryRelatedCounts,
 } from "./operations";
 import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
 import {
@@ -48,8 +47,13 @@ export function handleSyncEvent(
 ): void {
   switch (event.type) {
     case "new_entry":
-      // Update unread counts without invalidating entries.list
-      handleNewEntry(utils, event.subscriptionId, event.feedType, queryClient, event.tagIds);
+      // Set absolute unread counts from the server (idempotent — a new_entry
+      // re-delivered by a reconnect catch-up sync can't double-count). Older
+      // servers may omit counts during a deploy; skip the update then and let
+      // it self-heal on the next count-bearing event or refetch.
+      if (event.counts) {
+        setEntryRelatedCounts(utils, event.counts, queryClient);
+      }
       break;
 
     case "entry_updated":
@@ -83,15 +87,7 @@ export function handleSyncEvent(
       });
 
       // Set all counts from the server directly — no delta estimation needed.
-      // Use a placeholder for saved if not provided (non-saved entry mutations
-      // don't compute saved count) to avoid overwriting the client's current
-      // saved count with a wrong value.
-      const currentSaved = utils.entries.count.getData({ type: "saved" });
-      setBulkCounts(
-        utils,
-        { ...event.counts, saved: event.counts.saved ?? currentSaved ?? { unread: 0 } },
-        queryClient
-      );
+      setEntryRelatedCounts(utils, event.counts, queryClient);
       break;
     }
 
@@ -112,7 +108,8 @@ export function handleSyncEvent(
           tags: subscription.tags,
           fetchFullContent: false,
         },
-        queryClient
+        queryClient,
+        event.counts
       );
       break;
     }
@@ -148,7 +145,7 @@ export function handleSyncEvent(
         const alreadyRemoved = !findCachedSubscription(queryClient, event.subscriptionId);
 
         if (!alreadyRemoved) {
-          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient);
+          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, event.counts);
         }
       }
       break;

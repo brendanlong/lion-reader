@@ -120,90 +120,82 @@ function findEntryInQueryClient(entryId: string): Record<string, unknown> | unde
 // ============================================================================
 
 describe("handleSyncEvent - new_entry", () => {
-  it("updates tag unread count from event tagIds when subscription is not cached (#892)", () => {
+  it("sets a tag unread count from event counts even when the subscription is not cached (#892)", () => {
     // Simulates a collapsed sidebar tag: the subscription has never been
-    // loaded into any cache, so tag deltas can't be derived from cached
-    // subscription data. The server-provided tagIds must be used instead.
+    // loaded into any cache, but the server-provided absolute counts include
+    // the tag, so tags.list still updates.
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-uncached",
         feedType: "web",
-        tagIds: ["tag-2"],
+        counts: {
+          all: { unread: 19 },
+          starred: { unread: 0 },
+          subscriptions: [{ id: "sub-uncached", unread: 1 }],
+          tags: [{ id: "tag-2", unread: 11 }],
+        },
       })
     );
 
     const tagsList = getTagsList();
-    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(11); // was 10
-    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
-    expect(tagsList?.uncategorized.unreadCount).toBe(3); // unchanged
-    expect(getEntriesCount({})?.unread).toBe(19); // was 18
+    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(11); // set
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // untouched
+    expect(tagsList?.uncategorized.unreadCount).toBe(3); // untouched
+    expect(getEntriesCount({})?.unread).toBe(19); // set
   });
 
-  it("increments uncategorized count from empty event tagIds when subscription is not cached", () => {
+  it("sets uncategorized count from event counts when subscription is not cached", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-uncached",
         feedType: "web",
-        tagIds: [],
+        counts: {
+          all: { unread: 19 },
+          starred: { unread: 0 },
+          subscriptions: [{ id: "sub-uncached", unread: 1 }],
+          tags: [],
+          uncategorized: { unread: 4 },
+        },
       })
     );
 
     const tagsList = getTagsList();
-    expect(tagsList?.uncategorized.unreadCount).toBe(4); // was 3
-    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
-    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(10); // unchanged
+    expect(tagsList?.uncategorized.unreadCount).toBe(4); // set
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // untouched
+    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(10); // untouched
   });
 
-  it("uses event tagIds, not cached subscription tags", () => {
-    // sub-1 is cached with tag-1, but the event says tag-2 — the
-    // server-provided tags are authoritative (cache may be stale).
+  it("sets subscription, tag, and global counts for a tagged subscription", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-1",
         feedType: "web",
-        tagIds: ["tag-2"],
-      })
-    );
-
-    const tagsList = getTagsList();
-    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(11); // was 10
-    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
-
-    // Subscription count still increments
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // was 5
-  });
-
-  it("increments subscription unread count for tagged subscription", () => {
-    handleSyncEvent(
-      mockUtils.utils,
-      queryClient,
-      createNewEntryEvent({
-        subscriptionId: "sub-1",
-        feedType: "web",
-        tagIds: ["tag-1"],
+        counts: {
+          all: { unread: 19 },
+          starred: { unread: 0 },
+          subscriptions: [{ id: "sub-1", unread: 6 }],
+          tags: [{ id: "tag-1", unread: 16 }],
+        },
       })
     );
 
     const subs = getSubscriptionsList();
-    const sub1 = subs?.items.find((s) => s.id === "sub-1");
-    expect(sub1?.unreadCount).toBe(6); // was 5
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // set
 
     const tagsList = getTagsList();
-    const tag1 = tagsList?.items.find((t) => t.id === "tag-1");
-    expect(tag1?.unreadCount).toBe(16); // was 15, sub-1 is in tag-1
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(16); // set
 
-    expect(getEntriesCount({})?.unread).toBe(19); // was 18
-    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1); // unchanged
+    expect(getEntriesCount({})?.unread).toBe(19); // set
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1); // saved untouched (web entry)
   });
 
-  it("skips tag count updates when tagIds is absent (old-server event)", () => {
+  it("leaves all counts untouched when the event omits counts (old-server event)", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
@@ -213,85 +205,84 @@ describe("handleSyncEvent - new_entry", () => {
       })
     );
 
-    // Subscription and All Articles counts still update...
+    // No counts on the event → no cache writes; values self-heal on the next
+    // count-bearing event or refetch.
     const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // was 5
-    expect(getEntriesCount({})?.unread).toBe(19); // was 18
-
-    // ...but tag counts are left alone (briefly stale until next refetch)
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5); // unchanged
+    expect(getEntriesCount({})?.unread).toBe(18); // unchanged
     const tagsList = getTagsList();
     expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
-    expect(tagsList?.uncategorized.unreadCount).toBe(3); // unchanged
   });
 
-  it("increments saved count for saved entry (null subscriptionId)", () => {
+  it("sets saved count for a saved entry (null subscriptionId)", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: null,
         feedType: "saved",
+        counts: {
+          all: { unread: 19 },
+          starred: { unread: 0 },
+          saved: { unread: 2 },
+          subscriptions: [],
+          tags: [],
+        },
       })
     );
 
-    expect(getEntriesCount({})?.unread).toBe(19); // +1
-    expect(getEntriesCount({ type: "saved" })?.unread).toBe(2); // +1
+    expect(getEntriesCount({})?.unread).toBe(19); // set
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(2); // set
 
     // No subscription changes
     const subs = getSubscriptionsList();
     expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
   });
 
-  it("increments uncategorized unread for untagged subscription", () => {
-    handleSyncEvent(
-      mockUtils.utils,
-      queryClient,
-      createNewEntryEvent({
-        subscriptionId: "sub-2", // sub-2 has no tags
-        feedType: "web",
-        tagIds: [],
-      })
-    );
-
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(4); // was 3
-
-    const tagsList = getTagsList();
-    expect(tagsList?.uncategorized.unreadCount).toBe(4); // was 3
-  });
-
-  it("increments both tags for subscription with 2 tags", () => {
-    handleSyncEvent(
-      mockUtils.utils,
-      queryClient,
-      createNewEntryEvent({
-        subscriptionId: "sub-3", // sub-3 has tag-1 and tag-2
-        feedType: "web",
-        tagIds: ["tag-1", "tag-2"],
-      })
-    );
-
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-3")?.unreadCount).toBe(11); // was 10
-
-    const tagsList = getTagsList();
-    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(16); // +1
-    expect(tagsList?.items.find((t) => t.id === "tag-2")?.unreadCount).toBe(11); // +1
-  });
-
-  it("updates counts for email feed type", () => {
+  it("preserves the cached saved count when a web entry's counts omit saved", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-1",
-        feedType: "email",
+        feedType: "web",
+        counts: {
+          all: { unread: 19 },
+          starred: { unread: 0 },
+          subscriptions: [{ id: "sub-1", unread: 6 }],
+          tags: [{ id: "tag-1", unread: 16 }],
+          // saved omitted (web entries don't compute it)
+        },
       })
     );
 
+    // saved must not be clobbered to 0
+    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1);
+  });
+
+  it("is idempotent: applying the same new_entry twice does not double-count", () => {
+    // Regression for the live-SSE / reconnect-catch-up overlap: the same
+    // new_entry can be delivered by both paths. Because counts are absolute,
+    // applying twice leaves the cache identical to applying once.
+    const event = createNewEntryEvent({
+      subscriptionId: "sub-1",
+      feedType: "web",
+      counts: {
+        all: { unread: 19 },
+        starred: { unread: 0 },
+        subscriptions: [{ id: "sub-1", unread: 6 }],
+        tags: [{ id: "tag-1", unread: 16 }],
+      },
+    });
+
+    handleSyncEvent(mockUtils.utils, queryClient, event);
+    handleSyncEvent(mockUtils.utils, queryClient, event);
+
     const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6);
-    expect(getEntriesCount({})?.unread).toBe(19);
+    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // not 7
+    const tagsList = getTagsList();
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(16); // not 17
+    expect(getEntriesCount({})?.unread).toBe(19); // not 20
   });
 });
 
@@ -579,7 +570,10 @@ describe("handleSyncEvent - entry_state_changed", () => {
 // ============================================================================
 
 describe("handleSyncEvent - subscription_created", () => {
-  it("adds subscription with tags and updates counts", () => {
+  it("adds the subscription and sets absolute counts from the event", () => {
+    // A subscription_created with a tag exercises the handler's tag-count
+    // setting (the server only sends untagged created events, but the handler
+    // applies whatever absolute counts it's given).
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
@@ -600,6 +594,12 @@ describe("handleSyncEvent - subscription_created", () => {
           description: null,
           siteUrl: null,
         },
+        counts: {
+          all: { unread: 25 },
+          starred: { unread: 1 },
+          subscriptions: [{ id: "sub-new", unread: 7 }],
+          tags: [{ id: "tag-1", unread: 22 }],
+        },
       })
     );
 
@@ -609,14 +609,12 @@ describe("handleSyncEvent - subscription_created", () => {
     expect(newSub?.unreadCount).toBe(7);
 
     const tagsList = getTagsList();
-    const tag1 = tagsList?.items.find((t) => t.id === "tag-1");
-    expect(tag1?.feedCount).toBe(3); // was 2
-    expect(tag1?.unreadCount).toBe(22); // was 15, +7
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(22); // set
 
-    expect(getEntriesCount({})?.unread).toBe(25); // was 18, +7
+    expect(getEntriesCount({})?.unread).toBe(25); // set
   });
 
-  it("adds uncategorized subscription and updates uncategorized counts", () => {
+  it("sets uncategorized count from the event for an untagged subscription", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
@@ -637,26 +635,37 @@ describe("handleSyncEvent - subscription_created", () => {
           description: null,
           siteUrl: null,
         },
+        counts: {
+          all: { unread: 21 },
+          starred: { unread: 1 },
+          subscriptions: [{ id: "sub-new", unread: 3 }],
+          tags: [],
+          uncategorized: { unread: 6 },
+        },
       })
     );
 
     const tagsList = getTagsList();
-    expect(tagsList?.uncategorized.feedCount).toBe(2); // was 1
-    expect(tagsList?.uncategorized.unreadCount).toBe(6); // was 3, +3
+    expect(tagsList?.uncategorized.unreadCount).toBe(6); // set
 
-    expect(getEntriesCount({})?.unread).toBe(21); // was 18, +3
+    expect(getEntriesCount({})?.unread).toBe(21); // set
   });
 
-  it("does not cause count inflation for duplicate events", () => {
-    const event = createSubscriptionCreatedEvent();
+  it("is idempotent: applying the same created event twice does not inflate", () => {
+    const event = createSubscriptionCreatedEvent({
+      counts: {
+        all: { unread: 25 },
+        starred: { unread: 1 },
+        subscriptions: [{ id: "sub-new", unread: 7 }],
+        tags: [{ id: "tag-1", unread: 22 }],
+      },
+    });
 
     handleSyncEvent(mockUtils.utils, queryClient, event);
-    const countAfterFirst = getEntriesCount({})?.unread;
-
     handleSyncEvent(mockUtils.utils, queryClient, event);
-    const countAfterSecond = getEntriesCount({})?.unread;
 
-    expect(countAfterSecond).toBe(countAfterFirst);
+    expect(getEntriesCount({})?.unread).toBe(25); // not doubled
+    expect(getTagsList()?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(22);
   });
 
   it("uses customTitle when provided", () => {
@@ -770,12 +779,18 @@ describe("handleSyncEvent - subscription_updated", () => {
 // ============================================================================
 
 describe("handleSyncEvent - subscription_deleted", () => {
-  it("removes subscription with tags and updates counts", () => {
+  it("removes the subscription and sets absolute counts from the event", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-1",
+        counts: {
+          all: { unread: 13 },
+          starred: { unread: 1 },
+          subscriptions: [],
+          tags: [{ id: "tag-1", unread: 10 }],
+        },
       })
     );
 
@@ -783,19 +798,24 @@ describe("handleSyncEvent - subscription_deleted", () => {
     expect(subs?.items.find((s) => s.id === "sub-1")).toBeUndefined();
 
     const tagsList = getTagsList();
-    const tag1 = tagsList?.items.find((t) => t.id === "tag-1");
-    expect(tag1?.feedCount).toBe(1); // was 2
-    expect(tag1?.unreadCount).toBe(10); // was 15, -5
+    expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(10); // set
 
-    expect(getEntriesCount({})?.unread).toBe(13); // was 18, -5
+    expect(getEntriesCount({})?.unread).toBe(13); // set
   });
 
-  it("removes uncategorized subscription and updates uncategorized counts", () => {
+  it("removes an uncategorized subscription and sets uncategorized count", () => {
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createSubscriptionDeletedEvent({
-        subscriptionId: "sub-2", // sub-2 has no tags, unreadCount=3
+        subscriptionId: "sub-2", // sub-2 has no tags
+        counts: {
+          all: { unread: 15 },
+          starred: { unread: 1 },
+          subscriptions: [],
+          tags: [],
+          uncategorized: { unread: 0 },
+        },
       })
     );
 
@@ -803,10 +823,27 @@ describe("handleSyncEvent - subscription_deleted", () => {
     expect(subs?.items.find((s) => s.id === "sub-2")).toBeUndefined();
 
     const tagsList = getTagsList();
-    expect(tagsList?.uncategorized.feedCount).toBe(0); // was 1
-    expect(tagsList?.uncategorized.unreadCount).toBe(0); // was 3, -3
+    expect(tagsList?.uncategorized.unreadCount).toBe(0); // set
 
-    expect(getEntriesCount({})?.unread).toBe(15); // was 18, -3
+    expect(getEntriesCount({})?.unread).toBe(15); // set
+  });
+
+  it("invalidates the count caches when the event omits counts (sync catch-up)", () => {
+    mockUtils.clearOperations();
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createSubscriptionDeletedEvent({ subscriptionId: "sub-1" })
+    );
+
+    // Subscription removed structurally...
+    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")).toBeUndefined();
+    // ...and the count caches are invalidated rather than set (no counts to set).
+    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
+    expect(invalidations.some((op) => op.router === "tags" && op.procedure === "list")).toBe(true);
+    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "count")).toBe(
+      true
+    );
   });
 
   it("is a no-op when subscription already removed (optimistic update)", () => {
@@ -879,20 +916,22 @@ describe("handleSyncEvent - subscription_deleted", () => {
       })
     );
 
-    // Should NOT be treated as "already removed" — it should be processed
+    // Should NOT be treated as "already removed" — it should be processed.
     const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
     expect(invalidations.some((op) => op.router === "entries" && op.procedure === "list")).toBe(
       true
     );
+    // No counts on the event (sync path) → the count caches are invalidated.
+    expect(invalidations.some((op) => op.router === "tags" && op.procedure === "list")).toBe(true);
+    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "count")).toBe(
+      true
+    );
 
-    // Tag counts should be updated (targeted cleanup)
-    const tagsList = getTagsList();
-    const tag1 = tagsList?.items.find((t) => t.id === "tag-1");
-    expect(tag1?.feedCount).toBe(2); // was 3, -1
-    expect(tag1?.unreadCount).toBe(15); // was 19, -4
-
-    // All Articles count should be updated
-    expect(getEntriesCount({})?.unread).toBe(18); // was 22, -4
+    // The subscription is removed from the infinite-query cache.
+    const remaining = queryClient.getQueryData<{
+      pages: Array<{ items: Array<{ id: string }> }>;
+    }>([["subscriptions", "list"], { input: { tagId: "tag-1" }, type: "infinite" }]);
+    expect(remaining?.pages[0]?.items.some((s) => s.id === "sub-preexisting")).toBe(false);
   });
 
   it("is a no-op when subscription not in any cache (treated as already removed)", () => {
@@ -1642,7 +1681,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
 
 describe("handleSyncEvent - event sequences", () => {
   it("new_entry then entry_state_changed(read): count decrements back", () => {
-    // New entry arrives - sub-1 unread goes from 5 to 6
+    // New entry arrives - sub-1 unread goes from 5 to 6 (absolute server counts)
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
@@ -1650,6 +1689,12 @@ describe("handleSyncEvent - event sequences", () => {
         subscriptionId: "sub-1",
         entryId: "new-entry-seq",
         feedType: "web",
+        counts: {
+          all: { unread: 19 },
+          starred: { unread: 2 },
+          subscriptions: [{ id: "sub-1", unread: 6 }],
+          tags: [{ id: "tag-1", unread: 16 }],
+        },
       })
     );
 
@@ -1727,19 +1772,31 @@ describe("handleSyncEvent - event sequences", () => {
           description: null,
           siteUrl: null,
         },
+        counts: {
+          all: { unread: 20 },
+          starred: { unread: 1 },
+          subscriptions: [{ id: "sub-seq", unread: 2 }],
+          tags: [{ id: "tag-2", unread: 12 }],
+        },
       })
     );
 
     expect(getEntriesCount({})?.unread).toBe(20); // 18 + 2
 
-    // Now a new entry arrives for that subscription
+    // Now a new entry arrives for that subscription. Its server-computed
+    // absolute counts reflect the post-insert state.
     handleSyncEvent(
       mockUtils.utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-seq",
         feedType: "web",
-        tagIds: ["tag-2"],
+        counts: {
+          all: { unread: 21 },
+          starred: { unread: 1 },
+          subscriptions: [{ id: "sub-seq", unread: 3 }],
+          tags: [{ id: "tag-2", unread: 13 }],
+        },
       })
     );
 
@@ -1750,7 +1807,7 @@ describe("handleSyncEvent - event sequences", () => {
 
     const tagsList = getTagsList();
     const tag2 = tagsList?.items.find((t) => t.id === "tag-2");
-    expect(tag2?.unreadCount).toBe(13); // was 10, +2 from sub, +1 from entry
+    expect(tag2?.unreadCount).toBe(13); // 10 + 2 (sub) + 1 (entry)
   });
 
   it("subscription_created then subscription_deleted: clean slate", () => {
@@ -1774,6 +1831,13 @@ describe("handleSyncEvent - event sequences", () => {
           description: null,
           siteUrl: null,
         },
+        counts: {
+          all: { unread: 23 },
+          starred: { unread: 1 },
+          subscriptions: [{ id: "sub-temp", unread: 5 }],
+          tags: [],
+          uncategorized: { unread: 8 },
+        },
       })
     );
 
@@ -1784,6 +1848,13 @@ describe("handleSyncEvent - event sequences", () => {
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-temp",
+        counts: {
+          all: { unread: 18 },
+          starred: { unread: 1 },
+          subscriptions: [],
+          tags: [],
+          uncategorized: { unread: 3 },
+        },
       })
     );
 
