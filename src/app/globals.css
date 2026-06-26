@@ -150,50 +150,57 @@ body {
 }
 
 /* =================================
-   Prose Heading Hierarchy
+   Reader Prose Heading Hierarchy
 
-   Tailwind Typography's defaults make the in-body h1 (2.25em / 36px)
-   larger than the entry title, and collapse h4-h6 down to body size.
-   Override with a clean descending scale, expressed in `em` so it
-   tracks the user's configurable article font size:
+   Scoped to the rendered article/summary content (`reader-prose`, applied
+   alongside `prose` in EntryContentRenderer and SummaryCard) -- NOT to all
+   `.prose` blocks. Doc pages like /terms and /privacy also use `.prose` but
+   size their own headings with `ui-text-*` utilities, which we must not
+   clobber. Reader content is sanitized markdown with no heading classes, so
+   scoping here is both sufficient and side-effect free.
 
-   - h1 matches the entry title (24px mobile, 30px sm+) so an in-article
-     h1 never overshoots the document's own title.
+   Tailwind Typography's defaults make the in-body h1 (2.25em / 36px) larger
+   than the entry title and collapse h4-h6 to body size. Override with a
+   clean descending scale, in `em` so it tracks the user's configurable
+   article font size:
+
+   - h1 matches the entry title (24px mobile, 30px sm+) so an in-article h1
+     never overshoots the document's own title.
    - h2-h6 step down monotonically, never smaller than body text (p = 1em).
 
-   These `.prose <el>` selectors outrank Typography's `:where()`-wrapped
-   defaults (which carry only the `.prose` class's specificity).
+   Typography's rules live in the `utilities` layer; these are unlayered so
+   they win over the plugin defaults for the rendered content.
    ================================= */
 
-.prose h1 {
+.reader-prose h1 {
   font-size: 1.5em;
 }
-.prose h2 {
+.reader-prose h2 {
   font-size: 1.3em;
 }
-.prose h3 {
+.reader-prose h3 {
   font-size: 1.15em;
 }
-.prose h4 {
+.reader-prose h4 {
   font-size: 1.05em;
 }
-.prose h5,
-.prose h6 {
+.reader-prose h5,
+.reader-prose h6 {
   font-size: 1em;
 }
 
 /* sm+ (matches Tailwind's `sm` breakpoint and the entry title's sm step) */
 @media (min-width: 40rem) {
-  .prose h1 {
+  .reader-prose h1 {
     font-size: 1.875em;
   }
-  .prose h2 {
+  .reader-prose h2 {
     font-size: 1.5em;
   }
-  .prose h3 {
+  .reader-prose h3 {
     font-size: 1.25em;
   }
-  .prose h4 {
+  .reader-prose h4 {
     font-size: 1.125em;
   }
 }
