@@ -163,7 +163,7 @@ importers:
         version: 4.3.1
       '@tailwindcss/typography':
         specifier: ^0.5.19
-        version: 0.5.19(tailwindcss@4.3.0)
+        version: 0.5.19(tailwindcss@4.3.1)
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1
@@ -222,8 +222,8 @@ importers:
         specifier: ^0.8.0
         version: 0.8.0(prettier@3.8.3)
       tailwindcss:
-        specifier: ^4.3.0
-        version: 4.3.0
+        specifier: ^4.3.1
+        version: 4.3.1
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -8481,10 +8481,10 @@ snapshots:
       postcss: 8.5.15
       tailwindcss: 4.3.1
 
-  '@tailwindcss/typography@0.5.19(tailwindcss@4.3.0)':
+  '@tailwindcss/typography@0.5.19(tailwindcss@4.3.1)':
     dependencies:
       postcss-selector-parser: 6.0.10
-      tailwindcss: 4.3.0
+      tailwindcss: 4.3.1
 
   '@tanstack/query-core@5.101.0': {}
 
