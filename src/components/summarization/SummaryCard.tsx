@@ -128,7 +128,7 @@ export function SummaryCard({
 
       {/* Content */}
       <div
-        className="prose dark:prose-invert text-info-subtle-foreground [&_a]:text-info-foreground mt-3 max-w-none [&_li]:my-0 [&_ol]:my-1 [&_ul]:my-1"
+        className="prose reader-prose dark:prose-invert text-info-subtle-foreground [&_a]:text-info-foreground mt-3 max-w-none [&_li]:my-0 [&_ol]:my-1 [&_ul]:my-1"
         style={style}
         dangerouslySetInnerHTML={{ __html: summary }}
       />

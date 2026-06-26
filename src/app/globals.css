@@ -150,6 +150,62 @@ body {
 }
 
 /* =================================
+   Reader Prose Heading Hierarchy
+
+   Scoped to the rendered article/summary content (`reader-prose`, applied
+   alongside `prose` in EntryContentRenderer and SummaryCard) -- NOT to all
+   `.prose` blocks. Doc pages like /terms and /privacy also use `.prose` but
+   size their own headings with `ui-text-*` utilities, which we must not
+   clobber. Reader content is sanitized markdown with no heading classes, so
+   scoping here is both sufficient and side-effect free.
+
+   Tailwind Typography's defaults make the in-body h1 (2.25em / 36px) larger
+   than the entry title and collapse h4-h6 to body size. Override with a
+   clean descending scale, in `em` so it tracks the user's configurable
+   article font size:
+
+   - h1 matches the entry title (24px mobile, 30px sm+) so an in-article h1
+     never overshoots the document's own title.
+   - h2-h6 step down monotonically, never smaller than body text (p = 1em).
+
+   Typography's rules live in the `utilities` layer; these are unlayered so
+   they win over the plugin defaults for the rendered content.
+   ================================= */
+
+.reader-prose h1 {
+  font-size: 1.5em;
+}
+.reader-prose h2 {
+  font-size: 1.3em;
+}
+.reader-prose h3 {
+  font-size: 1.15em;
+}
+.reader-prose h4 {
+  font-size: 1.05em;
+}
+.reader-prose h5,
+.reader-prose h6 {
+  font-size: 1em;
+}
+
+/* sm+ (matches Tailwind's `sm` breakpoint and the entry title's sm step) */
+@media (min-width: 40rem) {
+  .reader-prose h1 {
+    font-size: 1.875em;
+  }
+  .reader-prose h2 {
+    font-size: 1.5em;
+  }
+  .reader-prose h3 {
+    font-size: 1.25em;
+  }
+  .reader-prose h4 {
+    font-size: 1.125em;
+  }
+}
+
+/* =================================
    Prose Link Hover
    Element-level hover so only the hovered link changes color,
    not all links in the entry.
