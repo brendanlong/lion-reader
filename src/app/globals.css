@@ -150,6 +150,55 @@ body {
 }
 
 /* =================================
+   Prose Heading Hierarchy
+
+   Tailwind Typography's defaults make the in-body h1 (2.25em / 36px)
+   larger than the entry title, and collapse h4-h6 down to body size.
+   Override with a clean descending scale, expressed in `em` so it
+   tracks the user's configurable article font size:
+
+   - h1 matches the entry title (24px mobile, 30px sm+) so an in-article
+     h1 never overshoots the document's own title.
+   - h2-h6 step down monotonically, never smaller than body text (p = 1em).
+
+   These `.prose <el>` selectors outrank Typography's `:where()`-wrapped
+   defaults (which carry only the `.prose` class's specificity).
+   ================================= */
+
+.prose h1 {
+  font-size: 1.5em;
+}
+.prose h2 {
+  font-size: 1.3em;
+}
+.prose h3 {
+  font-size: 1.15em;
+}
+.prose h4 {
+  font-size: 1.05em;
+}
+.prose h5,
+.prose h6 {
+  font-size: 1em;
+}
+
+/* sm+ (matches Tailwind's `sm` breakpoint and the entry title's sm step) */
+@media (min-width: 40rem) {
+  .prose h1 {
+    font-size: 1.875em;
+  }
+  .prose h2 {
+    font-size: 1.5em;
+  }
+  .prose h3 {
+    font-size: 1.25em;
+  }
+  .prose h4 {
+    font-size: 1.125em;
+  }
+}
+
+/* =================================
    Prose Link Hover
    Element-level hover so only the hovered link changes color,
    not all links in the entry.
