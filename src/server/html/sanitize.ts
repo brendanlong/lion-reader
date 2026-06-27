@@ -16,9 +16,12 @@
 
 import sanitizeHtml from "sanitize-html";
 
+import { convertMathJaxChtmlToMathml } from "./mathjax-chtml";
+
 /**
  * Version of the sanitization config. Bump this whenever `SANITIZE_OPTIONS`
- * (allowed tags/attributes/schemes or `transformTags`) changes.
+ * (allowed tags/attributes/schemes or `transformTags`) or the pre-sanitization
+ * transforms (`convertMathJaxChtmlToMathml`) change.
  *
  * Sanitized entry HTML is persisted in the database (`entries.*_sanitized`,
  * stamped with `*_sanitized_version`; see `withSanitizedEntryContent` in
@@ -28,7 +31,7 @@ import sanitizeHtml from "sanitize-html";
  * stale and transparently re-sanitizes it on next read instead of serving stale
  * output.
  */
-export const SANITIZER_VERSION = 1;
+export const SANITIZER_VERSION = 2;
 
 // Tags allowed in entry content. Superset of sanitize-html's defaults covering
 // the formatting, table, and media elements real articles use. `script` and
@@ -287,5 +290,7 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
  */
 export function sanitizeEntryHtml(html: string | null | undefined): string | null {
   if (!html) return null;
-  return sanitizeHtml(html, SANITIZE_OPTIONS);
+  // Convert MathJax CHTML to MathML first so equations survive sanitization.
+  // No-op (cheap string check) for the common case with no embedded math.
+  return sanitizeHtml(convertMathJaxChtmlToMathml(html), SANITIZE_OPTIONS);
 }
