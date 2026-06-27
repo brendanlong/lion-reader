@@ -16,6 +16,7 @@
 
 import sanitizeHtml from "sanitize-html";
 
+import { logger } from "@/lib/logger";
 import { convertMathJaxChtmlToMathml } from "./mathjax-chtml";
 
 /**
@@ -291,6 +292,17 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
 export function sanitizeEntryHtml(html: string | null | undefined): string | null {
   if (!html) return null;
   // Convert MathJax CHTML to MathML first so equations survive sanitization.
-  // No-op (cheap string check) for the common case with no embedded math.
-  return sanitizeHtml(convertMathJaxChtmlToMathml(html), SANITIZE_OPTIONS);
+  // No-op (cheap string check) for the common case with no embedded math. This
+  // runs on untrusted bodies at ingest time, so a pathological input (e.g.
+  // extreme nesting overflowing the recursion) must degrade to "math stripped"
+  // rather than crash the write path — fall back to the raw HTML on error.
+  let transformed = html;
+  try {
+    transformed = convertMathJaxChtmlToMathml(html);
+  } catch (error) {
+    logger.warn("Failed to convert MathJax CHTML to MathML; sanitizing raw HTML", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return sanitizeHtml(transformed, SANITIZE_OPTIONS);
 }

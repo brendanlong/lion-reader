@@ -62,6 +62,23 @@ describe("convertMathJaxChtmlToMathml", () => {
     expect(out).toContain("<mi>log</mi>");
   });
 
+  it("converts a flat fraction as <mfrac>[num, den]", () => {
+    // a/b
+    const html = `<mjx-container><mjx-math><mjx-mfrac><mjx-frac><mjx-num><mjx-mi><mjx-c class="mjx-c61"></mjx-c></mjx-mi></mjx-num><mjx-dbox><mjx-dtable><mjx-row><mjx-den><mjx-mi><mjx-c class="mjx-c62"></mjx-c></mjx-mi></mjx-den></mjx-row></mjx-dtable></mjx-dbox></mjx-frac></mjx-mfrac></mjx-math></mjx-container>`;
+    const out = convertMathJaxChtmlToMathml(html);
+    expect(out.replace(/\s+/g, "")).toContain("<mfrac><mi>a</mi><mi>b</mi></mfrac>");
+  });
+
+  it("converts nested fractions without hijacking the outer denominator", () => {
+    // (a/b)/c — the inner fraction's <mjx-den> (b) precedes the outer one (c)
+    // in document order, so a descendant querySelector would mis-pair them.
+    const html = `<mjx-container><mjx-math><mjx-mfrac><mjx-frac><mjx-num><mjx-mfrac><mjx-frac><mjx-num><mjx-mi><mjx-c class="mjx-c61"></mjx-c></mjx-mi></mjx-num><mjx-dbox><mjx-dtable><mjx-row><mjx-den><mjx-mi><mjx-c class="mjx-c62"></mjx-c></mjx-mi></mjx-den></mjx-row></mjx-dtable></mjx-dbox></mjx-frac></mjx-mfrac></mjx-num><mjx-dbox><mjx-dtable><mjx-row><mjx-den><mjx-mi><mjx-c class="mjx-c63"></mjx-c></mjx-mi></mjx-den></mjx-row></mjx-dtable></mjx-dbox></mjx-frac></mjx-mfrac></mjx-math></mjx-container>`;
+    const out = convertMathJaxChtmlToMathml(html);
+    expect(out.replace(/\s+/g, "")).toContain(
+      "<mfrac><mfrac><mi>a</mi><mi>b</mi></mfrac><mi>c</mi></mfrac>"
+    );
+  });
+
   it("unwraps unknown <mjx-*> wrappers so inner glyphs survive", () => {
     const html = `<mjx-container><mjx-math><mjx-unknown-wrapper><mjx-mi><mjx-c class="mjx-c1D465 TEX-I"></mjx-c></mjx-mi></mjx-unknown-wrapper></mjx-math></mjx-container>`;
     const out = convertMathJaxChtmlToMathml(html);

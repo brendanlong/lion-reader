@@ -90,6 +90,37 @@ function convertGroup(parent: Element | null, doc: Document): Node {
   return groupNodes(nodes, doc);
 }
 
+/**
+ * Locate the numerator/denominator wrappers belonging to a single `<mjx-mfrac>`,
+ * descending through MathJax's layout wrappers but stopping at this fraction's
+ * own `<mjx-num>`/`<mjx-den>` and at any nested `<mjx-mfrac>` (whose parts are
+ * not ours). This avoids a descendant `querySelector` matching a nested
+ * fraction's parts.
+ */
+function findFractionParts(frac: Element): {
+  num: Element | null;
+  den: Element | null;
+} {
+  let num: Element | null = null;
+  let den: Element | null = null;
+  const visit = (node: Element): void => {
+    for (const child of node.childNodes) {
+      if (child.nodeType !== 1) continue;
+      const childEl = child as Element;
+      const childTag = childEl.tagName.toLowerCase();
+      if (childTag === "mjx-num") {
+        num ??= childEl;
+      } else if (childTag === "mjx-den") {
+        den ??= childEl;
+      } else if (childTag !== "mjx-mfrac") {
+        visit(childEl);
+      }
+    }
+  };
+  visit(frac);
+  return { num, den };
+}
+
 function convertElement(el: Element, doc: Document, out: Node[]): void {
   const tag = el.tagName.toLowerCase();
 
@@ -165,10 +196,13 @@ function convertElement(el: Element, doc: Document, out: Node[]): void {
   }
 
   // Fractions: numerator/denominator are reachable via <mjx-num>/<mjx-den>,
-  // ignoring the intervening layout wrappers (<mjx-frac>/<mjx-dbox>/…).
+  // ignoring the intervening layout wrappers (<mjx-frac>/<mjx-dbox>/…). A plain
+  // `querySelector` would descend into a *nested* fraction and grab its
+  // <mjx-den> (which precedes this fraction's own <mjx-den> in document order,
+  // since nested fractions live inside <mjx-num>), so we use a scoped search
+  // that stops at this fraction's parts and at any nested <mjx-mfrac>.
   if (tag === "mjx-mfrac") {
-    const num = el.querySelector("mjx-num");
-    const den = el.querySelector("mjx-den");
+    const { num, den } = findFractionParts(el);
     if (num && den) {
       const node = doc.createElement("mfrac");
       node.appendChild(convertGroup(num, doc));
@@ -208,7 +242,7 @@ function convertElement(el: Element, doc: Document, out: Node[]): void {
  * common case), so this is a cheap no-op for the vast majority of entries.
  */
 export function convertMathJaxChtmlToMathml(html: string): string {
-  if (!html.includes("mjx-container")) return html;
+  if (!html.includes("<mjx-container")) return html;
 
   const isFullDocument =
     html.trim().toLowerCase().startsWith("<!doctype") ||
