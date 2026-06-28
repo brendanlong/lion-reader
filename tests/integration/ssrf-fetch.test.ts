@@ -50,8 +50,14 @@ beforeAll(async () => {
   port = (server.address() as AddressInfo).port;
 });
 
-afterAll(() => {
-  server.close();
+afterAll(async () => {
+  await new Promise<void>((resolve) => {
+    if (server) {
+      server.close(() => resolve());
+    } else {
+      resolve();
+    }
+  });
 });
 
 describe("fetchWithSsrfProtection — SSRF blocking", () => {
@@ -63,7 +69,11 @@ describe("fetchWithSsrfProtection — SSRF blocking", () => {
     process.env.ALLOW_PRIVATE_NETWORK_FETCH = "false";
   });
   afterAll(() => {
-    process.env.ALLOW_PRIVATE_NETWORK_FETCH = prev;
+    if (prev === undefined) {
+      delete process.env.ALLOW_PRIVATE_NETWORK_FETCH;
+    } else {
+      process.env.ALLOW_PRIVATE_NETWORK_FETCH = prev;
+    }
   });
 
   it("rejects a literal private IP host up front (lookup is skipped for IP literals)", async () => {
