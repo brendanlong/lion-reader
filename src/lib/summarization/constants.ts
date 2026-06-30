@@ -7,7 +7,7 @@
 /**
  * Default Anthropic model for summarization.
  */
-export const DEFAULT_SUMMARIZATION_MODEL = "claude-sonnet-4-6";
+export const DEFAULT_SUMMARIZATION_MODEL = "claude-sonnet-5";
 
 /**
  * Default maximum words for generated summaries.
