@@ -32,7 +32,7 @@ import { convertMathJaxChtmlToMathml } from "./mathjax-chtml";
  * stale and transparently re-sanitizes it on next read instead of serving stale
  * output.
  */
-export const SANITIZER_VERSION = 2;
+export const SANITIZER_VERSION = 3;
 
 // Tags allowed in entry content. Superset of sanitize-html's defaults covering
 // the formatting, table, and media elements real articles use. `script` and
