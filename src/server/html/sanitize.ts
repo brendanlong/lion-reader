@@ -16,9 +16,13 @@
 
 import sanitizeHtml from "sanitize-html";
 
+import { logger } from "@/lib/logger";
+import { convertMathJaxChtmlToMathml } from "./mathjax-chtml";
+
 /**
  * Version of the sanitization config. Bump this whenever `SANITIZE_OPTIONS`
- * (allowed tags/attributes/schemes or `transformTags`) changes.
+ * (allowed tags/attributes/schemes or `transformTags`) or the pre-sanitization
+ * transforms (`convertMathJaxChtmlToMathml`) change.
  *
  * Sanitized entry HTML is persisted in the database (`entries.*_sanitized`,
  * stamped with `*_sanitized_version`; see `withSanitizedEntryContent` in
@@ -28,7 +32,7 @@ import sanitizeHtml from "sanitize-html";
  * stale and transparently re-sanitizes it on next read instead of serving stale
  * output.
  */
-export const SANITIZER_VERSION = 1;
+export const SANITIZER_VERSION = 3;
 
 // Tags allowed in entry content. Superset of sanitize-html's defaults covering
 // the formatting, table, and media elements real articles use. `script` and
@@ -287,5 +291,18 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
  */
 export function sanitizeEntryHtml(html: string | null | undefined): string | null {
   if (!html) return null;
-  return sanitizeHtml(html, SANITIZE_OPTIONS);
+  // Convert MathJax CHTML to MathML first so equations survive sanitization.
+  // No-op (cheap string check) for the common case with no embedded math. This
+  // runs on untrusted bodies at ingest time, so a pathological input (e.g.
+  // extreme nesting overflowing the recursion) must degrade to "math stripped"
+  // rather than crash the write path — fall back to the raw HTML on error.
+  let transformed = html;
+  try {
+    transformed = convertMathJaxChtmlToMathml(html);
+  } catch (error) {
+    logger.warn("Failed to convert MathJax CHTML to MathML; sanitizing raw HTML", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return sanitizeHtml(transformed, SANITIZE_OPTIONS);
 }
