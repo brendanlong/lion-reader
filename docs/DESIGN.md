@@ -348,12 +348,22 @@ Token bucket via Redis, per-user. Different buckets for different operations (e.
 
 ### Error Responses
 
+Errors use tRPC's standard error envelope, extended by the `errorFormatter` in
+`src/server/trpc/trpc.ts`:
+
 ```typescript
 {
-  error: {
-    code: string;       // 'UNAUTHORIZED', 'NOT_FOUND', 'VALIDATION_ERROR'
-    message: string;    // Human-readable
-    details?: object;   // Optional additional context
+  message: string;      // Human-readable
+  code: number;         // JSON-RPC error code
+  data: {
+    code: string;        // tRPC error code ('UNAUTHORIZED', 'NOT_FOUND', 'BAD_REQUEST', ...)
+    httpStatus: number;
+    path?: string;
+    // Custom app error code set via createError in errors.ts
+    // (e.g. 'SIGNUP_CONFIRMATION_REQUIRED', 'INVITE_REQUIRED', 'CONTENT_TOO_LARGE')
+    appErrorCode?: string;
+    // Flattened Zod issues when input validation failed
+    zodError: object | null;
   }
 }
 ```
@@ -362,17 +372,23 @@ Token bucket via Redis, per-user. Different buckets for different operations (e.
 
 Business logic is extracted into reusable service functions in `src/server/services/`:
 
-| Service            | Functions                                                                        |
-| ------------------ | -------------------------------------------------------------------------------- |
-| `entries.ts`       | `listEntries`, `searchEntries`, `getEntry`, `markEntriesRead`, `countEntries`    |
-| `subscriptions.ts` | `listSubscriptions`, `getSubscription`                                           |
-| `saved.ts`         | Save/delete/upload articles                                                      |
-| `tags.ts`          | `listTags`, `createTag`, `updateTag`, `deleteTag`                                |
-| `counts.ts`        | `getEntryRelatedCounts`, `getBulkEntryRelatedCounts`, `getNewEntryRelatedCounts` |
-| `entry-filters.ts` | `buildEntryFeedFilter` - shared filter construction for entries queries          |
-| `narration.ts`     | Text-to-speech operations                                                        |
-| `full-content.ts`  | Fetch full article content from URLs                                             |
-| `summarization.ts` | AI-powered article summarization                                                 |
+| Service            | Functions                                                                                                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entries.ts`       | `listEntries`, `getEntry`, `getEntries`, `selectFullEntry`/`toFullEntry` (sanitized read path), `markEntriesRead`, `markAllEntriesRead`, `updateEntryStarred`, `countEntries`, `countTotalEntries` |
+| `subscriptions.ts` | `listSubscriptions`, `getSubscription`, `createSubscription`                                                                                                                                       |
+| `saved.ts`         | `saveArticle`, `deleteSavedArticle`, `uploadArticle`, `createUploadedArticle`                                                                                                                      |
+| `tags.ts`          | `listTags`, `createTag`, `updateTag`, `deleteTag`                                                                                                                                                  |
+| `counts.ts`        | `getEntryRelatedCounts`, `getBulkEntryRelatedCounts`, `getNewEntryRelatedCounts`, `getSubscriptionDeletionCounts`                                                                                  |
+| `entry-filters.ts` | `buildEntryFeedFilter`, `buildEntryFilterConditions`, `buildTaggedFeedIdsSubquery` - shared filter construction                                                                                    |
+| `narration.ts`     | Text-to-speech operations                                                                                                                                                                          |
+| `full-content.ts`  | `fetchFullContent`, `fetchAndStoreFullContent` - fetch, sanitize, and persist full article content                                                                                                 |
+| `summarization.ts` | AI-powered article summarization                                                                                                                                                                   |
+| `users.ts`         | `deleteUser` - account deletion                                                                                                                                                                    |
+| `retention.ts`     | `runRetentionCleanup` - data retention background job                                                                                                                                              |
+
+Entry content served by `getEntry`/`getEntries`/`toFullEntry` is **sanitized in
+the services layer** (see "Sanitizing untrusted HTML" in CLAUDE.md), so every
+consumer — tRPC, MCP, Google Reader, Wallabag — gets the same guarantee.
 
 **Pattern**: Pure functions accepting `db` and parameters, returning data objects. Shared across tRPC routers, MCP server, and background jobs.
 
