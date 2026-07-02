@@ -8,6 +8,7 @@
 import { eq, and } from "drizzle-orm";
 import { Parser } from "htmlparser2";
 import { createHash } from "crypto";
+import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -15,15 +16,27 @@ import { normalizeUrl } from "@/lib/url";
 import { fetchHtmlPage, HttpFetchError, ContentTooLargeError } from "@/server/http/fetch";
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
-import { wrapHtmlFragment } from "@/server/http/html";
-import { cleanContent } from "@/server/feed/content-cleaner";
+import { wrapHtmlFragment, extractTextFromHtml } from "@/server/http/html";
+import { absolutizeUrls } from "@/server/feed/content-cleaner";
+import { cleanContentInWorker } from "@/server/worker-thread/pool";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
-import { publishNewEntry } from "@/server/redis/pubsub";
+import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
 import { errors } from "@/server/trpc/errors";
 import { pluginRegistry } from "@/server/plugins";
+import {
+  isGoogleDocsUrl,
+  normalizeGoogleDocsUrl,
+  fetchPrivateGoogleDoc,
+  extractDocId,
+  extractTabId,
+  GOOGLE_DRIVE_SCOPE,
+  type GoogleDocsContent,
+} from "@/server/google/docs";
+import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
+import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth/oauth/google";
 
 // ============================================================================
 // Types
@@ -33,6 +46,35 @@ export interface SaveArticleParams {
   url: string;
   /** Optional title hint (useful when page title is poor) */
   title?: string;
+  /**
+   * Pre-fetched HTML (e.g. a bookmarklet capturing the rendered DOM). Used
+   * instead of fetching the URL — useful for JavaScript-rendered pages where
+   * a server-side fetch would miss content.
+   */
+  html?: string;
+  /**
+   * When true, re-fetch and update the article if the URL is already saved.
+   * Default: return the existing article without refetching.
+   */
+  refetch?: boolean;
+  /** With refetch, update even if the new content appears lower quality. */
+  force?: boolean;
+  /**
+   * Enable the interactive private-Google-Docs auth flow: when a Google Docs
+   * URL can't be fetched publicly, throw NEEDS_GOOGLE_SIGNIN /
+   * NEEDS_DOCS_PERMISSION / NEEDS_GOOGLE_REAUTH errors that the web UI turns
+   * into consent prompts (or fetch with the user's OAuth token when already
+   * granted). Leave off for non-interactive callers (MCP), which fall back to
+   * a plain HTML fetch.
+   */
+  googleDocsAuth?: boolean;
+}
+
+/** How a saveArticle call resolved. */
+export type SaveArticleOutcome = "created" | "updated" | "existing";
+
+export interface SaveArticleResult extends SavedArticle {
+  outcome: SaveArticleOutcome;
 }
 
 export interface UploadArticleParams {
@@ -262,25 +304,138 @@ async function insertSavedEntry(
 // ============================================================================
 
 /**
+ * Fetch a private Google Doc with the user's OAuth credentials (the
+ * interactive `googleDocsAuth` flow).
+ *
+ * Throws NEEDS_GOOGLE_SIGNIN when no Google account is linked and
+ * NEEDS_DOCS_PERMISSION when the required scopes haven't been granted — the
+ * web UI turns these into consent prompts. Returns null (caller falls back to
+ * a plain HTML fetch) when the doc can't be fetched for other reasons.
+ */
+async function fetchPrivateGoogleDocWithAuth(
+  userId: string,
+  normalizedUrl: string
+): Promise<GoogleDocsContent | null> {
+  const docId = extractDocId(normalizedUrl);
+  if (!docId) {
+    return null;
+  }
+  const tabId = extractTabId(normalizedUrl);
+
+  const googleOAuth = await getOAuthAccount(userId, "google");
+  if (!googleOAuth) {
+    logger.debug("User needs to sign in with Google for private docs", {
+      userId,
+      url: normalizedUrl,
+    });
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "NEEDS_GOOGLE_SIGNIN",
+      cause: {
+        code: "NEEDS_GOOGLE_SIGNIN",
+        details: {
+          url: normalizedUrl,
+        },
+      },
+    });
+  }
+
+  // Check if user has granted both required scopes:
+  // - documents.readonly for native Google Docs via Docs API
+  // - drive.readonly for uploaded .docx files via Drive API
+  const [hasDocsApiScope, hasDriveScope] = await Promise.all([
+    hasGoogleScope(userId, GOOGLE_DOCS_READONLY_SCOPE),
+    hasGoogleScope(userId, GOOGLE_DRIVE_SCOPE),
+  ]);
+
+  if (!hasDocsApiScope || !hasDriveScope) {
+    logger.debug("User needs to grant Google Docs permissions", {
+      userId,
+      url: normalizedUrl,
+      hasDocsApiScope,
+      hasDriveScope,
+    });
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "NEEDS_DOCS_PERMISSION",
+      cause: {
+        code: "NEEDS_DOCS_PERMISSION",
+        details: {
+          url: normalizedUrl,
+          scopes: [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
+        },
+      },
+    });
+  }
+
+  try {
+    logger.debug("Attempting private Google Docs fetch with user OAuth", { userId, docId });
+    const accessToken = await getValidGoogleToken(userId);
+    return await fetchPrivateGoogleDoc(docId, accessToken, tabId);
+  } catch (error) {
+    if (error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Google authentication expired. Please reconnect your Google account.",
+      });
+    } else if (error instanceof Error && error.message === "GOOGLE_PERMISSION_DENIED") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "You don't have permission to access this Google Doc.",
+      });
+    } else if (error instanceof Error && error.message === "GOOGLE_NEEDS_REAUTH") {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "NEEDS_GOOGLE_REAUTH",
+        cause: {
+          code: "NEEDS_GOOGLE_REAUTH",
+          details: {
+            url: normalizedUrl,
+          },
+        },
+      });
+    }
+    // Other errors - fall back to a plain fetch
+    logger.warn("Failed to fetch private Google Doc with OAuth", {
+      userId,
+      docId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
  * Save a URL for later reading.
  *
- * Fetches the URL, extracts metadata and clean content via Readability,
- * and stores it as a saved article. If the URL is already saved, returns
- * the existing article.
+ * Fetches the URL (or uses caller-provided HTML), extracts metadata and clean
+ * content via Readability, and stores it as a saved article. If the URL is
+ * already saved, returns the existing article — or, with `refetch`, updates
+ * it in place (guarded by a content-quality comparison unless `force`).
  *
- * Uses the plugin system for special URL handling (LessWrong, ArXiv, Google Docs, etc.).
+ * Uses the plugin system for special URL handling (LessWrong, ArXiv, public
+ * Google Docs, etc.); private Google Docs are supported via the interactive
+ * `googleDocsAuth` option.
  */
 export async function saveArticle(
   db: typeof dbType,
   userId: string,
   params: SaveArticleParams
-): Promise<SavedArticle> {
-  const normalizedUrl = normalizeUrl(params.url);
+): Promise<SaveArticleResult> {
+  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+
+  // Normalize URL: strip fragments (two URLs differing only by #section point
+  // to the same article). For Google Docs, also remove extraneous query
+  // params except 'tab'.
+  let normalizedUrl = normalizeUrl(params.url);
+  if (isGoogleDocsUrl(normalizedUrl)) {
+    normalizedUrl = normalizeGoogleDocsUrl(normalizedUrl);
+  }
 
   // Get or create the user's saved feed
   const savedFeedId = await getOrCreateSavedFeed(db, userId);
 
-  // Check if URL is already saved
+  // Check if URL is already saved (guid = normalized URL for saved articles)
   const existing = await db
     .select({
       entry: entries,
@@ -297,34 +452,37 @@ export async function saveArticle(
     )
     .limit(1);
 
+  // Track existing entry for the refetch comparison
+  let existingEntry: (typeof existing)[0] | null = null;
+
   if (existing.length > 0) {
-    const { entry, userState } = existing[0];
-    return {
-      id: entry.id,
-      url: entry.url!,
-      title: entry.title,
-      siteName: entry.siteName,
-      author: entry.author,
-      imageUrl: entry.imageUrl,
-      contentCleaned: entry.contentCleaned,
-      excerpt: entry.summary,
-      read: userState.read,
-      starred: userState.starred,
-      savedAt: entry.fetchedAt,
-    };
+    if (!params.refetch) {
+      const { entry, userState } = existing[0];
+      return {
+        id: entry.id,
+        url: entry.url!,
+        title: entry.title,
+        siteName: entry.siteName,
+        author: entry.author,
+        imageUrl: entry.imageUrl,
+        contentCleaned: entry.contentCleaned,
+        excerpt: entry.summary,
+        read: userState.read,
+        starred: userState.starred,
+        savedAt: entry.fetchedAt,
+        outcome: "existing",
+      };
+    }
+    // refetch=true: continue to fetch new content and compare
+    existingEntry = existing[0];
   }
 
-  // Try to find a plugin for this URL
-  let urlObj: URL | null = null;
-  try {
-    urlObj = new URL(params.url);
-  } catch {
-    // Invalid URL, continue to normal fetch
-  }
+  // --------------------------------------------------------------------
+  // Content acquisition: provided HTML > plugin (incl. public Google Docs)
+  // > private Google Docs OAuth (interactive callers) > plain HTML fetch
+  // --------------------------------------------------------------------
 
-  const plugin = urlObj ? pluginRegistry.findWithCapability(urlObj, "savedArticle") : null;
-
-  let html: string;
+  let html: string | undefined;
   // The URL the content was actually fetched from (after redirects).
   // Used for resolving relative URLs in the content.
   let contentUrl: string = params.url;
@@ -335,48 +493,6 @@ export async function saveArticle(
     siteName?: string;
     skipReadability?: boolean;
   } | null = null;
-
-  if (plugin) {
-    logger.debug("Attempting plugin fetch for saved article", {
-      url: params.url,
-      plugin: plugin.name,
-    });
-
-    try {
-      const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
-      if (content) {
-        // Check plugin content size
-        const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
-        if (content.html.length > maxSize) {
-          throw errors.contentTooLarge("Article", maxSize);
-        }
-
-        pluginContent = {
-          html: content.html,
-          title: content.title,
-          author: content.author,
-          siteName: plugin.capabilities.savedArticle.siteName,
-          skipReadability: plugin.capabilities.savedArticle.skipReadability,
-        };
-        html = content.html;
-        if (content.canonicalUrl) {
-          contentUrl = content.canonicalUrl;
-        }
-        logger.debug("Successfully fetched content via plugin", {
-          url: params.url,
-          plugin: plugin.name,
-          title: content.title,
-        });
-      }
-    } catch (error) {
-      logger.warn("Plugin fetch failed, falling back to normal fetch", {
-        url: params.url,
-        plugin: plugin.name,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
   // Track Markdown processing results (skip Readability for Markdown)
   let markdownResult: {
     html: string;
@@ -385,55 +501,149 @@ export async function saveArticle(
     author: string | null;
   } | null = null;
 
-  // Fall back to normal HTML fetch if no plugin or plugin failed
-  if (!pluginContent) {
+  if (params.html) {
+    if (params.html.length > maxSize) {
+      throw errors.contentTooLarge("Article", maxSize);
+    }
+    html = params.html;
+    logger.debug("Using provided HTML for saved article", {
+      url: params.url,
+      htmlLength: html.length,
+    });
+  } else {
+    // Try to find a plugin for this URL (public Google Docs, LessWrong, ArXiv, …)
+    let urlObj: URL | null = null;
     try {
-      const result = await fetchHtmlPage(params.url);
-      contentUrl = result.finalUrl;
+      urlObj = new URL(params.url);
+    } catch {
+      // Invalid URL, continue to normal fetch
+    }
 
-      // If we got Markdown, convert it to HTML and extract title
-      if (result.isMarkdown) {
-        logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
-          url: params.url,
-        });
-        markdownResult = await processMarkdown(result.content);
-        html = wrapHtmlFragment(markdownResult.html, markdownResult.title);
-      } else {
-        html = result.content;
-      }
-    } catch (error) {
-      logger.warn("Failed to fetch URL for saved article", {
+    const plugin = urlObj ? pluginRegistry.findWithCapability(urlObj, "savedArticle") : null;
+
+    if (plugin) {
+      logger.debug("Attempting plugin fetch for saved article", {
         url: params.url,
-        error: error instanceof Error ? error.message : String(error),
+        plugin: plugin.name,
       });
-      if (error instanceof ContentTooLargeError) {
-        throw errors.contentTooLarge("Article", usageLimitsConfig.maxSavedArticleSizeBytes);
+
+      try {
+        const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
+        if (content) {
+          // Check plugin content size
+          if (content.html.length > maxSize) {
+            throw errors.contentTooLarge("Article", maxSize);
+          }
+
+          pluginContent = {
+            html: content.html,
+            title: content.title,
+            author: content.author,
+            siteName: plugin.capabilities.savedArticle.siteName,
+            skipReadability: plugin.capabilities.savedArticle.skipReadability,
+          };
+          html = content.html;
+          if (content.canonicalUrl) {
+            contentUrl = content.canonicalUrl;
+          }
+          logger.debug("Successfully fetched content via plugin", {
+            url: params.url,
+            plugin: plugin.name,
+            title: content.title,
+          });
+        }
+      } catch (error) {
+        logger.warn("Plugin fetch failed, falling back to normal fetch", {
+          url: params.url,
+          plugin: plugin.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-      if (error instanceof HttpFetchError && error.isBlocked()) {
-        throw errors.siteBlocked(params.url, error.status);
+    }
+
+    // Private Google Docs: the plugin only fetches public docs. For
+    // interactive callers, try the user's OAuth credentials (throws NEEDS_*
+    // errors the web UI converts into consent prompts).
+    if (!html && params.googleDocsAuth && isGoogleDocsUrl(params.url)) {
+      const googleDocsContent = await fetchPrivateGoogleDocWithAuth(userId, normalizedUrl);
+      if (googleDocsContent) {
+        if (googleDocsContent.html.length > maxSize) {
+          throw errors.contentTooLarge("Article", maxSize);
+        }
+        pluginContent = {
+          html: googleDocsContent.html,
+          title: googleDocsContent.title,
+          author: googleDocsContent.author,
+          siteName: "Google Docs",
+          skipReadability: true,
+        };
+        html = wrapHtmlFragment(googleDocsContent.html, googleDocsContent.title);
+        contentUrl = normalizedUrl;
+        logger.debug("Successfully fetched private Google Docs content", {
+          userId,
+          docId: googleDocsContent.docId,
+          title: googleDocsContent.title,
+        });
       }
-      throw errors.savedArticleFetchError(
-        params.url,
-        error instanceof Error ? error.message : "Unknown error"
-      );
+    }
+
+    // Fall back to normal HTML fetch if no plugin or plugin failed
+    if (!html) {
+      // For Google Docs use the normalized URL for consistent fetching
+      const fetchUrl = isGoogleDocsUrl(params.url) ? normalizedUrl : params.url;
+      try {
+        const result = await fetchHtmlPage(fetchUrl);
+        contentUrl = result.finalUrl;
+
+        // If we got Markdown, convert it to HTML and extract title
+        if (result.isMarkdown) {
+          logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
+            url: fetchUrl,
+          });
+          markdownResult = await processMarkdown(result.content);
+          html = wrapHtmlFragment(markdownResult.html, markdownResult.title);
+        } else {
+          html = result.content;
+        }
+      } catch (error) {
+        logger.warn("Failed to fetch URL for saved article", {
+          url: fetchUrl,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (error instanceof ContentTooLargeError) {
+          throw errors.contentTooLarge("Article", maxSize);
+        }
+        if (error instanceof HttpFetchError && error.isBlocked()) {
+          throw errors.siteBlocked(fetchUrl, error.status);
+        }
+        throw errors.savedArticleFetchError(
+          fetchUrl,
+          error instanceof Error ? error.message : "Unknown error"
+        );
+      }
     }
   }
 
-  // Extract metadata
-  const metadata = extractMetadata(html!, contentUrl);
+  // Extract metadata from Open Graph / meta tags
+  const metadata = extractMetadata(html, contentUrl);
 
-  // Run Readability for clean content (skip for plugins that request it, or for Markdown)
-  const shouldSkipReadability = pluginContent?.skipReadability || markdownResult !== null;
-  const cleaned = shouldSkipReadability ? null : cleanContent(html!, { url: contentUrl });
+  // Run Readability for clean content (skip for plugins that request it, or
+  // for Markdown). Runs in a worker thread so large pages don't block the
+  // event loop.
+  const shouldSkipReadability = Boolean(pluginContent?.skipReadability) || markdownResult !== null;
+  const cleaned = shouldSkipReadability
+    ? null
+    : await cleanContentInWorker(html, { url: contentUrl });
 
   // Generate excerpt - prefer frontmatter summary for Markdown content
   let excerpt: string | null = null;
   if (markdownResult?.summary) {
     // Use summary from frontmatter
     excerpt = markdownResult.summary;
-  } else if (shouldSkipReadability) {
-    // For content that skips Readability (plugins or Markdown), extract summary from HTML
-    excerpt = generateSummary(html!) || null;
+  } else if (pluginContent) {
+    excerpt = generateSummary(pluginContent.html) || null;
+  } else if (markdownResult) {
+    excerpt = generateSummary(html) || null;
   } else if (cleaned) {
     excerpt = cleaned.excerpt || cleaned.textContent.slice(0, 300).trim() || null;
     if (excerpt && excerpt.length > 300) {
@@ -441,8 +651,14 @@ export async function saveArticle(
     }
   }
 
-  // Build final values - prefer plugin data, then provided hint, then extracted/metadata, then Readability
-  const finalContentCleaned = markdownResult?.html || cleaned?.content || html!;
+  // Build final values - prefer plugin/API data, then provided hint, then
+  // extracted metadata, then Readability
+  // When Readability ran, its output already has absolutized URLs; when it
+  // was skipped for plugin/API content, absolutize here.
+  const finalContentCleaned =
+    markdownResult?.html ??
+    cleaned?.content ??
+    (pluginContent ? absolutizeUrls(pluginContent.html, contentUrl) : html);
   const finalTitle =
     pluginContent?.title ||
     params.title ||
@@ -452,32 +668,133 @@ export async function saveArticle(
     null;
   const finalAuthor =
     pluginContent?.author || markdownResult?.author || metadata.author || cleaned?.byline || null;
-  const finalSiteName = pluginContent?.siteName || metadata.siteName;
+  const finalSiteName = pluginContent?.siteName || metadata.siteName || null;
 
   // Compute content hash for narration deduplication
-  const contentHash = generateContentHash(finalTitle, finalContentCleaned || html!);
+  const contentHash = generateContentHash(finalTitle, finalContentCleaned || html);
+
+  // Handle refetch: update the existing entry if quality is acceptable
+  if (existingEntry) {
+    const { entry: oldEntry, userState } = existingEntry;
+    const now = new Date();
+
+    // Compare content quality to avoid overwriting good content with bad
+    // (e.g., private Google Doc fetched with auth, refetched without)
+    if (!params.force) {
+      const oldTextLength = oldEntry.contentCleaned
+        ? extractTextFromHtml(oldEntry.contentCleaned).length
+        : 0;
+
+      const newTextLength = pluginContent
+        ? extractTextFromHtml(pluginContent.html).length
+        : cleaned
+          ? cleaned.textContent.length
+          : extractTextFromHtml(html).length;
+
+      // Reject if new content is significantly shorter AND short in absolute terms
+      // This catches error pages and access-denied pages while allowing legitimate edits
+      const isSignificantlyWorse = newTextLength < oldTextLength * 0.5 && newTextLength < 500;
+
+      if (isSignificantlyWorse) {
+        logger.warn("Refetch rejected: new content appears worse", {
+          url: normalizedUrl,
+          oldTextLength,
+          newTextLength,
+          ratio: oldTextLength > 0 ? newTextLength / oldTextLength : 0,
+        });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "REFETCH_CONTENT_WORSE",
+          cause: {
+            code: "REFETCH_CONTENT_WORSE",
+            details: {
+              url: normalizedUrl,
+              oldLength: oldTextLength,
+              newLength: newTextLength,
+              hint: "The refetched content appears significantly shorter than the original. This often happens when a private document is refetched without authentication. Use force=true to override.",
+            },
+          },
+        });
+      }
+    }
+
+    // Update the existing entry with new content
+    await db
+      .update(entries)
+      .set(
+        withSanitizedEntryContent({
+          title: finalTitle,
+          author: finalAuthor,
+          contentOriginal: html,
+          contentCleaned: finalContentCleaned,
+          summary: excerpt,
+          siteName: finalSiteName,
+          imageUrl: metadata.imageUrl,
+          contentHash,
+          updatedAt: now,
+        })
+      )
+      .where(eq(entries.id, oldEntry.id));
+
+    // Mark as unread since content was updated
+    await db
+      .update(userEntries)
+      .set({ read: false })
+      .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, oldEntry.id)));
+
+    logger.info("Refetched saved article", {
+      entryId: oldEntry.id,
+      url: normalizedUrl,
+      forced: params.force ?? false,
+    });
+
+    // Publish event to notify other browser windows/tabs of the update
+    await publishEntryUpdatedFromEntry(savedFeedId, {
+      id: oldEntry.id,
+      title: finalTitle,
+      author: finalAuthor,
+      summary: excerpt,
+      url: normalizedUrl,
+      publishedAt: oldEntry.publishedAt,
+      updatedAt: now,
+    });
+
+    return {
+      id: oldEntry.id,
+      url: normalizedUrl,
+      title: finalTitle,
+      siteName: finalSiteName,
+      author: finalAuthor,
+      imageUrl: metadata.imageUrl,
+      contentCleaned: finalContentCleaned,
+      excerpt,
+      read: false, // Marked unread since content was updated
+      starred: userState.starred,
+      savedAt: oldEntry.fetchedAt, // Keep original save time
+      outcome: "updated",
+    };
+  }
 
   const saved = await insertSavedEntry(db, userId, savedFeedId, {
     guid: normalizedUrl,
     url: normalizedUrl,
     title: finalTitle,
     author: finalAuthor,
-    contentOriginal: html!,
+    contentOriginal: html,
     contentCleaned: finalContentCleaned,
     summary: excerpt,
-    siteName: finalSiteName ?? null,
+    siteName: finalSiteName,
     imageUrl: metadata.imageUrl,
     contentHash,
   });
 
-  logger.info("Saved article via service", {
+  logger.info("Saved article", {
     entryId: saved.id,
     url: normalizedUrl,
     title: finalTitle,
-    plugin: plugin?.name,
   });
 
-  return saved;
+  return { ...saved, outcome: "created" };
 }
 
 /**
