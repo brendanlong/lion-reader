@@ -32,7 +32,7 @@ const buildOptions = {
   entryPoints: [resolve(rootDir, "src/server/worker-thread/worker.ts")],
   bundle: true,
   platform: "node",
-  target: "node20",
+  target: "node26",
   format: "cjs",
   outfile: resolve(rootDir, "dist/worker-thread.js"),
 

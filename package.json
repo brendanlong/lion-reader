@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "postinstall": "node scripts/copy-onnx-wasm.mjs",
     "dev": "concurrently --kill-others --names worker,next,discord \"pnpm dev:worker\" \"pnpm dev:next\" \"pnpm dev:discord-bot\"",

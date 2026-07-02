@@ -1,5 +1,5 @@
 # Deployment workflow for Lion Reader
-# Deploys to Fly.io on push to main branch
+# Deploys to Fly.io after the CI workflow succeeds on master
 #
 # Prerequisites:
 # 1. Create a Fly.io account and install flyctl
@@ -10,26 +10,38 @@
 name: Deploy
 
 on:
-  push:
+  # Gate deploys on CI: this fires when the CI workflow finishes for a push to
+  # master, and the job below only runs when CI succeeded. A direct `push`
+  # trigger would race CI and deploy even if typecheck/lint/tests fail.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [master]
   workflow_dispatch: # Allow manual trigger
 
 permissions:
   contents: read
 
+# Queue deploys instead of cancelling: cancelling an in-progress `flyctl deploy`
+# can kill a mid-flight canary rollout and leave a partial deployment.
 concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  group: deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
-    # Only deploy if CI checks pass on main
-    # The CI workflow runs on push to main, so this ensures quality
+    # workflow_run fires on every CI completion; only deploy when CI passed.
+    # Manual dispatch bypasses the gate intentionally.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.0
+        with:
+          # Deploy the exact commit CI validated (workflow_run runs on the
+          # default branch's ref, which may have moved past head_sha).
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@master

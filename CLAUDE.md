@@ -88,6 +88,7 @@ See docs/diagrams/ for more detail. These diagrams are very helpful for quickly 
 - **Timestamps**: `timestamptz`, store UTC
 - **Soft deletes**: Use `deleted_at`/`unsubscribed_at` patterns
 - **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act
+- **Migrations**: Must be backward-compatible with the previous release (expand/contract) — they run in Fly's `release_command` before the canary deploy, so old code runs against the new schema during rollout and on rollback. See "Migration Compatibility" in docs/DESIGN.md.
 - **Background jobs**: Postgres-based queue
 - **Caching/SSE**: Redis available for caching and coordinating SSE
 

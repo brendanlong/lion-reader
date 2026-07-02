@@ -11,6 +11,11 @@
 app = "lion-reader"
 primary_region = "lax"
 
+# Give graceful shutdown time to drain connections before SIGKILL (default 5s).
+# The app server drains in-flight requests and SSE streams for 15s, then closes
+# DB/Redis pools (see scripts/server.ts).
+kill_timeout = 30
+
 [build]
   dockerfile = "Dockerfile"
 
