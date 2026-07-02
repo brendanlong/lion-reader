@@ -120,6 +120,14 @@ describe("MCP tool argument validation", () => {
     await expect(
       tool("list_entries").handler(db, userId, { limit: 1000000 })
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+    // Tag colors are rendered into inline styles; the MCP surface must
+    // enforce the same hex-format invariant as the tRPC tags router.
+    await expect(
+      tool("create_tag").handler(db, userId, {
+        name: "Bad color",
+        color: "red;background-image:url(https://attacker.example/x)",
+      })
+    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
   });
 
   it("strips unknown keys so internal service params can't be injected", async () => {
