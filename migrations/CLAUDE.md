@@ -1,4 +1,5 @@
 - We use a custom migration runner, not drizzle-kit. The migration format looks like drizzle-kit's but drizzle-kit is not installed. Never run migrations with drizzle-kit, always use `pnpm db:migrate` or `pnpm db:migrate:test`. See ../scripts/migrate.ts if you need details.
-- Always add new migrations to meta/\_journal.json. Only migrations in the journal will be run.
+- Always add new migrations to meta/\_journal.json. Only migrations in the journal will be run (tests/unit/migrations-journal.test.ts enforces that every .sql file is journaled).
+- Never use `CREATE INDEX CONCURRENTLY` in a migration — the runner wraps each migration in a transaction, so it can't run. If an index must be built concurrently on production, apply it manually first, then journal a plain `CREATE INDEX IF NOT EXISTS` migration so other databases get it too.
 - Test new migrations using `pnpm test:integration`
 - Read @schema.sql and keep it up to date with `pnpm db:schema`
