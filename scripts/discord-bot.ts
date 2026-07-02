@@ -15,10 +15,17 @@
  *     bot is running; the monitor alerts if pings stop (dead/crash-looping bot)
  */
 
+import * as Sentry from "@sentry/nextjs";
 import { startDiscordBot } from "../src/server/discord/bot";
 import { startMetricsServer } from "../src/server/metrics/server";
 import { startHeartbeat } from "../src/server/notifications/healthchecks";
+import { initSentry } from "../src/server/sentry";
 import { logger } from "../src/lib/logger";
+
+// Initialize Sentry before any work starts. Next.js instrumentation only runs
+// in the app server, so this process must init explicitly (this also installs
+// Sentry's global uncaught-exception / unhandled-rejection handlers).
+initSentry();
 
 /** How often to ping the liveness heartbeat while the bot is running. */
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
@@ -35,14 +42,16 @@ logger.info("Starting Discord bot", {
 startMetricsServer(9093);
 
 // Handle graceful shutdown
-function shutdown(signal: string): void {
+async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down Discord bot...`);
   stopHeartbeat?.();
+  // Flush buffered Sentry events before exiting (no-op if never initialized).
+  await Sentry.close(2000);
   process.exit(0);
 }
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 startDiscordBot()
   .then(() => {

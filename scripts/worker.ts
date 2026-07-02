@@ -17,7 +17,13 @@
 import { startWorkerWithSignalHandling } from "../src/server/jobs/worker";
 import { startMetricsServer, setHealthChecker } from "../src/server/metrics/server";
 import { startHeartbeat } from "../src/server/notifications/healthchecks";
+import { initSentry } from "../src/server/sentry";
 import { logger } from "../src/lib/logger";
+
+// Initialize Sentry before any work starts. Next.js instrumentation only runs
+// in the app server, so without this the job runner's Sentry.captureException
+// calls are silent no-ops in this process.
+initSentry();
 
 const pollIntervalMs = parseInt(process.env.WORKER_POLL_INTERVAL_MS ?? "5000", 10);
 const concurrency = parseInt(process.env.WORKER_CONCURRENCY ?? "3", 10);
