@@ -291,6 +291,21 @@ export async function GET(req: Request): Promise<Response> {
       });
 
       /**
+       * Serializes event delivery so clients receive events in Redis-delivery
+       * order even though new_entry needs an async count query before sending.
+       * Without this, a new_entry carrying an older counts snapshot could
+       * arrive after a newer count-bearing event (e.g. entry_state_changed)
+       * and briefly regress the badge, and two new_entry queries could
+       * complete out of order.
+       */
+      let sendChain: Promise<void> = Promise.resolve();
+      function enqueueSend(task: () => void | Promise<void>): void {
+        sendChain = sendChain.then(task).catch((err) => {
+          console.error("Failed to deliver SSE event:", err);
+        });
+      }
+
+      /**
        * Handles messages from subscribed Redis channels (via the process-wide
        * shared subscriber connection).
        */
@@ -303,6 +318,8 @@ export async function GET(req: Request): Promise<Response> {
           // Keep the per-connection feed -> subscription mapping current so
           // feed events can be subscribed to / resolved. Per-user counts on
           // new_entry are computed from the DB, so no tag bookkeeping is needed.
+          // (Done synchronously, outside the send chain, so channel membership
+          // updates aren't delayed behind pending count queries.)
           if (event.type === "subscription_created") {
             subscribeToFeed(event.feedId, event.subscriptionId);
           } else if (event.type === "subscription_deleted") {
@@ -310,8 +327,10 @@ export async function GET(req: Request): Promise<Response> {
           }
 
           // All user events are forwarded to the client
-          send(formatSSEUserEvent(event));
-          trackSSEEventSent(event.type);
+          enqueueSend(() => {
+            send(formatSSEUserEvent(event));
+            trackSSEEventSent(event.type);
+          });
           return;
         }
 
@@ -329,12 +348,13 @@ export async function GET(req: Request): Promise<Response> {
             // Compute this user's absolute unread counts and send them with the
             // event so the client sets counts directly instead of applying a +1
             // delta. That makes new_entry idempotent: a reconnect catch-up sync
-            // can re-deliver the same entry without double-counting (the entry
-            // already exists in visible_entries by the time this event fires).
+            // can re-deliver the same entry without double-counting. All write
+            // paths publish new_entry only after the user_entries fanout, so
+            // the entry is in visible_entries by the time this query runs.
             // This is a per-subscriber query on the feed fan-out path, the same
             // order as the per-subscriber user_entries inserts the worker
             // already does for each new entry.
-            void (async () => {
+            enqueueSend(async () => {
               let counts: NewEntryUnreadCounts | undefined;
               try {
                 counts = toBulkUnreadCounts(
@@ -358,24 +378,26 @@ export async function GET(req: Request): Promise<Response> {
                 })}\n\n`
               );
               trackSSEEventSent("new_entry");
-            })();
+            });
             return;
           }
 
           // entry_updated: include metadata so the client can update caches directly
-          const cursor = new Date().toISOString();
-          send(
-            `event: entry_updated\nid: ${cursor}\ndata: ${JSON.stringify({
-              type: "entry_updated",
-              subscriptionId,
-              entryId: event.entryId,
-              timestamp: event.timestamp,
-              updatedAt: event.updatedAt, // Database updated_at for cursor tracking
-              feedType: event.feedType,
-              metadata: event.metadata,
-            })}\n\n`
-          );
-          trackSSEEventSent(event.type);
+          enqueueSend(() => {
+            const cursor = new Date().toISOString();
+            send(
+              `event: entry_updated\nid: ${cursor}\ndata: ${JSON.stringify({
+                type: "entry_updated",
+                subscriptionId,
+                entryId: event.entryId,
+                timestamp: event.timestamp,
+                updatedAt: event.updatedAt, // Database updated_at for cursor tracking
+                feedType: event.feedType,
+                metadata: event.metadata,
+              })}\n\n`
+            );
+            trackSSEEventSent(event.type);
+          });
         }
       }
 

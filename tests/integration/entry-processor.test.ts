@@ -6,8 +6,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { entries, feeds } from "../../src/server/db/schema";
+import { entries, feeds, subscriptions, userEntries, users } from "../../src/server/db/schema";
+import { createPubSubSubscription, getFeedEventsChannel } from "../../src/server/redis/pubsub";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   generateContentHash,
@@ -39,14 +41,20 @@ async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}
 describe("Entry Processor", () => {
   // Clean up tables before each test
   beforeEach(async () => {
+    await db.delete(userEntries);
     await db.delete(entries);
+    await db.delete(subscriptions);
     await db.delete(feeds);
+    await db.delete(users);
   });
 
   // Clean up after all tests
   afterAll(async () => {
+    await db.delete(userEntries);
     await db.delete(entries);
+    await db.delete(subscriptions);
     await db.delete(feeds);
+    await db.delete(users);
   });
 
   describe("generateContentHash", () => {
@@ -551,6 +559,72 @@ describe("Entry Processor", () => {
 
       // Both should reference the same entry ID
       expect(result.entries[0].id).toBe(result.entries[1].id);
+    });
+
+    it("publishes new_entry only after the user_entries fanout", async () => {
+      // Regression test: the SSE endpoint computes each subscriber's absolute
+      // unread counts from visible_entries the moment a new_entry event
+      // arrives. If the event were published before createUserEntriesForFeed
+      // (as it used to be), those counts would exclude the new entries and
+      // unread badges would stay stale. Assert that by the time each
+      // new_entry message is delivered, the subscriber's user_entries row
+      // already exists.
+      const feed = await createTestFeed();
+
+      const userId = generateUuidv7();
+      await db.insert(users).values({
+        id: userId,
+        email: `fanout-${userId}@test.com`,
+        passwordHash: "test-hash",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await db.insert(subscriptions).values({
+        id: generateUuidv7(),
+        userId,
+        feedId: feed.id,
+        subscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // On each delivered new_entry, immediately check (at arrival time)
+      // whether the subscriber's user_entries row exists.
+      const rowExistedAtDelivery: Array<Promise<boolean>> = [];
+      const handle = createPubSubSubscription((_channel, message) => {
+        const event = JSON.parse(message) as { type: string; entryId: string };
+        if (event.type !== "new_entry") return;
+        rowExistedAtDelivery.push(
+          db
+            .select({ entryId: userEntries.entryId })
+            .from(userEntries)
+            .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, event.entryId)))
+            .then((rows) => rows.length === 1)
+        );
+      });
+      expect(handle).not.toBeNull();
+      await handle!.subscribe(getFeedEventsChannel(feed.id));
+
+      try {
+        const parsedFeed: ParsedFeed = {
+          title: "Test Feed",
+          items: [
+            { guid: "fanout-1", title: "Entry 1", content: "Content 1" },
+            { guid: "fanout-2", title: "Entry 2", content: "Content 2" },
+          ],
+        };
+        await processEntries(feed.id, feed.type, parsedFeed);
+
+        // Publishes are fire-and-forget, so wait for delivery.
+        const deadline = Date.now() + 5000;
+        while (rowExistedAtDelivery.length < 2 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(rowExistedAtDelivery).toHaveLength(2);
+        expect(await Promise.all(rowExistedAtDelivery)).toEqual([true, true]);
+      } finally {
+        handle!.close();
+      }
     });
   });
 });

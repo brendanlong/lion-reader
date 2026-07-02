@@ -30,6 +30,11 @@ export interface ProcessedEntry {
   isNew: boolean;
   /** Whether the entry content was updated */
   isUpdated: boolean;
+  /**
+   * The entry's database updated_at, used for event cursor tracking.
+   * Present when isNew or isUpdated (unchanged entries aren't re-read).
+   */
+  updatedAt?: Date;
 }
 
 /**
@@ -266,20 +271,20 @@ export async function processEntry(
   const existing = await findEntryByGuid(feedId, guid);
 
   if (!existing) {
-    // New entry - create it
+    // New entry - create it.
+    // Note: the new_entry event is NOT published here. It's published by
+    // processEntries AFTER createUserEntriesForFeed, because the SSE endpoint
+    // computes per-user absolute counts from visible_entries when the event
+    // arrives — publishing before the user_entries fanout would produce counts
+    // that exclude this entry.
     const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt, feedUrl);
-
-    // Publish new_entry event for real-time updates
-    // Fire and forget - we don't want publishing failures to affect entry processing
-    publishNewEntry(feedId, entry.id, entry.updatedAt, feedType).catch((err) => {
-      console.error("Failed to publish new_entry event:", err);
-    });
 
     return {
       id: entry.id,
       guid,
       isNew: true,
       isUpdated: false,
+      updatedAt: entry.updatedAt,
     };
   }
 
@@ -288,7 +293,8 @@ export async function processEntry(
     // Content changed - update it
     const entry = await updateEntryContent(existing.id, parsedEntry, contentHash, feedUrl);
 
-    // Publish entry_updated event for real-time updates
+    // Publish entry_updated event for real-time updates (safe to publish here:
+    // subscribers' user_entries rows already exist for a previously-seen entry).
     // Fire and forget - we don't want publishing failures to affect entry processing
     publishEntryUpdatedFromEntry(feedId, entry).catch((err) => {
       console.error("Failed to publish entry_updated event:", err);
@@ -299,6 +305,7 @@ export async function processEntry(
       guid,
       isNew: false,
       isUpdated: true,
+      updatedAt: entry.updatedAt,
     };
   }
 
@@ -347,23 +354,21 @@ async function processEntryWithCache(
   const existing = existingEntriesMap.get(guid);
 
   if (!existing) {
-    // New entry - create it
+    // New entry - create it.
+    // Note: the new_entry event is NOT published here — processEntries
+    // publishes it after createUserEntriesForFeed so the SSE endpoint's
+    // per-user count computation sees the entry in visible_entries.
     const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt, feedUrl);
 
     // Add to cache so duplicate GUIDs in same feed don't create duplicates
     existingEntriesMap.set(guid, { id: entry.id, guid, contentHash });
-
-    // Publish new_entry event for real-time updates
-    // Fire and forget - we don't want publishing failures to affect entry processing
-    publishNewEntry(feedId, entry.id, entry.updatedAt, feedType).catch((err) => {
-      console.error("Failed to publish new_entry event:", err);
-    });
 
     return {
       id: entry.id,
       guid,
       isNew: true,
       isUpdated: false,
+      updatedAt: entry.updatedAt,
     };
   }
 
@@ -375,7 +380,8 @@ async function processEntryWithCache(
     // Update cache with new hash
     existingEntriesMap.set(guid, { ...existing, contentHash });
 
-    // Publish entry_updated event for real-time updates
+    // Publish entry_updated event for real-time updates (safe to publish here:
+    // subscribers' user_entries rows already exist for a previously-seen entry).
     // Fire and forget - we don't want publishing failures to affect entry processing
     publishEntryUpdatedFromEntry(feedId, entry).catch((err) => {
       console.error("Failed to publish entry_updated event:", err);
@@ -386,6 +392,7 @@ async function processEntryWithCache(
       guid,
       isNew: false,
       isUpdated: true,
+      updatedAt: entry.updatedAt,
     };
   }
 
@@ -602,6 +609,20 @@ export async function processEntries(
   // New subscribers get user_entries created at subscription time
   if (newEntryIds.length > 0) {
     await createUserEntriesForFeed(feedId, newEntryIds);
+
+    // Publish new_entry events AFTER the user_entries fanout: the SSE endpoint
+    // computes each connected subscriber's absolute unread counts from
+    // visible_entries when the event arrives, so the rows must exist first or
+    // the counts would exclude these entries (leaving badges stale until the
+    // next count-bearing event). Fire and forget — publishing failures must
+    // not affect entry processing.
+    for (const result of results) {
+      if (result.isNew && result.updatedAt) {
+        publishNewEntry(feedId, result.id, result.updatedAt, feedType).catch((err) => {
+          console.error("Failed to publish new_entry event:", err);
+        });
+      }
+    }
   }
 
   return {
