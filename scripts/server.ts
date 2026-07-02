@@ -15,12 +15,20 @@
 import next from "next";
 import { createServer } from "node:http";
 import { maybeCompressResponse } from "../src/server/http/compression";
-import { startMetricsServer } from "../src/server/metrics/server";
+import { startMetricsServer, stopMetricsServer } from "../src/server/metrics/server";
+import { getResourceCleanup } from "../src/server/shutdown";
 import { logger } from "../src/lib/logger";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME || "0.0.0.0";
 const port = parseInt(process.env.PORT || "3000", 10);
+
+// How long in-flight requests and SSE streams get to finish before their
+// connections are severed. Must fit inside fly.toml's kill_timeout (with room
+// for the resource cleanup that follows). Short in dev so Ctrl+C is snappy.
+const DRAIN_TIMEOUT_MS = dev ? 1_000 : 15_000;
+// Hard deadline for the whole shutdown (drain + pool/Redis cleanup).
+const FORCE_EXIT_TIMEOUT_MS = DRAIN_TIMEOUT_MS + 10_000;
 
 const app = next({
   dev,
@@ -53,4 +61,57 @@ app.prepare().then(() => {
 
   // Start internal metrics server for Prometheus scraping (port 9091)
   startMetricsServer(9091);
+
+  // Graceful shutdown: stop accepting connections, let in-flight requests
+  // drain, sever long-lived connections (SSE streams never end on their own —
+  // destroying their sockets aborts the requests, which unsubscribes them
+  // from Redis), and only then close shared resources.
+  let shuttingDown = false;
+  const shutdown = (signal: string): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`Received ${signal}, shutting down server...`, {
+      drainTimeoutMs: DRAIN_TIMEOUT_MS,
+    });
+
+    // Hard deadline in case a connection or pool refuses to close.
+    setTimeout(() => {
+      logger.error("Shutdown did not complete in time, forcing exit");
+      process.exit(1);
+    }, FORCE_EXIT_TIMEOUT_MS).unref();
+
+    // Stop accepting new connections. The callback fires once every existing
+    // connection has closed.
+    server.close(() => {
+      void (async () => {
+        try {
+          // Close DB pool / Redis / metrics registered by instrumentation.ts
+          // (the Next.js runtime's module graph — a separate copy from this
+          // bundle's modules in production).
+          const cleanup = getResourceCleanup();
+          if (cleanup) {
+            await cleanup();
+          }
+          // Stop this bundle's metrics server copy, whichever bound the port.
+          await stopMetricsServer();
+          logger.info("Graceful shutdown complete");
+          process.exit(0);
+        } catch (error) {
+          logger.error("Error during shutdown", { error });
+          process.exit(1);
+        }
+      })();
+    });
+
+    // Idle keep-alive connections would otherwise hold the server open until
+    // their sockets time out.
+    server.closeIdleConnections();
+
+    // Sever whatever is still open (SSE, slow requests) after the drain
+    // period.
+    setTimeout(() => server.closeAllConnections(), DRAIN_TIMEOUT_MS).unref();
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 });
