@@ -114,7 +114,7 @@ export async function readResponseBufferWithSizeLimit(
  * @returns The response body as a string
  * @throws ContentTooLargeError if the response exceeds the limit
  */
-async function readResponseWithSizeLimit(
+export async function readResponseWithSizeLimit(
   response: Response,
   maxBytes: number,
   url: string

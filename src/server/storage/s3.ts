@@ -10,6 +10,13 @@ import { logger } from "@/lib/logger";
 import { storageConfig } from "@/server/config/env";
 import { randomUUID } from "crypto";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { fetchWithSsrfProtection } from "@/server/http/ssrf";
+import { readResponseBufferWithSizeLimit, ContentTooLargeError } from "@/server/http/fetch";
+
+/**
+ * Maximum size for images fetched from external URLs (20MB).
+ */
+const MAX_FETCHED_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 
 // ============================================================================
 // Configuration
@@ -293,7 +300,9 @@ export async function fetchAndUploadImage(
       headers["Authorization"] = options.authorization;
     }
 
-    const response = await fetch(imageUrl, {
+    // Image URLs come from external documents (e.g. Google Docs contentUri
+    // values), so the fetch is SSRF-protected and size-limited.
+    const response = await fetchWithSsrfProtection(imageUrl, {
       method: "GET",
       headers,
       signal: controller.signal,
@@ -307,8 +316,11 @@ export async function fetchAndUploadImage(
       return null;
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const data = Buffer.from(arrayBuffer);
+    const data = await readResponseBufferWithSizeLimit(
+      response,
+      MAX_FETCHED_IMAGE_SIZE_BYTES,
+      imageUrl
+    );
 
     // Get content type from response or detect from data
     const contentType =
@@ -323,6 +335,11 @@ export async function fetchAndUploadImage(
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       logger.warn("Image fetch timed out", { url: imageUrl });
+    } else if (error instanceof ContentTooLargeError) {
+      logger.warn("Image too large, skipping", {
+        url: imageUrl,
+        receivedBytes: error.receivedBytes,
+      });
     } else {
       logger.warn("Failed to fetch image", {
         url: imageUrl,

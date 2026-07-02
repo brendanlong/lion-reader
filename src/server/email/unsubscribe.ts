@@ -8,6 +8,8 @@
 import { eq, desc, and, isNotNull, or } from "drizzle-orm";
 import { db } from "../db";
 import { entries } from "../db/schema";
+import { fetchWithSsrfProtection } from "../http/ssrf";
+import { USER_AGENT } from "../http/user-agent";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -171,10 +173,13 @@ async function sendUnsubscribePost(url: string): Promise<void> {
   try {
     logger.info("Sending RFC 8058 one-click unsubscribe POST", { url });
 
-    const response = await fetch(url, {
+    // The URL comes verbatim from the attacker-controllable List-Unsubscribe
+    // email header, so this must go through the SSRF-protected fetch.
+    const response = await fetchWithSsrfProtection(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": USER_AGENT,
       },
       body: "List-Unsubscribe=One-Click",
       signal: controller.signal,
