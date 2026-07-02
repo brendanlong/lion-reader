@@ -10,9 +10,11 @@
 -- The rebuilt view also switches the visibility predicate from fail-open to
 -- fail-closed: the old `s.unsubscribed_at IS NULL` evaluates TRUE when the
 -- LEFT JOINs match no subscription at all, so an orphaned user_entries row
--- (no subscription_feeds/subscriptions match) was visible. The documented
--- rule is "active subscription OR starred", so require a matching active
--- subscription explicitly.
+-- (no subscription_feeds/subscriptions match) was visible. The rule is
+-- "active subscription OR starred OR saved article", so require one of those
+-- explicitly. Saved articles live in a per-user feed with no subscription
+-- row — for them the user_entries row alone is the visibility record (they
+-- previously rode on the fail-open behavior).
 
 DROP VIEW visible_entries;
 
@@ -69,7 +71,7 @@ CREATE VIEW visible_entries AS
      JOIN entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN subscription_feeds sf ON (((sf.user_id = ue.user_id) AND (sf.feed_id = e.feed_id))))
      LEFT JOIN subscriptions s ON ((s.id = sf.subscription_id)))
-  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true));
+  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true) OR (e.type = 'saved'::feed_type));
 
 --> statement-breakpoint
 

@@ -146,7 +146,7 @@ See `docs/features/subscription-centric-api.md` for design details.
 
 ### Key Design Decisions
 
-**Entry Visibility**: Visibility is enforced at query time by the `visible_entries` view, which requires a `user_entries` row to exist for the `(user, entry)` pair AND that the entry is either from an active subscription (`subscription.unsubscribed_at IS NULL`) or is starred. The existence of the `user_entries` row is the durable record of visibility.
+**Entry Visibility**: Visibility is enforced at query time by the `visible_entries` view, which requires a `user_entries` row to exist for the `(user, entry)` pair AND that the entry is either from an active subscription (`subscription.unsubscribed_at IS NULL`), is starred, or is a saved article (saved articles live in a per-user feed with no subscription row, so their `user_entries` row alone grants visibility). The predicate is fail-closed: a `user_entries` row whose entry matches no subscription is hidden unless starred/saved. The existence of the `user_entries` row is the durable record of visibility.
 
 The `user_entries` rows are created outside the view at:
 

@@ -430,7 +430,7 @@ CREATE VIEW public.visible_entries AS
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscription_feeds sf ON (((sf.user_id = ue.user_id) AND (sf.feed_id = e.feed_id))))
      LEFT JOIN public.subscriptions s ON ((s.id = sf.subscription_id)))
-  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true));
+  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true) OR (e.type = 'saved'::public.feed_type));
 
 CREATE TABLE public.websub_subscriptions (
     id uuid NOT NULL,
@@ -580,8 +580,6 @@ ALTER TABLE ONLY public.users
 ALTER TABLE ONLY public.websub_subscriptions
     ADD CONSTRAINT websub_subscriptions_pkey PRIMARY KEY (id);
 
-CREATE INDEX idx_api_tokens_token ON public.api_tokens USING btree (token_hash);
-
 CREATE INDEX idx_api_tokens_user ON public.api_tokens USING btree (user_id);
 
 CREATE INDEX idx_blocked_senders_user ON public.blocked_senders USING btree (user_id);
@@ -612,25 +610,17 @@ CREATE INDEX idx_feeds_type ON public.feeds USING btree (type);
 
 CREATE INDEX idx_feeds_user_id ON public.feeds USING btree (user_id);
 
-CREATE INDEX idx_ingest_addresses_token ON public.ingest_addresses USING btree (token);
-
 CREATE INDEX idx_ingest_addresses_user ON public.ingest_addresses USING btree (user_id);
 
 CREATE INDEX idx_invites_expires ON public.invites USING btree (expires_at);
-
-CREATE INDEX idx_invites_token ON public.invites USING btree (token);
 
 CREATE INDEX idx_jobs_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE (type = 'fetch_feed'::text);
 
 CREATE INDEX idx_jobs_polling ON public.jobs USING btree (type, next_run_at);
 
-CREATE INDEX idx_narration_needs_generation ON public.narration_content USING btree (id);
-
 CREATE INDEX idx_oauth_access_tokens_client ON public.oauth_access_tokens USING btree (client_id);
 
 CREATE INDEX idx_oauth_access_tokens_expires ON public.oauth_access_tokens USING btree (expires_at);
-
-CREATE INDEX idx_oauth_access_tokens_token ON public.oauth_access_tokens USING btree (token_hash);
 
 CREATE INDEX idx_oauth_access_tokens_user ON public.oauth_access_tokens USING btree (user_id);
 
@@ -638,13 +628,9 @@ CREATE INDEX idx_oauth_accounts_scopes ON public.oauth_accounts USING gin (scope
 
 CREATE INDEX idx_oauth_accounts_user ON public.oauth_accounts USING btree (user_id);
 
-CREATE INDEX idx_oauth_auth_codes_code ON public.oauth_authorization_codes USING btree (code_hash);
-
 CREATE INDEX idx_oauth_auth_codes_expires ON public.oauth_authorization_codes USING btree (expires_at);
 
 CREATE INDEX idx_oauth_auth_codes_user ON public.oauth_authorization_codes USING btree (user_id);
-
-CREATE INDEX idx_oauth_clients_client_id ON public.oauth_clients USING btree (client_id);
 
 CREATE INDEX idx_oauth_consent_grants_client ON public.oauth_consent_grants USING btree (client_id);
 
@@ -656,8 +642,6 @@ CREATE INDEX idx_oauth_refresh_tokens_client ON public.oauth_refresh_tokens USIN
 
 CREATE INDEX idx_oauth_refresh_tokens_expires ON public.oauth_refresh_tokens USING btree (expires_at);
 
-CREATE INDEX idx_oauth_refresh_tokens_token ON public.oauth_refresh_tokens USING btree (token_hash);
-
 CREATE INDEX idx_oauth_refresh_tokens_user ON public.oauth_refresh_tokens USING btree (user_id);
 
 CREATE INDEX idx_opml_imports_status ON public.opml_imports USING btree (status);
@@ -665,8 +649,6 @@ CREATE INDEX idx_opml_imports_status ON public.opml_imports USING btree (status)
 CREATE INDEX idx_opml_imports_user ON public.opml_imports USING btree (user_id);
 
 CREATE INDEX idx_sessions_last_active ON public.sessions USING btree (last_active_at);
-
-CREATE INDEX idx_sessions_token ON public.sessions USING btree (token_hash);
 
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
 
@@ -682,13 +664,9 @@ CREATE INDEX idx_subscriptions_feed ON public.subscriptions USING btree (feed_id
 
 CREATE INDEX idx_subscriptions_feed_active ON public.subscriptions USING btree (feed_id) WHERE (unsubscribed_at IS NULL);
 
-CREATE INDEX idx_subscriptions_user ON public.subscriptions USING btree (user_id);
-
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
 
 CREATE INDEX idx_tags_updated_at ON public.tags USING btree (user_id, updated_at);
-
-CREATE INDEX idx_tags_user ON public.tags USING btree (user_id);
 
 CREATE INDEX idx_user_entries_entry_id ON public.user_entries USING btree (entry_id);
 
@@ -729,6 +707,9 @@ ALTER TABLE ONLY public.feeds
 
 ALTER TABLE ONLY public.ingest_addresses
     ADD CONSTRAINT ingest_addresses_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.invites
+    ADD CONSTRAINT invites_used_by_user_id_fkey FOREIGN KEY (used_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_access_tokens
     ADD CONSTRAINT oauth_access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

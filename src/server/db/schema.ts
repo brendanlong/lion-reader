@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  customType,
   index,
   integer,
   jsonb,
@@ -15,8 +16,19 @@ import {
   unique,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+/**
+ * Postgres citext (case-insensitive text). Behaves as a plain string in
+ * TypeScript; the case-insensitive comparison semantics live in the database.
+ */
+const citext = customType<{ data: string }>({
+  dataType() {
+    return "citext";
+  },
+});
 
 // ============================================================================
 // ENUMS
@@ -41,13 +53,12 @@ export const invites = pgTable(
     token: text("token").unique().notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),
-    usedByUserId: uuid("used_by_user_id"), // FK added after users table defined
+    usedByUserId: uuid("used_by_user_id").references((): AnyPgColumn => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("idx_invites_token").on(table.token),
-    index("idx_invites_expires").on(table.expiresAt),
-  ]
+  (table) => [index("idx_invites_expires").on(table.expiresAt)]
 );
 
 /**
@@ -56,7 +67,7 @@ export const invites = pgTable(
  */
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
-  email: text("email").unique().notNull(),
+  email: citext("email").unique().notNull(),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   passwordHash: text("password_hash"), // null if OAuth-only (future)
   inviteId: uuid("invite_id").references(() => invites.id, { onDelete: "set null" }),
@@ -101,10 +112,7 @@ export const sessions = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("idx_sessions_user").on(table.userId),
-    index("idx_sessions_token").on(table.tokenHash),
-  ]
+  (table) => [index("idx_sessions_user").on(table.userId)]
 );
 
 /**
@@ -135,10 +143,7 @@ export const apiTokens = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   },
-  (table) => [
-    index("idx_api_tokens_user").on(table.userId),
-    index("idx_api_tokens_token").on(table.tokenHash),
-  ]
+  (table) => [index("idx_api_tokens_user").on(table.userId)]
 );
 
 // ============================================================================
@@ -185,26 +190,22 @@ export const oauthAccounts = pgTable(
  * OAuth clients table - registered OAuth 2.1 clients.
  * Supports both pre-registered clients and Client ID Metadata Documents (CIMD).
  */
-export const oauthClients = pgTable(
-  "oauth_clients",
-  {
-    id: uuid("id").primaryKey(),
-    clientId: text("client_id").unique().notNull(), // URL for CIMD, or custom ID
-    clientSecretHash: text("client_secret_hash"), // NULL for public clients
-    name: text("name").notNull(),
-    redirectUris: text("redirect_uris").array().notNull(), // Allowed redirect URIs
-    grantTypes: text("grant_types")
-      .array()
-      .notNull()
-      .default(sql`'{authorization_code,refresh_token}'`),
-    scopes: text("scopes").array(), // Available scopes for this client
-    isPublic: boolean("is_public").notNull().default(true), // PKCE required for public clients
-    metadataUrl: text("metadata_url"), // For Client ID Metadata Documents
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [index("idx_oauth_clients_client_id").on(table.clientId)]
-);
+export const oauthClients = pgTable("oauth_clients", {
+  id: uuid("id").primaryKey(),
+  clientId: text("client_id").unique().notNull(), // URL for CIMD, or custom ID
+  clientSecretHash: text("client_secret_hash"), // NULL for public clients
+  name: text("name").notNull(),
+  redirectUris: text("redirect_uris").array().notNull(), // Allowed redirect URIs
+  grantTypes: text("grant_types")
+    .array()
+    .notNull()
+    .default(sql`'{authorization_code,refresh_token}'`),
+  scopes: text("scopes").array(), // Available scopes for this client
+  isPublic: boolean("is_public").notNull().default(true), // PKCE required for public clients
+  metadataUrl: text("metadata_url"), // For Client ID Metadata Documents
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /**
  * OAuth authorization codes table - short-lived codes for OAuth flow.
@@ -231,7 +232,6 @@ export const oauthAuthorizationCodes = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => [
-    index("idx_oauth_auth_codes_code").on(table.codeHash),
     index("idx_oauth_auth_codes_user").on(table.userId),
     index("idx_oauth_auth_codes_expires").on(table.expiresAt),
     check("oauth_auth_codes_pkce_s256", sql`${table.codeChallengeMethod} = 'S256'`),
@@ -259,7 +259,6 @@ export const oauthAccessTokens = pgTable(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   },
   (table) => [
-    index("idx_oauth_access_tokens_token").on(table.tokenHash),
     index("idx_oauth_access_tokens_user").on(table.userId),
     index("idx_oauth_access_tokens_client").on(table.clientId),
     index("idx_oauth_access_tokens_expires").on(table.expiresAt),
@@ -290,7 +289,6 @@ export const oauthRefreshTokens = pgTable(
     replacedById: uuid("replaced_by_id"), // Token rotation chain (self-reference added manually)
   },
   (table) => [
-    index("idx_oauth_refresh_tokens_token").on(table.tokenHash),
     index("idx_oauth_refresh_tokens_user").on(table.userId),
     index("idx_oauth_refresh_tokens_client").on(table.clientId),
     index("idx_oauth_refresh_tokens_expires").on(table.expiresAt),
@@ -356,6 +354,9 @@ export const feeds = pgTable(
     // Timestamp when entries last changed (new, updated, or removed from feed)
     // This matches entries.lastSeenAt for entries currently in the feed
     lastEntriesUpdatedAt: timestamp("last_entries_updated_at", { withTimezone: true }),
+    // Informational copy of the schedule for display surfaces (feed stats,
+    // broken feeds, admin). The authoritative value is jobs.next_run_at —
+    // job claiming never reads this column, and the two can drift.
     nextFetchAt: timestamp("next_fetch_at", { withTimezone: true }),
 
     // Error tracking
@@ -524,7 +525,6 @@ export const tags = pgTable(
     // Each user can only have one tag with a given name
     unique("uq_tags_user_name").on(table.userId, table.name),
     // Index for listing tags by user
-    index("idx_tags_user").on(table.userId),
     // Index for sync queries
     index("idx_tags_updated_at").on(table.userId, table.updatedAt),
   ]
@@ -584,7 +584,6 @@ export const subscriptions = pgTable(
   (table) => [
     // Unique constraint on user + feed
     unique("uq_subscriptions_user_feed").on(table.userId, table.feedId),
-    index("idx_subscriptions_user").on(table.userId),
     index("idx_subscriptions_feed").on(table.feedId),
   ]
 );
@@ -719,7 +718,8 @@ export const userFeeds = pgView("user_feeds", {
  * visible_entries view - Entries with visibility rules and subscription context.
  * An entry is visible if:
  * 1. User has a user_entries row for it, AND
- * 2. Either the entry is from an active subscription, OR the entry is starred
+ * 2. Either the entry is from an active subscription, OR the entry is starred,
+ *    OR it is a saved article (saved feeds have no subscription rows)
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
  * (most recently redefined in 0073_drop_entry_scoring.sql).
@@ -872,26 +872,19 @@ export const websubSubscriptions = pgTable(
  * Narration content table - stores LLM-processed text for text-to-speech.
  * Keyed by content hash for deduplication across entries and saved articles.
  */
-export const narrationContent = pgTable(
-  "narration_content",
-  {
-    id: uuid("id").primaryKey(), // UUIDv7
-    contentHash: text("content_hash").unique().notNull(), // SHA256 of source content
+export const narrationContent = pgTable("narration_content", {
+  id: uuid("id").primaryKey(), // UUIDv7
+  contentHash: text("content_hash").unique().notNull(), // SHA256 of source content
 
-    contentNarration: text("content_narration"), // null until generated
-    generatedAt: timestamp("generated_at", { withTimezone: true }),
+  contentNarration: text("content_narration"), // null until generated
+  generatedAt: timestamp("generated_at", { withTimezone: true }),
 
-    // Error tracking for retry logic
-    error: text("error"),
-    errorAt: timestamp("error_at", { withTimezone: true }),
+  // Error tracking for retry logic
+  error: text("error"),
+  errorAt: timestamp("error_at", { withTimezone: true }),
 
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    // Index for finding narration that needs generation (null narration, no recent error)
-    index("idx_narration_needs_generation").on(table.id),
-  ]
-);
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ============================================================================
 // AI SUMMARIZATION
@@ -911,7 +904,7 @@ export const entrySummaries = pgTable(
 
     summaryText: text("summary_text"), // null until generated
     modelId: text("model_id"), // e.g., "claude-sonnet-4-20250514"
-    promptVersion: integer("prompt_version").notNull().default(1), // for cache invalidation
+    promptVersion: smallint("prompt_version").notNull().default(1), // for cache invalidation
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     generatedAt: timestamp("generated_at", { withTimezone: true }), // when summary was generated
@@ -945,7 +938,7 @@ export const ingestAddresses = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
 
-    token: text("token").unique().notNull(), // Random token for the email address
+    token: citext("token").unique().notNull(), // Random token for the email address
     label: text("label"), // User-provided name for the address
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -954,8 +947,6 @@ export const ingestAddresses = pgTable(
   (table) => [
     // For listing addresses by user
     index("idx_ingest_addresses_user").on(table.userId),
-    // For looking up by token during email processing
-    index("idx_ingest_addresses_token").on(table.token),
   ]
 );
 

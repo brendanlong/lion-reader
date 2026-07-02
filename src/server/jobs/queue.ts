@@ -564,13 +564,16 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
       throw error;
     }
 
-    // Another worker created the job first - try to claim it
+    // Another worker created the job first - try to claim it. Keep the
+    // next_run_at <= now check: if the winner already ran and rescheduled the
+    // job, we must not immediately re-run it.
     const retryResult = await db.execute<RawJobRow>(sql`
       UPDATE ${jobs}
       SET
         running_since = ${now},
         updated_at = ${now}
       WHERE type = ${type}
+        AND next_run_at <= ${now}
         AND (running_since IS NULL OR running_since < ${staleThreshold})
       RETURNING *
     `);
@@ -579,7 +582,7 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
       return rowToJob(retryResult.rows[0]);
     }
 
-    // Job exists and is running - that's fine
+    // Job exists and is running or already rescheduled - that's fine
     return null;
   }
 }

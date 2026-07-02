@@ -58,6 +58,8 @@ Fetches a feed and processes new entries.
 
 **Failure handling**: Failures tracked on `feeds.consecutive_failures`. Backoff applied to `next_run_at`.
 
+**Dual scheduling state**: the schedule lives in two places — `jobs.next_run_at` is the **authoritative** value (claiming only reads the job row), while `feeds.next_fetch_at` is a denormalized copy written by the fetch handler for display surfaces (feed stats, broken feeds, admin). They are updated together on each fetch but can drift when only one is touched (e.g. WebSub backup-poll scheduling via `updateFeedJobNextRun`); treat `feeds.next_fetch_at` as informational only.
+
 ### `renew_websub`
 
 Renews expiring WebSub subscriptions.
