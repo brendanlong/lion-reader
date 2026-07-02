@@ -505,6 +505,13 @@
       "when": 1782950500000,
       "tag": "0072_entries_feed_published_sort_index",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1782950600000,
+      "tag": "0073_drop_entry_scoring",
+      "breakpoints": true
     }
   ]
 }

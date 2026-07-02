@@ -66,7 +66,7 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
     // - subscriptions (which cascades to subscription_tags)
     // - user_entries, tags
     // - ingest_addresses, blocked_senders, opml_imports
-    // - user_score_models, entry_score_predictions, entry_summaries
+    // - entry_summaries
     // - email/saved feeds (user_id FK with cascade)
     // - invites.used_by_user_id is set to NULL
     await tx.delete(users).where(eq(users.id, userId));

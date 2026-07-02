@@ -99,15 +99,6 @@ CREATE TABLE public.entries (
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
 );
 
-CREATE TABLE public.entry_score_predictions (
-    user_id uuid NOT NULL,
-    entry_id uuid NOT NULL,
-    predicted_score real NOT NULL,
-    confidence real NOT NULL,
-    model_version integer NOT NULL,
-    predicted_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE public.entry_summaries (
     id uuid NOT NULL,
     content_hash text NOT NULL,
@@ -369,21 +360,6 @@ CREATE VIEW public.user_feeds AS
      JOIN public.feeds f ON ((f.id = s.feed_id)))
   WHERE (s.unsubscribed_at IS NULL);
 
-CREATE TABLE public.user_score_models (
-    user_id uuid NOT NULL,
-    model_data text NOT NULL,
-    vocabulary jsonb NOT NULL,
-    idf_values jsonb NOT NULL,
-    feed_ids text[] NOT NULL,
-    training_count integer NOT NULL,
-    model_version integer DEFAULT 1 NOT NULL,
-    trained_at timestamp with time zone DEFAULT now() NOT NULL,
-    cv_mae real,
-    cv_correlation real,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE public.users (
     id uuid NOT NULL,
     email public.citext NOT NULL,
@@ -398,9 +374,6 @@ CREATE TABLE public.users (
     summarization_model text,
     summarization_max_words integer,
     summarization_prompt text,
-    algorithmic_feed_enabled boolean DEFAULT true NOT NULL,
-    best_feed_score_weight real DEFAULT 1 NOT NULL,
-    best_feed_uncertainty_weight real DEFAULT 1 NOT NULL,
     tos_agreed_at timestamp with time zone,
     privacy_policy_agreed_at timestamp with time zone,
     not_eu_agreed_at timestamp with time zone
@@ -443,8 +416,6 @@ CREATE VIEW public.visible_entries AS
     ue.has_marked_unread,
     ue.has_starred,
     s.id AS subscription_id,
-    esp.predicted_score,
-    esp.confidence AS prediction_confidence,
     e.unsubscribe_url,
     ue.read_changed_at,
     e.wallabag_id,
@@ -455,12 +426,11 @@ CREATE VIEW public.visible_entries AS
     e.full_content_original_sanitized,
     e.full_content_cleaned_sanitized,
     e.full_content_sanitized_version
-   FROM ((((public.user_entries ue
+   FROM (((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscription_feeds sf ON (((sf.user_id = ue.user_id) AND (sf.feed_id = e.feed_id))))
      LEFT JOIN public.subscriptions s ON ((s.id = sf.subscription_id)))
-     LEFT JOIN public.entry_score_predictions esp ON (((esp.user_id = ue.user_id) AND (esp.entry_id = e.id))))
-  WHERE ((s.unsubscribed_at IS NULL) OR (ue.starred = true));
+  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true));
 
 CREATE TABLE public.websub_subscriptions (
     id uuid NOT NULL,
@@ -489,9 +459,6 @@ ALTER TABLE ONLY public.blocked_senders
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.entry_score_predictions
-    ADD CONSTRAINT entry_score_predictions_pkey PRIMARY KEY (user_id, entry_id);
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
@@ -604,9 +571,6 @@ ALTER TABLE ONLY public.websub_subscriptions
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_entry_id_pk PRIMARY KEY (user_id, entry_id);
 
-ALTER TABLE ONLY public.user_score_models
-    ADD CONSTRAINT user_score_models_pkey PRIMARY KEY (user_id);
-
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_email_unique UNIQUE (email);
 
@@ -639,10 +603,6 @@ CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 CREATE INDEX idx_entries_type ON public.entries USING btree (type);
 
 CREATE INDEX idx_entries_wallabag_id ON public.entries USING btree (wallabag_id);
-
-CREATE INDEX idx_entry_score_predictions_entry ON public.entry_score_predictions USING btree (entry_id);
-
-CREATE INDEX idx_entry_score_predictions_user_score ON public.entry_score_predictions USING btree (user_id, predicted_score DESC);
 
 CREATE INDEX idx_entry_summaries_prompt_version ON public.entry_summaries USING btree (prompt_version) WHERE (summary_text IS NOT NULL);
 
@@ -740,8 +700,6 @@ CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
 
-CREATE INDEX idx_user_score_models_trained ON public.user_score_models USING btree (trained_at);
-
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
 
 CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
@@ -760,12 +718,6 @@ ALTER TABLE ONLY public.blocked_senders
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_feed_id_feeds_id_fk FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.entry_score_predictions
-    ADD CONSTRAINT entry_score_predictions_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.entries(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.entry_score_predictions
-    ADD CONSTRAINT entry_score_predictions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
@@ -832,9 +784,6 @@ ALTER TABLE ONLY public.user_entries
 
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.user_score_models
-    ADD CONSTRAINT user_score_models_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_invite_id_invites_id_fk FOREIGN KEY (invite_id) REFERENCES public.invites(id) ON DELETE SET NULL;

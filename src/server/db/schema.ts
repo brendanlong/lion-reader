@@ -721,7 +721,8 @@ export const userFeeds = pgView("user_feeds", {
  * 1. User has a user_entries row for it, AND
  * 2. Either the entry is from an active subscription, OR the entry is starred
  *
- * Note: This view is defined in migration 0035_subscription_views.sql.
+ * Note: This view is defined in migration 0035_subscription_views.sql
+ * (most recently redefined in 0073_drop_entry_scoring.sql).
  * The Drizzle definition here allows type-safe queries against the view.
  */
 export const visibleEntries = pgView("visible_entries", {
