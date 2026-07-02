@@ -9,7 +9,6 @@
 
 import { Suspense } from "react";
 import { usePathname } from "next/navigation";
-import { ClientLink } from "@/components/ui/client-link";
 import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks/useExpandedTags";
 import { NavLinkWithIcon } from "@/components/ui/nav-link";
@@ -54,19 +53,19 @@ function TagListContent({
   const activeTagId = pathname.startsWith("/tag/") ? pathname.slice("/tag/".length) : null;
   const isUncategorizedActive = pathname === "/uncategorized";
 
-  // Tags sorted alphabetically, showing only tags that have subscriptions.
-  // When unreadOnly, also hide tags with 0 unread (unless currently active).
+  // Visibility is driven by unread state, not feed counts (feedCount is only
+  // surfaced in settings now). In unread-only mode a tag/section shows when it
+  // has unread entries (or is the active route); in show-read mode everything
+  // shows, including empty tags/sections.
   const sortedTags = [...(tags ?? [])]
     .filter((tag) => {
-      if (tag.feedCount === 0) return false;
       if (unreadOnly && tag.unreadCount === 0 && tag.id !== activeTagId) return false;
       return true;
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const hasUncategorized =
-    (uncategorized?.feedCount ?? 0) > 0 &&
-    (!unreadOnly || (uncategorized?.unreadCount ?? 0) > 0 || isUncategorizedActive);
+    !unreadOnly || (uncategorized?.unreadCount ?? 0) > 0 || isUncategorizedActive;
   const hasTags = sortedTags.length > 0 || hasUncategorized;
 
   const isActiveLink = (href: string) => {
@@ -78,25 +77,6 @@ function TagListContent({
     }
     return pathname.startsWith(href);
   };
-
-  // Check if user has any subscriptions at all (ignoring unread filter)
-  const hasAnySubscriptions =
-    (tags ?? []).some((tag) => tag.feedCount > 0) || (uncategorized?.feedCount ?? 0) > 0;
-
-  if (!hasAnySubscriptions) {
-    return (
-      <p className="ui-text-sm px-3 text-zinc-500 dark:text-zinc-400">
-        No subscriptions yet.{" "}
-        <ClientLink
-          href="/subscribe"
-          onNavigate={onNavigate}
-          className="text-zinc-900 underline dark:text-zinc-50"
-        >
-          Add one
-        </ClientLink>
-      </p>
-    );
-  }
 
   if (!hasTags) {
     return <p className="ui-text-sm px-3 text-zinc-500 dark:text-zinc-400">No unread feeds</p>;

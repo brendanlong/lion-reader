@@ -33,15 +33,12 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Count Cache (`count-cache.ts`)
 
-| Function                              | Purpose                                                  |
-| ------------------------------------- | -------------------------------------------------------- |
-| `adjustSubscriptionUnreadCounts`      | Updates unread counts in lookup map and infinite queries |
-| `adjustTagUnreadCounts`               | Directly updates unread counts in `tags.list`            |
-| `adjustEntriesCount`                  | Directly updates `entries.count` cache                   |
-| `addSubscriptionToCache`              | Adds subscription to the subscription lookup map         |
-| `removeSubscriptionFromCache`         | Removes subscription from the subscription lookup map    |
-| `setSubscriptionUnreadCountInMap`     | Sets absolute unread count in the lookup map             |
-| `calculateTagDeltasFromSubscriptions` | Calculates tag deltas from subscription deltas           |
+| Function                          | Purpose                                               |
+| --------------------------------- | ----------------------------------------------------- |
+| `adjustEntriesCount`              | Directly updates `entries.count` cache                |
+| `addSubscriptionToCache`          | Adds subscription to the subscription lookup map      |
+| `removeSubscriptionFromCache`     | Removes subscription from the subscription lookup map |
+| `setSubscriptionUnreadCountInMap` | Sets absolute unread count in the lookup map          |
 
 ## Queries
 
@@ -120,13 +117,13 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Subscription Mutations
 
-| Mutation                | Used In                                  | Cache Updates                                                                         |
-| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `subscriptions.create`  | Subscribe page                           | `addSubscriptionToCache` + targeted invalidation                                      |
-| `subscriptions.update`  | `EntryContent`, `EditSubscriptionDialog` | Invalidate: `subscriptions.list`                                                      |
-| `subscriptions.delete`  | `Sidebar`, Broken feeds                  | Optimistic: remove from `subscriptions.list`. Invalidate: `entries.list`, `tags.list` |
-| `subscriptions.setTags` | `EditSubscriptionDialog`                 | (handled by dialog close)                                                             |
-| `subscriptions.import`  | `OpmlImportExport`                       | Toast + navigate on success                                                           |
+| Mutation                | Used In                                  | Cache Updates                                                                                                 |
+| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `subscriptions.create`  | Subscribe page                           | `handleSubscriptionCreated`: add to `subscriptions.list` + set absolute `counts` from response (`onSuccess`)  |
+| `subscriptions.update`  | `EntryContent`, `EditSubscriptionDialog` | Invalidate: `subscriptions.list`                                                                              |
+| `subscriptions.delete`  | `Sidebar`, Broken feeds                  | Optimistic remove (`onMutate`); set absolute `counts` from response + invalidate `entries.list` (`onSuccess`) |
+| `subscriptions.setTags` | `EditSubscriptionDialog`                 | (handled by dialog close)                                                                                     |
+| `subscriptions.import`  | `OpmlImportExport`                       | Toast + navigate on success                                                                                   |
 
 ### Tag Mutations
 
@@ -167,15 +164,15 @@ The `useRealtimeUpdates` hook manages SSE connections and updates caches.
 
 **Key principle:** Direct cache updates where possible, invalidation only when necessary. `entries.list` is NOT invalidated for new entries - users see new entries when they navigate (sidebar counts update immediately).
 
-| SSE Event              | Cache Updates                                                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `new_entry`            | Direct: `subscriptions.list` unreadCount, `tags.list` unreadCount (from server-resolved `tagIds` in the event, so collapsed/uncached tags update too — #892), `entries.count`. Does NOT invalidate `entries.list`. |
-| `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). No invalidation - avoids race condition when viewing.                                                                  |
-| `entry_state_changed`  | Direct: `entries.get`, `entries.list` (read, starred). Sets absolute counts via `setBulkCounts` from server-provided `counts`.                                                                                     |
-| `subscription_created` | Direct: add to `subscriptions.list`, update `tags.list` feedCount/unreadCount, update `entries.count`.                                                                                                             |
-| `subscription_deleted` | Direct: remove from `subscriptions.list`, update `tags.list`, update `entries.count`. Invalidate: `entries.list`.                                                                                                  |
-| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                                                                                                  |
-| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription updates handled by individual events during import.                                                                                          |
+| SSE Event              | Cache Updates                                                                                                                                                                                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `new_entry`            | Direct: sets absolute counts via `setEntryRelatedCounts` from server-provided `counts` (`subscriptions.list` unreadCount, `tags.list` unreadCount incl. collapsed/uncached tags — #892, `entries.count`). Idempotent, so a reconnect catch-up sync can't double-count. Does NOT invalidate `entries.list`. |
+| `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). No invalidation - avoids race condition when viewing.                                                                                                                                                          |
+| `entry_state_changed`  | Direct: `entries.get`, `entries.list` (read, starred). Sets absolute counts via `setBulkCounts` from server-provided `counts`.                                                                                                                                                                             |
+| `subscription_created` | Structural: add to `subscriptions.list`. Counts: sets absolute counts via `setEntryRelatedCounts` from server `counts` (live path); the sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                         |
+| `subscription_deleted` | Structural: remove from `subscriptions.list`. Counts: sets absolute counts from server `counts` (live path); sync.events omits them (former tags are gone server-side), so the client invalidates `tags.list` + `entries.count`. Always invalidates `entries.list`.                                        |
+| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                                                                                                                                                                                          |
+| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription updates handled by individual events during import.                                                                                                                                                                                  |
 
 ## Optimistic Updates
 
@@ -210,11 +207,11 @@ This is simpler than the old two-phase approach and provides better latency.
 
 ### subscriptions.delete (Sidebar)
 
-Uses `removeSubscriptionFromCache()` to remove the subscription from the lookup map, plus `removeSubscriptionFromInfiniteQueries()` to update sidebar lists. Targeted tag/count invalidations are done when the subscription data is available.
+`onMutate` optimistically removes the subscription from all caches via `removeSubscriptionFromCaches()` (lookup map + infinite-query pages) for an instant sidebar update. `onSuccess` applies the server-absolute `counts` via `setEntryRelatedCounts()` and invalidates `entries.list`. Counts come from the server (not estimated locally), so they're applied once the delete is committed.
 
 ### subscriptions.create (Subscribe page)
 
-Uses `addSubscriptionToCache()` to add the subscription to the lookup map. The SSE `subscription_created` event handler also calls this, with duplicate detection via the lookup map to prevent count inflation.
+`handleSubscriptionCreated()` adds the subscription to the lookup map and sets the absolute `counts` from the response. The SSE `subscription_created` event handler calls the same function (with duplicate detection via the lookup map); absolute counts make re-application idempotent.
 
 ## Server Response Enhancements
 
@@ -306,9 +303,9 @@ When adding cache updates, follow this decision tree:
 
 2. **What caches are affected?**
    - Entry lists: Invalidate (too many filter combinations)
-   - Entry counts: Direct update via `adjustEntriesCount`
-   - Subscription counts: Direct update via `adjustSubscriptionUnreadCounts`
-   - Tag counts: Direct update via `adjustTagUnreadCounts` + `calculateTagDeltasFromSubscriptions`
+   - Unread counts (subscriptions, tags, entries.count): Set absolute server-provided
+     counts via `setBulkCounts` / `setEntryRelatedCounts` (idempotent — preferred over
+     deltas so duplicate SSE/sync delivery can't drift counts)
    - Single entry: Direct update via `setData`
 
 3. **Handle race conditions:**
