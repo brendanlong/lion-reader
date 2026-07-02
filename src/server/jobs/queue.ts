@@ -87,6 +87,9 @@ export interface JobPayloads {
   // de-duplication are owned by the external healthchecks.io monitor, so no
   // state is carried across runs.
   monitor_feed_health: Record<string, never>;
+  // Daily retention cleanup of expired/revoked credentials and parked
+  // one-time jobs. See src/server/services/retention.ts.
+  cleanup: Record<string, never>;
 }
 
 export type JobType = keyof JobPayloads;
@@ -491,7 +494,7 @@ export async function listJobs(
 /**
  * Singleton job types that have exactly one instance and self-create on first run.
  */
-export const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub", "monitor_feed_health"];
+export const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub", "monitor_feed_health", "cleanup"];
 
 /**
  * Tries to claim a singleton job for processing.

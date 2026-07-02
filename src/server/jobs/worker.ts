@@ -29,6 +29,7 @@ import {
   handleRenewWebsub,
   handleProcessOpmlImport,
   handleMonitorFeedHealth,
+  handleCleanup,
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
@@ -313,6 +314,11 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "monitor_feed_health": {
           const payload = getJobPayload<"monitor_feed_health">(job);
           result = await handleMonitorFeedHealth(payload);
+          break;
+        }
+        case "cleanup": {
+          const payload = getJobPayload<"cleanup">(job);
+          result = await handleCleanup(payload);
           break;
         }
         case "process_opml_import": {

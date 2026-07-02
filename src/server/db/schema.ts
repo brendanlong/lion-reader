@@ -819,7 +819,7 @@ export const jobs = pgTable(
     // INSERT...catch actually races correctly (see SINGLETON_JOB_TYPES).
     uniqueIndex("jobs_singleton_type_unique")
       .on(table.type)
-      .where(sql`type IN ('renew_websub', 'monitor_feed_health')`),
+      .where(sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup')`),
   ]
 );
 

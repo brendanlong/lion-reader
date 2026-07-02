@@ -519,6 +519,13 @@
       "when": 1782950700000,
       "tag": "0074_jobs_polling_index",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1782950800000,
+      "tag": "0075_cleanup_job",
+      "breakpoints": true
     }
   ]
 }

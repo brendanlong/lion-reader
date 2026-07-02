@@ -706,7 +706,7 @@ CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (exp
 
 CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
 
-CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text]));
+CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text]));
 
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
 
@@ -746,7 +746,7 @@ ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_access_token_id_fkey FOREIGN KEY (access_token_id) REFERENCES public.oauth_access_tokens(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_refresh_tokens
-    ADD CONSTRAINT oauth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.oauth_refresh_tokens(id);
+    ADD CONSTRAINT oauth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.oauth_refresh_tokens(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
