@@ -163,12 +163,11 @@ export async function getEntryRelatedCounts(
     starred: { unread: counts.starredUnread },
   };
 
-  // Entry not found in this user's visible entries
+  // Entry not found in this user's visible entries: still return the real
+  // global counts (just computed above) — fabricated zeros would wipe the
+  // user's badges if a caller patched them into the cache.
   if (!entryInfo) {
-    return {
-      all: { unread: 0 },
-      starred: { unread: 0 },
-    };
+    return baseCounts;
   }
 
   const subscriptionId = entryInfo.subscriptionId;

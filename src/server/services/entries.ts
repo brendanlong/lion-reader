@@ -30,7 +30,11 @@ import {
 import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";
 import { errors } from "@/server/trpc/errors";
-import { buildEntryFeedFilter, buildEntryFilterConditions } from "./entry-filters";
+import {
+  buildEntryFeedFilter,
+  buildEntryFilterConditions,
+  buildTaggedFeedIdsSubquery,
+} from "./entry-filters";
 
 // ============================================================================
 // Types
@@ -1003,16 +1007,9 @@ export async function markAllEntriesRead(
     conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
   }
 
-  // Filter by tag (scoped to user via subscription_tags → subscription_feeds)
+  // Filter by tag (ownership enforced by the shared subquery's tags.userId join)
   if (params.tagId) {
-    const taggedFeedIdsSubquery = db
-      .select({ feedId: subscriptionFeeds.feedId })
-      .from(subscriptionTags)
-      .innerJoin(
-        subscriptionFeeds,
-        eq(subscriptionTags.subscriptionId, subscriptionFeeds.subscriptionId)
-      )
-      .where(eq(subscriptionTags.tagId, params.tagId));
+    const taggedFeedIdsSubquery = buildTaggedFeedIdsSubquery(db, params.tagId, params.userId);
 
     const taggedEntryIdsSubquery = db
       .select({ id: entries.id })

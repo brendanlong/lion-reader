@@ -226,23 +226,29 @@ export async function listSubscriptions(
 
   // Cursor pagination using (title, id) keyset for alphabetical ordering
   if (cursor) {
+    // Invalid cursors are a validation error, matching the entries service —
+    // silently restarting from page one would hide client bugs.
+    let decoded: { title: string | null; id: string };
     try {
-      const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8")) as {
+      decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8")) as {
         title: string | null;
         id: string;
       };
-      // Keyset pagination: (title, id) > (cursor.title, cursor.id)
-      // NULL titles sort first (COALESCE to empty string)
-      conditions.push(sql`(
-        COALESCE(${userFeeds.title}, '') > COALESCE(${decoded.title}::text, '')
-        OR (
-          COALESCE(${userFeeds.title}, '') = COALESCE(${decoded.title}::text, '')
-          AND ${userFeeds.id} > ${decoded.id}
-        )
-      )`);
+      if (!decoded.id) {
+        throw new Error("Invalid cursor structure");
+      }
     } catch {
-      // Invalid cursor - ignore and return from beginning
+      throw errors.validation("Invalid cursor format");
     }
+    // Keyset pagination: (title, id) > (cursor.title, cursor.id)
+    // NULL titles sort first (COALESCE to empty string)
+    conditions.push(sql`(
+      COALESCE(${userFeeds.title}, '') > COALESCE(${decoded.title}::text, '')
+      OR (
+        COALESCE(${userFeeds.title}, '') = COALESCE(${decoded.title}::text, '')
+        AND ${userFeeds.id} > ${decoded.id}
+      )
+    )`);
   }
 
   // Build and execute query, sorted alphabetically by title then by id as tiebreaker
