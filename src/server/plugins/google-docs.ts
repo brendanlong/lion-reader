@@ -5,7 +5,6 @@ import {
   normalizeGoogleDocsUrl,
   fetchGoogleDocsFromUrl,
 } from "@/server/google/docs";
-import { wrapHtmlFragment } from "@/server/http/html";
 import { logger } from "@/lib/logger";
 
 /**
@@ -52,7 +51,11 @@ export const googleDocsPlugin: UrlPlugin = {
           const title = content.title || null;
 
           return {
-            html: wrapHtmlFragment(content.html, title),
+            // Bare fragment, not a wrapped document: with skipReadability the
+            // html is stored as the article body, and the read-path sanitizer
+            // drops <title> tags but keeps their text — a wrapped document
+            // would leak the doc title as stray text above the content.
+            html: content.html,
             title,
             author: content.author || null,
             publishedAt: content.modifiedAt || null,

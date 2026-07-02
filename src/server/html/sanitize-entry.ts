@@ -7,7 +7,7 @@
  * once at write time and store it in the `*_sanitized` columns alongside a
  * `*_sanitized_version` stamp (`SANITIZER_VERSION`). The read path serves the
  * stored value when the version matches and re-sanitizes from the raw columns
- * otherwise (see `resolveSanitizedContent` in the entries router).
+ * otherwise (see `resolveSanitizedContent` in `@/server/services/entries`).
  *
  * Every place that writes entry content (feed create/update, full-content fetch,
  * saved articles, email ingestion) funnels its insert `values` / update `set`

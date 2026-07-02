@@ -3,7 +3,6 @@ import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { readResponseWithSizeLimit } from "@/server/http/fetch";
 import { githubConfig, usageLimitsConfig } from "@/server/config/env";
-import { wrapHtmlFragment } from "@/server/http/html";
 import { marked } from "marked";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 
@@ -453,7 +452,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       return {
-        html: wrapHtmlFragment(html, title),
+        html,
         title,
         author: gist.owner?.login ?? null,
         publishedAt: gist.created_at ? new Date(gist.created_at) : null,
@@ -473,7 +472,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       const title = extractedTitle || `${parsed.owner}/${parsed.repo}`;
 
       return {
-        html: wrapHtmlFragment(html, title),
+        html,
         title,
         author: parsed.owner,
         publishedAt: null,
@@ -496,7 +495,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
         const { html, extractedTitle } = processFileContent(rawContent, parsed.path, null);
         const title = extractedTitle || filename;
         return {
-          html: wrapHtmlFragment(html, title),
+          html,
           title,
           author: parsed.owner,
           publishedAt: null,
@@ -509,7 +508,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       const title = extractedTitle || filename;
 
       return {
-        html: wrapHtmlFragment(html, title),
+        html,
         title,
         author: parsed.owner,
         publishedAt: null,
@@ -529,7 +528,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       const title = extractedTitle || filename;
 
       return {
-        html: wrapHtmlFragment(html, title),
+        html,
         title,
         author: parsed.owner,
         publishedAt: null,

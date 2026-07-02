@@ -100,6 +100,12 @@ export interface SavedArticleFetchOptions {
 }
 
 export interface SavedArticleContent {
+  /**
+   * Article HTML as a bare body fragment, NOT a wrapped `<html>` document.
+   * With `skipReadability` the html is stored as the article body verbatim,
+   * and the read-path sanitizer drops `<title>`/`<head>` tags but keeps their
+   * text — a wrapped document would leak the title as stray body text.
+   */
   html: string;
   title?: string | null;
   author?: string | null;

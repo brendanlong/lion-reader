@@ -16,7 +16,8 @@ import { normalizeUrl } from "@/lib/url";
 import { fetchHtmlPage, HttpFetchError, ContentTooLargeError } from "@/server/http/fetch";
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
-import { wrapHtmlFragment, extractTextFromHtml } from "@/server/http/html";
+import { extractTextFromHtml } from "@/server/http/html";
+import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
 import { cleanContentInWorker } from "@/server/worker-thread/pool";
 import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
@@ -105,6 +106,11 @@ export interface SavedArticle {
   siteName: string | null;
   author: string | null;
   imageUrl: string | null;
+  /**
+   * Sanitized article body. Service results are returned verbatim by MCP
+   * save_article and the Wallabag POST response, so raw fetched HTML must
+   * never appear here.
+   */
   contentCleaned: string | null;
   excerpt: string | null;
   read: boolean;
@@ -224,7 +230,7 @@ interface InsertSavedEntryParams {
   title: string | null;
   author: string | null;
   contentOriginal: string;
-  contentCleaned: string;
+  contentCleaned: string | null;
   summary: string | null;
   siteName: string | null;
   imageUrl: string | null;
@@ -248,32 +254,31 @@ async function insertSavedEntry(
 
   // Sanitize at write time so entries.get serves saved articles without
   // re-running sanitize-html on every read.
-  await db.insert(entries).values(
-    withSanitizedEntryContent({
-      id: entryId,
-      feedId: savedFeedId,
-      type: "saved",
-      guid: params.guid,
-      url: params.url,
-      title: params.title,
-      author: params.author,
-      contentOriginal: params.contentOriginal,
-      contentCleaned: params.contentCleaned,
-      summary: params.summary,
-      siteName: params.siteName,
-      imageUrl: params.imageUrl,
-      publishedAt: null,
-      fetchedAt: now,
-      contentHash: params.contentHash,
-      spamScore: null,
-      isSpam: false,
-      listUnsubscribeMailto: null,
-      listUnsubscribeHttps: null,
-      listUnsubscribePost: null,
-      createdAt: now,
-      updatedAt: now,
-    })
-  );
+  const values = withSanitizedEntryContent({
+    id: entryId,
+    feedId: savedFeedId,
+    type: "saved" as const,
+    guid: params.guid,
+    url: params.url,
+    title: params.title,
+    author: params.author,
+    contentOriginal: params.contentOriginal,
+    contentCleaned: params.contentCleaned,
+    summary: params.summary,
+    siteName: params.siteName,
+    imageUrl: params.imageUrl,
+    publishedAt: null,
+    fetchedAt: now,
+    contentHash: params.contentHash,
+    spamScore: null,
+    isSpam: false,
+    listUnsubscribeMailto: null,
+    listUnsubscribeHttps: null,
+    listUnsubscribePost: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(entries).values(values);
 
   await db.insert(userEntries).values({
     userId,
@@ -291,7 +296,10 @@ async function insertSavedEntry(
     siteName: params.siteName,
     author: params.author,
     imageUrl: params.imageUrl,
-    contentCleaned: params.contentCleaned,
+    // Serve the sanitized body: SavedArticle is returned verbatim by service
+    // consumers (MCP save_article, Wallabag POST), so raw fetched HTML must
+    // not leave the service layer here either.
+    contentCleaned: values.contentCleanedSanitized ?? null,
     excerpt: params.summary,
     read: false,
     starred: false,
@@ -405,6 +413,195 @@ async function fetchPrivateGoogleDocWithAuth(
   }
 }
 
+/** True for errors created by errors.contentTooLarge. */
+function isContentTooLargeError(error: unknown): boolean {
+  return (
+    error instanceof TRPCError &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    (error.cause as { code?: unknown }).code === "CONTENT_TOO_LARGE"
+  );
+}
+
+interface AcquiredArticleContent {
+  /** Raw page/document HTML (stored as content_original). */
+  html: string;
+  /**
+   * The URL the content was actually fetched from (after redirects).
+   * Used for resolving relative URLs in the content.
+   */
+  contentUrl: string;
+  /** Content supplied by a plugin (incl. Google Docs); skips normal metadata sources. */
+  pluginContent: {
+    html: string;
+    title?: string | null;
+    author?: string | null;
+    siteName?: string;
+    skipReadability?: boolean;
+  } | null;
+  /** Markdown processing results (Readability is skipped for Markdown). */
+  markdownResult: {
+    html: string;
+    title: string | null;
+    summary: string | null;
+    author: string | null;
+  } | null;
+}
+
+/**
+ * Acquire the article HTML for a save. Precedence: provided HTML > plugin
+ * (incl. public Google Docs) > private Google Docs OAuth (interactive
+ * callers) > plain HTML fetch. Enforces maxSavedArticleSizeBytes on every
+ * path.
+ */
+async function acquireArticleContent(
+  userId: string,
+  params: SaveArticleParams,
+  normalizedUrl: string
+): Promise<AcquiredArticleContent> {
+  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+
+  if (params.html) {
+    if (params.html.length > maxSize) {
+      throw errors.contentTooLarge("Article", maxSize);
+    }
+    logger.debug("Using provided HTML for saved article", {
+      url: params.url,
+      htmlLength: params.html.length,
+    });
+    return { html: params.html, contentUrl: params.url, pluginContent: null, markdownResult: null };
+  }
+
+  // Try to find a plugin for this URL (public Google Docs, LessWrong, ArXiv, …)
+  let urlObj: URL | null = null;
+  try {
+    urlObj = new URL(params.url);
+  } catch {
+    // Invalid URL, continue to normal fetch
+  }
+
+  const plugin = urlObj ? pluginRegistry.findWithCapability(urlObj, "savedArticle") : null;
+
+  if (plugin) {
+    logger.debug("Attempting plugin fetch for saved article", {
+      url: params.url,
+      plugin: plugin.name,
+    });
+
+    try {
+      const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
+      if (content) {
+        // Check plugin content size
+        if (content.html.length > maxSize) {
+          throw errors.contentTooLarge("Article", maxSize);
+        }
+
+        logger.debug("Successfully fetched content via plugin", {
+          url: params.url,
+          plugin: plugin.name,
+          title: content.title,
+        });
+        return {
+          html: content.html,
+          contentUrl: content.canonicalUrl ?? params.url,
+          pluginContent: {
+            html: content.html,
+            title: content.title,
+            author: content.author,
+            siteName: plugin.capabilities.savedArticle.siteName,
+            skipReadability: plugin.capabilities.savedArticle.skipReadability,
+          },
+          markdownResult: null,
+        };
+      }
+    } catch (error) {
+      // A size-limit violation is a hard failure — surfacing it beats
+      // silently degrading to a plain scrape of the same oversized page.
+      if (isContentTooLargeError(error)) {
+        throw error;
+      }
+      logger.warn("Plugin fetch failed, falling back to normal fetch", {
+        url: params.url,
+        plugin: plugin.name,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // Private Google Docs: the plugin only fetches public docs. For
+  // interactive callers, try the user's OAuth credentials (throws NEEDS_*
+  // errors the web UI converts into consent prompts).
+  if (params.googleDocsAuth && isGoogleDocsUrl(params.url)) {
+    const googleDocsContent = await fetchPrivateGoogleDocWithAuth(userId, normalizedUrl);
+    if (googleDocsContent) {
+      if (googleDocsContent.html.length > maxSize) {
+        throw errors.contentTooLarge("Article", maxSize);
+      }
+      logger.debug("Successfully fetched private Google Docs content", {
+        userId,
+        docId: googleDocsContent.docId,
+        title: googleDocsContent.title,
+      });
+      return {
+        // Bare fragment — a wrapped document would leak the <title> text
+        // into the sanitized body (see SavedArticleContent in plugins/types.ts)
+        html: googleDocsContent.html,
+        contentUrl: normalizedUrl,
+        pluginContent: {
+          html: googleDocsContent.html,
+          title: googleDocsContent.title,
+          author: googleDocsContent.author,
+          siteName: "Google Docs",
+          skipReadability: true,
+        },
+        markdownResult: null,
+      };
+    }
+  }
+
+  // Fall back to a normal HTML fetch.
+  // For Google Docs use the normalized URL for consistent fetching.
+  const fetchUrl = isGoogleDocsUrl(params.url) ? normalizedUrl : params.url;
+  try {
+    const result = await fetchHtmlPage(fetchUrl);
+
+    // If we got Markdown, convert it to HTML and extract title
+    if (result.isMarkdown) {
+      logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
+        url: fetchUrl,
+      });
+      const markdownResult = await processMarkdown(result.content);
+      return {
+        html: markdownResult.html,
+        contentUrl: result.finalUrl,
+        pluginContent: null,
+        markdownResult,
+      };
+    }
+    return {
+      html: result.content,
+      contentUrl: result.finalUrl,
+      pluginContent: null,
+      markdownResult: null,
+    };
+  } catch (error) {
+    logger.warn("Failed to fetch URL for saved article", {
+      url: fetchUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (error instanceof ContentTooLargeError) {
+      throw errors.contentTooLarge("Article", maxSize);
+    }
+    if (error instanceof HttpFetchError && error.isBlocked()) {
+      throw errors.siteBlocked(fetchUrl, error.status);
+    }
+    throw errors.savedArticleFetchError(
+      fetchUrl,
+      error instanceof Error ? error.message : "Unknown error"
+    );
+  }
+}
+
 /**
  * Save a URL for later reading.
  *
@@ -422,8 +619,6 @@ export async function saveArticle(
   userId: string,
   params: SaveArticleParams
 ): Promise<SaveArticleResult> {
-  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
-
   // Normalize URL: strip fragments (two URLs differing only by #section point
   // to the same article). For Google Docs, also remove extraneous query
   // params except 'tab'.
@@ -465,7 +660,9 @@ export async function saveArticle(
         siteName: entry.siteName,
         author: entry.author,
         imageUrl: entry.imageUrl,
-        contentCleaned: entry.contentCleaned,
+        // Serve the stored sanitized body (self-heal happens on entries.get);
+        // raw content must not leave the service layer.
+        contentCleaned: entry.contentCleanedSanitized ?? sanitizeEntryHtml(entry.contentCleaned),
         excerpt: entry.summary,
         read: userState.read,
         starred: userState.starred,
@@ -477,152 +674,11 @@ export async function saveArticle(
     existingEntry = existing[0];
   }
 
-  // --------------------------------------------------------------------
-  // Content acquisition: provided HTML > plugin (incl. public Google Docs)
-  // > private Google Docs OAuth (interactive callers) > plain HTML fetch
-  // --------------------------------------------------------------------
-
-  let html: string | undefined;
-  // The URL the content was actually fetched from (after redirects).
-  // Used for resolving relative URLs in the content.
-  let contentUrl: string = params.url;
-  let pluginContent: {
-    html: string;
-    title?: string | null;
-    author?: string | null;
-    siteName?: string;
-    skipReadability?: boolean;
-  } | null = null;
-  // Track Markdown processing results (skip Readability for Markdown)
-  let markdownResult: {
-    html: string;
-    title: string | null;
-    summary: string | null;
-    author: string | null;
-  } | null = null;
-
-  if (params.html) {
-    if (params.html.length > maxSize) {
-      throw errors.contentTooLarge("Article", maxSize);
-    }
-    html = params.html;
-    logger.debug("Using provided HTML for saved article", {
-      url: params.url,
-      htmlLength: html.length,
-    });
-  } else {
-    // Try to find a plugin for this URL (public Google Docs, LessWrong, ArXiv, …)
-    let urlObj: URL | null = null;
-    try {
-      urlObj = new URL(params.url);
-    } catch {
-      // Invalid URL, continue to normal fetch
-    }
-
-    const plugin = urlObj ? pluginRegistry.findWithCapability(urlObj, "savedArticle") : null;
-
-    if (plugin) {
-      logger.debug("Attempting plugin fetch for saved article", {
-        url: params.url,
-        plugin: plugin.name,
-      });
-
-      try {
-        const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
-        if (content) {
-          // Check plugin content size
-          if (content.html.length > maxSize) {
-            throw errors.contentTooLarge("Article", maxSize);
-          }
-
-          pluginContent = {
-            html: content.html,
-            title: content.title,
-            author: content.author,
-            siteName: plugin.capabilities.savedArticle.siteName,
-            skipReadability: plugin.capabilities.savedArticle.skipReadability,
-          };
-          html = content.html;
-          if (content.canonicalUrl) {
-            contentUrl = content.canonicalUrl;
-          }
-          logger.debug("Successfully fetched content via plugin", {
-            url: params.url,
-            plugin: plugin.name,
-            title: content.title,
-          });
-        }
-      } catch (error) {
-        logger.warn("Plugin fetch failed, falling back to normal fetch", {
-          url: params.url,
-          plugin: plugin.name,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    // Private Google Docs: the plugin only fetches public docs. For
-    // interactive callers, try the user's OAuth credentials (throws NEEDS_*
-    // errors the web UI converts into consent prompts).
-    if (!html && params.googleDocsAuth && isGoogleDocsUrl(params.url)) {
-      const googleDocsContent = await fetchPrivateGoogleDocWithAuth(userId, normalizedUrl);
-      if (googleDocsContent) {
-        if (googleDocsContent.html.length > maxSize) {
-          throw errors.contentTooLarge("Article", maxSize);
-        }
-        pluginContent = {
-          html: googleDocsContent.html,
-          title: googleDocsContent.title,
-          author: googleDocsContent.author,
-          siteName: "Google Docs",
-          skipReadability: true,
-        };
-        html = wrapHtmlFragment(googleDocsContent.html, googleDocsContent.title);
-        contentUrl = normalizedUrl;
-        logger.debug("Successfully fetched private Google Docs content", {
-          userId,
-          docId: googleDocsContent.docId,
-          title: googleDocsContent.title,
-        });
-      }
-    }
-
-    // Fall back to normal HTML fetch if no plugin or plugin failed
-    if (!html) {
-      // For Google Docs use the normalized URL for consistent fetching
-      const fetchUrl = isGoogleDocsUrl(params.url) ? normalizedUrl : params.url;
-      try {
-        const result = await fetchHtmlPage(fetchUrl);
-        contentUrl = result.finalUrl;
-
-        // If we got Markdown, convert it to HTML and extract title
-        if (result.isMarkdown) {
-          logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
-            url: fetchUrl,
-          });
-          markdownResult = await processMarkdown(result.content);
-          html = wrapHtmlFragment(markdownResult.html, markdownResult.title);
-        } else {
-          html = result.content;
-        }
-      } catch (error) {
-        logger.warn("Failed to fetch URL for saved article", {
-          url: fetchUrl,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        if (error instanceof ContentTooLargeError) {
-          throw errors.contentTooLarge("Article", maxSize);
-        }
-        if (error instanceof HttpFetchError && error.isBlocked()) {
-          throw errors.siteBlocked(fetchUrl, error.status);
-        }
-        throw errors.savedArticleFetchError(
-          fetchUrl,
-          error instanceof Error ? error.message : "Unknown error"
-        );
-      }
-    }
-  }
+  const { html, contentUrl, pluginContent, markdownResult } = await acquireArticleContent(
+    userId,
+    params,
+    normalizedUrl
+  );
 
   // Extract metadata from Open Graph / meta tags
   const metadata = extractMetadata(html, contentUrl);
@@ -655,10 +711,13 @@ export async function saveArticle(
   // extracted metadata, then Readability
   // When Readability ran, its output already has absolutized URLs; when it
   // was skipped for plugin/API content, absolutize here.
+  // When neither produced anything (Readability failed on a plain page),
+  // store NULL rather than the raw full page — readers fall back to the
+  // sanitized original content.
   const finalContentCleaned =
     markdownResult?.html ??
     cleaned?.content ??
-    (pluginContent ? absolutizeUrls(pluginContent.html, contentUrl) : html);
+    (pluginContent ? absolutizeUrls(pluginContent.html, contentUrl) : null);
   const finalTitle =
     pluginContent?.title ||
     params.title ||
@@ -718,23 +777,19 @@ export async function saveArticle(
       }
     }
 
-    // Update the existing entry with new content
-    await db
-      .update(entries)
-      .set(
-        withSanitizedEntryContent({
-          title: finalTitle,
-          author: finalAuthor,
-          contentOriginal: html,
-          contentCleaned: finalContentCleaned,
-          summary: excerpt,
-          siteName: finalSiteName,
-          imageUrl: metadata.imageUrl,
-          contentHash,
-          updatedAt: now,
-        })
-      )
-      .where(eq(entries.id, oldEntry.id));
+    // Update the existing entry with new content (sanitized at write time)
+    const update = withSanitizedEntryContent({
+      title: finalTitle,
+      author: finalAuthor,
+      contentOriginal: html,
+      contentCleaned: finalContentCleaned,
+      summary: excerpt,
+      siteName: finalSiteName,
+      imageUrl: metadata.imageUrl,
+      contentHash,
+      updatedAt: now,
+    });
+    await db.update(entries).set(update).where(eq(entries.id, oldEntry.id));
 
     // Mark as unread since content was updated
     await db
@@ -766,7 +821,8 @@ export async function saveArticle(
       siteName: finalSiteName,
       author: finalAuthor,
       imageUrl: metadata.imageUrl,
-      contentCleaned: finalContentCleaned,
+      // Serve the sanitized body computed for the write above
+      contentCleaned: update.contentCleanedSanitized ?? null,
       excerpt,
       read: false, // Marked unread since content was updated
       starred: userState.starred,

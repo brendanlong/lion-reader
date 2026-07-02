@@ -88,31 +88,12 @@ const savedUnreadCountsSchema = z.object({
 });
 
 // ============================================================================
-// Helpers
-// ============================================================================
-
-/**
- * Maps a service SavedArticle to the mutation output shape (metadata only,
- * no body — see savedArticleFullSchema).
- */
-function toSavedArticleOutput(article: savedService.SavedArticle) {
-  return {
-    id: article.id,
-    url: article.url,
-    title: article.title,
-    siteName: article.siteName,
-    author: article.author,
-    imageUrl: article.imageUrl,
-    excerpt: article.excerpt,
-    read: article.read,
-    starred: article.starred,
-    savedAt: article.savedAt,
-  };
-}
-
-// ============================================================================
 // Router
 // ============================================================================
+//
+// Mutations return the service article directly; the .output() schema
+// (savedArticleFullSchema) strips the body and internal fields (contentCleaned,
+// outcome) from the response.
 
 export const savedRouter = createTRPCRouter({
   /**
@@ -176,7 +157,7 @@ export const savedRouter = createTRPCRouter({
           : await countsService.getEntryRelatedCounts(ctx.db, userId, article.id);
 
       return {
-        article: toSavedArticleOutput(article),
+        article,
         counts: {
           all: counts.all,
           starred: counts.starred,
@@ -318,7 +299,7 @@ export const savedRouter = createTRPCRouter({
       const counts = await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null);
 
       return {
-        article: toSavedArticleOutput(article),
+        article,
         counts: {
           all: counts.all,
           starred: counts.starred,
