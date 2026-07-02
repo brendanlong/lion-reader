@@ -13,6 +13,7 @@
  */
 
 import {
+  calculateExceptionRetryDelayMs,
   claimJob as defaultClaimJob,
   claimSingletonJob,
   claimFeedJob,
@@ -362,8 +363,11 @@ function createWorker(config: WorkerConfig = {}): Worker {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-      // On exception, schedule retry with backoff
-      const nextRunAt = new Date(Date.now() + 60 * 1000); // 1 minute
+      // On exception, schedule the retry with exponential backoff based on how
+      // many times this job has failed in a row (finishJob increments the count).
+      const nextRunAt = new Date(
+        Date.now() + calculateExceptionRetryDelayMs(job.consecutiveFailures)
+      );
 
       try {
         await finishWithLease({

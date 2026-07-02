@@ -115,6 +115,39 @@ const STALE_JOB_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 export const JOB_LEASE_HEARTBEAT_MS = 60 * 1000; // 1 minute
 
 /**
+ * Base delay before retrying a job whose handler threw: 1 minute.
+ */
+const EXCEPTION_RETRY_BASE_MS = 60 * 1000;
+
+/**
+ * Maximum delay between retries of a job whose handler keeps throwing: 24 hours.
+ */
+const EXCEPTION_RETRY_MAX_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Calculates the retry delay for a job whose handler threw an exception.
+ *
+ * Handlers that fail gracefully return their own nextRunAt (feed fetches use
+ * calculateNextFetch's failure backoff), but an unexpected throw used to be
+ * retried on a flat 60s forever — a deterministically-throwing handler would
+ * hammer its remote host every minute (issue #953). Instead, mirror the feed
+ * failure backoff: exponential from 1 minute, doubling per consecutive
+ * failure, capped at 24 hours (1m, 2m, 4m, ... ~17h, 24h).
+ *
+ * @param consecutiveFailures - The job's failure count *before* this failure
+ *   (i.e. `job.consecutiveFailures` as claimed; finishJob increments it)
+ * @returns Delay in milliseconds until the next retry
+ */
+export function calculateExceptionRetryDelayMs(consecutiveFailures: number): number {
+  const exponent = Math.max(0, consecutiveFailures);
+  // Avoid overflow for huge failure counts: past 2^31 the cap always wins.
+  if (exponent >= 31) {
+    return EXCEPTION_RETRY_MAX_MS;
+  }
+  return Math.min(EXCEPTION_RETRY_BASE_MS * 2 ** exponent, EXCEPTION_RETRY_MAX_MS);
+}
+
+/**
  * Options for creating a new job.
  */
 export interface CreateJobOptions<T extends JobType> {
