@@ -20,6 +20,7 @@ import {
   getFeedEventsChannel,
   getUserEventsChannel,
 } from "../../src/server/redis/pubsub";
+import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
 import {
   getDb,
   createConfirmedUser,
@@ -259,6 +260,56 @@ test("entry_state_changed event syncs read state and counts across lists without
   await expect(links.subscriptionRow).toContainText("(1)");
   // ...while unaffected lists keep their counts
   await expect(links.starred).toContainText("(1)");
+  await expect(links.uncategorized).toContainText("(1)");
+
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+// Regression test: when the LAST unread entry of a subscription is read, the
+// server-computed counts must still include the subscription and its tag
+// (with unread 0). The grouped count queries used to omit lists that dropped
+// to zero, so the sidebar badges stayed stale until a refresh. Unlike the
+// test above, the event counts here come from the real counts service (as
+// entries.markRead computes them), not a hand-written literal.
+test("entry_state_changed for the last unread entry clears subscription and tag badges", async ({
+  page,
+  baseURL,
+}) => {
+  const { user, taggedFeed, taggedEntries, trpcCalls } = await seedAndOpenAll(
+    page,
+    baseURL!,
+    ({ user }) => getUserEventsChannel(user.id)
+  );
+  const links = sidebarLinks(page, taggedFeed);
+
+  await expect(links.allItems).toContainText("(3)");
+  await expect(links.newsTag).toContainText("(2)");
+  await expect(links.subscriptionRow).toContainText("(2)");
+  await expect(links.uncategorized).toContainText("(1)");
+
+  trpcCalls.length = 0;
+
+  // Simulate another device marking BOTH tagged entries read, draining the
+  // subscription: update the database, compute absolute counts with the same
+  // service entries.markRead uses, and publish the state change.
+  const db = getDb();
+  let updatedAt = new Date();
+  for (const entry of taggedEntries) {
+    updatedAt = await markEntryRead(db, user.id, entry.id);
+  }
+  const counts = await getBulkEntryRelatedCounts(db, user.id, [
+    { subscriptionId: taggedFeed.subscriptionId, type: "web" },
+  ]);
+  const lastEntry = taggedEntries[taggedEntries.length - 1];
+  await publishEntryStateChanged(user.id, lastEntry.id, true, false, updatedAt, counts);
+
+  // The sidebar defaults to unread-only mode, so once the subscription's
+  // count reaches zero the tag and subscription rows disappear entirely
+  // (with the stale non-zero count they'd stay visible)...
+  await expect(links.allItems).toContainText("(1)");
+  await expect(links.newsTag).toBeHidden();
+  await expect(links.subscriptionRow).toBeHidden();
+  // ...while the unaffected Uncategorized list keeps its count.
   await expect(links.uncategorized).toContainText("(1)");
 
   expect(refetchProcedures(trpcCalls)).toEqual([]);

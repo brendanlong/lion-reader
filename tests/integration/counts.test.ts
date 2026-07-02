@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -117,6 +118,13 @@ async function createOverlappingSubscriptions(userId: string) {
   return { feedIdA, feedIdB, subId1, subId2, entryIdA, entryIdB };
 }
 
+async function markEntryRead(userId: string, entryId: string): Promise<void> {
+  await db
+    .update(userEntries)
+    .set({ read: true })
+    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+}
+
 async function linkTag(userId: string, name: string, subscriptionIds: string[]): Promise<string> {
   const tagId = generateUuidv7();
   await db.insert(tags).values({ id: tagId, userId, name, createdAt: new Date() });
@@ -176,6 +184,26 @@ describe("Entry counts service", () => {
       expect(counts.uncategorized).toEqual({ unread: 2 });
     });
 
+    it("returns tags with unread 0 when the subscription's tags have no unread entries left", async () => {
+      // Regression test: the tag counts query only groups over unread entries,
+      // so when the last unread entry of a tagged subscription is read, the
+      // tag produced no row and the (empty) result was misread as "the
+      // subscription has no tags", returning the uncategorized count instead.
+      // The client sets counts absolutely, so the tag badge went stale.
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://events.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      const tagId = await linkTag(userId, "Events", [subId]);
+      const entryId = await createTestEntry(feedId, [userId]);
+      await markEntryRead(userId, entryId);
+
+      const counts = await getEntryRelatedCounts(db, userId, entryId);
+
+      expect(counts.subscription).toEqual({ id: subId, unread: 0 });
+      expect(counts.tags).toEqual([{ id: tagId, unread: 0 }]);
+      expect(counts.uncategorized).toBeUndefined();
+    });
+
     it("does not count other users' unread entries in tag counts", async () => {
       const userId = await createTestUser("user-a");
       const otherUserId = await createTestUser("user-b");
@@ -217,6 +245,66 @@ describe("Entry counts service", () => {
 
       expect(counts.tags).toEqual([]);
       expect(counts.uncategorized).toEqual({ unread: 2 });
+    });
+
+    it("returns subscription and tag with unread 0 when their last unread entry is read", async () => {
+      // Regression test for the "mark the last entry read" bug: the grouped
+      // subscription/tag count queries only return rows with unread entries,
+      // so a subscription or tag that dropped to zero was omitted from the
+      // result. The client applies these counts absolutely, so the sidebar
+      // badge stayed at its previous value until a refresh.
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://events.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      const tagId = await linkTag(userId, "Events", [subId]);
+      const entryId = await createTestEntry(feedId, [userId]);
+      await markEntryRead(userId, entryId);
+
+      const counts = await getBulkEntryRelatedCounts(db, userId, [
+        { subscriptionId: subId, type: "web" },
+      ]);
+
+      expect(counts.all).toEqual({ unread: 0 });
+      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0 }]);
+      expect(counts.tags).toEqual([{ id: tagId, unread: 0 }]);
+    });
+
+    it("returns unread 0 for the drained subscription while other counts stay correct", async () => {
+      // Two tagged subscriptions; only one is drained. The drained one must be
+      // zero-filled while the shared tag keeps counting the other's entries.
+      const userId = await createTestUser();
+      const feedIdA = await createTestFeed("https://drained.com/rss");
+      const feedIdB = await createTestFeed("https://active.com/rss");
+      const subIdA = await createTestSubscription(userId, feedIdA);
+      const subIdB = await createTestSubscription(userId, feedIdB);
+      const tagId = await linkTag(userId, "Mixed", [subIdA, subIdB]);
+      const entryIdA = await createTestEntry(feedIdA, [userId]);
+      await createTestEntry(feedIdB, [userId]);
+      await markEntryRead(userId, entryIdA);
+
+      const counts = await getBulkEntryRelatedCounts(db, userId, [
+        { subscriptionId: subIdA, type: "web" },
+      ]);
+
+      expect(counts.all).toEqual({ unread: 1 });
+      expect(counts.subscriptions).toEqual([{ id: subIdA, unread: 0 }]);
+      expect(counts.tags).toEqual([{ id: tagId, unread: 1 }]);
+    });
+
+    it("returns unread 0 for an uncategorized subscription drained of unread entries", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://uncategorized.com/rss");
+      const subId = await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, [userId]);
+      await markEntryRead(userId, entryId);
+
+      const counts = await getBulkEntryRelatedCounts(db, userId, [
+        { subscriptionId: subId, type: "web" },
+      ]);
+
+      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0 }]);
+      expect(counts.tags).toEqual([]);
+      expect(counts.uncategorized).toEqual({ unread: 0 });
     });
   });
 });

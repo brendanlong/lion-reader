@@ -216,10 +216,6 @@ export async function getEntryRelatedCounts(
  * Fetches tag unread counts for a specific subscription's tags.
  * If the subscription has no tags, returns uncategorized count instead.
  *
- * Optimized to use a single query: always fetches tag counts for the
- * subscription's tags. If no tags exist (empty result), falls back to
- * fetching the uncategorized count.
- *
  * @param db - Database instance
  * @param userId - User ID
  * @param subscriptionId - Subscription ID
@@ -230,45 +226,55 @@ async function getSubscriptionTagCounts(
   userId: string,
   subscriptionId: string
 ): Promise<{ tags: TagCount[]; uncategorized: { unread: number } | null }> {
-  // Single query: get tag IDs for this subscription and their unread counts.
-  // If the subscription has no tags, the result will be empty.
-  // COUNT(DISTINCT) dedupes entries reachable through multiple subscriptions
-  // of the same tag (overlapping subscription_feeds from redirect/merge
-  // history), matching listTags semantics.
-  const tagCounts = await db
-    .select({
-      tagId: subscriptionTags.tagId,
-      unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
-    })
-    .from(subscriptionTags)
-    .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))
-    // Scope to active subscriptions (user_feeds is active-only): visible_entries
-    // also surfaces starred entries from unsubscribed feeds, which must not
-    // inflate a tag's unread badge.
-    .innerJoin(
-      userFeeds,
-      and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
-    )
-    .where(
-      and(
-        eq(visibleEntries.userId, userId),
-        eq(visibleEntries.read, false),
-        // Use a subquery to find all tags for this subscription, then count
-        // entries for all subscriptions with those tags
-        inArray(
-          subscriptionTags.tagId,
-          db
-            .select({ tagId: subscriptionTags.tagId })
-            .from(subscriptionTags)
-            .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+  // The subscription's tag IDs are fetched alongside the grouped counts
+  // (not derived from them): the counts query joins unread entries, so a tag
+  // whose unread count dropped to zero produces no row. Every tag must still
+  // be returned (with unread: 0) — the client sets these counts absolutely,
+  // so an omitted tag would keep its stale badge.
+  const [subTagRows, tagCounts] = await Promise.all([
+    db
+      .select({ tagId: subscriptionTags.tagId })
+      .from(subscriptionTags)
+      .where(eq(subscriptionTags.subscriptionId, subscriptionId)),
+    // COUNT(DISTINCT) dedupes entries reachable through multiple subscriptions
+    // of the same tag (overlapping subscription_feeds from redirect/merge
+    // history), matching listTags semantics.
+    db
+      .select({
+        tagId: subscriptionTags.tagId,
+        unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+      })
+      .from(subscriptionTags)
+      .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))
+      // Scope to active subscriptions (user_feeds is active-only): visible_entries
+      // also surfaces starred entries from unsubscribed feeds, which must not
+      // inflate a tag's unread badge.
+      .innerJoin(
+        userFeeds,
+        and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+      )
+      .where(
+        and(
+          eq(visibleEntries.userId, userId),
+          eq(visibleEntries.read, false),
+          // Use a subquery to find all tags for this subscription, then count
+          // entries for all subscriptions with those tags
+          inArray(
+            subscriptionTags.tagId,
+            db
+              .select({ tagId: subscriptionTags.tagId })
+              .from(subscriptionTags)
+              .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+          )
         )
       )
-    )
-    .groupBy(subscriptionTags.tagId);
+      .groupBy(subscriptionTags.tagId),
+  ]);
 
-  if (tagCounts.length > 0) {
+  if (subTagRows.length > 0) {
+    const unreadByTag = new Map(tagCounts.map((t) => [t.tagId, t.unread]));
     return {
-      tags: tagCounts.map((t) => ({ id: t.tagId, unread: t.unread })),
+      tags: subTagRows.map((t) => ({ id: t.tagId, unread: unreadByTag.get(t.tagId) ?? 0 })),
       uncategorized: null,
     };
   }
@@ -380,9 +386,19 @@ export async function getBulkEntryRelatedCounts(
       .where(inArray(subscriptionTags.subscriptionId, subscriptionIds)),
   ]);
 
-  baseCounts.subscriptions = subscriptionCounts
-    .filter((s) => s.subscriptionId !== null)
-    .map((s) => ({ id: s.subscriptionId!, unread: s.unread }));
+  // Zero-fill: the grouped query only returns subscriptions that still have
+  // unread entries, but the client sets these counts absolutely — omitting a
+  // subscription whose last unread entry was just read would leave its stale
+  // badge in place.
+  const unreadBySubscription = new Map(
+    subscriptionCounts
+      .filter((s) => s.subscriptionId !== null)
+      .map((s) => [s.subscriptionId!, s.unread])
+  );
+  baseCounts.subscriptions = subscriptionIds.map((id) => ({
+    id,
+    unread: unreadBySubscription.get(id) ?? 0,
+  }));
 
   const tagIds = [...new Set(subTags.map((t) => t.tagId))];
   const subscriptionsWithTags = new Set(subTags.map((t) => t.subscriptionId));
@@ -439,9 +455,9 @@ export async function getBulkEntryRelatedCounts(
       : Promise.resolve(null),
   ]);
 
-  if (tagCounts.length > 0) {
-    baseCounts.tags = tagCounts.map((t) => ({ id: t.tagId, unread: t.unread }));
-  }
+  // Zero-fill missing tags for the same reason as subscriptions above.
+  const unreadByTag = new Map(tagCounts.map((t) => [t.tagId, t.unread]));
+  baseCounts.tags = tagIds.map((id) => ({ id, unread: unreadByTag.get(id) ?? 0 }));
 
   if (uncategorizedResult) {
     baseCounts.uncategorized = { unread: uncategorizedResult[0]?.unread ?? 0 };

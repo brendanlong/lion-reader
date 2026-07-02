@@ -17,7 +17,9 @@ import type { BrowserContext, Page } from "@playwright/test";
 import * as schema from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
-export type TestDb = NodePgDatabase<typeof schema>;
+// Includes $client so a TestDb satisfies the app's `typeof db` and can be
+// passed to service functions (e.g. the counts service) directly.
+export type TestDb = NodePgDatabase<typeof schema> & { $client: Pool };
 
 let pool: Pool | undefined;
 let redis: Redis | undefined;
