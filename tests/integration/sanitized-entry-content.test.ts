@@ -23,6 +23,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { SANITIZER_VERSION } from "../../src/server/html/sanitize";
+import * as entriesService from "../../src/server/services/entries";
 
 function createAuthContext(userId: string): Context {
   const now = new Date();
@@ -210,6 +211,96 @@ describe("entries.get sanitized content", () => {
         .from(entries)
         .where(eq(entries.id, entryId));
       return row?.version === SANITIZER_VERSION && (row?.sanitized ?? "").includes("hello");
+    });
+  });
+
+  // The services-layer getEntry/getEntries are the read path for MCP get_entry,
+  // Google Reader, and Wallabag — they must serve sanitized content too, not
+  // just the tRPC router (issue #956).
+  describe("services getEntry/getEntries", () => {
+    it("getEntry serves stored sanitized content, never the raw columns", async () => {
+      const { userId, feedId } = await seedSubscribedUser();
+      const entryId = generateUuidv7();
+      const now = new Date();
+      await db.insert(entries).values({
+        id: entryId,
+        feedId,
+        type: "web",
+        guid: `guid-${entryId}`,
+        title: "Stored",
+        contentCleaned: "<p>raw uncached</p>",
+        contentCleanedSanitized: "<p>STORED_SENTINEL</p>",
+        contentSanitizedVersion: SANITIZER_VERSION,
+        contentHash: `hash-${entryId}`,
+        fetchedAt: now,
+        publishedAt: now,
+        lastSeenAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await makeEntryVisible(userId, entryId);
+
+      const entry = await entriesService.getEntry(db, userId, entryId);
+      expect(entry.contentCleaned).toBe("<p>STORED_SENTINEL</p>");
+    });
+
+    it("getEntry sanitizes unhealed rows instead of returning raw HTML", async () => {
+      const { userId, feedId } = await seedSubscribedUser();
+      const entryId = generateUuidv7();
+      const now = new Date();
+      await db.insert(entries).values({
+        id: entryId,
+        feedId,
+        type: "web",
+        guid: `guid-${entryId}`,
+        title: "Unhealed",
+        contentCleaned: '<p onclick="evil()">hello<script>alert(1)</script></p>',
+        contentSanitizedVersion: null,
+        contentHash: `hash-${entryId}`,
+        fetchedAt: now,
+        publishedAt: now,
+        lastSeenAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await makeEntryVisible(userId, entryId);
+
+      const entry = await entriesService.getEntry(db, userId, entryId);
+      expect(entry.contentCleaned).toContain("hello");
+      expect(entry.contentCleaned).not.toContain("<script>");
+      expect(entry.contentCleaned).not.toContain("onclick");
+    });
+
+    it("getEntries sanitizes every returned entry", async () => {
+      const { userId, feedId } = await seedSubscribedUser();
+      const now = new Date();
+      const entryIds = [generateUuidv7(), generateUuidv7()];
+      for (const entryId of entryIds) {
+        await db.insert(entries).values({
+          id: entryId,
+          feedId,
+          type: "web",
+          guid: `guid-${entryId}`,
+          title: "Bulk",
+          contentCleaned: `<p>body-${entryId}<script>alert(1)</script></p>`,
+          contentSanitizedVersion: null,
+          contentHash: `hash-${entryId}`,
+          fetchedAt: now,
+          publishedAt: now,
+          lastSeenAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await makeEntryVisible(userId, entryId);
+      }
+
+      const results = await entriesService.getEntries(db, userId, entryIds);
+      expect(results).toHaveLength(2);
+      for (const [i, entry] of results.entries()) {
+        expect(entry.id).toBe(entryIds[i]);
+        expect(entry.contentCleaned).toContain(`body-${entryIds[i]}`);
+        expect(entry.contentCleaned).not.toContain("<script>");
+      }
     });
   });
 });
