@@ -5,7 +5,7 @@
  * countEntries, and markAllRead.
  */
 
-import { eq, and, isNull, notInArray, type SQL } from "drizzle-orm";
+import { eq, and, isNull, notInArray, type SQL, type SQLWrapper } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   subscriptionFeeds,
@@ -37,11 +37,11 @@ export interface EntryConditionParams {
 
 /**
  * Type for feed IDs condition that can be used with inArray.
- * This is either a string array (for subscription filters) or a Drizzle subquery
- * (for tag or uncategorized filters).
+ * This is either a string array (for subscription filters) or a Drizzle
+ * subquery (for tag or uncategorized filters) — subqueries implement
+ * SQLWrapper, which is what inArray accepts.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type FeedIdsCondition = string[] | any;
+type FeedIdsCondition = string[] | SQLWrapper;
 
 /**
  * Result of building entry feed filters.
@@ -94,7 +94,7 @@ export async function getSubscriptionFeedIds(
  * The join with tags table ensures the tag belongs to the user, eliminating
  * the need for a separate tag ownership validation query.
  */
-function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, userId: string) {
+export function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, userId: string) {
   return db
     .select({ feedId: subscriptionFeeds.feedId })
     .from(subscriptionTags)

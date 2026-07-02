@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
-import { uuidSchema } from "../validation";
+import { uuidSchema, tagColorSchema } from "../validation";
 import * as tagsService from "@/server/services/tags";
 
 // All tag operations are part of the MCP tool surface; accessible to tokens with the `mcp` scope.
@@ -28,15 +28,6 @@ const tagNameSchema = z
   .min(1, "Tag name is required")
   .max(50, "Tag name must be less than 50 characters")
   .trim();
-
-/**
- * Tag color validation schema.
- * Accepts hex colors like #ff6b6b or null.
- */
-const tagColorSchema = z
-  .string()
-  .regex(/^#[0-9a-fA-F]{6}$/, "Color must be a valid hex color (e.g., #ff6b6b)")
-  .nullable();
 
 // ============================================================================
 // Output Schemas

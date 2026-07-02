@@ -13,11 +13,14 @@ import {
   entries,
   subscriptions,
   subscriptionFeeds,
+  subscriptionTags,
+  tags,
   userEntries,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
+import { markAllEntriesRead } from "../../src/server/services/entries";
 
 // ============================================================================
 // Test Helpers
@@ -678,6 +681,44 @@ describe("Entries", () => {
       const result = await caller.entries.count({ unreadOnly: true });
 
       expect(result.unread).toBe(2);
+    });
+  });
+
+  describe("markAllEntriesRead service", () => {
+    it("scopes the tag filter to the caller's own tags", async () => {
+      // The service is the documented reuse layer, so tag ownership must be
+      // enforced here, not just by router pre-validation (issue #956).
+      const victimId = await createTestUser("victim");
+      const attackerId = await createTestUser("attacker");
+
+      const feedId = await createTestFeed("https://victim-feed.com/rss");
+      const subscriptionId = await createTestSubscription(victimId, feedId);
+      const entryId = await createTestEntry(feedId, { title: "Victim entry" });
+      await createUserEntry(victimId, entryId, { read: false });
+
+      // The victim's tag on the victim's subscription
+      const tagId = generateUuidv7();
+      await db.insert(tags).values({ id: tagId, userId: victimId, name: "Victim tag" });
+      await db.insert(subscriptionTags).values({ tagId, subscriptionId });
+
+      // The attacker subscribes to the same shared feed with their own unread
+      // entry, then passes the victim's tagId. Another user's tag must not
+      // resolve to any feeds for them.
+      await createTestSubscription(attackerId, feedId);
+      await createUserEntry(attackerId, entryId, { read: false });
+
+      const marked = await markAllEntriesRead(db, { userId: attackerId, tagId });
+      expect(marked).toEqual([]);
+
+      const attackerEntries = await db
+        .select({ read: userEntries.read })
+        .from(userEntries)
+        .where(eq(userEntries.userId, attackerId));
+      expect(attackerEntries).toEqual([{ read: false }]);
+
+      // The owner can still mark through their tag
+      const ownMarked = await markAllEntriesRead(db, { userId: victimId, tagId });
+      expect(ownMarked).toEqual([entryId]);
     });
   });
 

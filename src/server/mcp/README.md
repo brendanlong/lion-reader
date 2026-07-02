@@ -85,12 +85,16 @@ Configure Claude Desktop to use the local server:
       "args": ["--dir", "/path/to/lion-reader", "mcp:serve"],
       "env": {
         "DATABASE_URL": "postgresql://...",
-        "REDIS_URL": "redis://..."
+        "REDIS_URL": "redis://...",
+        "LION_READER_USER_ID": "<your user's UUID>"
       }
     }
   }
 }
 ```
+
+The stdio transport has no authentication layer — it acts as the single user
+configured via `LION_READER_USER_ID` (the `users.id` UUID to operate as).
 
 Replace `/path/to/lion-reader` with the actual path to your Lion Reader installation.
 

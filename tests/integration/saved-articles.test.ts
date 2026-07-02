@@ -988,6 +988,26 @@ describe("Saved Articles API", () => {
   });
 
   describe("saved.save with provided HTML", () => {
+    it("rejects provided HTML larger than the saved article size limit", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const { usageLimitsConfig } = await import("../../src/server/config/env");
+      const hugeHtml = "x".repeat(usageLimitsConfig.maxSavedArticleSizeBytes + 1);
+
+      await expect(
+        caller.saved.save({ url: "https://example.com/too-big", html: hugeHtml })
+      ).rejects.toThrow();
+
+      // Nothing persisted
+      const saved = await db
+        .select({ id: entries.id })
+        .from(entries)
+        .where(eq(entries.url, "https://example.com/too-big"));
+      expect(saved).toHaveLength(0);
+    });
+
     it("uses provided HTML instead of fetching the URL", async () => {
       const userId = await createTestUser();
       const ctx = createAuthContext(userId);

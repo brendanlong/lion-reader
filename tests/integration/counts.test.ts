@@ -204,6 +204,20 @@ describe("Entry counts service", () => {
       expect(counts.uncategorized).toBeUndefined();
     });
 
+    it("returns the real global counts when the entry is not visible to the user", async () => {
+      // A caller patching these into the cache must not zero the user's
+      // badges just because the target entry wasn't visible (issue #956).
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://mine.com/rss");
+      await createTestSubscription(userId, feedId);
+      await createTestEntry(feedId, [userId]); // one real unread entry
+
+      const counts = await getEntryRelatedCounts(db, userId, generateUuidv7());
+
+      expect(counts.all).toEqual({ unread: 1 });
+      expect(counts.starred).toEqual({ unread: 0 });
+    });
+
     it("does not count other users' unread entries in tag counts", async () => {
       const userId = await createTestUser("user-a");
       const otherUserId = await createTestUser("user-b");

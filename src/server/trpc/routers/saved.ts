@@ -13,52 +13,30 @@
  * - entries.markRead, entries.star, entries.unstar for mutations
  *
  * This router only handles:
- * - saved.save: Save a URL (special content extraction logic)
+ * - saved.save: Save a URL (content extraction in services/saved.ts)
  * - saved.delete: Hard delete a saved article (entries use soft delete)
+ * - saved.uploadFile: Upload a file (.docx/.html/.md) as a saved article
+ *
+ * Business logic lives in the saved service (`@/server/services/saved`),
+ * shared with the MCP save_article/delete_saved_article/upload_article tools.
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
-import { Parser } from "htmlparser2";
 import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
-import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
-import { markdownToHtml } from "@/server/markdown";
-import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
-import { entries, userEntries } from "@/server/db/schema";
-import { generateUuidv7 } from "@/lib/uuidv7";
-import { normalizeUrl } from "@/lib/url";
-import { absolutizeUrls } from "@/server/feed/content-cleaner";
-import { cleanContentInWorker } from "@/server/worker-thread/pool";
-import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
-import { generateSummary } from "@/server/html/strip-html";
-import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
-import {
-  isGoogleDocsUrl,
-  fetchGoogleDocsFromUrl,
-  fetchPrivateGoogleDoc,
-  extractDocId,
-  extractTabId,
-  normalizeGoogleDocsUrl,
-  GOOGLE_DRIVE_SCOPE,
-  type GoogleDocsContent,
-} from "@/server/google/docs";
-import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
-import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth/oauth/google";
+import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
-import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
 import * as countsService from "@/server/services/counts";
+import * as savedService from "@/server/services/saved";
 import {
   processUploadedFile,
   detectFileType,
   getSupportedTypesDescription,
 } from "@/server/file/process-upload";
-import { pluginRegistry } from "@/server/plugins";
-import { generateContentHash, createUploadedArticle } from "@/server/services/saved";
 
 // Saved-article reads/management are part of the MCP tool surface (`mcp` scope).
 const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
@@ -110,103 +88,12 @@ const savedUnreadCountsSchema = z.object({
 });
 
 // ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Extracts metadata from HTML using Open Graph and meta tags.
- * Uses SAX parsing for efficiency and exits early after </head>.
- */
-interface PageMetadata {
-  title: string | null;
-  siteName: string | null;
-  author: string | null;
-  imageUrl: string | null;
-}
-
-function extractMetadata(html: string, url: string): PageMetadata {
-  // Use an object to collect results - avoids TypeScript control flow issues with callbacks
-  const result: PageMetadata = {
-    title: null,
-    siteName: null,
-    author: null,
-    imageUrl: null,
-  };
-
-  let ogTitle: string | null = null;
-  let titleText: string | null = null;
-  let inTitle = false;
-  let titleContent = "";
-
-  const parser = new Parser(
-    {
-      onopentag(name, attribs) {
-        const tagName = name.toLowerCase();
-
-        if (tagName === "title") {
-          inTitle = true;
-          titleContent = "";
-        } else if (tagName === "meta") {
-          const property = attribs.property?.toLowerCase();
-          const metaName = attribs.name?.toLowerCase();
-          const content = attribs.content;
-
-          if (property === "og:title" && content && !ogTitle) {
-            ogTitle = content;
-          } else if (property === "og:site_name" && content && !result.siteName) {
-            result.siteName = content;
-          } else if (property === "og:image" && content && !result.imageUrl) {
-            result.imageUrl = content;
-          } else if (property === "article:author" && content && !result.author) {
-            result.author = content;
-          } else if (metaName === "author" && content && !result.author) {
-            result.author = content;
-          }
-        }
-      },
-      ontext(text) {
-        if (inTitle) {
-          titleContent += text;
-        }
-      },
-      onclosetag(name) {
-        const tagName = name.toLowerCase();
-
-        if (tagName === "title") {
-          inTitle = false;
-          if (titleContent.trim() && !titleText) {
-            titleText = titleContent.trim();
-          }
-        } else if (tagName === "head") {
-          // Exit early after </head> - metadata is only in head
-          parser.pause();
-        }
-      },
-    },
-    { decodeEntities: true }
-  );
-
-  parser.write(html);
-  parser.end();
-
-  // Prefer og:title, fall back to <title>
-  result.title = ogTitle || titleText;
-
-  // Make image URL absolute if it's relative
-  if (result.imageUrl && !result.imageUrl.startsWith("http")) {
-    try {
-      result.imageUrl = new URL(result.imageUrl, url).href;
-    } catch {
-      result.imageUrl = null;
-    }
-  }
-
-  return result;
-}
-
-// ============================================================================
 // Router
 // ============================================================================
+//
+// Mutations return the service article directly; the .output() schema
+// (savedArticleFullSchema) strips the body and internal fields (contentCleaned,
+// outcome) from the response.
 
 export const savedRouter = createTRPCRouter({
   /**
@@ -236,7 +123,13 @@ export const savedRouter = createTRPCRouter({
     .input(
       z.object({
         url: urlSchema,
-        html: z.string().optional(),
+        html: z
+          .string()
+          .max(
+            usageLimitsConfig.maxSavedArticleSizeBytes,
+            "Provided HTML exceeds the maximum saved article size"
+          )
+          .optional(),
         title: z.string().optional(),
         /** When true (default), re-fetch and update if URL is already saved */
         refetch: z.boolean().default(true),
@@ -247,538 +140,24 @@ export const savedRouter = createTRPCRouter({
     .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const now = new Date();
 
-      // Normalize URL: strip fragments (two URLs differing only by #section point to same article)
-      // For Google Docs, also remove extraneous query params except 'tab'
-      let normalizedUrl = normalizeUrl(input.url);
-      if (isGoogleDocsUrl(normalizedUrl)) {
-        normalizedUrl = normalizeGoogleDocsUrl(normalizedUrl);
-      }
-
-      // Get or create the user's saved feed
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
-
-      // Check if URL is already saved (guid = normalized URL for saved articles)
-      const existing = await ctx.db
-        .select({
-          entry: entries,
-          userState: userEntries,
-        })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(
-          and(
-            eq(entries.feedId, savedFeedId),
-            eq(entries.guid, normalizedUrl),
-            eq(userEntries.userId, userId)
-          )
-        )
-        .limit(1);
-
-      // Track existing entry for refetch comparison
-      let existingEntry: (typeof existing)[0] | null = null;
-
-      if (existing.length > 0) {
-        if (!input.refetch) {
-          // Return existing article instead of error
-          const { entry, userState } = existing[0];
-          // Get counts for existing entry
-          const counts = await countsService.getEntryRelatedCounts(ctx.db, userId, entry.id);
-          return {
-            article: {
-              id: entry.id,
-              url: entry.url!,
-              title: entry.title,
-              siteName: entry.siteName,
-              author: entry.author,
-              imageUrl: entry.imageUrl,
-              excerpt: entry.summary,
-              read: userState.read,
-              starred: userState.starred,
-              savedAt: entry.fetchedAt,
-            },
-            counts: {
-              all: counts.all,
-              starred: counts.starred,
-              saved: counts.saved!,
-            },
-          };
-        }
-        // refetch=true: continue to fetch new content and compare
-        existingEntry = existing[0];
-      }
-
-      // Use provided HTML or fetch the page
-      let html: string | undefined;
-      // The URL the content was actually fetched from (after redirects).
-      // Used for resolving relative URLs in the content.
-      let contentUrl: string = input.url;
-      // For Google Docs URLs, we may get content from the Google Docs API
-      let googleDocsContent: GoogleDocsContent | null = null;
-      // For plugin-handled URLs, we may get content from a plugin
-      let pluginContent: {
-        html: string;
-        title?: string | null;
-        author?: string | null;
-        siteName?: string;
-        publishedAt?: Date | null;
-        skipReadability?: boolean;
-      } | null = null;
-
-      if (input.html) {
-        html = input.html;
-        logger.debug("Using provided HTML for saved article", {
-          url: input.url,
-          htmlLength: html.length,
-        });
-      } else if (isGoogleDocsUrl(input.url)) {
-        // Try Google Docs API first (pages don't render well without JavaScript)
-        // Use normalized URL for consistent fetching
-        logger.debug("Attempting Google Docs API fetch", { url: normalizedUrl });
-        googleDocsContent = await fetchGoogleDocsFromUrl(normalizedUrl);
-
-        if (googleDocsContent) {
-          // Public fetch succeeded
-          html = `<!DOCTYPE html><html><head><title>${escapeHtml(googleDocsContent.title)}</title></head><body>${googleDocsContent.html}</body></html>`;
-          logger.debug("Successfully fetched Google Docs content via API", {
-            url: normalizedUrl,
-            docId: googleDocsContent.docId,
-            title: googleDocsContent.title,
-          });
-        } else {
-          // Public fetch failed, try with user's OAuth token if available
-          const docId = extractDocId(normalizedUrl);
-          const tabId = extractTabId(normalizedUrl);
-
-          if (docId) {
-            // Check if user has Google OAuth linked
-            const googleOAuth = await getOAuthAccount(ctx.session.user.id, "google");
-
-            if (googleOAuth) {
-              // Check if user has granted both required scopes:
-              // - documents.readonly for native Google Docs via Docs API
-              // - drive.readonly for uploaded .docx files via Drive API
-              const [hasDocsApiScope, hasDriveScope] = await Promise.all([
-                hasGoogleScope(ctx.session.user.id, GOOGLE_DOCS_READONLY_SCOPE),
-                hasGoogleScope(ctx.session.user.id, GOOGLE_DRIVE_SCOPE),
-              ]);
-
-              if (!hasDocsApiScope || !hasDriveScope) {
-                // User has Google OAuth but hasn't granted required permissions
-                logger.debug("User needs to grant Google Docs permissions", {
-                  userId: ctx.session.user.id,
-                  url: normalizedUrl,
-                  hasDocsApiScope,
-                  hasDriveScope,
-                });
-                throw new TRPCError({
-                  code: "FORBIDDEN",
-                  message: "NEEDS_DOCS_PERMISSION",
-                  cause: {
-                    code: "NEEDS_DOCS_PERMISSION",
-                    details: {
-                      url: normalizedUrl,
-                      scopes: [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
-                    },
-                  },
-                });
-              }
-
-              // User has the required scope, try fetching with their token
-              try {
-                logger.debug("Attempting private Google Docs fetch with user OAuth", {
-                  userId: ctx.session.user.id,
-                  docId,
-                });
-                const accessToken = await getValidGoogleToken(ctx.session.user.id);
-                googleDocsContent = await fetchPrivateGoogleDoc(docId, accessToken, tabId);
-
-                if (googleDocsContent) {
-                  html = `<!DOCTYPE html><html><head><title>${escapeHtml(googleDocsContent.title)}</title></head><body>${googleDocsContent.html}</body></html>`;
-                  logger.debug("Successfully fetched private Google Docs content", {
-                    userId: ctx.session.user.id,
-                    docId: googleDocsContent.docId,
-                    title: googleDocsContent.title,
-                  });
-                }
-              } catch (error) {
-                if (error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {
-                  throw new TRPCError({
-                    code: "UNAUTHORIZED",
-                    message: "Google authentication expired. Please reconnect your Google account.",
-                  });
-                } else if (error instanceof Error && error.message === "GOOGLE_PERMISSION_DENIED") {
-                  throw new TRPCError({
-                    code: "FORBIDDEN",
-                    message: "You don't have permission to access this Google Doc.",
-                  });
-                } else if (error instanceof Error && error.message === "GOOGLE_NEEDS_REAUTH") {
-                  throw new TRPCError({
-                    code: "UNAUTHORIZED",
-                    message: "NEEDS_GOOGLE_REAUTH",
-                    cause: {
-                      code: "NEEDS_GOOGLE_REAUTH",
-                      details: {
-                        url: normalizedUrl,
-                      },
-                    },
-                  });
-                }
-                // Other errors - continue to fallback
-                logger.warn("Failed to fetch private Google Doc with OAuth", {
-                  userId: ctx.session.user.id,
-                  docId,
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              }
-            } else {
-              // User doesn't have Google OAuth linked
-              logger.debug("User needs to sign in with Google for private docs", {
-                userId: ctx.session.user.id,
-                url: normalizedUrl,
-              });
-              throw new TRPCError({
-                code: "UNAUTHORIZED",
-                message: "NEEDS_GOOGLE_SIGNIN",
-                cause: {
-                  code: "NEEDS_GOOGLE_SIGNIN",
-                  details: {
-                    url: normalizedUrl,
-                  },
-                },
-              });
-            }
-          }
-
-          // If we still don't have content, fall back to normal HTML fetch
-          if (!googleDocsContent) {
-            logger.debug("Google Docs API fetch failed, falling back to normal fetch", {
-              url: normalizedUrl,
-            });
-            try {
-              const result = await fetchHtmlPage(normalizedUrl);
-              contentUrl = result.finalUrl;
-              html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
-            } catch (error) {
-              logger.warn("Failed to fetch Google Docs URL", {
-                url: normalizedUrl,
-                error: error instanceof Error ? error.message : String(error),
-              });
-              if (error instanceof HttpFetchError && error.isBlocked()) {
-                throw errors.siteBlocked(normalizedUrl, error.status);
-              }
-              throw errors.savedArticleFetchError(
-                normalizedUrl,
-                error instanceof Error ? error.message : "Unknown error"
-              );
-            }
-          }
-        }
-      } else {
-        // For all other URLs, use the plugin system
-        // LessWrong and ArXiv are now handled by plugins, no need for special cases
-        // Check if a plugin can handle this URL
-        let urlObj: URL | null = null;
-        try {
-          urlObj = new URL(input.url);
-        } catch {
-          // Invalid URL, continue to normal fetch
-        }
-
-        const plugin = urlObj ? pluginRegistry.findWithCapability(urlObj, "savedArticle") : null;
-
-        if (plugin) {
-          logger.debug("Attempting plugin fetch for saved article", {
-            url: input.url,
-            plugin: plugin.name,
-          });
-
-          try {
-            const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!, {});
-            if (content) {
-              pluginContent = {
-                html: content.html,
-                title: content.title,
-                author: content.author,
-                siteName: plugin.capabilities.savedArticle.siteName,
-                publishedAt: content.publishedAt,
-                skipReadability: plugin.capabilities.savedArticle.skipReadability,
-              };
-              html = content.html;
-              if (content.canonicalUrl) {
-                contentUrl = content.canonicalUrl;
-              }
-              logger.debug("Successfully fetched content via plugin", {
-                url: input.url,
-                plugin: plugin.name,
-                title: content.title,
-              });
-            }
-          } catch (error) {
-            logger.warn("Plugin fetch failed, falling back to normal fetch", {
-              url: input.url,
-              plugin: plugin.name,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-
-        // Fall back to normal HTML fetch if plugin didn't provide content
-        if (!html) {
-          try {
-            const result = await fetchHtmlPage(input.url);
-            contentUrl = result.finalUrl;
-            html = result.isMarkdown ? await markdownToHtml(result.content) : result.content;
-          } catch (error) {
-            logger.warn("Failed to fetch URL for saved article", {
-              url: input.url,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            // Check if this is a blocked site error (403, 429, etc.)
-            if (error instanceof HttpFetchError && error.isBlocked()) {
-              throw errors.siteBlocked(input.url, error.status);
-            }
-            throw errors.savedArticleFetchError(
-              input.url,
-              error instanceof Error ? error.message : "Unknown error"
-            );
-          }
-        }
-      }
-
-      // Ensure we have HTML content at this point
-      if (!html) {
-        throw errors.savedArticleFetchError(input.url, "Failed to fetch content");
-      }
-
-      // Extract metadata (for LessWrong, we already have better metadata from GraphQL)
-      const metadata = extractMetadata(html, contentUrl);
-
-      // Run Readability for clean content (also absolutizes URLs internally)
-      // Skip for Google Docs API content and plugins that request skipReadability
-      const shouldSkipReadability =
-        Boolean(googleDocsContent) || (pluginContent?.skipReadability ?? false);
-      const cleaned = shouldSkipReadability
-        ? null
-        : await cleanContentInWorker(html, { url: contentUrl });
-
-      // Generate excerpt
-      let excerpt: string | null = null;
-      if (googleDocsContent) {
-        // For Google Docs API content, use generateSummary which properly decodes HTML entities
-        excerpt = generateSummary(googleDocsContent.html) || null;
-      } else if (pluginContent) {
-        // For plugin content, use generateSummary
-        excerpt = generateSummary(pluginContent.html) || null;
-      } else if (cleaned) {
-        excerpt = cleaned.excerpt || cleaned.textContent.slice(0, 300).trim() || null;
-        if (excerpt && excerpt.length > 300) {
-          excerpt = excerpt.slice(0, 297) + "...";
-        }
-      }
-
-      // Use provided title, then API data (Google Docs/LessWrong), then metadata, then Readability as fallback
-      // For Google Docs, prefer API title over browser-provided title (which includes " - Google Docs" suffix)
-      // For other sources, prefer plugin data, then provided title, then metadata
-      const finalTitle =
-        googleDocsContent?.title ||
-        pluginContent?.title ||
-        input.title ||
-        metadata.title ||
-        cleaned?.title ||
-        null;
-      // For author, prefer API data (Google Docs/Plugin), then metadata
-      const finalAuthor =
-        googleDocsContent?.author ||
-        pluginContent?.author ||
-        metadata.author ||
-        cleaned?.byline ||
-        null;
-      // For siteName, use appropriate source when content came from API
-      const finalSiteName = googleDocsContent
-        ? "Google Docs"
-        : pluginContent?.siteName || metadata.siteName;
-      // Saved articles don't have a publishedAt - they use fetchedAt (when saved)
-      // This ensures consistent sorting by save time in all views
-
-      // When cleanContent ran, it already absolutized URLs in its output.
-      // When it was skipped (Google Docs or skipReadability plugins), absolutize here.
-      const rawContentCleaned = googleDocsContent?.html || pluginContent?.html || null;
-      const finalContentCleaned =
-        cleaned?.content ??
-        (rawContentCleaned ? absolutizeUrls(rawContentCleaned, contentUrl) : null);
-
-      // Compute content hash for narration deduplication
-      const contentHash = generateContentHash(finalTitle, finalContentCleaned || html);
-
-      // Handle refetch case: update existing entry if quality is acceptable
-      if (existingEntry) {
-        const { entry: oldEntry, userState } = existingEntry;
-
-        // Compare content quality to avoid overwriting good content with bad
-        // (e.g., private Google Doc fetched with auth, refetched without)
-        if (!input.force) {
-          const oldTextLength = oldEntry.contentCleaned
-            ? extractTextFromHtml(oldEntry.contentCleaned).length
-            : 0;
-
-          // Get new text length from cleaned content or fall back to HTML
-          const newTextLength = googleDocsContent
-            ? extractTextFromHtml(googleDocsContent.html).length
-            : cleaned
-              ? cleaned.textContent.length
-              : extractTextFromHtml(html).length;
-
-          // Reject if new content is significantly shorter AND short in absolute terms
-          // This catches error pages and access-denied pages while allowing legitimate edits
-          const isSignificantlyWorse = newTextLength < oldTextLength * 0.5 && newTextLength < 500;
-
-          if (isSignificantlyWorse) {
-            logger.warn("Refetch rejected: new content appears worse", {
-              url: normalizedUrl,
-              oldTextLength,
-              newTextLength,
-              ratio: oldTextLength > 0 ? newTextLength / oldTextLength : 0,
-            });
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "REFETCH_CONTENT_WORSE",
-              cause: {
-                code: "REFETCH_CONTENT_WORSE",
-                details: {
-                  url: normalizedUrl,
-                  oldLength: oldTextLength,
-                  newLength: newTextLength,
-                  hint: "The refetched content appears significantly shorter than the original. This often happens when a private document is refetched without authentication. Use force=true to override.",
-                },
-              },
-            });
-          }
-        }
-
-        // Update the existing entry with new content
-        await ctx.db
-          .update(entries)
-          .set(
-            withSanitizedEntryContent({
-              title: finalTitle,
-              author: finalAuthor,
-              contentOriginal: html,
-              contentCleaned: finalContentCleaned,
-              summary: excerpt,
-              siteName: finalSiteName,
-              imageUrl: metadata.imageUrl,
-              contentHash,
-              updatedAt: now,
-            })
-          )
-          .where(eq(entries.id, oldEntry.id));
-
-        // Mark as unread since content was updated
-        await ctx.db
-          .update(userEntries)
-          .set({ read: false })
-          .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, oldEntry.id)));
-
-        logger.info("Refetched saved article", {
-          entryId: oldEntry.id,
-          url: normalizedUrl,
-          forced: input.force ?? false,
-        });
-
-        // Publish event to notify other browser windows/tabs of the update
-        await publishEntryUpdatedFromEntry(savedFeedId, {
-          id: oldEntry.id,
-          title: finalTitle,
-          author: finalAuthor,
-          summary: excerpt,
-          url: normalizedUrl,
-          publishedAt: oldEntry.publishedAt,
-          updatedAt: now,
-        });
-
-        // Get counts after update
-        const counts = await countsService.getEntryRelatedCounts(ctx.db, userId, oldEntry.id);
-
-        return {
-          article: {
-            id: oldEntry.id,
-            url: normalizedUrl,
-            title: finalTitle,
-            siteName: finalSiteName,
-            author: finalAuthor,
-            imageUrl: metadata.imageUrl,
-            excerpt,
-            read: false, // Marked unread since content was updated
-            starred: userState.starred,
-            savedAt: oldEntry.fetchedAt, // Keep original save time
-          },
-          counts: {
-            all: counts.all,
-            starred: counts.starred,
-            saved: counts.saved!,
-          },
-        };
-      }
-
-      // Create new saved article entry
-      const entryId = generateUuidv7();
-      await ctx.db.insert(entries).values(
-        withSanitizedEntryContent({
-          id: entryId,
-          feedId: savedFeedId,
-          type: "saved",
-          guid: normalizedUrl, // For saved articles, guid = normalized URL
-          url: normalizedUrl,
-          title: finalTitle,
-          author: finalAuthor,
-          contentOriginal: html,
-          contentCleaned: finalContentCleaned,
-          summary: excerpt,
-          siteName: finalSiteName,
-          imageUrl: metadata.imageUrl,
-          publishedAt: null,
-          fetchedAt: now, // When saved
-          contentHash,
-          // Email-specific fields are NULL for saved entries
-          spamScore: null,
-          isSpam: false,
-          listUnsubscribeMailto: null,
-          listUnsubscribeHttps: null,
-          listUnsubscribePost: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-      );
-
-      // Create user_entries row
-      await ctx.db.insert(userEntries).values({
-        userId,
-        entryId,
-        read: false,
-        starred: false,
+      const article = await savedService.saveArticle(ctx.db, userId, {
+        url: input.url,
+        html: input.html,
+        title: input.title,
+        refetch: input.refetch,
+        force: input.force,
+        // The web UI can walk the user through Google sign-in / consent.
+        googleDocsAuth: true,
       });
 
-      // Publish event to notify other browser windows/tabs
-      await publishNewEntry(savedFeedId, entryId, now, "saved");
-
-      // Get counts after creating new entry
-      const counts = await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null);
+      const counts =
+        article.outcome === "created"
+          ? await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null)
+          : await countsService.getEntryRelatedCounts(ctx.db, userId, article.id);
 
       return {
-        article: {
-          id: entryId,
-          url: normalizedUrl,
-          title: finalTitle,
-          siteName: finalSiteName,
-          author: finalAuthor,
-          imageUrl: metadata.imageUrl,
-          excerpt,
-          read: false,
-          starred: false,
-          savedAt: now,
-        },
+        article,
         counts: {
           all: counts.all,
           starred: counts.starred,
@@ -812,32 +191,10 @@ export const savedRouter = createTRPCRouter({
     )
     .output(z.object({}))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Get or create the user's saved feed
-      const savedFeedId = await getOrCreateSavedFeed(ctx.db, userId);
-
-      // Verify the article exists and belongs to the user's saved feed
-      const existing = await ctx.db
-        .select({ id: entries.id })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(
-          and(
-            eq(entries.id, input.id),
-            eq(entries.feedId, savedFeedId),
-            eq(userEntries.userId, userId)
-          )
-        )
-        .limit(1);
-
-      if (existing.length === 0) {
+      const deleted = await savedService.deleteSavedArticle(ctx.db, ctx.session.user.id, input.id);
+      if (!deleted) {
         throw errors.savedArticleNotFound();
       }
-
-      // Delete the entry (will cascade to user_entries)
-      await ctx.db.delete(entries).where(eq(entries.id, input.id));
-
       return {};
     }),
 
@@ -923,7 +280,7 @@ export const savedRouter = createTRPCRouter({
       const finalTitle = input.title || processed.title;
 
       // Create the uploaded article using the shared service
-      const article = await createUploadedArticle(ctx.db, userId, {
+      const article = await savedService.createUploadedArticle(ctx.db, userId, {
         contentHtml: processed.contentCleaned,
         title: finalTitle,
         excerpt: processed.excerpt,
@@ -942,18 +299,7 @@ export const savedRouter = createTRPCRouter({
       const counts = await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null);
 
       return {
-        article: {
-          id: article.id,
-          url: article.url,
-          title: article.title,
-          siteName: article.siteName,
-          author: article.author,
-          imageUrl: article.imageUrl,
-          excerpt: article.excerpt,
-          read: article.read,
-          starred: article.starred,
-          savedAt: article.savedAt,
-        },
+        article,
         counts: {
           all: counts.all,
           starred: counts.starred,

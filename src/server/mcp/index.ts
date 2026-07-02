@@ -14,7 +14,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/server/db";
-import { registerTools } from "./tools.js";
+import { registerTools, toMcpError } from "./tools.js";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -60,8 +60,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new Error(`Unknown tool: ${name}`);
     }
 
-    // Tool handlers will use services to execute operations
-    const result = await tool.handler(db, args ?? {});
+    // stdio is a trusted local single-user transport with no authentication
+    // layer: the acting user is configured at server startup via
+    // LION_READER_USER_ID. Identity is a property of the session, not of each
+    // call — the advertised tool schemas deliberately have no userId argument
+    // (they set additionalProperties: false, so clients can't pass one).
+    const userId = process.env.LION_READER_USER_ID;
+    if (!userId) {
+      throw new Error(
+        "No user configured: set the LION_READER_USER_ID environment variable to the user's ID"
+      );
+    }
+    const result = await tool.handler(db, userId, args ?? {});
 
     return {
       content: [
@@ -73,7 +83,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   } catch (error) {
     logger.error("MCP tool execution error", { tool: name, error });
-    throw error;
+    throw toMcpError(error);
   }
 });
 

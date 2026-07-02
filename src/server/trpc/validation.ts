@@ -16,6 +16,21 @@ import { z } from "zod";
 export const uuidSchema = z.string().uuid("Invalid ID");
 
 // ============================================================================
+// Tag Schemas
+// ============================================================================
+
+/**
+ * Tag color validation schema.
+ * Accepts hex colors like #ff6b6b or null. Shared between the tRPC tags
+ * router and the MCP create_tag/update_tag tools so the two surfaces enforce
+ * the same invariant (tag colors are rendered into inline styles).
+ */
+export const tagColorSchema = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, "Color must be a valid hex color (e.g., #ff6b6b)")
+  .nullable();
+
+// ============================================================================
 // URL Schemas
 // ============================================================================
 

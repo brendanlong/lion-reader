@@ -17,7 +17,6 @@ import {
   LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
 } from "@/server/feed/lesswrong";
 import { cleanLessWrongContent } from "@/server/feed/content-cleaner";
-import { wrapHtmlFragment } from "@/server/http/html";
 import { logger } from "@/lib/logger";
 
 /**
@@ -137,7 +136,7 @@ export const lessWrongPlugin: UrlPlugin = {
                 : null;
 
           return {
-            html: wrapHtmlFragment(content.html, title),
+            html: content.html,
             title: title || null,
             author: content.author || null,
             publishedAt: content.publishedAt || null,

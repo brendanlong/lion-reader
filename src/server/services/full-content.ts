@@ -6,11 +6,18 @@
  * then falls back to standard HTML fetching and Readability.
  */
 
+import { createHash } from "crypto";
+import { eq } from "drizzle-orm";
+import type { db as dbType } from "@/server/db";
+import { entries, narrationContent } from "@/server/db/schema";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
+import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { pluginRegistry } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { processMarkdown } from "@/server/markdown";
+import { errors } from "@/server/trpc/errors";
+import { selectFullEntry, toFullEntry } from "./entries";
 
 /**
  * Result of fetching full article content.
@@ -140,6 +147,177 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
       error: errorMessage,
     };
   }
+}
+
+/**
+ * Persist a fetchFullContent result onto an entry's full-content columns.
+ *
+ * This is the single write site for the full-content invariants — hash
+ * derivation for summary caching, sanitized-column stamping via
+ * withSanitizedEntryContent, and error persistence — shared by the
+ * user-initiated fetch (fetchAndStoreFullContent) and the background worker
+ * (fetchFullContentForEntries in jobs/handlers.ts).
+ *
+ * @returns the applied update (including the sanitized columns) on success,
+ *   or null when the fetch failed and only the error was persisted.
+ */
+export async function persistFullContentResult(
+  db: typeof dbType,
+  entryId: string,
+  result: FetchFullContentResult,
+  now: Date = new Date()
+) {
+  if (!result.success) {
+    await db
+      .update(entries)
+      .set({
+        fullContentError: result.error ?? "Unknown error",
+        fullContentFetchedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(entries.id, entryId));
+    return null;
+  }
+
+  // Compute hash of full content for separate summary caching
+  const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
+  const fullContentHash = fullContentForHash
+    ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
+    : null;
+
+  // Sanitize the fetched full content once: stored in the *_sanitized columns
+  // so reads are fast. The raw page HTML / Readability output is untrusted
+  // and rendered via dangerouslySetInnerHTML, so it must not be served raw.
+  const fullContentUpdate = withSanitizedEntryContent({
+    fullContentOriginal: result.contentOriginal ?? null,
+    fullContentCleaned: result.contentCleaned ?? null,
+    fullContentHash,
+    fullContentFetchedAt: now,
+    fullContentError: null,
+    updatedAt: now,
+  });
+
+  await db.update(entries).set(fullContentUpdate).where(eq(entries.id, entryId));
+  return fullContentUpdate;
+}
+
+/**
+ * Full entry shape returned by fetchAndStoreFullContent (the toFullEntry
+ * output shape used by entries.get).
+ */
+type FullEntry = Awaited<ReturnType<typeof toFullEntry>>;
+
+export interface FetchAndStoreFullContentResult {
+  success: boolean;
+  entry?: FullEntry;
+  error?: string;
+}
+
+/**
+ * Fetches full article content for an entry and persists it.
+ *
+ * Verifies the entry is visible to the user, fetches the full article from
+ * its URL (via fetchFullContent above), sanitizes and stores the result in
+ * the entry's full-content columns, and invalidates any cached narration so
+ * it is regenerated from the full content.
+ *
+ * Note on shared state: full-content columns (including `fullContentError`)
+ * live on the shared `entries` row, so one subscriber's fetch — success or
+ * failure — is visible to every subscriber of the feed. This is deliberate:
+ * the fetched article and its fetchability are properties of the source URL,
+ * not of the requesting user, and sharing the result means other subscribers
+ * don't re-fetch (or re-fail) the same URL.
+ *
+ * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
+ */
+export async function fetchAndStoreFullContent(
+  db: typeof dbType,
+  userId: string,
+  entryId: string
+): Promise<FetchAndStoreFullContentResult> {
+  // Verify the entry exists and the user has access
+  const rawEntry = await selectFullEntry(db, userId, entryId);
+  if (!rawEntry) {
+    throw errors.entryNotFound();
+  }
+
+  const contentHash = rawEntry.contentHash;
+
+  // Check if entry has a URL to fetch (before building the response entry —
+  // toFullEntry resolves sanitized content, which is wasted work here)
+  if (!rawEntry.url) {
+    return {
+      success: false,
+      error: "Entry has no URL to fetch content from",
+    };
+  }
+
+  const entry = await toFullEntry(db, rawEntry);
+
+  logger.info("Fetching full content for entry", {
+    entryId: entry.id,
+    url: rawEntry.url,
+  });
+
+  const result = await fetchFullContent(rawEntry.url);
+  const now = new Date();
+  // Persist onto the shared entry row (see note above); the update carries
+  // the sanitized columns so they can be served back to the client below.
+  const fullContentUpdate = await persistFullContentResult(db, entryId, result, now);
+
+  if (!result.success || !fullContentUpdate) {
+    logger.warn("Failed to fetch full content", {
+      entryId: entry.id,
+      url: rawEntry.url,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: result.error,
+      entry: {
+        ...entry,
+        fullContentError: result.error ?? "Unknown error",
+        fullContentFetchedAt: now,
+      },
+    };
+  }
+
+  // Invalidate any existing narration content so it will be regenerated
+  // using the full content next time narration is requested
+  if (contentHash) {
+    await db
+      .update(narrationContent)
+      .set({
+        contentNarration: null,
+        generatedAt: null,
+        error: null,
+        errorAt: null,
+      })
+      .where(eq(narrationContent.contentHash, contentHash));
+
+    logger.debug("Invalidated narration content for entry", {
+      entryId: entry.id,
+      contentHash,
+    });
+  }
+
+  logger.info("Successfully fetched full content for entry", {
+    entryId: entry.id,
+    url: rawEntry.url,
+    contentLength: result.contentCleaned?.length,
+  });
+
+  return {
+    success: true,
+    entry: {
+      ...entry,
+      fullContentOriginal: fullContentUpdate.fullContentOriginalSanitized ?? null,
+      fullContentCleaned: fullContentUpdate.fullContentCleanedSanitized ?? null,
+      fullContentFetchedAt: now,
+      fullContentError: null,
+    },
+  };
 }
 
 /**
