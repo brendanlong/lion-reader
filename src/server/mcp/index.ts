@@ -60,8 +60,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new Error(`Unknown tool: ${name}`);
     }
 
-    // Tool handlers will use services to execute operations
-    const result = await tool.handler(db, args ?? {});
+    // stdio is a trusted local transport with no authentication layer, so the
+    // caller supplies the target userId alongside the tool arguments. The
+    // remaining args are validated against the tool's Zod schema.
+    const { userId, ...toolArgs } = (args ?? {}) as { userId?: unknown };
+    if (typeof userId !== "string") {
+      throw new Error("Missing userId argument (required for the stdio transport)");
+    }
+    const result = await tool.handler(db, userId, toolArgs);
 
     return {
       content: [

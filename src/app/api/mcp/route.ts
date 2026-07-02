@@ -165,8 +165,9 @@ function createMcpServer(userId: string): Server {
       throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
     }
 
-    // Spread user args first, then set userId so it can't be overridden
-    const result = await tool.handler(db, { ...(args ?? {}), userId });
+    // The authenticated userId is passed separately from client args, so it
+    // can't be spoofed; the handler validates args against its Zod schema.
+    const result = await tool.handler(db, userId, args ?? {});
 
     return {
       content: [

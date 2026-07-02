@@ -3,8 +3,16 @@
  *
  * Defines the tools (functions) available to AI assistants via MCP.
  * Each tool wraps service layer functions with MCP-specific interfaces.
+ *
+ * Tool arguments are validated with Zod before reaching the services layer:
+ * the advertised `inputSchema` is generated from the same Zod schema that the
+ * handler enforces, so the two can never drift. Unknown keys are stripped, so
+ * clients can't smuggle internal service parameters (e.g. `maxLimit`,
+ * `userId`) through the tool call.
  */
 
+import { z } from "zod";
+import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import type { db as dbType } from "@/server/db";
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
@@ -24,9 +32,158 @@ interface Tool {
     properties: Record<string, unknown>;
     required?: string[];
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handler: (db: typeof dbType, args: any) => Promise<unknown>;
+  handler: (db: typeof dbType, userId: string, args: unknown) => Promise<unknown>;
 }
+
+// ============================================================================
+// Validation Helpers
+// ============================================================================
+
+const uuidSchema = z.uuid("Invalid ID");
+
+/**
+ * Parses tool arguments against a Zod schema, converting failures into MCP
+ * InvalidParams errors so clients get a useful message instead of a 500.
+ */
+function parseArgs<T extends z.ZodType>(schema: T, args: unknown): z.infer<T> {
+  const result = schema.safeParse(args ?? {});
+  if (!result.success) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `Invalid arguments: ${z.prettifyError(result.error)}`
+    );
+  }
+  return result.data;
+}
+
+/**
+ * Derives the advertised MCP inputSchema from the Zod schema so the schema
+ * clients see is exactly the one the handler enforces.
+ */
+function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
+  const json = z.toJSONSchema(schema) as Record<string, unknown>;
+  delete json.$schema;
+  return json as unknown as Tool["inputSchema"];
+}
+
+// ============================================================================
+// Argument Schemas
+// ============================================================================
+
+const listEntriesArgs = z.object({
+  query: z
+    .string()
+    .optional()
+    .describe(
+      "Optional full-text search query (searches both title and content, results ranked by relevance)"
+    ),
+  subscriptionId: uuidSchema.optional().describe("Filter by subscription ID"),
+  tagId: uuidSchema.optional().describe("Filter by tag ID"),
+  uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
+  type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
+  unreadOnly: z.boolean().optional().describe("Show only unread entries"),
+  starredOnly: z.boolean().optional().describe("Show only starred entries"),
+  sortOrder: z
+    .enum(["newest", "oldest"])
+    .optional()
+    .describe("Sort order (default: newest). Ignored when query is provided."),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe("Number of entries per page (max 100)"),
+  cursor: z.string().optional().describe("Pagination cursor from previous response"),
+});
+
+const getEntryArgs = z.object({
+  entryId: uuidSchema.describe("Entry ID"),
+});
+
+const markEntriesReadArgs = z.object({
+  entryIds: z.array(uuidSchema).min(1).max(1000).describe("Array of entry IDs to mark"),
+  read: z.boolean().describe("Mark as read (true) or unread (false)"),
+});
+
+const starEntriesArgs = z.object({
+  entryId: uuidSchema.describe("Entry ID"),
+  starred: z.boolean().describe("Star (true) or unstar (false)"),
+});
+
+const countEntriesArgs = z.object({
+  subscriptionId: uuidSchema.optional().describe("Filter by subscription ID"),
+  tagId: uuidSchema.optional().describe("Filter by tag ID"),
+  uncategorized: z.boolean().optional().describe("Count only uncategorized entries"),
+  type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
+  unreadOnly: z.boolean().optional().describe("Count only unread entries"),
+  starredOnly: z.boolean().optional().describe("Count only starred entries"),
+});
+
+const saveArticleArgs = z.object({
+  url: z.url().describe("The URL to save"),
+  title: z.string().optional().describe("Optional title override (useful if page title is poor)"),
+});
+
+const deleteSavedArticleArgs = z.object({
+  articleId: uuidSchema.describe("The saved article ID to delete"),
+});
+
+const uploadArticleArgs = z.object({
+  content: z
+    .string()
+    .min(1)
+    .describe("Article content in Markdown format (GitHub Flavored Markdown supported)"),
+  title: z.string().min(1).describe("Article title"),
+});
+
+const listSubscriptionsArgs = z.object({
+  query: z.string().optional().describe("Case-insensitive title search (substring matching)"),
+  tagId: uuidSchema.optional().describe("Filter by tag ID"),
+  unreadOnly: z.boolean().optional().describe("Only show feeds with unread items"),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe("Number of subscriptions per page (max 100)"),
+  cursor: z.string().optional().describe("Pagination cursor from previous response"),
+});
+
+const getSubscriptionArgs = z.object({
+  subscriptionId: uuidSchema.describe("Subscription ID"),
+});
+
+const listTagsArgs = z.object({});
+
+const createTagArgs = z.object({
+  name: z.string().min(1).max(50).describe("Tag name (max 50 characters, must be unique per user)"),
+  color: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Optional hex color (e.g., #ff6b6b). Null to remove color."),
+});
+
+const updateTagArgs = z.object({
+  tagId: uuidSchema.describe("Tag ID"),
+  name: z
+    .string()
+    .min(1)
+    .max(50)
+    .optional()
+    .describe("New tag name (max 50 characters, must be unique per user)"),
+  color: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("New hex color (e.g., #ff6b6b). Null to remove color."),
+});
+
+const deleteTagArgs = z.object({
+  tagId: uuidSchema.describe("Tag ID to delete"),
+});
 
 // ============================================================================
 // Tool Definitions
@@ -46,36 +203,9 @@ export function registerTools(): Tool[] {
       name: "list_entries",
       description:
         "List feed entries with filters and pagination. Optionally perform full-text search with the query parameter (searches both title and content, results ranked by relevance). Without query, returns entries sorted by time. Returns summaries (title, snippet) without full content.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description:
-              "Optional full-text search query (searches both title and content, results ranked by relevance)",
-          },
-          subscriptionId: { type: "string", description: "Filter by subscription ID" },
-          tagId: { type: "string", description: "Filter by tag ID" },
-          uncategorized: { type: "boolean", description: "Show only uncategorized entries" },
-          type: {
-            type: "string",
-            enum: ["web", "email", "saved"],
-            description: "Filter by entry type",
-          },
-          unreadOnly: { type: "boolean", description: "Show only unread entries" },
-          starredOnly: { type: "boolean", description: "Show only starred entries" },
-          sortOrder: {
-            type: "string",
-            enum: ["newest", "oldest"],
-            description: "Sort order (default: newest). Ignored when query is provided.",
-          },
-          limit: { type: "number", description: "Number of entries per page (max 100)" },
-          cursor: { type: "string", description: "Pagination cursor from previous response" },
-        },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        const { userId, ...params } = args;
+      inputSchema: toInputSchema(listEntriesArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(listEntriesArgs, args);
         return entriesService.listEntries(db, {
           userId,
           ...params,
@@ -87,16 +217,10 @@ export function registerTools(): Tool[] {
     {
       name: "get_entry",
       description: "Get a single entry with full content (original and cleaned HTML).",
-      inputSchema: {
-        type: "object",
-        properties: {
-          entryId: { type: "string", description: "Entry ID" },
-        },
-        required: ["entryId"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        return entriesService.getEntry(db, args.userId, args.entryId);
+      inputSchema: toInputSchema(getEntryArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(getEntryArgs, args);
+        return entriesService.getEntry(db, userId, params.entryId);
       },
     },
 
@@ -104,27 +228,16 @@ export function registerTools(): Tool[] {
       name: "mark_entries_read",
       description:
         "Mark entries as read or unread (bulk operation, max 1000). Returns updated entries and unread counts.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          entryIds: {
-            type: "array",
-            items: { type: "string" },
-            description: "Array of entry IDs to mark",
-          },
-          read: { type: "boolean", description: "Mark as read (true) or unread (false)" },
-        },
-        required: ["entryIds", "read"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
+      inputSchema: toInputSchema(markEntriesReadArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(markEntriesReadArgs, args);
         const entries = await entriesService.markEntriesRead(
           db,
-          args.userId,
-          (args.entryIds as string[]).map((id) => ({ id })),
-          args.read
+          userId,
+          params.entryIds.map((id) => ({ id })),
+          params.read
         );
-        const counts = await countsService.getBulkEntryRelatedCounts(db, args.userId, entries);
+        const counts = await countsService.getBulkEntryRelatedCounts(db, userId, entries);
         return { entries, counts };
       },
     },
@@ -133,41 +246,19 @@ export function registerTools(): Tool[] {
       name: "star_entries",
       description:
         "Star or unstar entries (bulk operation). Starred entries remain visible after unsubscribing.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          entryId: { type: "string", description: "Entry ID" },
-          starred: { type: "boolean", description: "Star (true) or unstar (false)" },
-        },
-        required: ["entryId", "starred"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        return entriesService.updateEntryStarred(db, args.userId, args.entryId, args.starred);
+      inputSchema: toInputSchema(starEntriesArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(starEntriesArgs, args);
+        return entriesService.updateEntryStarred(db, userId, params.entryId, params.starred);
       },
     },
 
     {
       name: "count_entries",
       description: "Get count of entries with filters. Returns total and unread counts.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          subscriptionId: { type: "string", description: "Filter by subscription ID" },
-          tagId: { type: "string", description: "Filter by tag ID" },
-          uncategorized: { type: "boolean", description: "Count only uncategorized entries" },
-          type: {
-            type: "string",
-            enum: ["web", "email", "saved"],
-            description: "Filter by entry type",
-          },
-          unreadOnly: { type: "boolean", description: "Count only unread entries" },
-          starredOnly: { type: "boolean", description: "Count only starred entries" },
-        },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        const { userId, ...params } = args;
+      inputSchema: toInputSchema(countEntriesArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(countEntriesArgs, args);
         return entriesService.countEntries(db, userId, {
           ...params,
           showSpam: false,
@@ -183,22 +274,12 @@ export function registerTools(): Tool[] {
       name: "save_article",
       description:
         "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article if already saved.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          url: { type: "string", description: "The URL to save" },
-          title: {
-            type: "string",
-            description: "Optional title override (useful if page title is poor)",
-          },
-        },
-        required: ["url"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        return savedService.saveArticle(db, args.userId, {
-          url: args.url,
-          title: args.title,
+      inputSchema: toInputSchema(saveArticleArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(saveArticleArgs, args);
+        return savedService.saveArticle(db, userId, {
+          url: params.url,
+          title: params.title,
         });
       },
     },
@@ -206,16 +287,10 @@ export function registerTools(): Tool[] {
     {
       name: "delete_saved_article",
       description: "Delete a saved article. Returns success status.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          articleId: { type: "string", description: "The saved article ID to delete" },
-        },
-        required: ["articleId"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        const deleted = await savedService.deleteSavedArticle(db, args.userId, args.articleId);
+      inputSchema: toInputSchema(deleteSavedArticleArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(deleteSavedArticleArgs, args);
+        const deleted = await savedService.deleteSavedArticle(db, userId, params.articleId);
         return { deleted };
       },
     },
@@ -224,25 +299,12 @@ export function registerTools(): Tool[] {
       name: "upload_article",
       description:
         "Upload an article with Markdown content directly, without a URL. Useful for saving content you've written or collected.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          content: {
-            type: "string",
-            description: "Article content in Markdown format (GitHub Flavored Markdown supported)",
-          },
-          title: {
-            type: "string",
-            description: "Article title",
-          },
-        },
-        required: ["content", "title"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        return savedService.uploadArticle(db, args.userId, {
-          content: args.content,
-          title: args.title,
+      inputSchema: toInputSchema(uploadArticleArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(uploadArticleArgs, args);
+        return savedService.uploadArticle(db, userId, {
+          content: params.content,
+          title: params.title,
         });
       },
     },
@@ -255,22 +317,9 @@ export function registerTools(): Tool[] {
       name: "list_subscriptions",
       description:
         "List active feed subscriptions with optional filtering and pagination. Supports case-insensitive title search, tag filtering, unread-only filtering, and cursor-based pagination.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: "Case-insensitive title search (substring matching)",
-          },
-          tagId: { type: "string", description: "Filter by tag ID" },
-          unreadOnly: { type: "boolean", description: "Only show feeds with unread items" },
-          limit: { type: "number", description: "Number of subscriptions per page (max 100)" },
-          cursor: { type: "string", description: "Pagination cursor from previous response" },
-        },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        const { userId, ...params } = args;
+      inputSchema: toInputSchema(listSubscriptionsArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(listSubscriptionsArgs, args);
         return subscriptionsService.listSubscriptions(db, {
           userId,
           ...params,
@@ -281,16 +330,10 @@ export function registerTools(): Tool[] {
     {
       name: "get_subscription",
       description: "Get details for a single subscription including unread count and tags.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          subscriptionId: { type: "string", description: "Subscription ID" },
-        },
-        required: ["subscriptionId"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        return subscriptionsService.getSubscription(db, args.userId, args.subscriptionId);
+      inputSchema: toInputSchema(getSubscriptionArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(getSubscriptionArgs, args);
+        return subscriptionsService.getSubscription(db, userId, params.subscriptionId);
       },
     },
 
@@ -302,38 +345,22 @@ export function registerTools(): Tool[] {
       name: "list_tags",
       description:
         "List all tags with feed counts and unread counts. Also returns uncategorized subscription counts.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        return tagsService.listTags(db, args.userId);
+      inputSchema: toInputSchema(listTagsArgs),
+      handler: async (db, userId, args) => {
+        parseArgs(listTagsArgs, args);
+        return tagsService.listTags(db, userId);
       },
     },
 
     {
       name: "create_tag",
       description: "Create a new tag for organizing subscriptions.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          name: {
-            type: "string",
-            description: "Tag name (max 50 characters, must be unique per user)",
-          },
-          color: {
-            type: "string",
-            description: "Optional hex color (e.g., #ff6b6b). Null to remove color.",
-          },
-        },
-        required: ["name"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        return tagsService.createTag(db, args.userId, {
-          name: args.name,
-          color: args.color,
+      inputSchema: toInputSchema(createTagArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(createTagArgs, args);
+        return tagsService.createTag(db, userId, {
+          name: params.name,
+          color: params.color,
         });
       },
     },
@@ -341,26 +368,12 @@ export function registerTools(): Tool[] {
     {
       name: "update_tag",
       description: "Update an existing tag's name or color.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          tagId: { type: "string", description: "Tag ID" },
-          name: {
-            type: "string",
-            description: "New tag name (max 50 characters, must be unique per user)",
-          },
-          color: {
-            type: "string",
-            description: "New hex color (e.g., #ff6b6b). Null to remove color.",
-          },
-        },
-        required: ["tagId"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        return tagsService.updateTag(db, args.userId, args.tagId, {
-          name: args.name,
-          color: args.color,
+      inputSchema: toInputSchema(updateTagArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(updateTagArgs, args);
+        return tagsService.updateTag(db, userId, params.tagId, {
+          name: params.name,
+          color: params.color,
         });
       },
     },
@@ -369,16 +382,10 @@ export function registerTools(): Tool[] {
       name: "delete_tag",
       description:
         "Delete a tag. Uses soft delete for sync tracking. Subscription-tag associations are removed immediately.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          tagId: { type: "string", description: "Tag ID to delete" },
-        },
-        required: ["tagId"],
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handler: async (db, args: any) => {
-        await tagsService.deleteTag(db, args.userId, args.tagId);
+      inputSchema: toInputSchema(deleteTagArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(deleteTagArgs, args);
+        await tagsService.deleteTag(db, userId, params.tagId);
         return { success: true };
       },
     },
