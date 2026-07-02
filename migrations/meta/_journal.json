@@ -491,6 +491,48 @@
       "when": 1770708800000,
       "tag": "0070_sanitized_entry_html",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1782950400000,
+      "tag": "0071_entries_published_sort_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1782950500000,
+      "tag": "0072_entries_feed_published_sort_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1782950600000,
+      "tag": "0073_drop_entry_scoring",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1782950700000,
+      "tag": "0074_jobs_polling_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1782950800000,
+      "tag": "0075_cleanup_job",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1782950900000,
+      "tag": "0076_redundant_indexes_and_invites_fk",
+      "breakpoints": true
     }
   ]
 }

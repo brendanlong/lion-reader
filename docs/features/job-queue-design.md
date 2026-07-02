@@ -58,6 +58,8 @@ Fetches a feed and processes new entries.
 
 **Failure handling**: Failures tracked on `feeds.consecutive_failures`. Backoff applied to `next_run_at`.
 
+**Dual scheduling state**: the schedule lives in two places — `jobs.next_run_at` is the **authoritative** value (claiming only reads the job row), while `feeds.next_fetch_at` is a denormalized copy written by the fetch handler for display surfaces (feed stats, broken feeds, admin). They are updated together on each fetch but can drift when only one is touched (e.g. WebSub backup-poll scheduling via `updateFeedJobNextRun`); treat `feeds.next_fetch_at` as informational only.
+
 ### `renew_websub`
 
 Renews expiring WebSub subscriptions.
@@ -82,6 +84,20 @@ Singleton health check enforcing "at least one feed must fetch successfully ever
 
 1. Self-creates on first claim (singleton, like `renew_websub`)
 2. Runs every 15 minutes
+3. Always enabled
+
+**Failure handling**: Failures tracked on `jobs.consecutive_failures` since there's no associated feed.
+
+### `cleanup`
+
+Daily retention cleanup (see `src/server/services/retention.ts`). Deletes rows that expire but are never deleted on any other path: expired sessions, expired OAuth authorization codes / access tokens / refresh tokens, long-revoked (30+ days) sessions and refresh tokens, and parked one-time `process_opml_import` jobs (completed one-time jobs reschedule themselves 365 days out instead of deleting their row).
+
+**Payload**: `{}` (empty)
+
+**Lifecycle**:
+
+1. Self-creates on first claim (singleton, like `renew_websub`)
+2. Runs daily
 3. Always enabled
 
 **Failure handling**: Failures tracked on `jobs.consecutive_failures` since there's no associated feed.

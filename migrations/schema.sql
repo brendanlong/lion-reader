@@ -99,15 +99,6 @@ CREATE TABLE public.entries (
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
 );
 
-CREATE TABLE public.entry_score_predictions (
-    user_id uuid NOT NULL,
-    entry_id uuid NOT NULL,
-    predicted_score real NOT NULL,
-    confidence real NOT NULL,
-    model_version integer NOT NULL,
-    predicted_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE public.entry_summaries (
     id uuid NOT NULL,
     content_hash text NOT NULL,
@@ -369,21 +360,6 @@ CREATE VIEW public.user_feeds AS
      JOIN public.feeds f ON ((f.id = s.feed_id)))
   WHERE (s.unsubscribed_at IS NULL);
 
-CREATE TABLE public.user_score_models (
-    user_id uuid NOT NULL,
-    model_data text NOT NULL,
-    vocabulary jsonb NOT NULL,
-    idf_values jsonb NOT NULL,
-    feed_ids text[] NOT NULL,
-    training_count integer NOT NULL,
-    model_version integer DEFAULT 1 NOT NULL,
-    trained_at timestamp with time zone DEFAULT now() NOT NULL,
-    cv_mae real,
-    cv_correlation real,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE public.users (
     id uuid NOT NULL,
     email public.citext NOT NULL,
@@ -398,9 +374,6 @@ CREATE TABLE public.users (
     summarization_model text,
     summarization_max_words integer,
     summarization_prompt text,
-    algorithmic_feed_enabled boolean DEFAULT true NOT NULL,
-    best_feed_score_weight real DEFAULT 1 NOT NULL,
-    best_feed_uncertainty_weight real DEFAULT 1 NOT NULL,
     tos_agreed_at timestamp with time zone,
     privacy_policy_agreed_at timestamp with time zone,
     not_eu_agreed_at timestamp with time zone
@@ -443,8 +416,6 @@ CREATE VIEW public.visible_entries AS
     ue.has_marked_unread,
     ue.has_starred,
     s.id AS subscription_id,
-    esp.predicted_score,
-    esp.confidence AS prediction_confidence,
     e.unsubscribe_url,
     ue.read_changed_at,
     e.wallabag_id,
@@ -455,12 +426,11 @@ CREATE VIEW public.visible_entries AS
     e.full_content_original_sanitized,
     e.full_content_cleaned_sanitized,
     e.full_content_sanitized_version
-   FROM ((((public.user_entries ue
+   FROM (((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscription_feeds sf ON (((sf.user_id = ue.user_id) AND (sf.feed_id = e.feed_id))))
      LEFT JOIN public.subscriptions s ON ((s.id = sf.subscription_id)))
-     LEFT JOIN public.entry_score_predictions esp ON (((esp.user_id = ue.user_id) AND (esp.entry_id = e.id))))
-  WHERE ((s.unsubscribed_at IS NULL) OR (ue.starred = true));
+  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true) OR (e.type = 'saved'::public.feed_type));
 
 CREATE TABLE public.websub_subscriptions (
     id uuid NOT NULL,
@@ -489,9 +459,6 @@ ALTER TABLE ONLY public.blocked_senders
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.entry_score_predictions
-    ADD CONSTRAINT entry_score_predictions_pkey PRIMARY KEY (user_id, entry_id);
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
@@ -604,9 +571,6 @@ ALTER TABLE ONLY public.websub_subscriptions
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_entry_id_pk PRIMARY KEY (user_id, entry_id);
 
-ALTER TABLE ONLY public.user_score_models
-    ADD CONSTRAINT user_score_models_pkey PRIMARY KEY (user_id);
-
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_email_unique UNIQUE (email);
 
@@ -615,8 +579,6 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.websub_subscriptions
     ADD CONSTRAINT websub_subscriptions_pkey PRIMARY KEY (id);
-
-CREATE INDEX idx_api_tokens_token ON public.api_tokens USING btree (token_hash);
 
 CREATE INDEX idx_api_tokens_user ON public.api_tokens USING btree (user_id);
 
@@ -640,10 +602,6 @@ CREATE INDEX idx_entries_type ON public.entries USING btree (type);
 
 CREATE INDEX idx_entries_wallabag_id ON public.entries USING btree (wallabag_id);
 
-CREATE INDEX idx_entry_score_predictions_entry ON public.entry_score_predictions USING btree (entry_id);
-
-CREATE INDEX idx_entry_score_predictions_user_score ON public.entry_score_predictions USING btree (user_id, predicted_score DESC);
-
 CREATE INDEX idx_entry_summaries_prompt_version ON public.entry_summaries USING btree (prompt_version) WHERE (summary_text IS NOT NULL);
 
 CREATE INDEX idx_feeds_next_fetch ON public.feeds USING btree (next_fetch_at);
@@ -652,23 +610,17 @@ CREATE INDEX idx_feeds_type ON public.feeds USING btree (type);
 
 CREATE INDEX idx_feeds_user_id ON public.feeds USING btree (user_id);
 
-CREATE INDEX idx_ingest_addresses_token ON public.ingest_addresses USING btree (token);
-
 CREATE INDEX idx_ingest_addresses_user ON public.ingest_addresses USING btree (user_id);
 
 CREATE INDEX idx_invites_expires ON public.invites USING btree (expires_at);
 
-CREATE INDEX idx_invites_token ON public.invites USING btree (token);
-
 CREATE INDEX idx_jobs_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE (type = 'fetch_feed'::text);
 
-CREATE INDEX idx_narration_needs_generation ON public.narration_content USING btree (id);
+CREATE INDEX idx_jobs_polling ON public.jobs USING btree (type, next_run_at);
 
 CREATE INDEX idx_oauth_access_tokens_client ON public.oauth_access_tokens USING btree (client_id);
 
 CREATE INDEX idx_oauth_access_tokens_expires ON public.oauth_access_tokens USING btree (expires_at);
-
-CREATE INDEX idx_oauth_access_tokens_token ON public.oauth_access_tokens USING btree (token_hash);
 
 CREATE INDEX idx_oauth_access_tokens_user ON public.oauth_access_tokens USING btree (user_id);
 
@@ -676,13 +628,9 @@ CREATE INDEX idx_oauth_accounts_scopes ON public.oauth_accounts USING gin (scope
 
 CREATE INDEX idx_oauth_accounts_user ON public.oauth_accounts USING btree (user_id);
 
-CREATE INDEX idx_oauth_auth_codes_code ON public.oauth_authorization_codes USING btree (code_hash);
-
 CREATE INDEX idx_oauth_auth_codes_expires ON public.oauth_authorization_codes USING btree (expires_at);
 
 CREATE INDEX idx_oauth_auth_codes_user ON public.oauth_authorization_codes USING btree (user_id);
-
-CREATE INDEX idx_oauth_clients_client_id ON public.oauth_clients USING btree (client_id);
 
 CREATE INDEX idx_oauth_consent_grants_client ON public.oauth_consent_grants USING btree (client_id);
 
@@ -694,8 +642,6 @@ CREATE INDEX idx_oauth_refresh_tokens_client ON public.oauth_refresh_tokens USIN
 
 CREATE INDEX idx_oauth_refresh_tokens_expires ON public.oauth_refresh_tokens USING btree (expires_at);
 
-CREATE INDEX idx_oauth_refresh_tokens_token ON public.oauth_refresh_tokens USING btree (token_hash);
-
 CREATE INDEX idx_oauth_refresh_tokens_user ON public.oauth_refresh_tokens USING btree (user_id);
 
 CREATE INDEX idx_opml_imports_status ON public.opml_imports USING btree (status);
@@ -703,8 +649,6 @@ CREATE INDEX idx_opml_imports_status ON public.opml_imports USING btree (status)
 CREATE INDEX idx_opml_imports_user ON public.opml_imports USING btree (user_id);
 
 CREATE INDEX idx_sessions_last_active ON public.sessions USING btree (last_active_at);
-
-CREATE INDEX idx_sessions_token ON public.sessions USING btree (token_hash);
 
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
 
@@ -720,13 +664,9 @@ CREATE INDEX idx_subscriptions_feed ON public.subscriptions USING btree (feed_id
 
 CREATE INDEX idx_subscriptions_feed_active ON public.subscriptions USING btree (feed_id) WHERE (unsubscribed_at IS NULL);
 
-CREATE INDEX idx_subscriptions_user ON public.subscriptions USING btree (user_id);
-
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
 
 CREATE INDEX idx_tags_updated_at ON public.tags USING btree (user_id, updated_at);
-
-CREATE INDEX idx_tags_user ON public.tags USING btree (user_id);
 
 CREATE INDEX idx_user_entries_entry_id ON public.user_entries USING btree (entry_id);
 
@@ -740,13 +680,11 @@ CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
 
-CREATE INDEX idx_user_score_models_trained ON public.user_score_models USING btree (trained_at);
-
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
 
 CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
 
-CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text]));
+CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text]));
 
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
 
@@ -761,12 +699,6 @@ ALTER TABLE ONLY public.blocked_senders
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_feed_id_feeds_id_fk FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.entry_score_predictions
-    ADD CONSTRAINT entry_score_predictions_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.entries(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.entry_score_predictions
-    ADD CONSTRAINT entry_score_predictions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
@@ -775,6 +707,9 @@ ALTER TABLE ONLY public.feeds
 
 ALTER TABLE ONLY public.ingest_addresses
     ADD CONSTRAINT ingest_addresses_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.invites
+    ADD CONSTRAINT invites_used_by_user_id_fkey FOREIGN KEY (used_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_access_tokens
     ADD CONSTRAINT oauth_access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
@@ -792,7 +727,7 @@ ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_access_token_id_fkey FOREIGN KEY (access_token_id) REFERENCES public.oauth_access_tokens(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_refresh_tokens
-    ADD CONSTRAINT oauth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.oauth_refresh_tokens(id);
+    ADD CONSTRAINT oauth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.oauth_refresh_tokens(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
@@ -832,9 +767,6 @@ ALTER TABLE ONLY public.user_entries
 
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.user_score_models
-    ADD CONSTRAINT user_score_models_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_invite_id_invites_id_fk FOREIGN KEY (invite_id) REFERENCES public.invites(id) ON DELETE SET NULL;

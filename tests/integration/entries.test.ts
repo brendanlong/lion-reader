@@ -227,6 +227,26 @@ describe("Entries", () => {
       expect(result.items.map((e) => e.id)).toContain(entry2Id);
     });
 
+    it("hides orphaned entries (user_entries row with no subscription) unless starred", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      // No subscription is created: these user_entries rows are orphaned.
+      // Fail-closed visibility (migration 0073) requires a matching active
+      // subscription OR starred, so only the starred entry is visible.
+      const orphanedId = await createTestEntry(feedId, { title: "Orphaned" });
+      const orphanedStarredId = await createTestEntry(feedId, { title: "Orphaned Starred" });
+
+      await createUserEntry(userId, orphanedId);
+      await createUserEntry(userId, orphanedStarredId, { starred: true });
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.list({});
+
+      expect(result.items.map((e) => e.id)).toEqual([orphanedStarredId]);
+    });
+
     it("filters by unreadOnly", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");

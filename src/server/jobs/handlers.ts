@@ -59,6 +59,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getFeedPlugin } from "@/server/plugins";
 import { createSubscription } from "../services/subscriptions";
+import { runRetentionCleanup } from "../services/retention";
 import {
   findPermanentRedirectUrl,
   isHttpToHttpsUpgrade,
@@ -1349,6 +1350,33 @@ export async function handleMonitorFeedHealth(
       failingFeedCount: snapshot.failingFeedCount,
       pollableFeedCount: snapshot.pollableFeedCount,
     },
+  };
+}
+
+/** How often the retention cleanup runs. */
+const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Handler for cleanup jobs (singleton, runs daily).
+ *
+ * Deletes rows that expire but were never deleted anywhere (issue #953):
+ * expired sessions, expired OAuth authorization codes / access tokens /
+ * refresh tokens, long-revoked credentials, and parked one-time
+ * process_opml_import jobs. See src/server/services/retention.ts.
+ */
+export async function handleCleanup(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _payload: JobPayloads["cleanup"]
+): Promise<JobHandlerResult> {
+  const now = new Date();
+  const deleted = await runRetentionCleanup(db);
+
+  logger.info("Retention cleanup completed", { ...deleted });
+
+  return {
+    success: true,
+    nextRunAt: new Date(now.getTime() + CLEANUP_INTERVAL_MS),
+    metadata: { ...deleted },
   };
 }
 

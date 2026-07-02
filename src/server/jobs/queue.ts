@@ -87,6 +87,9 @@ export interface JobPayloads {
   // de-duplication are owned by the external healthchecks.io monitor, so no
   // state is carried across runs.
   monitor_feed_health: Record<string, never>;
+  // Daily retention cleanup of expired/revoked credentials and parked
+  // one-time jobs. See src/server/services/retention.ts.
+  cleanup: Record<string, never>;
 }
 
 export type JobType = keyof JobPayloads;
@@ -113,6 +116,39 @@ const STALE_JOB_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
  * must fail before a job becomes reclaimable.
  */
 export const JOB_LEASE_HEARTBEAT_MS = 60 * 1000; // 1 minute
+
+/**
+ * Base delay before retrying a job whose handler threw: 1 minute.
+ */
+const EXCEPTION_RETRY_BASE_MS = 60 * 1000;
+
+/**
+ * Maximum delay between retries of a job whose handler keeps throwing: 24 hours.
+ */
+const EXCEPTION_RETRY_MAX_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Calculates the retry delay for a job whose handler threw an exception.
+ *
+ * Handlers that fail gracefully return their own nextRunAt (feed fetches use
+ * calculateNextFetch's failure backoff), but an unexpected throw used to be
+ * retried on a flat 60s forever — a deterministically-throwing handler would
+ * hammer its remote host every minute (issue #953). Instead, mirror the feed
+ * failure backoff: exponential from 1 minute, doubling per consecutive
+ * failure, capped at 24 hours (1m, 2m, 4m, ... ~17h, 24h).
+ *
+ * @param consecutiveFailures - The job's failure count *before* this failure
+ *   (i.e. `job.consecutiveFailures` as claimed; finishJob increments it)
+ * @returns Delay in milliseconds until the next retry
+ */
+export function calculateExceptionRetryDelayMs(consecutiveFailures: number): number {
+  const exponent = Math.max(0, consecutiveFailures);
+  // Avoid overflow for huge failure counts: past 2^31 the cap always wins.
+  if (exponent >= 31) {
+    return EXCEPTION_RETRY_MAX_MS;
+  }
+  return Math.min(EXCEPTION_RETRY_BASE_MS * 2 ** exponent, EXCEPTION_RETRY_MAX_MS);
+}
 
 /**
  * Options for creating a new job.
@@ -458,7 +494,7 @@ export async function listJobs(
 /**
  * Singleton job types that have exactly one instance and self-create on first run.
  */
-export const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub", "monitor_feed_health"];
+export const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub", "monitor_feed_health", "cleanup"];
 
 /**
  * Tries to claim a singleton job for processing.
@@ -528,13 +564,16 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
       throw error;
     }
 
-    // Another worker created the job first - try to claim it
+    // Another worker created the job first - try to claim it. Keep the
+    // next_run_at <= now check: if the winner already ran and rescheduled the
+    // job, we must not immediately re-run it.
     const retryResult = await db.execute<RawJobRow>(sql`
       UPDATE ${jobs}
       SET
         running_since = ${now},
         updated_at = ${now}
       WHERE type = ${type}
+        AND next_run_at <= ${now}
         AND (running_since IS NULL OR running_since < ${staleThreshold})
       RETURNING *
     `);
@@ -543,7 +582,7 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
       return rowToJob(retryResult.rows[0]);
     }
 
-    // Job exists and is running - that's fine
+    // Job exists and is running or already rescheduled - that's fine
     return null;
   }
 }
