@@ -560,14 +560,26 @@ Plugins are registered in `src/server/plugins/registry.ts` and declare capabilit
 - Redis for caching and pub/sub
 - Release command runs migrations automatically before deploy
 
+### Migration Compatibility (Expand/Contract)
+
+**Every migration must be backward-compatible with the previous release.** Nothing structural enforces this — it is a rule to follow when writing migrations.
+
+Why: `fly.toml` runs migrations in `release_command` _before_ the canary deploy, so the old code always runs against the new schema during rollout (and keeps running against it if the deploy fails health checks or is rolled back — migrations are not rolled back).
+
+Practically, this means using the expand/contract pattern:
+
+- **Expand** (safe in one release): add nullable columns or columns with defaults, add tables, add indexes, create views alongside old ones
+- **Contract** (requires two releases): to drop or rename a column/table, first ship a release whose code no longer references it; only then ship the migration that removes it. A rename is an add + dual-write/backfill + drop across releases, never a single `ALTER ... RENAME`.
+
 ### Local Development
 
 Docker Compose provides Postgres and Redis for local development. See README for setup instructions.
 
 ### CI/CD
 
-- GitHub Actions for CI (typecheck, lint, test)
-- Automatic deploy to Fly.io on push to master
+- GitHub Actions for CI (typecheck, lint, unit/integration/e2e tests)
+- Deploy to Fly.io runs only after the CI workflow succeeds on master (`workflow_run` gate in `deploy.yml`); deploys queue rather than cancel each other so a mid-flight canary rollout is never killed
+- In CI, e2e tests run against the production build (`next build` + `node dist/server.js`), not the dev server
 
 ---
 
