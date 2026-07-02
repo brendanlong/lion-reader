@@ -1,7 +1,8 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
-import { githubConfig } from "@/server/config/env";
+import { readResponseWithSizeLimit } from "@/server/http/fetch";
+import { githubConfig, usageLimitsConfig } from "@/server/config/env";
 import { wrapHtmlFragment } from "@/server/http/html";
 import { marked } from "marked";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
@@ -230,21 +231,47 @@ async function fetchRepoContents(
 }
 
 /**
+ * Timeout for raw file fetches (30 seconds).
+ */
+const RAW_FETCH_TIMEOUT_MS = 30000;
+
+/**
  * Fetch raw file content directly.
+ *
+ * The host is fixed (raw.githubusercontent.com), but the path is user-chosen,
+ * so the read is size-limited and time-limited to avoid OOM/hangs on large files.
  */
 async function fetchRawContent(rawUrl: string): Promise<string | null> {
-  const response = await fetch(rawUrl, {
-    headers: {
-      "User-Agent": USER_AGENT,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), RAW_FETCH_TIMEOUT_MS);
 
-  if (!response.ok) {
-    logger.debug("Failed to fetch raw content", { url: rawUrl, status: response.status });
+  try {
+    const response = await fetch(rawUrl, {
+      headers: {
+        "User-Agent": USER_AGENT,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      logger.debug("Failed to fetch raw content", { url: rawUrl, status: response.status });
+      return null;
+    }
+
+    return await readResponseWithSizeLimit(
+      response,
+      usageLimitsConfig.maxSavedArticleSizeBytes,
+      rawUrl
+    );
+  } catch (error) {
+    logger.warn("Failed to fetch raw content", {
+      url: rawUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return await response.text();
 }
 
 /**

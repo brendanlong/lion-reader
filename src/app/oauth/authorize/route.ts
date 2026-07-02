@@ -26,6 +26,7 @@ import {
   createOAuthError,
 } from "@/server/oauth/utils";
 import { getIssuer, getProtectedResourceMetadata } from "@/server/oauth/config";
+import { checkRouteRateLimit } from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
 
 /**
@@ -70,6 +71,13 @@ function buildSuccessRedirect(redirectUri: string, code: string, state?: string)
 }
 
 export async function GET(request: NextRequest) {
+  // Rate-limit by IP: this endpoint is unauthenticated and client resolution
+  // may trigger an outbound CIMD fetch for URL client_ids.
+  const rateLimited = await checkRouteRateLimit(request, "expensive");
+  if (rateLimited) {
+    return rateLimited;
+  }
+
   logger.info("OAuth authorize GET", { url: request.nextUrl.pathname + request.nextUrl.search });
   const searchParams = request.nextUrl.searchParams;
 
@@ -248,6 +256,12 @@ export async function GET(request: NextRequest) {
  * Handle POST for consent approval (from consent page).
  */
 export async function POST(request: NextRequest) {
+  // Rate-limit by IP (see GET handler).
+  const rateLimited = await checkRouteRateLimit(request, "expensive");
+  if (rateLimited) {
+    return rateLimited;
+  }
+
   const formData = await request.formData();
 
   const clientId = formData.get("client_id") as string;
@@ -298,7 +312,25 @@ export async function POST(request: NextRequest) {
   }
 
   const userId = session.user.id;
-  const scopes = scope ? scope.split(" ") : ["mcp"];
+
+  // Re-validate the submitted scopes against the resolved client, exactly like
+  // the GET handler. The consent form's scope field is client-controlled, so
+  // trusting it verbatim would let a client obtain scopes it isn't registered
+  // for (e.g. a saved:write-only client submitting scope=mcp).
+  const requestedScopes = parseScopes(scope || undefined);
+  const scopes = validateScopes(
+    requestedScopes.length > 0 ? requestedScopes : ["mcp"], // Default to mcp scope
+    client.scopes
+  );
+
+  if (scopes.length === 0) {
+    return buildErrorRedirect(
+      redirectUri,
+      OAUTH_ERRORS.INVALID_SCOPE,
+      "No valid scopes requested",
+      state
+    );
+  }
 
   // Validate / bind the RFC 8707 resource indicator (see GET handler).
   const canonicalResource = getProtectedResourceMetadata().resource;

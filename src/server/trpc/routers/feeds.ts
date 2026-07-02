@@ -8,16 +8,18 @@
 import { z } from "zod";
 
 import { logger } from "@/lib/logger";
-import { createTRPCRouter, publicProcedure } from "../trpc";
+import { createTRPCRouter, expensivePublicProcedure } from "../trpc";
 import { errors } from "../errors";
 import { feedUrlSchema } from "../validation";
 import {
   fetchUrl,
   isHtmlContent,
+  readResponseWithSizeLimit,
   FEED_FETCH_TIMEOUT_MS,
   ACCEPT_ENCODING,
 } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
+import { usageLimitsConfig } from "@/server/config/env";
 import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { detectFeedType } from "@/server/feed/parser";
@@ -162,7 +164,7 @@ async function tryFetchAsFeed(
       return null;
     }
 
-    const text = await response.text();
+    const text = await readResponseWithSizeLimit(response, usageLimitsConfig.maxFeedSizeBytes, url);
     const feedType = detectFeedType(text);
 
     if (feedType === "unknown") {
@@ -273,13 +275,14 @@ export const feedsRouter = createTRPCRouter({
    * 3. Parses the feed to get metadata and sample entries
    * 4. Returns the preview without saving anything to the database
    *
-   * This is a public procedure - no authentication required.
-   * It allows users to preview a feed before subscribing.
+   * This is a public procedure - no authentication required - but it triggers
+   * outbound fetches, so it uses the strict "expensive" rate limit to prevent
+   * anonymous users from using it as a scanning/amplification primitive.
    *
    * @param url - The feed URL (or HTML page with feed discovery)
    * @returns Feed preview with title, description, and sample entries
    */
-  preview: publicProcedure
+  preview: expensivePublicProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -389,13 +392,14 @@ export const feedsRouter = createTRPCRouter({
    * 4. Returns all discovered feeds with title, type, and URL
    * 5. Deduplicates by URL
    *
-   * This is a public procedure - no authentication required.
-   * It allows users to discover feeds before subscribing.
+   * This is a public procedure - no authentication required - but it fans out
+   * several outbound fetches, so it uses the strict "expensive" rate limit to
+   * prevent anonymous users from using it as a scanning/amplification primitive.
    *
    * @param url - The URL to discover feeds from
    * @returns Array of discovered feeds
    */
-  discover: publicProcedure
+  discover: expensivePublicProcedure
     .meta({
       openapi: {
         method: "GET",

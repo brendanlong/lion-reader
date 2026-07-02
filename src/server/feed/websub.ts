@@ -10,10 +10,18 @@
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
 import { eq, and, lt } from "drizzle-orm";
 import { fetchWithSsrfProtection } from "../http/ssrf";
+import { readResponseBufferWithSizeLimit } from "../http/fetch";
 import { db } from "../db";
 import { feeds, websubSubscriptions, type Feed, type WebsubSubscription } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { logger } from "@/lib/logger";
+
+/**
+ * Timeout for hub subscription POST requests (10 seconds).
+ * These are awaited inside the fetch job and renewal loop, so a wedged hub
+ * must not stall them indefinitely.
+ */
+const HUB_REQUEST_TIMEOUT_MS = 10000;
 
 /**
  * Private/local hostnames and IP ranges that can't receive WebSub callbacks.
@@ -261,6 +269,8 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
   }
 
   // POST subscription request to hub
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), HUB_REQUEST_TIMEOUT_MS);
   try {
     const response = await fetchWithSsrfProtection(feed.hubUrl, {
       method: "POST",
@@ -274,6 +284,7 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
         "hub.secret": secret,
         "hub.verify": "async",
       }).toString(),
+      signal: controller.signal,
     });
 
     // Hub should return 202 Accepted for async verification
@@ -289,9 +300,11 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
       return { success: true, subscriptionId };
     }
 
-    // Handle error response
-    const errorText = await response.text();
-    const errorMessage = `Hub returned ${response.status}: ${errorText.slice(0, 200)}`;
+    // Handle error response (read a bounded prefix; we only log 200 chars)
+    const errorBody = await readResponseBufferWithSizeLimit(response, 4096, feed.hubUrl).catch(() =>
+      Buffer.alloc(0)
+    );
+    const errorMessage = `Hub returned ${response.status}: ${errorBody.toString().slice(0, 200)}`;
 
     await db
       .update(websubSubscriptions)
@@ -329,6 +342,8 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
     });
 
     return { success: false, subscriptionId, error: errorMessage };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -451,17 +466,27 @@ export async function handleVerificationChallenge(
 /**
  * Handles an unsubscribe verification callback from a hub.
  *
- * Per W3C WebSub spec Section 5.3, we confirm unsubscribes that we requested
- * (tracked via unsubscribe_requested_at). For hub-initiated unsubscribes
- * (ones we didn't request), we also confirm and mark the subscription as
- * unsubscribed, since fighting a hub's decision to unsubscribe us is unlikely
- * to be productive.
+ * Per W3C WebSub spec Section 5.3, we only confirm unsubscribes that we
+ * requested (tracked via unsubscribe_requested_at). Unsubscribe verifications
+ * we never requested are rejected: the callback URL (feedId) and topic URL are
+ * both discoverable, so confirming unrequested unsubscribes would let anyone
+ * silently downgrade a feed from push to backup polling. A hub that genuinely
+ * drops us doesn't send a verification — it just stops delivering, and the
+ * lease-renewal/polling machinery recovers from that.
  */
 async function handleUnsubscribeVerification(
   feedId: string,
   subscription: WebsubSubscription,
   challenge: string
 ): Promise<VerificationResult> {
+  if (!subscription.unsubscribeRequestedAt) {
+    logger.warn("WebSub unsubscribe verification we never requested - rejecting", {
+      subscriptionId: subscription.id,
+      feedId,
+    });
+    return { success: false, error: "No unsubscribe was requested for this subscription" };
+  }
+
   const now = new Date();
 
   await db.transaction(async (tx) => {
@@ -471,9 +496,7 @@ async function handleUnsubscribeVerification(
       .set({
         state: "unsubscribed",
         lastChallengeAt: now,
-        lastError: subscription.unsubscribeRequestedAt
-          ? null
-          : "Hub-initiated unsubscribe confirmed",
+        lastError: null,
         updatedAt: now,
       })
       .where(eq(websubSubscriptions.id, subscription.id));
@@ -482,17 +505,10 @@ async function handleUnsubscribeVerification(
     await tx.update(feeds).set({ websubActive: false, updatedAt: now }).where(eq(feeds.id, feedId));
   });
 
-  if (subscription.unsubscribeRequestedAt) {
-    logger.info("WebSub unsubscribe verified (requested)", {
-      subscriptionId: subscription.id,
-      feedId,
-    });
-  } else {
-    logger.info("WebSub unsubscribe verified (hub-initiated)", {
-      subscriptionId: subscription.id,
-      feedId,
-    });
-  }
+  logger.info("WebSub unsubscribe verified (requested)", {
+    subscriptionId: subscription.id,
+    feedId,
+  });
 
   return { success: true, challenge };
 }

@@ -29,6 +29,8 @@ import {
   OAUTH_SCOPES,
 } from "./utils";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { fetchWithSsrfProtection } from "@/server/http/ssrf";
+import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
 
 // ============================================================================
 // Types
@@ -136,22 +138,41 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
 }
 
 /**
+ * Timeout for Client ID Metadata Document fetches (10 seconds).
+ */
+const CLIENT_METADATA_TIMEOUT_MS = 10000;
+
+/**
+ * Maximum Client ID Metadata Document size (256 KiB — real documents are tiny).
+ */
+const CLIENT_METADATA_MAX_BYTES = 256 * 1024;
+
+/**
  * Fetches Client ID Metadata Document from URL.
+ *
+ * The URL is an arbitrary client_id reachable via unauthenticated
+ * /oauth/authorize requests, so the fetch is SSRF-protected, time-limited,
+ * and size-limited.
  */
 async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CLIENT_METADATA_TIMEOUT_MS);
+
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithSsrfProtection(url, {
       headers: {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
       },
+      signal: controller.signal,
     });
 
     if (!response.ok) {
       return null;
     }
 
-    const metadata = (await response.json()) as ClientMetadata;
+    const body = await readResponseBufferWithSizeLimit(response, CLIENT_METADATA_MAX_BYTES, url);
+    const metadata = JSON.parse(body.toString()) as ClientMetadata;
 
     // Validate required fields
     if (!metadata.client_id || !metadata.redirect_uris || !Array.isArray(metadata.redirect_uris)) {
@@ -166,6 +187,8 @@ async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> 
     return metadata;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -217,6 +240,12 @@ interface AuthCodeValidation {
 /**
  * Validates and consumes an authorization code.
  * Returns the code data if valid, null otherwise.
+ *
+ * Consumption is a single atomic UPDATE ... WHERE used_at IS NULL, so of two
+ * concurrent token requests presenting the same code exactly one succeeds
+ * (OAuth 2.1 single-use requirement). The code is claimed before PKCE
+ * verification, so a failed PKCE attempt also burns the code — that's the
+ * safe direction (an attacker who stole a code can't retry verifiers).
  */
 export async function validateAndConsumeAuthCode(
   code: string,
@@ -226,10 +255,10 @@ export async function validateAndConsumeAuthCode(
 ): Promise<AuthCodeValidation | null> {
   const codeHash = hashToken(code);
 
-  // Get the code from database
+  // Atomically claim the code
   const result = await db
-    .select()
-    .from(oauthAuthorizationCodes)
+    .update(oauthAuthorizationCodes)
+    .set({ usedAt: new Date() })
     .where(
       and(
         eq(oauthAuthorizationCodes.codeHash, codeHash),
@@ -239,7 +268,7 @@ export async function validateAndConsumeAuthCode(
         gt(oauthAuthorizationCodes.expiresAt, new Date())
       )
     )
-    .limit(1);
+    .returning();
 
   if (result.length === 0) {
     return null;
@@ -251,12 +280,6 @@ export async function validateAndConsumeAuthCode(
   if (!validatePkceS256(codeVerifier, authCode.codeChallenge)) {
     return null;
   }
-
-  // Mark code as used
-  await db
-    .update(oauthAuthorizationCodes)
-    .set({ usedAt: new Date() })
-    .where(eq(oauthAuthorizationCodes.id, authCode.id));
 
   return {
     userId: authCode.userId,
@@ -379,32 +402,48 @@ async function updateAccessTokenLastUsed(tokenId: string): Promise<void> {
 
 /**
  * Validates a refresh token and rotates it (creates new tokens, revokes old).
+ *
+ * The presented token is claimed with an atomic UPDATE ... WHERE revoked_at IS
+ * NULL, so concurrent requests with the same token can't both rotate it.
+ * Presenting an already-rotated (revoked but unexpired) token is treated as
+ * rotation reuse — evidence the token leaked — and revokes every active token
+ * for that user+client pair, per OAuth 2.1 refresh token rotation guidance.
  */
 export async function rotateRefreshToken(
   refreshToken: string,
   clientId: string
 ): Promise<TokenPair | null> {
   const tokenHash = hashToken(refreshToken);
+  const now = new Date();
 
-  // Get the refresh token
-  const result = await db
-    .select()
-    .from(oauthRefreshTokens)
+  // Atomically claim (revoke) the presented refresh token
+  const claimed = await db
+    .update(oauthRefreshTokens)
+    .set({ revokedAt: now })
     .where(
       and(
         eq(oauthRefreshTokens.tokenHash, tokenHash),
         eq(oauthRefreshTokens.clientId, clientId),
         isNull(oauthRefreshTokens.revokedAt),
-        gt(oauthRefreshTokens.expiresAt, new Date())
+        gt(oauthRefreshTokens.expiresAt, now)
       )
     )
-    .limit(1);
+    .returning();
 
-  if (result.length === 0) {
+  if (claimed.length === 0) {
+    await handlePossibleRefreshTokenReuse(tokenHash, clientId, now);
     return null;
   }
 
-  const oldRefreshToken = result[0];
+  const oldRefreshToken = claimed[0];
+
+  // Revoke the old access token if it exists
+  if (oldRefreshToken.accessTokenId) {
+    await db
+      .update(oauthAccessTokens)
+      .set({ revokedAt: now })
+      .where(eq(oauthAccessTokens.id, oldRefreshToken.accessTokenId));
+  }
 
   // Create new tokens, preserving resource binding
   const newTokens = await createTokens({
@@ -414,7 +453,7 @@ export async function rotateRefreshToken(
     resource: oldRefreshToken.resource,
   });
 
-  // Get the new refresh token ID to link rotation chain
+  // Link the rotation chain on the old token
   const newRefreshTokenHash = hashToken(newTokens.refreshToken);
   const newRefreshTokenResult = await db
     .select({ id: oauthRefreshTokens.id })
@@ -423,25 +462,65 @@ export async function rotateRefreshToken(
     .limit(1);
 
   const newRefreshTokenId = newRefreshTokenResult[0]?.id;
-
-  // Revoke old refresh token and link to new one
-  await db
-    .update(oauthRefreshTokens)
-    .set({
-      revokedAt: new Date(),
-      replacedById: newRefreshTokenId,
-    })
-    .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
-
-  // Also revoke the old access token if it exists
-  if (oldRefreshToken.accessTokenId) {
+  if (newRefreshTokenId) {
     await db
-      .update(oauthAccessTokens)
-      .set({ revokedAt: new Date() })
-      .where(eq(oauthAccessTokens.id, oldRefreshToken.accessTokenId));
+      .update(oauthRefreshTokens)
+      .set({ replacedById: newRefreshTokenId })
+      .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
   }
 
   return newTokens;
+}
+
+/**
+ * Rotation-reuse detection: if a rotation attempt failed because the token was
+ * already revoked (but is otherwise valid and unexpired), someone is replaying
+ * an old refresh token. Revoke all active tokens for that user+client so the
+ * leaked chain is dead no matter which copy the attacker holds.
+ */
+async function handlePossibleRefreshTokenReuse(
+  tokenHash: string,
+  clientId: string,
+  now: Date
+): Promise<void> {
+  const [presented] = await db
+    .select()
+    .from(oauthRefreshTokens)
+    .where(
+      and(eq(oauthRefreshTokens.tokenHash, tokenHash), eq(oauthRefreshTokens.clientId, clientId))
+    )
+    .limit(1);
+
+  if (!presented || !presented.revokedAt || presented.expiresAt <= now) {
+    // Unknown or merely expired token — not reuse, nothing to do
+    return;
+  }
+
+  console.warn(
+    `OAuth refresh token reuse detected for user ${presented.userId}, client ${clientId}; revoking all tokens for the grant`
+  );
+
+  await db
+    .update(oauthRefreshTokens)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(oauthRefreshTokens.userId, presented.userId),
+        eq(oauthRefreshTokens.clientId, clientId),
+        isNull(oauthRefreshTokens.revokedAt)
+      )
+    );
+
+  await db
+    .update(oauthAccessTokens)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(oauthAccessTokens.userId, presented.userId),
+        eq(oauthAccessTokens.clientId, clientId),
+        isNull(oauthAccessTokens.revokedAt)
+      )
+    );
 }
 
 // ============================================================================
