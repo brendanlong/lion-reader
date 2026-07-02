@@ -234,7 +234,13 @@ export async function listSubscriptions(
         title: string | null;
         id: string;
       };
-      if (!decoded.id) {
+      // The id is interpolated into a uuid comparison — reject non-UUID
+      // values here so they surface as a validation error, not a Postgres
+      // "invalid input syntax for type uuid" 500.
+      if (
+        typeof decoded.id !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decoded.id)
+      ) {
         throw new Error("Invalid cursor structure");
       }
     } catch {

@@ -22,7 +22,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/server/db";
 import type { User } from "@/server/db/schema";
-import { registerTools } from "@/server/mcp/tools";
+import { registerTools, toMcpError } from "@/server/mcp/tools";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { validateAccessToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES, isResourceForThisServer } from "@/server/oauth/utils";
@@ -167,7 +167,12 @@ function createMcpServer(userId: string): Server {
 
     // The authenticated userId is passed separately from client args, so it
     // can't be spoofed; the handler validates args against its Zod schema.
-    const result = await tool.handler(db, userId, args ?? {});
+    let result: unknown;
+    try {
+      result = await tool.handler(db, userId, args ?? {});
+    } catch (error) {
+      throw toMcpError(error);
+    }
 
     return {
       content: [

@@ -13,7 +13,9 @@
 
 import { z } from "zod";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
+import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
 import * as subscriptionsService from "@/server/services/subscriptions";
@@ -39,8 +41,6 @@ interface Tool {
 // Validation Helpers
 // ============================================================================
 
-const uuidSchema = z.uuid("Invalid ID");
-
 /**
  * Parses tool arguments against a Zod schema, converting failures into MCP
  * InvalidParams errors so clients get a useful message instead of a 500.
@@ -54,6 +54,26 @@ function parseArgs<T extends z.ZodType>(schema: T, args: unknown): z.infer<T> {
     );
   }
   return result.data;
+}
+
+/**
+ * Convert service-layer errors into structured MCP errors so clients receive
+ * a parseable InvalidParams instead of an opaque internal error. Services
+ * throw TRPCErrors (their native error type across all transports); bad IDs
+ * and invalid cursors surface as BAD_REQUEST/NOT_FOUND.
+ */
+export function toMcpError(error: unknown): unknown {
+  if (error instanceof McpError) {
+    return error;
+  }
+  if (error instanceof TRPCError) {
+    const code =
+      error.code === "BAD_REQUEST" || error.code === "NOT_FOUND"
+        ? ErrorCode.InvalidParams
+        : ErrorCode.InternalError;
+    return new McpError(code, error.message);
+  }
+  return error;
 }
 
 /**
@@ -82,7 +102,9 @@ const listEntriesArgs = z.object({
   uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
   type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
   unreadOnly: z.boolean().optional().describe("Show only unread entries"),
+  readOnly: z.boolean().optional().describe("Show only read entries"),
   starredOnly: z.boolean().optional().describe("Show only starred entries"),
+  unstarredOnly: z.boolean().optional().describe("Show only unstarred entries"),
   sortOrder: z
     .enum(["newest", "oldest"])
     .optional()
@@ -117,7 +139,9 @@ const countEntriesArgs = z.object({
   uncategorized: z.boolean().optional().describe("Count only uncategorized entries"),
   type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
   unreadOnly: z.boolean().optional().describe("Count only unread entries"),
+  readOnly: z.boolean().optional().describe("Count only read entries"),
   starredOnly: z.boolean().optional().describe("Count only starred entries"),
+  unstarredOnly: z.boolean().optional().describe("Count only unstarred entries"),
 });
 
 const saveArticleArgs = z.object({
@@ -159,9 +183,7 @@ const listTagsArgs = z.object({});
 
 const createTagArgs = z.object({
   name: z.string().min(1).max(50).describe("Tag name (max 50 characters, must be unique per user)"),
-  color: z
-    .string()
-    .nullable()
+  color: tagColorSchema
     .optional()
     .describe("Optional hex color (e.g., #ff6b6b). Null to remove color."),
 });
@@ -174,11 +196,7 @@ const updateTagArgs = z.object({
     .max(50)
     .optional()
     .describe("New tag name (max 50 characters, must be unique per user)"),
-  color: z
-    .string()
-    .nullable()
-    .optional()
-    .describe("New hex color (e.g., #ff6b6b). Null to remove color."),
+  color: tagColorSchema.optional().describe("New hex color (e.g., #ff6b6b). Null to remove color."),
 });
 
 const deleteTagArgs = z.object({
@@ -192,8 +210,19 @@ const deleteTagArgs = z.object({
 /**
  * Registers all available MCP tools.
  * Each tool wraps a service function with MCP-compatible interface.
+ *
+ * The tool list is static (handlers take db/userId as parameters), so it is
+ * built once per process — the stateless MCP HTTP route calls this on every
+ * request, and rebuilding would re-run every z.toJSONSchema conversion.
  */
 export function registerTools(): Tool[] {
+  cachedTools ??= buildTools();
+  return cachedTools;
+}
+
+let cachedTools: Tool[] | null = null;
+
+function buildTools(): Tool[] {
   return [
     // ========================================================================
     // Entries Tools
