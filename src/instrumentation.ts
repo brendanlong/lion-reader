@@ -14,6 +14,8 @@
  * https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
  */
 
+import * as Sentry from "@sentry/nextjs";
+
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     // Import the server Sentry config
@@ -38,6 +40,11 @@ export async function register() {
     registerResourceCleanup(async () => {
       logger.info("Closing shared resources...");
 
+      // Flush buffered Sentry events first (errors captured during the
+      // connection drain are the ones most worth keeping). No-op without a
+      // DSN.
+      await Sentry.close(2000);
+
       // Close Redis connection
       const { redis } = await import("./server/redis");
       await redis.quit();
@@ -53,3 +60,8 @@ export async function register() {
     await import("../sentry.edge.config");
   }
 }
+
+// Capture errors from Server Components, route handlers, middleware, and
+// proxies. Without this export, only errors that flow through explicit
+// captureException call sites (e.g. the tRPC error middleware) reach Sentry.
+export const onRequestError = Sentry.captureRequestError;

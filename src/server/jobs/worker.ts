@@ -442,6 +442,10 @@ export async function startWorkerWithSignalHandling(config: WorkerConfig = {}): 
     logger.info(`Received ${signal}, initiating graceful shutdown...`);
 
     await worker.stop();
+    // Flush buffered Sentry events (e.g. failures captured from the jobs that
+    // just wound down) before the process exits. No-op if Sentry never
+    // initialized.
+    await Sentry.close(2000);
     process.exit(0);
   };
 

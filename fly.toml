@@ -18,6 +18,11 @@ kill_timeout = 30
 
 [build]
   dockerfile = "Dockerfile"
+  # Uncomment to enable client-side Sentry: NEXT_PUBLIC_* vars are inlined at
+  # build time, so the DSN must be a build arg (a runtime secret has no
+  # effect). DSNs are not secret — they ship in the client bundle by design.
+  # [build.args]
+  #   NEXT_PUBLIC_SENTRY_DSN = "https://<key>@<org>.ingest.sentry.io/<project>"
 
 [deploy]
   # Run migrations before starting the new app version

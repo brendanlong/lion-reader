@@ -1,14 +1,19 @@
 /**
- * Sentry Client Configuration
+ * Client Instrumentation (Next.js convention, replaces sentry.client.config.ts)
  *
- * This file configures the initialization of Sentry on the client (browser).
- * The config added here applies whenever a user loads a page in their browser.
+ * Runs in the browser before the app hydrates. This is where client-side
+ * Sentry is initialized. Like src/instrumentation.ts, Next.js resolves this
+ * file from `src/` first, then the repo root.
+ *
+ * https://nextjs.org/docs/app/guides/instrumentation-client
  * https://docs.sentry.io/platforms/javascript/guides/nextjs/
  */
 
 import * as Sentry from "@sentry/nextjs";
 
-// Only initialize Sentry if DSN is provided
+// Only initialize Sentry if DSN is provided.
+// NEXT_PUBLIC_* vars are inlined at build time, so the DSN must be available
+// to `next build` (not just at runtime) for client Sentry to work.
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -18,6 +23,10 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
 
     // Setting this option to true will print useful information to the console while you're setting up Sentry.
     debug: false,
+
+    // Session Replay. The sample rates below do nothing without this
+    // integration being registered.
+    integrations: [Sentry.replayIntegration()],
 
     // Enable replay for 10% of sessions
     replaysSessionSampleRate: 0.1,
@@ -64,3 +73,8 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     ],
   });
 }
+
+// Instruments Next.js router transitions for tracing. Most in-app navigation
+// here bypasses the Next router (ClientLink uses pushState directly), so this
+// mainly covers initial-load route changes; exported to follow the convention.
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

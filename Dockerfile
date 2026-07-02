@@ -49,6 +49,13 @@ ENV NODE_ENV=production
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV REDIS_URL="redis://localhost:6379"
 
+# Client-side Sentry DSN. NEXT_PUBLIC_* vars are inlined into the client
+# bundle at build time, so a runtime secret is not enough — the DSN must be
+# provided to the build (fly.toml [build.args]). DSNs are not secret (they
+# ship in the client bundle by design). Empty means client Sentry is disabled.
+ARG NEXT_PUBLIC_SENTRY_DSN=""
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
+
 # Build Next.js application
 RUN pnpm build
 
