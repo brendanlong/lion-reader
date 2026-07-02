@@ -16,6 +16,10 @@ const eslintConfig = defineConfig([
     "dist/**",
     // Vendored ONNX Runtime WASM/JS files
     "public/onnx/**",
+    // Generated PWA service worker (next-pwa output from `pnpm build`)
+    "public/sw.js",
+    "public/workbox-*.js",
+    "public/worker-*.js",
   ]),
 ]);
 

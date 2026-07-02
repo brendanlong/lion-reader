@@ -34,7 +34,7 @@ const buildOptions = {
   entryPoints: [resolve(rootDir, "scripts/server.ts")],
   bundle: true,
   platform: "node",
-  target: "node24",
+  target: "node26",
   format: "cjs",
   outfile: resolve(rootDir, "dist/server.js"),
 

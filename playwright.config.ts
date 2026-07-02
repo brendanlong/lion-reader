@@ -15,6 +15,13 @@ import { defineConfig, devices } from "@playwright/test";
 const PORT = process.env.E2E_PORT ? parseInt(process.env.E2E_PORT, 10) : 4983;
 const BASE_URL = `http://localhost:${PORT}`;
 
+// In CI, run against the production build (`pnpm build && pnpm build:server`
+// must have run first) so the deployed code path — next build output served by
+// dist/server.js with the compression wrapper — is what gets tested. Locally,
+// default to the dev server for fast iteration; set E2E_PRODUCTION=true to
+// test the production build locally instead.
+const useProductionBuild = !!process.env.CI || process.env.E2E_PRODUCTION === "true";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   // Tests share one database and one app server; run serially to avoid
@@ -39,16 +46,17 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev:next",
+    command: useProductionBuild ? "pnpm start" : "pnpm dev:next",
     url: `${BASE_URL}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     env: {
       PORT: String(PORT),
       // .env.test sets NODE_ENV=test, but the app server should run in
-      // development mode (DATABASE_URL/REDIS_URL still come from .env.test
-      // via inherited process env, which Next.js never overrides).
-      NODE_ENV: "development",
+      // development or production mode (DATABASE_URL/REDIS_URL still come
+      // from .env.test via inherited process env, which Next.js never
+      // overrides).
+      NODE_ENV: useProductionBuild ? "production" : "development",
     },
   },
 });

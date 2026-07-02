@@ -34,7 +34,7 @@ const buildOptions = {
   entryPoints: [resolve(rootDir, "scripts/migrate.ts")],
   bundle: true,
   platform: "node",
-  target: "node20",
+  target: "node26",
   format: "cjs",
   outfile: resolve(rootDir, "dist/migrate.js"),
 
