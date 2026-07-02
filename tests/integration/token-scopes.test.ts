@@ -86,6 +86,18 @@ function createSessionContext(userId: string): Context {
   };
 }
 
+function createAnonymousContext(): Context {
+  return {
+    db,
+    session: null,
+    apiToken: null,
+    authType: null,
+    scopes: [],
+    sessionToken: null,
+    headers: new Headers(),
+  };
+}
+
 function createTokenContext(userId: string, scopes: ApiTokenScope[]): Context {
   return {
     db,
@@ -192,6 +204,30 @@ describe("API token scope enforcement", () => {
 
       await expectPassedScopeGate(mcpCaller.saved.delete({ id: generateUuidv7() }), "NOT_FOUND");
       await expectForbidden(writeCaller.saved.delete({ id: generateUuidv7() }));
+    });
+  });
+
+  describe("feeds.preview / feeds.discover", () => {
+    // These trigger outbound fetches, so they require a confirmed session (see
+    // issue #951): anonymous or token access would be a scanning/amplification
+    // primitive. Both rejections happen at the auth gate, before any fetch.
+    it("rejects unauthenticated callers", async () => {
+      const caller = createCaller(createAnonymousContext());
+
+      await expect(
+        caller.feeds.preview({ url: "https://example.com/feed.xml" })
+      ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      await expect(caller.feeds.discover({ url: "https://example.com/" })).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
+    });
+
+    it("rejects API tokens (session-only)", async () => {
+      const userId = await createTestUser();
+      const caller = createCaller(createTokenContext(userId, ["mcp"]));
+
+      await expectForbidden(caller.feeds.preview({ url: "https://example.com/feed.xml" }));
+      await expectForbidden(caller.feeds.discover({ url: "https://example.com/" }));
     });
   });
 

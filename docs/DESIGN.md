@@ -216,7 +216,7 @@ Available scopes (`API_TOKEN_SCOPES` / `OAUTH_SCOPES`):
 
 Enforcement (`src/server/trpc/trpc.ts`):
 
-- `protectedProcedure` / `confirmedProtectedProcedure` (and their `expensive*` variants) are **session-only** — token auth is rejected with `FORBIDDEN`. This protects account-management and other non-MCP endpoints (sessions, password, preferences, ingest addresses, blocked senders, OPML import, narration, summarization, feed stats, broken feeds, subscription create/update/delete/import/export, `entries.markAllRead`, `entries.fetchFullContent`) by default.
+- `protectedProcedure` / `confirmedProtectedProcedure` (and their `expensive*` variants) are **session-only** — token auth is rejected with `FORBIDDEN`. This protects account-management and other non-MCP endpoints (sessions, password, preferences, ingest addresses, blocked senders, OPML import, narration, summarization, feed stats, broken feeds, feed preview/discover, subscription create/update/delete/import/export, `entries.markAllRead`, `entries.fetchFullContent`) by default.
 - `scopedProtectedProcedure(scope | scope[])` opts an endpoint into token access; a token must hold at least one of the listed scopes (sessions bypass). The `mcp`-scoped endpoints mirror the MCP tools exactly; `saved.save` accepts `saved:write` or `mcp`.
 
 Because the default is session-only, **new endpoints are token-inaccessible until they explicitly opt in**.
