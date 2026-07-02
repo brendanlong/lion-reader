@@ -622,6 +622,8 @@ CREATE INDEX idx_invites_token ON public.invites USING btree (token);
 
 CREATE INDEX idx_jobs_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE (type = 'fetch_feed'::text);
 
+CREATE INDEX idx_jobs_polling ON public.jobs USING btree (type, next_run_at);
+
 CREATE INDEX idx_narration_needs_generation ON public.narration_content USING btree (id);
 
 CREATE INDEX idx_oauth_access_tokens_client ON public.oauth_access_tokens USING btree (client_id);

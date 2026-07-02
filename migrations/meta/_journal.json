@@ -512,6 +512,13 @@
       "when": 1782950600000,
       "tag": "0073_drop_entry_scoring",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1782950700000,
+      "tag": "0074_jobs_polling_index",
+      "breakpoints": true
     }
   ]
 }

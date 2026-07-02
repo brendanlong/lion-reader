@@ -808,10 +808,13 @@ export const jobs = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    // Index for polling: jobs that are due
-    index("idx_jobs_polling").on(table.nextRunAt),
+    // Index for polling: claim queries filter on type + next_run_at <= now
+    // and order by next_run_at (restored by migration 0074)
+    index("idx_jobs_polling").on(table.type, table.nextRunAt),
     // Index for looking up feed jobs by feedId
-    index("idx_jobs_feed_id").on(sql`(${table.payload}->>'feedId')`),
+    index("idx_jobs_feed_id")
+      .on(sql`(${table.payload}->>'feedId')`)
+      .where(sql`type = 'fetch_feed'`),
     // Enforce one row per singleton job type so claimSingletonJob's
     // INSERT...catch actually races correctly (see SINGLETON_JOB_TYPES).
     uniqueIndex("jobs_singleton_type_unique")
